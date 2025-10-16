@@ -1,0 +1,19 @@
+* {
+    font-family: 'Roboto', sans-serif;
+}
+
+.hover {
+    cursor: pointer;
+}
+
+.v-form .v-field--disabled {
+    opacity: 0.7 !important;
+}
+
+.v-form .v-switch .v-selection-control--disabled {
+    opacity: 0.7 !important;
+}
+
+.v-list-item.disabled-opacity {
+    opacity: 0.7 !important;
+}
