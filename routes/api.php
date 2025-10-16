@@ -10,6 +10,9 @@ use App\Http\Controllers\Admin\NavigationController;
 use App\Http\Controllers\Admin\UserWithRoleController;
 use App\Http\Controllers\Homepage\HomepageController;
 
+
+
+
 // Globales Throttle
 Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function () {
 
@@ -18,6 +21,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/routes/is_route_allowed',  [RouteController::class, 'isRouteAllowed']);
 
     /***** HOMEPAGE ROUTES *****/
+
 
     Route::get('/homepage/config',  [HomepageController::class, 'config']);
 

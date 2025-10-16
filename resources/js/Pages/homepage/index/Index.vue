@@ -1,38 +1,14 @@
 <template>
-    <v-container fluid class="h-100 w-100 d-flex align-center justify-center">
-        <v-card class="mx-auto" width="300">
-            <v-img height="100px" :src="'/storage/images/' + config.logo"></v-img>
-
-            <v-card-title>
-                {{ config.title }}
+    <v-container
+        fluid
+        class="h-100 w-100 d-flex align-center justify-center bg-background"
+    >
+        <v-card class="mx-auto w-100" max-width="600" tile flat color="primary">
+            <v-card-title class="d-flex flex-row align-center">
+                <img src="/storage/images/logo.png" alt="Logo" class="logo" />
+                <div class="ml-2">Hello World</div>
             </v-card-title>
-
-            <v-card-subtitle>
-                {{ config.company }}
-            </v-card-subtitle>
-
-            <v-card-actions>
-                <v-btn append-icon="mdi-arrow-right" color="primary" slim flat rounded="0" variant="text" text="Admin"
-                    href="/admin" />
-
-                <v-spacer></v-spacer>
-
-                <v-btn :icon="is_more_content ? 'mdi-chevron-up' : 'mdi-chevron-down'"
-                    @click="is_more_content = !is_more_content"></v-btn>
-            </v-card-actions>
-
-            <v-expand-transition>
-                <div v-show="is_more_content">
-                    <v-divider></v-divider>
-
-                    <v-card-text class="text-text">
-                        Die Installation einer Laravel-App ist mit all seinen Features und Packages ziemlich
-                        zeitaufwändig.
-                        Mit spa wollte ich diese Zeit deutlich verkürzen.
-                        Ein Admin-Login ist ebenfalls dabei.
-                    </v-card-text>
-                </div>
-            </v-expand-transition>
+            <v-card-text> </v-card-text>
         </v-card>
     </v-container>
 </template>
@@ -40,32 +16,38 @@
 import { mapWritableState } from "pinia";
 import { useHomepageStore } from "@/stores/homepage/HomepageStore";
 export default {
-
     components: {},
 
     async beforeMount() {
         this.homepageStore = useHomepageStore();
     },
 
-    unmounted() {
-    },
+    unmounted() {},
 
     data() {
         return {
             homepageStore: null,
             is_more_content: false,
-
         };
     },
 
     computed: {
-        ...mapWritableState(useHomepageStore, ['config', 'is_loading', 'error']),
-
+        ...mapWritableState(useHomepageStore, [
+            "config",
+            "is_loading",
+            "error",
+        ]),
     },
 
-    methods: {
-
-    }
-
-}
+    methods: {},
+};
 </script>
+<style scoped>
+.logo {
+    display: block;
+    max-height: 64px; /* or 2em, relative to font size */
+    height: auto;
+    width: auto;
+    object-fit: contain;
+}
+</style>

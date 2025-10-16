@@ -2,9 +2,10 @@
 
 namespace App\Http\Middleware;
 
+use App\Traits\HasRoleTrait;
 use Closure;
 use Illuminate\Http\Request;
-use App\Traits\HasRoleTrait;
+use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
 
 class ApiAllowed
@@ -26,10 +27,10 @@ class ApiAllowed
     public function handle(Request $request, Closure $next, ...$allowed_roles): Response
     {
 
-        if (! auth()->check()) {
+        if (! Auth::check()) {
             abort(401, 'Nicht authorisiert');
         }
-        if (! $user = auth()->user()) {
+        if (! $user = Auth::user()) {
             abort(401, 'Nicht authorisiert');
         }
 

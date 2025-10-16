@@ -1,5 +1,4 @@
 <template>
-
     <v-app>
         <!-- Alle Dinge sind geladen -->
         <v-layout v-if="is_loading == 0" class="bg-background">
@@ -14,19 +13,22 @@
                         <v-btn text variant="text">Impressum homepage</v-btn>
                     </v-col>
                 </v-row>
-
             </v-footer>
         </v-layout>
 
         <!-- Es wird aktuell etwas geladen-->
-        <v-container class="d-flex justify-center align-center" style="height: 100vh;" v-if="is_loading > 0">
-            <v-progress-circular indeterminate size="70" width="7"></v-progress-circular>
+        <v-container
+            class="d-flex justify-center align-center"
+            style="height: 100vh"
+            v-if="is_loading > 0"
+        >
+            <v-progress-circular
+                indeterminate
+                size="70"
+                width="7"
+            ></v-progress-circular>
         </v-container>
-
     </v-app>
-
-
-
 </template>
 
 <script setup>
@@ -38,16 +40,20 @@ import { mapWritableState } from "pinia";
 import { useHomepageStore } from "@/stores/homepage/HomepageStore";
 
 export default {
-
     components: {},
 
     async beforeMount() {
-        this.homepageStore = useHomepageStore(); this.homepageStore.initialize(this.$router);
-        this.homepageStore.config();
+        console.log("href", window.location.href);
+        console.log("fullPath", this.$route.fullPath);
+        console.log("query", this.$route.query);
+
+        this.homepageStore = useHomepageStore();
+        const school = this.$route.query.school;
+        const app = this.$route.query.app;
+        this.homepageStore.loadConfig(school, app);
     },
 
-    unmounted() {
-    },
+    unmounted() {},
 
     data() {
         return {
@@ -56,13 +62,13 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useHomepageStore, ['config', 'is_loading', 'error']),
-
+        ...mapWritableState(useHomepageStore, [
+            "config",
+            "is_loading",
+            "error",
+        ]),
     },
 
-    methods: {
-
-    }
-
-}
+    methods: {},
+};
 </script>

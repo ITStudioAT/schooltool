@@ -2,11 +2,12 @@
 
 namespace App\Http\Middleware;
 
-use Closure;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Redirect;
 use App\Enums\RouteResult;
 use App\Services\RouteService;
+use Closure;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Redirect;
 use Symfony\Component\HttpFoundation\Response;
 
 class WebAllowed
@@ -24,10 +25,11 @@ class WebAllowed
         }
 
         $fullPath = '/' . ltrim($request->path(), '/'); // <--- WICHTIG!
-        $user = auth()->user();
+        $user = Auth::user();
 
         $routeService = new RouteService();
         $result = $routeService->checkWebRoles($user, $fullPath);
+        info($result->value);
 
 
 
@@ -64,7 +66,4 @@ class WebAllowed
             'type' => 'error',
         ]));
     }
-
-
-   
 }
