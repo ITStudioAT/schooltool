@@ -23,6 +23,11 @@ class School extends Model
         return $this->hasMany(Schoolyear::class);
     }
 
+    public function users(): HasMany
+    {
+        return $this->hasMany(User::class);
+    }
+
     // The one active year (or null)
     public function activeSchoolyear(): HasOne
     {
