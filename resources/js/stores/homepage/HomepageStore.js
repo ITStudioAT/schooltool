@@ -1,7 +1,7 @@
-import { defineStore } from "pinia";
-import { useNotificationStore } from "@/stores/spa/NotificationStore";
-import { useAdminStore } from "@/stores/admin/AdminStore";
-export const useHomepageStore = defineStore("HomepageStore", {
+import { defineStore } from 'pinia'
+import { useNotificationStore } from '@/stores/spa/NotificationStore'
+import { useAdminStore } from '@/stores/admin/AdminStore'
+export const useHomepageStore = defineStore('HomepageStore', {
     state: () => {
         return {
             router: null,
@@ -14,33 +14,38 @@ export const useHomepageStore = defineStore("HomepageStore", {
                 timeout: 3000,
             },
             response: null,
-        };
+            school: null,
+            licence: null,
+            selected_school_id: null,
+            selected_licence_id: null,
+        }
     },
 
     actions: {
         async loadConfig(school = null, app = null) {
-            const adminStore = useAdminStore();
-            const notification = useNotificationStore();
-            adminStore.is_loading++;
-            console.log(school, app);
+            const adminStore = useAdminStore()
+            const notification = useNotificationStore()
+            adminStore.is_loading++
             try {
-                console.log(1);
-                this.response = await axios.get("/api/homepage/config", {
+                this.response = await axios.get('/api/homepage/config', {
                     params: { school, app },
-                });
-                console.log(this.response);
-                this.config = this.response.data;
+                })
+                this.config = this.response.data
+                this.school = this.config?.school
+                this.licence = this.config?.licence
+                this.selected_licence_id = this.licence?.id || null
+                this.selected_school_id = this.school?.id || null
             } catch (error) {
                 notification.notify({
                     status: error.response.status,
-                    message: error.response.data.message || "Fehler passiert.",
-                    type: "error",
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
                     timeout: this.config?.timeout,
-                });
-                return false;
+                })
+                return false
             } finally {
-                adminStore.is_loading--;
+                adminStore.is_loading--
             }
         },
     },
-});
+})

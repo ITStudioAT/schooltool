@@ -36,6 +36,10 @@ Route::middleware(['throttle:global', 'throttle:web', 'web-allowed'])->group(fun
         return view('spa::application');
     })->where('any', '.*');
 
+    Route::get('homepage/{any?}', function () {
+        return view('spa::homepage');
+    });
+
     Route::get('/{any?}', function () {
         return view('spa::homepage');
     });

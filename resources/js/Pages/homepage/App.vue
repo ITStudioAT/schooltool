@@ -17,40 +17,25 @@
         </v-layout>
 
         <!-- Es wird aktuell etwas geladen-->
-        <v-container
-            class="d-flex justify-center align-center"
-            style="height: 100vh"
-            v-if="is_loading > 0"
-        >
-            <v-progress-circular
-                indeterminate
-                size="70"
-                width="7"
-            ></v-progress-circular>
+        <v-container class="d-flex justify-center align-center" style="height: 100vh" v-if="is_loading > 0">
+            <v-progress-circular indeterminate size="70" width="7"></v-progress-circular>
         </v-container>
     </v-app>
 </template>
 
 <script setup>
-import ItsNotification from "@/pages/components/ItsNotification.vue";
+import ItsNotification from '@/pages/components/ItsNotification.vue'
 </script>
 
 <script>
-import { mapWritableState } from "pinia";
-import { useHomepageStore } from "@/stores/homepage/HomepageStore";
+import { mapWritableState } from 'pinia'
+import { useHomepageStore } from '@/stores/homepage/HomepageStore'
 
 export default {
     components: {},
 
     async beforeMount() {
-        console.log("href", window.location.href);
-        console.log("fullPath", this.$route.fullPath);
-        console.log("query", this.$route.query);
-
-        this.homepageStore = useHomepageStore();
-        const school = this.$route.query.school;
-        const app = this.$route.query.app;
-        this.homepageStore.loadConfig(school, app);
+        this.homepageStore = useHomepageStore()
     },
 
     unmounted() {},
@@ -58,17 +43,13 @@ export default {
     data() {
         return {
             homepageStore: null,
-        };
+        }
     },
 
     computed: {
-        ...mapWritableState(useHomepageStore, [
-            "config",
-            "is_loading",
-            "error",
-        ]),
+        ...mapWritableState(useHomepageStore, ['config', 'is_loading', 'error']),
     },
 
     methods: {},
-};
+}
 </script>

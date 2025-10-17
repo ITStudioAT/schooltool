@@ -33,4 +33,20 @@ class School extends Model
     {
         return $this->hasOne(Schoolyear::class)->where('is_active', true);
     }
+
+    public function scopeSelectables($query)
+    {
+        return $query->where('is_selectable', true)->orderBy('long_name');
+    }
+
+    public function selectableValidLicences()
+    {
+        return $this->licences()
+            ->where('licences.is_selectable', true)
+            ->where(function ($q) {
+                $q->whereNull('school_licences.valid_until')
+                    ->orWhereDate('school_licences.valid_until', '>=', now()->toDateString());
+            })
+            ->orderBy('licences.long_name');
+    }
 }

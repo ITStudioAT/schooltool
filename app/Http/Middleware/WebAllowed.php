@@ -29,11 +29,6 @@ class WebAllowed
 
         $routeService = new RouteService();
         $result = $routeService->checkWebRoles($user, $fullPath);
-        info($result->value);
-
-
-
-
 
 
         switch ($result) {

@@ -16,6 +16,7 @@ return new class extends Migration
             $table->string('long_name')->nullable();
             $table->string('short_name')->nullable();
             $table->string('logo')->nullable();
+            $table->boolean('is_selectable')->default(true);
             $table->timestamps();
         });
     }
