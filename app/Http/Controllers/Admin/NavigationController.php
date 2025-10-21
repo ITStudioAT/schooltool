@@ -11,9 +11,12 @@ class NavigationController extends Controller
     {
         $navigationService = new AdminNavigationService();
 
-        if (! $auth_user = $this->userHasRole(['admin'])) {
+
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+
+
 
         $data = [
             'menu' => $navigationService->profileMenu(),
@@ -26,9 +29,12 @@ class NavigationController extends Controller
     {
         $navigationService = new AdminNavigationService();
 
-        if (! $auth_user = $this->userHasRole(['admin'])) {
+
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+
+
 
         $data = [
             'menu' => $navigationService->userMenu(),

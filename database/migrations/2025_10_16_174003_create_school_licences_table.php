@@ -13,8 +13,8 @@ return new class extends Migration
     {
         Schema::create('school_licences', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('school_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('licence_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('school_id')->constrained();
+            $table->foreignId('licence_id')->constrained();
             $table->date('valid_until')->nullable();
             $table->timestamps();
         });

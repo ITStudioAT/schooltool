@@ -118,7 +118,7 @@ class AdminService
     public function checkUserLogin($data): User
     {
 
-        if (! $user = User::where('email', $data['email'])->first()) {
+        if (! $user = User::where('email', $data['email'])->where('school_id', $data['school_id'])->first()) {
             abort(401, 'Login funktioniert mit dieser E-Mail-Adresse nicht.');
         }
 
@@ -133,7 +133,7 @@ class AdminService
         }
 
 
-        if (! $user->hasAnyRole(['super_admin', 'admin', 'user'])) {
+        if (! $user->hasAnyRole(['super_admin', 'admin', 'user', 'register_admin'])) {
             // Benutzer hat keine der angegebenen Rollen
             abort(423, 'Login aufgrund der Berechtigungen nicht möglich.');
         }

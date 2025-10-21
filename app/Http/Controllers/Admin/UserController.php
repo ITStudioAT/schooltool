@@ -109,7 +109,7 @@ class UserController extends Controller
 
     public function show(User $user)
     {
-        if (! $auth_user = $this->userHasRole(['admin'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -118,7 +118,9 @@ class UserController extends Controller
 
     public function update(UpdateUserRequest $request, User $user)
     {
-        $auth_user = $this->userHasRole(['admin']);
+        if (! $auth_user = $this->userHasRole(['admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
         $validated = $request->validated();
 
         $validated = $this->convertConfirmedVerified($validated, $user);
@@ -200,7 +202,7 @@ class UserController extends Controller
     public function updateProfile(UpdateProfileRequest $request, User $user)
     {
 
-        if (! $auth_user = $this->userHasAtLeastOneRole()) {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
         $validated = $request->validated();

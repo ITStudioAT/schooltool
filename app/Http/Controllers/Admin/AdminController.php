@@ -2,10 +2,6 @@
 
 namespace App\Http\Controllers\Admin;
 
-use Composer\InstalledVersions;
-use Illuminate\Http\Request;
-use Illuminate\Routing\Controller;
-use Illuminate\Support\Facades\Auth;
 use App\Http\Requests\Admin\LoginStep1Request;
 use App\Http\Requests\Admin\LoginStep2Request;
 use App\Http\Requests\Admin\LoginStep3Request;
@@ -16,34 +12,46 @@ use App\Http\Requests\Admin\PasswordUnknownStep4Request;
 use App\Http\Requests\Admin\RegisterStep1Request;
 use App\Http\Requests\Admin\RegisterStep2Request;
 use App\Http\Requests\Admin\RegisterStep3Request;
+use App\Http\Resources\Admin\RegisterResource;
+use App\Http\Resources\Admin\SchoolyearResource;
 use App\Http\Resources\Admin\UserResource;
+use App\Http\Resources\Admin\UserWithRoleResource;
+use App\Http\Resources\Homepage\SchoolResource;
+use App\Models\School;
 use App\Services\AdminNavigationService;
 use App\Services\AdminService;
+use App\Services\LicenceService;
+use Composer\InstalledVersions;
+use Illuminate\Http\Request;
+use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\Auth;
 
 class AdminController extends Controller
 {
-    public function config(Request $request)
+    public function config(Request $request, LicenceService $licenceService)
     {
         $navigationService = new AdminNavigationService();
 
+        // Laden aller auswählbaren Schulen
+        $schools = School::selectables()->get();
+
+        $user = Auth::check() ? Auth::user() : null;
 
         $data = [
-            'logo' => config('spa.logo', ''),
-            'copyright' => config('spa.copyright', ''),
-            'title' => config('spa.title', 'Fresh Laravel'),
-            'company' => config('spa.company', 'ItStudio.at'),
-            'version' => InstalledVersions::getPrettyVersion('itstudioat/spa'),
-            'register_admin_allowed' => config('spa.register_admin_allowed', false),
+            'logo' => config('schooltool.logo', ''),
+            'copyright' => config('schooltool.copyright', ''),
+            'title' => 'SchoolTool',
+            'company' => 'ITStudio Dipl.-Ing. Günther Kron',
+            'version' => config('schooltool.version', 'x.x.x'),
             'timeout' => config('spa.timeout', 3000),
-            'is_auth' => auth()->check(),
-            'user' => auth()->check() ? new UserResource(auth()->user()) : null,
+            'is_auth' => Auth::check(),
+            'user' => $user ? new UserWithRoleResource($user) : null,
+            'selected_school' =>  $user && $user->selectedSchool ? new SchoolResource($user->selectedSchool) : null,
+            'selected_schoolyear' =>  $user && $user->selectedSchoolyear ? new SchoolyearResource($user->selectedSchoolyear) : null,
+            'selected_register' =>  $user && $user->selectedRegister ? new RegisterResource($user->selectedRegister) : null,
             'menu' => $navigationService->dashboardMenu(),
+            'selectableSchools' => SchoolResource::collection($schools),
         ];
-
-
-
-
-
 
         return response()->json($data, 200);
     }
@@ -189,7 +197,7 @@ class AdminController extends Controller
             return response()->json($data, 200);
         } else {
             // Keine 2-Faktoren-Authentifizierung ==> Login fertig
-            auth('web')->login($user);
+            Auth::guard('web')->login($user);
             session()->regenerate();
             $data = [
                 'step' => 'LOGIN_SUCCESS',
@@ -207,7 +215,7 @@ class AdminController extends Controller
         $adminService = new AdminService();
         $validated = $request->validated();
         $user = $adminService->checkUserLogin($validated['data']);
-        auth()->login($user);
+        Auth::guard('web')->login($user);
 
         session()->regenerate();
 
@@ -224,11 +232,11 @@ class AdminController extends Controller
     public function executeLogout(Request $request)
     {
 
-        if (! auth()->check()) {
+        if (! Auth::check()) {
             abort(400, 'Sie sind gar nicht eingeloggt.');
         }
 
-        auth('web')->logout();
+        Auth::guard('web')->logout();
         session()->invalidate();
         session()->regenerateToken();
 

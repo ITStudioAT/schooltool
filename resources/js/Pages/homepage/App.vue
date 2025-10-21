@@ -10,7 +10,7 @@
             <v-footer app>
                 <v-row justify="center" no-gutters>
                     <v-col cols="12" class="text-center">
-                        <v-btn text variant="text">Impressum homepage</v-btn>
+                        <v-btn text variant="text" to="/homepage/impressum">Impressum</v-btn>
                     </v-col>
                 </v-row>
             </v-footer>
@@ -47,7 +47,7 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useHomepageStore, ['config', 'is_loading', 'error']),
+        ...mapWritableState(useHomepageStore, ['config', 'is_loading', 'error', 'school', 'licence']),
     },
 
     methods: {},

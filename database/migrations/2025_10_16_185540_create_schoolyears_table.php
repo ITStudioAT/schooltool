@@ -13,12 +13,11 @@ return new class extends Migration
     {
         Schema::create('schoolyears', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('school_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('school_id')->constrained();
             $table->string('name')->nullable();
             $table->date('from')->nullable();
             $table->date('until')->nullable();
             $table->date('sem_2_start')->nullable();
-            $table->boolean('is_active')->default(false);
             $table->timestamps();
         });
     }

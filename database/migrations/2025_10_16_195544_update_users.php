@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::table('users', function (Blueprint $table) {
             // E-Mail als UNIQUE löschen
-            $table->foreignId('school_id')->after('id')->default(1)->constrained()->cascadeOnDelete();
+            $table->foreignId('school_id')->after('id')->constrained();
 
             // E-Mail plus school_id als UNIQUE setzen
             $table->unique(['school_id', 'email']);

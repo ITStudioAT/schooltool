@@ -48,8 +48,18 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
 
 
+    /* SANCTUM */
+    Route::middleware(['auth:sanctum'])->group(function () {
+        // navigation, menus
+        Route::get('/admin/navigation/profile_menu',  [NavigationController::class, 'profileMenu']);
+        Route::get('/admin/navigation/user_menu',  [NavigationController::class, 'userMenu']);
+
+        // users
+        Route::apiResource('/admin/users', UserController::class);
+    });
+
     /* SANCTUM - user */
-    Route::middleware(['auth:sanctum', 'api-allowed:user,admin'])->group(function () {
+    Route::middleware(['auth:sanctum', 'api-allowed:user,admin,register_admin'])->group(function () {
         Route::put('/admin/users/update_profile/{user}',  [UserController::class, 'updateProfile']);
         Route::post('/admin/users/update_with_code',  [UserController::class, 'updateWithCode']);
         Route::post('/admin/execute_logout',  [AdminController::class, 'executeLogout']);
@@ -57,16 +67,27 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/users/save_password_with_code',  [UserController::class, 'savePasswordWithCode']);
     });
 
+    /* SANCTUM - admin, register_admin */
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,register_admin'])->group(function () {
+
+
+
+        //schoolyears
+        Route::apiResource('/admin/schoolyears', \App\Http\Controllers\Admin\SchoolyearController::class);
+        Route::post('/admin/schoolyears/set_active',  [\App\Http\Controllers\Admin\SchoolyearController::class, 'setActiveSchoolyear']);
+
+        // registers
+        Route::apiResource('/admin/registers', \App\Http\Controllers\Admin\RegisterController::class);
+        Route::post('/admin/registers/set_active',  [\App\Http\Controllers\Admin\RegisterController::class, 'setActiveRegister']);
+        Route::post('/admin/registers/get_active',  [\App\Http\Controllers\Admin\RegisterController::class, 'getActiveRegisters']);
+        Route::post('/admin/registers/toggle',  [\App\Http\Controllers\Admin\RegisterController::class, 'toggleRegister']);
+    });
+
     /* SANCTUM - admin */
     Route::middleware(['auth:sanctum', 'api-allowed:admin'])->group(function () {
 
-
-        // navigation, menus
-        Route::get('/admin/navigation/profile_menu',  [NavigationController::class, 'profileMenu']);
-        Route::get('/admin/navigation/user_menu',  [NavigationController::class, 'userMenu']);
-
         // users
-        Route::apiResource('/admin/users', UserController::class);
+
         Route::post('/admin/users/destroy_multiple',  [UserController::class, 'destroyMultiple']);
         Route::post('/admin/users/send_verification_email',  [UserController::class, 'sendVerificationEmail']);
         Route::post('/admin/users/confirm',  [UserController::class, 'confirm']);

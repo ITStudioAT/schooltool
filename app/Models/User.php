@@ -4,13 +4,18 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 
+use App\Models\Register;
+use App\Models\School;
+use App\Models\Schoolyear;
+use App\Notifications\StandardEmail;
+use App\Traits\UserTrait;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
-use App\Notifications\StandardEmail;
-use App\Traits\UserTrait;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 
@@ -54,6 +59,22 @@ class User extends Authenticatable
             'token_2fa_expires_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    public function selectedSchool(): BelongsTo
+    {
+        return $this->belongsTo(School::class, 'school_id');
+    }
+
+
+    public function selectedSchoolyear(): BelongsTo
+    {
+        return $this->belongsTo(Schoolyear::class, 'schoolyear_id');
+    }
+
+    public function selectedRegister(): BelongsTo
+    {
+        return $this->belongsTo(Register::class, 'register_id');
     }
 
     public function shouldDelete(): bool

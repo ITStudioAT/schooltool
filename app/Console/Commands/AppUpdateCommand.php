@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\InstallUpdateService;
+use App\Services\RecordsCreateService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
 
@@ -25,7 +26,7 @@ class AppUpdateCommand extends Command
     /**
      * Execute the console command.
      */
-    public function handle(InstallUpdateService $service)
+    public function handle(InstallUpdateService $service, RecordsCreateService $recordsCreateService)
     {
 
         // CLEAR CONSOLE
@@ -45,11 +46,12 @@ class AppUpdateCommand extends Command
         $this->line('..................................................');
 
         // ROLES
-        $this->info('▶ ROLES AND USERS');
-        $service->createRoles(['super_admin', 'admin']);
+        $this->info('▶ ROLES AND RECORDS');
+        $service->createRoles(['super_admin', 'admin', 'register_admin', 'register_user']);
         $this->info('✅ Roles checked');
-        $service->checkSuperAdmins();
-        $this->info('✅ Super-Admins checked');
+
+        $recordsCreateService->initRecords();
+        $this->info('✅ Init Records checked');
 
 
         $this->line('..................................................');

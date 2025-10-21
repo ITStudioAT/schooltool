@@ -2,14 +2,34 @@
 
 namespace App\Services;
 
-use App\Models\Role;
-use App\Models\User;
-use Illuminate\Support\Facades\Notification;
 use App\Enums\TwoFaResult;
+use App\Models\Role;
+use App\Models\Schoolyear;
+use App\Models\User;
 use App\Notifications\StandardEmail;
+use Illuminate\Support\Facades\Notification;
 
 class UserService
 {
+
+
+    // Die User sollen ein neues Schuljahr als active_schoolyear zugewiesen bekommen als das jetzige
+    public function setNewSchoolyear($schoolyear, $schoolyear_new = null): Schoolyear | bool
+    {
+
+
+        $school_id = $schoolyear->school_id;
+
+        if (!$schoolyear_new) $schoolyear_new = Schoolyear::whereNot('id', $schoolyear->id)->where('school_id', $school_id)->first();
+        if (!$schoolyear_new) return false;
+
+        User::where('school_id', $school_id)->where('schoolyear_id', $schoolyear->id)->update([
+            'schoolyear_id' => $schoolyear_new->id,
+        ]);
+
+        return $schoolyear_new;
+    }
+
     public function allUsersInfos(): array
     {
         $data = [];

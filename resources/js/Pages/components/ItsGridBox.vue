@@ -1,10 +1,12 @@
 <template>
     <v-sheet class="pr-2 mb-2">
-        <v-card flat rounded="0" :color="color ? color : 'secondary'" class="h-100 py-0">
+        <v-card flat rounded="0" :color="color ? color : 'secondary'" class="h-100 py-0" :disabled="disabled">
             <v-card-title>
                 <div class="d-flex flex-row ga-2">
                     <v-icon :icon="icon" v-if="icon" />
-                    <div>{{ title }}</div>
+                    <slot name="title">
+                        <div v-if="title">{{ title }}</div>
+                    </slot>
                 </div>
                 <div class="text-caption" v-if="subtitle">{{ subtitle }}</div>
             </v-card-title>
@@ -17,20 +19,14 @@
     </v-sheet>
 </template>
 
-
 <script>
 export default {
-    props: ['title', 'subtitle', 'text', 'color', 'icon'],
+    props: ['title', 'subtitle', 'text', 'color', 'icon', 'disabled'],
 
     data() {
-        return {
-
-        };
+        return {}
     },
 
-    methods: {
-
-    }
-
+    methods: {},
 }
 </script>

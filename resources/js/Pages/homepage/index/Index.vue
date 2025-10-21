@@ -69,7 +69,7 @@
                     flat
                     variant="outlined"
                     v-if="selected_school_id && selected_licence_id"
-                    :to="'/homepage/register?school_id=' + school.id">
+                    :href="'/homepage/register?school_id=' + school.id + '&licence_id=' + licence.id">
                     Weiter
                 </v-btn>
                 <div v-if="config?.selectableSchools?.length == 0">Es kann keine Schule ausgewählt werden!</div>
@@ -77,17 +77,6 @@
                     Es kann gibt keine Apps zum Auswählen!
                 </div>
             </v-card-actions>
-        </v-card>
-
-        <!-- COPYRIGHT -->
-        <v-card class="mx-auto w-100" max-width="600" tile flat>
-            <v-card-text class="text-caption text-secondary bg-background">
-                <v-row>
-                    <v-col cols="4" class="text-left">{{ config.title }}</v-col>
-                    <v-col cols="4" class="text-center">{{ config.copyright }}</v-col>
-                    <v-col cols="4" class="text-right">{{ config.version }}</v-col>
-                </v-row>
-            </v-card-text>
         </v-card>
     </v-container>
 </template>

@@ -24,9 +24,9 @@ class AdminNavigationService
 
         $menu[] = ['title' => 'Home', 'icon' => 'mdi-home', 'to' => '/admin'];
 
-        // DASHBOARD
-        if ($this->userHasRole(['admin'])) {
-            $menu[] = ['title' => 'Dashboard', 'icon' => 'mdi-view-dashboard', 'to' => '/admin/dashboard'];
+        // ANMELDESYSTEM
+        if ($this->userHasRole(['admin', 'register_admin'])) {
+            $menu[] = ['title' => 'Anmeldesystem', 'icon' => 'mdi-calendar-cursor', 'to' => '/admin/register_system'];
         }
 
         // BENUTZER ALS admin
@@ -47,7 +47,7 @@ class AdminNavigationService
     public function profileMenu(): array
     {
         $menu = [];
-        if ($this->userHasRole(['admin', 'user'])) {
+        if ($this->userHasRole(['admin', 'user', 'register_user', 'register_admin'])) {
             $menu[] = ['title' => '', 'subtitle' => 'Home', 'icon' => 'mdi-home', 'color' => 'secondary',  'to' => '/admin'];
             $menu[] = ['title' => '', 'subtitle' => 'Kennwort ändern', 'icon' => 'mdi-form-textbox-password', 'color' => 'secondary',  'action' => 'wantToChangePassword'];
             $menu[] = ['title' => '', 'subtitle' => '2-FA-Authentifizierung', 'icon' => 'mdi-two-factor-authentication', 'color' => 'secondary',  'action' => 'wantToChange2Fa'];

@@ -25,6 +25,7 @@ class LoginStep1Request extends FormRequest
         return [
             'data.step' => 'required|in:LOGIN_ENTER_EMAIL',
             'data.email' => 'required|email|max:255',
+            'data.school_id' => 'required|exists:schools,id',
         ];
     }
 }
