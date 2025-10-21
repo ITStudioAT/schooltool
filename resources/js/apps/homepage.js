@@ -4,7 +4,7 @@ import '../../css/homepage.css'
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 
-import App from '../Pages/homepage/App.vue'
+import App from '../pages/homepage/App.vue'
 
 import vuetify from '../../plugins/homepage.js'
 import router from '../../routes/homepage.js'
