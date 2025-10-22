@@ -62,7 +62,7 @@ export default {
         this.adminStore = useAdminStore()
         this.schoolyearStore = useSchoolyearStore()
         this.registerStore = useRegisterStore()
-        this.loadActiveRegisters()
+        if (this.active_registers.length == 0) this.loadActiveRegisters()
     },
 
     unmounted() {},

@@ -38,6 +38,9 @@ class RegisterUpdateRequest extends FormRequest
             'must_student_first_name' => 'boolean',
             'show_student_birthdate' => 'boolean',
             'must_student_birthdate' => 'boolean',
+            'show_booked' => 'boolean',
+            'show_end_time' => 'boolean',
+            'show_supervisor' => 'boolean',
         ];
     }
 }

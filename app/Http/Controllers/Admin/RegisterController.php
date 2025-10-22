@@ -101,6 +101,8 @@ class RegisterController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
+        if ($register->hasDependencies()) abort(409, 'Das Anmeldesystem hat noch Abhängigkeiten und kann nicht gelöscht werden');
+
         $auth_user->register_id = null;
         $auth_user->save();
 

@@ -3,7 +3,7 @@
         <v-col cols="12">
             <its-grid-box
                 color="primary"
-                :title="'Anmeldesysteme ' + selected_schoolyear.name"
+                :title="'Anmeldesysteme ' + selected_schoolyear?.name"
                 class="h-100 w-100"
                 :disabled="action != ''">
                 <div class="d-flex flex-wrap flex-row align-center ga-2">
@@ -20,17 +20,20 @@
                         config?.user?.roles.some((role) => ['super_admin', 'admin', 'register_admin'].includes(role))
                     ">
                     <div class="d-flex flex-row align-center justify-space-between w-100">
-                        <div class="mr-4">Anmeldesysteme {{ selected_schoolyear.name }}</div>
+                        <div class="mr-4">Anmeldesysteme {{ selected_schoolyear?.name }}</div>
                         <div class="d-flex flex-row align-center">
                             <v-btn flat tile icon="mdi-plus" color="primary" @click="create" />
                             <div class="d-flex flex-row align-center" v-if="selected_register">
                                 <v-btn flat tile icon="mdi-pencil" color="primary" @click="edit(selected_register)" />
-                                <v-btn flat tile icon="mdi-delete" color="primary" @click="remove(selected_register)" />
+                                <v-btn flat tile icon color="primary" @click="remove(selected_register)">
+                                    <v-icon icon="mdi-delete" color="warning"></v-icon>
+                                </v-btn>
                                 <v-btn flat tile @click="toggleRegister(selected_register)" icon color="primary">
                                     <v-icon
                                         icon="mdi-power-standby"
                                         :color="selected_register.is_active ? 'success' : 'error'"></v-icon>
                                 </v-btn>
+                                <v-btn flat tile color="primary" to="/admin/register_system/details" text="Details" />
                             </div>
                         </div>
                     </div>
@@ -59,6 +62,22 @@
                         v-model="data.max_registrations"
                         label="Max. Anmeldungen gesamt (0=unendlich)"
                         :rules="[required(), min(0)]" />
+
+                    <v-row dense>
+                        <v-col cols="6">
+                            <v-checkbox v-model="data.show_booked" hide-details label="Gebuchte anzeigen" />
+                        </v-col>
+                        <v-col cols="6">
+                            <v-checkbox v-model="data.show_end_time" hide-details label="Endzeite anzeigen" />
+                        </v-col>
+                    </v-row>
+
+                    <v-row dense>
+                        <v-col cols="6">
+                            <v-checkbox v-model="data.show_supervisor" hide-details label="Berater anzeigen" />
+                        </v-col>
+                        <v-col cols="6"></v-col>
+                    </v-row>
 
                     <v-card tile flat color="primary">
                         <v-card-text>
@@ -139,6 +158,12 @@
             </its-grid-box>
         </v-col>
     </v-row>
+    <v-row>
+        <v-col>
+            AXCTION
+            {{ action }}
+        </v-col>
+    </v-row>
 </template>
 <script>
 import { useValidationRulesSetup } from '@/helpers/rules'
@@ -160,7 +185,7 @@ export default {
         this.adminStore = useAdminStore()
         this.schoolyearStore = useSchoolyearStore()
         this.registerStore = useRegisterStore()
-        this.loadRegisters()
+        if (this.registers.length == 0) this.loadRegisters()
     },
 
     unmounted() {},
@@ -190,7 +215,12 @@ export default {
 
     watch: {
         async selected_schoolyear() {
-            this.loadRegisters()
+            if (this.selected_schoolyear) {
+                this.loadRegisters()
+            } else {
+                this.registerStore.registers = []
+                this.registerStore.selected_register = null
+            }
         },
     },
 
@@ -208,7 +238,7 @@ export default {
             } else {
                 answer = await this.registerStore.store(data)
             }
-            this.selected_register = JSON.parse(JSON.stringify(data))
+            this.selected_register = null
             await this.registerStore.loadActiveRegisters()
             if (answer) this.action = ''
         },
@@ -217,7 +247,7 @@ export default {
             var answer = false
             answer = await this.registerStore.destroy(data)
             await this.registerStore.loadActiveRegisters()
-            this.selected_active_register = null
+            this.selected_register = null
             if (answer) this.action = ''
         },
 

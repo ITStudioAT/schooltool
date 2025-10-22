@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { useRegisterStore } from '@/stores/admin/RegisterStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
 export const useSchoolyearStore = defineStore('AdminSchoolyearStore', {
@@ -85,13 +86,12 @@ export const useSchoolyearStore = defineStore('AdminSchoolyearStore', {
         async destroy(data) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
+            const registerStore = useRegisterStore()
             adminStore.is_loading++
 
             try {
                 const response = await axios.delete(`/api/admin/schoolyears/${data.id}`)
                 this.schoolyears = this.schoolyears.filter((sy) => sy.id !== this.selected_schoolyear.id)
-                this.selected_schoolyear = response.data
-
                 return true
             } catch (error) {
                 notification.notify({

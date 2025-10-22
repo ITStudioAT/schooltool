@@ -16,9 +16,11 @@
                         <div class="mr-4">Schuljahre</div>
                         <div class="d-flex flex-row align-center">
                             <v-btn flat tile icon="mdi-plus" color="primary" @click="create" />
-                            <div class="d-flex flex-row align-center">
+                            <div class="d-flex flex-row align-center" v-if="selected_schoolyear">
                                 <v-btn flat tile icon="mdi-pencil" color="primary" @click="edit(selected_schoolyear)" />
-                                <v-btn flat tile icon="mdi-delete" color="primary" @click="remove()" />
+                                <v-btn flat tile icon color="primary" @click="remove()">
+                                    <v-icon icon="mdi-delete" color="warning"></v-icon>
+                                </v-btn>
                             </div>
                         </div>
                     </div>
@@ -65,6 +67,7 @@
             <its-grid-box color="primary" :title="selected_schoolyear?.name" class="h-100 w-100">
                 <v-form ref="form" v-model="is_valid" @submit.prevent="destroy(selected_schoolyear)" class="mb-4">
                     <div class="text-h6">Soll dieses Schuljahr wirklich gelöscht werden?</div>
+
                     <div class="d-flex flex-row align-center justify-space-between mt-4">
                         <v-btn color="success" slim flat @click="abort">Abbruch</v-btn>
                         <v-btn color="error" slim flat type="submit">Löschen</v-btn>
@@ -78,6 +81,7 @@
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+
 import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
@@ -92,7 +96,7 @@ export default {
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.schoolyearStore = useSchoolyearStore()
-        await this.schoolyearStore.index()
+        if (this.schoolyears.length == 0) await this.schoolyearStore.index()
     },
 
     unmounted() {},
@@ -129,14 +133,19 @@ export default {
             } else {
                 answer = await this.schoolyearStore.store(data)
             }
-            this.selected_schoolyear = JSON.parse(JSON.stringify(data))
             if (answer) this.action = ''
+            this.selected_schoolyear = this.schoolyearStore.selected_schoolyear
         },
 
         async destroy(data) {
             var answer = false
             answer = await this.schoolyearStore.destroy(data)
-            if (answer) this.action = ''
+
+            if (answer) {
+                this.selected_register = null
+                this.selected_schoolyear = null
+                this.action = ''
+            }
         },
 
         abort() {

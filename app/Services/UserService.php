@@ -13,21 +13,26 @@ class UserService
 {
 
 
-    // Die User sollen ein neues Schuljahr als active_schoolyear zugewiesen bekommen als das jetzige
-    public function setNewSchoolyear($schoolyear, $schoolyear_new = null): Schoolyear | bool
+    // Die User sollen statt eines Schuljahres (und statt eines Registers) NULL zugewiesen bekommen
+    public function setSchoolyearToNull($schoolyear): Schoolyear | bool
     {
-
-
         $school_id = $schoolyear->school_id;
 
-        if (!$schoolyear_new) $schoolyear_new = Schoolyear::whereNot('id', $schoolyear->id)->where('school_id', $school_id)->first();
-        if (!$schoolyear_new) return false;
-
         User::where('school_id', $school_id)->where('schoolyear_id', $schoolyear->id)->update([
-            'schoolyear_id' => $schoolyear_new->id,
+            'schoolyear_id' => null,
+            'register_id' => null,
         ]);
 
-        return $schoolyear_new;
+        return true;
+    }
+
+
+    // Neues Schuljahr bei User setzen (und Register auf NULL)
+    public function setNewSchoolyear($user, $schoolyear)
+    {
+        $user->schoolyear_id = $schoolyear->id;
+        $user->register_id = null;
+        $user->save();
     }
 
     public function allUsersInfos(): array

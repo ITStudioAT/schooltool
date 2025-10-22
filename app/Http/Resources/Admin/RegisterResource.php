@@ -29,6 +29,10 @@ class RegisterResource extends JsonResource
             'show_student_first_name' => $this->show_student_first_name,
             'must_student_first_name' => $this->must_student_first_name,
 
+            'show_booked' => $this->show_booked,
+            'show_end_time' => $this->show_end_time,
+            'show_supervisor' => $this->show_supervisor,
+
             'is_active' => $this->is_active,
 
             'schoolyear_name' => $this->whenLoaded('schoolyear', fn() => $this->schoolyear->name),

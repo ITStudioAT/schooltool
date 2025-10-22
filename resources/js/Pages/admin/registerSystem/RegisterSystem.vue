@@ -10,6 +10,7 @@
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
+import { useRegisterStore } from '@/stores/admin/RegisterStore'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import Schoolyears from '@/pages/admin/components/schoolyears/Schoolyears.vue'
@@ -27,10 +28,14 @@ export default {
         return {
             adminStore: null,
             schoolyearStore: null,
+            registerStore: null,
         }
     },
 
-    computed: {},
+    computed: {
+        ...mapWritableState(useSchoolyearStore, ['schoolyears']),
+        ...mapWritableState(useRegisterStore, ['registers', 'active_registers']),
+    },
 
     methods: {},
 }

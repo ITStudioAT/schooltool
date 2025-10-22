@@ -35,6 +35,8 @@ class AdminController extends Controller
         // Laden aller auswählbaren Schulen
         $schools = School::selectables()->get();
 
+        $viaRemember = Auth::viaRemember();
+
         $user = Auth::check() ? Auth::user() : null;
 
         $data = [
@@ -49,8 +51,9 @@ class AdminController extends Controller
             'selected_school' =>  $user && $user->selectedSchool ? new SchoolResource($user->selectedSchool) : null,
             'selected_schoolyear' =>  $user && $user->selectedSchoolyear ? new SchoolyearResource($user->selectedSchoolyear) : null,
             'selected_register' =>  $user && $user->selectedRegister ? new RegisterResource($user->selectedRegister) : null,
-            'menu' => $navigationService->dashboardMenu(),
+            'menu' => $user ? $navigationService->dashboardMenu() : [],
             'selectableSchools' => SchoolResource::collection($schools),
+            'viaRemember' => $viaRemember,
         ];
 
         return response()->json($data, 200);
@@ -197,7 +200,7 @@ class AdminController extends Controller
             return response()->json($data, 200);
         } else {
             // Keine 2-Faktoren-Authentifizierung ==> Login fertig
-            Auth::guard('web')->login($user);
+            Auth::guard('web')->login($user, true);
             session()->regenerate();
             $data = [
                 'step' => 'LOGIN_SUCCESS',
@@ -215,7 +218,7 @@ class AdminController extends Controller
         $adminService = new AdminService();
         $validated = $request->validated();
         $user = $adminService->checkUserLogin($validated['data']);
-        Auth::guard('web')->login($user);
+        Auth::guard('web')->login($user, true);
 
         session()->regenerate();
 

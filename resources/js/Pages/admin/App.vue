@@ -71,7 +71,7 @@ export default {
         await axios.get('/sanctum/csrf-cookie')
         this.adminStore = useAdminStore()
         this.adminStore.initialize(this.$router)
-        this.adminStore.loadConfig()
+        await this.adminStore.loadConfig()
     },
 
     unmounted() {},

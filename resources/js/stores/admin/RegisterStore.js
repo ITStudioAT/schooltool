@@ -6,7 +6,7 @@ export const useRegisterStore = defineStore('AdminRegisterStore', {
     state: () => ({
         registers: [],
         selected_register: null,
-        active_registers: null,
+        active_registers: [],
     }),
 
     actions: {

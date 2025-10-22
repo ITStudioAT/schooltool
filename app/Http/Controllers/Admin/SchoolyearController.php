@@ -34,7 +34,7 @@ class SchoolyearController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(SchoolyearStoreRequest $request)
+    public function store(SchoolyearStoreRequest $request, UserService $userService)
     {
         if (! $auth_user = $this->userHasRole(['admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -43,6 +43,9 @@ class SchoolyearController extends Controller
         $validated['school_id'] = $auth_user->school_id;
 
         $schoolyear = Schoolyear::create($validated);
+        $userService->setNewSchoolyear($auth_user, $schoolyear);
+
+
         return response()->json(new SchoolyearResource($schoolyear), 200);
     }
 
@@ -73,11 +76,13 @@ class SchoolyearController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        // Setzen eines neues beliebigen Schuljahres für alle Benutzer, die das zu löschendes Schuljahr benutzen.
-        if (!$schoolyear_new = $userService->setNewSchoolyear($schoolyear)) abort(409, 'Mindestens ein Schuljahr muss existieren.');
+        if ($schoolyear->hasDependencies()) abort(409, 'Das Schuljahr hat noch Abhängigkeiten und kann nicht gelöscht werden');
+
+        // Setzen eines des Schuljahres auf NULL für alle Benutzer, die das zu löschendes Schuljahr benutzen.
+        $userService->setSchoolyearToNull($schoolyear);
 
         $schoolyear->delete();
-        return response()->json(new SchoolyearResource($schoolyear_new), 200);
+        return response()->noContent();
     }
 
     // Set active schoolyear to user    
