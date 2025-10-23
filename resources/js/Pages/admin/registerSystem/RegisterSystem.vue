@@ -14,8 +14,8 @@ import { useRegisterStore } from '@/stores/admin/RegisterStore'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import Schoolyears from '@/pages/admin/components/schoolyears/Schoolyears.vue'
-import Registers from '@/pages/admin/registerSystem/components/Registers.vue'
-import ActiveRegisters from '@/pages/admin/registerSystem/components/ActiveRegisters.vue'
+import Registers from '@/pages/admin/registerSystem/components/RegisterSystem/Registers.vue'
+import ActiveRegisters from '@/pages/admin/registerSystem/components/RegisterSystem/ActiveRegisters.vue'
 
 export default {
     components: { ItsMenuButton, ItsGridBox, Schoolyears, Registers, ActiveRegisters },

@@ -21,6 +21,7 @@ class UserResource extends JsonResource
             'first_name' => $this->first_name,
             'last_name' => $this->last_name,
             'email' => $this->email,
+            'phone' => $this->phone,
             'is_2fa' => (bool) $this->is_2fa,
             'is_active' => (bool) $this->is_active,
             'is_confirmed' => (bool) $this->confirmed_at,

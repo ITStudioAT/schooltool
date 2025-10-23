@@ -33,7 +33,14 @@
                                         icon="mdi-power-standby"
                                         :color="selected_register.is_active ? 'success' : 'error'"></v-icon>
                                 </v-btn>
-                                <v-btn flat tile color="primary" to="/admin/register_system/details" text="Details" />
+                                <v-btn
+                                    class="ml-2"
+                                    flat
+                                    tile
+                                    color="secondary"
+                                    variant="outlined"
+                                    to="/admin/register_system/details"
+                                    text="Details" />
                             </div>
                         </div>
                     </div>

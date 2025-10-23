@@ -152,11 +152,13 @@ export const useRegisterStore = defineStore('AdminRegisterStore', {
             try {
                 const response = await axios.post(`/api/admin/registers/set_active`, { register_id })
                 this.selected_register = response.data
+                /*
                 notification.notify({
                     message: 'Das Anmeldesystem wurde erfolgreich ausgewählt.',
                     type: 'success',
                     timeout: 3000,
                 })
+                    */
 
                 return true
             } catch (error) {
@@ -180,7 +182,9 @@ export const useRegisterStore = defineStore('AdminRegisterStore', {
             try {
                 const response = await axios.post(`/api/admin/registers/toggle`, { register_id })
                 notification.notify({
-                    message: 'Das Anmeldesystem wurde erfolgreich umgeschaltet.',
+                    message:
+                        'Das Anmeldesystem wurde erfolgreich ' +
+                        (register.is_active ? 'ausgeschaltet.' : 'eingeschaltet.'),
                     type: 'success',
                     timeout: 3000,
                 })

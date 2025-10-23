@@ -31,6 +31,59 @@ class RegisterDateController extends Controller
         return response()->json(RegisterDateResource::collection($registerDates), 200);
     }
 
+    public function filterRegisterDates(Request $request)
+    {
+
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        info($request->all());
+
+        $validated = $request->validate([
+            'search_string' => 'required|max:255',
+
+        ]);
+
+        $register_id = $auth_user->register_id;
+
+        // $registerDates = RegisterDate::where('register_id', $register_id)->where('supervisor', 'like', '%' . $search_string . '%')->orderBy('date')->orderBy('from')->orderBy('supervisor')->get();
+
+
+        $term = trim($validated['search_string']);
+
+        // OPTIONAL: escape %/_ so they’re literal in LIKE; keeps user input safe for LIKE
+        $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $term) . '%';
+
+
+        $registerDates = RegisterDate::query()
+            ->with(['bookings.user']) // eager load to avoid N+1
+            ->where('register_id', $register_id)
+            ->where(function ($q) use ($like) {
+                // Search on RegisterDate
+                $q->where('supervisor', 'like', $like);
+
+                // Search on related RegisterDateBooking
+                $q->orWhereHas('bookings', function ($b) use ($like) {
+                    $b->where('student_first_name', 'like', $like)
+                        ->orWhere('student_last_name',  'like', $like);
+                });
+
+                // Search on related User (via RegisterDateBooking->user)
+                $q->orWhereHas('bookings.user', function ($u) use ($like) {
+                    $u->where('first_name', 'like', $like)
+                        ->orWhere('last_name',  'like', $like)
+                        ->orWhere('email',      'like', $like);
+                });
+            })
+            ->orderBy('date')
+            ->orderBy('from')
+            ->orderBy('supervisor')
+            ->get();
+
+        return response()->json(RegisterDateResource::collection($registerDates), 200);
+    }
+
     /**
      * Store a newly created resource in storage.
      */

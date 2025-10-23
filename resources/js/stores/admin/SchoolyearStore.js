@@ -113,11 +113,13 @@ export const useSchoolyearStore = defineStore('AdminSchoolyearStore', {
             try {
                 const response = await axios.post(`/api/admin/schoolyears/set_active`, { schoolyear_id })
                 this.selected_schoolyear = response.data
+                /*
                 notification.notify({
                     message: 'Das Schuljahr wurde erfolgreich ausgewählt.',
                     type: 'success',
                     timeout: 3000,
                 })
+                    */
 
                 return true
             } catch (error) {

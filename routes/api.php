@@ -84,13 +84,18 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/register_dates', \App\Http\Controllers\Admin\RegisterDateController::class);
         Route::post('/admin/register_dates/create_dates',  [\App\Http\Controllers\Admin\RegisterDateController::class, 'createDates']);
         Route::post('/admin/register_dates/load_days',  [\App\Http\Controllers\Admin\RegisterDateController::class, 'loadDays']);
+        Route::post('/admin/register_dates/filter_register_dates',  [\App\Http\Controllers\Admin\RegisterDateController::class, 'filterRegisterDates']);
+
+        // register_date_bookings
+        Route::apiResource('/admin/register_date_bookings', \App\Http\Controllers\Admin\RegisterDateBookingController::class);
+        Route::post('/admin/register_date_bookings/get_user_with_email',  [\App\Http\Controllers\Admin\RegisterDateBookingController::class, 'getUserWithEmail']);
+        Route::post('/admin/register_date_bookings/update_or_create_user',  [\App\Http\Controllers\Admin\RegisterDateBookingController::class, 'updateOrCreateUser']);
     });
 
     /* SANCTUM - admin */
     Route::middleware(['auth:sanctum', 'api-allowed:admin'])->group(function () {
 
         // users
-
         Route::post('/admin/users/destroy_multiple',  [UserController::class, 'destroyMultiple']);
         Route::post('/admin/users/send_verification_email',  [UserController::class, 'sendVerificationEmail']);
         Route::post('/admin/users/confirm',  [UserController::class, 'confirm']);

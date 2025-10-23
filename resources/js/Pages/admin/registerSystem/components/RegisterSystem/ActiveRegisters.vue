@@ -1,4 +1,5 @@
 <template>
+    <!-- Geöffnete Anmeldesysteme -->
     <v-row class="w-100">
         <v-col cols="12">
             <its-grid-box

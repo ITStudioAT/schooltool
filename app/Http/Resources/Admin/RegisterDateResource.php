@@ -21,6 +21,7 @@ class RegisterDateResource extends JsonResource
             'from' => $this->from,
             'to' => $this->to,
             'max_registrations' => $this->max_registrations,
+            'count_bookings' => $this->bookings->count(),
         ];
     }
 }

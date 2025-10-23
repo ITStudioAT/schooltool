@@ -2,23 +2,22 @@ import { defineStore } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
-export const useRegisterDateStore = defineStore('AdminRegisterDateStore', {
+export const useRegisterDateBookingStore = defineStore('AdminRegisterDateBookingStore', {
     state: () => ({
-        register_dates: [],
-        days: [],
-        selected_day: null,
-        data: {},
-        selected_register_dates: [],
+        person: {},
+        user: null,
+        booking: null,
     }),
 
     actions: {
-        async loadRegisterDates(date) {
+        async getUserWithEmail(person) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
-                const response = await axios.get(`/api/admin/register_dates`, { params: { date } })
-                this.register_dates = response.data
+                const response = await axios.post(`/api/admin/register_date_bookings/get_user_with_email`, person)
+                this.user = response.data
+                if (!this.user || Object.keys(this.user).length === 0) this.user = null
                 return true
             } catch (error) {
                 notification.notify({
@@ -33,13 +32,14 @@ export const useRegisterDateStore = defineStore('AdminRegisterDateStore', {
             }
         },
 
-        async filterRegisterDates(search_string) {
+        async updateOrCreateUser(person) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
-                const response = await axios.post(`/api/admin/register_dates/filter_register_dates`, { search_string })
-                this.register_dates = response.data
+                const response = await axios.post(`/api/admin/register_date_bookings/update_or_create_user`, person)
+                this.user = response.data
+                if (!this.user || Object.keys(this.user).length === 0) this.user = null
                 return true
             } catch (error) {
                 notification.notify({
@@ -54,34 +54,14 @@ export const useRegisterDateStore = defineStore('AdminRegisterDateStore', {
             }
         },
 
-        async loadDays() {
+        async createBooking(person) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
-                const response = await axios.post(`/api/admin/register_dates/load_days`, {})
-                this.days = response.data
-                return true
-            } catch (error) {
-                notification.notify({
-                    status: error.response.status,
-                    message: error.response.data.message || 'Fehler passiert.',
-                    type: 'error',
-                    timeout: 3000,
-                })
-                return false
-            } finally {
-                adminStore.is_loading--
-            }
-        },
+                const response = await axios.post(`/api/admin/register_date_bookings`, person)
+                this.booking = response.data
 
-        async createDates(data) {
-            const notification = useNotificationStore()
-            const adminStore = useAdminStore()
-            adminStore.is_loading++
-            try {
-                const response = await axios.post(`/api/admin/register_dates/create_dates`, data)
-                this.loadRegisterDates(this.selected_day.date)
                 return true
             } catch (error) {
                 notification.notify({
