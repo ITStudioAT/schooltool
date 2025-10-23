@@ -15,8 +15,11 @@
             <!-- NEUE TERMINE ANLEGEN -->
             <AddDates v-if="action == 'add_dates'" />
 
-            <!-- NEUE PERSOn ZU TERMIN HINZUFÜGEN ANLEGEN -->
+            <!-- NEUE PERSON ZU TERMIN HINZUFÜGEN ANLEGEN -->
             <AddPerson v-if="action == 'add_person'" />
+
+            <!-- BUCHUNGEN ANZEUGEN -->
+            <ShowBookings v-if="action == 'show_bookings'" />
         </v-row>
     </v-container>
 </template>
@@ -31,9 +34,10 @@ import Overview from './components/RegisterDetails/Overview.vue'
 import DatesWithMenu from './components/RegisterDetails/DatesWithMenu.vue'
 import AddDates from './components/RegisterDetails/AddDates.vue'
 import AddPerson from './components/RegisterDetails/AddPerson.vue'
+import ShowBookings from './components/RegisterDetails/ShowBookings.vue'
 
 export default {
-    components: { ItsMenuButton, ItsGridBox, Schoolyears, Overview, DatesWithMenu, AddDates, AddPerson },
+    components: { ItsMenuButton, ItsGridBox, Schoolyears, Overview, DatesWithMenu, AddDates, AddPerson, ShowBookings },
 
     async beforeMount() {
         this.adminStore = useAdminStore()

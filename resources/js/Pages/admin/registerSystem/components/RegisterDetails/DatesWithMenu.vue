@@ -106,8 +106,8 @@
     </v-col>
 
     <!-- MENÜ -->
-    <v-col cols="12" md="4" xl="3">
-        <its-grid-box color="primary" title="Menü" class="w-100" :disabled="action != ''">
+    <v-col cols="12" md="4" xl="3" v-if="action == ''">
+        <its-grid-box color="primary" title="Menü" class="w-100">
             <div class="d-flex flex-row flex-wrap align-center ga-2">
                 <v-card
                     tile
@@ -127,7 +127,7 @@
                         subtitle="anzeigen"
                         icon="mdi-view-list"
                         color="primary"
-                        @click="" />
+                        @click="showBookings" />
                 </v-card>
 
                 <v-card
@@ -230,7 +230,9 @@ export default {
     },
     watch: {
         async selected_day() {
+            if (this.selected_day == null) return
             this.selected_register_dates = []
+            this.search_string = ''
             if (this.selected_day) await this.loadRegisterDates(this.selected_day.date)
         },
     },
@@ -243,12 +245,15 @@ export default {
             this.loadRegisterDates(this.selected_day.date)
         },
         async search(search_string) {
+            console.log('c')
             if (!search_string || search_string == '') {
                 await this.loadRegisterDates(this.selected_day.date)
                 return
             }
             this.selected_day = null
+            console.log(search_string)
             await this.registerDateStore.filterRegisterDates(search_string)
+            console.log(search_string)
         },
 
         registerDateClass(register_date) {
@@ -262,6 +267,10 @@ export default {
 
         selectNoRegisterDates() {
             this.selected_register_dates = []
+        },
+
+        showBookings() {
+            this.action = 'show_bookings'
         },
 
         selectDay(day) {
