@@ -1,5 +1,5 @@
 <template>
-    <v-sheet class="pr-2 mb-2">
+    <v-sheet class="mb-2">
         <v-card flat rounded="0" :color="color ? color : 'secondary'" class="h-100 py-0" :disabled="disabled">
             <v-card-title>
                 <div class="d-flex flex-row ga-2">

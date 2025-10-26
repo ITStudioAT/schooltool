@@ -120,4 +120,25 @@ class RegisterDateService
 
         return true;
     }
+
+    public function deleteRegisterDates($school_id, $schoolyear_id, $register_id, $register_dates): bool
+    {
+        $base = RegisterDate::query()
+            ->where('school_id', $school_id)
+            ->where('schoolyear_id', $schoolyear_id)
+            ->where('register_id', $register_id)
+            ->whereIn('id', $register_dates);
+
+        // IDs that are NOT deletable (because they have bookings)
+        $blockedIds = (clone $base)
+            ->whereHas('bookings')
+            ->pluck('id');
+
+        // Delete only dates that have NO bookings
+        $deletedCount = (clone $base)
+            ->whereDoesntHave('bookings')
+            ->delete();
+
+        return true;
+    }
 }

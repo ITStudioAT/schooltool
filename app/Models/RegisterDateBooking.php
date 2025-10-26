@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\Register;
+use App\Models\RegisterDate;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -13,5 +15,15 @@ class RegisterDateBooking extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function registerDate(): BelongsTo
+    {
+        return $this->belongsTo(RegisterDate::class);
+    }
+
+    public function register(): BelongsTo
+    {
+        return $this->belongsTo(Register::class);
     }
 }

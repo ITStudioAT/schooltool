@@ -3,14 +3,55 @@
 namespace App\Services;
 
 use App\Models\RegisterDateBooking;
+use App\Models\School;
 use App\Models\User;
+use App\Notifications\StandardEmail;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 
 
 
 
 class RegisterDateBookingService
 {
+
+    public function deleteBookings($user, $bookings, $notify)
+    {
+
+        $school_id = $user->school_id;
+        $schoolyear_id = $user->schoolyear_id;
+        $register_id = $user->register_id;
+
+        $school = School::findOrFail($school_id);
+
+        $mail = [
+            'from_address' => 'noreply@schooltool.at',
+            'from_name' => $school->long_name,
+            'logo' => asset('/storage/images/' . $school->logo),
+            'subject' => 'Stornierung Termin',
+            'markdown' => 'mails.admin.deleteRegisterDateBooking'
+        ];
+
+        // Bookings durchlesen
+        foreach ($bookings as $register_date_booking_id) {
+            $booking = RegisterDateBooking::where('school_id', $school_id)->where('schoolyear_id', $schoolyear_id)->where('register_id', $register_id)->where('id', $register_date_booking_id)->first();
+
+
+            if ($notify) {
+                // Wenn gewünscht Abmelde-E-Mail schicken
+                $mail['register_name'] = $booking->register->name;
+                $mail['student_last_name'] = $booking->student_last_name;
+                $mail['student_first_name'] = $booking->student_first_name;
+                $mail['date'] = $booking->registerDate->date;
+                $mail['from'] = $booking->registerDate->from;
+                $mail['to'] = $booking->registerDate->to;
+                Notification::route('mail', $booking->user->email)->notify(new StandardEmail($mail));
+            }
+
+            // Buchung löschen
+            $booking->delete();
+        }
+    }
 
     public function updateOrCreateUser($school_id, $validated): User
     {

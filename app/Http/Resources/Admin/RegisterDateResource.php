@@ -22,6 +22,8 @@ class RegisterDateResource extends JsonResource
             'to' => $this->to,
             'max_registrations' => $this->max_registrations,
             'count_bookings' => $this->bookings->count(),
+            'bookings' => RegisterDateBookingResource::collection($this->bookings),
+            'is_locked' => $this->is_locked ? true : false,
         ];
     }
 }

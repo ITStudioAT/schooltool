@@ -3,10 +3,13 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\RegisterDateBookingDeleteBookingsRequest;
 use App\Http\Requests\Admin\RegisterDateBookingStoreRequest;
 use App\Http\Requests\Admin\RegisterDateBookingUpdateOrCreateUserRequest;
 use App\Http\Resources\Admin\RegisterDateBookingResource;
+use App\Http\Resources\Admin\RegisterDateResource;
 use App\Http\Resources\Admin\UserResource;
+use App\Models\RegisterDate;
 use App\Models\RegisterDateBooking;
 use App\Models\User;
 use App\Services\RegisterDateBookingService;
@@ -18,9 +21,15 @@ class RegisterDateBookingController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(Request $request)
     {
-        //
+        $validated = $request->validate([
+            'dates' => ['required', 'array'],
+            'dates.*' => ['integer', 'exists:register_dates,id'],
+        ]);
+
+        $registerDates = \App\Models\RegisterDate::whereIn('id', $validated['dates'])->get();
+        return response()->json(RegisterDateResource::collection($registerDates), 200);
     }
 
     /**
@@ -95,5 +104,17 @@ class RegisterDateBookingController extends Controller
         $user = $service->updateOrCreateUser($school_id, $validated);
 
         return response()->json(new UserResource($user), 200);
+    }
+
+    public function deleteBookings(RegisterDateBookingDeleteBookingsRequest $request, RegisterDateBookingService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validated();
+
+
+        $service->deleteBookings($auth_user, $validated['bookings'], $validated['notify']);
     }
 }

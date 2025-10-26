@@ -42,7 +42,6 @@ class RegisterDateController extends Controller
 
         $validated = $request->validate([
             'search_string' => 'required|max:255',
-
         ]);
 
         $register_id = $auth_user->register_id;
@@ -116,6 +115,36 @@ class RegisterDateController extends Controller
         //
     }
 
+    public function lockRegisterDates(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            '*' => ['integer', 'exists:register_dates,id']
+        ]);
+
+        $registerDates = RegisterDate::where('school_id', $auth_user->school_id)->where('schoolyear_id', $auth_user->schoolyear_id)->where('register_id', $auth_user->register_id)->whereIn('id', $validated)->update(['is_locked' => true]);
+
+        return response()->json($registerDates, 200);
+    }
+
+    public function unlockRegisterDates(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            '*' => ['integer', 'exists:register_dates,id']
+        ]);
+
+        $registerDates = RegisterDate::where('school_id', $auth_user->school_id)->where('schoolyear_id', $auth_user->schoolyear_id)->where('register_id', $auth_user->register_id)->whereIn('id', $validated)->update(['is_locked' => false]);
+
+        return response()->json($registerDates, 200);
+    }
+
     public function createDates(RegisterDateCreateDatesRequest $request, RegisterDateService $service)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
@@ -137,5 +166,20 @@ class RegisterDateController extends Controller
         $registerDates = $service->loadDays($auth_user->register_id);
 
         return response()->json($registerDates, 200);
+    }
+
+    public function deleteRegisterDates(Request $request, RegisterDateService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            '*' => ['integer', 'exists:register_dates,id'],
+        ]);
+
+        $service->deleteRegisterDates($auth_user->school_id, $auth_user->schoolyear_id, $auth_user->register_id, $validated);
+
+        return response()->noContent();
     }
 }

@@ -35,7 +35,7 @@ class StandardEmail extends Notification implements ShouldQueue
         return (new MailMessage())
             ->from($this->data['from_address'], $this->data['from_name'])
             ->subject($this->data['subject'])
-            ->markdown($this->data['markdown'], ['notifiable' => $notifiable, 'data' => $this->data]);
+            ->markdown($this->data['markdown'], ['notifiable' => $notifiable,  'data' => $this->data, 'logo' => $this->data['logo']]);
     }
 
     /**

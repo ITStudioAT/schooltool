@@ -165,12 +165,6 @@
             </its-grid-box>
         </v-col>
     </v-row>
-    <v-row>
-        <v-col>
-            AXCTION
-            {{ action }}
-        </v-col>
-    </v-row>
 </template>
 <script>
 import { useValidationRulesSetup } from '@/helpers/rules'

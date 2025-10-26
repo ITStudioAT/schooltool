@@ -80,6 +80,7 @@
                             :class="registerDateClass(register_date)">
                             <div>
                                 <div class="text-body-1">
+                                    <v-icon icon="mdi-lock" class="mr-2" v-if="register_date.is_locked" />
                                     {{
                                         register_date.from +
                                         ' - ' +
@@ -121,13 +122,6 @@
                         icon="mdi-account-plus"
                         color="primary"
                         @click="addPerson(selected_register_dates[0])" />
-
-                    <its-menu-button
-                        title="Anmeldungen"
-                        subtitle="anzeigen"
-                        icon="mdi-view-list"
-                        color="primary"
-                        @click="showBookings" />
                 </v-card>
 
                 <v-card
@@ -137,25 +131,32 @@
                     class="d-flex flex-row flex-wrap align-center ga-2"
                     v-if="selected_register_dates.length >= 1">
                     <its-menu-button
+                        title="Anmeldungen"
+                        subtitle="anzeigen"
+                        icon="mdi-view-list"
+                        color="primary"
+                        @click="showBookings()" />
+
+                    <its-menu-button
                         :title="selected_register_dates.length == 1 ? 'Termin' : 'Termine'"
                         subtitle="sperren"
                         icon="mdi-lock"
                         color="warning-lighten-2"
-                        @click="addDates" />
+                        @click="lockDates(selected_register_dates)" />
 
                     <its-menu-button
                         :title="selected_register_dates.length == 1 ? 'Termin' : 'Termine'"
                         subtitle="entsperren"
                         icon="mdi-lock-open"
                         color="success-lighten-2"
-                        @click="addDates" />
+                        @click="unlockDates(selected_register_dates)" />
 
                     <its-menu-button
                         :title="selected_register_dates.length == 1 ? 'Termin' : 'Termine'"
                         subtitle="löschen"
                         icon="mdi-delete"
                         color="warning"
-                        @click="addDates" />
+                        @click="deleteDates" />
                 </v-card>
 
                 <its-menu-button
@@ -166,6 +167,65 @@
                     @click="addDates" />
             </div>
         </its-grid-box>
+    </v-col>
+    <!-- MENÜ -->
+    <v-col cols="12" md="4" xl="3" v-if="action == 'delete_dates'">
+        <!-- LÖSCHEN VON ANMELDUNGEN -->
+        <v-card tile flat color="warning">
+            <v-card-text>
+                <its-grid-box color="primary" title="LÖSCHEN" class="h-100 w-100">
+                    <v-form
+                        ref="form"
+                        v-model="is_valid"
+                        @submit.prevent="doDeleteDates(selected_register_dates)"
+                        class="mb-4">
+                        <!-- Buchungen vorhanden -->
+                        <div v-if="countRegistrations(selected_register_dates) > 0">
+                            <div class="text-h6">
+                                <div class="text-h6" v-if="selected_register_dates.length > 1">
+                                    Die Termine können nicht gelöscht werden, weil sie
+                                    <span v-if="countRegistrations(selected_register_dates) == 1">eine Buchung.</span>
+                                    <span v-if="countRegistrations(selected_register_dates) > 1">
+                                        {{ countRegistrations(selected_register_dates) }} Buchungen
+                                    </span>
+                                    beinhalten.
+                                </div>
+
+                                <div class="text-h6" v-if="selected_register_dates.length == 1">
+                                    Der Termin kann nicht gelöscht werden, weil er
+                                    <span v-if="countRegistrations(selected_register_dates) == 1">eine Buchung</span>
+                                    <span v-if="countRegistrations(selected_register_dates) > 1">
+                                        {{ countRegistrations(selected_register_dates) }} Buchungen
+                                    </span>
+                                    beinhaltet.
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Buchungen nicht vorhanden -->
+                        <div v-if="countRegistrations(selected_register_dates) == 0">
+                            <div class="text-h6" v-if="selected_register_dates.length > 1">
+                                Sollen die markierten Termine wirklich gelöscht werden?
+                            </div>
+                            <div class="text-h6" v-if="selected_register_dates.length == 1">
+                                Soll der markierte Termin wirklich gelöscht werden?
+                            </div>
+                        </div>
+
+                        <div class="d-flex flex-row align-center justify-space-between mt-4">
+                            <v-btn color="success" slim flat @click="abortDelete">Abbruch</v-btn>
+                            <v-btn
+                                color="error"
+                                slim
+                                flat
+                                type="submit"
+                                v-if="countRegistrations(selected_register_dates) == 0">
+                                Löschen
+                            </v-btn>
+                        </div>
+                    </v-form>
+                </its-grid-box>
+            </v-card-text>
+        </v-card>
     </v-col>
 </template>
 
@@ -238,22 +298,48 @@ export default {
     },
 
     methods: {
+        countRegistrations(register_dates) {
+            return this.register_dates
+                .filter((date) => register_dates.includes(date.id))
+                .reduce((sum, date) => sum + date.count_bookings, 0)
+        },
+        abortDelete() {
+            this.action = ''
+        },
+        async lockDates(register_dates) {
+            if (!(await this.registerDateStore.lockRegisterDates(register_dates))) return
+
+            this.register_dates = this.register_dates.map((date) => {
+                if (register_dates.includes(date.id)) {
+                    return { ...date, is_locked: true }
+                }
+                return date
+            })
+        },
+        async unlockDates(register_dates) {
+            if (!(await this.registerDateStore.unlockRegisterDates(register_dates))) return
+
+            this.register_dates = this.register_dates.map((date) => {
+                if (register_dates.includes(date.id)) {
+                    return { ...date, is_locked: false }
+                }
+                return date
+            })
+        },
         async refresh() {
             this.search_string = ''
             if (this.days.length == 0) return
             if (!this.selected_day) this.selected_day = this.days[0]
-            this.loadRegisterDates(this.selected_day.date)
+            await this.loadRegisterDates(this.selected_day.date)
+            this.selected_register_dates = []
         },
         async search(search_string) {
-            console.log('c')
             if (!search_string || search_string == '') {
                 await this.loadRegisterDates(this.selected_day.date)
                 return
             }
             this.selected_day = null
-            console.log(search_string)
             await this.registerDateStore.filterRegisterDates(search_string)
-            console.log(search_string)
         },
 
         registerDateClass(register_date) {
@@ -271,6 +357,16 @@ export default {
 
         showBookings() {
             this.action = 'show_bookings'
+        },
+
+        deleteDates() {
+            this.action = 'delete_dates'
+        },
+
+        async doDeleteDates(register_dates) {
+            if (!(await this.registerDateStore.deleteRegisterDates(register_dates))) return
+            this.refresh()
+            this.action = ''
         },
 
         selectDay(day) {

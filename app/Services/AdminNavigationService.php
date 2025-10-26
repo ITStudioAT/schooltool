@@ -24,9 +24,14 @@ class AdminNavigationService
 
         $menu[] = ['title' => 'Home', 'icon' => 'mdi-home', 'to' => '/admin'];
 
+        // SUPERADMIN
+        if ($this->userHasRole(['super_admin'])) {
+            $menu[] = ['title' => 'Super-Admin', 'icon' => 'mdi-shield-crown', 'to' => '/admin/super_admin'];
+        }
+
         // ANMELDESYSTEM
         if ($this->userHasRole(['admin', 'register_admin'])) {
-            $menu[] = ['title' => 'Anmeldesystem', 'icon' => 'mdi-calendar-cursor', 'to' => '/admin/register_system'];
+            $menu[] = ['title' => 'Anmeldetool', 'icon' => 'mdi-calendar-cursor', 'to' => '/admin/register_system'];
         }
 
         // BENUTZER ALS admin

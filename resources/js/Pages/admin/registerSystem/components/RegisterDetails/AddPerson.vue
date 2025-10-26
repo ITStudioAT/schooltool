@@ -131,8 +131,6 @@
             </v-form>
         </its-grid-box>
     </v-col>
-    <v-col cols="12">{{ person }}</v-col>
-    <v-col cols="12">{{ user }}</v-col>
 </template>
 
 <script>

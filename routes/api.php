@@ -85,11 +85,15 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/register_dates/create_dates',  [\App\Http\Controllers\Admin\RegisterDateController::class, 'createDates']);
         Route::post('/admin/register_dates/load_days',  [\App\Http\Controllers\Admin\RegisterDateController::class, 'loadDays']);
         Route::post('/admin/register_dates/filter_register_dates',  [\App\Http\Controllers\Admin\RegisterDateController::class, 'filterRegisterDates']);
+        Route::post('/admin/register_dates/lock_register_dates',  [\App\Http\Controllers\Admin\RegisterDateController::class, 'lockRegisterDates']);
+        Route::post('/admin/register_dates/unlock_register_dates',  [\App\Http\Controllers\Admin\RegisterDateController::class, 'unlockRegisterDates']);
+        Route::post('/admin/register_dates/delete_register_dates',  [\App\Http\Controllers\Admin\RegisterDateController::class, 'deleteRegisterDates']);
 
         // register_date_bookings
         Route::apiResource('/admin/register_date_bookings', \App\Http\Controllers\Admin\RegisterDateBookingController::class);
         Route::post('/admin/register_date_bookings/get_user_with_email',  [\App\Http\Controllers\Admin\RegisterDateBookingController::class, 'getUserWithEmail']);
         Route::post('/admin/register_date_bookings/update_or_create_user',  [\App\Http\Controllers\Admin\RegisterDateBookingController::class, 'updateOrCreateUser']);
+        Route::post('/admin/register_date_bookings/delete_bookings',  [\App\Http\Controllers\Admin\RegisterDateBookingController::class, 'deleteBookings']);
     });
 
     /* SANCTUM - admin */
