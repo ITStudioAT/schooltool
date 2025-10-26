@@ -28,7 +28,7 @@ class RegisterDateBookingController extends Controller
             'dates.*' => ['integer', 'exists:register_dates,id'],
         ]);
 
-        $registerDates = \App\Models\RegisterDate::whereIn('id', $validated['dates'])->get();
+        $registerDates = \App\Models\RegisterDate::whereIn('id', $validated['dates'])->orderBy('date')->orderBy('from')->orderBy('supervisor')->get();
         return response()->json(RegisterDateResource::collection($registerDates), 200);
     }
 
