@@ -4,7 +4,7 @@ namespace App\Http\Requests\Admin;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-class LoginStep1Request extends FormRequest
+class LoginStepEmailRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -25,7 +25,6 @@ class LoginStep1Request extends FormRequest
         return [
             'data.step' => 'required|in:LOGIN_ENTER_EMAIL',
             'data.email' => 'required|email|max:255',
-            'data.school_id' => 'required|exists:schools,id',
         ];
     }
 }

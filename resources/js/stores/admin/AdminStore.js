@@ -18,6 +18,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
         selected_school_id: null,
         selected_active_register: null,
         action: '',
+        data: {},
     }),
 
     actions: {
@@ -188,13 +189,14 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             }
         },
 
-        async loginStep1(data) {
+        async loginStepEmail(data) {
             const notification = useNotificationStore()
             this.is_loading++
             this.api_response = null
             try {
                 await axios.get('/sanctum/csrf-cookie')
-                this.api_response = await axios.post('/api/admin/login_step_1', { data })
+                this.api_response = await axios.post('/api/admin/login_step_email', { data })
+                this.data = this.api_response.data
                 return true
             } catch (error) {
                 notification.notify({
@@ -216,8 +218,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             try {
                 await axios.get('/sanctum/csrf-cookie')
                 this.api_response = await axios.post('/api/admin/login_step_2', { data })
-                console.log('loginStep2')
-                console.log(this.api_response)
+                this.data = this.api_response.data
                 return true
             } catch (error) {
                 notification.notify({
@@ -239,6 +240,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             try {
                 await axios.get('/sanctum/csrf-cookie')
                 this.api_response = await axios.post('/api/admin/login_step_3', { data })
+                this.data = this.api_response.data
                 return true
             } catch (error) {
                 notification.notify({

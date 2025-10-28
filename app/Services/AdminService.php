@@ -2,10 +2,13 @@
 
 namespace App\Services;
 
+use App\Http\Resources\Admin\SchoolResource;
+use App\Models\School;
 use App\Models\User;
+use App\Notifications\StandardEmail;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
-use App\Notifications\StandardEmail;
 
 class AdminService
 {
@@ -115,6 +118,118 @@ class AdminService
         return $user;
     }
 
+    public function login($data)
+    {
+        $user = User::where('email', $data['email'])->where('school_id', $data['school']['id'])->first();
+        Auth::guard('web')->login($user, true);
+        session()->regenerate();
+
+        return $user;
+    }
+
+    public function login2Fa($data)
+    {
+        $user = User::where('email', $data['email'])->where('school_id', $data['school']['id'])->first();
+
+        if ($user->token_2fa != $data['token_2fa'] || $user->token_2fa_expires_at < now()) {
+            abort(423, 'Der Token ist ungültig oder abgelaufen.');
+        }
+
+        $user->token_2fa = null;
+        $user->token_2fa_expires_at = null;
+        $user->save();
+
+
+        Auth::guard('web')->login($user, true);
+        session()->regenerate();
+
+        return $user;
+    }
+
+    public function checkEmail($data): array
+    {
+        $users = User::where('email', $data['email'])->get();
+        $data['users_count'] = $users->count();
+
+        $ids = $users->pluck('id');
+
+        $schools = School::whereIn('id', $ids)->get();
+
+        if (count($schools) == 1) {
+            $data['school'] = new SchoolResource($schools->first());
+        } else {
+            $data['school'] = null;
+            $data['schools'] = $schools ? SchoolResource::collection($schools) : [];
+        }
+
+        return $data;
+    }
+
+
+    public function check2Fa($data): array
+    {
+        $user = User::where('email', $data['email'])->where('school_id', $data['school']['id'])->first();
+        if ($user->is_2fa) {
+            $this->setToken2Fa($user, $data);
+            $data['step'] = 'LOGIN_ENTER_TOKEN';
+        } else {
+            $data['step'] = 'LOGIN_SUCCESS';
+        }
+        return $data;
+    }
+
+    public function setToken2Fa($user, $data)
+    {
+        $token = rand(100000, 999999);
+        $user->token_2fa = $token;
+        $user->token_2fa_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
+        $user->save();
+
+
+        $email = [
+            'from_address' => config('schooltool.noreply_email'),
+            'from_name' => $data['school']['long_name'],
+            'logo' =>  asset('/storage/images/' . $data['school']['logo']),
+            'subject' => 'Code für Login',
+            'markdown' => 'mails.admin.sendCode',
+            'token_2fa' => $token,
+            'token-expire-time' => config('schooltool.token_expire_time'),
+        ];
+
+        Notification::route('mail', $user->email)->notify(new StandardEmail($email));
+    }
+
+    public function checkLogin($data): array
+    {
+
+
+        if (! $user = User::where('email', $data['email'])
+            ->where('school_id', $data['school']['id'])
+            ->first()) {
+            abort(401, 'Login funktioniert mit dieser E-Mail-Adresse nicht.');
+        }
+
+        if (! $user->confirmed_at) {
+            abort(423, 'Benutzer ist noch nicht bestätigt.');
+        }
+
+        if (! $user->is_active) {
+            abort(423, 'Benutzer ist gesperrt.');
+        }
+
+
+        if (! $user->hasAnyRole(['super_admin', 'admin', 'register_admin'])) {
+            // Benutzer hat keine der angegebenen Rollen
+            abort(423, 'Login aufgrund fehlender Berechtigungen nicht möglich.');
+        }
+
+        if (! Hash::check($data['password'], $user->password)) {
+            abort(401, 'Login funktioniert mit diesem Kennwort nicht.');
+        }
+
+        return $data;
+    }
+
     public function checkUserLogin($data): User
     {
 
@@ -122,11 +237,9 @@ class AdminService
             abort(401, 'Login funktioniert mit dieser E-Mail-Adresse nicht.');
         }
 
-
         if (! $user->confirmed_at) {
             abort(423, 'Benutzer ist noch nicht bestätigt.');
         }
-
 
         if (! $user->is_active) {
             abort(423, 'Benutzer ist gesperrt.');
@@ -157,22 +270,7 @@ class AdminService
         return $user;
     }
 
-    public function continueLoginFor2FaUser($user)
-    {
 
-        $token_2fa = $user->setToken2Fa(config('spa.token_expire_time'), 1);
-
-        $data = [
-            'from_address' => env('MAIL_FROM_ADDRESS'),
-            'from_name' => env('MAIL_FROM_NAME'),
-            'subject' => 'Code für Login',
-            'markdown' => 'spa::mails.admin.sendCode',
-            'token_2fa' => $token_2fa,
-            'token-expire-time' => config('spa.token_expire_time'),
-        ];
-
-        Notification::route('mail', $user->email)->notify(new StandardEmail($data));
-    }
 
     public function sendPasswordResetToken($select = 1, $user, $email)
     {

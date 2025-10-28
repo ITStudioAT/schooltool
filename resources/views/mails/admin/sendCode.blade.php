@@ -1,4 +1,4 @@
-<x-mail::message>
+<x-mail::message :logo="$logo">
 # {{ $data['subject'] }}
 
 Bitte diesen Code eingeben:

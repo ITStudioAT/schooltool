@@ -35,9 +35,11 @@ class AdminNavigationService
         }
 
         // BENUTZER ALS admin
+        /*
         if ($this->userHasRole(['admin'])) {
             $menu[] = ['title' => 'Benutzer/Rollen', 'icon' => 'mdi-account-multiple', 'to' => '/admin/users'];
         }
+            */
 
         // PROFILE
         $menu[] = ['title' => $user_name, 'icon' => 'mdi-account', 'to' => '/admin/profile'];

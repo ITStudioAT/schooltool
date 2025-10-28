@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Http\Requests\Admin\LoginStep1Request;
 use App\Http\Requests\Admin\LoginStep2Request;
 use App\Http\Requests\Admin\LoginStep3Request;
+use App\Http\Requests\Admin\LoginStepEmailRequest;
 use App\Http\Requests\Admin\PasswordUnknownStep1Request;
 use App\Http\Requests\Admin\PasswordUnknownStep2Request;
 use App\Http\Requests\Admin\PasswordUnknownStep3Request;
@@ -13,11 +13,12 @@ use App\Http\Requests\Admin\RegisterStep1Request;
 use App\Http\Requests\Admin\RegisterStep2Request;
 use App\Http\Requests\Admin\RegisterStep3Request;
 use App\Http\Resources\Admin\RegisterResource;
+use App\Http\Resources\Admin\SchoolResource;
 use App\Http\Resources\Admin\SchoolyearResource;
 use App\Http\Resources\Admin\UserResource;
 use App\Http\Resources\Admin\UserWithRoleResource;
-use App\Http\Resources\Admin\SchoolResource;
 use App\Models\School;
+use App\Models\User;
 use App\Services\AdminNavigationService;
 use App\Services\AdminService;
 use App\Services\LicenceService;
@@ -173,13 +174,18 @@ class AdminController extends Controller
         return response()->json($data, 200);
     }
 
-    public function loginStep1(LoginStep1Request $request)
+    public function loginStepEmail(LoginStepEmailRequest $request)
     {
         $adminService = new AdminService();
         $validated = $request->validated();
 
-        $user = $adminService->checkUserLogin($validated['data']);
-        $data = ['step' => 'LOGIN_ENTER_PASSWORD'];
+
+
+        $data = $adminService->checkEmail($validated['data']);
+
+        if ($data['users_count'] == 0) {
+            abort(401, 'Login funktioniert mit dieser E-Mail-Adresse nicht.');
+        }
 
         return response()->json($data, 200);
     }
@@ -189,54 +195,37 @@ class AdminController extends Controller
         $adminService = new AdminService();
         $validated = $request->validated();
 
-        $user = $adminService->checkUserLogin($validated['data']);
+        $data = $adminService->checkLogin($validated['data']);
+        $data = $adminService->check2Fa($data);
 
-        if ($user->is_2fa) {
-            // Bei Benutzer ist 2-Faktoren-Authentifizierung aktiviert => wir brauchen einen Code
-            $adminService->continueLoginFor2FaUser($user);
-            $data = ['step' => 'LOGIN_ENTER_TOKEN'];
-
-            return response()->json($data, 200);
-        } else {
-            // Keine 2-Faktoren-Authentifizierung ==> Login fertig
-            Auth::guard('web')->login($user, true);
-            session()->regenerate();
-            $data = [
-                'step' => 'LOGIN_SUCCESS',
-                'auth' => true,
-                'user' => $user,
-            ];
-            $user->rememberLogin();
-
-            return response()->json($data, 200);
+        if ($data['step'] == 'LOGIN_SUCCESS') {
+            $user = $adminService->login($data);
+            unset($data['password']);
         }
+        return response()->json($data, 200);
     }
 
     public function loginStep3(LoginStep3Request $request)
     {
         $adminService = new AdminService();
         $validated = $request->validated();
-        $user = $adminService->checkUserLogin($validated['data']);
-        Auth::guard('web')->login($user, true);
 
-        session()->regenerate();
+        $data = $adminService->checkLogin($validated['data']);
+        $user = $adminService->login2Fa($data);
+        unset($data['password']);
+        unset($data['token_2_fa']);
 
         $data = [
             'step' => 'LOGIN_SUCCESS',
             'auth' => true,
             'user' => $user,
         ];
-        $user->rememberLogin();
 
         return response()->json($data, 200);
     }
 
     public function executeLogout(Request $request)
     {
-
-        if (! Auth::check()) {
-            abort(400, 'Sie sind gar nicht eingeloggt.');
-        }
 
         Auth::guard('web')->logout();
         session()->invalidate();

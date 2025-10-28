@@ -25,7 +25,7 @@ class RegisterDateBookingService
         $school = School::findOrFail($school_id);
 
         $mail = [
-            'from_address' => 'noreply@schooltool.at',
+            'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
             'logo' => asset('/storage/images/' . $school->logo),
             'subject' => 'Stornierung Termin',

@@ -127,6 +127,12 @@
                     </v-col>
                     <v-col cols="12">
                         <div class="text-body-1">Logo:</div>
+                        <div>
+                            {{ data.upload_file }}
+                        </div>
+                        <div>
+                            {{ data.logo }}
+                        </div>
                         <!-- Upload-Logo -->
                         <div v-if="data.upload_file">
                             <img :src="`/storage${data.upload_file}`" alt="Logo" height="60px" class="pl-2" />

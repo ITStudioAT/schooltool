@@ -26,7 +26,7 @@ class LoginStep2Request extends FormRequest
             'data.step' => 'required|in:LOGIN_ENTER_PASSWORD',
             'data.email' => 'required|email|max:255',
             'data.password' => 'required|string|min:8|max:255',
-            'data.school_id' => 'required|exists:schools,id',
+            'data.school' => 'required',
         ];
     }
 }

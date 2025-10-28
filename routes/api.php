@@ -23,6 +23,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /***** OTHER ROUTES *****/
     Route::post('/routes/is_route_allowed',  [RouteController::class, 'isRouteAllowed']);
+    Route::post('/admin/execute_logout',  [AdminController::class, 'executeLogout']);
 
     /***** HOMEPAGE ROUTES *****/
 
@@ -33,7 +34,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     Route::get('/admin/config',  [AdminController::class, 'config']);
 
-    Route::post('/admin/login_step_1',  [AdminController::class, 'loginStep1']);
+    Route::post('/admin/login_step_email',  [AdminController::class, 'loginStepEmail']);
     Route::post('/admin/login_step_2',  [AdminController::class, 'loginStep2']);
     Route::post('/admin/login_step_3',  [AdminController::class, 'loginStep3']);
 
@@ -66,7 +67,6 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::middleware(['auth:sanctum', 'api-allowed:user,admin,register_admin'])->group(function () {
         Route::put('/admin/users/update_profile/{user}',  [UserController::class, 'updateProfile']);
         Route::post('/admin/users/update_with_code',  [UserController::class, 'updateWithCode']);
-        Route::post('/admin/execute_logout',  [AdminController::class, 'executeLogout']);
         Route::post('/admin/users/save_password',  [UserController::class, 'savePassword']);
         Route::post('/admin/users/save_password_with_code',  [UserController::class, 'savePasswordWithCode']);
     });
