@@ -16,7 +16,7 @@ use App\Http\Resources\Admin\RegisterResource;
 use App\Http\Resources\Admin\SchoolyearResource;
 use App\Http\Resources\Admin\UserResource;
 use App\Http\Resources\Admin\UserWithRoleResource;
-use App\Http\Resources\Homepage\SchoolResource;
+use App\Http\Resources\Admin\SchoolResource;
 use App\Models\School;
 use App\Services\AdminNavigationService;
 use App\Services\AdminService;
@@ -52,8 +52,7 @@ class AdminController extends Controller
             'selected_schoolyear' =>  $user && $user->selectedSchoolyear ? new SchoolyearResource($user->selectedSchoolyear) : null,
             'selected_register' =>  $user && $user->selectedRegister ? new RegisterResource($user->selectedRegister) : null,
             'menu' => $user ? $navigationService->dashboardMenu() : [],
-            'selectableSchools' => SchoolResource::collection($schools),
-            'viaRemember' => $viaRemember,
+            'roles' => $user ? $user->getRoleNames() : [],
         ];
 
         return response()->json($data, 200);

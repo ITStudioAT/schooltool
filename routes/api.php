@@ -16,6 +16,10 @@ use App\Http\Controllers\Homepage\HomepageController;
 // Globales Throttle
 Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function () {
 
+    Route::get('admin/token', function (Request $request) {
+        return csrf_token();
+    });
+
 
     /***** OTHER ROUTES *****/
     Route::post('/routes/is_route_allowed',  [RouteController::class, 'isRouteAllowed']);
@@ -69,6 +73,11 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /* SANCTUM - admin, register_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:admin,register_admin'])->group(function () {
+
+        //schools
+        Route::apiResource('/admin/schools', \App\Http\Controllers\Admin\SchoolController::class);
+        Route::post('/admin/schools_upload/uploadLogo', [\App\Http\Controllers\Admin\SchoolController::class, 'uploadLogo']);
+        Route::patch('/admin/schools_upload/uploadLogo', [\App\Http\Controllers\Admin\SchoolController::class, 'uploadLogoNext']);
 
         //schoolyears
         Route::apiResource('/admin/schoolyears', \App\Http\Controllers\Admin\SchoolyearController::class);

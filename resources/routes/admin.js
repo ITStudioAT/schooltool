@@ -13,6 +13,8 @@ import Users_UsersWithRoles from '@/pages/admin/users/UsersWithRoles/Items.vue'
 import RegisterSystem from '@/pages/admin/registerSystem/RegisterSystem.vue'
 import RegisterSystem_Details from '@/pages/admin/registerSystem/RegisterDetails.vue'
 
+import SuperAdmin from '@/pages/admin/superAdmin/SuperAdmin.vue'
+
 const routes = [
     { path: '/admin', component: Index },
     { path: '/admin/login', component: Auth_Login },
@@ -26,6 +28,7 @@ const routes = [
     { path: '/admin/users/users_with_roles', component: Users_UsersWithRoles },
     { path: '/admin/register_system', component: RegisterSystem },
     { path: '/admin/register_system/details', component: RegisterSystem_Details },
+    { path: '/admin/super_admin', component: SuperAdmin },
 ]
 
 const router = createRouter({

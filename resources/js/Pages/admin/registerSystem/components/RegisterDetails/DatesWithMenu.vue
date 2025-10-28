@@ -59,10 +59,10 @@
                 color="transparent"
                 class="d-flex flex-row flex-wrap align-center ga-2 mt-2"
                 :disabled="action != ''">
-                <v-btn color="primary" slim flat tile @click="selectAllRegisterDates">
+                <v-btn color="primary" slim flat tile class="text-caption" @click="selectAllRegisterDates">
                     Alle auswählen [{{ register_dates.length - selected_register_dates.length }}]
                 </v-btn>
-                <v-btn color="primary" slim flat tile @click="selectNoRegisterDates">
+                <v-btn color="primary" slim flat tile class="text-caption" @click="selectNoRegisterDates">
                     Alle abwählen [{{ selected_register_dates.length }}]
                 </v-btn>
             </v-card>

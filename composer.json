@@ -10,6 +10,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.2",
+        "intervention/image": "^3.11",
         "itstudioat/spa": "^0.3.3",
         "laravel/framework": "^12.34",
         "laravel/tinker": "^2.10.1",
@@ -17,6 +18,7 @@
         "symfony/postmark-mailer": "^7.3"
     },
     "require-dev": {
+        "barryvdh/laravel-ide-helper": "^3.6",
         "fakerphp/faker": "^1.23",
         "laravel-lang/lang": "^15.26",
         "laravel/pail": "^1.2.2",
@@ -32,7 +34,10 @@
             "App\\": "app/",
             "Database\\Factories\\": "database/factories/",
             "Database\\Seeders\\": "database/seeders/"
-        }
+        },
+        "exclude-from-classmap": [
+            "vendor/itstudioat/spa/src/Facades/Spa.php"
+        ]
     },
     "autoload-dev": {
         "psr-4": {

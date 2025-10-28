@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\School;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 
 class InstallUpdateService
@@ -34,6 +35,17 @@ class InstallUpdateService
                 ]);
                 $user->assignRole('super_admin');
             }
+        }
+    }
+
+    public function findOrCreateFolders()
+    {
+
+        $path = 'temp';
+        info($path);
+        info(!Storage::directoryExists($path));
+        if (!Storage::directoryExists($path)) {
+            Storage::makeDirectory($path);
         }
     }
 }

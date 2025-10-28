@@ -52,8 +52,12 @@ class AppUpdateCommand extends Command
 
         $recordsCreateService->initRecords();
         $this->info('✅ Init Records checked');
+        $this->line('..................................................');
 
-
+        // FOLDERS
+        $this->info('▶ FOLDERS');
+        $service->findOrCreateFolders();
+        $this->info('✅ Folders checked');
         $this->line('..................................................');
 
         // END 

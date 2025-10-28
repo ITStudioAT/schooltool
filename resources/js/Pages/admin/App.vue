@@ -30,9 +30,9 @@
         <v-app-bar flat color="primary" v-if="config && config.is_auth">
             <template v-slot:prepend>
                 <v-btn icon="mdi-menu-open" v-if="!show_navigation_drawer" @click="show_navigation_drawer = true" />
-                <v-img :src="'/storage/images/' + config?.logo" alt="Logo" width="32" class="pl-2"></v-img>
+                <img :src="'/storage/images/' + config?.selected_school?.logo" alt="Logo" height="60px" class="pl-2" />
             </template>
-            <template v-slot:title>{{ config?.active_school?.long_name }}</template>
+            <template v-slot:title>{{ config?.selected_school?.long_name }}</template>
         </v-app-bar>
 
         <v-main class="bg-background" v-if="config">
