@@ -199,25 +199,35 @@ class UserController extends Controller
         return $validated;
     }
 
-    public function updateProfile(UpdateProfileRequest $request, User $user)
+    public function updateProfile(UpdateProfileRequest $request, User $user, AdminService $adminService)
     {
 
-        if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
+        if (! $auth_user = $this->userHasAtLeastOneRole()) {
             abort(403, 'Sie haben keine Berechtigung');
         }
         $validated = $request->validated();
+        unset($validated['id']);
 
-        if ($user->email != $validated['email']) {
-            // Neue E-Mail-Adresse, die muss natürlich zunächst bestätigt werden
-            $adminService = new AdminService();
-            $adminService->sendEmailValidationToken(1, $user, $validated['email']);
-
-            return response()->json(['answer' => 'INPUT_CODE', 'email' => $user->email, 'email_new' => $validated['email']]);
+        // Keine E-Mail-Änderung => Update durchführen und zwar für alle User in allen Schulen
+        if ($user->email == $validated['email']) {
+            User::where('email', $user->email)->update($validated);
+            return response()->json(new UserResource($user), 200);
         }
 
-        $user->update($validated);
+        // Neue E-Mail-Adresse
+        // Check, ob diese frei ist
+        if (User::where('email', $validated['email'])->exists()) {
+            abort(422, 'Diese E-Mail-Adresse wird bereits verwendet.');
+        }
 
-        return response()->json(new UserResource($user), 200);
+        // Token für 2FA setzen und E-Mail senden
+        $data['school'] = $auth_user->selectedSchool;
+        $email_90 = $user->email;
+        $user->email =  $validated['email'];
+        $adminService->setToken2Fa($user, $data, "Code für E-Mail-Änderung");
+        $user->email = $email_90;
+        $user->save();
+        return response()->json(['answer' => 'INPUT_CODE', 'email' => $user->email, 'email_new' => $validated['email']]);
     }
 
     public function updateWithCode(UpdateUserWithCodeRequest $request)
@@ -231,28 +241,33 @@ class UserController extends Controller
             abort(401, 'Der Code ist falsch oder abgelaufen');
         }
 
-        $user->update($validated);
+        $users = User::where('email', $user->email)->get();
+        $data['users_count'] = $users->count();
+
+        $ids = $users->pluck('id');
+
+        unset($validated['id']);
+        User::whereIn('id', $ids)->update($validated);
 
         return response()->json(new UserResource($user), 200);
     }
 
-    public function savePassword(SavePasswordRequest $request)
+    public function savePassword(SavePasswordRequest $request, AdminService $adminService)
     {
         if (! $user = $this->userHasAtLeastOneRole()) {
             abort(403, 'Sie haben keine Berechtigung');
         }
         $validated = $request->validated();
 
-        $adminService = new AdminService();
-
-        $adminService->sendPasswordResetToken(1, $user, $user->email);
+        $data['school'] = $user->selectedSchool;
+        $adminService->setToken2Fa($user, $data, "Code für Kennwort-Änderung");
 
         $data = ['step' => 'PASSWORD_ENTER_TOKEN'];
 
         return response()->json($data, 200);
     }
 
-    public function savePasswordWithCode(SavePasswordWithCodeRequest $request)
+    public function savePasswordWithCode(SavePasswordWithCodeRequest $request, AdminService $adminService)
     {
         if (! $user = $this->userHasAtLeastOneRole()) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -263,11 +278,15 @@ class UserController extends Controller
             abort(401, 'Kennwort speichern funktioniert nicht. Code falsch oder Zeit abgelaufen.');
         }
 
-        $user->update(
-            [
-                'password' => Hash::make($validated['password']),
-            ]
-        );
+        $data['email'] = $user->email;
+        $data['school'] = $user->selectedSchool;
+
+        $users = User::where('email', $user->email)->get();
+        $ids = $users->pluck('id');
+
+        User::whereIn('id', $ids)->update(['password' => Hash::make($validated['password'])]);
+
+        $adminService->login($data);
 
         return response()->noContent();
     }
@@ -343,7 +362,7 @@ class UserController extends Controller
         if (! $user = $this->userHasRole(['admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
-        info("da");
+
         $validated = $request->validated();
 
         $userService = new UserService();

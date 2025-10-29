@@ -170,7 +170,7 @@ class AdminService
     {
         $user = User::where('email', $data['email'])->where('school_id', $data['school']['id'])->first();
         if ($user->is_2fa) {
-            $this->setToken2Fa($user, $data);
+            $this->setToken2Fa($user, $data, 'Code für Login');
             $data['step'] = 'LOGIN_ENTER_TOKEN';
         } else {
             $data['step'] = 'LOGIN_SUCCESS';
@@ -178,19 +178,17 @@ class AdminService
         return $data;
     }
 
-    public function setToken2Fa($user, $data)
+    public function setToken2Fa($user, $data, $subject)
     {
         $token = rand(100000, 999999);
         $user->token_2fa = $token;
         $user->token_2fa_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
         $user->save();
-
-
         $email = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $data['school']['long_name'],
             'logo' =>  asset('/storage/images/' . $data['school']['logo']),
-            'subject' => 'Code für Login',
+            'subject' => $subject,
             'markdown' => 'mails.admin.sendCode',
             'token_2fa' => $token,
             'token-expire-time' => config('schooltool.token_expire_time'),
@@ -272,22 +270,6 @@ class AdminService
 
 
 
-    public function sendPasswordResetToken($select = 1, $user, $email)
-    {
-        $token_2fa = $user->setToken2Fa(config('spa.token_expire_time'), $select);
-
-        $data = [
-            'from_address' => env('MAIL_FROM_ADDRESS'),
-            'from_name' => env('MAIL_FROM_NAME'),
-            'subject' => 'Code zum Setzen des Kennwortes',
-            'markdown' => 'spa::mails.admin.sendCode',
-            'token_2fa' => $token_2fa,
-            'token-expire-time' => config('spa.token_expire_time'),
-        ];
-
-        Notification::route('mail', $email)->notify(new StandardEmail($data));
-    }
-
     public function sendRegisterToken($select = 1, $user, $email)
     {
         $token_2fa = $user->setToken2Fa(config('spa.token_expire_time'), $select);
@@ -296,22 +278,6 @@ class AdminService
             'from_address' => env('MAIL_FROM_ADDRESS'),
             'from_name' => env('MAIL_FROM_NAME'),
             'subject' => 'Code zum Registrieren',
-            'markdown' => 'spa::mails.admin.sendCode',
-            'token_2fa' => $token_2fa,
-            'token-expire-time' => config('spa.token_expire_time'),
-        ];
-
-        Notification::route('mail', $email)->notify(new StandardEmail($data));
-    }
-
-    public function sendEmailValidationToken($select = 1, $user, $email)
-    {
-        $token_2fa = $user->setToken2Fa(config('spa.token_expire_time'), $select);
-
-        $data = [
-            'from_address' => env('MAIL_FROM_ADDRESS'),
-            'from_name' => env('MAIL_FROM_NAME'),
-            'subject' => 'Code zum Bestätigen der E-Mail-Adresse',
             'markdown' => 'spa::mails.admin.sendCode',
             'token_2fa' => $token_2fa,
             'token-expire-time' => config('spa.token_expire_time'),

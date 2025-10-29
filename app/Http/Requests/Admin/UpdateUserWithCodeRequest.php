@@ -25,7 +25,7 @@ class UpdateUserWithCodeRequest extends FormRequest
             'id' => 'required|exists:users,id',
             'last_name' => 'required|max:255',
             'first_name' => 'nullable|max:255',
-            'email' => 'email|required|max:255|unique:users,email,' . $this->id,
+            'email' => 'email|required|max:255',
             'token_2fa' => 'required|string|size:6',
             'is_2fa' => 'boolean',
         ];

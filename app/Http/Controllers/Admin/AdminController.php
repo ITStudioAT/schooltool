@@ -227,9 +227,11 @@ class AdminController extends Controller
     public function executeLogout(Request $request)
     {
 
-        Auth::guard('web')->logout();
-        session()->invalidate();
-        session()->regenerateToken();
+        if (Auth::check()) {
+            Auth::guard('web')->logout();
+            session()->invalidate();
+            session()->regenerateToken();
+        }
 
         return response()->json(['message' => 'Logout successful'], 200);
     }

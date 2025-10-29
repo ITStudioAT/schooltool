@@ -38,8 +38,6 @@ class RegisterDateController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        info($request->all());
-
         $validated = $request->validate([
             'search_string' => 'required|max:255',
         ]);

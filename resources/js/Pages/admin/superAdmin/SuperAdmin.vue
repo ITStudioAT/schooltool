@@ -16,6 +16,7 @@
                 @click="main_action == 'licences' ? (main_action = '') : (main_action = 'licences')" />
         </v-card>
         <v-row class="w-100" dense>
+            <ActiveSchool v-if="main_action == '' && config.roles.includes('super_admin')" />
             <Schools v-if="main_action == 'schools' && config.roles.includes('super_admin')" />
         </v-row>
     </v-container>
@@ -27,9 +28,10 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import Schools from './components/Schools.vue'
+import ActiveSchool from './components/ActiveSchool.vue'
 
 export default {
-    components: { ItsMenuButton, ItsGridBox, Schools },
+    components: { ItsMenuButton, ItsGridBox, Schools, ActiveSchool },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
