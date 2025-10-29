@@ -26,6 +26,12 @@ class School extends Model
         return $this->hasMany(Schoolyear::class);
     }
 
+    public function registers(): HasMany
+    {
+        return $this->hasMany(Register::class);
+    }
+
+
     public function users(): HasMany
     {
         return $this->hasMany(User::class);

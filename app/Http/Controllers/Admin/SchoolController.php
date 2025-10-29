@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\SchoolDeleteSchoolsRequest;
 use App\Http\Requests\Admin\SchoolIndexRequest;
 use App\Http\Requests\Admin\SchoolStoreRequest;
 use App\Http\Requests\Admin\SchoolUpdateRequest;
@@ -91,6 +92,19 @@ class SchoolController extends Controller
     public function destroy(School $school)
     {
         //
+    }
+
+
+    public function deleteSchools(SchoolDeleteSchoolsRequest $request, SchoolService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validated();
+        $data = $service->deleteSchools($validated);
+
+        return response()->json($data, 200);
     }
 
     public function uploadLogo(Request $request, FileUploadService $fileUploadService)

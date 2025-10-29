@@ -2,15 +2,14 @@ import { defineStore } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
-export const useSchoolStore = defineStore('AdminSchoolStore', {
+export const useLicenceStore = defineStore('AdminLicenceStore', {
     state: () => ({
-        schools: [],
-        selected_schools: [],
+        licences: [],
+        selected_licences: [],
         search_string: '',
         meta: [],
         data: {},
-        saved_school: null,
-        answer: null,
+        saved_licence: null,
     }),
 
     actions: {
@@ -20,8 +19,8 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
             adminStore.is_loading++
             const search_string = this.search_string
             try {
-                const response = await axios.get(`/api/admin/schools`, { params: { search_string, page } })
-                this.schools = response.data.data
+                const response = await axios.get(`/api/admin/licences`, { params: { search_string, page } })
+                this.licences = response.data.data
                 this.meta = response.data.meta
                 return true
             } catch (error) {
@@ -42,17 +41,17 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
-                const response = await axios.put(`/api/admin/schools/${data.id}`, data)
-                this.saved_school = response.data
+                const response = await axios.put(`/api/admin/licences/${data.id}`, data)
+                this.saved_licence = response.data
 
-                const index = this.schools.findIndex((s) => s.id === this.saved_school.id)
+                const index = this.licences.findIndex((s) => s.id === this.saved_licence.id)
 
                 if (index !== -1) {
                     // Replace the old element with the new one
-                    this.schools.splice(index, 1, this.saved_school)
+                    this.licences.splice(index, 1, this.saved_licence)
                 }
 
-                this.schools.sort((a, b) => a.long_name.localeCompare(b.long_name))
+                this.licences.sort((a, b) => a.name.localeCompare(b.name))
                 return true
             } catch (error) {
                 notification.notify({
@@ -72,42 +71,10 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
-                const response = await axios.post(`/api/admin/schools`, data)
-                this.saved_school = response.data
-                this.schools.push(this.saved_school)
-                this.schools.sort((a, b) => a.long_name.localeCompare(b.long_name))
-                return true
-            } catch (error) {
-                notification.notify({
-                    status: error.response.status,
-                    message: error.response.data.message || 'Fehler passiert.',
-                    type: 'error',
-                    timeout: this.timeout,
-                })
-                return false
-            } finally {
-                adminStore.is_loading--
-            }
-        },
-
-        async deleteSchools(data) {
-            const notification = useNotificationStore()
-            const adminStore = useAdminStore()
-            adminStore.is_loading++
-            try {
-                this.answer = await axios.post(`/api/admin/schools/delete_schools`, data)
-
-                notification.notify({
-                    message:
-                        'Es wurden ' +
-                        this.answer.data.deleted.length +
-                        ' Schulen gelöscht und ' +
-                        this.answer.data.skipped.length +
-                        ' Schulen nicht gelöscht.',
-                    type: 'success',
-                    timeout: 3000,
-                })
-
+                const response = await axios.post(`/api/admin/licences`, data)
+                this.saved_licence = response.data
+                this.licences.push(this.saved_licence)
+                this.licences.sort((a, b) => a.name.localeCompare(b.name))
                 return true
             } catch (error) {
                 notification.notify({

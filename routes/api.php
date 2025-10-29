@@ -74,10 +74,14 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     /* SANCTUM - admin, register_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:admin,register_admin'])->group(function () {
 
+        //licences
+        Route::apiResource('/admin/licences', \App\Http\Controllers\Admin\LicenceController::class);
+
         //schools
         Route::apiResource('/admin/schools', \App\Http\Controllers\Admin\SchoolController::class);
         Route::post('/admin/schools_upload/uploadLogo', [\App\Http\Controllers\Admin\SchoolController::class, 'uploadLogo']);
         Route::patch('/admin/schools_upload/uploadLogo', [\App\Http\Controllers\Admin\SchoolController::class, 'uploadLogoNext']);
+        Route::post('/admin/schools/delete_schools',  [\App\Http\Controllers\Admin\SchoolController::class, 'deleteSchools']);
 
         //schoolyears
         Route::apiResource('/admin/schoolyears', \App\Http\Controllers\Admin\SchoolyearController::class);

@@ -74,22 +74,17 @@
                             @click="editSchool(selected_schools[0])">
                             Ändern
                         </v-btn>
+                    </div>
+                    <!-- MINDEST 1 ELEMENT AUSGEWÄHLT -->
+                    <div class="d-flex flex-column ga-2" v-if="selected_schools.length >= 1">
                         <v-btn
                             block
                             tile
                             flat
-                            color="primary"
+                            color="warning"
                             class="text-caption"
-                            prepend-icon="mdi-card-account-details">
-                            Lizenzen
-                        </v-btn>
-                        <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-calendar-range">
-                            Schuljahre
-                        </v-btn>
-                    </div>
-                    <!-- MINDEST 1 ELEMENT AUSGEWÄHLT -->
-                    <div class="d-flex flex-column ga-2" v-if="selected_schools.length >= 1">
-                        <v-btn block tile flat color="warning" class="text-caption" prepend-icon="mdi-delete">
+                            prepend-icon="mdi-delete"
+                            @click="deleteSchool">
                             Löschen
                         </v-btn>
                     </div>
@@ -183,6 +178,26 @@
             </v-form>
         </its-grid-box>
     </v-col>
+    <v-col cols="12" md="4" xl="3" v-if="action == 'delete_school'">
+        <its-grid-box color="primary" title="Löschen" class="w-100">
+            <v-form ref="form" v-model="is_valid" @submit.prevent="doDeleteSchools(selected_schools)">
+                <v-card tile flat color="transparent" class="text-body-1">
+                    <div v-if="selected_schools.length == 1">
+                        Es soll eine Schule gelöscht werden. Sind Sie sicher, dass Sie die markierte Schule löschen
+                        möchten?
+                    </div>
+                    <div v-if="selected_schools.length > 1">
+                        Es sollen {{ selected_schools.length }} Schulen gelöscht werden. Sind Sie sicher, dass Sie die
+                        markierten Schulen löschen möchten?
+                    </div>
+                </v-card>
+                <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between mt-4">
+                    <v-btn color="success" flat tile @click="action = ''">Abbruch</v-btn>
+                    <v-btn color="error" flat tile type="submit">Löschen</v-btn>
+                </v-card>
+            </v-form>
+        </its-grid-box>
+    </v-col>
 </template>
 
 <script>
@@ -226,7 +241,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'config']),
-        ...mapWritableState(useSchoolStore, ['schools', 'meta', 'selected_schools', 'search_string', 'data']),
+        ...mapWritableState(useSchoolStore, ['schools', 'meta', 'selected_schools', 'search_string', 'data', 'answer']),
     },
 
     methods: {
@@ -262,6 +277,17 @@ export default {
         createSchool() {
             this.data = { is_selectable: true }
             this.action = 'create_school'
+        },
+
+        deleteSchool() {
+            this.action = 'delete_school'
+        },
+
+        async doDeleteSchools(data) {
+            if (!(await this.schoolStore.deleteSchools(data))) return
+            await this.schoolStore.index()
+            this.selected_schools = []
+            this.action = ''
         },
 
         editSchool(school_id) {
