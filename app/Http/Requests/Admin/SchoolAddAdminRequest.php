@@ -5,7 +5,7 @@ namespace App\Http\Requests\Admin;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 
-class SchoolDeleteSchoolsRequest extends FormRequest
+class SchoolAddAdminRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -23,7 +23,11 @@ class SchoolDeleteSchoolsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            '*' => ['integer', 'exists:schools,id'], // validates each ID
+            'data.last_name' => ['required', 'string', 'max:255'],
+            'data.first_name' => ['nullable', 'string', 'max:255'],
+            'data.email' => ['required', 'email', 'max:255'],
+            'roles' => ['required', 'array'],
+            'roles.*' => ['string', 'max:255'],
         ];
     }
 }

@@ -96,7 +96,7 @@ export default {
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.schoolyearStore = useSchoolyearStore()
-        if (this.schoolyears.length == 0) await this.schoolyearStore.index()
+        await this.schoolyearStore.index()
     },
 
     unmounted() {},

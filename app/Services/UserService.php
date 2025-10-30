@@ -96,7 +96,6 @@ class UserService
         foreach ($role_ids as &$role_id) {
             $role = Role::findOrFail($role_id['id']);
             $role_id['name'] = $role->name;
-            info($role_id['name']);
         }
         unset($role_id);
 

@@ -88,5 +88,53 @@ export const useLicenceStore = defineStore('AdminLicenceStore', {
                 adminStore.is_loading--
             }
         },
+
+        async loadLicences() {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.post(`/api/admin/licences/load_licences`, {})
+                this.licences = response.data
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.timeout,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async deleteLicence(data) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                this.answer = await axios.post(`/api/admin/licences/delete_licences`, data)
+
+                notification.notify({
+                    message: 'Die Lizenzen wurden gelöscht.',
+                    type: 'success',
+                    timeout: 3000,
+                })
+
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.timeout,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
     },
 })

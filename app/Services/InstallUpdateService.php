@@ -42,8 +42,6 @@ class InstallUpdateService
     {
 
         $path = 'temp';
-        info($path);
-        info(!Storage::directoryExists($path));
         if (!Storage::directoryExists($path)) {
             Storage::makeDirectory($path);
         }

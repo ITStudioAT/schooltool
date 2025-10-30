@@ -5,12 +5,14 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 
 use App\Models\Register;
+use App\Models\RegisterDateBooking;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Notifications\StandardEmail;
 use App\Traits\UserTrait;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -75,6 +77,11 @@ class User extends Authenticatable
     public function selectedRegister(): BelongsTo
     {
         return $this->belongsTo(Register::class, 'register_id');
+    }
+
+    public function registerDateBookings(): HasMany
+    {
+        return $this->hasMany(RegisterDateBooking::class);
     }
 
     public function shouldDelete(): bool

@@ -3,6 +3,7 @@
 namespace App\Traits;
 
 use App\Models\User;
+use Illuminate\Support\Facades\Auth;
 
 trait HasRoleTrait
 {
@@ -14,10 +15,10 @@ trait HasRoleTrait
             $roles = $par_roles;
         }
 
-        if (! auth()->check()) {
+        if (! Auth::check()) {
             return false;
         }
-        if (! $user = auth()->user()) {
+        if (! $user = Auth::user()) {
             return false;
         }
 
@@ -36,10 +37,10 @@ trait HasRoleTrait
     public function userHasAtLeastOneRole()
     {
 
-        if (! auth()->check()) {
+        if (! Auth::check()) {
             return false;
         }
-        if (! $user = auth()->user()) {
+        if (! $user = Auth::user()) {
             return false;
         }
 

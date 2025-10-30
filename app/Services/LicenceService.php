@@ -33,4 +33,27 @@ class LicenceService
 
         return true;
     }
+
+    public function schoolAddLicence($school, $data): SchoolLicence
+    {
+
+
+        $school_licence = SchoolLicence::updateOrCreate([
+            'school_id' => $school['id'],
+            'licence_id' => $data['licence_id'],
+        ], [
+            'valid_until' => $data['valid_until'],
+        ]);
+
+        return $school_licence;
+    }
+
+    public function deleteLicences($ids)
+    {
+
+        // Wenn die Schule eine Lizenz zugeordnet hat, kann nicht gelöscht werden
+        if (SchoolLicence::whereIn('licence_id', $ids)->exists()) abort(409, "Mindest eine Lizenz ist noch einer Schule zugeordnet");
+
+        Licence::whereIn('id', $ids)->delete();
+    }
 }

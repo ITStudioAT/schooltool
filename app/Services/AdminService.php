@@ -151,9 +151,9 @@ class AdminService
         $users = User::where('email', $data['email'])->get();
         $data['users_count'] = $users->count();
 
-        $ids = $users->pluck('id');
+        $ids = $users->pluck('school_id');
 
-        $schools = School::whereIn('id', $ids)->get();
+        $schools = School::whereIn('id', $ids)->orderBy('long_name')->get();
 
         if (count($schools) == 1) {
             $data['school'] = new SchoolResource($schools->first());

@@ -186,7 +186,7 @@ export default {
         this.adminStore = useAdminStore()
         this.schoolyearStore = useSchoolyearStore()
         this.registerStore = useRegisterStore()
-        if (this.registers.length == 0) this.loadRegisters()
+        await this.loadRegisters()
     },
 
     unmounted() {},

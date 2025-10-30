@@ -8,27 +8,15 @@
                         <SearchField :store="schoolStore" selected_field="selected_schools" />
 
                         <!-- Abwählen / Auswählen-->
-                        <v-card
-                            tile
-                            flat
-                            color="transparent"
-                            class="d-flex flex-row flex-wrap align-center ga-2 mt-2"
-                            :disabled="action != ''">
+                        <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2 mt-2" :disabled="action != ''">
                             <v-btn color="primary" slim flat tile class="text-caption" @click="selectAll">
                                 Alle auswählen [{{ selected_schools.length - selected_schools.length }}]
                             </v-btn>
-                            <v-btn color="primary" slim flat tile class="text-caption" @click="unselectAll">
-                                Alle abwählen [{{ selected_schools.length }}]
-                            </v-btn>
+                            <v-btn color="primary" slim flat tile class="text-caption" @click="unselectAll">Alle abwählen [{{ selected_schools.length }}]</v-btn>
                         </v-card>
 
                         <!-- RECORDS -->
-                        <v-list
-                            dense
-                            variant="elevated"
-                            select-strategy="leaf"
-                            v-model:selected="selected_schools"
-                            color="success-lighten-2">
+                        <v-list dense variant="elevated" select-strategy="leaf" v-model:selected="selected_schools" color="success-lighten-2">
                             <v-list-item v-for="item in schools" :key="item.id" :value="item.id">
                                 <template v-slot:title>
                                     <div class="d-flex flex-row align-center justify-space-between">
@@ -51,42 +39,15 @@
                 <v-card tile flat color="transparent" style="width: 150px" class="d-flex flex-column ga-2">
                     <!-- AUSWAHl EGAL -->
                     <div class="d-flex flex-column ga-2">
-                        <v-btn
-                            block
-                            tile
-                            flat
-                            color="primary"
-                            class="text-caption"
-                            prepend-icon="mdi-plus"
-                            @click="createSchool">
-                            Hinzufügen
-                        </v-btn>
+                        <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-plus" @click="createSchool">Hinzufügen</v-btn>
                     </div>
                     <!-- GENAU 1 ELEMENT AUSGEWÄHLT -->
                     <div class="d-flex flex-column ga-2" v-if="selected_schools.length == 1">
-                        <v-btn
-                            block
-                            tile
-                            flat
-                            color="primary"
-                            class="text-caption"
-                            prepend-icon="mdi-pencil"
-                            @click="editSchool(selected_schools[0])">
-                            Ändern
-                        </v-btn>
+                        <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-pencil" @click="editSchool(selected_schools[0])">Ändern</v-btn>
                     </div>
                     <!-- MINDEST 1 ELEMENT AUSGEWÄHLT -->
                     <div class="d-flex flex-column ga-2" v-if="selected_schools.length >= 1">
-                        <v-btn
-                            block
-                            tile
-                            flat
-                            color="warning"
-                            class="text-caption"
-                            prepend-icon="mdi-delete"
-                            @click="deleteSchool">
-                            Löschen
-                        </v-btn>
+                        <v-btn block tile flat color="warning" class="text-caption" prepend-icon="mdi-delete" @click="deleteSchool">Löschen</v-btn>
                     </div>
                 </v-card>
             </div>
@@ -97,24 +58,14 @@
             <v-form ref="form" v-model="is_valid" @submit.prevent="saveSchool(data)" class="mb-4">
                 <v-row dense>
                     <v-col cols="12">
-                        <v-text-field
-                            autofocus
-                            v-model="data.long_name"
-                            label="Schule (langer Name)"
-                            :rules="[required(), maxLength(255)]" />
+                        <v-text-field autofocus v-model="data.long_name" label="Schule (langer Name)" :rules="[required(), maxLength(255)]" />
                     </v-col>
                     <v-col cols="12">
-                        <v-text-field
-                            v-model="data.short_name"
-                            label="Schule (kurzer Name)"
-                            :rules="[required(), maxLength(255)]" />
+                        <v-text-field v-model="data.short_name" label="Schule (kurzer Name)" :rules="[required(), maxLength(255)]" />
                     </v-col>
 
                     <v-col cols="12">
-                        <v-text-field
-                            v-model="data.email"
-                            label="E-Mail"
-                            :rules="[required(), mail(), maxLength(255)]" />
+                        <v-text-field v-model="data.email" label="E-Mail" :rules="[required(), mail(), maxLength(255)]" />
                     </v-col>
 
                     <v-col cols="12">
@@ -134,42 +85,19 @@
                         </div>
 
                         <!-- Logo existiert und kein Upload-Logo-->
-                        <div
-                            v-if="data.logo && !data.upload_file"
-                            class="d-flex flex-row align-center justify-space-between ga-2">
-                            <img
-                                :src="'/storage/images/' + data.logo + '?t=' + Date.now()"
-                                alt="Logo"
-                                height="60px"
-                                class="pl-2" />
-                            <v-btn
-                                tile
-                                flat
-                                color="error"
-                                class="text-caption"
-                                prepend-icon="mdi-delete"
-                                @click="removeLogo">
-                                Löschen
-                            </v-btn>
+                        <div v-if="data.logo && !data.upload_file" class="d-flex flex-row align-center justify-space-between ga-2">
+                            <img :src="'/storage/images/' + data.logo + '?t=' + Date.now()" alt="Logo" height="60px" class="pl-2" />
+                            <v-btn tile flat color="error" class="text-caption" prepend-icon="mdi-delete" @click="removeLogo">Löschen</v-btn>
                         </div>
 
                         <div class="text-body-1" v-if="!data.logo && !data.upload_file">Kein Logo hochgeladen</div>
 
-                        <FileUpload
-                            path="/api/admin/schools_upload/uploadLogo"
-                            @fileUploadFinished="fileUploadFinished"
-                            @uploadStart="onUploadStart"
-                            class="mt-2" />
+                        <FileUpload path="/api/admin/schools_upload/uploadLogo" @fileUploadFinished="fileUploadFinished" @uploadStart="onUploadStart" class="mt-2" />
                     </v-col>
                 </v-row>
                 <v-row>
                     <v-col cols="12">
-                        <v-card
-                            tile
-                            flat
-                            color="transparent"
-                            class="d-flex flex-row align-center justify-space-between"
-                            :disabled="is_uploading">
+                        <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between" :disabled="is_uploading">
                             <v-btn color="warning" flat tile @click="abort">Abbruch</v-btn>
                             <v-btn color="success" flat tile type="submit">Speichern</v-btn>
                         </v-card>
@@ -178,17 +106,14 @@
             </v-form>
         </its-grid-box>
     </v-col>
+    <!-- Löschen -->
     <v-col cols="12" md="4" xl="3" v-if="action == 'delete_school'">
         <its-grid-box color="primary" title="Löschen" class="w-100">
             <v-form ref="form" v-model="is_valid" @submit.prevent="doDeleteSchools(selected_schools)">
                 <v-card tile flat color="transparent" class="text-body-1">
-                    <div v-if="selected_schools.length == 1">
-                        Es soll eine Schule gelöscht werden. Sind Sie sicher, dass Sie die markierte Schule löschen
-                        möchten?
-                    </div>
+                    <div v-if="selected_schools.length == 1">Es soll eine Schule gelöscht werden. Sind Sie sicher, dass Sie die markierte Schule löschen möchten?</div>
                     <div v-if="selected_schools.length > 1">
-                        Es sollen {{ selected_schools.length }} Schulen gelöscht werden. Sind Sie sicher, dass Sie die
-                        markierten Schulen löschen möchten?
+                        Es sollen {{ selected_schools.length }} Schulen gelöscht werden. Sind Sie sicher, dass Sie die markierten Schulen löschen möchten?
                     </div>
                 </v-card>
                 <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between mt-4">
@@ -286,7 +211,7 @@ export default {
         async doDeleteSchools(data) {
             if (!(await this.schoolStore.deleteSchools(data))) return
             await this.schoolStore.index()
-            this.selected_schools = []
+
             this.action = ''
         },
 

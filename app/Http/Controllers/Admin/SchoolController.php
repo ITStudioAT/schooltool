@@ -3,14 +3,24 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\SchoolAddAdminRequest;
+use App\Http\Requests\Admin\SchoolAddLicenceRequest;
+use App\Http\Requests\Admin\SchoolDeleteAdminRequest;
+use App\Http\Requests\Admin\SchoolDeleteLicenceRequest;
 use App\Http\Requests\Admin\SchoolDeleteSchoolsRequest;
 use App\Http\Requests\Admin\SchoolIndexRequest;
+use App\Http\Requests\Admin\SchoolLoadSchoolLicencesRequest;
 use App\Http\Requests\Admin\SchoolStoreRequest;
+use App\Http\Requests\Admin\SchoolSwitchSchoolRequest;
 use App\Http\Requests\Admin\SchoolUpdateRequest;
+use App\Http\Resources\Admin\LicenceResource;
 use App\Http\Resources\Admin\PaginateResource;
 use App\Http\Resources\Admin\SchoolResource;
+use App\Http\Resources\Admin\UserResource;
 use App\Models\School;
+use App\Models\SchoolLicence;
 use App\Services\FileUploadService;
+use App\Services\LicenceService;
 use App\Services\SchoolService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
@@ -101,10 +111,15 @@ class SchoolController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $validated = $request->validated();
-        $data = $service->deleteSchools($validated);
 
-        return response()->json($data, 200);
+
+        $validated = $request->validated();
+
+        if (in_array($auth_user->school_id, $validated)) abort(409, "Eine zu löschende Schule ist ihnen zugeordnet. Das ist nicht zulässig.");
+
+        $service->deleteSchools($validated);
+
+        return response()->noContent();
     }
 
     public function uploadLogo(Request $request, FileUploadService $fileUploadService)
@@ -145,5 +160,97 @@ class SchoolController extends Controller
         return response($result, 200)->header('Content-Type', 'text/plain');
 
         // return $result; // already a proper Response from the service
+    }
+
+    public function loadSwitchableSchools(Request $request, SchoolService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $schools = $service->loadSwitchableSchools($auth_user);
+
+        return response()->json(SchoolResource::collection($schools), 200);
+    }
+
+    public function switchSchool(SchoolSwitchSchoolRequest $request, SchoolService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validated();
+
+        $auth_user = $service->switchSchool($auth_user, $validated['school_id']);
+        return response()->noContent();
+    }
+
+    public function loadSchoolInfos(SchoolLoadSchoolLicencesRequest $request, SchoolService $service)
+    {
+
+        if (! $auth_user = $this->userHasRole(['admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validated();
+
+        $data = $service->schoolInfos($validated['school_id']);
+
+
+        return response()->json($data, 200);
+    }
+
+    public function addLicence(SchoolAddLicenceRequest $request, LicenceService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validated();
+
+
+        $school_licence = $service->schoolAddLicence($auth_user->selectedSchool, $validated['data']);
+        $licences = School::find($school_licence->school_id)->licences;
+        return response()->json(LicenceResource::collection($licences), 200);
+    }
+
+    public function deleteLicence(SchoolDeleteLicenceRequest $request, LicenceService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validated();
+        $school_licence = SchoolLicence::findOrFail($validated['school_licence_id']);
+        $school_id = $school_licence->id;
+        $school_licence->delete();
+
+        $licences = School::find($school_id)->licences;
+        return response()->json(LicenceResource::collection($licences), 200);
+    }
+
+    public function addAdmin(SchoolAddAdminRequest $request, SchoolService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validated();
+        $user = $service->addAdmin($auth_user->selectedSchool->id, $validated['data'], $validated['roles']);
+        return response()->json(new UserResource($user), 200);
+    }
+
+    public function deleteAdmin(SchoolDeleteAdminRequest $request, SchoolService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validated();
+
+        if ($validated['admin_id'] == $auth_user->id) abort(409, "Man kann sich selbst nicht löschen.");
+
+        $service->deleteAdmin($validated['admin_id'], $validated['is_delete_complete']);
+        return response()->noContent();
     }
 }

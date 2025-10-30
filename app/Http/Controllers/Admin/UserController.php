@@ -242,7 +242,6 @@ class UserController extends Controller
         }
 
         $users = User::where('email', $user->email)->get();
-        $data['users_count'] = $users->count();
 
         $ids = $users->pluck('id');
 

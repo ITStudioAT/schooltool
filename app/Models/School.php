@@ -18,7 +18,7 @@ class School extends Model
 
     public function licences(): BelongsToMany
     {
-        return $this->belongsToMany(Licence::class, 'school_licences');
+        return $this->belongsToMany(Licence::class, 'school_licences')->withPivot('id', 'valid_until');
     }
 
     public function schoolyears(): HasMany

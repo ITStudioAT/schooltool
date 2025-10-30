@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\LicenceDeleteLicencesRequest;
 use App\Http\Requests\Admin\LicenceIndexRequest;
 use App\Http\Requests\Admin\LicenceStoreRequest;
 use App\Http\Requests\Admin\LicenceUpdateRequest;
@@ -19,7 +20,7 @@ class LicenceController extends Controller
      */
     public function index(LicenceIndexRequest $request)
     {
-        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+        if (! $auth_user = $this->userHasRole(['super_admin', 'admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -71,7 +72,7 @@ class LicenceController extends Controller
      */
     public function update(LicenceUpdateRequest  $request, Licence $licence)
     {
-        if (! $auth_user = $this->userHasRole(['admin'])) {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
         $validated = $request->validated();
@@ -87,5 +88,28 @@ class LicenceController extends Controller
     public function destroy(Licence $licence)
     {
         //
+    }
+
+    public function loadLicences()
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin', 'admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $licences = Licence::orderBy('long_name')->get();
+
+        return response()->json(LicenceResource::collection($licences), 200);
+    }
+
+    public function deleteLicences(LicenceDeleteLicencesRequest $request, LicenceService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validated();
+        $service->deleteLicences($validated);
+
+        return response()->noContent();
     }
 }

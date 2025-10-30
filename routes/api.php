@@ -76,12 +76,22 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
         //licences
         Route::apiResource('/admin/licences', \App\Http\Controllers\Admin\LicenceController::class);
+        Route::post('/admin/licences/load_licences', [\App\Http\Controllers\Admin\LicenceController::class, 'loadLicences']);
+        Route::post('/admin/licences/delete_licences', [\App\Http\Controllers\Admin\LicenceController::class, 'deleteLicences']);
 
         //schools
         Route::apiResource('/admin/schools', \App\Http\Controllers\Admin\SchoolController::class);
         Route::post('/admin/schools_upload/uploadLogo', [\App\Http\Controllers\Admin\SchoolController::class, 'uploadLogo']);
         Route::patch('/admin/schools_upload/uploadLogo', [\App\Http\Controllers\Admin\SchoolController::class, 'uploadLogoNext']);
         Route::post('/admin/schools/delete_schools',  [\App\Http\Controllers\Admin\SchoolController::class, 'deleteSchools']);
+        Route::post('/admin/schools/load_switchable_schools',  [\App\Http\Controllers\Admin\SchoolController::class, 'loadSwitchableSchools']);
+        Route::post('/admin/schools/switch_school',  [\App\Http\Controllers\Admin\SchoolController::class, 'switchSchool']);
+        Route::post('/admin/schools/load_school_infos',  [\App\Http\Controllers\Admin\SchoolController::class, 'loadSchoolInfos']);
+        Route::post('/admin/schools/add_licence',  [\App\Http\Controllers\Admin\SchoolController::class, 'addLicence']);
+        Route::post('/admin/schools/delete_licence',  [\App\Http\Controllers\Admin\SchoolController::class, 'deleteLicence']);
+        Route::post('/admin/schools/add_admin',  [\App\Http\Controllers\Admin\SchoolController::class, 'addAdmin']);
+        Route::post('/admin/schools/delete_admin',  [\App\Http\Controllers\Admin\SchoolController::class, 'deleteAdmin']);
+
 
         //schoolyears
         Route::apiResource('/admin/schoolyears', \App\Http\Controllers\Admin\SchoolyearController::class);
@@ -124,6 +134,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         // roles
         Route::apiResource('/admin/roles', SpaRoleController::class);
         Route::post('/admin/roles/destroy_multiple',  [SpaRoleController::class, 'destroyMultiple']);
+        Route::post('/admin/load_roles',  [\App\Http\Controllers\Admin\AdminController::class, 'loadRoles']);
 
         // users_with_roles
         Route::get('/admin/users_with_roles/roles',  [UserWithRoleController::class, 'roles']);

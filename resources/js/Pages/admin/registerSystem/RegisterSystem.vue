@@ -2,7 +2,8 @@
     <v-container fluid class="ma-0 w-100 pa-2">
         <ActiveRegisters />
         <Schoolyears />
-        <Registers />
+        <Registers v-if="selected_schoolyear" />
+        {{ selected_schoolyear }}
     </v-container>
 </template>
 
@@ -20,7 +21,11 @@ import ActiveRegisters from '@/pages/admin/registerSystem/components/RegisterSys
 export default {
     components: { ItsMenuButton, ItsGridBox, Schoolyears, Registers, ActiveRegisters },
 
-    async beforeMount() {},
+    async beforeMount() {
+        this.adminStore = useAdminStore()
+        this.schoolyearStore = useSchoolyearStore()
+        this.registerStore = useRegisterStore()
+    },
 
     unmounted() {},
 
@@ -33,6 +38,7 @@ export default {
     },
 
     computed: {
+        ...mapWritableState(useAdminStore, ['selected_schoolyear']),
         ...mapWritableState(useSchoolyearStore, ['schoolyears']),
         ...mapWritableState(useRegisterStore, ['registers', 'active_registers']),
     },

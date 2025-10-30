@@ -19,6 +19,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
         selected_active_register: null,
         action: '',
         data: {},
+        roles: [],
     }),
 
     actions: {
@@ -273,6 +274,27 @@ export const useAdminStore = defineStore('AdminAdminStore', {
                 return false
             } finally {
                 this.is_loading--
+            }
+        },
+
+        async loadRoles() {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.post(`/api/admin/load_roles`, {})
+                this.roles = response.data
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
             }
         },
     },

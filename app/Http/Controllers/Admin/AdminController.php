@@ -17,18 +17,22 @@ use App\Http\Resources\Admin\SchoolResource;
 use App\Http\Resources\Admin\SchoolyearResource;
 use App\Http\Resources\Admin\UserResource;
 use App\Http\Resources\Admin\UserWithRoleResource;
+use App\Models\Role;
 use App\Models\School;
 use App\Models\User;
 use App\Services\AdminNavigationService;
 use App\Services\AdminService;
 use App\Services\LicenceService;
+use App\Traits\HasRoleTrait;
 use Composer\InstalledVersions;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class AdminController extends Controller
 {
+    use HasRoleTrait;
     public function config(Request $request, LicenceService $licenceService)
     {
         $navigationService = new AdminNavigationService();
@@ -234,5 +238,16 @@ class AdminController extends Controller
         }
 
         return response()->json(['message' => 'Logout successful'], 200);
+    }
+
+    public function loadRoles(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $roles = DB::table('roles')->orderBy('name')->get();
+
+        return response()->json($roles, 200);
     }
 }

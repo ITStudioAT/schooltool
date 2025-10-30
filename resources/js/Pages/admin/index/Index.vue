@@ -5,9 +5,6 @@
                 <its-grid-box color="primary" title="Anmeldesystem" class="h-100 w-100">Hello Index</its-grid-box>
             </v-col>
         </v-row>
-        <v-row>
-            {{ config }}
-        </v-row>
     </v-container>
 </template>
 

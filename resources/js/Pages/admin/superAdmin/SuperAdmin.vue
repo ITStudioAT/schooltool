@@ -1,19 +1,17 @@
 <template>
-    <v-container fluid class="ma-0 w-100 pa-2">
+    <v-container fluid class="ma-0 w-100 pa-2" v-if="config.roles.includes('super_admin')">
         <!-- Menüleiste oben -->
         <v-card tile flat color="transparent" class="d-flex flex-row ga-2 w-100 mb-2" :disabled="action != ''">
+            <its-menu-button subtitle="Übersicht" icon="mdi-home" :color="main_action == '' ? 'primary' : 'secondary'" @click="main_action = ''" />
+
             <its-menu-button
                 subtitle="Schulen"
                 icon="mdi-school"
                 :color="main_action == 'schools' ? 'primary' : 'secondary'"
-                @click="main_action == 'schools' ? (main_action = '') : (main_action = 'schools')"
+                @click="main_action = 'schools'"
                 v-if="config.roles.includes('super_admin')" />
 
-            <its-menu-button
-                subtitle="Lizenzen"
-                icon="mdi-card-account-details"
-                :color="main_action == 'licences' ? 'primary' : 'secondary'"
-                @click="main_action == 'licences' ? (main_action = '') : (main_action = 'licences')" />
+            <its-menu-button subtitle="Lizenzen" icon="mdi-card-account-details" :color="main_action == 'licences' ? 'primary' : 'secondary'" @click="main_action = 'licences'" />
         </v-card>
         <v-row class="w-100" dense>
             <ActiveSchool v-if="main_action == '' && config.roles.includes('super_admin')" />
