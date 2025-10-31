@@ -23,7 +23,7 @@ class SchoolyearStoreRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => 'required|string|max:255|unique:schoolyears,name',
+            'name' => 'required|string|max:255',
             'from' => 'nullable|date',
             'until' => 'nullable|date',
             'sem_2_start' => 'nullable|date',

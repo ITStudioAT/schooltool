@@ -1,11 +1,7 @@
 <template>
     <v-row class="w-100">
         <v-col cols="12">
-            <its-grid-box
-                color="primary"
-                :title="'Anmeldesysteme ' + selected_schoolyear?.name"
-                class="h-100 w-100"
-                :disabled="action != ''">
+            <its-grid-box color="primary" :title="'Anmeldesysteme ' + selected_schoolyear?.name" class="h-100 w-100" :disabled="action != ''">
                 <div class="d-flex flex-wrap flex-row align-center ga-2">
                     <its-menu-button
                         :title="register.name"
@@ -14,11 +10,7 @@
                         @click="setSelectedRegister(register)"
                         v-for="register in registers" />
                 </div>
-                <template
-                    v-slot:title
-                    v-if="
-                        config?.user?.roles.some((role) => ['super_admin', 'admin', 'register_admin'].includes(role))
-                    ">
+                <template v-slot:title v-if="config?.user?.roles.some((role) => ['super_admin', 'admin', 'register_admin'].includes(role))">
                     <div class="d-flex flex-row align-center justify-space-between w-100">
                         <div class="mr-4">Anmeldesysteme {{ selected_schoolyear?.name }}</div>
                         <div class="d-flex flex-row align-center">
@@ -29,18 +21,9 @@
                                     <v-icon icon="mdi-delete" color="warning"></v-icon>
                                 </v-btn>
                                 <v-btn flat tile @click="toggleRegister(selected_register)" icon color="primary">
-                                    <v-icon
-                                        icon="mdi-power-standby"
-                                        :color="selected_register.is_active ? 'success' : 'error'"></v-icon>
+                                    <v-icon icon="mdi-power-standby" :color="selected_register.is_active ? 'success' : 'error'"></v-icon>
                                 </v-btn>
-                                <v-btn
-                                    class="ml-2"
-                                    flat
-                                    tile
-                                    color="secondary"
-                                    variant="outlined"
-                                    to="/admin/register_system/details"
-                                    text="Details" />
+                                <v-btn class="ml-2" flat tile color="secondary" variant="outlined" to="/admin/register_system/details" text="Details" />
                             </div>
                         </div>
                     </div>
@@ -50,25 +33,12 @@
 
         <!-- ÄNDERN/ANLEGEN EINES Anmeldesystems -->
         <v-col cols="12" sm="6" md="4" xl="3" v-if="action == 'edit_register' || action == 'create_register'">
-            <its-grid-box
-                color="primary"
-                :title="data.id ? selected_register.name : 'Neues Anmeldesystem anlegen'"
-                class="h-100 w-100">
+            <its-grid-box color="primary" :title="data.id ? selected_register.name : 'Neues Anmeldesystem anlegen'" class="h-100 w-100">
                 <v-form ref="form" v-model="is_valid" @submit.prevent="save(data)" class="mb-4">
-                    <v-text-field
-                        autofocus
-                        v-model="data.name"
-                        label="Bezeichnung"
-                        :rules="[required(), maxLength(255)]" />
-                    <v-textarea
-                        v-model="data.description"
-                        label="Beschreibung am Bildschirm"
-                        :rules="[maxLength(1024)]" />
+                    <v-text-field autofocus v-model="data.name" label="Bezeichnung" :rules="[required(), maxLength(255)]" />
+                    <v-textarea v-model="data.description" label="Beschreibung am Bildschirm" :rules="[maxLength(1024)]" />
 
-                    <v-text-field
-                        v-model="data.max_registrations"
-                        label="Max. Anmeldungen gesamt (0=unendlich)"
-                        :rules="[required(), min(0)]" />
+                    <v-text-field v-model="data.max_registrations" label="Max. Anmeldungen gesamt (0=unendlich)" :rules="[required(), min(0)]" />
 
                     <v-row dense>
                         <v-col cols="6">
@@ -88,8 +58,7 @@
 
                     <v-card tile flat color="primary">
                         <v-card-text>
-                            Bei der Eingabe werden Nachname, Vorname und E-Mail verlangt. Weitere erforderliche Eingaben
-                            können hier festgelegt werden.
+                            Bei der Eingabe werden Nachname, Vorname und E-Mail verpflichtend verlangt. Weitere erforderliche Eingaben können hier festgelegt werden.
                         </v-card-text>
                     </v-card>
 
@@ -98,11 +67,7 @@
                             <v-checkbox v-model="data.show_phone" hide-details label="Telefon" />
                         </v-col>
                         <v-col cols="6">
-                            <v-checkbox
-                                v-model="data.must_phone"
-                                hide-details
-                                label="Pflichtfeld"
-                                v-if="data.show_phone" />
+                            <v-checkbox v-model="data.must_phone" hide-details label="Pflichtfeld" v-if="data.show_phone" />
                         </v-col>
                     </v-row>
 
@@ -111,11 +76,7 @@
                             <v-checkbox v-model="data.show_student_last_name" hide-details label="Nachname Kind" />
                         </v-col>
                         <v-col cols="6">
-                            <v-checkbox
-                                v-model="data.must_student_last_name"
-                                hide-details
-                                label="Pflichtfeld"
-                                v-if="data.show_student_last_name" />
+                            <v-checkbox v-model="data.must_student_last_name" hide-details label="Pflichtfeld" v-if="data.show_student_last_name" />
                         </v-col>
                     </v-row>
                     <v-row dense>
@@ -123,24 +84,16 @@
                             <v-checkbox v-model="data.show_student_first_name" hide-details label="Vorname Kind" />
                         </v-col>
                         <v-col cols="6">
-                            <v-checkbox
-                                v-model="data.must_student_first_name"
-                                hide-details
-                                label="Pflichtfeld"
-                                v-if="data.show_student_first_name" />
+                            <v-checkbox v-model="data.must_student_first_name" hide-details label="Pflichtfeld" v-if="data.show_student_first_name" />
                         </v-col>
                     </v-row>
 
                     <v-row dense>
                         <v-col cols="6">
-                            <v-checkbox v-model="data.show_birthdate" hide-details label="Geburtsdatum" />
+                            <v-checkbox v-model="data.show_student_birthdate" hide-details label="Geburtsdatum" />
                         </v-col>
                         <v-col cols="6">
-                            <v-checkbox
-                                v-model="data.must_birthdate"
-                                hide-details
-                                label="Pflichtfeld"
-                                v-if="data.show_birthdate" />
+                            <v-checkbox v-model="data.must_student_birthdate" hide-details label="Pflichtfeld" v-if="data.show_student_birthdate" />
                         </v-col>
                     </v-row>
 
@@ -202,14 +155,7 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, [
-            'config',
-            'selected_school',
-            'selected_schoolyear',
-            'selected_register',
-            'selected_active_register',
-            'action',
-        ]),
+        ...mapWritableState(useAdminStore, ['config', 'selected_school', 'selected_schoolyear', 'selected_register', 'selected_active_register', 'action']),
         ...mapWritableState(useSchoolyearStore, []),
         ...mapWritableState(useRegisterStore, ['registers']),
     },
@@ -227,7 +173,11 @@ export default {
 
     methods: {
         async loadRegisters() {
-            this.registerStore.index()
+            await this.registerStore.index()
+            if (this.selected_register) {
+                this.selected_register = this.registers.find((r) => r.id === this.selected_register.id)
+            }
+            await this.registerStore.loadActiveRegisters()
         },
         async save(data) {
             this.is_valid = false
@@ -239,17 +189,16 @@ export default {
             } else {
                 answer = await this.registerStore.store(data)
             }
-            this.selected_register = null
-            await this.registerStore.loadActiveRegisters()
+            await this.loadRegisters()
             if (answer) this.action = ''
         },
 
         async destroy(data) {
             var answer = false
             answer = await this.registerStore.destroy(data)
-            await this.registerStore.loadActiveRegisters()
-            this.selected_register = null
+            await this.loadRegisters()
             if (answer) this.action = ''
+            this.selected_register = null
         },
 
         abort() {

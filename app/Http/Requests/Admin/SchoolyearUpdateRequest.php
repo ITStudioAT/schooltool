@@ -24,7 +24,7 @@ class SchoolyearUpdateRequest extends FormRequest
     {
         return [
             'id' => 'required|exists:schoolyears,id',
-            'name' => 'required|string|max:255|unique:schoolyears,name,' . $this->id,
+            'name' => 'required|string|max:255',
             'from' => 'nullable|date',
             'until' => 'nullable|date',
             'sem_2_start' => 'nullable|date',

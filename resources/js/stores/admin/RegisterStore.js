@@ -64,14 +64,6 @@ export const useRegisterStore = defineStore('AdminRegisterStore', {
                     timeout: 3000,
                 })
 
-                this.selected_register = response.data
-                const index = this.registers.findIndex((s) => s.id === this.selected_register.id)
-
-                if (index !== -1) {
-                    // Replace the old element with the new one
-                    this.registers.splice(index, 1, this.selected_register)
-                }
-                this.registers.sort((a, b) => a.name.localeCompare(b.name))
                 return true
             } catch (error) {
                 notification.notify({
@@ -99,10 +91,6 @@ export const useRegisterStore = defineStore('AdminRegisterStore', {
                     timeout: 3000,
                 })
 
-                this.selected_register = response.data
-                this.registers.push(this.selected_register)
-                this.registers.sort((a, b) => a.name.localeCompare(b.name))
-
                 return true
             } catch (error) {
                 notification.notify({
@@ -129,8 +117,7 @@ export const useRegisterStore = defineStore('AdminRegisterStore', {
                     type: 'success',
                     timeout: 3000,
                 })
-                this.registers = this.registers.filter((sy) => sy.id !== this.selected_register.id)
-                this.selected_register = null
+
                 return true
             } catch (error) {
                 notification.notify({
@@ -182,9 +169,7 @@ export const useRegisterStore = defineStore('AdminRegisterStore', {
             try {
                 const response = await axios.post(`/api/admin/registers/toggle`, { register_id })
                 notification.notify({
-                    message:
-                        'Das Anmeldesystem wurde erfolgreich ' +
-                        (register.is_active ? 'ausgeschaltet.' : 'eingeschaltet.'),
+                    message: 'Das Anmeldesystem wurde erfolgreich ' + (register.is_active ? 'ausgeschaltet.' : 'eingeschaltet.'),
                     type: 'success',
                     timeout: 3000,
                 })
