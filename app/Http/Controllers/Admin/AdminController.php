@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Requests\Admin\AdminPasswordUnknownStepSchoolRequest;
+use App\Http\Requests\Admin\AdminPasswordUnkownStepPasswordRequest;
+use App\Http\Requests\Admin\AdminPasswordUnkownStepTokenRequest;
 use App\Http\Requests\Admin\LoginStep2Request;
 use App\Http\Requests\Admin\LoginStep3Request;
 use App\Http\Requests\Admin\LoginStepEmailRequest;
@@ -110,6 +113,32 @@ class AdminController extends Controller
         $data = ['step' => $user->confirmed_at ? 'REGISTER_FINISHED' : 'REGISTER_MUST_BE_CONFIRMED'];
 
         return response()->json($data, 200);
+    }
+
+
+    public function passwordUnknownStepSchool(AdminPasswordUnknownStepSchoolRequest $request, AdminService $service)
+    {
+        $validated = $request->validated();
+        $data = $service->passwordUnkownSendToken($validated['data']);
+
+        return response()->json($data, 200);
+    }
+
+    public function passwordUnknownStepToken(AdminPasswordUnkownStepTokenRequest $request, AdminService $service)
+    {
+        $validated = $request->validated();
+        $data = $service->passwordUnkownCheckToken($validated['data']);
+
+        return response()->json($data, 200);
+    }
+
+    public function passwordUnknownStepPassword(AdminPasswordUnkownStepPasswordRequest $request, AdminService $service)
+    {
+        $validated = $request->validated();
+
+        $data = $service->passwordUnkownSetPassword($validated['data']);
+
+        return response()->json($validated["data"], 200);
     }
 
     public function passwordUnknownStep1(PasswordUnknownStep1Request $request)

@@ -38,10 +38,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/admin/login_step_2',  [AdminController::class, 'loginStep2']);
     Route::post('/admin/login_step_3',  [AdminController::class, 'loginStep3']);
 
-    Route::post('/admin/password_unknown_step_1',  [AdminController::class, 'passwordUnknownStep1']);
-    Route::post('/admin/password_unknown_step_2',  [AdminController::class, 'passwordUnknownStep2']);
-    Route::post('/admin/password_unknown_step_3',  [AdminController::class, 'passwordUnknownStep3']);
-    Route::post('/admin/password_unknown_step_4',  [AdminController::class, 'passwordUnknownStep4']);
+    Route::post('/admin/password_unknown_step_school',  [AdminController::class, 'passwordUnknownStepSchool']);
+    Route::post('/admin/password_unknown_step_token',  [AdminController::class, 'passwordUnknownStepToken']);
+    Route::post('/admin/password_unknown_step_password',  [AdminController::class, 'passwordUnknownStepPassword']);
 
     Route::post('/admin/register_step_1',  [AdminController::class, 'registerStep1']);
     Route::post('/admin/register_step_2',  [AdminController::class, 'registerStep2']);

@@ -110,12 +110,13 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             }
         },
 
-        async passwordUnknownStep1(data) {
+        async passwordUnknownStepSchool(data) {
             const notification = useNotificationStore()
             this.is_loading++
             this.api_response = null
             try {
-                this.api_response = await axios.post('/api/admin/password_unknown_step_1', { data })
+                this.api_response = await axios.post('/api/admin/password_unknown_step_school', { data })
+                this.data = this.api_response.data
                 return true
             } catch (error) {
                 notification.notify({
@@ -130,12 +131,13 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             }
         },
 
-        async passwordUnknownStep2(data) {
+        async passwordUnknownStepToken(data) {
             const notification = useNotificationStore()
             this.is_loading++
             this.api_response = null
             try {
-                this.api_response = await axios.post('/api/admin/password_unknown_step_2', { data })
+                this.api_response = await axios.post('/api/admin/password_unknown_step_token', { data })
+                this.data = this.api_response.data
                 return true
             } catch (error) {
                 notification.notify({
@@ -150,32 +152,13 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             }
         },
 
-        async passwordUnknownStep3(data) {
+        async passwordUnknownStepPassword(data) {
             const notification = useNotificationStore()
             this.is_loading++
             this.api_response = null
             try {
-                this.api_response = await axios.post('/api/admin/password_unknown_step_3', { data })
-                return true
-            } catch (error) {
-                notification.notify({
-                    status: error.response.status,
-                    message: error.response.data.message || 'Fehler passiert.',
-                    type: 'error',
-                    timeout: this.config?.timeout,
-                })
-                return false
-            } finally {
-                this.is_loading--
-            }
-        },
-
-        async passwordUnknownStep4(data) {
-            const notification = useNotificationStore()
-            this.is_loading++
-            this.api_response = null
-            try {
-                this.api_response = await axios.post('/api/admin/password_unknown_step_4', { data })
+                this.api_response = await axios.post('/api/admin/password_unknown_step_password', { data })
+                this.data = this.api_response.data
                 return true
             } catch (error) {
                 notification.notify({

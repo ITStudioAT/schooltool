@@ -165,6 +165,35 @@ class AdminService
         return $data;
     }
 
+    public function passwordUnkownSendToken($data)
+    {
+        if (!$user = User::where('email', $data['email'])->where('school_id', $data['school_id'])->first()) abort(404, "Kein Benutzer gefunden");
+
+        $data['school'] = $user->selectedSchool;
+        $this->setToken2Fa($user, $data, "Code zum Neusetzen des Kennwortes");
+
+        return $data;
+    }
+
+    public function passwordUnkownCheckToken($data)
+    {
+        if (!$user = User::where('email', $data['email'])->where('school_id', $data['school_id'])->first()) abort(404, "Kein Benutzer gefunden");
+        if ($user->token_2fa != $data['token_2fa'] || !now()->isBefore($user->token_2fa_expires_at)) abort(401, "Token falsch oder abgelaufen");
+
+        return $data;
+    }
+
+    public function passwordUnkownSetPassword($data)
+    {
+        $data = $this->passwordUnkownCheckToken($data);
+        if (!$user = User::where('email', $data['email'])->where('school_id', $data['school_id'])->first()) abort(404, "Kein Benutzer gefunden");
+
+        $user->password = Hash::make($data['password']);
+        $user->save();
+
+        return $data;
+    }
+
 
     public function check2Fa($data): array
     {
