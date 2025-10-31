@@ -3,7 +3,6 @@
         <ActiveRegisters />
         <Schoolyears />
         <Registers v-if="selected_schoolyear" />
-        {{ selected_schoolyear }}
     </v-container>
 </template>
 

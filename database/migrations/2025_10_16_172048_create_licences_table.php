@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('name')->nullable();
             $table->string('long_name')->nullable();
+            $table->unsignedInteger('price_per_year')->nullable();
             $table->boolean('is_selectable')->default(true);
             $table->timestamps();
         });

@@ -84,14 +84,15 @@ class SchoolService
 
     public function schoolInfos($school_id)
     {
-        $licences = School::find($school_id)->licences;
+        $licences = School::find($school_id)->licences->sortBy('name');
         $data = [
             'licences' => LicenceResource::collection($licences)
         ];
 
         $roles = ['admin', 'register_admin', 'super_admin'];
         $users = User::where('school_id', $school_id)
-            ->role($roles) // from Spatie
+            ->role($roles)
+            ->orderBy('last_name')
             ->get();
 
         $data['admins'] = UserResource::collection($users);
