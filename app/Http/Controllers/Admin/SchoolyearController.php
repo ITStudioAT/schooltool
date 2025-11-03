@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\admin\SchoolyearIndexRequest;
+use App\Http\Requests\Admin\SchoolyearIndexRequest;
 use App\Http\Requests\Admin\SchoolyearStoreRequest;
 use App\Http\Requests\Admin\SchoolyearUpdateRequest;
 use App\Http\Requests\admin\SetActiveSchoolyearRequest;
