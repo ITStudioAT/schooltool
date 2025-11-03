@@ -2,17 +2,53 @@
 
 namespace App\Http\Controllers\Homepage;
 
-use App\Http\Resources\Homepage\LicenceRecource;
+use App\Http\Requests\Homepage\HomepageRoutingRequest;
+use App\Http\Resources\Homepage\LicenceResource;
 use App\Http\Resources\Homepage\SchoolResource;
 use App\Models\Licence;
 use App\Models\School;
+use App\Services\HomepageRoutingService;
 use App\Services\LicenceService;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\Auth;
 
 class HomepageController extends Controller
 {
     public function index(Request $request) {}
+    public function routing(HomepageRoutingRequest $request, HomepageRoutingService $service)
+    {
+
+        $validated = $request->validated();
+
+        info("ROUTING:");
+
+        $answer = $service->checkRoute($validated['school'] ?? null, $validated['licence'] ?? null);
+
+        info($answer);
+
+        if ($answer['status'] == 'error') return redirect('/homepage/error?msg=' . $answer['msg']);
+
+        $redirectUrl = $answer['redirect'];
+
+        $parts = parse_url($redirectUrl);
+        parse_str($parts['query'] ?? '', $query);
+
+        $licence = $query['licence'] ?? null;
+        $school = $query['school'] ?? null;
+
+        switch ($licence) {
+            case 'Anmeldetool':
+                return redirect('/homepage/register?school=' . $school);
+                break;
+
+            default:
+                // fallback if none match
+                break;
+        }
+
+        return redirect($answer['redirect']);
+    }
 
     public function config(Request $request, LicenceService $licenceService)
     {
@@ -63,11 +99,22 @@ class HomepageController extends Controller
             'isSchoolValid' => $isSchoolValid,
             'school' => $isSchoolValid ? new SchoolResource($school) : null,
             'isLicenceValid' =>  $isLicenceValid,
-            'licence' => $isLicenceValid ? $licence : null,
+            'licence' => $isLicenceValid ? new LicenceResource($licence) : null,
             'selectableSchools' => SchoolResource::collection($schools),
-            'schoolLicences' => $school ? LicenceRecource::collection($schoolLicences) : []
+            'schoolLicences' => $school ? LicenceResource::collection($schoolLicences) : []
         ];
 
         return response()->json($data, 200);
+    }
+
+    public function logout()
+    {
+
+        info("logout");
+        if (Auth::check()) {
+            Auth::guard('web')->logout();
+            session()->invalidate();
+            session()->regenerateToken();
+        }
     }
 }

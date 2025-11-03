@@ -26,9 +26,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/admin/execute_logout',  [AdminController::class, 'executeLogout']);
 
     /***** HOMEPAGE ROUTES *****/
-
-
     Route::get('/homepage/config',  [HomepageController::class, 'config']);
+    Route::post('/homepage/logout',  [\App\Http\Controllers\Homepage\HomepageController::class, 'logout']);
 
     /***** ADMIN ROUTES *****/
 
@@ -49,6 +48,18 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     /* vom User ausgelöste APis zur E-Mail-Verifikation */
     Route::post('/admin/users/send_verification_email_initialized_from_user',  [UserController::class, 'sendVerificationEmailInitializedFromUser']);
     Route::post('/admin/users/email_verification',  [UserController::class, 'emailVerification']);
+
+
+    /* homepage/register */
+    Route::get('/homepage/register/config',  [\App\Http\Controllers\Homepage\RegisterController::class, 'config']);
+    Route::post('/homepage/register/check_email',  [\App\Http\Controllers\Homepage\RegisterController::class, 'checkEmail']);
+    Route::post('/homepage/register/confirm_email',  [\App\Http\Controllers\Homepage\RegisterController::class, 'confirmEmail']);
+    Route::post('/homepage/register/save_user_data',  [\App\Http\Controllers\Homepage\RegisterController::class, 'saveUserData']);
+    Route::post('/homepage/register/login_token',  [\App\Http\Controllers\Homepage\RegisterController::class, 'loginToken']);
+    Route::get('/homepage/register/load_register_and_user',  [\App\Http\Controllers\Homepage\RegisterController::class, 'loadRegisterAndUser']);
+    Route::post('/homepage/register/book',  [\App\Http\Controllers\Homepage\RegisterController::class, 'book']);
+    Route::post('/homepage/register/delete_booking',  [\App\Http\Controllers\Homepage\RegisterController::class, 'deleteBooking']);
+
 
 
 

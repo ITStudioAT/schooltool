@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolLicence;
+use Carbon\Carbon;
 use Spatie\Permission\Models\Role;
 
 class LicenceService
@@ -36,8 +37,6 @@ class LicenceService
 
     public function schoolAddLicence($school, $data): SchoolLicence
     {
-
-
         $school_licence = SchoolLicence::updateOrCreate([
             'school_id' => $school['id'],
             'licence_id' => $data['licence_id'],
@@ -55,5 +54,18 @@ class LicenceService
         if (SchoolLicence::whereIn('licence_id', $ids)->exists()) abort(409, "Mindest eine Lizenz ist noch einer Schule zugeordnet");
 
         Licence::whereIn('id', $ids)->delete();
+    }
+
+    public function checkLicence($school, $licence_load)
+    {
+        $licence = Licence::where('name', $licence_load)->first();
+        if (!$licence) return ['status' => 'error', 'msg' => 'Die Lizenz konnte nicht gefunden werden.'];
+
+        $school_licence = SchoolLicence::where('school_id', $school->id)->where('licence_id', $licence->id)->first();
+        if (!$school_licence) return ['status' => 'error', 'msg' => 'Die Schule hat für die App keine Lizenz.'];
+
+        if (Carbon::parse($school_licence->valid_until)->isPast()) return ['status' => 'error', 'msg' => 'Die Lizenz für die App ist abgelaufen.'];
+
+        return ['status' => 'ok', 'redirect' => '&licence=' . $licence_load];
     }
 }

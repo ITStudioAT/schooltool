@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
-import { useAdminStore } from '@/stores/admin/AdminStore'
 export const useHomepageStore = defineStore('HomepageStore', {
     state: () => {
         return {
@@ -23,9 +22,9 @@ export const useHomepageStore = defineStore('HomepageStore', {
 
     actions: {
         async loadConfig(school = null, app = null) {
-            const adminStore = useAdminStore()
             const notification = useNotificationStore()
-            adminStore.is_loading++
+            this.is_loading++
+
             try {
                 this.response = await axios.get('/api/homepage/config', {
                     params: { school, app },
@@ -33,18 +32,36 @@ export const useHomepageStore = defineStore('HomepageStore', {
                 this.config = this.response.data
                 this.school = this.config?.school
                 this.licence = this.config?.licence
-                this.selected_licence_id = this.licence?.id || null
-                this.selected_school_id = this.school?.id || null
+                this.selected_licence_id ??= this.licence?.id ?? null
+                this.selected_school_id ??= this.school?.id ?? null
             } catch (error) {
                 notification.notify({
                     status: error.response.status,
                     message: error.response.data.message || 'Fehler passiert.',
                     type: 'error',
-                    timeout: this.config?.timeout,
+                    timeout: 3000,
                 })
                 return false
             } finally {
-                adminStore.is_loading--
+                this.is_loading--
+            }
+        },
+
+        async logout() {
+            const notification = useNotificationStore()
+            this.is_loading++
+            try {
+                this.response = await axios.post('/api/homepage/logout', {})
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                this.is_loading--
             }
         },
     },

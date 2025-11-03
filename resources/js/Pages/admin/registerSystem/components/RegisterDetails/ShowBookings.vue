@@ -3,12 +3,7 @@
         <its-grid-box color="primary" title="Anmeldungen anzeigen" class="w-100">
             <v-card tile flat color="primary" :disabled="booking_action != ''">
                 <v-card-text class="d-flex flex-row flex-wrap align-center ga-2">
-                    <its-menu-button
-                        title="Zurück"
-                        subtitle="Übersicht"
-                        icon="mdi-arrow-left"
-                        color="secondary"
-                        @click="action = ''" />
+                    <its-menu-button title="Zurück" subtitle="Übersicht" icon="mdi-arrow-left" color="secondary" @click="action = ''" />
 
                     <its-menu-button
                         :title="selected_bookings.length == 1 ? 'Anmeldung' : 'Anmeldungen'"
@@ -24,21 +19,11 @@
             <v-card tile flat color="warning" v-if="booking_action == 'remove_booking'">
                 <v-card-text>
                     <its-grid-box color="primary" title="LÖSCHEN" class="h-100 w-100">
-                        <v-form
-                            ref="form"
-                            v-model="is_valid"
-                            @submit.prevent="deleteBookings(selected_bookings, delete_notify)"
-                            class="mb-4">
-                            <div class="text-h6" v-if="selected_bookings.length > 1">
-                                Sollen die markierten Anmeldungen wirklich gelöscht werden?
-                            </div>
-                            <div class="text-h6" v-if="selected_bookings.length == 1">
-                                Soll die markierte Anmeldung wirklich gelöscht werden?
-                            </div>
+                        <v-form ref="form" v-model="is_valid" @submit.prevent="deleteBookings(selected_bookings, delete_notify)" class="mb-4">
+                            <div class="text-h6" v-if="selected_bookings.length > 1">Sollen die markierten Anmeldungen wirklich gelöscht werden?</div>
+                            <div class="text-h6" v-if="selected_bookings.length == 1">Soll die markierte Anmeldung wirklich gelöscht werden?</div>
                             <div class="d-flex flex-row align-center justify-end">
-                                <v-checkbox
-                                    label="Lösch-Verständigung per E-Mail?"
-                                    v-model="delete_notify"></v-checkbox>
+                                <v-checkbox label="Lösch-Verständigung per E-Mail?" v-model="delete_notify"></v-checkbox>
                             </div>
                             <div class="d-flex flex-row align-center justify-space-between mt-4">
                                 <v-btn color="success" slim flat @click="abortBooking">Abbruch</v-btn>
@@ -60,7 +45,8 @@
                     select-strategy="leaf"
                     v-model:selected="selected_bookings"
                     color="success-lighten-2"
-                    :disabled="booking_action != ''">
+                    :disabled="booking_action != ''"
+                    v-if="booking.bookings.length >= 1">
                     <v-list-item v-for="item in booking.bookings" :key="item.id" :value="item.id">
                         <template v-slot:title>
                             <div class="d-flex flex-row align-center text-body-2 ga-2">
@@ -77,6 +63,7 @@
                         </template>
                     </v-list-item>
                 </v-list>
+                <div class="mt-4 text-body-1 font-weight-bold" v-if="booking.bookings.length == 0">Keine Buchungen vorhanden!</div>
             </div>
         </its-grid-box>
     </v-col>
@@ -123,14 +110,7 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, [
-            'config',
-            'selected_school',
-            'selected_schoolyear',
-            'selected_register',
-            'selected_active_register',
-            'action',
-        ]),
+        ...mapWritableState(useAdminStore, ['config', 'selected_school', 'selected_schoolyear', 'selected_register', 'selected_active_register', 'action']),
         ...mapWritableState(useRegisterStore, []),
         ...mapWritableState(useRegisterDateStore, ['register_dates', 'selected_register_dates']),
         ...mapWritableState(useRegisterDateBookingStore, ['bookings', 'selected_bookings']),

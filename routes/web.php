@@ -37,10 +37,8 @@ Route::middleware(['throttle:global', 'throttle:web', 'web-allowed'])->group(fun
     })->where('any', '.*');
 
     Route::get('homepage/{any?}', function () {
-        return view('spa::homepage');
+        return view('homepage');
     });
 
-    Route::get('/{any?}', function () {
-        return view('spa::homepage');
-    });
+    Route::get('/{any?}',  [\App\Http\Controllers\Homepage\HomepageController::class, 'routing']);
 });

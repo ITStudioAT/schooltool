@@ -1,10 +1,10 @@
 <template>
     <v-container fluid class="h-100 w-100 d-flex flex-column align-center justify-center bg-background">
-        <v-card class="mx-auto w-100" max-width="600" tile flat color="primary">
+        <v-card class="mx-auto w-100" max-width="600" tile flat color="error">
             <!-- ÜBERSCHRIFT -->
             <v-card-title class="d-flex flex-row align-center">
                 <img src="/storage/images/schooltool_white.png" alt="Logo" class="logo" />
-                <div class="ml-2">Impressum</div>
+                <div class="ml-2 text-h6">Fehler</div>
             </v-card-title>
 
             <v-card-subtitle class="d-flex flex-row align-center justify-space-between">
@@ -13,30 +13,27 @@
 
             <!-- IMPRESSUM -->
             <v-card-text class="text-body-1">
-                <div>Diese App wurde im Auftrag mehrerer österreichischer Schulen entwickelt.</div>
-                <div>Sie wird von Dipl.-Ing. Günther Kron bereitgestellt.</div>
+                <div>Es tut uns leid, es ist folgender Fehler aufgetreten:</div>
+                <div class="font-weight-bold mt-2">{{ $route.query.msg }}</div>
             </v-card-text>
             <v-card-text class="text-body-1">
-                <div>
+                <div class="d-flex flex-row">
                     <span class="text-decoration-underline">Kontakt</span>
-                    :
+                    <span>:</span>
                 </div>
-                <div>ITStudio.at</div>
-                <div>Dipl.-Ing. Günther Kron</div>
-                <div>5110 Oberndorf bei Salzburg</div>
-                <div>Austria</div>
+
                 <div>E-Mail: hallo@itstudio.at</div>
             </v-card-text>
 
             <!-- INFOS ZUR APP -->
             <v-card-text class="text-body-1">
-                <div>
+                <div class="d-flex flex-row">
                     <span class="text-decoration-underline">Web-App</span>
-                    : SchoolTool
+                    <span>: Schooltool</span>
                 </div>
-                <div>
-                    <span class="text-decoration-underline">Aktuelle Version</span>
-                    : {{ config?.version }}
+                <div class="d-flex flex-row">
+                    <span class="text-decoration-underline">Version</span>
+                    <span>: {{ config?.version }}</span>
                 </div>
             </v-card-text>
 
@@ -47,7 +44,7 @@
 
             <!-- MENÜ -->
             <v-card-actions class="d-flex flex-column justify-center text-body-1 font-weight-medium">
-                <v-btn tile flat variant="outlined" :to="'/homepage?t=' + Date.now()">Startseite</v-btn>
+                <v-btn tile flat variant="outlined" to="/">Startseite</v-btn>
             </v-card-actions>
         </v-card>
     </v-container>

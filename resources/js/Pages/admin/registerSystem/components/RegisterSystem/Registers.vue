@@ -36,7 +36,7 @@
             <its-grid-box color="primary" :title="data.id ? selected_register.name : 'Neues Anmeldesystem anlegen'" class="h-100 w-100">
                 <v-form ref="form" v-model="is_valid" @submit.prevent="save(data)" class="mb-4">
                     <v-text-field autofocus v-model="data.name" label="Bezeichnung" :rules="[required(), maxLength(255)]" />
-                    <v-textarea v-model="data.description" label="Beschreibung am Bildschirm" :rules="[maxLength(1024)]" />
+                    <v-textarea v-model="data.description_on_website" label="Beschreibung am Bildschirm" :rules="[maxLength(1024)]" />
 
                     <v-text-field v-model="data.max_registrations" label="Max. Anmeldungen gesamt (0=unendlich)" :rules="[required(), min(0)]" />
 

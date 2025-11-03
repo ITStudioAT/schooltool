@@ -1,10 +1,14 @@
 <template>
     <v-app>
-        <!-- Alle Dinge sind geladen -->
-        <v-layout v-if="is_loading == 0" class="bg-background">
+        <v-layout class="bg-background">
             <v-main>
-                <router-view></router-view>
+                <router-view />
                 <ItsNotification />
+
+                <!-- overlay spinner instead of removing the router-view -->
+                <v-overlay :model-value="is_loading > 0" class="align-center justify-center" contained>
+                    <v-progress-circular indeterminate size="70" width="7" />
+                </v-overlay>
             </v-main>
 
             <v-footer app>
@@ -15,11 +19,6 @@
                 </v-row>
             </v-footer>
         </v-layout>
-
-        <!-- Es wird aktuell etwas geladen-->
-        <v-container class="d-flex justify-center align-center" style="height: 100vh" v-if="is_loading > 0">
-            <v-progress-circular indeterminate size="70" width="7"></v-progress-circular>
-        </v-container>
     </v-app>
 </template>
 
@@ -47,7 +46,7 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useHomepageStore, ['config', 'is_loading', 'error', 'school', 'licence']),
+        ...mapWritableState(useHomepageStore, ['config', 'error', 'school', 'licence', 'is_loading']),
     },
 
     methods: {},

@@ -46,7 +46,9 @@ class RegisterDateBookingController extends Controller
         unset($validated['email']);
         if (!$user) abort(404, 'Benutzer wurde nicht gefunden');
 
-        $booking = $service->createBooking($auth_user, $user, $validated);
+
+
+        $booking = $service->createBooking($auth_user->school_id, $auth_user->schoolyear_id, $auth_user->register_id, $user->id, $validated);
 
         return response()->json(new RegisterDateBookingResource($booking), 200);
     }

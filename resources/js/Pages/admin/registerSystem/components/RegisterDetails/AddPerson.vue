@@ -27,11 +27,7 @@
             </v-form>
         </its-grid-box>
 
-        <its-grid-box
-            color="primary"
-            :title="user ? 'Anmelder prüfen' : 'Neuer Anmelder'"
-            class="w-100"
-            v-if="step == 1">
+        <its-grid-box color="primary" :title="user ? 'Anmelder prüfen' : 'Neuer Anmelder'" class="w-100" v-if="step == 1">
             <v-form ref="form" v-model="is_valid" @submit.prevent="updateOrCreateUser(person)" class="mb-4">
                 <v-row dense>
                     <v-col cols="12">
@@ -44,22 +40,13 @@
                             <v-card-text class="text-h6">
                                 {{ person.email }}
                             </v-card-text>
-                            <v-card-text v-if="!user">
-                                Unter der angegeben E-Mail ist kein Benuter gespeichert. Der Benutzer muss neu
-                                registriert werden.
-                            </v-card-text>
-                            <v-card-text v-if="user">
-                                Die E-Mail existiert. Die Daten können geändert/ergänzt werden.
-                            </v-card-text>
+                            <v-card-text v-if="!user">Unter der angegeben E-Mail ist kein Benuter gespeichert. Der Benutzer muss neu registriert werden.</v-card-text>
+                            <v-card-text v-if="user">Die E-Mail existiert. Die Daten können geändert/ergänzt werden.</v-card-text>
                         </v-card>
                     </v-col>
 
                     <v-col cols="12">
-                        <v-text-field
-                            autofocus
-                            v-model="person.last_name"
-                            label="Nachname"
-                            :rules="[required(), maxLength(255)]" />
+                        <v-text-field autofocus v-model="person.last_name" label="Nachname" :rules="[required(), maxLength(255)]" />
                     </v-col>
                     <v-col cols="12">
                         <v-text-field v-model="person.first_name" label="Vorname" :rules="[maxLength(255)]" />
@@ -68,6 +55,7 @@
                         <v-text-field v-model="person.phone" label="Telefon" :rules="[maxLength(255)]" />
                     </v-col>
                 </v-row>
+
                 <v-row>
                     <v-col cols="12" class="d-flex flex-row align-center justify-space-between">
                         <v-btn color="warning" slim flat @click="step--">Zurück</v-btn>
@@ -79,11 +67,7 @@
         </its-grid-box>
 
         <its-grid-box color="primary" title="Person erfassen" class="w-100" v-if="step == 2">
-            <v-form
-                ref="form"
-                v-model="is_valid"
-                @submit.prevent="createBooking(selectedRegisterDate, person)"
-                class="mb-4">
+            <v-form ref="form" v-model="is_valid" @submit.prevent="createBooking(selectedRegisterDate, person)" class="mb-4">
                 <v-row dense>
                     <v-col cols="12">
                         <v-card tile flat color="primary" class="mt-2">
@@ -101,31 +85,27 @@
                     </v-col>
 
                     <v-col cols="12">
-                        <v-text-field
-                            autofocus
-                            v-model="person.student_last_name"
-                            label="Nachname des Kindes"
-                            :rules="[required(), maxLength(255)]" />
+                        <v-text-field autofocus v-model="person.student_last_name" label="Nachname des Kindes" :rules="[required(), maxLength(255)]" />
                     </v-col>
                     <v-col cols="12">
-                        <v-text-field
-                            v-model="person.student_first_name"
-                            label="Vorname des Kindes"
-                            :rules="[maxLength(255)]" />
+                        <v-text-field v-model="person.student_first_name" label="Vorname des Kindes" :rules="[maxLength(255)]" />
                     </v-col>
 
                     <v-col cols="12">
-                        <v-text-field
-                            v-model="person.student_birthdate"
-                            label="Geburtsdatum (JJJJ-MM-TT)"
-                            :rules="[dateOrNull()]" />
+                        <v-text-field v-model="person.student_birthdate" label="Geburtsdatum (JJJJ-MM-TT)" :rules="[dateOrNull()]" />
+                    </v-col>
+
+                    <v-col cols="12">
+                        <div class="d-flex flex-row align-center justify-end">
+                            <v-checkbox label="Verständigung per E-Mail?" v-model="person.is_notify"></v-checkbox>
+                        </div>
                     </v-col>
                 </v-row>
                 <v-row>
                     <v-col cols="12" class="d-flex flex-row align-center justify-space-between">
                         <v-btn color="warning" slim flat @click="step--">Zurück</v-btn>
                         <v-btn color="error" slim flat @click="abort">Abbruch</v-btn>
-                        <v-btn color="success" slim flat type="submit">Speichern</v-btn>
+                        <v-btn color="success" slim flat type="submit">Buchen</v-btn>
                     </v-col>
                 </v-row>
             </v-form>
@@ -171,14 +151,7 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, [
-            'config',
-            'selected_school',
-            'selected_schoolyear',
-            'selected_register',
-            'selected_active_register',
-            'action',
-        ]),
+        ...mapWritableState(useAdminStore, ['config', 'selected_school', 'selected_schoolyear', 'selected_register', 'selected_active_register', 'action']),
         ...mapWritableState(useRegisterStore, []),
         ...mapWritableState(useRegisterDateStore, ['selected_day', 'selected_register_dates', 'register_dates']),
         ...mapWritableState(useRegisterDateBookingStore, ['person', 'user']),

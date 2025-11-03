@@ -34,7 +34,7 @@ class RegisterDateBookingService
 
         // Bookings durchlesen
         foreach ($bookings as $register_date_booking_id) {
-            $booking = RegisterDateBooking::where('school_id', $school_id)->where('schoolyear_id', $schoolyear_id)->where('register_id', $register_id)->where('id', $register_date_booking_id)->first();
+            $booking = RegisterDateBooking::where('user_id', $user->id)->where('school_id', $school_id)->where('schoolyear_id', $schoolyear_id)->where('register_id', $register_id)->where('id', $register_date_booking_id)->first();
 
 
             if ($notify) {
@@ -72,14 +72,40 @@ class RegisterDateBookingService
         return $user;
     }
 
-    public function createBooking($auth_user, $user, $validated): RegisterDateBooking
+    public function createBooking($school_id, $schoolyear_id, $register_id, $user_id, $validated): RegisterDateBooking
     {
-        $validated['school_id'] = $auth_user->school_id;
-        $validated['schoolyear_id'] = $auth_user->schoolyear_id;
-        $validated['register_id'] = $auth_user->register_id;
-        $validated['user_id'] = $user->id;
+        $validated['school_id'] = $school_id;
+        $validated['schoolyear_id'] = $schoolyear_id;
+        $validated['register_id'] = $register_id;
+        $validated['user_id'] = $user_id;
+
+        $is_notify = $validated['is_notify'];
+        unset($validated['is_notify']);
 
         $booking = RegisterDateBooking::create($validated);
+
+        $school = $booking->school;
+
+        if ($is_notify) {
+
+            $mail = [
+                'from_address' => config('schooltool.noreply_email'),
+                'from_name' => $school->long_name,
+                'logo' => asset('/storage/images/' . $school->logo),
+                'subject' => 'Buchung Termin',
+                'markdown' => 'mails.admin.bookRegisterDateBooking'
+            ];
+
+            $mail['register_name'] = $booking->register->name;
+            $mail['student_last_name'] = $booking->student_last_name;
+            $mail['student_first_name'] = $booking->student_first_name;
+            $mail['date'] = $booking->registerDate->date;
+            $mail['from'] = $booking->registerDate->from;
+            $mail['to'] = $booking->registerDate->to;
+            Notification::route('mail', $booking->user->email)->notify(new StandardEmail($mail));
+        }
+
+
         return $booking;
     }
 }
