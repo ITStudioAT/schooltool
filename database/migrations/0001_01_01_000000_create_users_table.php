@@ -11,6 +11,18 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (\Illuminate\Support\Facades\Schema::hasTable('users')) {
+            return;
+        }
+
+        if (\Illuminate\Support\Facades\Schema::hasTable('password_reset_tokens')) {
+            return;
+        }
+
+        if (\Illuminate\Support\Facades\Schema::hasTable('sessions')) {
+            return;
+        }
+
         Schema::create('users', function (Blueprint $table) {
             $table->id();
             $table->string('name');
