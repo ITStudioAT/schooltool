@@ -40,6 +40,7 @@
 
                     <v-text-field v-model="data.max_registrations" label="Max. Anmeldungen gesamt (0=unendlich)" :rules="[required(), min(0)]" />
 
+                    <!--
                     <v-row dense>
                         <v-col cols="6">
                             <v-checkbox v-model="data.show_booked" hide-details label="Gebuchte anzeigen" />
@@ -55,6 +56,7 @@
                         </v-col>
                         <v-col cols="6"></v-col>
                     </v-row>
+                    -->
 
                     <v-card tile flat color="primary">
                         <v-card-text>
@@ -94,6 +96,15 @@
                         </v-col>
                         <v-col cols="6">
                             <v-checkbox v-model="data.must_student_birthdate" hide-details label="Pflichtfeld" v-if="data.show_student_birthdate" />
+                        </v-col>
+                    </v-row>
+
+                    <v-row dense>
+                        <v-col cols="6">
+                            <v-checkbox v-model="data.show_note" hide-details label="Anmerkungen" />
+                        </v-col>
+                        <v-col cols="6">
+                            <v-checkbox v-model="data.must_note" hide-details label="Pflichtfeld" v-if="data.show_note" />
                         </v-col>
                     </v-row>
 

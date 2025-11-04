@@ -4,7 +4,7 @@ import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
 export const useRegisterDateBookingStore = defineStore('AdminRegisterDateBookingStore', {
     state: () => ({
-        person: {},
+        person: { is_notify: false },
         user: null,
         booking: null,
         bookings: [],

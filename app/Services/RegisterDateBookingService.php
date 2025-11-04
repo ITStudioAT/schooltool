@@ -34,14 +34,22 @@ class RegisterDateBookingService
 
         // Bookings durchlesen
         foreach ($bookings as $register_date_booking_id) {
-            $booking = RegisterDateBooking::where('user_id', $user->id)->where('school_id', $school_id)->where('schoolyear_id', $schoolyear_id)->where('register_id', $register_id)->where('id', $register_date_booking_id)->first();
+            $booking = RegisterDateBooking::where('user_id', $user->id)->where('school_id', $school_id)->where('register_id', $register_id)->where('id', $register_date_booking_id)->first();
 
+            /*
+            info('user_id: ' . $user->id);
+            info('school_id: ' . $school_id);
+            info('schoolyear_id: ' . $schoolyear_id);
+            info('register_id: ' . $register_id);
+            info('id: ' . $register_date_booking_id);
+    */
 
             if ($notify) {
                 // Wenn gewünscht Abmelde-E-Mail schicken
                 $mail['register_name'] = $booking->register->name;
                 $mail['student_last_name'] = $booking->student_last_name;
                 $mail['student_first_name'] = $booking->student_first_name;
+                $mail['note'] = $booking->note;
                 $mail['date'] = $booking->registerDate->date;
                 $mail['from'] = $booking->registerDate->from;
                 $mail['to'] = $booking->registerDate->to;
@@ -79,7 +87,7 @@ class RegisterDateBookingService
         $validated['register_id'] = $register_id;
         $validated['user_id'] = $user_id;
 
-        $is_notify = $validated['is_notify'];
+        $is_notify = $validated['is_notify'] ?? false;
         unset($validated['is_notify']);
 
         $booking = RegisterDateBooking::create($validated);
@@ -99,6 +107,7 @@ class RegisterDateBookingService
             $mail['register_name'] = $booking->register->name;
             $mail['student_last_name'] = $booking->student_last_name;
             $mail['student_first_name'] = $booking->student_first_name;
+            $mail['note'] = $booking->note;
             $mail['date'] = $booking->registerDate->date;
             $mail['from'] = $booking->registerDate->from;
             $mail['to'] = $booking->registerDate->to;

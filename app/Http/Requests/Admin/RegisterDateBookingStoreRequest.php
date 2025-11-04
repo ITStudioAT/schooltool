@@ -28,6 +28,7 @@ class RegisterDateBookingStoreRequest extends FormRequest
             'student_last_name' => 'required|max:255',
             'student_first_name' => 'nullable|max:255',
             'student_birthdate' => 'nullable|date',
+            'note' => 'nullable|max:255',
             'is_notify' => 'boolean',
         ];
     }

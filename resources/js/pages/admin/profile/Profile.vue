@@ -7,11 +7,7 @@
             <its-menu-button subtitle="Kennwort ändern" icon="mdi-form-textbox-password" color="secondary"
                 @click="wantToChangePassword" />
                 -->
-            <its-menu-button
-                subtitle="Kennwort ändern"
-                icon="mdi-form-textbox-password"
-                color="secondary"
-                @click="wantToChangePassword" />
+            <its-menu-button subtitle="Kennwort ändern" icon="mdi-form-textbox-password" color="secondary" @click="wantToChangePassword" />
             <!--
             <its-menu-button
                 subtitle="2-FA-Authentifizierung"
@@ -23,34 +19,13 @@
         <v-row class="w-100" no-gutters>
             <v-col cols="12" sm="6" md="4" xl="3">
                 <!-- PROFILDATEN ÄNDERN-->
-                <its-grid-box
-                    color="primary"
-                    title="Benutzerprofil"
-                    :subtitle="config.user.last_name + ' ' + config.user.first_name"
-                    icon="mdi-account"
-                    v-if="step == ''">
+                <its-grid-box color="primary" title="Benutzerprofil" :subtitle="config.user.last_name + ' ' + config.user.first_name" icon="mdi-account" v-if="step == ''">
                     <v-form ref="form" v-model="is_valid" @submit.prevent="save(data)" :disabled="!is_edit">
-                        <v-text-field
-                            autofocus
-                            flat
-                            rounded="0"
-                            v-model="data.last_name"
-                            label="Nachname"
-                            :rules="[required(), maxLength(255)]" />
+                        <v-text-field autofocus flat rounded="0" v-model="data.last_name" label="Nachname" :rules="[required(), maxLength(255)]" />
 
-                        <v-text-field
-                            flat
-                            rounded="0"
-                            v-model="data.first_name"
-                            label="Vorname"
-                            :rules="[required(), maxLength(255)]" />
+                        <v-text-field flat rounded="0" v-model="data.first_name" label="Vorname" :rules="[required(), maxLength(255)]" />
 
-                        <v-text-field
-                            flat
-                            rounded="0"
-                            v-model="data.email"
-                            label="E-Mail"
-                            :rules="[required(), mail(), maxLength(255)]" />
+                        <v-text-field flat rounded="0" v-model="data.email" label="E-Mail" :rules="[required(), mail(), maxLength(255)]" />
 
                         <v-switch
                             true-icon="mdi-check"
@@ -61,22 +36,14 @@
                             :base-color="is_edit ? 'error' : ''"
                             disabled />
 
-                        <v-text-field
-                            flat
-                            rounded="0"
-                            v-model="data.email_2fa"
-                            label="E-Mail 2-Faktoren-Authentifizierung"
-                            v-if="data.is_2fa"
-                            disabled />
+                        <v-text-field flat rounded="0" v-model="data.email_2fa" label="E-Mail 2-Faktoren-Authentifizierung" v-if="data.is_2fa" disabled />
                     </v-form>
                     <div v-if="!is_edit">
                         <v-btn block color="primary" slim flat rounded="0" @click="is_edit = true">Ändern</v-btn>
                     </div>
                     <v-row no-gutters v-if="is_edit">
                         <v-col cols="12" sm="6">
-                            <v-btn block color="success" slim flat rounded="0" @click="save(data)" type="submit">
-                                Speichern
-                            </v-btn>
+                            <v-btn block color="success" slim flat rounded="0" @click="save(data)" type="submit">Speichern</v-btn>
                         </v-col>
                         <v-col cols="12" sm="6">
                             <v-btn block color="error" slim flat rounded="0" @click="abort">Abbruch</v-btn>
@@ -104,16 +71,7 @@
 
                         <v-row no-gutters v-if="step == 'INPUT_CODE'">
                             <v-col cols="12" sm="6">
-                                <v-btn
-                                    block
-                                    color="success"
-                                    slim
-                                    flat
-                                    rounded="0"
-                                    @click="updateWithCode(data)"
-                                    type="submit">
-                                    Bestätigen
-                                </v-btn>
+                                <v-btn block color="success" slim flat rounded="0" @click="updateWithCode(data)" type="submit">Bestätigen</v-btn>
                             </v-col>
                             <v-col cols="12" sm="6">
                                 <v-btn block color="error" slim flat rounded="0" @click="abort">Abbruch</v-btn>
@@ -149,16 +107,7 @@
 
                     <v-row no-gutters v-if="step == 'CHANGE_PASSWORD'">
                         <v-col cols="12" sm="6">
-                            <v-btn
-                                block
-                                color="success"
-                                slim
-                                flat
-                                rounded="0"
-                                @click="savePassword(data)"
-                                type="submit">
-                                Weiter
-                            </v-btn>
+                            <v-btn block color="success" slim flat rounded="0" @click="savePassword(data)" type="submit">Weiter</v-btn>
                         </v-col>
                         <v-col cols="12" sm="6">
                             <v-btn block color="error" slim flat rounded="0" @click="abort">Abbruch</v-btn>
@@ -181,9 +130,7 @@
 
                     <v-row no-gutters v-if="step == 'PASSWORD_ENTER_TOKEN'">
                         <v-col cols="12" sm="6">
-                            <v-btn block color="success" slim flat rounded="0" @click="savePasswordWithCode(data)">
-                                Weiter
-                            </v-btn>
+                            <v-btn block color="success" slim flat rounded="0" @click="savePasswordWithCode(data)">Weiter</v-btn>
                         </v-col>
                         <v-col cols="12" sm="6">
                             <v-btn block color="error" slim flat rounded="0" @click="abort">Abbruch</v-btn>
@@ -218,9 +165,7 @@
 
                     <v-row no-gutters>
                         <v-col cols="12" sm="6">
-                            <v-btn block color="success" slim flat rounded="0" @click="save2Fa(data)" type="submit">
-                                Speichern
-                            </v-btn>
+                            <v-btn block color="success" slim flat rounded="0" @click="save2Fa(data)" type="submit">Speichern</v-btn>
                         </v-col>
                         <v-col cols="12" sm="6">
                             <v-btn block color="error" slim flat rounded="0" @click="abort2Fa">Abbruch</v-btn>
@@ -235,11 +180,7 @@
                     :subtitle="config.user.last_name + ' ' + config.user.first_name"
                     icon="mdi-account"
                     v-if="step == 'TWO_FA_DELETE'">
-                    <v-alert
-                        color="success"
-                        type="info"
-                        text="Die Zwei-Faktoren-Authentifizierung wurde ausgeschaltet!"
-                        class="mb-2" />
+                    <v-alert color="success" type="info" text="Die Zwei-Faktoren-Authentifizierung wurde ausgeschaltet!" class="mb-2" />
                     <v-row no-gutters>
                         <v-col cols="12" sm="6"></v-col>
                         <v-col cols="12" sm="6">
@@ -256,20 +197,14 @@
                     icon="mdi-account"
                     v-if="step == 'TWO_FA_EMAIL_IS_NEW' || step == 'TWO_FA_EMAIL_MUST_BE_VERIFIED'">
                     <v-form ref="form" v-model="is_valid" @submit.prevent="" class="mb-4">
-                        <v-alert
-                            closable
-                            color="success"
-                            type="info"
-                            :text="'Bitte prüfen Sie Ihre E-Mails: ' + data.email_2fa" />
+                        <v-alert closable color="success" type="info" :text="'Bitte prüfen Sie Ihre E-Mails: ' + data.email_2fa" />
                         <div class="text-caption text-text">Bitte den Code laut E-Mail eingeben</div>
                         <v-otp-input autofocus v-model="data.token_2fa" />
                     </v-form>
 
                     <v-row no-gutters>
                         <v-col cols="12" sm="6">
-                            <v-btn block color="success" slim flat rounded="0" @click="save2FaWithCode(data)">
-                                Weiter
-                            </v-btn>
+                            <v-btn block color="success" slim flat rounded="0" @click="save2FaWithCode(data)">Weiter</v-btn>
                         </v-col>
                         <v-col cols="12" sm="6">
                             <v-btn block color="error" slim flat rounded="0" @click="abort2Fa">Abbruch</v-btn>
@@ -284,11 +219,7 @@
                     :subtitle="config.user.last_name + ' ' + config.user.first_name"
                     icon="mdi-account"
                     v-if="step == 'TWO_FA_SET' || step == 'TWO_FA_OK'">
-                    <v-alert
-                        color="success"
-                        type="info"
-                        text="Die Zwei-Faktoren-Authentifizierung wurde eingeschaltet!"
-                        class="mb-2" />
+                    <v-alert color="success" type="info" text="Die Zwei-Faktoren-Authentifizierung wurde eingeschaltet!" class="mb-2" />
                     <v-row no-gutters>
                         <v-col cols="12" sm="6"></v-col>
                         <v-col cols="12" sm="6">
@@ -387,6 +318,7 @@ export default {
             } else {
                 this.data = JSON.parse(JSON.stringify(this.item))
                 await this.adminStore.loadConfig()
+                await this.userStore.show(this.config.user.id)
                 this.abort()
             }
         },

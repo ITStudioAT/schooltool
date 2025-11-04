@@ -30,6 +30,8 @@ class RegisterResource extends JsonResource
             'must_student_first_name' => $this->must_student_first_name ? true : false,
             'show_student_birthdate' => $this->show_student_birthdate ? true : false,
             'must_student_birthdate' => $this->must_student_birthdate ? true : false,
+            'show_note' => $this->show_note ? true : false,
+            'must_note' => $this->must_note ? true : false,
 
             'show_booked' => $this->show_booked ? true : false,
             'show_end_time' => $this->show_end_time ? true : false,

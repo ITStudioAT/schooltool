@@ -10,7 +10,8 @@ Wir informieren sie darüber, dass folgende Anmeldung gelöscht wurde:
 **{{ $data['student_last_name'] . ' ' . $data['student_first_name'] }}**
 
 {{  'Datum: ' .  $data['date'] }}<br>
-{{  'Uhrzeit: ' .  $data['from'] . ' - ' . $data['to'] }}
+{{  'Uhrzeit: ' .  $data['from'] . ' - ' . $data['to'] }}<br>
+{{ $data['note'] ?? '' }}
 
 
 Falls Sie diese E-Mail nicht angefordert haben, brauchen Sie nichts weiter zu tun.

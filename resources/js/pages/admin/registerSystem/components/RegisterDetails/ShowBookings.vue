@@ -60,6 +60,7 @@
                                     {{ '🎂 ' + item.student_birthdate }}
                                 </div>
                             </div>
+                            <div class="text-caption" v-if="item.note">{{ item.note }}</div>
                         </template>
                     </v-list-item>
                 </v-list>

@@ -96,6 +96,10 @@
                     </v-col>
 
                     <v-col cols="12">
+                        <v-text-field v-model="person.note" label="Anmerkungen" :rules="[maxLength(255)]" />
+                    </v-col>
+
+                    <v-col cols="12">
                         <div class="d-flex flex-row align-center justify-end">
                             <v-checkbox label="Verständigung per E-Mail?" v-model="person.is_notify"></v-checkbox>
                         </div>

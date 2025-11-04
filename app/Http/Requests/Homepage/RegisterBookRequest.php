@@ -29,6 +29,7 @@ class RegisterBookRequest extends FormRequest
             'data.student_last_name' => ['required', 'string', 'max:255'],
             'data.student_first_name' => ['nullable', 'string', 'max:255'],
             'data.student_birthdate' => ['nullable', 'date'],
+            'data.note' => ['nullable', 'string', 'max:255'],
         ];
     }
 }

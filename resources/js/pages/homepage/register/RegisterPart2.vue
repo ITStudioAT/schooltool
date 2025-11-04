@@ -73,7 +73,7 @@
                     </div>
                 </v-card-text>
 
-                <!-- ES EXISTIEREN BUCHUGNEN -->
+                <!-- ES EXISTIEREN BUCHUNGEN -->
                 <v-card-text v-if="action == '' && bookings.length > 0">
                     <div class="text-h6">Sie haben gebucht:</div>
                     <div v-for="booking in bookings" :key="booking.id">
@@ -138,7 +138,13 @@
                                 <v-text-field
                                     v-model="data.student_birthdate"
                                     label="Geburtsdatum (JJJJ-MM-TT)"
-                                    :rules="active_register.must_student_birthdate ? [required(), maxLength(255)] : [maxLength(255)]" />
+                                    :rules="active_register.must_student_birthdate ? [required(), date()] : [date()]" />
+                            </v-col>
+                        </v-row>
+
+                        <v-row v-if="active_register.show_note">
+                            <v-col cols="12">
+                                <v-text-field v-model="data.note" label="Anmerkungen" :rules="active_register.must_note ? [required(), maxLength(255)] : [maxLength(255)]" />
                             </v-col>
                         </v-row>
 
@@ -168,6 +174,7 @@
                     <div class="text-body-1">
                         <div>{{ data.student_last_name + ' ' + data.student_first_name }}</div>
                         <div v-if="data.student_birthdate">{{ 'Geburtsdatum: ' + data.student_birthdate }}</div>
+                        <div v-if="data.note">{{ data.note }}</div>
                     </div>
 
                     <div class="d-flex flex-row align-center justify-space-between mt-4">
@@ -237,6 +244,7 @@ export default {
                 student_last_name: input?.student_last_name ?? null,
                 student_first_name: input?.student_first_name ?? null,
                 student_birthdate: input?.student_birthdate ?? null,
+                note: input?.note ?? null,
             }
 
             if (!(await this.registerStore.book(data))) return
