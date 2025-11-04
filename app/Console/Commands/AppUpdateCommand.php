@@ -45,7 +45,13 @@ class AppUpdateCommand extends Command
         // ✅ 4. Frontend build (optional, if Node is available)
         if (file_exists(base_path('package.json'))) {
             $this->info('▶ BUILDING FRONTEND (npm run build)...');
-            $process = new Process(['npm', 'run', 'build'], base_path());
+
+            $bashCommand = 'export NVM_DIR="/home/master/.nvm" && '
+                . '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && '
+                . 'nvm use 22 && '
+                . 'npm run build';
+
+            $process = Process::fromShellCommandline($bashCommand, base_path());
             $process->setTimeout(600); // 10 minutes max
             $process->run(function ($type, $buffer) {
                 echo $buffer;
