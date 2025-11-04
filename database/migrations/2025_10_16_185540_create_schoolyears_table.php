@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('schoolyears', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('school_id')->constrained();
+            $table->foreignId('school_id');
             $table->string('name')->nullable();
             $table->date('from')->nullable();
             $table->date('until')->nullable();

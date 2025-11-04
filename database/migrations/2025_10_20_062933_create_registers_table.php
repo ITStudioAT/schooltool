@@ -13,8 +13,8 @@ return new class extends Migration
     {
         Schema::create('registers', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('school_id')->constrained();
-            $table->foreignId('schoolyear_id')->constrained();
+            $table->foreignId('school_id');
+            $table->foreignId('schoolyear_id');
             $table->string('name')->nullable();
             $table->text('description_on_website')->nullable();
             $table->integer('max_registrations')->default(0);

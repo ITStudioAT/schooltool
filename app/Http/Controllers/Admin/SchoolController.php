@@ -70,6 +70,7 @@ class SchoolController extends Controller
 
         $school = $service->create($validated);
 
+
         return response()->json(new SchoolResource($school), 200);
     }
 
@@ -236,7 +237,7 @@ class SchoolController extends Controller
         }
 
         $validated = $request->validated();
-        $user = $service->addAdmin($auth_user->selectedSchool->id, $validated['data'], $validated['roles']);
+        $user = $service->addAdmin($auth_user->selectedSchool->id, $auth_user->selectedSchoolyear->id, $validated['data'], $validated['roles']);
         return response()->json(new UserResource($user), 200);
     }
 

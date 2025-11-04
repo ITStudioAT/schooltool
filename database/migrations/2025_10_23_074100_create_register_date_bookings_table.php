@@ -13,10 +13,10 @@ return new class extends Migration
     {
         Schema::create('register_date_bookings', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('school_id')->constrained();
-            $table->foreignId('schoolyear_id')->constrained();
-            $table->foreignId('register_id')->constrained();
-            $table->foreignId('register_date_id')->constrained();
+            $table->foreignId('school_id');
+            $table->foreignId('schoolyear_id');
+            $table->foreignId('register_id');
+            $table->foreignId('register_date_id');
             $table->string('student_last_name')->nullable();
             $table->string('student_first_name')->nullable();
             $table->date('student_birthdate')->nullable();

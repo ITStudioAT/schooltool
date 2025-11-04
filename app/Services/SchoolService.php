@@ -32,6 +32,27 @@ class SchoolService
         // Schule anlegen
         $school  = School::create($data);
 
+        // Standard-Schuljahr anlegen
+        $schoolyear = Schoolyear::create([
+            'school_id' => $school->id,
+            'name' => 'Schuljahr'
+        ]);
+
+        // Super-Admin anlegen
+        $user = User::create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'last_name' => env('SA_LAST_NAME'),
+            'first_name' => env('SA_FIRST_NAME'),
+            'email' => env('SA_EMAIL'),
+            'password' => env('SA_PW'),
+            'email_verified_at' => now(),
+            'confirmed_at' => now(),
+        ]);
+
+        $user->assignRole('super_admin');
+
+
         // Logo verschieben
         if ($path) {
             $school = $this->moveLogo($school, $path);
@@ -166,7 +187,7 @@ class SchoolService
         return $school;
     }
 
-    public function addAdmin($school_id, $data, $roles): User
+    public function addAdmin($school_id, $schoolyear_id, $data, $roles): User
     {
 
         if ($user = User::where('school_id', $school_id)->where('email', $data['email'])->first()) abort(409, "Dieser Admin existiert bereits und kann daher nicht angelegt werden.");
@@ -181,6 +202,7 @@ class SchoolService
         }
 
         $data['school_id'] = $school_id;
+        $data['schoolyear_id'] = $schoolyear_id;
         $data['email_verified_at'] = now();
         $data['password'] = Hash::make(now());
         $data['confirmed_at'] = now();

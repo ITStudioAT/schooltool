@@ -13,9 +13,9 @@ return new class extends Migration
     {
         Schema::create('register_dates', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('school_id')->constrained();
-            $table->foreignId('schoolyear_id')->constrained();
-            $table->foreignId('register_id')->constrained();
+            $table->foreignId('school_id');
+            $table->foreignId('schoolyear_id');
+            $table->foreignId('register_id');
             $table->string('supervisor')->nullable();
             $table->date('date');
             $table->time('from');

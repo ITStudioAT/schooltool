@@ -12,6 +12,7 @@
                     {{ config?.school?.long_name }}
                 </div>
             </v-card-subtitle>
+            <v-card-text class="text-body-1 font-weight-bold" v-if="registers.length == 0">Keine Anmeldung aktiv!</v-card-text>
         </v-card>
 
         <!-- Registrierung muss ausgewählt werden, weil es mehr als eine gibt und noch keine active_register vorhanden ist -->

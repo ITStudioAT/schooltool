@@ -263,7 +263,7 @@ class AdminController extends Controller
         if (Auth::check()) {
             Auth::guard('web')->logout();
             session()->invalidate();
-            session()->regenerateToken();
+            // session()->regenerateToken();
         }
 
         return response()->json(['message' => 'Logout successful'], 200);

@@ -27,6 +27,7 @@ class LicenceUpdateRequest extends FormRequest
             'name' => ['required', 'string', 'max:255', 'unique:licences,name,' . $this->id],
             'long_name' => ['nullable', 'string', 'max:255'],
             'is_selectable' => ['boolean'],
+            'price_per_year' => ['nullable', 'integer'],
         ];
     }
 }

@@ -195,6 +195,7 @@ export default {
             } else {
                 if (!(await this.schoolStore.store(data))) return
             }
+            await this.adminStore.loadConfig()
             this.data = {}
             this.action = ''
         },
