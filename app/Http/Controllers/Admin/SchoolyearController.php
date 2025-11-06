@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\SchoolyearIndexRequest;
 use App\Http\Requests\Admin\SchoolyearStoreRequest;
 use App\Http\Requests\Admin\SchoolyearUpdateRequest;
-use App\Http\Requests\admin\SetActiveSchoolyearRequest;
+use App\Http\Requests\Admin\SetActiveSchoolyearRequest;
 use App\Http\Resources\Admin\SchoolyearResource;
 use App\Models\Schoolyear;
 use App\Models\User;
