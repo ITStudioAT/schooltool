@@ -46,24 +46,22 @@ class AppUpdateCommand extends Command
         if (file_exists(base_path('package.json'))) {
             $this->info('▶ BUILDING FRONTEND (npm run build)...');
 
-            // detect OS
-            $isWindows = strtoupper(substr(PHP_OS_FAMILY, 0, 3)) === 'WIN';
+            $isWindows = strtoupper(PHP_OS_FAMILY) === 'Windows';
 
             if ($isWindows) {
-                // on Windows we usually just call npm.cmd directly
-                $bashCommand = 'npm run build';
+                // run through cmd.exe so Windows can find npm.cmd
+                $command = 'cmd /C npm run build';
             } else {
-                // your original Linux/macOS command with nvm
-                $bashCommand = 'export NVM_DIR="$HOME/.nvm" && '
+                $command = 'export NVM_DIR="$HOME/.nvm" && '
                     . '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && '
                     . 'nvm use 22 && '
                     . 'npm run build';
             }
 
-
-            $process = Process::fromShellCommandline($bashCommand, base_path());
-            $process->setTimeout(600); // 10 minutes max
+            $process = Process::fromShellCommandline($command, base_path());
+            $process->setTimeout(600);
             $process->run(function ($type, $buffer) {
+                // stream everything to console
                 echo $buffer;
             });
 
@@ -71,6 +69,8 @@ class AppUpdateCommand extends Command
                 $this->info('✅ Frontend build completed');
             } else {
                 $this->error('❌ Frontend build failed');
+                // print both outputs so we actually see the error on Windows
+                $this->error($process->getOutput());
                 $this->error($process->getErrorOutput());
             }
         } else {
