@@ -46,10 +46,20 @@ class AppUpdateCommand extends Command
         if (file_exists(base_path('package.json'))) {
             $this->info('▶ BUILDING FRONTEND (npm run build)...');
 
-            $bashCommand = 'export NVM_DIR="/home/master/.nvm" && '
-                . '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && '
-                . 'nvm use 22 && '
-                . 'npm run build';
+            // detect OS
+            $isWindows = strtoupper(substr(PHP_OS_FAMILY, 0, 3)) === 'WIN';
+
+            if ($isWindows) {
+                // on Windows we usually just call npm.cmd directly
+                $bashCommand = 'npm run build';
+            } else {
+                // your original Linux/macOS command with nvm
+                $bashCommand = 'export NVM_DIR="$HOME/.nvm" && '
+                    . '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && '
+                    . 'nvm use 22 && '
+                    . 'npm run build';
+            }
+
 
             $process = Process::fromShellCommandline($bashCommand, base_path());
             $process->setTimeout(600); // 10 minutes max

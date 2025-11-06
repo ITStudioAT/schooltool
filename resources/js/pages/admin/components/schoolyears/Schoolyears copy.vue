@@ -1,6 +1,6 @@
 <template>
     <v-row class="w-100">
-        <v-col cols="12">
+        <v-col cols="12" md="4" xl="3">
             <its-grid-box color="primary" title="Schuljahre" class="h-100 w-100" :disabled="action != ''">
                 <div class="d-flex flex-wrap flex-row align-center ga-2">
                     <its-menu-button
@@ -10,20 +10,28 @@
                         v-for="schoolyear in schoolyears" />
                 </div>
 
+                <v-list dense variant="elevated" select-strategy="single-leaf" v-model:selected="selected_schoolyear_array" color="success-lighten-2">
+                    <v-list-item v-for="schoolyear in schoolyears" :key="schoolyear" :value="schoolyear" class="mb-2">
+                        <template v-slot:title>
+                            <div class="d-flex flex-row align-center justify-space-between">
+                                <div>
+                                    <div class="text-body-1">{{ schoolyear.name }}</div>
+                                </div>
+                            </div>
+                        </template>
+                    </v-list-item>
+                </v-list>
+
                 <template v-slot:title v-if="config?.user?.roles.some((role) => ['super_admin', 'admin'].includes(role))">
                     <div class="d-flex flex-row align-center justify-space-between w-100">
                         <div class="mr-4">Schuljahre</div>
                         <div class="d-flex flex-row align-center">
-                            <!--
                             <v-btn flat tile icon="mdi-plus" color="primary" @click="create" />
-                            -->
                             <div class="d-flex flex-row align-center" v-if="selected_schoolyear">
                                 <v-btn flat tile icon="mdi-pencil" color="primary" @click="edit(selected_schoolyear)" />
-                                <!--
                                 <v-btn flat tile icon color="primary" @click="remove()">
                                     <v-icon icon="mdi-delete" color="warning"></v-icon>
                                 </v-btn>
-                                -->
                             </div>
                         </div>
                     </div>
@@ -35,9 +43,9 @@
         <v-col cols="12" sm="6" md="4" xl="3" v-if="action == 'edit_schoolyear' || action == 'create_schoolyear'">
             <its-grid-box color="primary" :title="data.id ? selected_schoolyear.name : 'Neues Schuljahr anlegen'" class="h-100 w-100">
                 <v-form ref="form" v-model="is_valid" @submit.prevent="save(data)" class="mb-4">
-                    <v-text-field v-model="data.name" label="Bezeichnung" :rules="[required(), maxLength(255)]" disabled />
+                    <v-text-field autofocus v-model="data.name" label="Bezeichnung" :rules="[required(), maxLength(255)]" />
 
-                    <v-text-field autofocus v-model="data.from" label="Beginn des Schuljahres (jjjj-mm-tt)" :rules="[dateOrNull()]" />
+                    <v-text-field v-model="data.from" label="Beginn des Schuljahres (jjjj-mm-tt)" :rules="[dateOrNull()]" />
                     <v-text-field v-model="data.until" label="Ende des Schuljahres (jjjj-mm-tt)" :rules="[dateOrNull()]" />
                     <v-text-field v-model="data.sem_2_start" label="Beginn des 2. Semesters  (jjjj-mm-tt)" :rules="[dateOrNull()]" />
 
@@ -63,6 +71,14 @@
             </its-grid-box>
         </v-col>
     </v-row>
+    <v-row>
+        selected_schoolyear:
+        {{ selected_schoolyear }}
+    </v-row>
+    <v-row>
+        selected_schoolyear_array:
+        {{ selected_schoolyear_array }}
+    </v-row>
 </template>
 <script>
 import { useValidationRulesSetup } from '@/helpers/rules'
@@ -84,6 +100,8 @@ export default {
         this.adminStore = useAdminStore()
         this.schoolyearStore = useSchoolyearStore()
         await this.schoolyearStore.index()
+        await this.$nextTick()
+        this.selected_schoolyear_array = [this.selected_schoolyear]
     },
 
     unmounted() {},
@@ -95,12 +113,23 @@ export default {
 
             is_valid: false,
             data: {},
+            selected_schoolyear_array: [],
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'selected_school', 'selected_schoolyear', 'selected_register', 'action']),
         ...mapWritableState(useSchoolyearStore, ['schoolyears']),
+        /*
+        selected_schoolyear: {
+            get() {
+                return this.selected_schoolyear_array?.[0]
+            },
+            set(registerObj) {
+                this.selected_schoolyear_array = registerObj ? [registerObj] : []
+            },
+        },
+        */
     },
 
     methods: {
@@ -114,10 +143,8 @@ export default {
             } else {
                 answer = await this.schoolyearStore.store(data)
             }
-            await this.schoolyearStore.index()
-            this.selected_schoolyear = this.schoolyears.find((year) => year.id === this.selected_schoolyear.id)
-
             if (answer) this.action = ''
+            this.selected_schoolyear = this.schoolyearStore.selected_schoolyear
         },
 
         async destroy(data) {

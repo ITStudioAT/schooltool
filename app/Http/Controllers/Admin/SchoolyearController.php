@@ -27,7 +27,7 @@ class SchoolyearController extends Controller
 
         $school_id = $auth_user->school_id;
 
-        $schoolyears = Schoolyear::where('school_id', $school_id)->orderBy('name', 'DESC')->get();
+        $schoolyears = Schoolyear::where('school_id', $school_id)->orderBy('name')->get();
         return response()->json(SchoolyearResource::collection($schoolyears), 200);
     }
 

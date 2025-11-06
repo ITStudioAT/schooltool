@@ -28,6 +28,7 @@ class RecordsCreateService
         $schools = School::all();
         foreach ($schools as $school) {
             $this->checkOrCreateAdmins($school);
+            $this->checkOrCreateSchoolyears($school);
         }
     }
 
@@ -50,7 +51,26 @@ class RecordsCreateService
     }
 
 
+    private function checkOrCreateSchoolyears($school)
+    {
+        $schoolyears = config('schooltool.schoolyears');
+        foreach ($schoolyears as $schoolyear) {
+            Schoolyear::firstOrCReate(
+                [
+                    'school_id' => $school->id,
+                    'name' =>  $schoolyear['name']
+                ],
+                [
+                    'from' => $schoolyear['from'],
+                    'until' => $schoolyear['to'],
+                    'sem_2_start' => $schoolyear['sem_2_start']
+                ]
+            );
+        }
+    }
+
     private function firstOrCreateSchoolyear($school): Schoolyear
+    // 90
     {
         return Schoolyear::firstOrCReate(
             ['school_id' => $school->id],
@@ -81,12 +101,9 @@ class RecordsCreateService
     private function checkOrCreateAdmins($school): bool
     {
         $EMAIL_SUPER_ADMIN = 'kron@naturwelt.at';
-        $EMAIL_ADMIN = 'hallo@itstudio.at';
         $schoolyear = Schoolyear::where('school_id', $school->id)->first();
 
         $this->checkOrCreateAdmin($school, $schoolyear, $EMAIL_SUPER_ADMIN, 'super_admin');
-        $this->checkOrCreateAdmin($school, $schoolyear, $EMAIL_ADMIN, 'admin');
-
         return true;
     }
 

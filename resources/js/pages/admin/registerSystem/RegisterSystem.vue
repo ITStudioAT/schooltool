@@ -1,7 +1,7 @@
 <template>
     <v-container fluid class="ma-0 w-100 pa-2">
-        <ActiveRegisters />
         <Schoolyears />
+        <ActiveRegisters />
         <Registers v-if="selected_schoolyear" />
     </v-container>
 </template>

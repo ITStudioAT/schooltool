@@ -4,93 +4,39 @@
         <its-grid-box color="primary" title="Termine" class="w-100" v-if="register_dates.length == 0">
             <div class="d-flex flex-row align-cebter justify-space-between">
                 <div>Keine Termine vorhanden!</div>
-                <v-btn
-                    flat
-                    tile
-                    class="mt-1 ml-2"
-                    color="primary"
-                    variant="outlined"
-                    icon="mdi-refresh"
-                    @click="refresh"></v-btn>
+                <v-btn flat tile class="mt-1 ml-2" color="primary" variant="outlined" icon="mdi-refresh" @click="refresh"></v-btn>
             </div>
         </its-grid-box>
         <its-grid-box color="primary" title="Termine" class="w-100" v-if="register_dates.length > 0">
             <v-card tile flat color="transparent">
                 <v-form ref="form" v-model="is_valid" @submit.prevent="search(search_string)" class="mb-4">
                     <div class="d-flex flex-row align-start">
-                        <v-text-field
-                            clearable
-                            autofocus
-                            v-model="search_string"
-                            label="Suche"
-                            :rules="[maxLength(255)]"
-                            @click:clear="refresh" />
-                        <v-btn
-                            flat
-                            tile
-                            class="mt-1 ml-2"
-                            color="primary"
-                            variant="outlined"
-                            icon="mdi-magnify"
-                            tyoe="submit"
-                            @click="search(search_string)" />
+                        <v-text-field clearable autofocus v-model="search_string" label="Suche" :rules="[maxLength(255)]" @click:clear="refresh" />
+                        <v-btn flat tile class="mt-1 ml-2" color="primary" variant="outlined" icon="mdi-magnify" tyoe="submit" @click="search(search_string)" />
                     </div>
                 </v-form>
             </v-card>
             <!-- Tage zur Auswahl -->
-            <v-card
-                tile
-                flat
-                color="transparent"
-                class="d-flex flex-row flex-wrap align-center ga-2"
-                :disabled="action != ''">
-                <its-menu-button
-                    :title="day.date"
-                    :subtitle="day.day"
-                    :color="day == selected_day ? 'success' : 'primary'"
-                    @click="selectDay(day)"
-                    v-for="day in days" />
+            <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2" :disabled="action != ''">
+                <its-menu-button :title="day.date" :subtitle="day.day" :color="day == selected_day ? 'success' : 'primary'" @click="selectDay(day)" v-for="day in days" />
             </v-card>
 
             <!-- Abwählen / Auswählen-->
-            <v-card
-                tile
-                flat
-                color="transparent"
-                class="d-flex flex-row flex-wrap align-center ga-2 mt-2"
-                :disabled="action != ''">
+            <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2 mt-2" :disabled="action != ''">
                 <v-btn color="primary" slim flat tile class="text-caption" @click="selectAllRegisterDates">
                     Alle auswählen [{{ register_dates.length - selected_register_dates.length }}]
                 </v-btn>
-                <v-btn color="primary" slim flat tile class="text-caption" @click="selectNoRegisterDates">
-                    Alle abwählen [{{ selected_register_dates.length }}]
-                </v-btn>
+                <v-btn color="primary" slim flat tile class="text-caption" @click="selectNoRegisterDates">Alle abwählen [{{ selected_register_dates.length }}]</v-btn>
             </v-card>
 
-            <v-list
-                variant="elevated"
-                select-strategy="leaf"
-                v-model:selected="selected_register_dates"
-                color="success-lighten-2"
-                :disabled="action != ''">
+            <v-list variant="elevated" select-strategy="leaf" v-model:selected="selected_register_dates" color="success-lighten-2" :disabled="action != ''">
                 <v-list-item v-for="register_date in register_dates" :key="register_date.id" :value="register_date.id">
                     <template v-slot:title>
-                        <div
-                            class="d-flex flex-row align-center justify-space-between"
-                            :class="registerDateClass(register_date)">
+                        <div class="d-flex flex-row align-center justify-space-between" :class="registerDateClass(register_date)">
                             <div>
                                 <div class="text-body-1">
                                     <v-icon icon="mdi-lock" class="mr-2" v-if="register_date.is_locked" />
-                                    {{
-                                        register_date.from +
-                                        ' - ' +
-                                        register_date.to +
-                                        ' [' +
-                                        register_date.count_bookings +
-                                        '/' +
-                                        register_date.max_registrations +
-                                        ']'
-                                    }}
+                                    {{ register_date.from + ' - ' + register_date.to + ' [' + register_date.count_bookings + '/' + register_date.max_registrations + ']' }}
                                 </div>
                                 <div class="text-caption" v-if="search_string != ''">
                                     {{ register_date.date }}
@@ -110,32 +56,12 @@
     <v-col cols="12" md="4" xl="3" v-if="action == ''">
         <its-grid-box color="primary" title="Menü" class="w-100">
             <div class="d-flex flex-row flex-wrap align-center ga-2">
-                <v-card
-                    tile
-                    flat
-                    color="transparent"
-                    class="d-flex flex-row flex-wrap align-center ga-2"
-                    v-if="selected_register_dates.length == 1">
-                    <its-menu-button
-                        title="Person"
-                        subtitle="anmelden"
-                        icon="mdi-account-plus"
-                        color="primary"
-                        @click="addPerson(selected_register_dates[0])" />
+                <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2" v-if="selected_register_dates.length == 1">
+                    <its-menu-button title="Person" subtitle="anmelden" icon="mdi-account-plus" color="primary" @click="addPerson(selected_register_dates[0])" />
                 </v-card>
 
-                <v-card
-                    tile
-                    flat
-                    color="transparent"
-                    class="d-flex flex-row flex-wrap align-center ga-2"
-                    v-if="selected_register_dates.length >= 1">
-                    <its-menu-button
-                        title="Anmeldungen"
-                        subtitle="anzeigen"
-                        icon="mdi-view-list"
-                        color="primary"
-                        @click="showBookings()" />
+                <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2" v-if="selected_register_dates.length >= 1">
+                    <its-menu-button title="Anmeldungen" subtitle="anzeigen" icon="mdi-view-list" color="primary" @click="showBookings()" />
 
                     <its-menu-button
                         :title="selected_register_dates.length == 1 ? 'Termin' : 'Termine'"
@@ -159,12 +85,7 @@
                         @click="deleteDates" />
                 </v-card>
 
-                <its-menu-button
-                    title="Termine"
-                    subtitle="anlegen"
-                    icon="mdi-calendar-plus"
-                    color="primary"
-                    @click="addDates" />
+                <its-menu-button title="Termine" subtitle="anlegen" icon="mdi-calendar-plus" color="primary" @click="addDates" />
             </div>
         </its-grid-box>
     </v-col>
@@ -174,53 +95,34 @@
         <v-card tile flat color="warning">
             <v-card-text>
                 <its-grid-box color="primary" title="LÖSCHEN" class="h-100 w-100">
-                    <v-form
-                        ref="form"
-                        v-model="is_valid"
-                        @submit.prevent="doDeleteDates(selected_register_dates)"
-                        class="mb-4">
+                    <v-form ref="form" v-model="is_valid" @submit.prevent="doDeleteDates(selected_register_dates)" class="mb-4">
                         <!-- Buchungen vorhanden -->
                         <div v-if="countRegistrations(selected_register_dates) > 0">
                             <div class="text-h6">
                                 <div class="text-h6" v-if="selected_register_dates.length > 1">
                                     Die Termine können nicht gelöscht werden, weil sie
                                     <span v-if="countRegistrations(selected_register_dates) == 1">eine Buchung.</span>
-                                    <span v-if="countRegistrations(selected_register_dates) > 1">
-                                        {{ countRegistrations(selected_register_dates) }} Buchungen
-                                    </span>
+                                    <span v-if="countRegistrations(selected_register_dates) > 1">{{ countRegistrations(selected_register_dates) }} Buchungen</span>
                                     beinhalten.
                                 </div>
 
                                 <div class="text-h6" v-if="selected_register_dates.length == 1">
                                     Der Termin kann nicht gelöscht werden, weil er
                                     <span v-if="countRegistrations(selected_register_dates) == 1">eine Buchung</span>
-                                    <span v-if="countRegistrations(selected_register_dates) > 1">
-                                        {{ countRegistrations(selected_register_dates) }} Buchungen
-                                    </span>
+                                    <span v-if="countRegistrations(selected_register_dates) > 1">{{ countRegistrations(selected_register_dates) }} Buchungen</span>
                                     beinhaltet.
                                 </div>
                             </div>
                         </div>
                         <!-- Buchungen nicht vorhanden -->
                         <div v-if="countRegistrations(selected_register_dates) == 0">
-                            <div class="text-h6" v-if="selected_register_dates.length > 1">
-                                Sollen die markierten Termine wirklich gelöscht werden?
-                            </div>
-                            <div class="text-h6" v-if="selected_register_dates.length == 1">
-                                Soll der markierte Termin wirklich gelöscht werden?
-                            </div>
+                            <div class="text-h6" v-if="selected_register_dates.length > 1">Sollen die markierten Termine wirklich gelöscht werden?</div>
+                            <div class="text-h6" v-if="selected_register_dates.length == 1">Soll der markierte Termin wirklich gelöscht werden?</div>
                         </div>
 
                         <div class="d-flex flex-row align-center justify-space-between mt-4">
                             <v-btn color="success" slim flat @click="abortDelete">Abbruch</v-btn>
-                            <v-btn
-                                color="error"
-                                slim
-                                flat
-                                type="submit"
-                                v-if="countRegistrations(selected_register_dates) == 0">
-                                Löschen
-                            </v-btn>
+                            <v-btn color="error" slim flat type="submit" v-if="countRegistrations(selected_register_dates) == 0">Löschen</v-btn>
                         </div>
                     </v-form>
                 </its-grid-box>
@@ -270,22 +172,9 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, [
-            'config',
-            'selected_school',
-            'selected_schoolyear',
-            'selected_register',
-            'selected_active_register',
-            'action',
-        ]),
+        ...mapWritableState(useAdminStore, ['config', 'selected_school', 'selected_schoolyear', 'selected_register', 'selected_active_register', 'action']),
         ...mapWritableState(useRegisterStore, []),
-        ...mapWritableState(useRegisterDateStore, [
-            'days',
-            'selected_day',
-            'register_dates',
-            'data',
-            'selected_register_dates',
-        ]),
+        ...mapWritableState(useRegisterDateStore, ['days', 'selected_day', 'register_dates', 'data', 'selected_register_dates']),
         ...mapWritableState(useRegisterDateBookingStore, ['person']),
     },
     watch: {
@@ -299,9 +188,7 @@ export default {
 
     methods: {
         countRegistrations(register_dates) {
-            return this.register_dates
-                .filter((date) => register_dates.includes(date.id))
-                .reduce((sum, date) => sum + date.count_bookings, 0)
+            return this.register_dates.filter((date) => register_dates.includes(date.id)).reduce((sum, date) => sum + date.count_bookings, 0)
         },
         abortDelete() {
             this.action = ''
@@ -391,7 +278,7 @@ export default {
 
         addDates() {
             this.data = {
-                date_from: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10),
+                date_from: this.selected_day ? this.selected_day.date : new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10),
                 time_from: '08:00',
                 time_until: '12:00',
                 monday: true,

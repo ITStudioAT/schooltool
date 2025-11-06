@@ -37,14 +37,7 @@ export const useSchoolyearStore = defineStore('AdminSchoolyearStore', {
             adminStore.is_loading++
             try {
                 const response = await axios.put(`/api/admin/schoolyears/${data.id}`, data)
-                this.selected_schoolyear = response.data
-                const index = this.schoolyears.findIndex((s) => s.id === this.selected_schoolyear.id)
 
-                if (index !== -1) {
-                    // Replace the old element with the new one
-                    this.schoolyears.splice(index, 1, this.selected_schoolyear)
-                }
-                this.schoolyears.sort((a, b) => b.name.localeCompare(a.name))
                 return true
             } catch (error) {
                 notification.notify({
