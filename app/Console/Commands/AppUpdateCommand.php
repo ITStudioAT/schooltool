@@ -47,21 +47,20 @@ class AppUpdateCommand extends Command
             $this->info('▶ BUILDING FRONTEND (npm run build)...');
 
             $isWindows = strtoupper(PHP_OS_FAMILY) === 'Windows';
+            $scriptDir = base_path('scripts');
+            $posixScript = $scriptDir . DIRECTORY_SEPARATOR . 'build_frontend.sh';
+            $winScript   = $scriptDir . DIRECTORY_SEPARATOR . 'build_frontend.cmd';
 
             if ($isWindows) {
-                $command = 'cmd /C npm run build';
                 $this->info('▶ Windows detected');
+                $command = 'cmd /C ' . escapeshellarg($winScript);
             } else {
-                // force bash so nvm (a bash function) is available
-                $command = 'bash -lc \'export NVM_DIR="$HOME/.nvm"; '
-                    . '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; '
-                    . 'nvm use 22; '
-                    . 'npm run build\'';
                 $this->info('▶ Non-Windows detected');
+                $command = 'bash -lc ' . escapeshellarg($posixScript);
             }
 
             $process = Process::fromShellCommandline($command, base_path());
-            $process->setTimeout(600);
+            $process->setTimeout(900); // 15 minutes
             $process->run(function ($type, $buffer) {
                 echo $buffer;
             });
@@ -69,13 +68,14 @@ class AppUpdateCommand extends Command
             if ($process->isSuccessful()) {
                 $this->info('✅ Frontend build completed');
             } else {
-                $this->error('❌ Frontend build failed');
+                $this->warn('⚠️ Frontend build failed — see logs above.');
                 $this->error($process->getOutput());
                 $this->error($process->getErrorOutput());
             }
         } else {
             $this->warn('⚠️ No package.json found, skipping frontend build.');
         }
+
 
         $this->line(str_repeat('.', 50));
         $this->info('🏁 Application update finished!');
