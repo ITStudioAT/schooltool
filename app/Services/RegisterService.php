@@ -73,10 +73,6 @@ class RegisterService
         $register = Register::findOrFail($user->register_id);
         $app = 'Anmeldetool';
 
-        info($register);
-
-
-
         // Prüfen der Lizenz
         $register_data = $this->checkLicenceAndSchool($school->short_name, $app);
 

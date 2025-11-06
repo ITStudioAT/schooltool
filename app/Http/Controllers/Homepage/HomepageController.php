@@ -21,11 +21,7 @@ class HomepageController extends Controller
 
         $validated = $request->validated();
 
-        info("ROUTING:");
-
         $answer = $service->checkRoute($validated['school'] ?? null, $validated['licence'] ?? null);
-
-        info($answer);
 
         if ($answer['status'] == 'error') return redirect('/homepage/error?msg=' . $answer['msg']);
 
@@ -109,8 +105,6 @@ class HomepageController extends Controller
 
     public function logout()
     {
-
-        info("logout");
         if (Auth::check()) {
             Auth::guard('web')->logout();
             session()->invalidate();
