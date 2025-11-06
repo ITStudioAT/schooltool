@@ -49,22 +49,20 @@ class AppUpdateCommand extends Command
             $isWindows = strtoupper(PHP_OS_FAMILY) === 'Windows';
 
             if ($isWindows) {
-                // run through cmd.exe so Windows can find npm.cmd
                 $command = 'cmd /C npm run build';
-                $this->info('✅ Windows detected');
+                $this->info('▶ Windows detected');
             } else {
-                $command = 'export NVM_DIR="$HOME/.nvm" && '
-                    . '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && '
-                    . 'nvm use 22 && '
-                    . 'npm run build';
-
-                $this->info('✅ Non-Windows detected');
+                // force bash so nvm (a bash function) is available
+                $command = 'bash -lc \'export NVM_DIR="$HOME/.nvm"; '
+                    . '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; '
+                    . 'nvm use 22; '
+                    . 'npm run build\'';
+                $this->info('▶ Non-Windows detected');
             }
 
             $process = Process::fromShellCommandline($command, base_path());
             $process->setTimeout(600);
             $process->run(function ($type, $buffer) {
-                // stream everything to console
                 echo $buffer;
             });
 
@@ -72,7 +70,6 @@ class AppUpdateCommand extends Command
                 $this->info('✅ Frontend build completed');
             } else {
                 $this->error('❌ Frontend build failed');
-                // print both outputs so we actually see the error on Windows
                 $this->error($process->getOutput());
                 $this->error($process->getErrorOutput());
             }
