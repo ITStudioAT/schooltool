@@ -66,6 +66,7 @@ export default {
     components: { ItsMenuButton, ItsGridBox },
 
     async beforeMount() {
+        await axios.get('/sanctum/csrf-cookie')
         this.adminStore = useAdminStore()
         this.schoolStore = useSchoolStore()
         await this.schoolStore.loadSchoolInfos(this.config?.selected_school?.id)

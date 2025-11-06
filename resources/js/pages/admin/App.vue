@@ -11,18 +11,8 @@
             </v-toolbar>
             <v-list>
                 <template v-for="(item, i) in config.menu" :key="i">
-                    <v-list-item
-                        :exact="false"
-                        :title="item.title"
-                        :prepend-icon="item.icon"
-                        v-if="item.to"
-                        :to="item.to" />
-                    <v-list-item
-                        :exact="false"
-                        v-if="item.click"
-                        :title="item.title"
-                        :prepend-icon="item.icon"
-                        @click="() => this[item.click]()" />
+                    <v-list-item :exact="false" :title="item.title" :prepend-icon="item.icon" v-if="item.to" :to="item.to" />
+                    <v-list-item :exact="false" v-if="item.click" :title="item.title" :prepend-icon="item.icon" @click="callItemClick(item)" />
                 </template>
             </v-list>
         </v-navigation-drawer>
@@ -30,12 +20,7 @@
         <v-app-bar flat color="primary" v-if="config && config.is_auth">
             <template v-slot:prepend>
                 <v-btn icon="mdi-menu-open" v-if="!show_navigation_drawer" @click="show_navigation_drawer = true" />
-                <img
-                    :src="'/storage/images/' + config?.selected_school?.logo + '?t=' + Date.now()"
-                    alt="Logo"
-                    height="60px"
-                    class="pl-2"
-                    v-if="config?.selected_school?.logo" />
+                <img :src="'/storage/images/' + config?.selected_school?.logo + '?t=' + Date.now()" alt="Logo" height="60px" class="pl-2" v-if="config?.selected_school?.logo" />
             </template>
             <template v-slot:title>{{ config?.selected_school?.long_name }}</template>
         </v-app-bar>
@@ -52,10 +37,7 @@
         </v-footer>
 
         <!-- Es wird aktuell etwas geladen-->
-        <div
-            class="d-flex justify-center align-center"
-            style="position: fixed; inset: 0; background-color: rgba(255, 255, 255, 0.8); z-index: 9999"
-            v-if="is_loading > 0">
+        <div class="d-flex justify-center align-center" style="position: fixed; inset: 0; background-color: rgba(255, 255, 255, 0.8); z-index: 9999" v-if="is_loading > 0">
             <v-progress-circular indeterminate size="70" width="7" />
         </div>
     </v-app>
@@ -97,6 +79,12 @@ export default {
             await this.adminStore.executeLogout()
             await this.adminStore.loadConfig()
             this.$router.replace('/admin/login')
+        },
+
+        callItemClick(item) {
+            if (item.click && typeof this[item.click] === 'function') {
+                this[item.click]()
+            }
         },
     },
 }
