@@ -51,11 +51,14 @@ class AppUpdateCommand extends Command
             if ($isWindows) {
                 // run through cmd.exe so Windows can find npm.cmd
                 $command = 'cmd /C npm run build';
+                $this->info('✅ Windows detected');
             } else {
                 $command = 'export NVM_DIR="$HOME/.nvm" && '
                     . '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && '
                     . 'nvm use 22 && '
                     . 'npm run build';
+
+                $this->info('✅ Non-Windows detected');
             }
 
             $process = Process::fromShellCommandline($command, base_path());
