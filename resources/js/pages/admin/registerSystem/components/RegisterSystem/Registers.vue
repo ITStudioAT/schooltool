@@ -144,8 +144,6 @@
             </its-grid-box>
         </v-col>
     </v-row>
-    <v-row>selected_register: {{ selected_register }}</v-row>
-    <v-row class="mt-5">selected_register_array: {{ selected_register_array }}</v-row>
 </template>
 <script>
 import { useValidationRulesSetup } from '@/helpers/rules'

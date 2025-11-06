@@ -46,7 +46,7 @@ class AppUpdateCommand extends Command
         if (file_exists(base_path('package.json'))) {
             $this->info('▶ BUILDING FRONTEND (npm run build)...');
 
-            $isWindows = strtoupper(PHP_OS_FAMILY) === 'Windows';
+            $isWindows = PHP_OS_FAMILY === 'Windows';
             $scriptDir = base_path('scripts');
             $posixScript = $scriptDir . DIRECTORY_SEPARATOR . 'build_frontend.sh';
             $winScript   = $scriptDir . DIRECTORY_SEPARATOR . 'build_frontend.cmd';
