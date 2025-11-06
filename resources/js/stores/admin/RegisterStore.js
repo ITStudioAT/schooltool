@@ -175,11 +175,6 @@ export const useRegisterStore = defineStore('AdminRegisterStore', {
                     timeout: 3000,
                 })
 
-                const found = this.registers.find((r) => r.id === register.id)
-                if (found) {
-                    found.is_active = !found.is_active
-                }
-
                 return true
             } catch (error) {
                 notification.notify({
