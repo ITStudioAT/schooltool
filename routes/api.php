@@ -61,8 +61,6 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/homepage/register/delete_booking',  [\App\Http\Controllers\Homepage\RegisterController::class, 'deleteBooking']);
 
 
-
-
     /* SANCTUM */
     Route::middleware(['auth:sanctum'])->group(function () {
         // navigation, menus

@@ -144,6 +144,8 @@ class RegisterController extends Controller
 
         // Prüfen, ob es den User wirklich gibt, wenn nein, kann etwas nicht stimmen
         if (!$user = User::where('id', $data['user_id'])->where('school_id', $data['school_id'])->where('email', $data['email'])->first()) abort(422, 'Ungültige Anmeldedaten');
+        $user->register_id = $data['register_id'];
+        $user->save();
 
         if (!$registerService->checkToken($user, $data)) abort(401, 'Das Token ist falsch oder abgelaufen');
 
@@ -191,4 +193,7 @@ class RegisterController extends Controller
 
         $service->deleteBookings($auth_user, [$validated['booking_id']], true);
     }
+
+
+    //setActiveRegister
 }

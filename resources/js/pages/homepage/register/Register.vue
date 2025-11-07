@@ -118,6 +118,10 @@
                 </v-form>
             </v-card-text>
         </v-card>
+        <v-card>
+            DATA:
+            {{ data }}
+        </v-card>
     </v-container>
 </template>
 <script>
@@ -192,7 +196,7 @@ export default {
             }
         },
 
-        selectRegister() {
+        async selectRegister() {
             this.active_register = this.registers.find((r) => r.id === this.selected_register_id)
             this.data.step = 'EMAIL'
         },
