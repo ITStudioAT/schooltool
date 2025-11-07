@@ -9,7 +9,7 @@
                             <div class="d-flex flex-row align-center justify-space-between">
                                 <div>
                                     <div class="text-body-1">{{ register.name }}</div>
-                                    <div class="text-caption">{{ register.scholyear_name }}</div>
+                                    <div class="text-caption">{{ register.schoolyear_name }}</div>
                                 </div>
                             </div>
                         </template>

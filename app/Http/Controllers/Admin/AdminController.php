@@ -212,8 +212,6 @@ class AdminController extends Controller
         $adminService = new AdminService();
         $validated = $request->validated();
 
-
-
         $data = $adminService->checkEmail($validated['data']);
 
         if ($data['users_count'] == 0) {
