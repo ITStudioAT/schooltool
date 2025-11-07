@@ -1,7 +1,7 @@
 <template>
     <v-row class="w-100">
         <v-col cols="12" md="4" xl="3">
-            <its-grid-box color="primary" :title="selected_schoolyear?.name" class="h-100 w-100" :disabled="action != ''">
+            <its-grid-box color="primary" :subtitle="selected_schoolyear?.name" class="h-100 w-100" :disabled="action != ''">
                 <div class="d-flex flex-wrap flex-row align-center ga-2">
                     <!--
                     <its-menu-button
@@ -26,7 +26,7 @@
                 </v-list>
                 <template v-slot:title v-if="config?.user?.roles.some((role) => ['super_admin', 'admin', 'register_admin'].includes(role))">
                     <div class="d-flex flex-row align-center justify-space-between w-100">
-                        <div class="mr-4">{{ selected_schoolyear?.name }}</div>
+                        <div class="mr-4">Anmeldetools</div>
                         <div class="d-flex flex-row align-center">
                             <v-btn flat tile icon="mdi-plus" color="primary" @click="create" />
                             <div class="d-flex flex-row align-center" v-if="selected_register">
@@ -53,24 +53,6 @@
                     <v-textarea v-model="data.description_on_website" label="Beschreibung am Bildschirm" :rules="[maxLength(1024)]" />
 
                     <v-text-field v-model="data.max_registrations" label="Max. Anmeldungen gesamt (0=unendlich)" :rules="[required(), min(0)]" />
-
-                    <!--
-                    <v-row dense>
-                        <v-col cols="6">
-                            <v-checkbox v-model="data.show_booked" hide-details label="Gebuchte anzeigen" />
-                        </v-col>
-                        <v-col cols="6">
-                            <v-checkbox v-model="data.show_end_time" hide-details label="Endzeite anzeigen" />
-                        </v-col>
-                    </v-row>
-
-                    <v-row dense>
-                        <v-col cols="6">
-                            <v-checkbox v-model="data.show_supervisor" hide-details label="Berater anzeigen" />
-                        </v-col>
-                        <v-col cols="6"></v-col>
-                    </v-row>
-                    -->
 
                     <v-card tile flat color="primary">
                         <v-card-text>

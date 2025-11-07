@@ -3,8 +3,7 @@
         <v-navigation-drawer v-model="show_navigation_drawer" color="primary" v-if="config && config.is_auth">
             <v-toolbar color="appbar">
                 <v-toolbar-title>
-                    <div class="text-body-2">Admin</div>
-                    <div class="text-caption text-text">{{ config.version }}</div>
+                    <img :src="'/storage/images/' + config?.logo" alt="Logo" class="logo" height="24" />
                 </v-toolbar-title>
                 <v-spacer></v-spacer>
                 <v-btn icon="mdi-menu-close" @click="show_navigation_drawer = false" v-if="show_navigation_drawer" />
@@ -82,9 +81,10 @@ export default {
     methods: {
         async logout() {
             // whatever your backend sequence is
-            this.$router.push('/admin')
+            // this.$router.push('/admin')
             await this.adminStore.executeLogout()
-            await this.adminStore.loadConfig()
+            //await this.adminStore.loadConfig()
+            await this.$nextTick()
             this.$router.replace('/admin/login')
         },
 

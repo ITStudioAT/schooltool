@@ -12,6 +12,7 @@ use App\Http\Resources\Admin\RegisterResource;
 use App\Models\Register;
 use App\Services\RegisterService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class RegisterController extends Controller
 {
@@ -28,7 +29,13 @@ class RegisterController extends Controller
         $school_id = $auth_user->school_id;
         $schoolyear_id = $auth_user->schoolyear_id;
 
-        $registers = Register::where('school_id', $school_id)->where('schoolyear_id', $schoolyear_id)->orderBy('name')->get();
+        $registers = Register::withCount([
+            'bookings',
+            'dates',
+            'dates as different_dates_count' => function ($q) {
+                $q->select(DB::raw('COUNT(DISTINCT date)'));
+            },
+        ])->where('school_id', $school_id)->where('schoolyear_id', $schoolyear_id)->orderBy('name')->get();
 
         return response()->json(RegisterResource::collection($registers), 200);
     }
@@ -48,8 +55,24 @@ class RegisterController extends Controller
             ->orderBy('schoolyears.name', 'desc')
             ->orderBy('registers.name')
             ->with(['schoolyear:id,name'])
+            ->withCount([
+                'bookings',
+                'dates',
+                'dates as different_dates_count' => function ($q) {
+                    $q->select(DB::raw('COUNT(DISTINCT date)'));
+                },
+            ])
             ->get();
 
+        /*
+
+         'selected_register' =>  $user && $user->selectedRegister ? new RegisterResource($user->selectedRegister->loadCount([
+                'bookings',
+                'dates',
+                'dates as different_dates_count' => function ($q) {
+                    $q->select(DB::raw('COUNT(DISTINCT date)'));
+                },
+            */
 
         return response()->json(RegisterResource::collection($registers), 200);
     }
@@ -118,6 +141,14 @@ class RegisterController extends Controller
 
         $validated = $request->validated();
         $register = $registerService->setToUser($auth_user, $validated['register_id']);
+        $register = Register::withCount([
+            'bookings',
+            'dates',
+            'dates as different_dates_count' => function ($q) {
+                $q->select(DB::raw('COUNT(DISTINCT date)'));
+            },
+        ])
+            ->findOrFail($register->id);
 
         return response()->json(new RegisterResource($register), 200);
     }

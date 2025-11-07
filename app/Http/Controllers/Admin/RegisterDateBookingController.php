@@ -116,7 +116,6 @@ class RegisterDateBookingController extends Controller
 
         $validated = $request->validated();
 
-
         $service->deleteBookings($auth_user, $validated['bookings'], $validated['notify']);
     }
 }

@@ -2,7 +2,13 @@
     <v-container fluid class="ma-0 w-100 pa-2">
         <v-row class="w-100" no-gutters v-if="config">
             <v-col cols="12" md="6" lg="4" xl="3">
-                <its-grid-box color="primary" title="🟢 System läuft ordnungsgemäß" class="h-100 w-100">
+                <its-grid-box color="primary" class="h-100 w-100">
+                    <template #title>
+                        <div class="d-flex flex-row align-center justify-space-between w-100">
+                            <div>🟢 System läuft ordnungsgemäß</div>
+                            <div class="text-caption">Version: {{ config?.version }}</div>
+                        </div>
+                    </template>
                     <v-card tile flat color="primary">
                         <v-card-title>Angemeldeter Benutzer</v-card-title>
                         <v-card-text class="text-body-1">
@@ -69,7 +75,7 @@ export default {
         await axios.get('/sanctum/csrf-cookie')
         this.adminStore = useAdminStore()
         this.schoolStore = useSchoolStore()
-        await this.schoolStore.loadSchoolInfos(this.config?.selected_school?.id)
+        if (this.config?.is_auth) await this.schoolStore.loadSchoolInfos(this.config?.selected_school?.id)
     },
 
     unmounted() {},

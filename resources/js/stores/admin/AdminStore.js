@@ -247,6 +247,12 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             try {
                 this.api_response = await axios.post('/api/admin/execute_logout', {})
                 await axios.get('/sanctum/csrf-cookie')
+
+                this.config = this.api_response.data
+                this.selected_school = this.config?.selected_school
+                this.selected_schoolyear = this.config?.selected_schoolyear
+                this.selected_register = this.config?.selected_register
+
                 return true
             } catch (error) {
                 notification.notify({

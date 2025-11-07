@@ -147,12 +147,14 @@ export default {
             await this.$refs.form.validate()
             if (!this.is_valid) return
             var answer = false
-            answer = await this.registerDateStore.createDates(data)
+            if (!(await this.registerDateStore.createDates(data))) return
+            await this.registerStore.index()
+            await this.registerDateStore.loadDays()
             if (this.selected_day) {
                 await this.registerDateStore.loadRegisterDates(this.selected_day.date)
             }
 
-            if (answer) this.action = ''
+            this.action = ''
         },
     },
 }

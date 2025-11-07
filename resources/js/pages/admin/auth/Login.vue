@@ -13,34 +13,21 @@
                     <div class="text-caption text-text">Bitte die E-Mail-Adresse eingeben</div>
                     <v-text-field autofocus v-model="data.email" label="Email" :rules="[required(), mail()]" />
                 </v-form>
-                <v-btn block color="success" slim flat rounded="0" type="submit" @click="loginStepEmail()">
-                    Weiter
-                </v-btn>
+                <v-btn block color="success" slim flat rounded="0" type="submit" @click="loginStepEmail()">Weiter</v-btn>
                 <div class="text-caption text-center font-weight-light">oder</div>
 
-                <v-btn block color="primary" slim flat rounded="0" variant="text" @click="passwordUnknown">
-                    Kennwort unbekannt
-                </v-btn>
+                <v-btn block color="primary" slim flat rounded="0" variant="text" @click="passwordUnknown">Kennwort unbekannt</v-btn>
                 <div v-if="config.register_admin_allowed">
                     <div class="text-caption text-center font-weight-light">oder</div>
-                    <v-btn block color="success" slim flat rounded="0" variant="text" @click="register">
-                        Neu registrieren
-                    </v-btn>
+                    <v-btn block color="success" slim flat rounded="0" variant="text" @click="register">Neu registrieren</v-btn>
                 </div>
             </v-card-text>
 
             <!-- Login STEP LOGIN_SELECT_SCHOOL -->
             <v-card-text v-if="step == 'LOGIN_SELECT_SCHOOL'">
                 <div class="text-h6">Bitte die Schule auswählen</div>
-                <v-autocomplete
-                    v-model="selected_school_id"
-                    :items="data.schools"
-                    item-title="long_name"
-                    item-value="id"
-                    label="Auswahl Schule" />
-                <v-btn block color="success" slim flat rounded="0" @click="loginStepSchool()" v-if="school">
-                    Weiter
-                </v-btn>
+                <v-autocomplete v-model="selected_school_id" :items="data.schools" item-title="long_name" item-value="id" label="Auswahl Schule" />
+                <v-btn block color="success" slim flat rounded="0" @click="loginStepSchool()" v-if="school">Weiter</v-btn>
                 <div class="text-caption text-center font-weight-light">oder</div>
                 <v-btn block color="warning" slim flat rounded="0" variant="text" @click="restartLogin">Zurück</v-btn>
             </v-card-text>
@@ -100,8 +87,8 @@ export default {
     async beforeMount() {
         await axios.get('/sanctum/csrf-cookie')
         this.adminStore = useAdminStore()
-        await this.adminStore.executeLogout()
-        await this.adminStore.loadConfig()
+        if (!this.config?.is_auth) await this.adminStore.executeLogout()
+        // await this.adminStore.loadConfig()
         this.restartLogin()
     },
 
@@ -115,16 +102,7 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, [
-            'config',
-            'is_loading',
-            'error',
-            'api_response',
-            'load_config',
-            'school',
-            'selected_school_id',
-            'data',
-        ]),
+        ...mapWritableState(useAdminStore, ['config', 'is_loading', 'error', 'api_response', 'load_config', 'school', 'selected_school_id', 'data']),
     },
 
     watch: {

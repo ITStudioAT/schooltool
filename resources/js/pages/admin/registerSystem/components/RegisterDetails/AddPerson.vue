@@ -157,7 +157,7 @@ export default {
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'selected_school', 'selected_schoolyear', 'selected_register', 'selected_active_register', 'action']),
         ...mapWritableState(useRegisterStore, []),
-        ...mapWritableState(useRegisterDateStore, ['selected_day', 'selected_register_dates', 'register_dates']),
+        ...mapWritableState(useRegisterDateStore, ['selected_day', 'selected_register_dates', 'register_dates', 'days']),
         ...mapWritableState(useRegisterDateBookingStore, ['person', 'user']),
 
         selectedRegisterDate() {
@@ -219,6 +219,9 @@ export default {
 
             answer = await this.registerDateBookingStore.createBooking(person)
             if (!answer) return
+
+            await this.registerDateStore.loadDays()
+            this.selected_day = this.days.find((item) => item.id === this.selected_day.id)
 
             const index = this.register_dates.findIndex((d) => d.id === register_date.id)
             this.register_dates[index].count_bookings++

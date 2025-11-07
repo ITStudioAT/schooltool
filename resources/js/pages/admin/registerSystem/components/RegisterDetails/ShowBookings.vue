@@ -113,7 +113,7 @@ export default {
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'selected_school', 'selected_schoolyear', 'selected_register', 'selected_active_register', 'action']),
         ...mapWritableState(useRegisterStore, []),
-        ...mapWritableState(useRegisterDateStore, ['register_dates', 'selected_register_dates']),
+        ...mapWritableState(useRegisterDateStore, ['register_dates', 'selected_register_dates', 'days', 'selected_day']),
         ...mapWritableState(useRegisterDateBookingStore, ['bookings', 'selected_bookings']),
     },
     watch: {},
@@ -163,6 +163,9 @@ export default {
                     count_bookings: Math.max(0, date.count_bookings - removedCount),
                 }
             })
+
+            await this.registerDateStore.loadDays()
+            this.selected_day = this.days.find((item) => item.id === this.selected_day.id)
 
             this.booking_action = ''
         },

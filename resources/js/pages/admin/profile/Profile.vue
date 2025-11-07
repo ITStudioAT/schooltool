@@ -1,5 +1,5 @@
 <template>
-    <v-container fluid class="ma-0 w-100 pa-2">
+    <v-container fluid class="ma-0 w-100 pa-2" v-if="config && config.user">
         <!-- Menüleiste oben -->
         <v-row class="d-flex flex-row ga-2 mb-2 mt-0 w-100" no-gutters>
             <!--

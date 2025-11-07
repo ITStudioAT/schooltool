@@ -18,7 +18,12 @@
             </v-card>
             <!-- Tage zur Auswahl -->
             <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2" :disabled="action != ''">
-                <its-menu-button :title="day.date" :subtitle="day.day" :color="day == selected_day ? 'success' : 'primary'" @click="selectDay(day)" v-for="day in days" />
+                <its-menu-button
+                    :title="day.date"
+                    :subtitle="day.day + ' (' + day.bookings_count + ')'"
+                    :color="day == selected_day ? 'success' : 'primary'"
+                    @click="selectDay(day)"
+                    v-for="day in days" />
             </v-card>
 
             <!-- Abwählen / Auswählen-->
@@ -55,14 +60,26 @@
     <!-- MENÜ -->
     <v-col cols="12" md="4" xl="3" v-if="action == ''">
         <its-grid-box color="primary" title="Menü" class="w-100">
-            <div class="d-flex flex-row flex-wrap align-center ga-2">
-                <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2" v-if="selected_register_dates.length == 1">
-                    <its-menu-button title="Person" subtitle="anmelden" icon="mdi-account-plus" color="primary" @click="addPerson(selected_register_dates[0])" />
+            <div class="d-flex flex-column flex-wrap ga-2">
+                <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2" v-if="selected_register_dates.length >= 1">
+                    <its-menu-button
+                        title="Person"
+                        subtitle="anmelden"
+                        icon="mdi-account-plus"
+                        color="primary"
+                        @click="addPerson(selected_register_dates[0])"
+                        v-if="selected_register_dates.length == 1" />
+
+                    <its-menu-button
+                        title="Anmeldungen"
+                        subtitle="anzeigen"
+                        icon="mdi-view-list"
+                        color="primary"
+                        @click="showBookings()"
+                        v-if="selected_register_dates.length >= 1" />
                 </v-card>
 
                 <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2" v-if="selected_register_dates.length >= 1">
-                    <its-menu-button title="Anmeldungen" subtitle="anzeigen" icon="mdi-view-list" color="primary" @click="showBookings()" />
-
                     <its-menu-button
                         :title="selected_register_dates.length == 1 ? 'Termin' : 'Termine'"
                         subtitle="sperren"
@@ -76,7 +93,8 @@
                         icon="mdi-lock-open"
                         color="success-lighten-2"
                         @click="unlockDates(selected_register_dates)" />
-
+                </v-card>
+                <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2" v-if="selected_register_dates.length >= 1">
                     <its-menu-button
                         :title="selected_register_dates.length == 1 ? 'Termin' : 'Termine'"
                         subtitle="löschen"
@@ -84,8 +102,9 @@
                         color="warning"
                         @click="deleteDates" />
                 </v-card>
-
-                <its-menu-button title="Termine" subtitle="anlegen" icon="mdi-calendar-plus" color="primary" @click="addDates" />
+                <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2">
+                    <its-menu-button title="Termine" subtitle="anlegen" icon="mdi-calendar-plus" color="primary" @click="addDates" />
+                </v-card>
             </div>
         </its-grid-box>
     </v-col>
@@ -252,6 +271,8 @@ export default {
 
         async doDeleteDates(register_dates) {
             if (!(await this.registerDateStore.deleteRegisterDates(register_dates))) return
+            await this.registerDateStore.loadDays()
+            this.selected_day = this.days.find((item) => item.id === this.selected_day.id)
             this.refresh()
             this.action = ''
         },

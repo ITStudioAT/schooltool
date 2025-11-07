@@ -36,14 +36,21 @@ use Illuminate\Support\Facades\DB;
 class AdminController extends Controller
 {
     use HasRoleTrait;
-    public function config(Request $request, LicenceService $licenceService)
+    public function config(Request $request)
+    {
+        // Laden aller auswählbaren Schulen
+        // $schools = School::selectables()->get();
+
+        // $viaRemember = Auth::viaRemember();
+
+        $data = $this->getConfigData();
+
+        return response()->json($data, 200);
+    }
+
+    private function getConfigData()
     {
         $navigationService = new AdminNavigationService();
-
-        // Laden aller auswählbaren Schulen
-        $schools = School::selectables()->get();
-
-        $viaRemember = Auth::viaRemember();
 
         $user = Auth::check() ? Auth::user() : null;
 
@@ -58,12 +65,18 @@ class AdminController extends Controller
             'user' => $user ? new UserWithRoleResource($user) : null,
             'selected_school' =>  $user && $user->selectedSchool ? new SchoolResource($user->selectedSchool) : null,
             'selected_schoolyear' =>  $user && $user->selectedSchoolyear ? new SchoolyearResource($user->selectedSchoolyear) : null,
-            'selected_register' =>  $user && $user->selectedRegister ? new RegisterResource($user->selectedRegister) : null,
+            'selected_register' =>  $user && $user->selectedRegister ? new RegisterResource($user->selectedRegister->loadCount([
+                'bookings',
+                'dates',
+                'dates as different_dates_count' => function ($q) {
+                    $q->select(DB::raw('COUNT(DISTINCT date)'));
+                },
+            ])) : null,
             'menu' => $user ? $navigationService->dashboardMenu() : [],
             'roles' => $user ? $user->getRoleNames() : [],
         ];
 
-        return response()->json($data, 200);
+        return $data;
     }
 
     public function registerStep1(RegisterStep1Request $request)
@@ -264,7 +277,9 @@ class AdminController extends Controller
             // session()->regenerateToken();
         }
 
-        return response()->json(['message' => 'Logout successful'], 200);
+        $data = $this->getConfigData();
+
+        return response()->json($data, 200);
     }
 
     public function loadRoles(Request $request)

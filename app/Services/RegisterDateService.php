@@ -15,17 +15,22 @@ class RegisterDateService
     {
         Carbon::setLocale(app()->getLocale()); // or explicitly 'de', 'fr', etc.
 
-        return  RegisterDate::where('register_id', $register_id)
+        $dates = RegisterDate::where('register_id', $register_id)
             ->whereNotNull('date')
-            ->distinct()
+            ->withCount('bookings')   // gives each row a bookings_count
             ->orderBy('date')
-            ->pluck('date')
-            ->map(fn($date) => [
-                'date' => $date,
-                'day'  => Carbon::parse($date)->locale(app()->getLocale())->dayName,
-            ])
+            ->get()
+            ->groupBy('date')         // group all rows that share the same date
+            ->map(function ($group) {
+                $first = $group->first();                 // keep one row as base
+                $first->bookings_count = $group->sum('bookings_count');  // sum bookings of that day
+                $first->day = Carbon::parse($first->date)
+                    ->locale(app()->getLocale())->dayName;
+                return $first;
+            })
             ->values()
             ->all();
+        return $dates;
     }
 
     public function createDates($school_id, $schoolyear_id, $register_id, array $data): bool

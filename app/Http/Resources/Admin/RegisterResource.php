@@ -21,7 +21,9 @@ class RegisterResource extends JsonResource
             'name' => $this->name,
             'description_on_website' => $this->description_on_website,
             'max_registrations' => $this->max_registrations,
-
+            'bookings_count' => $this->bookings_count,
+            'dates_count' => $this->dates_count,
+            'different_dates_count' => $this->different_dates_count,
             'show_phone' => $this->show_phone ? true : false,
             'must_phone' => $this->must_phone ? true : false,
             'show_student_last_name' => $this->show_student_last_name ? true : false,

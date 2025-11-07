@@ -34,8 +34,7 @@ class RegisterDateBookingService
 
         // Bookings durchlesen
         foreach ($bookings as $register_date_booking_id) {
-            $booking = RegisterDateBooking::where('user_id', $user->id)->where('school_id', $school_id)->where('register_id', $register_id)->where('id', $register_date_booking_id)->first();
-
+            $booking = RegisterDateBooking::where('school_id', $school_id)->where('register_id', $register_id)->where('id', $register_date_booking_id)->first();
 
             if ($notify) {
                 // Wenn gewünscht Abmelde-E-Mail schicken
