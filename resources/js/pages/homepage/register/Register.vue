@@ -1,5 +1,12 @@
 <template>
-    <v-container fluid class="h-100 w-100 d-flex flex-column align-center justify-center bg-background" v-if="config">
+    <canvas ref="particleCanvas" class="particle-canvas"></canvas>
+
+    <v-container fluid class="h-100 w-100 d-flex flex-column align-center justify-center modern-bg" v-if="config">
+        <!-- Gradient Orbs -->
+        <div class="gradient-orb orb-1"></div>
+        <div class="gradient-orb orb-2"></div>
+        <div class="gradient-orb orb-3"></div>
+
         <v-card class="mx-auto w-100" max-width="600" tile flat color="primary">
             <v-card-title class="d-flex flex-row align-center">
                 <img :src="`/storage/images/${config?.school?.logo}`" alt="Logo" class="logo" v-if="config?.school?.logo" />
@@ -118,16 +125,13 @@
                 </v-form>
             </v-card-text>
         </v-card>
-        <v-card>
-            DATA:
-            {{ data }}
-        </v-card>
     </v-container>
 </template>
 <script>
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useRegisterStore } from '@/stores/homepage/RegisterStore'
+import { useParticles } from '@/composables/useParticles'
 export default {
     setup() {
         return useValidationRulesSetup()
@@ -142,7 +146,30 @@ export default {
         this.startRegister()
     },
 
-    unmounted() {},
+    mounted() {
+        // Particle System initialisieren
+        const particleSystem = useParticles({
+            count: 50,
+            lineOpacity: 0.15,
+            connectionDistance: 120,
+            speed: 0.3,
+        })
+
+        this.$nextTick(() => {
+            particleSystem.init(this.$refs.particleCanvas)
+        })
+
+        window.addEventListener('resize', particleSystem.resizeCanvas)
+
+        // Cleanup speichern
+        this._particleCleanup = particleSystem.cleanup
+    },
+
+    unmounted() {
+        if (this._particleCleanup) {
+            this._particleCleanup()
+        }
+    },
 
     data() {
         return {
@@ -151,6 +178,7 @@ export default {
             school_name: '',
             app_name: '',
             is_valid: false,
+            _particleCleanup: null,
         }
     },
 

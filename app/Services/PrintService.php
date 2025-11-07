@@ -33,8 +33,6 @@ class PrintService
             ->get();
 
 
-        info('Bookings: ' . $bookings->toJson(JSON_PRETTY_PRINT));
-
 
         $excel = SimpleExcelWriter::create($path)
             ->addHeader(
