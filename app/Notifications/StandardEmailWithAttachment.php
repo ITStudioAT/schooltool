@@ -7,7 +7,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class StandardEmail extends Notification implements ShouldQueue
+class StandardEmailWithAttachment extends Notification implements ShouldQueue
 {
     use Queueable;
 
@@ -16,13 +16,11 @@ class StandardEmail extends Notification implements ShouldQueue
      */
     public function __construct(
         public array $data,
-        public array|string|null $attachments = null
+        public array|string|null $attachments = null // can be a single path or an array
     ) {}
 
     /**
      * Get the notification's delivery channels.
-     *
-     * @return array<int, string>
      */
     public function via(object $notifiable): array
     {
@@ -34,8 +32,6 @@ class StandardEmail extends Notification implements ShouldQueue
      */
     public function toMail(object $notifiable): MailMessage
     {
-
-
         $mail = (new MailMessage())
             ->from($this->data['from_address'], $this->data['from_name'])
             ->subject($this->data['subject'])
@@ -45,7 +41,7 @@ class StandardEmail extends Notification implements ShouldQueue
                 'logo' => $this->data['logo'] ?? null,
             ]);
 
-        // ✅ Optional attachments support
+        // ✅ Add attachments if provided
         if ($this->attachments) {
             $attachments = is_array($this->attachments)
                 ? $this->attachments
@@ -53,10 +49,7 @@ class StandardEmail extends Notification implements ShouldQueue
 
             foreach ($attachments as $file) {
                 if (file_exists($file)) {
-                    $mail->attach($file, [
-                        'as' => basename($file),
-                        'mime' => mime_content_type($file) ?: null,
-                    ]);
+                    $mail->attach($file);
                 }
             }
         }
@@ -66,13 +59,9 @@ class StandardEmail extends Notification implements ShouldQueue
 
     /**
      * Get the array representation of the notification.
-     *
-     * @return array<string, mixed>
      */
     public function toArray(object $notifiable): array
     {
-        return [
-            //
-        ];
+        return [];
     }
 }

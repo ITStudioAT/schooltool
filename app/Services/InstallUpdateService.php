@@ -42,13 +42,29 @@ class InstallUpdateService
     {
 
         $path = 'temp';
-        if (!Storage::directoryExists($path)) {
-            Storage::makeDirectory($path);
-        }
+        $this->createOrCleanDirectory($path);
+        $path = 'excel';
+        $this->createOrCleanDirectory($path);
+
 
         $path = 'images'; // relative to storage/app/public
         if (!Storage::disk('public')->exists($path)) {
             Storage::disk('public')->makeDirectory($path);
+        }
+    }
+
+    private function createOrCleanDirectory($path)
+    {
+        if (!Storage::directoryExists($path)) {
+            Storage::makeDirectory($path);
+        } else {
+            $files = Storage::allFiles($path);
+            $directories = Storage::allDirectories($path);
+
+            Storage::delete($files); // delete all files
+            foreach ($directories as $directory) {
+                Storage::deleteDirectory($directory); // delete subfolders
+            }
         }
     }
 }

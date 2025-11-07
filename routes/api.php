@@ -110,6 +110,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/registers/set_active',  [\App\Http\Controllers\Admin\RegisterController::class, 'setActiveRegister']);
         Route::post('/admin/registers/get_active',  [\App\Http\Controllers\Admin\RegisterController::class, 'getActiveRegisters']);
         Route::post('/admin/registers/toggle',  [\App\Http\Controllers\Admin\RegisterController::class, 'toggleRegister']);
+        Route::post('/admin/registers/print_excel',  [\App\Http\Controllers\Admin\RegisterPrintController::class, 'printExcel']);
+
 
         // register_dates
         Route::apiResource('/admin/register_dates', \App\Http\Controllers\Admin\RegisterDateController::class);

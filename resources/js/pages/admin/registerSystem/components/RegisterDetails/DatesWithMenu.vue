@@ -61,7 +61,7 @@
     <v-col cols="12" md="4" xl="3" v-if="action == ''">
         <its-grid-box color="primary" title="Menü" class="w-100">
             <div class="d-flex flex-column flex-wrap ga-2">
-                <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2" v-if="selected_register_dates.length >= 1">
+                <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2">
                     <its-menu-button
                         title="Person"
                         subtitle="anmelden"
@@ -77,6 +77,8 @@
                         color="primary"
                         @click="showBookings()"
                         v-if="selected_register_dates.length >= 1" />
+
+                    <its-menu-button title="Anmeldungen" subtitle="drucken" icon="mdi-cloud-print-outline" color="primary" @click="action = 'print'" />
                 </v-card>
 
                 <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2" v-if="selected_register_dates.length >= 1">
@@ -108,7 +110,35 @@
             </div>
         </its-grid-box>
     </v-col>
-    <!-- MENÜ -->
+
+    <!-- MENÜ ZUM DRUCKEN -->
+    <v-col cols="12" md="4" xl="3" v-if="action == 'print'">
+        <its-grid-box color="primary" title="Druck-Menü" class="w-100">
+            <div class="d-flex flex-column flex-wrap ga-2">
+                <div class="d-flex flex-column flex-wrap ga-2">
+                    <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2">
+                        <its-menu-button title="Menü" subtitle="zurück" icon="mdi-arrow-left" color="primary" @click="action = ''" />
+                    </v-card>
+                </div>
+                <div class="d-flex flex-column flex-wrap ga-2" v-if="subaction == ''">
+                    <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2">
+                        <its-menu-button title="EXCEL" subtitle="Ausgabe" icon="mdi-microsoft-excel" color="primary" @click="printExcel(selected_register.id)" />
+                        <its-menu-button title="PDF" subtitle="Betreuer" icon="mdi-file-pdf-box" color="primary" @click="" />
+                        <its-menu-button title="PDF" subtitle="Tag" icon="mdi-file-pdf-box" color="primary" @click="" />
+                    </v-card>
+                </div>
+                <v-alert title="Exel Auswertung" type="info" v-if="subaction == 'excel'">
+                    <template #text>
+                        <div class="d-flex flex-column">
+                            <div>Der Auftrag wurde erteilt. Sobald die Excel-Auswertung fertig ist, erhalten Sie das Ergebis per E-Mail.</div>
+                            <v-btn class="mt-4" tile flat color="primary" @click="subaction = ''">Weiter</v-btn>
+                        </div>
+                    </template>
+                </v-alert>
+            </div>
+        </its-grid-box>
+    </v-col>
+    <!-- MENÜ DELETE_DATES -->
     <v-col cols="12" md="4" xl="3" v-if="action == 'delete_dates'">
         <!-- LÖSCHEN VON ANMELDUNGEN -->
         <v-card tile flat color="warning">
@@ -155,6 +185,7 @@ import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useRegisterStore } from '@/stores/admin/RegisterStore'
+import { useRegisterPrintStore } from '@/stores/admin/RegisterPrintStore'
 import { useRegisterDateStore } from '@/stores/admin/RegisterDateStore'
 import { useRegisterDateBookingStore } from '@/stores/admin/RegisterDateBookingStore'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
@@ -170,6 +201,7 @@ export default {
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.registerStore = useRegisterStore()
+        this.registerPrintStore = useRegisterPrintStore()
         this.registerDateStore = useRegisterDateStore()
         this.registerDateBookingStore = useRegisterDateBookingStore()
         this.register_dates = []
@@ -184,9 +216,11 @@ export default {
         return {
             adminStore: null,
             registerStore: null,
+            registerPrintStore: null,
             is_valid: false,
             search_string: '',
             is_valid: false,
+            subaction: '',
         }
     },
 
@@ -206,6 +240,11 @@ export default {
     },
 
     methods: {
+        async printExcel(register_id) {
+            await this.registerPrintStore.printExcel(register_id)
+            this.subaction = 'excel'
+        },
+
         countRegistrations(register_dates) {
             return this.register_dates.filter((date) => register_dates.includes(date.id)).reduce((sum, date) => sum + date.count_bookings, 0)
         },

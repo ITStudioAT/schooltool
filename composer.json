@@ -10,10 +10,12 @@
     "license": "MIT",
     "require": {
         "php": "^8.2",
+        "barryvdh/laravel-dompdf": "^3.1",
         "intervention/image": "^3.11",
         "itstudioat/spa": "^0.3.3",
         "laravel/framework": "^12.34",
         "laravel/tinker": "^2.10.1",
+        "spatie/simple-excel": "^3.8",
         "symfony/http-client": "^7.3",
         "symfony/postmark-mailer": "^7.3"
     },
