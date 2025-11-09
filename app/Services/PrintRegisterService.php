@@ -52,7 +52,7 @@ class PrintRegisterService
         // info($data['bookings']);
 
 
-        $chromePath = '/home/1486907.cloudwaysapps.com/hdhyrwwjyz/public_html/.puppeteer-cache/chrome-headless-shell/linux-142.0.7444.61/chrome-headless-shell/linux64/chrome-headless-shell';
+        $chromePath = '/home/1486907.cloudwaysapps.com/hdhyrwwjyz/public_html/.puppeteer-cache/chrome-headless-shell/linux-142.0.7444.61/chrome-headless-shell-linux64/chrome-headless-shell';
 
 
         Pdf::view('pdfs.registerSupervisor', ['data' => $data])
@@ -60,7 +60,14 @@ class PrintRegisterService
             ->headerView('pdfs.registerSupervisor_header', ['title' => $data['register_name'] . ' - Betreuer'])
             ->footerView('pdfs.registerSupervisor_footer', ['long_name' => $register->school->long_name])
             ->withBrowsershot(function (Browsershot $b) use ($chromePath) {
-                $b->setOption('executablePath', $chromePath);
+                $b->setOption('executablePath', $chromePath)
+                    ->noSandbox()  // WICHTIG für Cloudways!
+                    ->setOption('args', [
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-gpu',
+                    ]);
             })
             ->save($path);
         return $path;
