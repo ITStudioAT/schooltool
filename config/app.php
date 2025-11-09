@@ -123,9 +123,15 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    'providers' => [
+        // ...
+        Spatie\LaravelPdf\PdfServiceProvider::class,
+    ],
+
     'aliases' => [
         // ...
         'Spa' => App\Facades\SpaFacade::class,
+        'Pdf' => Spatie\LaravelPdf\Facades\Pdf::class,
     ],
 
 
