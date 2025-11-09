@@ -123,10 +123,6 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
-    'providers' => [
-        // ...
-        Spatie\LaravelPdf\PdfServiceProvider::class,
-    ],
 
     'aliases' => [
         // ...
