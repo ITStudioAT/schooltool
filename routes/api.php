@@ -112,6 +112,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/registers/toggle',  [\App\Http\Controllers\Admin\RegisterController::class, 'toggleRegister']);
         Route::post('/admin/registers/print_excel',  [\App\Http\Controllers\Admin\RegisterPrintController::class, 'printExcel']);
         Route::post('/admin/registers/print_supervisor',  [\App\Http\Controllers\Admin\RegisterPrintController::class, 'printSupervisor']);
+        Route::post('/admin/registers/print_date',  [\App\Http\Controllers\Admin\RegisterPrintController::class, 'printDate']);
 
 
         // register_dates

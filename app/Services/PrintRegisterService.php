@@ -54,8 +54,59 @@ class PrintRegisterService
 
         Pdf::view('pdfs.registerSupervisor', ['data' => $data])
             ->format(Format::A4)
-            ->headerView('pdfs.registerSupervisor_header', ['title' => $data['register_name']])
-            ->footerView('pdfs.registerSupervisor_footer')
+            ->headerView('pdfs.registerSupervisor_header', ['title' => $data['register_name'] . ' - Betreuer'])
+            ->footerView('pdfs.registerSupervisor_footer', ['long_name' => $register->school->long_name])
+            ->save($path);
+        return $path;
+    }
+
+
+
+
+    public function printDate($user, $data)
+    {
+        $register = Register::findOrFail($data['register_id']);
+        $filename = Str::slug($register->name, '_') . '_' . now()->format('Ymd_His') . '_betreuer.pdf';
+
+        $path = storage_path('app/private/pdf/' . $filename);
+
+        $bookings = $register->bookings()
+            ->with([
+                'user:id,last_name,first_name,email,phone',
+                'registerDate:id,register_id,date,from,to,supervisor',
+            ])
+            ->join('register_dates as rd', 'register_date_bookings.register_date_id', '=', 'rd.id')
+            ->join('users', 'register_date_bookings.user_id', '=', 'users.id')
+            ->orderBy('rd.date')
+            ->orderBy('rd.supervisor')
+            ->orderBy('rd.from')
+            ->orderBy('users.last_name')
+            ->select('register_date_bookings.*')
+            ->get();
+
+        $totalsByDate = $bookings
+            ->groupBy(fn($b) => $b->registerDate->date ?? '')
+            ->map->count()
+            ->toArray();
+
+        $totalCount = $bookings->count();
+
+
+        $data = [
+            'register_name' => $register->name,
+            'bookings' => $bookings->toArray(),
+            'totals_by_date' => $totalsByDate,
+            'total_count'         => $totalCount,
+        ];
+
+        // info($data['bookings']);
+
+
+
+        Pdf::view('pdfs.registerDate', ['data' => $data])
+            ->format(Format::A4)
+            ->headerView('pdfs.registerDate_header', ['title' => $data['register_name'] . ' - Datum'])
+            ->footerView('pdfs.registerDate_footer', ['long_name' => $register->school->long_name])
             ->save($path);
         return $path;
     }

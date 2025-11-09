@@ -18,7 +18,7 @@
             width: 100%;
             border-collapse: collapse;
             table-layout: fixed;
-            /* use colgroup widths */
+            /* we want the widths from colgroup */
         }
 
         th,
@@ -53,31 +53,41 @@
 <body>
 
     @php
-    $lastSupervisor = null;
+    // count per date
+    $totals_by_date = [];
+    foreach ($data['bookings'] as $b) {
+    $d = $b['register_date']['date'] ?? '';
+    $totals_by_date[$d] = ($totals_by_date[$d] ?? 0) + 1;
+    }
+    $lastDate = null;
     @endphp
 
     @foreach ($data['bookings'] as $booking)
     @php
-    $currentSupervisor = $booking['register_date']['supervisor'] ?? '';
+    $currentDateRaw = $booking['register_date']['date'] ?? '';
+    $currentDateDisplay = $currentDateRaw
+    ? substr($currentDateRaw, 8, 2) . '.' . substr($currentDateRaw, 5, 2) . '.' . substr($currentDateRaw, 0, 4)
+    : '';
     @endphp
 
-    {{-- when supervisor changes: close previous table + page break --}}
-    @if ($lastSupervisor !== null && $currentSupervisor !== $lastSupervisor)
+    {{-- close previous table + page break when DATE changes --}}
+    @if ($lastDate !== null && $currentDateRaw !== $lastDate)
     </tbody>
     </table>
     <div class="page-break"></div>
     @endif
 
-    {{-- start of a supervisor block --}}
-    @if ($lastSupervisor === null || $currentSupervisor !== $lastSupervisor)
+    {{-- start of a DATE block --}}
+    @if ($lastDate === null || $currentDateRaw !== $lastDate)
     @php
-    $countForThisSupervisor = $data['totals_by_supervisor'][$currentSupervisor] ?? 0;
+    $countForThisDate = $totals_by_date[$currentDateRaw] ?? 0;
     @endphp
 
     <table>
+        {{-- widths go here, NOT on the <th> --}}
         <colgroup>
-            <col style="width:30px;"> {{-- Dat --}}
-            <col style="width:55px;"> {{-- Zeit --}}
+            <col style="width:45px;"> {{-- Dat --}}
+            <col style="width:50px;"> {{-- Zeit --}}
             <col style="width:65px;"> {{-- Nachn. Kind --}}
             <col style="width:65px;"> {{-- Vorn. Kind --}}
             <col style="width:50px;"> {{-- Geb.Datum --}}
@@ -87,12 +97,12 @@
             <col style="width:90px;"> {{-- Telefon --}}
         </colgroup>
         <thead>
-            <!-- this header (with supervisor + count) will repeat on page break -->
+            <!-- this whole thead repeats on each page -->
             <tr>
                 <th colspan="9" style="text-align:left; padding-bottom:4px;">
                     <h3>
-                        {{ $data['register_name'] }} – {{ $currentSupervisor }}
-                        ({{ $countForThisSupervisor }} Einträge)
+                        {{ $data['register_name'] }} – {{ $currentDateDisplay }}
+                        ({{ $countForThisDate }} Einträge)
                     </h3>
                 </th>
             </tr>
@@ -111,9 +121,9 @@
         <tbody>
             @endif
 
-            {{-- data row --}}
             <tr style="border-bottom: 1px dotted #AAA;">
-                <td>{{ substr($booking['register_date']['date'], 8, 2) . '.' . substr($booking['register_date']['date'], 5, 2) . '.' }}</td>
+                {{-- you showed supervisor here, keep it or switch back to date --}}
+                <td>{{ substr($booking['register_date']['supervisor'] ?? '', 0, 8) }}</td>
                 <td>{{ substr($booking['register_date']['from'], 0, 5) . '-' . substr($booking['register_date']['to'], 0, 5) }}</td>
                 <td>{{ $booking['student_last_name'] }}</td>
                 <td>{{ $booking['student_first_name'] }}</td>
@@ -125,11 +135,10 @@
             </tr>
 
             @php
-            $lastSupervisor = $currentSupervisor;
+            $lastDate = $currentDateRaw;
             @endphp
             @endforeach
 
-            {{-- close last table if there were bookings --}}
             @if (!empty($data['bookings']))
         </tbody>
     </table>

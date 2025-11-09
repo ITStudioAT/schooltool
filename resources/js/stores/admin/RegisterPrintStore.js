@@ -47,5 +47,26 @@ export const useRegisterPrintStore = defineStore('AdminRegisterPrintStore', {
                 adminStore.is_loading--
             }
         },
+
+        async printDate(register_id) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.post(`/api/admin/registers/print_date`, { register_id })
+
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
     },
 })

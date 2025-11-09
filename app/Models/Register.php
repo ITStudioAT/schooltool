@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\RegisterDate;
 use App\Models\RegisterDateBooking;
+use App\Models\School;
 use App\Models\Schoolyear;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -30,6 +31,11 @@ class Register extends Model
     public function schoolyear(): BelongsTo
     {
         return $this->belongsTo(Schoolyear::class);
+    }
+
+    public function school(): BelongsTo
+    {
+        return $this->belongsTo(School::class);
     }
 
 
