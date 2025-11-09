@@ -123,7 +123,7 @@
                 <div class="d-flex flex-column flex-wrap ga-2" v-if="subaction == ''">
                     <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2">
                         <its-menu-button title="EXCEL" subtitle="Ausgabe" icon="mdi-microsoft-excel" color="primary" @click="printExcel(selected_register.id)" />
-                        <its-menu-button title="PDF" subtitle="Betreuer" icon="mdi-file-pdf-box" color="primary" @click="" />
+                        <its-menu-button title="PDF" subtitle="Betreuer" icon="mdi-file-pdf-box" color="primary" @click="printSupervisor(selected_register.id)" />
                         <its-menu-button title="PDF" subtitle="Tag" icon="mdi-file-pdf-box" color="primary" @click="" />
                     </v-card>
                 </div>
@@ -131,6 +131,14 @@
                     <template #text>
                         <div class="d-flex flex-column">
                             <div>Der Auftrag wurde erteilt. Sobald die Excel-Auswertung fertig ist, erhalten Sie das Ergebis per E-Mail.</div>
+                            <v-btn class="mt-4" tile flat color="primary" @click="subaction = ''">Weiter</v-btn>
+                        </div>
+                    </template>
+                </v-alert>
+                <v-alert title="PDF Auswertung nach Betreuer" type="info" v-if="subaction == 'supervisor'">
+                    <template #text>
+                        <div class="d-flex flex-column">
+                            <div>Der Auftrag wurde erteilt. Sobald das PDF fertig erstellt ist, erhalten Sie das Ergebis per E-Mail.</div>
                             <v-btn class="mt-4" tile flat color="primary" @click="subaction = ''">Weiter</v-btn>
                         </div>
                     </template>
@@ -243,6 +251,11 @@ export default {
         async printExcel(register_id) {
             await this.registerPrintStore.printExcel(register_id)
             this.subaction = 'excel'
+        },
+
+        async printSupervisor(register_id) {
+            await this.registerPrintStore.printSupervisor(register_id)
+            this.subaction = 'supervisor'
         },
 
         countRegistrations(register_dates) {

@@ -45,6 +45,8 @@ class InstallUpdateService
         $this->createOrCleanDirectory($path);
         $path = 'excel';
         $this->createOrCleanDirectory($path);
+        $path = 'pdf';
+        $this->createOrCleanDirectory($path);
 
 
         $path = 'images'; // relative to storage/app/public

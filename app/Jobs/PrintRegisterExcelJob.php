@@ -4,13 +4,13 @@ namespace App\Jobs;
 
 use App\Models\Register;
 use App\Notifications\StandardEmail;
-use App\Services\PrintService;
+use App\Services\PrintRegisterService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Notification;
 
 
-class PrintExcelJob implements ShouldQueue
+class PrintRegisterExcelJob implements ShouldQueue
 {
     use Queueable;
 
@@ -27,7 +27,7 @@ class PrintExcelJob implements ShouldQueue
      */
     public function handle(): void
     {
-        $service = new PrintService();
+        $service = new PrintRegisterService();
         $path = $service->printExcel($this->user, $this->data);
 
         $school = $this->user->selectedSchool;

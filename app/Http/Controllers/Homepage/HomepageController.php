@@ -88,6 +88,7 @@ class HomepageController extends Controller
 
 
         $data = [
+            'schooltool_logo' => config('schooltool.logo'),
             'logo' => $school ? $school->logo : null,
             'version' => config('schooltool.version', 'x.x.x'),
             'copyright' => config('schooltool.copyright', ''),

@@ -14,9 +14,16 @@
 
         <v-card class="mx-auto w-100" max-width="600" tile flat color="primary">
             <v-form ref="form" class="mb-4" @submit.prevent="redirect(school, licence)">
-                <v-card-title class="d-flex flex-row align-center">
+                <v-card-title class="d-flex flex-row align-center" v-if="school">
                     <img :src="`/storage/images/${school?.logo}`" alt="Logo" class="logo" v-if="school?.logo" />
                     <div class="ml-2"></div>
+                </v-card-title>
+
+                <v-card-title v-if="!school" class="mb-4 d-flex flex-row align-center">
+                    <div style="height: 28px; width: 28px" class="mr-4">
+                        <v-img :src="`/storage/images/${config?.schooltool_logo}`" alt="Logo" />
+                    </div>
+                    <div>SchoolTool</div>
                 </v-card-title>
 
                 <v-card-subtitle class="d-flex flex-row align-center justify-space-between" v-if="school?.long_name">
@@ -27,12 +34,12 @@
                 </v-card-subtitle>
 
                 <v-card-text v-if="!school">
-                    <div class="text-h6">Bitte die Schule auswählen</div>
+                    <div class="text-body-1 font-weight-bold">Bitte die Schule auswählen</div>
                     <v-autocomplete v-model="selected_school_id" :items="config.selectableSchools" item-title="long_name" item-value="id" label="Auswahl Schule" />
                 </v-card-text>
 
                 <v-card-text v-if="school && !licence && config.schoolLicences.length > 0">
-                    <div class="text-h6">Bitte die App auswählen</div>
+                    <div class="text-body-1 font-weight-bold">Bitte die App auswählen</div>
                     <v-autocomplete v-model="selected_licence_id" :items="config?.schoolLicences" item-title="long_name" item-value="id" label="Auswahl App" />
                 </v-card-text>
 
@@ -135,6 +142,7 @@ export default {
     methods: {
         abortSchool() {
             this.school = null
+            this.licence = null
         },
 
         redirect(school, licence) {

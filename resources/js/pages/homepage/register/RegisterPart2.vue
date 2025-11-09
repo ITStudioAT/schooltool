@@ -238,6 +238,9 @@ export default {
         },
 
         async book(input) {
+            this.is_valid = false
+            await this.$refs.form.validate()
+            if (!this.is_valid) return
             const data = {
                 register_id: this.active_register?.id ?? null,
                 register_date_id: this.selected_register_date[0] ?? null,

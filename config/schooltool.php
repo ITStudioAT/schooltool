@@ -2,7 +2,7 @@
 
 return [
 
-    'version' => '3.1.12',
+    'version' => '3.1.13',
     'copyright' => '(c) 2025 ITStudio.at by Günther Kron',
     'logo' => 'schooltool_white.png',
     'pagination' => 30,
