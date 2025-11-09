@@ -8,6 +8,7 @@ use Illuminate\Support\Str;
 use Spatie\LaravelPdf\Enums\Format;
 use Spatie\LaravelPdf\Facades\Pdf;
 use Spatie\SimpleExcel\SimpleExcelWriter;
+use Spatie\Browsershot\Browsershot;
 
 class PrintRegisterService
 {
@@ -51,11 +52,16 @@ class PrintRegisterService
         // info($data['bookings']);
 
 
+        $chromePath = '/home/1486907.cloudwaysapps.com/hdhyrwwjyz/public_html/.puppeteer-cache/chrome-headless-shell/linux-142.0.7444.61/chrome-headless-shell/linux64/chrome-headless-shell';
+
 
         Pdf::view('pdfs.registerSupervisor', ['data' => $data])
             ->format(Format::A4)
             ->headerView('pdfs.registerSupervisor_header', ['title' => $data['register_name'] . ' - Betreuer'])
             ->footerView('pdfs.registerSupervisor_footer', ['long_name' => $register->school->long_name])
+            ->withBrowsershot(function (Browsershot $b) use ($chromePath) {
+                $b->setOption('executablePath', $chromePath);
+            })
             ->save($path);
         return $path;
     }
