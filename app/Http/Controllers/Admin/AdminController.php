@@ -235,9 +235,11 @@ class AdminController extends Controller
     }
 
     public function loginStep2(LoginStep2Request $request)
+    // 
     {
         $adminService = new AdminService();
         $validated = $request->validated();
+
 
         $data = $adminService->checkLogin($validated['data']);
         $data = $adminService->check2Fa($data);

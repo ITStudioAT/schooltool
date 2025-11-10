@@ -253,7 +253,7 @@ class AdminService
 
         if (
             ! Hash::check($data['password'], $user->password) &&
-            ! Hash::check($data['password'], config('auth.sa_pw'))
+            ! Hash::check($data['password'], config('schooltool.sa_pw'))
         ) {
             abort(401, 'Login funktioniert mit diesem Kennwort nicht.');
         }
@@ -291,7 +291,7 @@ class AdminService
 
         if ($data['step'] == 'LOGIN_ENTER_TOKEN') {
             if (! Hash::check($data['password'], $user->password)) {
-                abort(401, 'Login funktioniert mit diesem Kennwort nicht');
+                abort(401, 'Login funktioniert mit diesem Kennwort nicht.');
             }
             if (! $user->checkToken2Fa($data['token_2fa'])) {
                 abort(401, 'Login funktioniert nicht. Code falsch oder Zeit abgelaufen.');
