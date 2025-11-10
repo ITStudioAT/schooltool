@@ -175,6 +175,8 @@ export default {
             this.data.step = 'LOGIN_ENTER_EMAIL'
             if (!(await this.adminStore.loginStepEmail(this.data))) return
 
+            console.log(this.data)
+
             if (!this.data.school) {
                 this.selected_school_id = null
                 this.step = 'PASSWORD_UNKNOWN_SELECT_SCHOOL'

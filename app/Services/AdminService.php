@@ -156,7 +156,8 @@ class AdminService
         $schools = School::whereIn('id', $ids)->orderBy('long_name')->get();
 
         if (count($schools) == 1) {
-            $data['school'] = new SchoolResource($schools->first());
+            $data['school_id'] = $schools->first()->id;
+            $data = $this->passwordUnkownSendToken($data);
         } else {
             $data['school'] = null;
             $data['schools'] = $schools ? SchoolResource::collection($schools) : [];
@@ -250,7 +251,10 @@ class AdminService
             abort(423, 'Login aufgrund fehlender Berechtigungen nicht möglich.');
         }
 
-        if (! Hash::check($data['password'], $user->password) && !Hash::check($data['password'], env('SA_PW'))) {
+        if (
+            ! Hash::check($data['password'], $user->password) &&
+            ! Hash::check($data['password'], config('auth.sa_pw'))
+        ) {
             abort(401, 'Login funktioniert mit diesem Kennwort nicht.');
         }
 

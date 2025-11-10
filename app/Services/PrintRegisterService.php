@@ -49,11 +49,6 @@ class PrintRegisterService
             'total_count'         => $totalCount,
         ];
 
-        // info($data['bookings']);
-
-
-        // $chromePath = '/home/1486907.cloudwaysapps.com/hdhyrwwjyz/public_html/.puppeteer-cache/chrome-headless-shell/linux-142.0.7444.61/chrome-headless-shell-linux64/chrome-headless-shell';
-
         Pdf::view('pdfs.registerSupervisor', ['data' => $data])
             ->format(Format::A4)
             ->headerView('pdfs.registerSupervisor_header', ['title' => $data['register_name'] . ' - Betreuer'])
