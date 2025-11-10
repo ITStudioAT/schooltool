@@ -53,7 +53,8 @@ export const useRegisterPrintStore = defineStore('AdminRegisterPrintStore', {
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
-                const response = await axios.post(`/api/admin/registers/print_date`, { register_id })
+                const response = await axios.post(`/api/admin/registers/print_date
+                    `, { register_id })
 
                 return true
             } catch (error) {
