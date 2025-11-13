@@ -19,7 +19,7 @@ class RegisterResource extends JsonResource
             'school_id' => $this->school_id,
             'schoolyear_id' => $this->schoolyear_id,
             'name' => $this->name,
-            'description_on_website' => e($this->description_on_website),
+            'description_on_website' => $this->description_on_website,
             'max_registrations' => $this->max_registrations,
             'bookings_count' => $this->bookings_count,
             'dates_count' => $this->dates_count,

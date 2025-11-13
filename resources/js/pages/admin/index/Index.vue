@@ -58,9 +58,6 @@
                 </its-grid-box>
             </v-col>
         </v-row>
-        <v-row>
-            {{ health }}
-        </v-row>
     </v-container>
 </template>
 
