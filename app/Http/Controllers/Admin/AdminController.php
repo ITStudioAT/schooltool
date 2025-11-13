@@ -20,6 +20,7 @@ use App\Http\Resources\Admin\SchoolResource;
 use App\Http\Resources\Admin\SchoolyearResource;
 use App\Http\Resources\Admin\UserResource;
 use App\Http\Resources\Admin\UserWithRoleResource;
+use App\Models\QueueTest;
 use App\Models\Role;
 use App\Models\School;
 use App\Models\User;
@@ -34,6 +35,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 
 class AdminController extends Controller
 {
@@ -81,32 +83,13 @@ class AdminController extends Controller
             'roles' => $user ? $user->getRoleNames() : [],
         ];
 
-        // Health-Data
-        /*
-        $count = (int)shell_exec('pgrep -fc "queue:work"');
-
-        if ($count > 0) {
-            echo "Queue is running ($count workers)\n";
-        } else {
-            echo "Queue is NOT running\n";
-        }
-
-
-        $output = shell_exec('pgrep -fc "queue:work"');
-        $isRunning = (int)trim($output) > 0;
-
-        if ($isRunning) {
-            $data['health']['queue_working'] = true;
-        } else {
-            $data['health']['queue_working'] = false;
-        }
-
-*/
         $data['health']['queue_working'] = true;
 
 
         return $data;
     }
+
+
 
     public function registerStep1(RegisterStep1Request $request)
     {
