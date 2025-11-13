@@ -24,6 +24,8 @@ use App\Services\LicenceService;
 use App\Services\SchoolService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Response;
 
 class SchoolController extends Controller
@@ -196,6 +198,13 @@ class SchoolController extends Controller
         $validated = $request->validated();
 
         $data = $service->schoolInfos($validated['school_id']);
+
+        // Dispatch a test job that sets a cache flag
+        Queue::push(function () {
+            Cache::put('queue_working', true, 60);
+        });
+
+
 
 
         return response()->json($data, 200);

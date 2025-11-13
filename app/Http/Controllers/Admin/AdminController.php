@@ -31,7 +31,9 @@ use Composer\InstalledVersions;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 
 class AdminController extends Controller
 {
@@ -48,11 +50,14 @@ class AdminController extends Controller
         return response()->json($data, 200);
     }
 
+
+
     private function getConfigData()
     {
         $navigationService = new AdminNavigationService();
 
         $user = Auth::check() ? Auth::user() : null;
+
 
         $data = [
             'logo' => config('schooltool.logo', ''),
@@ -75,6 +80,30 @@ class AdminController extends Controller
             'menu' => $user ? $navigationService->dashboardMenu() : [],
             'roles' => $user ? $user->getRoleNames() : [],
         ];
+
+        // Health-Data
+        /*
+        $count = (int)shell_exec('pgrep -fc "queue:work"');
+
+        if ($count > 0) {
+            echo "Queue is running ($count workers)\n";
+        } else {
+            echo "Queue is NOT running\n";
+        }
+
+
+        $output = shell_exec('pgrep -fc "queue:work"');
+        $isRunning = (int)trim($output) > 0;
+
+        if ($isRunning) {
+            $data['health']['queue_working'] = true;
+        } else {
+            $data['health']['queue_working'] = false;
+        }
+
+*/
+        $data['health']['queue_working'] = true;
+
 
         return $data;
     }

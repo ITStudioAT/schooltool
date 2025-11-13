@@ -1,7 +1,7 @@
 <template>
     <v-container fluid class="ma-0 w-100 pa-2">
         <v-row class="w-100" no-gutters v-if="config">
-            <v-col cols="12" md="6" lg="4" xl="3">
+            <v-col cols="12" md="6" xl="4">
                 <its-grid-box color="primary" class="h-100 w-100">
                     <template #title>
                         <div class="d-flex flex-row align-center justify-space-between w-100">
@@ -58,6 +58,9 @@
                 </its-grid-box>
             </v-col>
         </v-row>
+        <v-row>
+            {{ health }}
+        </v-row>
     </v-container>
 </template>
 
@@ -88,7 +91,7 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, ['config']),
+        ...mapWritableState(useAdminStore, ['config', 'health']),
         ...mapWritableState(useSchoolStore, ['school_licences', 'school_admins']),
     },
 

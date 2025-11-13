@@ -1,6 +1,6 @@
 <template>
     <!-- TERMINE -->
-    <v-col cols="12" md="4" xl="3">
+    <v-col cols="12" md="6" xl="4">
         <its-grid-box color="primary" title="Termine" class="w-100" v-if="register_dates.length == 0">
             <div class="d-flex flex-row align-cebter justify-space-between">
                 <div>Keine Termine vorhanden!</div>
@@ -58,7 +58,7 @@
     </v-col>
 
     <!-- MENÜ -->
-    <v-col cols="12" md="4" xl="3" v-if="action == ''">
+    <v-col cols="12" md="6" xl="4" v-if="action == ''">
         <its-grid-box color="primary" title="Menü" class="w-100">
             <div class="d-flex flex-column flex-wrap ga-2">
                 <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2">
@@ -112,7 +112,7 @@
     </v-col>
 
     <!-- MENÜ ZUM DRUCKEN -->
-    <v-col cols="12" md="4" xl="3" v-if="action == 'print'">
+    <v-col cols="12" md="6" xl="4" v-if="action == 'print'">
         <its-grid-box color="primary" title="Druck-Menü" class="w-100">
             <div class="d-flex flex-column flex-wrap ga-2">
                 <div class="d-flex flex-column flex-wrap ga-2">
@@ -155,7 +155,7 @@
         </its-grid-box>
     </v-col>
     <!-- MENÜ DELETE_DATES -->
-    <v-col cols="12" md="4" xl="3" v-if="action == 'delete_dates'">
+    <v-col cols="12" md="6" xl="4" v-if="action == 'delete_dates'">
         <!-- LÖSCHEN VON ANMELDUNGEN -->
         <v-card tile flat color="warning">
             <v-card-text>

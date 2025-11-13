@@ -22,15 +22,8 @@ export const useRegisterDateBookingStore = defineStore('AdminRegisterDateBooking
                     notify,
                 })
 
-                // Bookings aus bookings löschen
-                const count = this.selected_bookings.length
-
-                this.bookings = this.bookings.filter((booking) => !this.selected_bookings.includes(booking.id))
-
                 // Select_Bookings löschen
                 this.selected_bookings = []
-
-                // Anzahl Bookings in register_dates anpassen
 
                 return true
             } catch (error) {

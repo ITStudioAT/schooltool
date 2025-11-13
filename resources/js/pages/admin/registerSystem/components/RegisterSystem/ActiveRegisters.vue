@@ -1,7 +1,7 @@
 <template>
     <!-- Geöffnete Anmeldesysteme -->
     <v-row class="w-100">
-        <v-col cols="12" md="4" xl="3">
+        <v-col cols="12" md="6" xl="4">
             <its-grid-box color="primary" :title="'Geöffnete Anmeldesysteme'" class="h-100 w-100" :disabled="action != ''">
                 <v-list dense variant="elevated" select-strategy="single-leaf" v-model:selected="selected_active_register_array" color="success-lighten-2" bg-color="transparent">
                     <v-list-item v-for="register in active_registers" :key="register" :value="register" class="mb-2">

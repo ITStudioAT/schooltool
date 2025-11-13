@@ -1,5 +1,5 @@
 <template>
-    <v-col cols="12" md="4" xl="3">
+    <v-col cols="12" md="6" xl="4">
         <its-grid-box color="primary" title="Anmeldungen anzeigen" class="w-100">
             <v-card tile flat color="primary" :disabled="booking_action != ''">
                 <v-card-text class="d-flex flex-row flex-wrap align-center ga-2">
@@ -130,43 +130,12 @@ export default {
             var bookings_90 = bookings
 
             if (!(await this.registerDateBookingStore.deleteBookings(bookings, notify))) return
-
-            // Löschen der Buchungen aus deer Übersicht
-            this.bookings = this.bookings.map((dateBlock) => {
-                // Filter out bookings that should be deleted
-                const remainingBookings = dateBlock.bookings.filter((b) => !bookings.includes(b.id))
-
-                // Calculate how many were removed
-                const removedCount = dateBlock.bookings.length - remainingBookings.length
-
-                return {
-                    ...dateBlock,
-                    bookings: remainingBookings,
-                    count_bookings: Math.max(0, dateBlock.count_bookings - removedCount),
-                }
-            })
-
-            // Löschen der Buchungen aus den gesamten Buchungen
-            this.bookings = this.bookings.filter((booking) => !bookings.includes(booking.id))
-
-            this.register_dates = this.register_dates.map((date) => {
-                // Filter out bookings whose IDs are in bookings_90
-                const remainingBookings = date.bookings.filter((booking) => !bookings_90.includes(booking.id))
-
-                // Calculate how many were removed
-                const removedCount = date.bookings.length - remainingBookings.length
-
-                // Return updated date entry
-                return {
-                    ...date,
-                    bookings: remainingBookings,
-                    count_bookings: Math.max(0, date.count_bookings - removedCount),
-                }
-            })
-
-            await this.registerDateStore.loadDays()
-            this.selected_day = this.days.find((item) => item.id === this.selected_day.id)
-
+            const date = this.registerDateStore?.register_dates[0].date
+            if (date) {
+                await this.registerDateStore.loadRegisterDates(date)
+            }
+            await this.adminStore.loadConfig()
+            await this.loadBookings(this.selected_register_dates)
             this.booking_action = ''
         },
         remove() {

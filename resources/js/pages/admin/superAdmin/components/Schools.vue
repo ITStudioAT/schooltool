@@ -1,5 +1,5 @@
 <template>
-    <v-col cols="12" md="4" xl="3">
+    <v-col cols="12" md="6" xl="4">
         <its-grid-box color="primary" title="Schulen" class="w-100" :disabled="action != ''">
             <div class="d-flex flex-row align-start">
                 <v-card tile flat color="transparent" class="w-100">
@@ -53,7 +53,7 @@
             </div>
         </its-grid-box>
     </v-col>
-    <v-col cols="12" md="4" xl="3" v-if="action == 'create_school' || action == 'edit_school'">
+    <v-col cols="12" md="6" xl="4" v-if="action == 'create_school' || action == 'edit_school'">
         <its-grid-box color="primary" :title="data.id ? 'Schule ändern' : 'Neue Schule'" class="w-100">
             <v-form ref="form" v-model="is_valid" @submit.prevent="saveSchool(data)" class="mb-4">
                 <v-row dense>
@@ -107,7 +107,7 @@
         </its-grid-box>
     </v-col>
     <!-- Löschen -->
-    <v-col cols="12" md="4" xl="3" v-if="action == 'delete_school'">
+    <v-col cols="12" md="6" xl="4" v-if="action == 'delete_school'">
         <its-grid-box color="primary" title="Löschen" class="w-100">
             <v-form ref="form" v-model="is_valid" @submit.prevent="doDeleteSchools(selected_schools)">
                 <v-card tile flat color="transparent" class="text-body-1">

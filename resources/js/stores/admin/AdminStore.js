@@ -20,6 +20,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
         action: '',
         data: {},
         roles: [],
+        health: null,
     }),
 
     actions: {
@@ -36,6 +37,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
                 this.selected_school = this.config?.selected_school
                 this.selected_schoolyear = this.config?.selected_schoolyear
                 this.selected_register = this.config?.selected_register
+                this.health = this.config?.health
                 return this.api_response.data
             } catch (error) {
                 notification.notify({

@@ -1,6 +1,6 @@
 <template>
     <v-row class="w-100">
-        <v-col cols="12" md="4" xl="3">
+        <v-col cols="12" md="6" xl="4">
             <its-grid-box color="primary" :subtitle="selected_schoolyear?.name" class="h-100 w-100" :disabled="action != ''">
                 <div class="d-flex flex-wrap flex-row align-center ga-2">
                     <!--
@@ -24,6 +24,7 @@
                         </template>
                     </v-list-item>
                 </v-list>
+                <!-- Menü -->
                 <template v-slot:title v-if="config?.user?.roles.some((role) => ['super_admin', 'admin', 'register_admin'].includes(role))">
                     <div class="d-flex flex-row align-center justify-space-between w-100">
                         <div class="mr-4">Anmeldetools</div>
@@ -46,7 +47,7 @@
         </v-col>
 
         <!-- ÄNDERN/ANLEGEN EINES Anmeldesystems -->
-        <v-col cols="12" sm="6" md="4" xl="3" v-if="action == 'edit_register' || action == 'create_register'">
+        <v-col cols="12" md="6" xl="4" v-if="action == 'edit_register' || action == 'create_register'">
             <its-grid-box color="primary" :title="data.id ? selected_register.name : 'Neues Anmeldesystem anlegen'" class="h-100 w-100">
                 <v-form ref="form" v-model="is_valid" @submit.prevent="save(data)" class="mb-4">
                     <v-text-field autofocus v-model="data.name" label="Bezeichnung" :rules="[required(), maxLength(255)]" />
@@ -113,7 +114,7 @@
         </v-col>
 
         <!-- LÖSCHEN EINES Anmeldesystems -->
-        <v-col cols="12" sm="6" md="4" xl="3" v-if="action == 'remove_register'">
+        <v-col cols="12" md="6" xl="4" v-if="action == 'remove_register'">
             <its-grid-box color="primary" :title="selected_register?.name" class="h-100 w-100">
                 <v-form ref="form" v-model="is_valid" @submit.prevent="destroy(selected_register)" class="mb-4">
                     <div class="text-h6">Soll dieses Anmeldesystem wirklich gelöscht werden?</div>

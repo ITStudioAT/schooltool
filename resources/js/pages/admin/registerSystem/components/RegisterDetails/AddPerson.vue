@@ -1,5 +1,5 @@
 <template>
-    <v-col cols="12" md="4" xl="3">
+    <v-col cols="12" md="6" xl="4">
         <its-grid-box color="primary" title="Person anmelden" class="w-100" v-if="step == 0">
             <v-form ref="form" v-model="is_valid" @submit.prevent="getUserWithEmail(person)" class="mb-4">
                 <v-row dense>

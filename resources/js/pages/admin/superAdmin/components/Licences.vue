@@ -1,5 +1,5 @@
 <template>
-    <v-col cols="12" md="4" xl="3">
+    <v-col cols="12" md="6" xl="4">
         <its-grid-box color="primary" title="Lizenzen" class="w-100" :disabled="action != ''">
             <div class="d-flex flex-row align-start">
                 <v-card tile flat color="transparent" class="w-100">
@@ -55,7 +55,7 @@
     </v-col>
 
     <!-- NEUE LIZENZ / LIZENZ ÄNDERN -->
-    <v-col cols="12" md="4" xl="3" v-if="action == 'create_licence' || action == 'edit_licence'">
+    <v-col cols="12" md="6" xl="4" v-if="action == 'create_licence' || action == 'edit_licence'">
         <its-grid-box color="primary" :title="data.id ? 'Lizenz ändern' : 'Neue Lizenz'" class="w-100">
             <v-form ref="form" v-model="is_valid" @submit.prevent="saveLicence(data)" class="mb-4">
                 <v-row dense>
@@ -82,7 +82,7 @@
     </v-col>
 
     <!-- Löschen -->
-    <v-col cols="12" md="4" xl="3" v-if="action == 'delete_licence'">
+    <v-col cols="12" md="6" xl="4" v-if="action == 'delete_licence'">
         <its-grid-box color="primary" title="Löschen" class="w-100">
             <v-form ref="form" v-model="is_valid" @submit.prevent="doDeleteLicences(selected_licences)">
                 <v-card tile flat color="transparent" class="text-body-1">

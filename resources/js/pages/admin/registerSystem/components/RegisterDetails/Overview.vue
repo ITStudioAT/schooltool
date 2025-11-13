@@ -1,7 +1,7 @@
 <!-- Überblick über das Anmeldesystem -->
 <template>
     <v-row class="w-100" dense>
-        <v-col cols="12" md="4" xl="3">
+        <v-col cols="12" md="6" xl="4">
             <its-grid-box color="primary" :title="selected_register?.name + ' ' + selected_schoolyear?.name" class="h-100 w-100" v-if="selected_register">
                 <v-card tile flat color="transparent">
                     <v-card-text class="d-flex flex-row align-center text-body-1">
@@ -22,7 +22,7 @@
                 </v-card>
             </its-grid-box>
         </v-col>
-        <v-col cols="12" md="4" xl="3">
+        <v-col cols="12" md="6" xl="4">
             <its-grid-box color="primary" title="Infos" class="h-100 w-100" v-if="selected_register">
                 <v-card tile flat color="transparent">
                     <v-card-text class="d-flex flex-column ga-1">
