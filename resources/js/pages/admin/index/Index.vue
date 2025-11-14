@@ -5,11 +5,34 @@
                 <its-grid-box color="primary" class="h-100 w-100">
                     <template #title>
                         <div class="d-flex flex-row align-center justify-space-between w-100">
-                            <div>🟢 System läuft ordnungsgemäß</div>
+                            <div>Schooltool</div>
                             <div class="text-caption">Version: {{ config?.version }}</div>
                         </div>
                     </template>
                     <v-card tile flat color="primary">
+                        <v-card-title class="d-flex flex-row align-center justify-space-between">
+                            <div>Status</div>
+                            <div v-if="test_step != 999">... Tests werden durchgeführt</div>
+                            <div v-if="test_step == 999">Tests abgeschlossen</div>
+                            <div v-if="test_step == 999">
+                                <v-icon icon="mdi-circle " color="success" v-if="all_tests_result == 1" />
+                                <v-icon icon="mdi-circle " color="error" v-if="all_tests_result != 1" />
+                            </div>
+                        </v-card-title>
+                        <v-card-text class="text-body-1">
+                            <div class="d-flex flex-row align-center justify-space-between">
+                                <div>Test Warteschlange</div>
+                                <div v-if="queue_test_status == 'waiting'">wartend ...</div>
+                                <div v-if="queue_test_status == 'running'">läuft ...</div>
+                                <div v-if="queue_test_status == 'finished'">abgeschlossen</div>
+                                <div v-if="queue_test_status == 'finished'">
+                                    <v-icon icon="mdi-checkbox-marked " color="success" v-if="queue_test_result == 1" />
+                                    <v-icon icon="mdi-checkbox-marked" color="error" v-if="queue_test_result != 1" />
+                                </div>
+                            </div>
+                        </v-card-text>
+                    </v-card>
+                    <v-card tile flat color="primary" class="mt-4">
                         <v-card-title>Angemeldeter Benutzer</v-card-title>
                         <v-card-text class="text-body-1">
                             {{ config?.user?.last_name + ' ' + config?.user?.first_name }}
@@ -41,8 +64,8 @@
                             <div v-for="licence in school_licences">
                                 <div class="d-flex flex-row flex-wrap align-center justify-space-between">
                                     <div class="d-flex flex-row flex-wrap align-center ga-2">
-                                        <div v-if="new Date(licence.valid_until) >= new Date()">🟢</div>
-                                        <div v-if="new Date(licence.valid_until) < new Date()">🔴</div>
+                                        <div v-if="new Date(licence.valid_until) >= new Date()"><v-icon icon="mdi-circle " color="success" /></div>
+                                        <div v-if="new Date(licence.valid_until) < new Date()"><v-icon icon="mdi-circle " color="error" /></div>
                                         <div class="text-body-1">{{ licence.name }}</div>
                                     </div>
                                     <div class="text-body-2">
@@ -65,6 +88,7 @@
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolStore } from '@/stores/admin/SchoolStore'
+import { useHealthStore } from '@/stores/admin/HealthStore'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
@@ -74,8 +98,34 @@ export default {
     async beforeMount() {
         await axios.get('/sanctum/csrf-cookie')
         this.adminStore = useAdminStore()
+        this.healthStore = useHealthStore()
         this.schoolStore = useSchoolStore()
         if (this.config?.is_auth) await this.schoolStore.loadSchoolInfos(this.config?.selected_school?.id)
+        this.queue_test_status = 'running'
+        await this.healthStore.testQueue()
+        // Mehrmals prüfen bis completed
+        let attempts = 0
+        let maxAttempts = 10
+        let status = null
+        let is_completed = false
+
+        this.queue_test_result = 999
+        while (attempts < maxAttempts && !is_completed) {
+            status = await this.healthStore.checkQueueStatus(this.data.testId)
+
+            if (status.is_completed) {
+                this.queue_test_result = 1
+                break
+            } else {
+                await new Promise((resolve) => setTimeout(resolve, 1000)) // 1 Sekunde warten
+                attempts++
+            }
+        }
+        this.queue_test_status = 'finished'
+
+        this.all_tests_result = 1
+        if (this.queue_test_result != 1) this.all_tests_result = 999
+        this.test_step = 999
     },
 
     unmounted() {},
@@ -83,12 +133,18 @@ export default {
     data() {
         return {
             adminStore: null,
+            healthStore: null,
             schoolStore: null,
+            test_step: 0,
+            all_tests_result: 0,
+            queue_test_status: 'waiting',
+            queue_test_result: 0,
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'health']),
+        ...mapWritableState(useHealthStore, ['data', 'data_2']),
         ...mapWritableState(useSchoolStore, ['school_licences', 'school_admins']),
     },
 

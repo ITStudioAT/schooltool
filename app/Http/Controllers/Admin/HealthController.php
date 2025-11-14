@@ -22,8 +22,6 @@ class HealthController extends Controller
 
         // Dispatch job
         dispatch(function () use ($queueTest) {
-            sleep(2); // Simulate some work
-
             $queueTest->update([
                 'status' => 'completed',
                 'processed_at' => now()
@@ -44,8 +42,10 @@ class HealthController extends Controller
         ]);
     }
 
-    public function checkQueueStatus($testId)
+    public function checkQueueStatus(Request $request)
     {
+
+        $testId = $request->test_id;
         $queueTest = QueueTest::where('id', $testId)
             ->where('user_id', Auth::id())
             ->first();

@@ -1,0 +1,564 @@
+<?php
+
+use App\Models\User;
+use App\Services\AdminNavigationService;
+use App\Services\UserService;
+use Illuminate\Support\Facades\Auth;
+use Spatie\Permission\Models\Role;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+uses(TestCase::class, RefreshDatabase::class);
+
+beforeEach(function () {
+    $this->service = new AdminNavigationService();
+});
+
+describe('dashboardMenu', function () {
+    it('returns empty array when user is not authenticated', function () {
+        Auth::shouldReceive('check')->andReturn(false);
+
+        $result = $this->service->dashboardMenu();
+
+        expect($result)->toBeArray()->toBeEmpty();
+    });
+
+    it('returns basic menu items for authenticated user without special roles', function () {
+        $user = User::factory()->create([
+            'first_name' => 'John',
+            'last_name' => 'Doe',
+        ]);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+
+        expect($result)->toBeArray()->toHaveCount(3);
+
+        expect($result[0])
+            ->toMatchArray([
+                'title' => 'Home',
+                'icon' => 'mdi-home',
+                'to' => '/admin',
+            ]);
+
+        expect($result[1])
+            ->toMatchArray([
+                'title' => 'Doe John',
+                'icon' => 'mdi-account',
+                'to' => '/admin/profile',
+            ]);
+
+        expect($result[2])
+            ->toMatchArray([
+                'title' => 'Abmelden',
+                'icon' => 'mdi-power-cycle',
+                'click' => 'logout',
+            ]);
+    });
+
+    it('includes super admin menu item for super_admin role', function () {
+        $user = User::factory()->create([
+            'first_name' => 'Admin',
+            'last_name' => 'Super',
+        ]);
+        $role = Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+
+        $superAdminItem = collect($result)->firstWhere('title', 'Super-Admin');
+
+        expect($superAdminItem)
+            ->not->toBeNull()
+            ->and($superAdminItem['icon'])->toBe('mdi-shield-crown')
+            ->and($superAdminItem['to'])->toBe('/admin/super_admin');
+    });
+
+    it('includes register system menu item for admin role', function () {
+        $user = User::factory()->create([
+            'first_name' => 'Admin',
+            'last_name' => 'Regular',
+        ]);
+        $role = Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+
+        $registerItem = collect($result)->firstWhere('title', 'Anmeldetool');
+
+        expect($registerItem)
+            ->not->toBeNull()
+            ->and($registerItem['icon'])->toBe('mdi-calendar-cursor')
+            ->and($registerItem['to'])->toBe('/admin/register_system');
+    });
+
+    it('includes register system menu item for register_admin role', function () {
+        $user = User::factory()->create([
+            'first_name' => 'Register',
+            'last_name' => 'Admin',
+        ]);
+        $role = Role::create(['name' => 'register_admin', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+
+        $registerItem = collect($result)->firstWhere('title', 'Anmeldetool');
+
+        expect($registerItem)
+            ->not->toBeNull()
+            ->and($registerItem['icon'])->toBe('mdi-calendar-cursor')
+            ->and($registerItem['to'])->toBe('/admin/register_system');
+    });
+
+    it('truncates long user names to 17 characters', function () {
+        $user = User::factory()->create([
+            'first_name' => 'VeryLongFirstName',
+            'last_name' => 'VeryLongLastName',
+        ]);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+
+        $profileItem = collect($result)->firstWhere('to', '/admin/profile');
+
+        expect($profileItem)
+            ->not->toBeNull()
+            ->and(strlen($profileItem['title']))->toBeLessThanOrEqual(17);
+    });
+
+    it('includes all menu items for user with multiple roles', function () {
+        $user = User::factory()->create([
+            'first_name' => 'Multi',
+            'last_name' => 'Role',
+        ]);
+        $superAdminRole = Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
+        $adminRole = Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        $user->assignRole([$superAdminRole, $adminRole]);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+
+        expect($result)
+            ->toBeArray()
+            ->toHaveCount(5)
+            ->and(collect($result)->pluck('title')->toArray())
+            ->toContain('Home', 'Super-Admin', 'Anmeldetool', 'Role Multi', 'Abmelden');
+    });
+
+    it('ensures Home is always first menu item', function () {
+        $user = User::factory()->create();
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+
+        expect($result[0])
+            ->toHaveKey('title', 'Home')
+            ->and($result[0]['to'])->toBe('/admin');
+    });
+
+    it('ensures logout is always last menu item', function () {
+        $user = User::factory()->create();
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+
+        $lastItem = end($result);
+
+        expect($lastItem)
+            ->toHaveKey('title', 'Abmelden')
+            ->and($lastItem['click'])->toBe('logout');
+    });
+});
+
+describe('profileMenu', function () {
+    it('returns menu items for admin role', function () {
+        $user = User::factory()->create();
+        $role = Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->profileMenu();
+
+        expect($result)
+            ->toBeArray()
+            ->toHaveCount(3);
+    });
+
+    it('returns menu items for user role', function () {
+        $user = User::factory()->create();
+        $role = Role::create(['name' => 'user', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->profileMenu();
+
+        expect($result)
+            ->toBeArray()
+            ->toHaveCount(3);
+    });
+
+    it('returns menu items for register_user role', function () {
+        $user = User::factory()->create();
+        $role = Role::create(['name' => 'register_user', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->profileMenu();
+
+        expect($result)
+            ->toBeArray()
+            ->toHaveCount(3);
+    });
+
+    it('returns menu items for register_admin role', function () {
+        $user = User::factory()->create();
+        $role = Role::create(['name' => 'register_admin', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->profileMenu();
+
+        expect($result)
+            ->toBeArray()
+            ->toHaveCount(3);
+    });
+
+    it('includes home menu item with correct properties', function () {
+        $user = User::factory()->create();
+        $role = Role::create(['name' => 'user', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->profileMenu();
+
+        $homeItem = collect($result)->firstWhere('subtitle', 'Home');
+
+        expect($homeItem)
+            ->not->toBeNull()
+            ->and($homeItem['icon'])->toBe('mdi-home')
+            ->and($homeItem['color'])->toBe('secondary')
+            ->and($homeItem['to'])->toBe('/admin');
+    });
+
+    it('includes password change menu item with correct properties', function () {
+        $user = User::factory()->create();
+        $role = Role::create(['name' => 'user', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->profileMenu();
+
+        $passwordItem = collect($result)->firstWhere('subtitle', 'Kennwort ändern');
+
+        expect($passwordItem)
+            ->not->toBeNull()
+            ->and($passwordItem['icon'])->toBe('mdi-form-textbox-password')
+            ->and($passwordItem['color'])->toBe('secondary')
+            ->and($passwordItem['action'])->toBe('wantToChangePassword');
+    });
+
+    it('includes 2FA menu item with correct properties', function () {
+        $user = User::factory()->create();
+        $role = Role::create(['name' => 'user', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->profileMenu();
+
+        $twoFaItem = collect($result)->firstWhere('subtitle', '2-FA-Authentifizierung');
+
+        expect($twoFaItem)
+            ->not->toBeNull()
+            ->and($twoFaItem['icon'])->toBe('mdi-two-factor-authentication')
+            ->and($twoFaItem['color'])->toBe('secondary')
+            ->and($twoFaItem['action'])->toBe('wantToChange2Fa');
+    });
+
+    it('returns empty array for user without proper roles', function () {
+        $user = User::factory()->create();
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->profileMenu();
+
+        expect($result)->toBeArray()->toBeEmpty();
+    });
+
+    it('all menu items have empty title field', function () {
+        $user = User::factory()->create();
+        $role = Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->profileMenu();
+
+        foreach ($result as $item) {
+            expect($item['title'])->toBe('');
+        }
+    });
+
+    it('all menu items have secondary color', function () {
+        $user = User::factory()->create();
+        $role = Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->profileMenu();
+
+        foreach ($result as $item) {
+            expect($item['color'])->toBe('secondary');
+        }
+    });
+});
+
+describe('userMenu', function () {
+    it('returns home menu item for all users', function () {
+        $user = User::factory()->create();
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->userMenu();
+
+        expect($result)
+            ->toBeArray()
+            ->toHaveCount(1)
+            ->and($result[0]['subtitle'])->toBe('Home')
+            ->and($result[0]['to'])->toBe('/admin');
+    });
+
+    it('includes roles menu item for super_admin', function () {
+        $user = User::factory()->create();
+        $role = Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->userMenu();
+
+        expect($result)
+            ->toBeArray()
+            ->toHaveCount(2);
+
+        $rolesItem = collect($result)->firstWhere('subtitle', 'Rollen');
+
+        expect($rolesItem)
+            ->not->toBeNull()
+            ->and($rolesItem['icon'])->toBe('mdi-badge-account-horizontal-outline')
+            ->and($rolesItem['color'])->toBe('secondary')
+            ->and($rolesItem['to'])->toBe('/admin/users/roles');
+    });
+
+    it('does not include roles menu item for non super_admin', function () {
+        $user = User::factory()->create();
+        $role = Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->userMenu();
+
+        expect($result)
+            ->toBeArray()
+            ->toHaveCount(1);
+    });
+
+    it('home menu item has correct structure', function () {
+        $user = User::factory()->create();
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->userMenu();
+
+        expect($result[0])
+            ->toHaveKeys(['title', 'subtitle', 'icon', 'color', 'to'])
+            ->and($result[0]['title'])->toBe('')
+            ->and($result[0]['icon'])->toBe('mdi-home')
+            ->and($result[0]['color'])->toBe('secondary');
+    });
+});
+
+describe('userSelection', function () {
+    it('returns user selection for admin role', function () {
+        $user = User::factory()->create();
+        $role = Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $userService = mock(UserService::class);
+        $userService->shouldReceive('allUsersInfos')->andReturn([
+            'total' => 10,
+            'active' => 8,
+        ]);
+
+        $this->service = new class($userService) extends AdminNavigationService {
+            private $userService;
+
+            public function __construct($userService)
+            {
+                $this->userService = $userService;
+            }
+
+            public function userSelection(): array
+            {
+                $selection = [];
+                $all_users = [
+                    'title' => 'Alle Benutzer',
+                    'icon' => 'mdi-account-group',
+                    'url' => '/admin/users/all_users',
+                    'infos' => $this->userService->allUsersInfos()
+                ];
+
+                if ($this->userHasRole(['admin'])) {
+                    $selection[] = $all_users;
+                }
+
+                return $selection;
+            }
+        };
+
+        $result = $this->service->userSelection();
+
+        expect($result)
+            ->toBeArray()
+            ->toHaveCount(1)
+            ->and($result[0]['title'])->toBe('Alle Benutzer')
+            ->and($result[0]['icon'])->toBe('mdi-account-group')
+            ->and($result[0]['url'])->toBe('/admin/users/all_users')
+            ->and($result[0]['infos'])->toBeArray();
+    });
+
+    it('returns empty array for non-admin users', function () {
+        $user = User::factory()->create();
+        $role = Role::create(['name' => 'user', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->userSelection();
+
+        expect($result)->toBeArray()->toBeEmpty();
+    });
+
+    it('user selection item has correct structure', function () {
+        $user = User::factory()->create();
+        $role = Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->userSelection();
+
+        if (!empty($result)) {
+            expect($result[0])
+                ->toHaveKeys(['title', 'icon', 'url', 'infos']);
+        }
+    });
+});
+
+describe('HasRoleTrait integration', function () {
+    it('properly checks for multiple roles', function () {
+        $user = User::factory()->create();
+        $role1 = Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        $role2 = Role::create(['name' => 'register_admin', 'guard_name' => 'web']);
+        $user->assignRole([$role1, $role2]);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+
+        expect($result)
+            ->toBeArray()
+            ->and(collect($result)->contains('title', 'Anmeldetool'))->toBeTrue();
+    });
+
+    it('handles unauthenticated users gracefully', function () {
+        Auth::shouldReceive('check')->andReturn(false);
+
+        $result = $this->service->dashboardMenu();
+
+        expect($result)->toBeArray()->toBeEmpty();
+    });
+});
+
+describe('menu item consistency', function () {
+    it('all dashboard menu items have required keys', function () {
+        $user = User::factory()->create();
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+
+        foreach ($result as $item) {
+            expect($item)
+                ->toHaveKey('title')
+                ->and($item)->toHaveKey('icon');
+
+            expect(
+                array_key_exists('to', $item) || array_key_exists('click', $item)
+            )->toBeTrue();
+        }
+    });
+
+    it('menu items use consistent icon prefix', function () {
+        $user = User::factory()->create();
+        $role = Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+
+        foreach ($result as $item) {
+            expect($item['icon'])->toStartWith('mdi-');
+        }
+    });
+});

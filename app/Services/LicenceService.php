@@ -20,6 +20,7 @@ class LicenceService
     // $school: School-Objekt
     // $app: String mit dem App-Namen
     {
+
         // Checken, ob Schule existiert
         if (!$school) return false;
 
@@ -29,10 +30,13 @@ class LicenceService
         // Checken, ob es die Lizenz für die Schule gibt gibt
         if (!$schoolLicence = $school->licences()->where('licence_id', $licence->id)->first()) return false;
 
-        // Prüfen, ob die Lizenz gültig ist (kein Datum = unendlich gültig)
-        if (!($schoolLicence->valid_until == null || $schoolLicence->valid_until->isFuture())) return false;
+        if ($schoolLicence->pivot->valid_until === null) {
+            return true; // Unendlich gültig
+        }
 
-        return true;
+
+        // Schritt 4: Datum vergleichen
+        return $schoolLicence->pivot->valid_until >= Carbon::today()->toDateString();
     }
 
     public function schoolAddLicence($school, $data): SchoolLicence

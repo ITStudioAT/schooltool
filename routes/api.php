@@ -71,7 +71,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/users', UserController::class);
 
         Route::get('/admin/test-queue', [App\Http\Controllers\Admin\HealthController::class, 'testQueue']);
-        Route::get('/admin/test-queue/check/{testId}', [App\Http\Controllers\Admin\HealthController::class, 'checkQueueStatus']);
+        Route::get('/admin/test-queue/check', [App\Http\Controllers\Admin\HealthController::class, 'checkQueueStatus']);
     });
 
     /* SANCTUM - user */

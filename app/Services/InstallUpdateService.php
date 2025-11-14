@@ -26,7 +26,7 @@ class InstallUpdateService
             })->count();
             if ($users === 0) {
                 // Create one super-admin for this school
-                $pw = env('SA_PW', 'ChangeMe123!');
+                $pw = env('SA_PW');
                 $user = $school->users()->create([
                     'last_name' => 'Kron',
                     'first_name' => 'Günther',
