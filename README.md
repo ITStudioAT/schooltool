@@ -4,6 +4,10 @@ SchoolTool beinhaltet Tools zur Unterstützung der Administration von Schulen.
 
 # Last Changes
 
+## 3.2.6 - 14.11.2025
+
+-   Queue Test
+
 ## 3.2.5 - 13.11.2025
 
 -   Added some Pest tests for Service-Classes
