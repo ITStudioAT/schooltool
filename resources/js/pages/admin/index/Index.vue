@@ -10,26 +10,54 @@
                         </div>
                     </template>
                     <v-card tile flat color="primary">
-                        <v-card-title class="d-flex flex-row align-center justify-space-between">
-                            <div>Status</div>
-                            <div v-if="test_step != 999">... Tests werden durchgeführt</div>
-                            <div v-if="test_step == 999">Tests abgeschlossen</div>
-                            <div v-if="test_step == 999">
-                                <v-icon icon="mdi-circle " color="success" v-if="all_tests_result == 1" />
-                                <v-icon icon="mdi-circle " color="error" v-if="all_tests_result != 1" />
-                            </div>
-                        </v-card-title>
                         <v-card-text class="text-body-1">
-                            <div class="d-flex flex-row align-center justify-space-between">
-                                <div>Test Warteschlange</div>
-                                <div v-if="queue_test_status == 'waiting'">wartend ...</div>
-                                <div v-if="queue_test_status == 'running'">läuft ...</div>
-                                <div v-if="queue_test_status == 'finished'">abgeschlossen</div>
-                                <div v-if="queue_test_status == 'finished'">
-                                    <v-icon icon="mdi-checkbox-marked " color="success" v-if="queue_test_result == 1" />
-                                    <v-icon icon="mdi-checkbox-marked" color="error" v-if="queue_test_result != 1" />
-                                </div>
-                            </div>
+                            <v-row no-gutters="" dense>
+                                <v-col cols="4">
+                                    Status
+                                    <v-btn
+                                        icon="mdi-refresh"
+                                        class="ml-2"
+                                        flat
+                                        tile
+                                        size="x-small"
+                                        @click="runTests"
+                                        variant="outlined"
+                                        :disabled="queue_test_status == 'running'" />
+                                </v-col>
+                                <v-col cols="4" class="text-right">
+                                    <div v-if="test_step != 999">
+                                        <div>
+                                            Tests aktiv
+                                            <v-icon size="small" icon="mdi-dots-circle mdi-spin" />
+                                        </div>
+                                    </div>
+                                    <div v-if="test_step == 999">Tests abgeschlossen</div>
+                                </v-col>
+                                <v-col cols="4" class="text-right">
+                                    <div v-if="test_step == 999">
+                                        <v-icon icon="mdi-circle " color="success" v-if="all_tests_result == 1" />
+                                        <v-icon icon="mdi-circle " color="error" v-if="all_tests_result != 1" />
+                                    </div>
+                                </v-col>
+                            </v-row>
+
+                            <v-row no-gutters="" dense>
+                                <v-col cols="4">Test Warteschlange</v-col>
+                                <v-col cols="4" class="text-right">
+                                    <div v-if="queue_test_status == 'waiting'">Test wartend</div>
+                                    <div v-if="queue_test_status == 'running'">
+                                        Test aktiv
+                                        <v-icon size="small" icon="mdi-dots-circle mdi-spin" />
+                                    </div>
+                                    <div v-if="queue_test_status == 'finished'">Test abgeschlossen</div>
+                                </v-col>
+                                <v-col cols="4" class="text-right">
+                                    <div v-if="queue_test_status == 'finished'">
+                                        <v-icon icon="mdi-checkbox-marked " color="success" v-if="queue_test_result == 1" />
+                                        <v-icon icon="mdi-checkbox-marked" color="error" v-if="queue_test_result != 1" />
+                                    </div>
+                                </v-col>
+                            </v-row>
                         </v-card-text>
                     </v-card>
                     <v-card tile flat color="primary" class="mt-4">
@@ -101,31 +129,7 @@ export default {
         this.healthStore = useHealthStore()
         this.schoolStore = useSchoolStore()
         if (this.config?.is_auth) await this.schoolStore.loadSchoolInfos(this.config?.selected_school?.id)
-        this.queue_test_status = 'running'
-        await this.healthStore.testQueue()
-        // Mehrmals prüfen bis completed
-        let attempts = 0
-        let maxAttempts = 10
-        let status = null
-        let is_completed = false
-
-        this.queue_test_result = 999
-        while (attempts < maxAttempts && !is_completed) {
-            status = await this.healthStore.checkQueueStatus(this.data.testId)
-
-            if (status.is_completed) {
-                this.queue_test_result = 1
-                break
-            } else {
-                await new Promise((resolve) => setTimeout(resolve, 1000)) // 1 Sekunde warten
-                attempts++
-            }
-        }
-        this.queue_test_status = 'finished'
-
-        this.all_tests_result = 1
-        if (this.queue_test_result != 1) this.all_tests_result = 999
-        this.test_step = 999
+        this.runTests()
     },
 
     unmounted() {},
@@ -149,6 +153,38 @@ export default {
     },
 
     methods: {
+        async runTests() {
+            this.test_step = 0
+            this.all_tests_result = 0
+            this.queue_test_status = 'waiting'
+            this.queue_test_result = 0
+
+            this.queue_test_status = 'running'
+            await this.healthStore.testQueue()
+            // Mehrmals prüfen bis completed
+            let attempts = 0
+            let maxAttempts = 10
+            let status = null
+            let is_completed = false
+
+            this.queue_test_result = 999
+            while (attempts < maxAttempts && !is_completed) {
+                status = await this.healthStore.checkQueueStatus(this.data.testId)
+
+                if (status.is_completed) {
+                    this.queue_test_result = 1
+                    break
+                } else {
+                    await new Promise((resolve) => setTimeout(resolve, 1000)) // 1 Sekunde warten
+                    attempts++
+                }
+            }
+            this.queue_test_status = 'finished'
+
+            this.all_tests_result = 1
+            if (this.queue_test_result != 1) this.all_tests_result = 999
+            this.test_step = 999
+        },
         user(id) {
             return this.school_admins.find((a) => a.id === id)
         },

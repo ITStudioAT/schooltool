@@ -23,6 +23,14 @@ class AppUpdateCommand extends Command
         Artisan::call('migrate', ['--force' => true]);
         $this->line(Artisan::output());
         $this->line(str_repeat('.', 50));
+
+        // ✅Delete Records in Test-Models
+        $this->info('▶ CLEAR TEST-FILES');
+        $service->clearModels();
+        $this->info('✅ Records in test-files deleted');
+        $this->line(str_repeat('.', 50));
+
+
         // ✅ 2. Roles and records
         $this->info('▶ ROLES AND RECORDS');
         $service->createRoles(['super_admin', 'admin', 'register_admin', 'register_user']);

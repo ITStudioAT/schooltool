@@ -4,9 +4,14 @@ SchoolTool beinhaltet Tools zur Unterstützung der Administration von Schulen.
 
 # Last Changes
 
+## 3.2.7 - 15.11.2025
+
+-   Deleting test-files, when updating app
+-   Queue test updated
+
 ## 3.2.6 - 14.11.2025
 
--   Queue Test
+-   Queue tTest
 
 ## 3.2.5 - 13.11.2025
 

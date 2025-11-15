@@ -11,21 +11,10 @@ use Tests\TestCase;
 uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->service = new InstallUpdateService();
-    
-    // Clear any existing storage files and directories
-    Storage::deleteDirectory('temp');
-    Storage::deleteDirectory('excel');
-    Storage::deleteDirectory('pdf');
-    Storage::disk('public')->deleteDirectory('images');
-});
+    Storage::fake('local');
+    Storage::fake('public');
 
-afterEach(function () {
-    // Clean up test directories
-    Storage::deleteDirectory('temp');
-    Storage::deleteDirectory('excel');
-    Storage::deleteDirectory('pdf');
-    Storage::disk('public')->deleteDirectory('images');
+    $this->service = new InstallUpdateService();
 });
 
 describe('createRoles', function () {

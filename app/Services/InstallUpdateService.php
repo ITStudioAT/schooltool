@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\QueueTest;
 use App\Models\School;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
@@ -13,6 +14,12 @@ class InstallUpdateService
         foreach ($roles as $role) {
             Role::firstOrCreate(['name' => $role, 'guard_name' => 'web']);
         }
+    }
+
+    public function clearModels()
+    {
+        //
+        QueueTest::query()->delete();
     }
 
     public function checkSuperAdmins()

@@ -121,6 +121,9 @@ class AdminService
     public function login($data)
     {
         $user = User::where('email', $data['email'])->where('school_id', $data['school']['id'])->first();
+        $user->login_at = now();
+        $user->login_ip = request()->ip();
+        $user->save();
         Auth::guard('web')->login($user, true);
         session()->regenerate();
 

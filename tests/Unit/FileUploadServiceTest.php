@@ -1,9 +1,9 @@
 <?php
 
 use App\Services\FileUploadService;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -11,28 +11,25 @@ uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
     $this->service = new FileUploadService();
-    
-    // Clean up any temp directories from previous tests
-    $tempPath = storage_path('app/private/temp');
-    if (is_dir($tempPath)) {
-        array_map('unlink', glob("{$tempPath}/**/file.part"));
-        array_map('rmdir', glob("{$tempPath}/*", GLOB_ONLYDIR));
+    $this->filesystem = new Filesystem();
+
+    $this->originalStoragePath = storage_path();
+    $this->testStoragePath = storage_path('framework/testing/file-upload-service/' . Str::uuid());
+
+    if (! is_dir($this->testStoragePath)) {
+        mkdir($this->testStoragePath, 0775, true);
     }
+
+    app()->useStoragePath($this->testStoragePath);
 });
 
 afterEach(function () {
-    // Clean up test files and directories
-    $tempPath = storage_path('app/private/temp');
-    if (is_dir($tempPath)) {
-        array_map('unlink', glob("{$tempPath}/**/file.part"));
-        array_map('rmdir', glob("{$tempPath}/*", GLOB_ONLYDIR));
+    if (isset($this->originalStoragePath)) {
+        app()->useStoragePath($this->originalStoragePath);
     }
-    
-    // Clean up test upload directories
-    $testPath = storage_path('app/test-uploads');
-    if (is_dir($testPath)) {
-        array_map('unlink', glob("{$testPath}/*"));
-        @rmdir($testPath);
+
+    if (isset($this->testStoragePath) && is_dir($this->testStoragePath)) {
+        $this->filesystem->deleteDirectory($this->testStoragePath);
     }
 });
 
