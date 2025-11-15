@@ -4,6 +4,10 @@ SchoolTool beinhaltet Tools zur Unterstützung der Administration von Schulen.
 
 # Last Changes
 
+## 3.2.8
+
+-   Optionale 2-Faktoren-Authentifizierung
+
 ## 3.2.7 - 15.11.2025
 
 -   Deleting test-files, when updating app

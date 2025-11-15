@@ -202,6 +202,9 @@ class UserController extends Controller
     public function updateProfile(UpdateProfileRequest $request, User $user, AdminService $adminService)
     {
 
+
+        info("da");
+
         if (! $auth_user = $this->userHasAtLeastOneRole()) {
             abort(403, 'Sie haben keine Berechtigung');
         }
@@ -219,6 +222,8 @@ class UserController extends Controller
         if (User::where('email', $validated['email'])->exists()) {
             abort(422, 'Diese E-Mail-Adresse wird bereits verwendet.');
         }
+
+
 
         // Token für 2FA setzen und E-Mail senden
         $data['school'] = $auth_user->selectedSchool;

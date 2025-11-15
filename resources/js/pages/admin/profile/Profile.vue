@@ -2,19 +2,24 @@
     <v-container fluid class="ma-0 w-100 pa-2" v-if="config && config.user">
         <!-- Menüleiste oben -->
         <v-row class="d-flex flex-row ga-2 mb-2 mt-0 w-100" no-gutters>
-            <!--
+            <v-card tile flat color="transparent" :disabled="step != '' || is_edit" class="d-flex flex-row ga-2">
+                <!--
             <its-menu-button subtitle="Home" icon="mdi-home" color="secondary" to="/admin" />
-            <its-menu-button subtitle="Kennwort ändern" icon="mdi-form-textbox-password" color="secondary"
-                @click="wantToChangePassword" />
                 -->
-            <its-menu-button subtitle="Kennwort ändern" icon="mdi-form-textbox-password" color="secondary" @click="wantToChangePassword" />
-            <!--
-            <its-menu-button
-                subtitle="2-FA-Authentifizierung"
-                icon="mdi-two-factor-authentication"
-                color="secondary"
-                @click="wantToChange2Fa" />
-                -->
+                <its-menu-button
+                    subtitle="Kennwort ändern"
+                    icon="mdi-form-textbox-password"
+                    :color="step == 'CHANGE_PASSWORD' ? 'primary' : 'secondary'"
+                    @click="wantToChangePassword" />
+
+                <its-menu-button
+                    subtitle="2-FA-Authentifizierung"
+                    icon="mdi-two-factor-authentication"
+                    :color="step == 'CHANGE_2FA' ? 'primary' : 'secondary'"
+                    @click="wantToChange2Fa" />
+
+                <!-- CHANGE_2FA -->
+            </v-card>
         </v-row>
         <v-row class="w-100" no-gutters>
             <v-col cols="12" sm="6" md="4" xl="3">

@@ -35,7 +35,6 @@ class StandardEmail extends Notification implements ShouldQueue
     public function toMail(object $notifiable): MailMessage
     {
 
-
         $mail = (new MailMessage())
             ->from($this->data['from_address'], $this->data['from_name'])
             ->subject($this->data['subject'])

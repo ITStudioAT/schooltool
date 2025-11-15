@@ -220,12 +220,13 @@ class AdminService
         $email = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $data['school']['long_name'],
-            'logo' =>  asset('/storage/images/' . $data['school']['logo']),
+            'logo' =>  asset('/storage/images/' . config('schooltool.logo')),
             'subject' => $subject,
             'markdown' => 'mails.admin.sendCode',
             'token_2fa' => $token,
             'token-expire-time' => config('schooltool.token_expire_time'),
         ];
+
 
         Notification::route('mail', $user->email)->notify(new StandardEmail($email));
     }

@@ -156,17 +156,20 @@ class UserService
         switch ($result) {
             case TwoFaResult::TWO_FA_DELETE:
                 // Delete 2-FA-Authentication
-                $user->is_2fa = false;
-                $user->email_2fa = null;
-                $user->email_2fa_verified_at = null;
-                $user->save();
+                User::where('email', $user->email)->update([
+                    'is_2fa' => false,
+                    'email_2fa' => null,
+                    'email_2fa_verified_at' => null
+                ]);
 
                 break;
 
             case TwoFaResult::TWO_FA_OK:
                 // 2-FA: yes, email exists and is verified
-                $user->is_2fa = true;
-                $user->save();
+                User::where('email', $user->email)->update([
+                    'is_2fa' => true,
+                    'email_2fa' => $user->email_2fa
+                ]);
 
                 break;
 
@@ -187,10 +190,14 @@ class UserService
 
     public function update2Fa($user, $email_2fa)
     {
-        $user->is_2fa = true;
-        $user->email_2fa = $email_2fa;
-        $user->email_2fa_verified_at = now();
-        $user->save();
+
+        User::where('email', $user->email)->update(
+            [
+                'is_2fa' => true,
+                'email_2fa' => $email_2fa,
+                'email_2fa_verified_at' => now()
+            ]
+        );
 
         return TwoFaResult::TWO_FA_SET;
     }
@@ -202,8 +209,9 @@ class UserService
         $data = [
             'from_address' => env('MAIL_FROM_ADDRESS'),
             'from_name' => env('MAIL_FROM_NAME'),
+            'logo' =>  asset('/storage/images/' . config('schooltool.logo')),
             'subject' => 'Code zum Bestätigen der E-Mail',
-            'markdown' => 'spa::mails.admin.sendCode',
+            'markdown' => 'mails.admin.sendCode',
             'token_2fa' => $token_2fa,
             'token-expire-time' => config('spa.token_expire_time'),
         ];

@@ -17,7 +17,7 @@ return new class extends Migration
             $table->foreignId('schoolyear_id');
             $table->foreignId('register_id');
             $table->string('supervisor')->nullable();
-            $table->date('date');
+            $table->date('date')->nullable();
             $table->time('from');
             $table->time('to');
             $table->unsignedInteger('max_registrations')->default(0);

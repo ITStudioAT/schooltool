@@ -6,11 +6,13 @@ use App\Models\RegisterDate;
 use App\Models\RegisterDateBooking;
 use App\Models\School;
 use App\Models\Schoolyear;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Register extends Model
 {
+    use HasFactory;
 
     protected $guarded = [];
 
