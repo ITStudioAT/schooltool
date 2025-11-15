@@ -139,6 +139,7 @@ class RegisterService
             $licence = Licence::where('name', $app)->first();
         } else {
             $data = ['status' => 'error', 'message' => 'Lizenz ist ungültig'];
+            $licence = null;
         }
 
         $data = ['status' => 'ok', 'isSchoolValid' => $isSchoolValid, 'school' => $school, 'isLicenceValid' => $isLicenceValid, 'licence' => $licence];

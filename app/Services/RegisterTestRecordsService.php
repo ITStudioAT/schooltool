@@ -33,7 +33,12 @@ class RegisterTestRecordsService
         $count = User::count();
         if ($count >= 500) return false;
 
-        User::factory()->count(500)->create();
+        User::factory()
+            ->count(500)
+            ->create()
+            ->each(function ($user) {
+                $user->assignRole('register_user');
+            });
         return true;
     }
 

@@ -9,6 +9,10 @@
         <Overview />
 
         <v-row class="w-100" dense>
+            <MainMenu />
+        </v-row>
+
+        <v-row class="w-100" dense v-if="main_menu == ''">
             <!-- TERMINE mit Menü-->
             <DatesWithMenu />
 
@@ -18,8 +22,16 @@
             <!-- NEUE PERSON ZU TERMIN HINZUFÜGEN ANLEGEN -->
             <AddPerson v-if="action == 'add_person'" />
 
-            <!-- BUCHUNGEN ANZEUGEN -->
+            <!-- BUCHUNGEN ANZEIGEN -->
             <ShowBookings v-if="action == 'show_bookings'" />
+
+            <!-- REGISTER USERS ANZEIGEN -->
+            <RegisterUsers v-if="action == 'show_users'" />
+        </v-row>
+
+        <v-row class="w-100" dense v-if="main_menu == 'register_users'">
+            <!-- REGISTER USERS ANZEIGEN -->
+            <RegisterUsers />
         </v-row>
     </v-container>
 </template>
@@ -27,20 +39,24 @@
 <script>
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { useRegisterStore } from '@/stores/admin/RegisterStore'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import Schoolyears from '@/pages/admin/components/schoolyears/Schoolyears.vue'
 import Overview from './components/RegisterDetails/Overview.vue'
+import MainMenu from './components/RegisterDetails/MainMenu.vue'
 import DatesWithMenu from './components/RegisterDetails/DatesWithMenu.vue'
 import AddDates from './components/RegisterDetails/AddDates.vue'
 import AddPerson from './components/RegisterDetails/AddPerson.vue'
 import ShowBookings from './components/RegisterDetails/ShowBookings.vue'
+import RegisterUsers from './components/RegisterDetails/RegisterUsers.vue'
 
 export default {
-    components: { ItsMenuButton, ItsGridBox, Schoolyears, Overview, DatesWithMenu, AddDates, AddPerson, ShowBookings },
+    components: { ItsMenuButton, ItsGridBox, Schoolyears, Overview, DatesWithMenu, AddDates, AddPerson, ShowBookings, RegisterUsers, MainMenu },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
+        this.registerStore = useRegisterStore()
     },
 
     unmounted() {},
@@ -48,11 +64,12 @@ export default {
     data() {
         return {
             adminStore: null,
+            registerStore: null,
         }
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, ['action']),
+        ...mapWritableState(useAdminStore, ['main_menu', 'action']),
     },
     watch: {},
 

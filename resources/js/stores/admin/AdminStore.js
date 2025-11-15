@@ -18,9 +18,11 @@ export const useAdminStore = defineStore('AdminAdminStore', {
         selected_school_id: null,
         selected_active_register: null,
         action: '',
+        action_2: '',
         data: {},
         roles: [],
         health: null,
+        main_menu: '',
     }),
 
     actions: {

@@ -4,7 +4,12 @@ SchoolTool beinhaltet Tools zur Unterstützung der Administration von Schulen.
 
 # Last Changes
 
-## 3.2.8
+## 3.2.9 - 15.11.2025
+
+-   Übersicht über Benutzer im Anmeldetool
+-   Bereinigen Benutzer ohne Anmeldung
+
+## 3.2.8 - 15.11.2025
 
 -   Optionale 2-Faktoren-Authentifizierung
 

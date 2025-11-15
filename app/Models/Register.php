@@ -6,9 +6,11 @@ use App\Models\RegisterDate;
 use App\Models\RegisterDateBooking;
 use App\Models\School;
 use App\Models\Schoolyear;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Register extends Model
 {
@@ -57,6 +59,16 @@ class Register extends Model
             'id',                       // local key on registers
             'id'                        // local key on register_dates
         );
+    }
+
+    public function users(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            User::class,
+            'register_date_bookings', // pivot table
+            'register_id',            // FK on pivot to registers.id
+            'user_id'                 // FK on pivot to users.id
+        )->distinct();                // avoid duplicates when user has multiple bookings
     }
 
     public function hasDependencies(): bool

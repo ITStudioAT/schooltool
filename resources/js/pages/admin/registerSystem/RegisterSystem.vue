@@ -24,6 +24,7 @@ export default {
         this.adminStore = useAdminStore()
         this.schoolyearStore = useSchoolyearStore()
         this.registerStore = useRegisterStore()
+        this.main_menu = ''
     },
 
     unmounted() {},
@@ -37,7 +38,7 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, ['selected_schoolyear']),
+        ...mapWritableState(useAdminStore, ['selected_schoolyear', 'main_menu']),
         ...mapWritableState(useSchoolyearStore, ['schoolyears']),
         ...mapWritableState(useRegisterStore, ['registers', 'active_registers']),
     },
