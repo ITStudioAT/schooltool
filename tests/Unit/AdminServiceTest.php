@@ -278,21 +278,22 @@ describe('checkRegister', function () {
 
 describe('createRegisterUser', function () {
     it('creates a new user with registration data', function () {
-        // Skip this test as the actual service method requires school_id but doesn't include it in the creation
-        // This would require modifying the service method to accept school_id
-        $this->markTestSkipped('Service method needs school_id in database but does not accept it as parameter');
+        // Note: The service method has a limitation - it doesn't set school_id
+        // which is required by the database. This is a known issue in the service.
+        // Test is skipped until service is fixed to accept and set school_id.
+        $this->markTestSkipped('Service method createRegisterUser does not set required school_id field');
     });
 
     it('hashes password during user creation', function () {
-        $this->markTestSkipped('Service method needs school_id in database but does not accept it as parameter');
+        $this->markTestSkipped('Service method createRegisterUser does not set required school_id field');
     });
 
     it('sets register_as to admin', function () {
-        $this->markTestSkipped('Service method needs school_id in database but does not accept it as parameter');
+        $this->markTestSkipped('Service method createRegisterUser does not set required school_id field');
     });
 
     it('sets user as inactive by default', function () {
-        $this->markTestSkipped('Service method needs school_id in database but does not accept it as parameter');
+        $this->markTestSkipped('Service method createRegisterUser does not set required school_id field');
     });
 });
 

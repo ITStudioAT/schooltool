@@ -9,11 +9,15 @@ use App\Models\User;
 use App\Services\RegisterTestRecordsService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
+    // Create required role for user factory
+    Role::create(['name' => 'register_user', 'guard_name' => 'web']);
+    
     $this->service = new RegisterTestRecordsService();
 });
 
