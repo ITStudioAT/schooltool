@@ -126,7 +126,7 @@ return [
 
     'aliases' => [
         // ...
-        'Spa' => App\Facades\SpaFacade::class,
+        // 'Spa' => App\Facades\SpaFacade::class,
         'Pdf' => Spatie\LaravelPdf\Facades\Pdf::class,
     ],
 

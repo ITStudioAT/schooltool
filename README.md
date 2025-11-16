@@ -4,6 +4,10 @@ SchoolTool beinhaltet Tools zur Unterstützung der Administration von Schulen.
 
 # Last Changes
 
+## 3.2.10 - 16.11.2025
+
+-   Many pest tests added
+
 ## 3.2.9 - 15.11.2025
 
 -   Übersicht über Benutzer im Anmeldetool
