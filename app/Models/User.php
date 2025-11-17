@@ -152,4 +152,11 @@ class User extends Authenticatable
 
         return true;
     }
+
+    public function hasDependencies(): bool
+    {
+
+        if (RegisterDateBooking::where('user_id', $this->id)->count() > 0) return true;
+        return false;
+    }
 }

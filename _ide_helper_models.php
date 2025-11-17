@@ -16,6 +16,7 @@ namespace App\Models{
  * @property int $id
  * @property string|null $name
  * @property string|null $long_name
+ * @property int|null $price_per_year
  * @property int $is_selectable
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
@@ -27,9 +28,34 @@ namespace App\Models{
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Licence whereIsSelectable($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Licence whereLongName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Licence whereName($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Licence wherePricePerYear($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Licence whereUpdatedAt($value)
  */
 	class Licence extends \Eloquent {}
+}
+
+namespace App\Models{
+/**
+ * @property string $id
+ * @property int $user_id
+ * @property string $status
+ * @property \Illuminate\Support\Carbon $dispatched_at
+ * @property \Illuminate\Support\Carbon|null $processed_at
+ * @property \Illuminate\Support\Carbon|null $created_at
+ * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property-read \App\Models\User $user
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|QueueTest newModelQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|QueueTest newQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|QueueTest query()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|QueueTest whereCreatedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|QueueTest whereDispatchedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|QueueTest whereId($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|QueueTest whereProcessedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|QueueTest whereStatus($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|QueueTest whereUpdatedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|QueueTest whereUserId($value)
+ */
+	class QueueTest extends \Eloquent {}
 }
 
 namespace App\Models{
@@ -39,7 +65,6 @@ namespace App\Models{
  * @property int $schoolyear_id
  * @property string|null $name
  * @property string|null $description_on_website
- * @property bool $is_active
  * @property int $max_registrations
  * @property bool $show_phone
  * @property bool $must_phone
@@ -52,9 +77,20 @@ namespace App\Models{
  * @property bool $show_booked
  * @property bool $show_end_time
  * @property bool $show_supervisor
+ * @property bool $is_active
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \App\Models\Schoolyear $schoolyear
+ * @property int $show_note
+ * @property int $must_note
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\RegisterDateBooking> $bookings
+ * @property-read int|null $bookings_count
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\RegisterDate> $dates
+ * @property-read int|null $dates_count
+ * @property-read \App\Models\School|null $school
+ * @property-read \App\Models\Schoolyear|null $schoolyear
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\User> $users
+ * @property-read int|null $users_count
+ * @method static \Database\Factories\RegisterFactory factory($count = null, $state = [])
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register newQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register query()
@@ -63,6 +99,7 @@ namespace App\Models{
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereId($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereIsActive($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereMaxRegistrations($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereMustNote($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereMustPhone($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereMustStudentBirthdate($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereMustStudentFirstName($value)
@@ -72,6 +109,7 @@ namespace App\Models{
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereSchoolyearId($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereShowBooked($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereShowEndTime($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereShowNote($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereShowPhone($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereShowStudentBirthdate($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereShowStudentFirstName($value)
@@ -98,6 +136,7 @@ namespace App\Models{
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\RegisterDateBooking> $bookings
  * @property-read int|null $bookings_count
+ * @method static \Database\Factories\RegisterDateFactory factory($count = null, $state = [])
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDate newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDate newQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDate query()
@@ -130,14 +169,18 @@ namespace App\Models{
  * @property string|null $student_birthdate
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \App\Models\Register $register
- * @property-read \App\Models\RegisterDate $registerDate
+ * @property string|null $note
+ * @property-read \App\Models\Register|null $register
+ * @property-read \App\Models\RegisterDate|null $registerDate
+ * @property-read \App\Models\School|null $school
  * @property-read \App\Models\User|null $user
+ * @method static \Database\Factories\RegisterDateBookingFactory factory($count = null, $state = [])
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDateBooking newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDateBooking newQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDateBooking query()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDateBooking whereCreatedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDateBooking whereId($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDateBooking whereNote($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDateBooking whereRegisterDateId($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDateBooking whereRegisterId($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDateBooking whereSchoolId($value)
@@ -181,14 +224,16 @@ namespace App\Models{
  * @property int $id
  * @property string|null $long_name
  * @property string|null $short_name
- * @property string|null $logo
  * @property string|null $email
+ * @property string|null $logo
  * @property int $is_selectable
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @property-read \App\Models\Schoolyear|null $activeSchoolyear
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Licence> $licences
  * @property-read int|null $licences_count
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Register> $registers
+ * @property-read int|null $registers_count
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Schoolyear> $schoolyears
  * @property-read int|null $schoolyears_count
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\User> $users
@@ -242,6 +287,7 @@ namespace App\Models{
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Schoolyear active()
+ * @method static \Database\Factories\SchoolyearFactory factory($count = null, $state = [])
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Schoolyear newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Schoolyear newQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Schoolyear query()
@@ -260,7 +306,7 @@ namespace App\Models{
 namespace App\Models{
 /**
  * @property int $id
- * @property int|null $school_id
+ * @property int $school_id
  * @property int|null $schoolyear_id
  * @property int|null $register_id
  * @property string $email
@@ -291,6 +337,8 @@ namespace App\Models{
  * @property-read int|null $notifications_count
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \Spatie\Permission\Models\Permission> $permissions
  * @property-read int|null $permissions_count
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\RegisterDateBooking> $registerDateBookings
+ * @property-read int|null $register_date_bookings_count
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \Spatie\Permission\Models\Role> $roles
  * @property-read int|null $roles_count
  * @property-read \App\Models\Register|null $selectedRegister

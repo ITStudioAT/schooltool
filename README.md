@@ -4,6 +4,13 @@ SchoolTool beinhaltet Tools zur Unterstützung der Administration von Schulen.
 
 # Last Changes
 
+## 3.2.11 - 17.11.2025
+
+-   User-Übersicht für Super-Admin mit:
+-   Selektion nach Rolle
+-   Erstellen, Ändern, Löschen von Benutzern
+-   More pest tests added
+
 ## 3.2.10 - 16.11.2025
 
 -   Many pest tests added

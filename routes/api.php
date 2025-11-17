@@ -80,10 +80,18 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/users/update_with_code',  [UserController::class, 'updateWithCode']);
         Route::post('/admin/users/save_password',  [UserController::class, 'savePassword']);
         Route::post('/admin/users/save_password_with_code',  [UserController::class, 'savePasswordWithCode']);
+
+        Route::get('/admin/users20/load_users', [\App\Http\Controllers\Admin\UserController::class, 'loadUsers']);
+        Route::post('/admin/users20/update', [\App\Http\Controllers\Admin\UserController::class, 'updateUser']);
+        Route::post('/admin/users20/store', [\App\Http\Controllers\Admin\UserController::class, 'storeUser']);
+        Route::post('/admin/users20/delete_users', [\App\Http\Controllers\Admin\UserController::class, 'deleteUsers']);
     });
 
     /* SANCTUM - admin, register_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:admin,register_admin'])->group(function () {
+
+        //Roles
+        Route::get('/admin/roles/load_roles', [\App\Http\Controllers\Admin\RoleController::class, 'loadRoles']);
 
         //licences
         Route::apiResource('/admin/licences', \App\Http\Controllers\Admin\LicenceController::class);

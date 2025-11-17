@@ -2,34 +2,108 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Models\User;
 use App\Enums\TwoFaResult;
-use Illuminate\Http\Request;
-use App\Services\UserService;
-use App\Services\AdminService;
-use App\Traits\PaginationTrait;
 use App\Enums\VerificationResult;
 use App\Http\Controllers\Controller;
-use Illuminate\Support\Facades\Hash;
-use App\Http\Resources\Admin\UserResource;
 use App\Http\Requests\Admin\ConfirmRequest;
-use App\Http\Requests\Admin\Save2FaRequest;
-use App\Http\Requests\Admin\IndexUserRequest;
-use App\Http\Requests\Admin\StoreUserRequest;
-use App\Http\Requests\Admin\UpdateUserRequest;
-use App\Http\Requests\Admin\SavePasswordRequest;
-use App\Http\Requests\Admin\SaveUserRolesRequest;
-use App\Http\Requests\Admin\UpdateProfileRequest;
-use App\Http\Requests\Admin\Save2FaWithCodeRequest;
 use App\Http\Requests\Admin\EmailVerificationRequest;
-use App\Http\Requests\Admin\UpdateUserWithCodeRequest;
+use App\Http\Requests\Admin\IndexUserRequest;
+use App\Http\Requests\Admin\Save2FaRequest;
+use App\Http\Requests\Admin\Save2FaWithCodeRequest;
+use App\Http\Requests\Admin\SavePasswordRequest;
 use App\Http\Requests\Admin\SavePasswordWithCodeRequest;
-use App\Http\Requests\Admin\SendVerificationMailRequest;
+use App\Http\Requests\Admin\SaveUserRolesRequest;
 use App\Http\Requests\Admin\SendVerificationEmailInitializedFromUserRequest;
+use App\Http\Requests\Admin\SendVerificationMailRequest;
+use App\Http\Requests\Admin\StoreUserRequest;
+use App\Http\Requests\Admin\UpdateProfileRequest;
+use App\Http\Requests\Admin\UpdateUserRequest;
+use App\Http\Requests\Admin\UpdateUserWithCodeRequest;
+use App\Http\Requests\Admin\UserDeleteUsersRequest;
+use App\Http\Requests\Admin\UserIndexRequest;
+use App\Http\Requests\Admin\UserStoreUserRequest;
+use App\Http\Requests\Admin\UserUpdateUserRequest;
+use App\Http\Resources\Admin\PaginateResource;
+use App\Http\Resources\Admin\UserResource;
+use App\Models\User;
+use App\Services\AdminService;
+use App\Services\UserService;
+use App\Traits\PaginationTrait;
+use Illuminate\Auth\Events\Validated;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 
 class UserController extends Controller
 {
     use PaginationTrait;
+
+    public function loadUsers(UserIndexRequest $request)
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validated();
+        $search_string = $validated['search_string'] ?? null;
+
+        $role = $validated['role'] ?? null;
+
+        $users = User::query()
+            ->where('school_id', $auth_user->school_id)
+            ->when($search_string, function ($query, $search_string) {
+                $query->where(function ($q) use ($search_string) {
+                    $q->where('last_name', 'like', "%{$search_string}%")
+                        ->orWhere('first_name', 'like', "%{$search_string}%")
+                        ->orWhere('email', 'like', "%{$search_string}%");
+                });
+            })
+            ->when($role, function ($query, $role) {
+                $query->role($role); // Spatie Permission Methode
+            })
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->paginate(config('schooltool.pagination'));
+
+        return response()->json([
+            'data' => UserResource::collection($users),
+            'meta' => new PaginateResource($users)
+        ]);
+    }
+
+    public function updateUser(UserUpdateUserRequest $request, UserService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+        $validated = $request->validated();
+
+        $user = $service->update($validated);
+        return response()->json(new UserResource($user), 200);
+    }
+
+
+    public function storeUser(UserStoreUserRequest $request, UserService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+        $validated = $request->validated();
+
+        $user = $service->store($auth_user->school_id, $validated);
+        return response()->json(new UserResource($user), 200);
+    }
+
+    public function deleteUsers(UserDeleteUsersRequest $request, UserService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validated();
+        $service->delete($auth_user->id, $validated['data']);
+
+        return response()->noContent();
+    }
 
     public function index(IndexUserRequest $request)
     {
@@ -86,7 +160,7 @@ class UserController extends Controller
             });
         }
 
-        $pagination = UserResource::collection($query->paginate(config('spa.pagination')));
+        $pagination = UserResource::collection($query->paginate(config('schooltool.pagination')));
 
         return response()->json($this->makePagination($pagination), 200);
     }

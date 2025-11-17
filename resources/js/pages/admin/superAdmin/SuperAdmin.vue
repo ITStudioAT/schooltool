@@ -12,11 +12,14 @@
                 v-if="config.roles.includes('super_admin')" />
 
             <its-menu-button subtitle="Lizenzen" icon="mdi-card-account-details" :color="main_action == 'licences' ? 'primary' : 'secondary'" @click="main_action = 'licences'" />
+
+            <its-menu-button subtitle="Benutzer" icon="mdi-account-multiple" :color="main_action == 'users' ? 'primary' : 'secondary'" @click="main_action = 'users'" />
         </v-card>
         <v-row class="w-100" dense>
             <ActiveSchool v-if="main_action == '' && config.roles.includes('super_admin')" />
             <Schools v-if="main_action == 'schools' && config.roles.includes('super_admin')" />
-            <Licences v-if="main_action == 'licences' && config.roles.includes('super_admin')"></Licences>
+            <Licences v-if="main_action == 'licences' && config.roles.includes('super_admin')" />
+            <Users v-if="main_action == 'users' && config.roles.includes('super_admin')" />
         </v-row>
     </v-container>
 </template>
@@ -28,10 +31,11 @@ import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import Schools from './components/Schools.vue'
 import Licences from './components/Licences.vue'
+import Users from './components/Users.vue'
 import ActiveSchool from './components/ActiveSchool.vue'
 
 export default {
-    components: { ItsMenuButton, ItsGridBox, Schools, ActiveSchool, Licences },
+    components: { ItsMenuButton, ItsGridBox, Schools, ActiveSchool, Licences, Users },
 
     async beforeMount() {
         this.adminStore = useAdminStore()

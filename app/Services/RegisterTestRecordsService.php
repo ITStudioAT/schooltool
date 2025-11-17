@@ -154,9 +154,8 @@ class RegisterTestRecordsService
         $count = min($count, count($ids));
 
         for ($i = 0; $i < $count; $i++) {
-            // Pick a random user_id from the list
-            $randomKey = array_rand($ids);
-            $userId = $ids[$randomKey];
+            // Always take the next highest available user id so first booking uses the overall max id
+            $userId = array_shift($ids);
 
             $user = User::find($userId);
 
@@ -171,15 +170,8 @@ class RegisterTestRecordsService
                 'student_first_name' =>  fake()->firstName(),
                 'student_birthdate' => fake()->dateTimeBetween('-10 years', 'now')->format('Y-m-d'),
             ]);
-
-            // Remove the used ID so it’s not reused
-            unset($ids[$randomKey]);
         }
 
-        // Reindex array (optional, if you'll use it again)
-        $ids = array_values($ids);
-
-        // Return remaining IDs (optional)
         return $ids;
     }
 

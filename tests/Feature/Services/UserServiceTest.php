@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\TwoFaResult;
+use App\Models\RegisterDateBooking;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
@@ -19,6 +20,7 @@ beforeEach(function () {
     Role::create(['name' => 'super_admin']);
     Role::create(['name' => 'admin']);
     Role::create(['name' => 'register_admin']);
+    Role::create(['name' => 'register_user']);
     Role::create(['name' => 'teacher']);
     Role::create(['name' => 'student']);
 
@@ -30,6 +32,204 @@ beforeEach(function () {
         'school_id' => $dummySchool->id,
         'schoolyear_id' => $dummySchoolyear->id,
     ]);
+});
+
+describe('store', function () {
+    it('creates a user with defaults and assigns only checked non super_admin roles', function () {
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+
+        $userData = User::factory()->make([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'email' => 'newuser@example.com',
+        ])->toArray();
+
+        $userData['roles'] = [
+            ['name' => 'admin', 'checked' => true],
+            ['name' => 'teacher', 'checked' => false],
+            ['name' => 'super_admin', 'checked' => true],
+        ];
+
+        $user = $this->service->store($school->id, $userData);
+
+        expect($user->school_id)->toBe($school->id)
+            ->and($user->is_active)->toBeTrue()
+            ->and($user->email_verified_at)->not->toBeNull()
+            ->and($user->confirmed_at)->not->toBeNull()
+            ->and($user->hasRole('admin'))->toBeTrue()
+            ->and($user->hasRole('teacher'))->toBeFalse()
+            ->and($user->hasRole('super_admin'))->toBeFalse();
+    });
+
+    it('throws an exception when the email already exists for the school', function () {
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+
+        User::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'email' => 'duplicate@example.com',
+        ]);
+
+        $userData = User::factory()->make([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'email' => 'duplicate@example.com',
+        ])->toArray();
+
+        $userData['roles'] = [
+            ['name' => 'admin', 'checked' => true],
+        ];
+
+        $this->service->store($school->id, $userData);
+    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class);
+});
+
+describe('update', function () {
+    it('updates a user and synchronizes roles', function () {
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+
+        $user = User::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'email' => 'old@example.com',
+        ]);
+        $user->assignRole('teacher');
+
+        $data = [
+            'id' => $user->id,
+            'first_name' => 'Updated',
+            'last_name' => 'User',
+            'email' => 'updated@example.com',
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'roles' => [
+                ['name' => 'admin', 'checked' => true],
+                ['name' => 'teacher', 'checked' => false],
+                ['name' => 'super_admin', 'checked' => true],
+            ],
+        ];
+
+        $updatedUser = $this->service->update($data);
+        $updatedUser->refresh();
+
+        expect($updatedUser->first_name)->toBe('Updated')
+            ->and($updatedUser->last_name)->toBe('User')
+            ->and($updatedUser->email)->toBe('updated@example.com')
+            ->and($updatedUser->hasRole('admin'))->toBeTrue()
+            ->and($updatedUser->hasRole('teacher'))->toBeFalse()
+            ->and($updatedUser->hasRole('super_admin'))->toBeFalse();
+    });
+
+    it('does not remove register_user role when bookings exist', function () {
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+
+        $user = User::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+        ]);
+        $user->assignRole('register_user');
+
+        RegisterDateBooking::factory()->create(['user_id' => $user->id]);
+
+        $data = [
+            'id' => $user->id,
+            'first_name' => $user->first_name,
+            'last_name' => $user->last_name,
+            'email' => $user->email,
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'roles' => [
+                ['name' => 'register_user', 'checked' => false],
+            ],
+        ];
+
+        $this->service->update($data);
+
+        expect($user->fresh()->hasRole('register_user'))->toBeTrue();
+    });
+
+    it('throws an exception when updating to an email already used in the school', function () {
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+
+        $user = User::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'email' => 'original@example.com',
+        ]);
+
+        User::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'email' => 'taken@example.com',
+        ]);
+
+        $data = [
+            'id' => $user->id,
+            'first_name' => $user->first_name,
+            'last_name' => $user->last_name,
+            'email' => 'taken@example.com',
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'roles' => [
+                ['name' => 'admin', 'checked' => false],
+            ],
+        ];
+
+        $this->service->update($data);
+    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class);
+});
+
+describe('delete', function () {
+    it('deletes users without dependencies and not matching the current user', function () {
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+
+        $user = User::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+        ]);
+        $user->assignRole('teacher');
+
+        $this->service->delete(1, [$user->id]);
+
+        expect(User::find($user->id))->toBeNull();
+    });
+
+    it('does not delete users with dependencies', function () {
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+
+        $user = User::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+        ]);
+
+        RegisterDateBooking::factory()->create(['user_id' => $user->id]);
+
+        $this->service->delete(1, [$user->id]);
+
+        expect(User::find($user->id))->not->toBeNull();
+    });
+
+    it('does not delete the current user', function () {
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+
+        $currentUser = User::factory()->create([
+            'id' => 5,
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+        ]);
+
+        $this->service->delete($currentUser->id, [$currentUser->id]);
+
+        expect(User::find($currentUser->id))->not->toBeNull();
+    });
 });
 
 describe('setSchoolyearToNull', function () {

@@ -3,14 +3,87 @@
 namespace App\Services;
 
 use App\Enums\TwoFaResult;
+use App\Models\RegisterDateBooking;
 use App\Models\Role;
 use App\Models\Schoolyear;
 use App\Models\User;
 use App\Notifications\StandardEmail;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 
 class UserService
 {
+
+    public function delete($me_id, $data)
+    {
+
+        foreach ($data as $id) {
+            $user = User::findOrFail($id);
+            if (!$user->hasDependencies() && $user->id != $me_id) {
+                $user->syncRoles([]);
+                $user->delete();
+            }
+        }
+    }
+
+
+    public function store($school_id, $data): User
+    {
+        if (User::where('school_id', $school_id)->where('email', $data['email'])->first()) abort(409, 'E-Mail existiert bereits');
+
+        $user_roles = $data['roles'];
+        unset($data['roles']);
+
+        $data['school_id'] = $school_id;
+        $data['email_verified_at'] = now();
+        $data['is_active'] = true;
+        $data['confirmed_at'] = now();
+        $data['password'] = Hash::make(now());
+
+        $user = User::create($data);
+
+        foreach ($user_roles as $role) {
+
+            // super_admin überspringen
+            if ($role['name'] == 'super_admin') continue;
+
+            if ($role['checked'] ?? false) {
+                $user->assignRole($role['name']);
+            }
+        }
+        return $user;
+    }
+
+    public function update($data): User
+    {
+        if (!$user = User::findOrFail($data['id'])) abort(404, 'Benutzer wurde nich gefunden');
+
+        if (User::whereNot('id', $user->id)->where('school_id', $user->school_id)->where('email', $data['email'])->first()) abort(409, 'E-Mail existiert bereits');
+
+
+        $user_roles = $data['roles'];
+        unset($data['roles']);
+
+        $user->update($data);
+
+        foreach ($user_roles as $role) {
+
+            // super_admin überspringen
+            if ($role['name'] == 'super_admin') continue;
+
+            if ($role['checked']) {
+                $user->assignRole($role['name']);
+            } else {
+                // register_user prüfen, ob es eine Registrierung gibt.
+                if ($role['name'] == 'register_user') {
+                    if (RegisterDateBooking::where('user_id', $user->id)->count() > 0) continue;
+                }
+                $user->removeRole($role['name']);
+            }
+        }
+
+        return $user;
+    }
 
 
     // Die User sollen statt eines Schuljahres (und statt eines Registers) NULL zugewiesen bekommen

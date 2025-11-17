@@ -199,13 +199,6 @@ class SchoolController extends Controller
 
         $data = $service->schoolInfos($validated['school_id']);
 
-        // Dispatch a test job that sets a cache flag
-        Queue::push(function () {
-            Cache::put('queue_working', true, 60);
-        });
-
-
-
 
         return response()->json($data, 200);
     }
