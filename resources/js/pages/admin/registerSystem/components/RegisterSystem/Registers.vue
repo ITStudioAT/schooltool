@@ -28,9 +28,9 @@
                 <template v-slot:title v-if="config?.user?.roles.some((role) => ['super_admin', 'admin', 'register_admin'].includes(role))">
                     <div class="d-flex flex-row align-center justify-space-between w-100">
                         <div class="mr-4">Anmeldetools</div>
-                        <div class="d-flex flex-row align-center">
+                        <div class="d-flex flex-row flex-wrap align-center">
                             <v-btn flat tile icon="mdi-plus" color="primary" @click="create" />
-                            <div class="d-flex flex-row align-center" v-if="selected_register">
+                            <div class="d-flex flex-row flex-wrap align-center" v-if="selected_register">
                                 <v-btn flat tile icon="mdi-pencil" color="primary" @click="edit(selected_register)" />
                                 <v-btn flat tile icon color="primary" @click="remove(selected_register)">
                                     <v-icon icon="mdi-delete" color="warning"></v-icon>

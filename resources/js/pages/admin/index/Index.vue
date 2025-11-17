@@ -10,7 +10,7 @@
                         </div>
                     </template>
                     <v-card tile flat color="primary">
-                        <v-card-text class="text-body-1">
+                        <v-card-text class="text-caption text-sm-body-1">
                             <v-row no-gutters="" dense>
                                 <v-col cols="4">
                                     Status
@@ -31,7 +31,7 @@
                                             <v-icon size="small" icon="mdi-dots-circle mdi-spin" />
                                         </div>
                                     </div>
-                                    <div v-if="test_step == 999">Tests abgeschlossen</div>
+                                    <div v-if="test_step == 999">fertig geprüft</div>
                                 </v-col>
                                 <v-col cols="4" class="text-right">
                                     <div v-if="test_step == 999">
@@ -42,14 +42,14 @@
                             </v-row>
 
                             <v-row no-gutters="" dense>
-                                <v-col cols="4">Test Warteschlange</v-col>
+                                <v-col cols="4">Warteschlange</v-col>
                                 <v-col cols="4" class="text-right">
                                     <div v-if="queue_test_status == 'waiting'">Test wartend</div>
                                     <div v-if="queue_test_status == 'running'">
                                         Test aktiv
                                         <v-icon size="small" icon="mdi-dots-circle mdi-spin" />
                                     </div>
-                                    <div v-if="queue_test_status == 'finished'">Test abgeschlossen</div>
+                                    <div v-if="queue_test_status == 'finished'">fertig geprüft</div>
                                 </v-col>
                                 <v-col cols="4" class="text-right">
                                     <div v-if="queue_test_status == 'finished'">
