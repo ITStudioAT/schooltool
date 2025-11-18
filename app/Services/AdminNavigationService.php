@@ -34,6 +34,11 @@ class AdminNavigationService
             $menu[] = ['title' => 'Anmeldetool', 'icon' => 'mdi-calendar-cursor', 'to' => '/admin/register_system'];
         }
 
+        // TUTORING
+        if ($this->userHasRole(['admin', 'tutoring_admin'])) {
+            $menu[] = ['title' => 'Nachhilfe', 'icon' => 'mdi-cast-education', 'to' => '/admin/tutoring'];
+        }
+
         // BENUTZER ALS admin
         /*
         if ($this->userHasRole(['admin'])) {

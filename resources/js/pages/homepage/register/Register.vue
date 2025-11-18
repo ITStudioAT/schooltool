@@ -58,7 +58,7 @@
                 <v-form ref="form" v-model="is_valid" @submit.prevent="checkEmail(data)" class="mb-4">
                     <v-text-field autofocus v-model="data.email" label="Ihre E-Mail-Adresse" :rules="[required(), mail()]" tabindex="1" />
                     <div class="d-flex flex-row align-center justify-space-between">
-                        <v-btn color="warning" slim flat rounded="0" @click="startRegister" tabindex="3">Zurück</v-btn>
+                        <v-btn color="warning" slim flat rounded="0" to="/homepage" tabindex="3">Zurück</v-btn>
                         <v-btn color="success" slim flat rounded="0" type="submit" v-if="data.email" tabindex="2">Weiter</v-btn>
                     </div>
                 </v-form>

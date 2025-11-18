@@ -15,6 +15,8 @@ import RegisterSystem_Details from '@/pages/admin/registerSystem/RegisterDetails
 
 import SuperAdmin from '@/pages/admin/superAdmin/SuperAdmin.vue'
 
+import Tutoring from '@/pages/admin/tutoring/Tutoring.vue'
+
 const routes = [
     { path: '/admin', component: Index },
     { path: '/admin/login', component: Auth_Login },
@@ -29,6 +31,7 @@ const routes = [
     { path: '/admin/register_system', component: RegisterSystem },
     { path: '/admin/register_system/details', component: RegisterSystem_Details },
     { path: '/admin/super_admin', component: SuperAdmin },
+    { path: '/admin/tutoring', component: Tutoring },
 ]
 
 const router = createRouter({
@@ -75,13 +78,7 @@ async function isRouteAllowed(data) {
         const answer = await axios.post('/api/routes/is_route_allowed', { data })
         return true
     } catch (error) {
-        const redirectUrl =
-            '/application/error?status=' +
-            error.response.status +
-            '&message=' +
-            encodeURIComponent(error.response.data.message) +
-            '&type=' +
-            error
+        const redirectUrl = '/application/error?status=' + error.response.status + '&message=' + encodeURIComponent(error.response.data.message) + '&type=' + error
         window.location.href = redirectUrl
         return false
     } finally {

@@ -29,8 +29,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::get('/homepage/config',  [HomepageController::class, 'config']);
     Route::post('/homepage/logout',  [\App\Http\Controllers\Homepage\HomepageController::class, 'logout']);
 
-    /***** ADMIN ROUTES *****/
 
+    /***** ADMIN ROUTES *****/
     Route::get('/admin/config',  [AdminController::class, 'config']);
 
     Route::post('/admin/login_step_email',  [AdminController::class, 'loginStepEmail']);
@@ -59,6 +59,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::get('/homepage/register/load_register_and_user',  [\App\Http\Controllers\Homepage\RegisterController::class, 'loadRegisterAndUser']);
     Route::post('/homepage/register/book',  [\App\Http\Controllers\Homepage\RegisterController::class, 'book']);
     Route::post('/homepage/register/delete_booking',  [\App\Http\Controllers\Homepage\RegisterController::class, 'deleteBooking']);
+
+    /* homepage/tutoring */
+    Route::get('/homepage/tutoring/config',  [\App\Http\Controllers\Homepage\TutoringController::class, 'config']);
 
 
     /* SANCTUM */

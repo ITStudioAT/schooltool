@@ -20,6 +20,11 @@ const lightTheme = {
         success: '#00897B', // teal.darken1
         // For errors, alerts
         error: '#E53935', // red.darken1
+
+        // Tutoring
+        tutoring_background: '#5c6c62',
+        tutoring_text: '#fbf0d4',
+        tutoring_secondary: '#dc8210',
     },
 }
 

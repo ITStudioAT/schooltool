@@ -148,9 +148,15 @@ export default {
         redirect(school, licence) {
             if (!school || !licence) return
 
+            console.log(licence)
+
             switch (licence.name) {
                 case 'Anmeldetool':
                     window.location.href = '/homepage/register?school=' + school.short_name
+                    break
+
+                case 'Tutoring':
+                    window.location.href = '/homepage/tutoring'
                     break
             }
         },
