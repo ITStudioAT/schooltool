@@ -4,6 +4,10 @@ SchoolTool beinhaltet Tools zur Unterstützung der Administration von Schulen.
 
 # Last Changes
 
+## Branch Tutoring:
+
+-   Welcome Screen for Users, 18.11.2025
+
 ## 3.2.11 - 17.11.2025
 
 -   User-Übersicht für Super-Admin mit:

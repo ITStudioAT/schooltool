@@ -62,6 +62,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /* homepage/tutoring */
     Route::get('/homepage/tutoring/config',  [\App\Http\Controllers\Homepage\TutoringController::class, 'config']);
+    Route::post('/homepage/tutoring/check_email',  [\App\Http\Controllers\Homepage\TutoringController::class, 'checkEMail']);
+    Route::post('/homepage/tutoring/create_user',  [\App\Http\Controllers\Homepage\TutoringController::class, 'createUser']);
 
 
     /* SANCTUM */

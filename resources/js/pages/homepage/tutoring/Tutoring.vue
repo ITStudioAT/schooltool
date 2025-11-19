@@ -18,7 +18,9 @@
                     <div>
                         <img :src="`/storage/images/${school?.logo}`" alt="Logo" class="logo" v-if="school?.logo" height="100" />
                     </div>
+                </v-card-text>
 
+                <v-card-text v-if="school && !data.status">
                     <v-form ref="form" v-model="is_valid" @submit.prevent="checkEmail(data)" class="mb-4">
                         <v-text-field autofocus v-model="data.email" label="Deine E-Mail-Adresse" :rules="[required(), mail()]" tabindex="1" />
                         <div class="d-flex flex-row align-center justify-space-between">
@@ -26,6 +28,27 @@
                             <v-btn color="success" slim flat rounded="0" type="submit" v-if="data.email" tabindex="2">Weiter</v-btn>
                         </div>
                     </v-form>
+                </v-card-text>
+
+                <v-card-text v-if="data.status == 'NEW_USER'">
+                    <div class="text-h6 font-weight-medium">Neuer Benutzer</div>
+                    <div class="text-body-2">E-Mail: {{ data.email }}</div>
+                    <v-form ref="form" v-model="is_valid" @submit.prevent="createUser(data)" class="my-4">
+                        <v-text-field autofocus v-model="data.last_name" label="Dein Nachname" :rules="[required(), maxLength(255)]" tabindex="1" />
+                        <v-text-field v-model="data.first_name" label="Dein Vorname" :rules="[maxLength(255)]" tabindex="1" />
+                        <div class="d-flex flex-row align-center justify-space-between">
+                            <div></div>
+                            <v-btn color="success" slim flat rounded="0" type="submit" v-if="data.email" tabindex="2">Weiter</v-btn>
+                        </div>
+                    </v-form>
+                </v-card-text>
+                <v-card-text>
+                    DATA:
+                    {{ data }}
+                </v-card-text>
+                <v-card-text>
+                    SCHOOL:
+                    {{ school }}
                 </v-card-text>
             </v-card>
         </div>
@@ -47,10 +70,11 @@ export default {
 
     async beforeMount() {
         this.tutoringStore = useTutoringStore()
-
         this.school_name = this.$route.query.school
-        await this.tutoringStore.config()
+        await this.tutoringStore.loadConfig()
     },
+
+    async mounted() {},
 
     unmounted() {},
 
@@ -58,13 +82,13 @@ export default {
         return {
             tutoringStore: null,
             school_name: null,
-            data: {},
+
             is_valid: false,
         }
     },
 
     computed: {
-        ...mapWritableState(useTutoringStore, ['schools', 'selected_school_id', 'school']),
+        ...mapWritableState(useTutoringStore, ['schools', 'selected_school_id', 'school', 'data']),
     },
 
     watch: {
@@ -77,14 +101,10 @@ export default {
         schools: {
             handler(newSchools) {
                 if (newSchools.length > 0 && this.school_name) {
-                    console.log('Schools geladen:', newSchools)
                     const foundSchool = newSchools.find((school) => school.short_name.toLowerCase() === this.school_name.toLowerCase())
                     if (foundSchool) {
-                        console.log('School gefunden:', foundSchool)
                         this.school = foundSchool
                         this.selected_school_id = foundSchool.id
-                    } else {
-                        console.log('Keine School gefunden für:', this.school_name)
                     }
                 }
             },
@@ -92,6 +112,22 @@ export default {
         },
     },
 
-    methods: {},
+    methods: {
+        async checkEmail(data) {
+            this.is_valid = false
+            await this.$refs.form.validate()
+            if (!this.is_valid) return
+            data.school_id = this.school?.id ?? null
+            if (!(await this.tutoringStore.checkEmail(data))) return
+        },
+
+        async createUser(data) {
+            this.is_valid = false
+            await this.$refs.form.validate()
+            if (!this.is_valid) return
+            data.school_id = this.school?.id ?? null
+            if (!(await this.tutoringStore.createUser(data))) return
+        },
+    },
 }
 </script>
