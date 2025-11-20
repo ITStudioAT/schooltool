@@ -52,6 +52,20 @@ class SchoolService
 
         $user->assignRole('super_admin');
 
+        // Folder für LOogo etc anlegen
+        $hlp_path = $school->id . '/temp';
+        if (!Storage::directoryExists($hlp_path)) {
+            Storage::makeDirectory($hlp_path);
+        }
+        $hlp_path = $school->id . '/excel';
+        if (!Storage::directoryExists($hlp_path)) {
+            Storage::makeDirectory($hlp_path);
+        }
+        $hlp_path = $school->id . '/pdf';
+        if (!Storage::directoryExists($hlp_path)) {
+            Storage::makeDirectory($hlp_path);
+        }
+
 
         // Logo verschieben
         if ($path) {
@@ -82,25 +96,57 @@ class SchoolService
     public function deleteSchools($ids)
     {
 
-        // Schule 1 kann nicht gelöscht werden
-        if (in_array(1, $ids)) abort(409, 'Die Big-Boss-Schule kann nicht gelöscht werden.');
 
-        // Schauen, ob irgend einer Schule noch ein Register zugeordnet ist
-        if (School::whereIn('id', $ids)->whereHas('registers')->exists()) abort(409, 'Mindestens eine Schule ist einem Registrierungstool zugeordnet.');
+        foreach ($ids as $id) {
+            $this->deleteSchool($id);
+        }
+    }
 
-        // Schauen, ob irgend einer Schule noch mehr als ein Benuter zugeordnet sind (1 Benutzer = super_admin)
-        if (School::whereIn('id', $ids)->has('users', '>', 1)->exists())  abort(409, 'Bei mindestens einer Schule sind noch Benutzer zugeordnet.');
+    private function deleteSchool($id): bool
+    {
 
-        // Alle Lizenzen für die zu löschenden Schulen entfernen
-        School::whereIn('id', $ids)->each(function ($school) {
-            $school->licences()->detach(); // removes all pivot rows for this school
+        // Schule 1 kann nicht gelöscht werden (Big Boss Schule)
+        if ($id == 1) return false;
+
+        // Schule mit Registers kann nicht gelöscht werden
+        if (School::where('id', $id)->has('registers')->exists()) return false;
+
+        // Die Schule hat mehr User als nur den Super-Admin und kann daher nicht gelöscht werden
+        if (School::where('id', $id)->has('users', '>', 1)->exists())  return false;
+
+        $school = School::findOrFail($id);
+
+        // Lizenzen löschen
+        $school->licences()->detach();
+
+        // Super-Admin löschen
+        User::where('school_id', $id)->each(function ($user) {
+            $user->syncRoles([]);   // removes all role assignments
+            $user->delete();
         });
 
-        // Löschen aller noch der Schule zugeordneten User, darf eigentlich nur noch der Super-Admin sein.
-        User::whereIn('school_id', $ids)->delete();
 
-        // Schulen löschen
-        School::whereIn('id', $ids)->delete();
+        // Schuljahr der Schule löschen
+        Schoolyear::where('school_id', $id)->delete();
+
+        // Schulen lösche
+        $school = School::find($id);
+
+        if ($school) {
+
+            // Logo löschen, falls vorhanden
+            if ($school->logo) {
+                Storage::disk('public')->delete("images/{$school->logo}");
+            }
+
+            // Schule löschen
+            $school->delete();
+        }
+
+        // Storage-Pfad löschen, falls vorhanden
+        Storage::deleteDirectory("{$id}");
+
+        return true;
     }
 
     public function schoolInfos($school_id)

@@ -4,7 +4,8 @@
     "type": "module",
     "scripts": {
         "build": "vite build",
-        "dev": "vite"
+        "dev": "vite",
+        "ide-helper": "php artisan ide-helper:generate && php artisan ide-helper:meta"
     },
     "devDependencies": {
         "@tailwindcss/vite": "^4.0.0",

@@ -48,12 +48,17 @@ class InstallUpdateService
     public function findOrCreateFolders()
     {
 
-        $path = 'temp';
-        $this->createOrCleanDirectory($path);
-        $path = 'excel';
-        $this->createOrCleanDirectory($path);
-        $path = 'pdf';
-        $this->createOrCleanDirectory($path);
+        $schools = School::query()->get();
+
+        foreach ($schools as $school) {
+            $path = $school->id . '/temp';
+            $this->createOrCleanDirectory($path);
+            $path =  $school->id . '/excel';
+            $this->createOrCleanDirectory($path);
+            $path =  $school->id . '/pdf';
+            $this->createOrCleanDirectory($path);
+        }
+
 
 
         $path = 'images'; // relative to storage/app/public

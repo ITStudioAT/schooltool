@@ -11,30 +11,25 @@ uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
     $this->service = new RouteService();
-    
+
     // Create roles for testing
     Role::create(['name' => 'admin', 'guard_name' => 'web']);
     Role::create(['name' => 'teacher', 'guard_name' => 'web']);
     Role::create(['name' => 'student', 'guard_name' => 'web']);
     Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
-    
+
     // Create test route meta file
     $metaDir = base_path('routes/meta/web');
     if (!file_exists($metaDir)) {
         mkdir($metaDir, 0755, true);
     }
-    
-    // Create test route file
+
+    // Create test route file (or overwrite if it exists)
     $testRouteFile = $metaDir . '/test.php';
     file_put_contents($testRouteFile, "<?php\n\nreturn [\n    'roles' => [\n        '/test/public' => [],\n        '/test/admin' => ['admin'],\n        '/test/teacher' => ['teacher'],\n        '/test/multi' => ['admin', 'teacher'],\n        '/test/prefix/*' => ['admin'],\n    ]\n];\n");
-});
 
-afterEach(function () {
-    // Clean up test route file
-    $testRouteFile = base_path('routes/meta/web/test.php');
-    if (file_exists($testRouteFile)) {
-        unlink($testRouteFile);
-    }
+    // Clear file stat cache to ensure fresh reads
+    clearstatcache();
 });
 
 describe('checkWebRoles', function () {
@@ -861,18 +856,19 @@ describe('integration scenarios', function () {
 });
 
 describe('edge cases', function () {
-    
+
     it('handles empty route_roles gracefully for web', function () {
         $user = User::factory()->create();
-        
+
         // Create empty route file
         $emptyRouteFile = base_path('routes/meta/web/empty.php');
         file_put_contents($emptyRouteFile, "<?php\n\nreturn [];\n");
-        
+
         $result = $this->service->checkWebRoles($user, '/empty/something');
-        
-        unlink($emptyRouteFile);
-        
+
+        // Don't delete - Windows keeps file locked after include
+        // File will be cleaned up by git or manually as it's in routes/meta/web
+
         expect($result)->toBe(RouteResult::NOT_FOUND);
     });
     

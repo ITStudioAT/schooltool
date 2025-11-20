@@ -266,255 +266,318 @@ describe('checkSuperAdmins', function () {
 });
 
 describe('findOrCreateFolders', function () {
-    it('creates temp directory if it does not exist', function () {
-        expect(Storage::exists('temp'))->toBeFalse();
-        
+    it('creates per-school temp directories for all schools', function () {
+        $school1 = School::factory()->create();
+        $school2 = School::factory()->create();
+
         $this->service->findOrCreateFolders();
-        
-        expect(Storage::exists('temp'))->toBeTrue();
+
+        expect(Storage::exists("{$school1->id}/temp"))->toBeTrue()
+            ->and(Storage::exists("{$school2->id}/temp"))->toBeTrue();
     });
 
-    it('creates excel directory if it does not exist', function () {
-        expect(Storage::exists('excel'))->toBeFalse();
-        
+    it('creates per-school excel directories for all schools', function () {
+        $school1 = School::factory()->create();
+        $school2 = School::factory()->create();
+
         $this->service->findOrCreateFolders();
-        
-        expect(Storage::exists('excel'))->toBeTrue();
+
+        expect(Storage::exists("{$school1->id}/excel"))->toBeTrue()
+            ->and(Storage::exists("{$school2->id}/excel"))->toBeTrue();
     });
 
-    it('creates pdf directory if it does not exist', function () {
-        expect(Storage::exists('pdf'))->toBeFalse();
-        
+    it('creates per-school pdf directories for all schools', function () {
+        $school1 = School::factory()->create();
+        $school2 = School::factory()->create();
+
         $this->service->findOrCreateFolders();
-        
-        expect(Storage::exists('pdf'))->toBeTrue();
+
+        expect(Storage::exists("{$school1->id}/pdf"))->toBeTrue()
+            ->and(Storage::exists("{$school2->id}/pdf"))->toBeTrue();
     });
 
     it('creates images directory in public disk if it does not exist', function () {
+        School::factory()->create();
+
         expect(Storage::disk('public')->exists('images'))->toBeFalse();
-        
+
         $this->service->findOrCreateFolders();
-        
+
         expect(Storage::disk('public')->exists('images'))->toBeTrue();
     });
 
-    it('creates all required directories', function () {
+    it('creates all required directories for each school', function () {
+        $school = School::factory()->create();
+
         $this->service->findOrCreateFolders();
-        
-        expect(Storage::exists('temp'))->toBeTrue()
-            ->and(Storage::exists('excel'))->toBeTrue()
-            ->and(Storage::exists('pdf'))->toBeTrue()
+
+        expect(Storage::exists("{$school->id}/temp"))->toBeTrue()
+            ->and(Storage::exists("{$school->id}/excel"))->toBeTrue()
+            ->and(Storage::exists("{$school->id}/pdf"))->toBeTrue()
             ->and(Storage::disk('public')->exists('images'))->toBeTrue();
     });
 
-    it('cleans existing temp directory', function () {
+    it('cleans existing temp directory for each school', function () {
+        $school = School::factory()->create();
+
         // Create directory with files
-        Storage::makeDirectory('temp');
-        Storage::put('temp/test.txt', 'test content');
-        Storage::put('temp/test2.txt', 'test content 2');
-        
-        expect(Storage::exists('temp/test.txt'))->toBeTrue();
-        
+        Storage::makeDirectory("{$school->id}/temp");
+        Storage::put("{$school->id}/temp/test.txt", 'test content');
+        Storage::put("{$school->id}/temp/test2.txt", 'test content 2');
+
+        expect(Storage::exists("{$school->id}/temp/test.txt"))->toBeTrue();
+
         $this->service->findOrCreateFolders();
-        
-        expect(Storage::exists('temp'))->toBeTrue()
-            ->and(Storage::exists('temp/test.txt'))->toBeFalse()
-            ->and(Storage::exists('temp/test2.txt'))->toBeFalse();
+
+        expect(Storage::exists("{$school->id}/temp"))->toBeTrue()
+            ->and(Storage::exists("{$school->id}/temp/test.txt"))->toBeFalse()
+            ->and(Storage::exists("{$school->id}/temp/test2.txt"))->toBeFalse();
     });
 
-    it('cleans existing excel directory', function () {
-        Storage::makeDirectory('excel');
-        Storage::put('excel/report.xlsx', 'excel content');
-        
+    it('cleans existing excel directory for each school', function () {
+        $school = School::factory()->create();
+
+        Storage::makeDirectory("{$school->id}/excel");
+        Storage::put("{$school->id}/excel/report.xlsx", 'excel content');
+
         $this->service->findOrCreateFolders();
-        
-        expect(Storage::exists('excel'))->toBeTrue()
-            ->and(Storage::exists('excel/report.xlsx'))->toBeFalse();
+
+        expect(Storage::exists("{$school->id}/excel"))->toBeTrue()
+            ->and(Storage::exists("{$school->id}/excel/report.xlsx"))->toBeFalse();
     });
 
-    it('cleans existing pdf directory', function () {
-        Storage::makeDirectory('pdf');
-        Storage::put('pdf/document.pdf', 'pdf content');
-        
+    it('cleans existing pdf directory for each school', function () {
+        $school = School::factory()->create();
+
+        Storage::makeDirectory("{$school->id}/pdf");
+        Storage::put("{$school->id}/pdf/document.pdf", 'pdf content');
+
         $this->service->findOrCreateFolders();
-        
-        expect(Storage::exists('pdf'))->toBeTrue()
-            ->and(Storage::exists('pdf/document.pdf'))->toBeFalse();
+
+        expect(Storage::exists("{$school->id}/pdf"))->toBeTrue()
+            ->and(Storage::exists("{$school->id}/pdf/document.pdf"))->toBeFalse();
     });
 
     it('does not clean images directory in public disk', function () {
+        School::factory()->create();
+
         // Create images directory with file
         Storage::disk('public')->makeDirectory('images');
         Storage::disk('public')->put('images/logo.png', 'image content');
-        
+
         $this->service->findOrCreateFolders();
-        
+
         expect(Storage::disk('public')->exists('images'))->toBeTrue()
             ->and(Storage::disk('public')->exists('images/logo.png'))->toBeTrue();
     });
 
-    it('removes subdirectories in temp directory', function () {
-        Storage::makeDirectory('temp/subdir1');
-        Storage::makeDirectory('temp/subdir2');
-        Storage::put('temp/subdir1/file.txt', 'content');
-        
+    it('removes subdirectories in temp directory for each school', function () {
+        $school = School::factory()->create();
+
+        Storage::makeDirectory("{$school->id}/temp/subdir1");
+        Storage::makeDirectory("{$school->id}/temp/subdir2");
+        Storage::put("{$school->id}/temp/subdir1/file.txt", 'content');
+
         $this->service->findOrCreateFolders();
-        
-        expect(Storage::exists('temp'))->toBeTrue()
-            ->and(Storage::exists('temp/subdir1'))->toBeFalse()
-            ->and(Storage::exists('temp/subdir2'))->toBeFalse();
+
+        expect(Storage::exists("{$school->id}/temp"))->toBeTrue()
+            ->and(Storage::exists("{$school->id}/temp/subdir1"))->toBeFalse()
+            ->and(Storage::exists("{$school->id}/temp/subdir2"))->toBeFalse();
     });
 
-    it('removes subdirectories in excel directory', function () {
-        Storage::makeDirectory('excel/archive');
-        Storage::put('excel/archive/old.xlsx', 'content');
-        
+    it('removes subdirectories in excel directory for each school', function () {
+        $school = School::factory()->create();
+
+        Storage::makeDirectory("{$school->id}/excel/archive");
+        Storage::put("{$school->id}/excel/archive/old.xlsx", 'content');
+
         $this->service->findOrCreateFolders();
-        
-        expect(Storage::exists('excel'))->toBeTrue()
-            ->and(Storage::exists('excel/archive'))->toBeFalse();
+
+        expect(Storage::exists("{$school->id}/excel"))->toBeTrue()
+            ->and(Storage::exists("{$school->id}/excel/archive"))->toBeFalse();
     });
 
-    it('removes subdirectories in pdf directory', function () {
-        Storage::makeDirectory('pdf/reports');
-        Storage::put('pdf/reports/report.pdf', 'content');
-        
+    it('removes subdirectories in pdf directory for each school', function () {
+        $school = School::factory()->create();
+
+        Storage::makeDirectory("{$school->id}/pdf/reports");
+        Storage::put("{$school->id}/pdf/reports/report.pdf", 'content');
+
         $this->service->findOrCreateFolders();
-        
-        expect(Storage::exists('pdf'))->toBeTrue()
-            ->and(Storage::exists('pdf/reports'))->toBeFalse();
+
+        expect(Storage::exists("{$school->id}/pdf"))->toBeTrue()
+            ->and(Storage::exists("{$school->id}/pdf/reports"))->toBeFalse();
     });
 
-    it('handles multiple files in directories', function () {
-        Storage::makeDirectory('temp');
+    it('handles multiple files in directories for each school', function () {
+        $school = School::factory()->create();
+
+        Storage::makeDirectory("{$school->id}/temp");
         for ($i = 1; $i <= 10; $i++) {
-            Storage::put("temp/file{$i}.txt", "content {$i}");
+            Storage::put("{$school->id}/temp/file{$i}.txt", "content {$i}");
         }
-        
+
         $this->service->findOrCreateFolders();
-        
-        $files = Storage::allFiles('temp');
+
+        $files = Storage::allFiles("{$school->id}/temp");
         expect(count($files))->toBe(0);
     });
 
-    it('handles nested subdirectories', function () {
-        Storage::makeDirectory('temp/level1/level2/level3');
-        Storage::put('temp/level1/level2/level3/deep.txt', 'deep content');
-        
+    it('handles nested subdirectories for each school', function () {
+        $school = School::factory()->create();
+
+        Storage::makeDirectory("{$school->id}/temp/level1/level2/level3");
+        Storage::put("{$school->id}/temp/level1/level2/level3/deep.txt", 'deep content');
+
         $this->service->findOrCreateFolders();
-        
-        expect(Storage::exists('temp'))->toBeTrue()
-            ->and(Storage::exists('temp/level1'))->toBeFalse();
+
+        expect(Storage::exists("{$school->id}/temp"))->toBeTrue()
+            ->and(Storage::exists("{$school->id}/temp/level1"))->toBeFalse();
     });
 
     it('can be called multiple times safely', function () {
+        $school = School::factory()->create();
+
         $this->service->findOrCreateFolders();
         $this->service->findOrCreateFolders();
         $this->service->findOrCreateFolders();
-        
-        expect(Storage::exists('temp'))->toBeTrue()
-            ->and(Storage::exists('excel'))->toBeTrue()
-            ->and(Storage::exists('pdf'))->toBeTrue()
+
+        expect(Storage::exists("{$school->id}/temp"))->toBeTrue()
+            ->and(Storage::exists("{$school->id}/excel"))->toBeTrue()
+            ->and(Storage::exists("{$school->id}/pdf"))->toBeTrue()
             ->and(Storage::disk('public')->exists('images'))->toBeTrue();
+    });
+
+    it('handles when no schools exist', function () {
+        $this->service->findOrCreateFolders();
+
+        // Should only create images directory
+        expect(Storage::disk('public')->exists('images'))->toBeTrue();
+    });
+
+    it('creates folders for multiple schools independently', function () {
+        $school1 = School::factory()->create();
+        $school2 = School::factory()->create();
+        $school3 = School::factory()->create();
+
+        $this->service->findOrCreateFolders();
+
+        expect(Storage::exists("{$school1->id}/temp"))->toBeTrue()
+            ->and(Storage::exists("{$school1->id}/excel"))->toBeTrue()
+            ->and(Storage::exists("{$school1->id}/pdf"))->toBeTrue()
+            ->and(Storage::exists("{$school2->id}/temp"))->toBeTrue()
+            ->and(Storage::exists("{$school2->id}/excel"))->toBeTrue()
+            ->and(Storage::exists("{$school2->id}/pdf"))->toBeTrue()
+            ->and(Storage::exists("{$school3->id}/temp"))->toBeTrue()
+            ->and(Storage::exists("{$school3->id}/excel"))->toBeTrue()
+            ->and(Storage::exists("{$school3->id}/pdf"))->toBeTrue();
     });
 });
 
 describe('createOrCleanDirectory (private method testing)', function () {
     it('creates directory when it does not exist', function () {
         // Test indirectly through findOrCreateFolders
-        Storage::deleteDirectory('temp');
-        
-        expect(Storage::exists('temp'))->toBeFalse();
-        
+        $school = School::factory()->create();
+
+        // Delete entire school directory to ensure clean state
+        Storage::deleteDirectory("{$school->id}");
+
         $this->service->findOrCreateFolders();
-        
-        expect(Storage::exists('temp'))->toBeTrue();
+
+        expect(Storage::exists("{$school->id}/temp"))->toBeTrue();
     });
 
     it('cleans directory when it exists', function () {
         // Test indirectly through findOrCreateFolders
-        Storage::makeDirectory('temp');
-        Storage::put('temp/old-file.txt', 'old content');
-        
+        $school = School::factory()->create();
+        Storage::makeDirectory("{$school->id}/temp");
+        Storage::put("{$school->id}/temp/old-file.txt", 'old content');
+
         $this->service->findOrCreateFolders();
-        
-        expect(Storage::exists('temp'))->toBeTrue()
-            ->and(Storage::allFiles('temp'))->toBeEmpty();
+
+        expect(Storage::exists("{$school->id}/temp"))->toBeTrue()
+            ->and(Storage::allFiles("{$school->id}/temp"))->toBeEmpty();
     });
 
     it('preserves directory structure while cleaning content', function () {
-        Storage::makeDirectory('excel/subfolder');
-        Storage::put('excel/file.xlsx', 'content');
-        Storage::put('excel/subfolder/nested.xlsx', 'nested content');
-        
+        $school = School::factory()->create();
+        Storage::makeDirectory("{$school->id}/excel/subfolder");
+        Storage::put("{$school->id}/excel/file.xlsx", 'content');
+        Storage::put("{$school->id}/excel/subfolder/nested.xlsx", 'nested content');
+
         $this->service->findOrCreateFolders();
-        
-        expect(Storage::exists('excel'))->toBeTrue()
-            ->and(Storage::allFiles('excel'))->toBeEmpty()
-            ->and(Storage::allDirectories('excel'))->toBeEmpty();
+
+        expect(Storage::exists("{$school->id}/excel"))->toBeTrue()
+            ->and(Storage::allFiles("{$school->id}/excel"))->toBeEmpty()
+            ->and(Storage::allDirectories("{$school->id}/excel"))->toBeEmpty();
     });
 });
 
 describe('integration tests', function () {
     it('sets up complete installation environment', function () {
         $school = School::factory()->create();
-        
+
         // Run all setup methods
         $this->service->createRoles(['super_admin', 'admin', 'teacher']);
         $this->service->checkSuperAdmins();
         $this->service->findOrCreateFolders();
-        
+
         // Verify roles are created
         expect(Role::count())->toBeGreaterThanOrEqual(3);
-        
+
         // Verify super admin exists
         $superAdmins = $school->users()->whereHas('roles', function ($q) {
             $q->where('name', 'super_admin');
         })->count();
         expect($superAdmins)->toBe(1);
-        
-        // Verify directories exist
-        expect(Storage::exists('temp'))->toBeTrue()
-            ->and(Storage::exists('excel'))->toBeTrue()
-            ->and(Storage::exists('pdf'))->toBeTrue()
+
+        // Verify directories exist for the school
+        expect(Storage::exists("{$school->id}/temp"))->toBeTrue()
+            ->and(Storage::exists("{$school->id}/excel"))->toBeTrue()
+            ->and(Storage::exists("{$school->id}/pdf"))->toBeTrue()
             ->and(Storage::disk('public')->exists('images'))->toBeTrue();
     });
 
     it('handles multiple schools in installation', function () {
         $schools = School::factory()->count(3)->create();
-        
+
         $this->service->createRoles(['super_admin']);
         $this->service->checkSuperAdmins();
         $this->service->findOrCreateFolders();
-        
+
         // Each school should have a super admin
         foreach ($schools as $school) {
             $admins = $school->users()->whereHas('roles', function ($q) {
                 $q->where('name', 'super_admin');
             })->count();
             expect($admins)->toBe(1);
+
+            // Each school should have its own directories
+            expect(Storage::exists("{$school->id}/temp"))->toBeTrue()
+                ->and(Storage::exists("{$school->id}/excel"))->toBeTrue()
+                ->and(Storage::exists("{$school->id}/pdf"))->toBeTrue();
         }
-        
+
         // Total users should equal number of schools
         expect(User::count())->toBe(3);
     });
 
     it('can safely rerun installation process', function () {
         $school = School::factory()->create();
-        
+
         // First run
         $this->service->createRoles(['super_admin', 'admin']);
         $this->service->checkSuperAdmins();
         $this->service->findOrCreateFolders();
-        
+
         $firstRunRoleCount = Role::count();
         $firstRunUserCount = User::count();
-        
+
         // Second run
         $this->service->createRoles(['super_admin', 'admin']);
         $this->service->checkSuperAdmins();
         $this->service->findOrCreateFolders();
-        
+
         // Should not duplicate
         expect(Role::count())->toBe($firstRunRoleCount)
             ->and(User::count())->toBe($firstRunUserCount);
@@ -522,25 +585,25 @@ describe('integration tests', function () {
 
     it('cleans temporary directories while preserving system state', function () {
         $school = School::factory()->create();
-        
+
         // Create initial state
         $this->service->createRoles(['super_admin', 'admin']);  // Create super_admin role first
         $this->service->checkSuperAdmins();
         $this->service->findOrCreateFolders();
-        
+
         // Add some temporary files
-        Storage::put('temp/temp1.txt', 'temp');
-        Storage::put('excel/excel1.xlsx', 'excel');
-        Storage::put('pdf/pdf1.pdf', 'pdf');
-        
+        Storage::put("{$school->id}/temp/temp1.txt", 'temp');
+        Storage::put("{$school->id}/excel/excel1.xlsx", 'excel');
+        Storage::put("{$school->id}/pdf/pdf1.pdf", 'pdf');
+
         // Run again - should clean directories but not affect roles/users
         $this->service->findOrCreateFolders();
-        
+
         expect(Role::count())->toBeGreaterThan(0)
             ->and(User::count())->toBeGreaterThan(0)
-            ->and(Storage::allFiles('temp'))->toBeEmpty()
-            ->and(Storage::allFiles('excel'))->toBeEmpty()
-            ->and(Storage::allFiles('pdf'))->toBeEmpty();
+            ->and(Storage::allFiles("{$school->id}/temp"))->toBeEmpty()
+            ->and(Storage::allFiles("{$school->id}/excel"))->toBeEmpty()
+            ->and(Storage::allFiles("{$school->id}/pdf"))->toBeEmpty();
     });
 });
 
@@ -569,16 +632,18 @@ describe('edge cases and error handling', function () {
     });
 
     it('handles concurrent directory operations', function () {
+        $school = School::factory()->create();
+
         // Simulate multiple calls
         $this->service->findOrCreateFolders();
-        Storage::put('temp/file1.txt', 'content1');
-        
+        Storage::put("{$school->id}/temp/file1.txt", 'content1');
+
         $this->service->findOrCreateFolders();
-        Storage::put('temp/file2.txt', 'content2');
-        
+        Storage::put("{$school->id}/temp/file2.txt", 'content2');
+
         $this->service->findOrCreateFolders();
-        
-        expect(Storage::exists('temp'))->toBeTrue()
-            ->and(Storage::allFiles('temp'))->toBeEmpty();
+
+        expect(Storage::exists("{$school->id}/temp"))->toBeTrue()
+            ->and(Storage::allFiles("{$school->id}/temp"))->toBeEmpty();
     });
 });

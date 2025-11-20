@@ -58,6 +58,7 @@ class AdminController extends Controller
     {
         $navigationService = new AdminNavigationService();
 
+        /** @var \App\Models\User|null $user */
         $user = Auth::check() ? Auth::user() : null;
 
 

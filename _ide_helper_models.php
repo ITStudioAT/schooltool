@@ -30,8 +30,10 @@ namespace App\Models{
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Licence whereName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Licence wherePricePerYear($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Licence whereUpdatedAt($value)
+ * @mixin \Eloquent
  */
-	class Licence extends \Eloquent {}
+	#[\AllowDynamicProperties]
+	class IdeHelperLicence {}
 }
 
 namespace App\Models{
@@ -54,8 +56,10 @@ namespace App\Models{
  * @method static \Illuminate\Database\Eloquent\Builder<static>|QueueTest whereStatus($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|QueueTest whereUpdatedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|QueueTest whereUserId($value)
+ * @mixin \Eloquent
  */
-	class QueueTest extends \Eloquent {}
+	#[\AllowDynamicProperties]
+	class IdeHelperQueueTest {}
 }
 
 namespace App\Models{
@@ -82,13 +86,13 @@ namespace App\Models{
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @property int $show_note
  * @property int $must_note
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\RegisterDateBooking> $bookings
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, RegisterDateBooking> $bookings
  * @property-read int|null $bookings_count
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\RegisterDate> $dates
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, RegisterDate> $dates
  * @property-read int|null $dates_count
- * @property-read \App\Models\School|null $school
- * @property-read \App\Models\Schoolyear|null $schoolyear
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\User> $users
+ * @property-read School|null $school
+ * @property-read Schoolyear|null $schoolyear
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, User> $users
  * @property-read int|null $users_count
  * @method static \Database\Factories\RegisterFactory factory($count = null, $state = [])
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register newModelQuery()
@@ -116,8 +120,10 @@ namespace App\Models{
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereShowStudentLastName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereShowSupervisor($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereUpdatedAt($value)
+ * @mixin \Eloquent
  */
-	class Register extends \Eloquent {}
+	#[\AllowDynamicProperties]
+	class IdeHelperRegister {}
 }
 
 namespace App\Models{
@@ -134,7 +140,7 @@ namespace App\Models{
  * @property int $is_locked
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\RegisterDateBooking> $bookings
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, RegisterDateBooking> $bookings
  * @property-read int|null $bookings_count
  * @method static \Database\Factories\RegisterDateFactory factory($count = null, $state = [])
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDate newModelQuery()
@@ -152,8 +158,10 @@ namespace App\Models{
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDate whereSupervisor($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDate whereTo($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDate whereUpdatedAt($value)
+ * @mixin \Eloquent
  */
-	class RegisterDate extends \Eloquent {}
+	#[\AllowDynamicProperties]
+	class IdeHelperRegisterDate {}
 }
 
 namespace App\Models{
@@ -170,10 +178,10 @@ namespace App\Models{
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @property string|null $note
- * @property-read \App\Models\Register|null $register
- * @property-read \App\Models\RegisterDate|null $registerDate
- * @property-read \App\Models\School|null $school
- * @property-read \App\Models\User|null $user
+ * @property-read Register|null $register
+ * @property-read RegisterDate|null $registerDate
+ * @property-read School|null $school
+ * @property-read User|null $user
  * @method static \Database\Factories\RegisterDateBookingFactory factory($count = null, $state = [])
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDateBooking newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDateBooking newQuery()
@@ -190,8 +198,10 @@ namespace App\Models{
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDateBooking whereStudentLastName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDateBooking whereUpdatedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDateBooking whereUserId($value)
+ * @mixin \Eloquent
  */
-	class RegisterDateBooking extends \Eloquent {}
+	#[\AllowDynamicProperties]
+	class IdeHelperRegisterDateBooking {}
 }
 
 namespace App\Models{
@@ -215,8 +225,10 @@ namespace App\Models{
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Role whereName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Role whereUpdatedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Role withoutPermission($permissions)
+ * @mixin \Eloquent
  */
-	class Role extends \Eloquent {}
+	#[\AllowDynamicProperties]
+	class IdeHelperRole {}
 }
 
 namespace App\Models{
@@ -229,12 +241,12 @@ namespace App\Models{
  * @property int $is_selectable
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \App\Models\Schoolyear|null $activeSchoolyear
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Licence> $licences
+ * @property-read Schoolyear|null $activeSchoolyear
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, Licence> $licences
  * @property-read int|null $licences_count
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Register> $registers
  * @property-read int|null $registers_count
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Schoolyear> $schoolyears
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, Schoolyear> $schoolyears
  * @property-read int|null $schoolyears_count
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\User> $users
  * @property-read int|null $users_count
@@ -251,8 +263,10 @@ namespace App\Models{
  * @method static \Illuminate\Database\Eloquent\Builder<static>|School whereLongName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|School whereShortName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|School whereUpdatedAt($value)
+ * @mixin \Eloquent
  */
-	class School extends \Eloquent {}
+	#[\AllowDynamicProperties]
+	class IdeHelperSchool {}
 }
 
 namespace App\Models{
@@ -272,8 +286,10 @@ namespace App\Models{
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolLicence whereSchoolId($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolLicence whereUpdatedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolLicence whereValidUntil($value)
+ * @mixin \Eloquent
  */
-	class SchoolLicence extends \Eloquent {}
+	#[\AllowDynamicProperties]
+	class IdeHelperSchoolLicence {}
 }
 
 namespace App\Models{
@@ -299,8 +315,10 @@ namespace App\Models{
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Schoolyear whereSem2Start($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Schoolyear whereUntil($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Schoolyear whereUpdatedAt($value)
+ * @mixin \Eloquent
  */
-	class Schoolyear extends \Eloquent {}
+	#[\AllowDynamicProperties]
+	class IdeHelperSchoolyear {}
 }
 
 namespace App\Models{
@@ -337,13 +355,13 @@ namespace App\Models{
  * @property-read int|null $notifications_count
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \Spatie\Permission\Models\Permission> $permissions
  * @property-read int|null $permissions_count
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\RegisterDateBooking> $registerDateBookings
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, RegisterDateBooking> $registerDateBookings
  * @property-read int|null $register_date_bookings_count
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \Spatie\Permission\Models\Role> $roles
  * @property-read int|null $roles_count
- * @property-read \App\Models\Register|null $selectedRegister
- * @property-read \App\Models\School|null $selectedSchool
- * @property-read \App\Models\Schoolyear|null $selectedSchoolyear
+ * @property-read Register|null $selectedRegister
+ * @property-read School|null $selectedSchool
+ * @property-read Schoolyear|null $selectedSchoolyear
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \Laravel\Sanctum\PersonalAccessToken> $tokens
  * @property-read int|null $tokens_count
  * @method static \Database\Factories\UserFactory factory($count = null, $state = [])
@@ -382,7 +400,9 @@ namespace App\Models{
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereUuidAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User withoutPermission($permissions)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User withoutRole($roles, $guard = null)
+ * @mixin \Eloquent
  */
-	class User extends \Eloquent {}
+	#[\AllowDynamicProperties]
+	class IdeHelperUser {}
 }
 

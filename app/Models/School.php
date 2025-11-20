@@ -10,6 +10,40 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 
+/**
+ * @property int $id
+ * @property string|null $long_name
+ * @property string|null $short_name
+ * @property string|null $email
+ * @property string|null $logo
+ * @property int $is_selectable
+ * @property \Illuminate\Support\Carbon|null $created_at
+ * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property-read Schoolyear|null $activeSchoolyear
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, Licence> $licences
+ * @property-read int|null $licences_count
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Register> $registers
+ * @property-read int|null $registers_count
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, Schoolyear> $schoolyears
+ * @property-read int|null $schoolyears_count
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\User> $users
+ * @property-read int|null $users_count
+ * @method static \Database\Factories\SchoolFactory factory($count = null, $state = [])
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|School newModelQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|School newQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|School query()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|School selectables()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|School whereCreatedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|School whereEmail($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|School whereId($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|School whereIsSelectable($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|School whereLogo($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|School whereLongName($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|School whereShortName($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|School whereUpdatedAt($value)
+ * @mixin \Eloquent
+ * @mixin IdeHelperSchool
+ */
 class School extends Model
 {
     use HasFactory;

@@ -9,9 +9,7 @@
 
                         <!-- Abwählen / Auswählen-->
                         <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2 mt-2" :disabled="action != ''">
-                            <v-btn color="primary" slim flat tile class="text-caption" @click="selectAll">
-                                Alle auswählen [{{ selected_schools.length - selected_schools.length }}]
-                            </v-btn>
+                            <v-btn color="primary" slim flat tile class="text-caption" @click="selectAll">Alle auswählen [{{ schools.length - selected_schools.length }}]</v-btn>
                             <v-btn color="primary" slim flat tile class="text-caption" @click="unselectAll">Alle abwählen [{{ selected_schools.length }}]</v-btn>
                         </v-card>
 
@@ -73,12 +71,6 @@
                     </v-col>
                     <v-col cols="12">
                         <div class="text-body-1">Logo:</div>
-                        <div>
-                            {{ data.upload_file }}
-                        </div>
-                        <div>
-                            {{ data.logo }}
-                        </div>
                         <!-- Upload-Logo -->
                         <div v-if="data.upload_file">
                             <img :src="`/storage${data.upload_file}`" alt="Logo" height="60px" class="pl-2" />
@@ -195,7 +187,10 @@ export default {
             } else {
                 if (!(await this.schoolStore.store(data))) return
             }
-            await this.adminStore.loadConfig()
+
+            this.selected_schools = []
+            // await this.adminStore.loadConfig()
+            await this.schoolStore.index()
             this.data = {}
             this.action = ''
         },
@@ -211,8 +206,8 @@ export default {
 
         async doDeleteSchools(data) {
             if (!(await this.schoolStore.deleteSchools(data))) return
+            this.selected_schools = []
             await this.schoolStore.index()
-
             this.action = ''
         },
 

@@ -114,11 +114,9 @@ class SchoolController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-
-
         $validated = $request->validated();
 
-        if (in_array($auth_user->school_id, $validated)) abort(409, "Eine zu löschende Schule ist ihnen zugeordnet. Das ist nicht zulässig.");
+        if (in_array($auth_user->school_id, $validated)) abort(409, "Eine zu löschende Schule ist aktuell ihnen zugeordnet. Das ist nicht zulässig.");
 
         $service->deleteSchools($validated);
 
@@ -147,7 +145,7 @@ class SchoolController extends Controller
 
         $result = $fileUploadService->uploadNext(
             $request,
-            'app/public/temp/' . $auth_user->id,
+            'app/public/temp/' . $school->id,
             $logo,
             ['width' => 200, 'height' => 100]
         );

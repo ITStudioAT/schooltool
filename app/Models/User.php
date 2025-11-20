@@ -21,6 +21,87 @@ use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 
+/**
+ * @property int $id
+ * @property int $school_id
+ * @property int|null $schoolyear_id
+ * @property int|null $register_id
+ * @property string $email
+ * @property \Illuminate\Support\Carbon|null $email_verified_at
+ * @property string $password
+ * @property string|null $remember_token
+ * @property \Illuminate\Support\Carbon|null $created_at
+ * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property string|null $last_name
+ * @property string|null $first_name
+ * @property string|null $phone
+ * @property string|null $login_at
+ * @property string|null $login_ip
+ * @property int|null $is_2fa
+ * @property string|null $token_2fa
+ * @property \Illuminate\Support\Carbon|null $token_2fa_expires_at
+ * @property string|null $token_2fa_2
+ * @property string|null $token_2fa_2_expires_at
+ * @property string|null $email_2fa
+ * @property string|null $email_2fa_verified_at
+ * @property int|null $is_active
+ * @property string|null $register_started_at
+ * @property string|null $register_as
+ * @property string|null $confirmed_at
+ * @property string|null $uuid
+ * @property string|null $uuid_at
+ * @property-read \Illuminate\Notifications\DatabaseNotificationCollection<int, \Illuminate\Notifications\DatabaseNotification> $notifications
+ * @property-read int|null $notifications_count
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \Spatie\Permission\Models\Permission> $permissions
+ * @property-read int|null $permissions_count
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, RegisterDateBooking> $registerDateBookings
+ * @property-read int|null $register_date_bookings_count
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \Spatie\Permission\Models\Role> $roles
+ * @property-read int|null $roles_count
+ * @property-read Register|null $selectedRegister
+ * @property-read School|null $selectedSchool
+ * @property-read Schoolyear|null $selectedSchoolyear
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \Laravel\Sanctum\PersonalAccessToken> $tokens
+ * @property-read int|null $tokens_count
+ * @method static \Database\Factories\UserFactory factory($count = null, $state = [])
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User newModelQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User newQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User permission($permissions, $without = false)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User query()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User role($roles, $guard = null, $without = false)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereConfirmedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereCreatedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereEmail($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereEmail2fa($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereEmail2faVerifiedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereEmailVerifiedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereFirstName($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereId($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereIs2fa($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereIsActive($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereLastName($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereLoginAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereLoginIp($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User wherePassword($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User wherePhone($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereRegisterAs($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereRegisterId($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereRegisterStartedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereRememberToken($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereSchoolId($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereSchoolyearId($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereToken2fa($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereToken2fa2($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereToken2fa2ExpiresAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereToken2faExpiresAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereUpdatedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereUuid($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereUuidAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User withoutPermission($permissions)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User withoutRole($roles, $guard = null)
+ * @mixin \Eloquent
+ * @mixin IdeHelperUser
+ */
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
