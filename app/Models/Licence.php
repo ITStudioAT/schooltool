@@ -31,4 +31,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 class Licence extends Model
 {
     protected $guarded = [];
+
+    public function schools(): BelongsToMany
+    {
+        return $this->belongsToMany(School::class, 'school_licences');
+    }
 }
