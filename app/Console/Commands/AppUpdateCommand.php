@@ -31,19 +31,28 @@ class AppUpdateCommand extends Command
         $this->line(str_repeat('.', 50));
 
 
-        // ✅ 2. Roles and records
+        // ✅ Roles and records
         $this->info('▶ ROLES AND RECORDS');
         $service->createRoles(['super_admin', 'admin', 'register_admin', 'register_user']);
         $this->info('✅ Roles checked');
         $recordsCreateService->initRecords();
         $this->info('✅ Init Records checked');
         $this->line(str_repeat('.', 50));
-        // ✅ 3. Folders
+
+        // ✅ Folders
         $this->info('▶ FOLDERS');
         $service->findOrCreateFolders();
         $this->info('✅ Folders checked');
         $this->line(str_repeat('.', 50));
-        // ✅ 4. Frontend build (optional, if Node is available)
+
+        // ✅ DEV-Debugbar
+        $this->info('▶ DEV:DEBUGBAR');
+        $service->clearDebugbar();
+        $this->info('✅ Debugbar cleared');
+        $this->line(str_repeat('.', 50));
+
+
+        // Frontend build (optional, if Node is available)
         if (file_exists(base_path('package.json'))) {
             $this->info('▶ BUILDING FRONTEND (npm run build)...');
             $isWindows = PHP_OS_FAMILY === 'Windows';

@@ -12,7 +12,12 @@
                     {{ config?.school?.long_name }}
                 </div>
             </v-card-subtitle>
-            <v-card-text class="text-body-1 font-weight-bold" v-if="registers.length == 0">Keine Anmeldung aktiv!</v-card-text>
+            <v-card-text class="text-body-1 font-weight-bold" v-if="registers.length == 0">
+                <div>Keine Anmeldung aktiv!</div>
+                <div class="d-flex flex-row align-center justify-space-between mt-4">
+                    <v-btn color="warning" slim flat rounded="0" to="/" tabindex="3">Zurück</v-btn>
+                </div>
+            </v-card-text>
         </v-card>
 
         <!-- Registrierung muss ausgewählt werden, weil es mehr als eine gibt und noch keine active_register vorhanden ist -->
@@ -51,7 +56,7 @@
                 <v-form ref="form" v-model="is_valid" @submit.prevent="checkEmail(data)" class="mb-4">
                     <v-text-field autofocus v-model="data.email" label="Ihre E-Mail-Adresse" :rules="[required(), mail()]" tabindex="1" />
                     <div class="d-flex flex-row align-center justify-space-between">
-                        <v-btn color="warning" slim flat rounded="0" @click="startRegister" tabindex="3">Zurück</v-btn>
+                        <v-btn color="warning" slim flat rounded="0" to="/" tabindex="3">Zurück</v-btn>
                         <v-btn color="success" slim flat rounded="0" type="submit" v-if="data.email" tabindex="2">Weiter</v-btn>
                     </div>
                 </v-form>
@@ -135,7 +140,19 @@ export default {
     async beforeMount() {
         this.registerStore = useRegisterStore()
         this.school_name = this.$route.query.school
+
+        if (!this.school_name) {
+            this.$router.push('/')
+            return
+        }
+
         await this.registerStore.loadConfig(this.school_name)
+
+        if (!this.config?.school) {
+            this.$router.push('/')
+            return
+        }
+
         this.startRegister()
     },
 

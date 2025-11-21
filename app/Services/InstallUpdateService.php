@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\QueueTest;
 use App\Models\School;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 
@@ -20,6 +21,15 @@ class InstallUpdateService
     {
         //
         QueueTest::query()->delete();
+    }
+
+    public function clearDebugbar()
+    {
+        $debugbarPath = storage_path('debugbar');
+
+        if (File::exists($debugbarPath)) {
+            File::cleanDirectory($debugbarPath);  // empty everything inside
+        }
     }
 
     public function checkSuperAdmins()
