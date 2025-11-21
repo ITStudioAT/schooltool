@@ -10,6 +10,7 @@
         <!-- Tool-Auswahl -->
         <v-card tile flat color="transparent" class="border-md" v-if="step == ''">
             <v-card-text>
+                <!-- ANMELDETOOL -->
                 <div class="d-flex flex-wrap justify-center ga-4">
                     <v-card color="third" width="300" height="170" class="d-flex flex-column">
                         <v-card-title class="text-h5">Anmeldetool</v-card-title>
@@ -21,6 +22,7 @@
                         </v-card-actions>
                     </v-card>
 
+                    <!-- NACHHILFETOOL -->
                     <v-card color="secondary" width="300" height="170" class="d-flex flex-column">
                         <v-card-title class="text-h5">SuSis helfen SuSis</v-card-title>
 
@@ -29,11 +31,12 @@
                         <v-card-actions class="mt-auto">
                             <div>befindet sich derzeit in Entwicklung</div>
                             <!--
-                            <v-btn class="ms-2" size="small" text="LOS" variant="outlined" to="/homepage/register"></v-btn>
+                            <v-btn class="ms-2" size="small" text="LOS" variant="outlined" @click="loadSchoolsForTool('Tutoring')"></v-btn>
                             -->
                         </v-card-actions>
                     </v-card>
 
+                    <!-- MITTAGESSEN -->
                     <v-card color="third" width="300" height="170" class="d-flex flex-column">
                         <v-card-title class="text-h5">Mittagsmenüs</v-card-title>
 
@@ -87,12 +90,13 @@
 
                         <v-card-actions class="mt-auto">
                             <v-btn class="ms-2" size="small" text="Zurück" color="warning" variant="flat" @click="abort('selectSchool')" />
-                            <v-btn class="ms-2" size="small" text="Weiter" variant="outlined" :to="'/homepage/register?school=' + selected_school.short_name" />
+                            <v-btn class="ms-2" size="small" text="Weiter" variant="outlined" @click="moveTo(licence, selected_school)" />
                         </v-card-actions>
                     </v-card>
                 </div>
             </v-card-text>
         </v-card>
+        <v-card>{{ licence }}</v-card>
     </div>
 </template>
 
@@ -137,6 +141,20 @@ export default {
     },
 
     methods: {
+        moveTo(licence, school) {
+            var path = '/homepage/'
+            switch (licence.name) {
+                case 'Anmeldetool':
+                    path += 'register/'
+                    break
+                case 'Tutoring':
+                    path += 'tutoring/'
+                    break
+            }
+            path += '?school=' + school.short_name
+
+            this.$router.push(path)
+        },
         abort(step) {
             this.selected_school = null
             this.selected_school_id = null

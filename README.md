@@ -4,6 +4,10 @@ SchoolTool beinhaltet Tools zur Unterstützung der Administration von Schulen.
 
 # Last Changes
 
+## 3.2.13 - 21.11.2025
+
+-   Enztry-Point changed
+
 ## 3.2.12 - 20.11.2025
 
 -   Super-Admin: Bei Erstellung, Löschen von Schulen oder Upload von Schul-Logo: Erstellen bzw. korrekte Verwendung von Verzeichnissen
