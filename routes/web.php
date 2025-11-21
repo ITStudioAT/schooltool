@@ -36,9 +36,17 @@ Route::middleware(['throttle:global', 'throttle:web', 'web-allowed'])->group(fun
         return view('spa::application');
     })->where('any', '.*');
 
-    Route::get('homepage/{any?}', function () {
+    Route::get('/homepage/register/', function () {
         return view('homepage');
     });
 
-    Route::get('/{any?}',  [\App\Http\Controllers\Homepage\HomepageController::class, 'routing']);
+    Route::get('/homepage/register2/', function () {
+        return view('homepage');
+    });
+
+    Route::get('/', function () {
+        return view('homepage');
+    });
+
+    Route::get('/homepage/{any?}',  [\App\Http\Controllers\Homepage\HomepageController::class, 'routing']);
 });

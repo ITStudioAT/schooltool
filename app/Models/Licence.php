@@ -2,7 +2,10 @@
 
 namespace App\Models;
 
+use App\Models\School;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+
 
 /**
  * @property int $id
@@ -28,4 +31,9 @@ use Illuminate\Database\Eloquent\Model;
 class Licence extends Model
 {
     protected $guarded = [];
+
+    public function schools(): BelongsToMany
+    {
+        return $this->belongsToMany(School::class, 'school_licences');
+    }
 }

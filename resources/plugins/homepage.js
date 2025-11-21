@@ -5,9 +5,10 @@ const lightTheme = {
     dark: false,
     colors: {
         // Main brand color for buttons, links, highlights
-        primary: '#3949AB', // indigo.darken1
+        primary: '#37474F', // indigo.darken1
         // Used for secondary buttons, cards, less emphasis
-        secondary: '#B0BEC5', // blue-grey.lighten3
+        secondary: '#F39200 ', // blue-grey.lighten3
+        third: '#3AAA35',
         // Optional highlight or accent tone
         accent: '#18FFFF', // cyan.accent3
         // App background

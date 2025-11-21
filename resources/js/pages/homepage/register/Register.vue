@@ -1,12 +1,5 @@
 <template>
-    <canvas ref="particleCanvas" class="particle-canvas"></canvas>
-
-    <v-container fluid class="h-100 w-100 d-flex flex-column align-center justify-center modern-bg" v-if="config">
-        <!-- Gradient Orbs -->
-        <div class="gradient-orb orb-1"></div>
-        <div class="gradient-orb orb-2"></div>
-        <div class="gradient-orb orb-3"></div>
-
+    <v-container fluid class="h-100 w-100 d-flex flex-column align-center justify-center" v-if="config">
         <v-card class="mx-auto w-100" max-width="600" tile flat color="primary">
             <v-card-title class="d-flex flex-row align-center">
                 <img :src="`/storage/images/${config?.school?.logo}`" alt="Logo" class="logo" v-if="config?.school?.logo" />

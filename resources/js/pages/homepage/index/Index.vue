@@ -1,72 +1,104 @@
 <template>
-    <canvas ref="particleCanvas" class="particle-canvas"></canvas>
+    <div class="schooltool-background">
+        <div class="text-container">
+            <span v-for="(letter, index) in letters" :key="index" class="letter" :style="{ animationDelay: `${index * 0.1}s` }">
+                {{ letter }}
+            </span>
+        </div>
+    </div>
+    <div class="h-100 w-100 d-flex flex-column align-center justify-center" style="max-width: 1024px; margin: auto">
+        <!-- Tool-Auswahl -->
+        <v-card tile flat color="transparent" class="border-md" v-if="step == ''">
+            <v-card-text>
+                <div class="d-flex flex-wrap justify-center ga-4">
+                    <v-card color="third" width="300" height="170" class="d-flex flex-column">
+                        <v-card-title class="text-h5">Anmeldetool</v-card-title>
 
-    <v-container fluid class="index-bg modern-bg d-flex flex-column align-center justify-center" v-if="config">
-        <!-- Canvas für die Fäden -->
+                        <v-card-subtitle style="white-space: normal">Hier können Sie sich zu ausgeschriebenen Events anmelden.</v-card-subtitle>
 
-        <!-- Gradient Orbs -->
-        <div class="gradient-orb orb-1"></div>
-        <div class="gradient-orb orb-2"></div>
-        <div class="gradient-orb orb-3"></div>
+                        <v-card-actions class="mt-auto">
+                            <v-btn class="ms-2" size="small" text="LOS" variant="outlined" @click="loadSchoolsForTool('Anmeldetool')"></v-btn>
+                        </v-card-actions>
+                    </v-card>
 
-        <!-- Grid Pattern -->
-        <div class="grid-pattern"></div>
+                    <v-card color="secondary" width="300" height="170" class="d-flex flex-column">
+                        <v-card-title class="text-h5">SuSis helfen SuSis</v-card-title>
 
-        <v-card class="mx-auto w-100" max-width="600" tile flat color="primary">
-            <v-form ref="form" class="mb-4" @submit.prevent="redirect(school, licence)">
-                <v-card-title class="d-flex flex-row align-center" v-if="school">
-                    <img :src="`/storage/images/${school?.logo}`" alt="Logo" class="logo" v-if="school?.logo" />
-                    <div class="ml-2"></div>
-                </v-card-title>
+                        <v-card-subtitle style="white-space: normal">Das Nachhilfetool für Schüler:innen. Anbieten und Anfordern von Nachhilfe.</v-card-subtitle>
 
-                <v-card-title v-if="!school" class="mb-4 d-flex flex-row align-center">
-                    <div style="height: 28px; width: 28px" class="mr-4">
-                        <v-img :src="`/storage/images/${config?.schooltool_logo}`" alt="Logo" />
-                    </div>
-                    <div>SchoolTool</div>
-                </v-card-title>
+                        <v-card-actions class="mt-auto">
+                            <div>befindet sich derzeit in Entwicklung</div>
+                            <!--
+                            <v-btn class="ms-2" size="small" text="LOS" variant="outlined" to="/homepage/register"></v-btn>
+                            -->
+                        </v-card-actions>
+                    </v-card>
 
-                <v-card-subtitle class="d-flex flex-row align-center justify-space-between" v-if="school?.long_name">
-                    <div>{{ school?.long_name }}</div>
-                    <v-btn flat size="small" icon color="primary" @click="abortSchool" v-if="config.selectableSchools.length > 1">
-                        <v-icon icon="mdi-close" />
-                    </v-btn>
-                </v-card-subtitle>
+                    <v-card color="third" width="300" height="170" class="d-flex flex-column">
+                        <v-card-title class="text-h5">Mittagsmenüs</v-card-title>
 
-                <v-card-text v-if="!school">
-                    <div class="text-body-1 font-weight-bold">Bitte die Schule auswählen</div>
-                    <v-autocomplete v-model="selected_school_id" :items="config.selectableSchools" item-title="long_name" item-value="id" label="Auswahl Schule" />
-                </v-card-text>
+                        <v-card-subtitle style="white-space: normal">Hier können Mittagessen im Buffet bestellt werden. Derzeit nur CDGym.</v-card-subtitle>
 
-                <v-card-text v-if="school && !licence && config.schoolLicences.length > 0">
-                    <div class="text-body-1 font-weight-bold">Bitte die App auswählen</div>
-                    <v-autocomplete v-model="selected_licence_id" :items="config?.schoolLicences" item-title="long_name" item-value="id" label="Auswahl App" />
-                </v-card-text>
-
-                <v-card-text v-if="licence">
-                    <div class="d-flex flex-row align-center justify-space-between">
-                        <div class="text-body-1 font-weight-medium">{{ licence.long_name }}</div>
-                        <v-btn flat size="small" icon color="primary" @click="selected_licence_id = null" v-if="config.schoolLicences.length > 1">
-                            <v-icon icon="mdi-close" />
-                        </v-btn>
-                    </div>
-                    <div>App</div>
-                </v-card-text>
-
-                <v-card-actions class="d-flex flex-column justify-center text-body-1 font-weight-medium">
-                    <v-btn autofocus tile flat variant="outlined" v-if="selected_school_id && selected_licence_id" type="submit">Weiter</v-btn>
-                    <div v-if="config?.selectableSchools?.length == 0">Es kann keine Schule ausgewählt werden!</div>
-                    <div v-if="selected_school_id && config?.schoolLicences?.length == 0">Es gibt keine Apps zum Auswählen!</div>
-                </v-card-actions>
-            </v-form>
+                        <v-card-actions class="mt-auto">
+                            <v-btn class="ms-2" size="small" text="LOS" variant="outlined" href="https://cdgym.info/lunch" target></v-btn>
+                        </v-card-actions>
+                    </v-card>
+                </div>
+            </v-card-text>
         </v-card>
-    </v-container>
+
+        <!-- Schulauswahl -->
+
+        <v-card tile flat color="transparent" class="border-md w-100" max-width="600" v-if="step == 'selectSchool' && !selected_school">
+            <v-card-text>
+                <div class="d-flex flex-column flex-wrap justify-center ga-4">
+                    <v-card color="third" max-width="600" class="d-flex flex-column w-100" v-if="licence">
+                        <v-card-title class="text-h5">{{ licence.name }}</v-card-title>
+
+                        <v-card-subtitle style="white-space: normal">{{ licence.long_name }}</v-card-subtitle>
+
+                        <v-card-text>
+                            <div class="text-h6">Bitte wähle die Schule aus</div>
+                            <v-autocomplete v-model="selected_school_id" :items="schools" item-title="long_name" item-value="id" label="Auswahl Schule" />
+                        </v-card-text>
+
+                        <v-card-actions class="mt-auto">
+                            <v-btn class="ms-2" size="small" text="Zurück" color="warning" variant="flat" @click="abort('')" />
+                        </v-card-actions>
+                    </v-card>
+                </div>
+            </v-card-text>
+        </v-card>
+
+        <v-card tile flat color="transparent" class="border-md w-100" max-width="600" v-if="step == 'selectSchool' && selected_school">
+            <v-card-text>
+                <div class="d-flex flex-column flex-wrap justify-center ga-4">
+                    <v-card color="third" max-width="600" class="d-flex flex-column w-100" v-if="licence">
+                        <v-card-title class="text-h5">{{ licence.name }}</v-card-title>
+
+                        <v-card-subtitle style="white-space: normal">{{ licence.long_name }}</v-card-subtitle>
+
+                        <v-card-text>
+                            <v-card tile flat width="300" color="transparent" class="text-left">
+                                <img :src="'/storage/images/' + selected_school.logo" max-height="50" max-width="150" />
+                            </v-card>
+                            <div class="text-h6">{{ selected_school.long_name }}</div>
+                        </v-card-text>
+
+                        <v-card-actions class="mt-auto">
+                            <v-btn class="ms-2" size="small" text="Zurück" color="warning" variant="flat" @click="abort('selectSchool')" />
+                            <v-btn class="ms-2" size="small" text="Weiter" variant="outlined" :to="'/homepage/register?school=' + selected_school.short_name" />
+                        </v-card-actions>
+                    </v-card>
+                </div>
+            </v-card-text>
+        </v-card>
+    </div>
 </template>
 
 <script>
 import { mapWritableState } from 'pinia'
 import { useHomepageStore } from '@/stores/homepage/HomepageStore'
-import { useParticles } from '@/composables/useParticles'
 
 export default {
     components: {},
@@ -78,110 +110,95 @@ export default {
         if (!this.school) {
             await this.homepageStore.loadConfig(this.school_name, this.app_name)
         }
+        this.selected_school = null
+        this.selected_school_id = null
     },
 
-    mounted() {
-        // Particle System initialisieren
-        const particleSystem = useParticles({
-            count: 50,
-            lineOpacity: 0.15,
-            connectionDistance: 120,
-            speed: 0.3,
-        })
+    mounted() {},
 
-        this.$nextTick(() => {
-            particleSystem.init(this.$refs.particleCanvas)
-        })
-
-        window.addEventListener('resize', particleSystem.resizeCanvas)
-
-        // Cleanup speichern
-        this._particleCleanup = particleSystem.cleanup
-    },
-
-    unmounted() {
-        if (this._particleCleanup) {
-            this._particleCleanup()
-        }
-    },
+    unmounted() {},
 
     data() {
         return {
             homepageStore: null,
-            is_more_content: false,
-            school_name: '',
-            app_name: '',
-            ctx: null, // <-- Wichtig: ctx hier definieren
-
-            // Particle system
-            _particleCleanup: null,
+            letters: 'SCHOOLTOOL'.split(''),
+            step: '',
         }
     },
 
     computed: {
-        ...mapWritableState(useHomepageStore, ['config', 'is_loading', 'error', 'school', 'licence', 'selected_school_id', 'selected_licence_id']),
+        ...mapWritableState(useHomepageStore, ['config', 'is_loading', 'schools', 'licence', 'selected_school', 'selected_school_id']),
     },
 
     watch: {
-        async selected_school_id() {
-            if (this.selected_school_id) {
-                this.school = this.config?.selectableSchools.find((s) => s.id === this.selected_school_id)
-                await this.homepageStore.loadConfig(this.school?.short_name, this.app_name)
-            }
-        },
-        async selected_licence_id() {
-            if (this.selected_licence_id) {
-                this.licence = this.config?.schoolLicences.find((s) => s.id === this.selected_licence_id)
-                await this.homepageStore.loadConfig(this.school?.short_name, this.licence.name)
-            } else {
-                this.licence = null
-            }
+        selected_school_id() {
+            this.selected_school = this.schools.find((item) => item.id == this.selected_school_id)
         },
     },
 
     methods: {
-        abortSchool() {
-            this.school = null
-            this.licence = null
+        abort(step) {
+            this.selected_school = null
+            this.selected_school_id = null
+            this.step = step
         },
 
-        redirect(school, licence) {
-            if (!school || !licence) return
-
-            switch (licence.name) {
-                case 'Anmeldetool':
-                    window.location.href = '/homepage/register?school=' + school.short_name
-                    break
-            }
+        async loadSchoolsForTool(tool) {
+            await this.homepageStore.loadSchoolsForTool(tool)
+            this.step = 'selectSchool'
         },
     },
 }
 </script>
 
 <style scoped>
-.logo {
-    display: block;
-    max-height: 90px;
-    height: auto;
-    width: auto;
-    object-fit: contain;
-}
-
-.index-bg {
-    position: relative;
-    z-index: 1;
-    min-height: 100vh;
+.schooltool-background {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     display: flex;
-    justify-content: center;
     align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
 }
 
-:deep(.v-card) {
-    position: relative;
-    z-index: 10; /* Card bleibt ganz oben */
-    backdrop-filter: blur(8px);
-    background-color: rgba(48, 63, 159, 0.9);
-    box-shadow: 0 10px 35px rgba(48, 63, 159, 0.35);
-    border-radius: 12px;
+.text-container {
+    display: flex;
+    gap: 0;
+    align-items: flex-end; /* Bottom-Ausrichtung */
+}
+
+.letter {
+    font-size: clamp(3.6rem, 9vw, 18rem); /* 90% Größe als Default */
+    font-weight: 900;
+    color: rgba(0, 0, 0, 0.05);
+    text-transform: uppercase;
+    font-family: 'Arial Black', sans-serif;
+    animation: wave 5.5s ease-in-out infinite;
+    user-select: none;
+}
+
+.letter:nth-child(1) {
+    font-size: clamp(4rem, 10vw, 20rem); /* S - volle Größe */
+    color: rgba(243, 146, 55, 0.15);
+}
+
+.letter:nth-child(7) {
+    font-size: clamp(4rem, 9.5vw, 20rem); /* T - volle Größe */
+    color: rgba(100, 171, 57, 0.15);
+}
+
+@keyframes wave {
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-20px);
+    }
 }
 </style>

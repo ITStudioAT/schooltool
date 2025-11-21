@@ -6,7 +6,7 @@ import Register_Part2 from '@/pages/homepage/register/RegisterPart2.vue'
 import Application_Error from '@/pages/homepage/error/Error.vue'
 
 const routes = [
-    { path: '/homepage', component: Index },
+    { path: '/', component: Index },
     { path: '/homepage/impressum', component: Impressum },
     { path: '/homepage/register', component: Register },
     { path: '/homepage/register2', component: Register_Part2 },

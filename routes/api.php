@@ -27,6 +27,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /***** HOMEPAGE ROUTES *****/
     Route::get('/homepage/config',  [HomepageController::class, 'config']);
+    Route::get('/homepage/load_schools_for_tool',  [HomepageController::class, 'loadSchoolsForTool']);
     Route::post('/homepage/logout',  [\App\Http\Controllers\Homepage\HomepageController::class, 'logout']);
 
     /***** ADMIN ROUTES *****/

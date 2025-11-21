@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Homepage;
 
+use App\Http\Requests\Homepage\HomepageLoadSchoolsForToolRequest;
 use App\Http\Requests\Homepage\HomepageRoutingRequest;
 use App\Http\Resources\Homepage\LicenceResource;
 use App\Http\Resources\Homepage\SchoolResource;
@@ -45,6 +46,21 @@ class HomepageController extends Controller
 
         return redirect($answer['redirect']);
     }
+
+    public function loadSchoolsForTool(HomepageLoadSchoolsForToolRequest $request)
+    {
+        $validated = $request->validated();
+        $licence = Licence::where('name', $validated['tool'])->first();
+
+        $data = [
+            'licence' => new LicenceResource($licence),
+            'schools' => SchoolResource::collection($licence->schools)
+        ];
+
+        return response()->json($data, 200);
+    }
+
+
 
     public function config(Request $request, LicenceService $licenceService)
     {
