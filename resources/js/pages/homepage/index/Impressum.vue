@@ -47,7 +47,7 @@
 
             <!-- MENÜ -->
             <v-card-actions class="d-flex flex-column justify-center text-body-1 font-weight-medium">
-                <v-btn tile flat variant="outlined" :to="'/homepage?t=' + Date.now()">Startseite</v-btn>
+                <v-btn tile flat variant="outlined" @click="back">Startseite</v-btn>
             </v-card-actions>
         </v-card>
     </v-container>
@@ -78,7 +78,11 @@ export default {
     },
 
     watch: {},
-    methods: {},
+    methods: {
+        back() {
+            this.$router.back()
+        },
+    },
 }
 </script>
 <style scoped>
