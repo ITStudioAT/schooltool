@@ -7,9 +7,10 @@ use App\Http\Resources\Admin\UserResource;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolLicence;
+use App\Models\SchoolTool;
 use App\Models\Schoolyear;
-use App\Models\User;
 
+use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -51,6 +52,13 @@ class SchoolService
         ]);
 
         $user->assignRole('super_admin');
+
+        // SchoolTool - Record erzeugen 
+        $schoolTool = SchoolTool::create([
+            'school_id' =>  $school->id,
+            'tutoring_student_must_be_confirmed' => false,
+            'tutoring_confirmer_email' => '',
+        ]);
 
         // Folder für LOogo etc anlegen
         $hlp_path = $school->id . '/temp';
@@ -128,6 +136,9 @@ class SchoolService
 
         // Schuljahr der Schule löschen
         Schoolyear::where('school_id', $id)->delete();
+
+        // SchoolTool der Schule löschen
+        SchoolTool::where('school_id', $id)->delete();
 
         // Schulen lösche
         $school = School::find($id);

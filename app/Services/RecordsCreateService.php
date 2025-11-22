@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\User;
 use Spatie\Permission\Models\Role;
@@ -29,6 +30,7 @@ class RecordsCreateService
         foreach ($schools as $school) {
             $this->checkOrCreateAdmins($school);
             $this->checkOrCreateSchoolyears($school);
+            $this->checkOrCreateSchoolTool($school);
         }
     }
 
@@ -126,5 +128,20 @@ class RecordsCreateService
 
         $user->assignRole($role);
         return $user;
+    }
+
+    public function checkOrCreateSchoolTool($school): SchoolTool
+    {
+
+        $schoolTool = SchoolTool::where('school_id', $school->id)->first();
+        if (!$schoolTool) {
+            $schoolTool = SchoolTool::create([
+                'school_id' =>  $school->id,
+                'tutoring_student_must_be_confirmed' => false,
+                'tutoring_confirmer_email' => '',
+            ]);
+        }
+
+        return $schoolTool;
     }
 }

@@ -20,35 +20,29 @@
                     </div>
                 </v-card-text>
 
+                <!-- E-Mail muss eingegeben werden -->
                 <v-card-text v-if="school && !data.status">
                     <v-form ref="form" v-model="is_valid" @submit.prevent="checkEmail(data)" class="mb-4">
                         <v-text-field autofocus v-model="data.email" label="Deine E-Mail-Adresse" :rules="[required(), mail()]" tabindex="1" />
-                        <div class="d-flex flex-row align-center justify-space-between">
-                            <div></div>
+                        <div class="d-flex flex-row align-center justify-space-between mt-4">
+                            <v-btn color="warning" slim flat rounded="0" to="/">Zurück</v-btn>
                             <v-btn color="success" slim flat rounded="0" type="submit" v-if="data.email" tabindex="2">Weiter</v-btn>
                         </div>
                     </v-form>
                 </v-card-text>
 
+                <!-- Neuer Benutzer: Name muss eingegeben werden -->
                 <v-card-text v-if="data.status == 'NEW_USER'">
                     <div class="text-h6 font-weight-medium">Neuer Benutzer</div>
                     <div class="text-body-2">E-Mail: {{ data.email }}</div>
                     <v-form ref="form" v-model="is_valid" @submit.prevent="createUser(data)" class="my-4">
                         <v-text-field autofocus v-model="data.last_name" label="Dein Nachname" :rules="[required(), maxLength(255)]" tabindex="1" />
                         <v-text-field v-model="data.first_name" label="Dein Vorname" :rules="[maxLength(255)]" tabindex="1" />
-                        <div class="d-flex flex-row align-center justify-space-between">
-                            <div></div>
+                        <div class="d-flex flex-row align-center justify-space-between mt-4">
+                            <v-btn color="warning" slim flat rounded="0" @click="data.status = ''">Zurück</v-btn>
                             <v-btn color="success" slim flat rounded="0" type="submit" v-if="data.email" tabindex="2">Weiter</v-btn>
                         </div>
                     </v-form>
-                </v-card-text>
-                <v-card-text>
-                    DATA:
-                    {{ data }}
-                </v-card-text>
-                <v-card-text>
-                    SCHOOL:
-                    {{ school }}
                 </v-card-text>
             </v-card>
         </div>
