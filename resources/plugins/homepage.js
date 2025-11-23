@@ -5,9 +5,9 @@ const lightTheme = {
     dark: false,
     colors: {
         // Main brand color for buttons, links, highlights
-        primary: '#37474F', // indigo.darken1
+        primary: '#37474F', // blue-grey-darken-3
         // Used for secondary buttons, cards, less emphasis
-        secondary: '#F39200 ', // blue-grey.lighten3
+        secondary: '#F39200 ', //
         third: '#3AAA35',
         // Optional highlight or accent tone
         accent: '#18FFFF', // cyan.accent3
@@ -21,6 +21,9 @@ const lightTheme = {
         success: '#00897B', // teal.darken1
         // For errors, alerts
         error: '#E53935', // red.darken1
+
+        button_primary: '#5c6c62', // indigo.darken1
+        button_primary_selected: '#37474F', // indigo.darken1
 
         // Tutoring
         tutoring_background: '#5c6c62',

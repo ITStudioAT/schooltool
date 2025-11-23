@@ -11,6 +11,7 @@ export const useTutoringStore = defineStore('HomepageTutoringStore', {
             school: null,
             data: {},
             response: null,
+            auth: null,
         }
     },
 
@@ -23,6 +24,27 @@ export const useTutoringStore = defineStore('HomepageTutoringStore', {
                 this.response = await axios.get('/api/homepage/tutoring/config', {})
                 this.config = this.response.data
                 this.schools = this.config?.schools
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
+        async loadAuth() {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+            try {
+                this.response = await axios.get('/api/homepage/tutoring/load_auth', {})
+                this.auth = this.response.data
                 return true
             } catch (error) {
                 notification.notify({

@@ -10,10 +10,13 @@ use App\Http\Requests\Homepage\TutoringCreateUserRequest;
 use App\Http\Requests\Homepage\TutoringLoginWithTokenRequest;
 use App\Http\Requests\Homepage\TutoringUnknownPasswordRequest;
 use App\Http\Resources\Homepage\SchoolWithLicenceRecource;
+use App\Http\Resources\Homepage\UserResource;
 use App\Models\School;
 use App\Models\User;
 use App\Services\TutoringService;
+use Barryvdh\Debugbar\Facades\Debugbar;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class TutoringController extends Controller
 {
@@ -31,6 +34,27 @@ class TutoringController extends Controller
 
         $data = [
             'schools' => SchoolWithLicenceRecource::collection($schools),
+        ];
+
+        return response()->json($data, 200);
+    }
+
+    public function loadAuth()
+    {
+        if (! $auth_user = $this->userHasRole(['tutoring_user'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+
+        $school = $auth_user->selectedSchool;
+
+        $data = [
+            'auth_check' => true,
+            'auth_user' => new UserResource($auth_user),
+            'version' => config('schooltool.version'),
+            'school_long_name' => $school->long_name,
+            'school_short_name' => $school->short_name,
+            'school_logo' => $school->logo,
         ];
 
         return response()->json($data, 200);

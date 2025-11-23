@@ -96,6 +96,11 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/users20/delete_users', [\App\Http\Controllers\Admin\UserController::class, 'deleteUsers']);
     });
 
+    /* SANCTUM - tutoring_user */
+    Route::middleware(['auth:sanctum', 'api-allowed:tutoring_user'])->group(function () {
+        Route::get('/homepage/tutoring/load_auth', [\App\Http\Controllers\Homepage\TutoringController::class, 'loadAuth']);
+    });
+
     /* SANCTUM - admin, tutoring_admin, register_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:admin,tutoring_admin,register_admin'])->group(function () {
         Route::get('/admin/school_tools/load_config', [\App\Http\Controllers\Admin\SchoolToolController::class, 'loadConfig']);
