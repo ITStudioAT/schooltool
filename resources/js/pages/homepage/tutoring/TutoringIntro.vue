@@ -173,7 +173,7 @@
 
                     <div class="d-flex flex-row align-center justify-space-between mt-4">
                         <v-btn color="primary" slim flat rounded="0" @click="logout">Logout</v-btn>
-                        <v-btn color="primary" slim flat rounded="0" @click="">Weiter</v-btn>
+                        <v-btn color="primary" slim flat rounded="0" to="/homepage/tutoring">Weiter</v-btn>
                     </div>
                 </v-card-text>
             </v-card>
@@ -184,7 +184,7 @@
 <script>
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
-import { useTutoringStore } from '@/stores/homepage/TutoringStore'
+import { useTutoringStore } from '@/stores/tutoring/TutoringStore'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 

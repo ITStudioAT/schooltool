@@ -155,9 +155,9 @@ describe('dashboardMenu', function () {
 
         expect($result)
             ->toBeArray()
-            ->toHaveCount(5)
+            ->toHaveCount(6)
             ->and(collect($result)->pluck('title')->toArray())
-            ->toContain('Home', 'Super-Admin', 'Anmeldetool', 'Role Multi', 'Abmelden');
+            ->toContain('Home', 'Super-Admin', 'Anmeldetool', 'Nachhilfe', 'Role Multi', 'Abmelden');
     });
 
     it('ensures Home is always first menu item', function () {

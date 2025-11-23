@@ -223,7 +223,7 @@ class SchoolController extends Controller
 
         $validated = $request->validated();
         $school_licence = SchoolLicence::findOrFail($validated['school_licence_id']);
-        $school_id = $school_licence->id;
+        $school_id = $school_licence->school_id;
         $school_licence->delete();
 
         $licences = School::find($school_id)->licences;

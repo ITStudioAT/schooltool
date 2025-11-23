@@ -62,12 +62,12 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/homepage/register/delete_booking',  [\App\Http\Controllers\Homepage\RegisterController::class, 'deleteBooking']);
 
     /* homepage/tutoring */
-    Route::get('/homepage/tutoring/config',  [\App\Http\Controllers\Homepage\TutoringController::class, 'config']);
-    Route::post('/homepage/tutoring/check_email',  [\App\Http\Controllers\Homepage\TutoringController::class, 'checkEMail']);
-    Route::post('/homepage/tutoring/confirm_email',  [\App\Http\Controllers\Homepage\TutoringController::class, 'confirmEMail']);
-    Route::post('/homepage/tutoring/create_user',  [\App\Http\Controllers\Homepage\TutoringController::class, 'createUser']);
-    Route::post('/homepage/tutoring/unknown_password',  [\App\Http\Controllers\Homepage\TutoringController::class, 'unknownPassword']);
-    Route::post('/homepage/tutoring/login_with_token',  [\App\Http\Controllers\Homepage\TutoringController::class, 'loginWithToken']);
+    Route::get('/homepage/tutoring/config',  [\App\Http\Controllers\Tutoring\TutoringController::class, 'config']);
+    Route::post('/homepage/tutoring/check_email',  [\App\Http\Controllers\Tutoring\TutoringController::class, 'checkEMail']);
+    Route::post('/homepage/tutoring/confirm_email',  [\App\Http\Controllers\Tutoring\TutoringController::class, 'confirmEMail']);
+    Route::post('/homepage/tutoring/create_user',  [\App\Http\Controllers\Tutoring\TutoringController::class, 'createUser']);
+    Route::post('/homepage/tutoring/unknown_password',  [\App\Http\Controllers\Tutoring\TutoringController::class, 'unknownPassword']);
+    Route::post('/homepage/tutoring/login_with_token',  [\App\Http\Controllers\Tutoring\TutoringController::class, 'loginWithToken']);
 
 
     /* SANCTUM */
@@ -94,11 +94,16 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/users20/update', [\App\Http\Controllers\Admin\UserController::class, 'updateUser']);
         Route::post('/admin/users20/store', [\App\Http\Controllers\Admin\UserController::class, 'storeUser']);
         Route::post('/admin/users20/delete_users', [\App\Http\Controllers\Admin\UserController::class, 'deleteUsers']);
+
+        // RegisterUsers
+        Route::get('/admin/register_users',  [\App\Http\Controllers\Admin\RegisterUserController::class, 'index']);
+        Route::post('/admin/register_users/delete_register_users',  [\App\Http\Controllers\Admin\RegisterUserController::class, 'deleteRegisterUsers']);
     });
 
     /* SANCTUM - tutoring_user */
     Route::middleware(['auth:sanctum', 'api-allowed:tutoring_user'])->group(function () {
-        Route::get('/homepage/tutoring/load_auth', [\App\Http\Controllers\Homepage\TutoringController::class, 'loadAuth']);
+        Route::apiResource('/homepage/tututoring/users', \App\Http\Controllers\Tutoring\UserController::class);
+        Route::get('/homepage/tutoring/load_auth', [\App\Http\Controllers\Tutoring\TutoringController::class, 'loadAuth']);
     });
 
     /* SANCTUM - admin, tutoring_admin, register_admin */
@@ -135,11 +140,6 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/schools/delete_licence',  [\App\Http\Controllers\Admin\SchoolController::class, 'deleteLicence']);
         Route::post('/admin/schools/add_admin',  [\App\Http\Controllers\Admin\SchoolController::class, 'addAdmin']);
         Route::post('/admin/schools/delete_admin',  [\App\Http\Controllers\Admin\SchoolController::class, 'deleteAdmin']);
-
-        // RegisterUsers
-        Route::get('/admin/register_users',  [\App\Http\Controllers\Admin\RegisterUserController::class, 'index']);
-        Route::post('/admin/register_users/delete_register_users',  [\App\Http\Controllers\Admin\RegisterUserController::class, 'deleteRegisterUsers']);
-
 
         //schoolyears
         Route::apiResource('/admin/schoolyears', \App\Http\Controllers\Admin\SchoolyearController::class);

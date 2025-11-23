@@ -28,6 +28,8 @@ const lightTheme = {
         // Tutoring
         tutoring_background: '#5c6c62',
         tutoring_text: '#fbf0d4',
+        tutoring_card: '#ECEFF1',
+        tutoring_card_title: '#263238',
         tutoring_secondary: '#dc8210',
     },
 }

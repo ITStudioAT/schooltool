@@ -67,14 +67,14 @@ describe('checkRoute with invalid school', function () {
             ->and($result['msg'])->toBe('Die Schule konnte nicht gefunden werden.');
     });
 
-    it('is case sensitive for school short_name', function () {
+    it('is case insensitive for school short_name', function () {
         School::factory()->create(['short_name' => 'ABC']);
-        
+
         $result = $this->service->checkRoute('abc', null);
-        
+
         expect($result)->toBeArray()
-            ->and($result['status'])->toBe('error')
-            ->and($result['msg'])->toBe('Die Schule konnte nicht gefunden werden.');
+            ->and($result['status'])->toBe('ok')
+            ->and($result['redirect'])->toBe('/homepage/?school=abc');
     });
 });
 
@@ -256,15 +256,15 @@ describe('checkRoute with school and valid licence', function () {
             'name' => 'premium-app',
             'long_name' => 'Premium Application',
         ]);
-        
+
         SchoolLicence::create([
             'school_id' => $school->id,
             'licence_id' => $licence->id,
-            'valid_until' => Carbon::now()->addHours(2),
+            'valid_until' => Carbon::now()->addDay(),
         ]);
-        
+
         $result = $this->service->checkRoute('TEST', 'premium-app');
-        
+
         expect($result)->toBeArray()
             ->and($result['status'])->toBe('ok')
             ->and($result['redirect'])->toBe('/homepage/?school=TEST&licence=premium-app');

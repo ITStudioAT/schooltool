@@ -190,7 +190,7 @@ test('admin can update school via service', function () {
 test('update requires valid payload', function () {
     $this->actingAs($this->adminUser, 'sanctum');
 
-    $this->putJson('/api/admin/schools/1', [
+    $this->putJson("/api/admin/schools/{$this->school->id}", [
         'long_name' => 'Missing ID',
     ])->assertStatus(422);
 });

@@ -25,7 +25,7 @@ Route::middleware(['throttle:global', 'throttle:web', 'web-allowed'])->group(fun
 
 
 
-    Route::get('/homepage/tutoring/confirm-user',  [\App\Http\Controllers\Homepage\TutoringController::class, 'confirmUser']);
+    Route::get('/homepage/tutoring/confirm-user',  [\App\Http\Controllers\Tutoring\TutoringController::class, 'confirmUser']);
 
     /* restliche admin-Routen */
     Route::get('/admin/{any?}', function () {

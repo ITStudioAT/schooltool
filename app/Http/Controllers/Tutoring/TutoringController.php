@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Homepage;
+namespace App\Http\Controllers\Tutoring;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Homepage\TutoringCheckEmailRequest;
@@ -38,6 +38,8 @@ class TutoringController extends Controller
 
         return response()->json($data, 200);
     }
+
+
 
     public function loadAuth()
     {

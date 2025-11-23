@@ -128,7 +128,9 @@ class Register extends Model
             'register_date_bookings', // pivot table
             'register_id',            // FK on pivot to registers.id
             'user_id'                 // FK on pivot to users.id
-        )->distinct();                // avoid duplicates when user has multiple bookings
+        )
+        ->withPivot('school_id', 'schoolyear_id', 'register_date_id')
+        ->distinct();                // avoid duplicates when user has multiple bookings
     }
 
     public function hasDependencies(): bool

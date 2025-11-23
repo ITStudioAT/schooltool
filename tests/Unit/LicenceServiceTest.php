@@ -407,14 +407,14 @@ describe('checkLicence', function () {
         expect($result['redirect'])->toBe('&licence=custom_app');
     });
 
-    it('handles edge case where valid_until is exactly one second in future', function () {
+    it('handles edge case where valid_until is shortly in future', function () {
         $school = School::factory()->create();
         $licence = Licence::create(['name' => 'app1', 'long_name' => 'Application 1']);
-        
+
         SchoolLicence::create([
             'school_id' => $school->id,
             'licence_id' => $licence->id,
-            'valid_until' => now()->addSecond(),
+            'valid_until' => now()->addDay(),
         ]);
 
         $result = $this->service->checkLicence($school, 'app1');

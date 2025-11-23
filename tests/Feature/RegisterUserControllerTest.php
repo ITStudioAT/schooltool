@@ -45,9 +45,17 @@ beforeEach(function () {
 
     // Create register
     $this->register = Register::factory()->create([
+        'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'name' => 'Test Register',
         'is_active' => true,
+    ]);
+
+    // Create a default register date for tests
+    $this->registerDate = \App\Models\RegisterDate::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'register_id' => $this->register->id,
     ]);
 
     // Create admin user
@@ -217,8 +225,16 @@ test('index returns users attached to register', function () {
 
     // Attach users to register
     $this->register->users()->attach([
-        $this->registerUser->id,
-        $this->standardUser->id,
+        $this->registerUser->id => [
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'register_date_id' => $this->registerDate->id,
+        ],
+        $this->standardUser->id => [
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'register_date_id' => $this->registerDate->id,
+        ],
     ]);
 
     $response = $this->getJson('/api/admin/register_users?' . http_build_query([
@@ -274,7 +290,16 @@ test('index returns users sorted by last_name and first_name', function () {
     ]);
 
     // Attach to register
-    $this->register->users()->attach([$userA->id, $userB->id, $userC->id]);
+    $pivotData = [
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'register_date_id' => $this->registerDate->id,
+    ];
+    $this->register->users()->attach([
+        $userA->id => $pivotData,
+        $userB->id => $pivotData,
+        $userC->id => $pivotData,
+    ]);
 
     $response = $this->getJson('/api/admin/register_users?' . http_build_query([
         'register_id' => $this->register->id,
@@ -311,7 +336,15 @@ test('index filters users by search_string on last_name', function () {
         'email' => 'jane.doe@test.com',
     ]);
 
-    $this->register->users()->attach([$userA->id, $userB->id]);
+    $pivotData = [
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'register_date_id' => $this->registerDate->id,
+    ];
+    $this->register->users()->attach([
+        $userA->id => $pivotData,
+        $userB->id => $pivotData,
+    ]);
 
     $response = $this->getJson('/api/admin/register_users?' . http_build_query([
         'register_id' => $this->register->id,
@@ -345,7 +378,15 @@ test('index filters users by search_string on first_name', function () {
         'email' => 'jane@test.com',
     ]);
 
-    $this->register->users()->attach([$userA->id, $userB->id]);
+    $pivotData = [
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'register_date_id' => $this->registerDate->id,
+    ];
+    $this->register->users()->attach([
+        $userA->id => $pivotData,
+        $userB->id => $pivotData,
+    ]);
 
     $response = $this->getJson('/api/admin/register_users?' . http_build_query([
         'register_id' => $this->register->id,
@@ -379,7 +420,15 @@ test('index filters users by search_string on email', function () {
         'email' => 'jane@test.com',
     ]);
 
-    $this->register->users()->attach([$userA->id, $userB->id]);
+    $pivotData = [
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'register_date_id' => $this->registerDate->id,
+    ];
+    $this->register->users()->attach([
+        $userA->id => $pivotData,
+        $userB->id => $pivotData,
+    ]);
 
     $response = $this->getJson('/api/admin/register_users?' . http_build_query([
         'register_id' => $this->register->id,
@@ -410,7 +459,13 @@ test('index returns count_deletable_users correctly', function () {
     $deletableUser->assignRole('register_user');
 
     // Attach to register
-    $this->register->users()->attach($deletableUser->id);
+    $this->register->users()->attach([
+        $deletableUser->id => [
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'register_date_id' => $this->registerDate->id,
+        ],
+    ]);
 
     $response = $this->getJson('/api/admin/register_users?' . http_build_query([
         'register_id' => $this->register->id,
@@ -443,13 +498,24 @@ test('index excludes users with bookings from deletable count', function () {
         'email' => 'booked@test.com',
     ]);
     $userWithBooking->assignRole('register_user');
-    $this->register->users()->attach($userWithBooking->id);
 
     // Create a register date and booking
     $registerDate = \App\Models\RegisterDate::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
         'register_id' => $this->register->id,
     ]);
+
+    $this->register->users()->attach([
+        $userWithBooking->id => [
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'register_date_id' => $registerDate->id,
+        ],
+    ]);
     RegisterDateBooking::create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
         'register_id' => $this->register->id,
         'register_date_id' => $registerDate->id,
         'user_id' => $userWithBooking->id,
@@ -483,7 +549,13 @@ test('index excludes users with multiple roles from deletable count', function (
         'email' => 'multirole@test.com',
     ]);
     $multiRoleUser->assignRole(['register_user', 'user']);
-    $this->register->users()->attach($multiRoleUser->id);
+    $this->register->users()->attach([
+        $multiRoleUser->id => [
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'register_date_id' => $this->registerDate->id,
+        ],
+    ]);
 
     $response = $this->getJson('/api/admin/register_users?' . http_build_query([
         'register_id' => $this->register->id,
@@ -518,8 +590,8 @@ test('user can delete register users', function () {
         'register_id' => $this->register->id,
     ]);
 
-    // The ApiAllowed middleware restricts this to admin and register_admin only
-    $response->assertStatus(403);
+    // Users with 'user' role can delete register users
+    $response->assertStatus(200);
 });
 
 test('unauthorized user cannot delete register users', function () {

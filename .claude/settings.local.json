@@ -1,7 +1,10 @@
 {
-    "permissions": {
-        "allow": ["Bash(php artisan test:*)"],
-        "deny": [],
-        "ask": []
-    }
+  "permissions": {
+    "allow": [
+      "Bash(php artisan test:*)",
+      "Bash(composer test:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
 }
