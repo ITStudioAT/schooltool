@@ -55,7 +55,7 @@ export default createVuetify({
     theme: {
         defaultTheme: 'light',
         variations: {
-            colors: ['primary', 'secondary', 'accent', 'background', 'surface', 'text', 'success', 'error'],
+            colors: ['primary', 'secondary', 'accent', 'background', 'surface', 'text', 'success', 'error', 'tutoring_background', 'tutoring_secondary'],
             lighten: 4,
             darken: 4,
         },

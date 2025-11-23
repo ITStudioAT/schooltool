@@ -58,12 +58,75 @@ export const useTutoringStore = defineStore('HomepageTutoringStore', {
             }
         },
 
+        async confirmEmail(data) {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+            try {
+                this.response = await axios.post('/api/homepage/tutoring/confirm_email', { data })
+                this.data = this.response.data
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
         async createUser(data) {
             const notification = useNotificationStore()
             const homepageStore = useHomepageStore()
             homepageStore.is_loading++
             try {
                 this.response = await axios.post('/api/homepage/tutoring/create_user', { data })
+                this.data = this.response.data
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
+        async unknownPassword(data) {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+            try {
+                this.response = await axios.post('/api/homepage/tutoring/unknown_password', { data })
+                this.data = this.response.data
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
+        async loginWithToken(data) {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+            try {
+                this.response = await axios.post('/api/homepage/tutoring/login_with_token', { data })
                 this.data = this.response.data
                 return true
             } catch (error) {

@@ -25,6 +25,8 @@ Route::middleware(['throttle:global', 'throttle:web', 'web-allowed'])->group(fun
 
 
 
+    Route::get('/homepage/tutoring/confirm-user',  [\App\Http\Controllers\Homepage\TutoringController::class, 'confirmUser']);
+
     /* restliche admin-Routen */
     Route::get('/admin/{any?}', function () {
         return view('spa::admin');
@@ -44,9 +46,13 @@ Route::middleware(['throttle:global', 'throttle:web', 'web-allowed'])->group(fun
         return view('homepage');
     });
 
-    Route::get('/homepage/tutoring/', function () {
+    Route::get('/homepage/tutoring_intro/', function () {
         return view('homepage');
     });
+
+    Route::get('/homepage/tutoring/', function () {
+        return view('homepage');
+    })->middleware(['auth:sanctum']);
 
     Route::get('/', function () {
         return view('homepage');
