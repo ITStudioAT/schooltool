@@ -113,11 +113,16 @@
                 </v-card-text>
 
                 <!-- Benutzer existiert: Kennwort eingeben -->
-                <v-card-text v-if="data.status == 'USER_FOUND'">
+                <v-card-text v-if="data.status == 'USER_FOUND' || data.status == 'RETRY_PASSWORD'">
                     <div class="text-h6 font-weight-medium">Bitte Kennwort eingeben</div>
                     <div class="text-body-2">E-Mail: {{ data.email }}</div>
-                    <v-form ref="form" v-model="is_valid" @submit.prevent="createUser(data)" class="my-4">
-                        <v-text-field autofocus v-model="data.password" label="Dein Kennwort" :rules="[required(), maxLength(255)]" tabindex="1" />
+                    <v-form ref="form" v-model="is_valid" @submit.prevent="loginWithPassword(data)" class="my-4">
+                        <v-alert class="mt-4" color="warning" v-if="data.status == 'RETRY_PASSWORD'">
+                            <div>Das Kennwort war falsch.</div>
+                            <div class="mt-2">Bitte probiere es erneut oder klicke auf 'Kennwort unbekannt'.</div>
+                        </v-alert>
+
+                        <v-text-field autofocus type="password" v-model="data.password" label="Dein Kennwort" :rules="[required(), maxLength(255)]" tabindex="1" />
                         <div class="d-flex flex-row align-center justify-space-between mt-4">
                             <v-btn color="warning" slim flat rounded="0" @click="data.status = ''">Zurück</v-btn>
                             <v-btn color="success" slim flat rounded="0" type="submit" v-if="data.password" tabindex="2">Weiter</v-btn>
@@ -162,7 +167,7 @@
                     </div>
                 </v-card-text>
 
-                <!-- Login mit Code war erfolgreich -->
+                <!-- Login war erfolgreich -->
                 <v-card-text v-if="data.status == 'LOGGED_IN'">
                     <div class="text-h6 font-weight-medium">Login war erfolgreich!</div>
                     <div class="text-body-2">E-Mail: {{ data.email }}</div>
@@ -251,6 +256,10 @@ export default {
 
         async loginWithToken(data) {
             if (!(await this.tutoringStore.loginWithToken(data))) return
+        },
+
+        async loginWithPassword(data) {
+            if (!(await this.tutoringStore.loginWithPassword(data))) return
         },
 
         newConfirmEmail() {

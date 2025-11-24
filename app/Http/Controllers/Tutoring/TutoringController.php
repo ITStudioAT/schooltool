@@ -9,6 +9,7 @@ use App\Http\Requests\Homepage\TutoringConfirmUserRequest;
 use App\Http\Requests\Homepage\TutoringCreateUserRequest;
 use App\Http\Requests\Homepage\TutoringLoginWithTokenRequest;
 use App\Http\Requests\Homepage\TutoringUnknownPasswordRequest;
+use App\Http\Requests\Tutoring\LoginWithPasswordRequest;
 use App\Http\Resources\Homepage\SchoolWithLicenceRecource;
 use App\Http\Resources\Homepage\UserResource;
 use App\Models\School;
@@ -135,6 +136,16 @@ class TutoringController extends Controller
         if ($data['status'] != 'LOGIN_WITH_TOKEN') return response()->json($data, 200);
 
         $data = $service->loginWithToken($data);
+        return response()->json($data, 200);
+    }
+
+    public function loginWithPassword(LoginWithPasswordRequest $request, TutoringService $service)
+    {
+        $validated = $request->validated();
+        $data = $validated['data'];
+
+        $data = $service->loginWithPassword($data);
+
         return response()->json($data, 200);
     }
 }

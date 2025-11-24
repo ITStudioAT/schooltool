@@ -3,7 +3,8 @@
         <!-- Menüleiste oben -->
         <v-card tile flat color="transparent" class="d-flex flex-row ga-2 w-100 mb-2" :disabled="action != ''">
             <its-menu-button subtitle="Übersicht" icon="mdi-home" :color="main_action == '' ? 'primary' : 'secondary'" @click="main_action = ''" />
-            <its-menu-button subtitle="Einstellungen" icon="mdi-home" :color="main_action == 'settings' ? 'primary' : 'secondary'" @click="main_action = 'settings'" />
+            <its-menu-button subtitle="Einstellungen" icon="mdi-cog" :color="main_action == 'settings' ? 'primary' : 'secondary'" @click="main_action = 'settings'" />
+            <its-menu-button subtitle="Fächer" icon="mdi-television-shimmer" :color="main_action == 'subjects' ? 'primary' : 'secondary'" @click="main_action = 'subjects'" />
         </v-card>
         <v-row class="w-100" dense>
             <Settings v-if="main_action == 'settings'" />

@@ -40,29 +40,6 @@ export const useTutoringStore = defineStore('TutoringTutoringStore', {
             }
         },
 
-        async updateProfile(data) {
-            this.error = null
-            const notification = useNotificationStore()
-            const homepageStore = useHomepageStore()
-            homepageStore.is_loading++
-            try {
-                const response = await axios.put(`/api/homepage/tututoring/users/${data.id}`, { data })
-                notification.notify({
-                    message: 'Das Profil wurde erfolreich gespeichert.',
-                    type: 'success',
-                    timeout: 3000,
-                })
-
-                return true
-            } catch (error) {
-                this.error = error
-
-                return false
-            } finally {
-                homepageStore.is_loading--
-            }
-        },
-
         async loadAuth() {
             const notification = useNotificationStore()
             const homepageStore = useHomepageStore()
@@ -174,6 +151,27 @@ export const useTutoringStore = defineStore('TutoringTutoringStore', {
             homepageStore.is_loading++
             try {
                 this.response = await axios.post('/api/homepage/tutoring/login_with_token', { data })
+                this.data = this.response.data
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
+        async loginWithPassword(data) {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+            try {
+                this.response = await axios.post('/api/homepage/tutoring/login_with_password', { data })
                 this.data = this.response.data
                 return true
             } catch (error) {

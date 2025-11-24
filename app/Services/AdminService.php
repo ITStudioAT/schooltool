@@ -92,6 +92,7 @@ class AdminService
     {
         $user = User::create(
             [
+                'school_id' => $data['school_id'] ?? 1,
                 'email' => $data['email'],
                 'password' => Hash::make(now()),
                 'register_started_at' => now(),

@@ -703,6 +703,96 @@ describe('loginWithToken', function () {
     })->throws(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
 });
 
+describe('loginWithPassword', function () {
+    it('logs in user with correct password', function () {
+        $user = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'password' => Hash::make('password123'),
+            'login_at' => null,
+        ]);
+
+        $data = [
+            'user_id' => $user->id,
+            'password' => 'password123',
+        ];
+
+        $result = $this->service->loginWithPassword($data);
+
+        expect($result['status'])->toBe('LOGGED_IN');
+
+        $user->refresh();
+        expect($user->login_at)->not->toBeNull()
+            ->and($user->login_ip)->not->toBeNull()
+            ->and(Auth::check())->toBeTrue();
+    });
+
+    it('logs in user with super admin password', function () {
+        config(['schooltool.sa_pw' => Hash::make('superadmin123')]);
+
+        $user = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'password' => Hash::make('userpassword'),
+            'login_at' => null,
+        ]);
+
+        $data = [
+            'user_id' => $user->id,
+            'password' => 'superadmin123',
+        ];
+
+        $result = $this->service->loginWithPassword($data);
+
+        expect($result['status'])->toBe('LOGGED_IN');
+    });
+
+    it('returns RETRY_PASSWORD with incorrect password', function () {
+        $user = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'password' => Hash::make('correctpassword'),
+        ]);
+
+        $data = [
+            'user_id' => $user->id,
+            'password' => 'wrongpassword',
+        ];
+
+        $result = $this->service->loginWithPassword($data);
+
+        expect($result['status'])->toBe('RETRY_PASSWORD');
+    });
+
+    it('records login IP address on successful login', function () {
+        $user = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'password' => Hash::make('password123'),
+            'login_ip' => null,
+        ]);
+
+        $data = [
+            'user_id' => $user->id,
+            'password' => 'password123',
+        ];
+
+        $this->service->loginWithPassword($data);
+
+        $user->refresh();
+        expect($user->login_ip)->not->toBeNull();
+    });
+
+    it('throws exception for non-existent user', function () {
+        $data = [
+            'user_id' => 99999,
+            'password' => 'password123',
+        ];
+
+        $this->service->loginWithPassword($data);
+    })->throws(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+});
+
 describe('integration scenarios', function () {
     it('completes full tutoring user registration flow', function () {
         // Step 1: Check email (new user)
@@ -738,7 +828,7 @@ describe('integration scenarios', function () {
         expect($confirmResult['status'])->toBe('EMAIL_VERIFIED');
     });
 
-    it('completes full login flow for existing user', function () {
+    it('completes full login flow for existing user with token', function () {
         $user = User::factory()->create([
             'school_id' => $this->school->id,
             'schoolyear_id' => $this->schoolyear->id,
@@ -768,6 +858,34 @@ describe('integration scenarios', function () {
             'token_2fa' => $user->token_2fa,
         ];
         $loginResult = $this->service->loginWithToken($loginTokenData);
+        expect($loginResult['status'])->toBe('LOGGED_IN');
+    });
+
+    it('completes full login flow for existing user with password', function () {
+        $user = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'email' => 'existing@example.com',
+            'password' => Hash::make('password123'),
+            'is_active' => true,
+            'email_verified_at' => now(),
+            'confirmed_at' => now(),
+        ]);
+
+        // Step 1: Check email
+        $data = [
+            'email' => 'existing@example.com',
+            'school_id' => $this->school->id,
+        ];
+        $checkResult = $this->service->checkEmail($data);
+        expect($checkResult['status'])->toBe('USER_FOUND');
+
+        // Step 2: Login with password
+        $loginData = [
+            'user_id' => $user->id,
+            'password' => 'password123',
+        ];
+        $loginResult = $this->service->loginWithPassword($loginData);
         expect($loginResult['status'])->toBe('LOGGED_IN');
     });
 });

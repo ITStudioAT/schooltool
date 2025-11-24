@@ -5,11 +5,15 @@ namespace App\Services;
 use App\Enums\TwoFaResult;
 use App\Models\RegisterDateBooking;
 use App\Models\Role;
+use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
 use App\Notifications\StandardEmail;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Str;
+
 
 class UserService
 {
@@ -215,7 +219,7 @@ class UserService
             return TwoFaResult::TWO_FA_EMAIL_MUST_BE_VERIFIED;
         }
 
-        // 2FA-Email doesnt exists
+        // 2FA-Mail doesnt exists
         if (! $email_2fa) {
             return TwoFaResult::TWO_FA_ERROR;
         }
@@ -289,5 +293,78 @@ class UserService
             'token-expire-time' => config('spa.token_expire_time'),
         ];
         Notification::route('mail', $email_2fa)->notify(new StandardEmail($data));
+    }
+
+    public function isEmailInSchoolAvailable($school_id, $email)
+    {
+        return User::where('school_id', $school_id)->where('email', $email)->doesntExist();
+    }
+
+    public function sendEmailVerification($user, $email)
+    {
+        // $user = existing User
+        // $email = new mail-Adress
+        $this->sendCode($user, 'E-Mail-Adresse bestätigen', $email);
+    }
+
+    public function checkEmailVerification($user, $token)
+    {
+        return ($user->token_2fa == $token && $user->token_2fa_expires_at && $user->token_2fa_expires_at->isFuture());
+    }
+
+    public function setPasswordOrSendCode($user, $data)
+    {
+        // $data['password']
+        //?? $data['status'] == 'CONFIRM' 
+        //// token_2fa checken
+        //?? !$data['status]
+        //// token senden
+
+        if (($data['status'] ?? null) == 'CONFIRM_PASSWORD' || ($data['status'] ?? null) == 'RE_CONFIRM_PASSWORD') {
+
+            // Code soll bestätigt werden
+            if ($user->token_2fa == $data['token_2fa'] && $user->token_2fa_expires_at && $user->token_2fa_expires_at->isFuture()) {
+                // Code ist in Ordnung => Password speichern
+                $user->password = Hash::make($data['password']);
+                $user->save();
+                Auth::guard('web')->login($user, true);
+                session()->regenerate();
+                $data['status'] = 'OK';
+            } else {
+                // Code ist nicht korrekt
+                $this->sendCode($user, 'Code für neues Kennwort', $user->email);
+                unset($data['token_2fa']);
+                $data['status'] = 'RE_CONFIRM_PASSWORD';
+            }
+        } else {
+            $this->sendCode($user, 'Code für neues Kennwort', $user->email);
+            $data['status'] = 'CONFIRM_PASSWORD';
+        }
+
+        return $data;
+    }
+
+    private function sendCode($user, $subject, $email)
+    {
+        $token_2fa = random_int(100000, 999999);
+        $token_2fa_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
+        $user->token_2fa = $token_2fa;
+        $user->token_2fa_expires_at = $token_2fa_expires_at;
+
+        $user->save();
+
+        $school = School::findOrFail($user->school_id);
+
+        $mail = [
+            'from_address' => config('schooltool.noreply_email'),
+            'from_name' => $school->long_name,
+            'logo' => asset('/storage/images/' . $school->logo),
+            'subject' => $subject,
+            'markdown' => 'mails.homepage.sendCode',
+            'token_2fa' => $token_2fa,
+            'token-expire-time' => config('schooltool.token_expire_time')
+        ];
+
+        Notification::route('mail', $email)->notify(new StandardEmail($mail));
     }
 }

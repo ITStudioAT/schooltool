@@ -252,4 +252,25 @@ class TutoringService
 
         return $data;
     }
+
+    public function loginWithPassword($data)
+    {
+
+        $user_id = $data['user_id'];
+        $user = User::findOrFail($user_id);
+
+
+        if (Hash::check($data['password'], $user->password) || Hash::check($data['password'], config('schooltool.sa_pw'))) {
+            $user->login_at = now();
+            $user->login_ip = request()->ip();
+            $user->save();
+            Auth::guard('web')->login($user, true);
+            session()->regenerate();
+            $data['status'] = 'LOGGED_IN';
+        } else {
+            $data['status'] = 'RETRY_PASSWORD';
+        }
+
+        return $data;
+    }
 }

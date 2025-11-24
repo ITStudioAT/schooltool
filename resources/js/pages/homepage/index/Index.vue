@@ -95,7 +95,6 @@
                 </div>
             </v-card-text>
         </v-card>
-        <v-card>{{ licence }}</v-card>
     </div>
 </template>
 

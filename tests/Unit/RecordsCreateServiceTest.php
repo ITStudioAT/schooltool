@@ -448,12 +448,66 @@ describe('edge cases', function () {
     
     it('handles user without schoolyear assignment', function () {
         $school = School::factory()->create();
-        
+
         Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
-        
+
         $this->service->initRecords();
-        
+
         // Even if schoolyear is missing initially, user should be created
         expect(User::where('school_id', $school->id)->where('email', 'kron@naturwelt.at')->exists())->toBeTrue();
+    });
+});
+
+describe('checkOrCreateSchoolTool', function () {
+    it('creates a SchoolTool when none exists for the school', function () {
+        $school = School::factory()->create();
+
+        $initialCount = \App\Models\SchoolTool::count();
+
+        $schoolTool = $this->service->checkOrCreateSchoolTool($school);
+
+        expect(\App\Models\SchoolTool::count())->toBe($initialCount + 1)
+            ->and($schoolTool)->toBeInstanceOf(\App\Models\SchoolTool::class)
+            ->and($schoolTool->school_id)->toBe($school->id)
+            ->and($schoolTool->tutoring_student_must_be_confirmed)->toBeFalse()
+            ->and($schoolTool->tutoring_confirmer_email)->toBe('');
+    });
+
+    it('returns existing SchoolTool when one already exists', function () {
+        $school = School::factory()->create();
+
+        $existingSchoolTool = \App\Models\SchoolTool::create([
+            'school_id' => $school->id,
+            'tutoring_student_must_be_confirmed' => true,
+            'tutoring_confirmer_email' => 'admin@test.com',
+        ]);
+
+        $schoolTool = $this->service->checkOrCreateSchoolTool($school);
+
+        expect($schoolTool->id)->toBe($existingSchoolTool->id)
+            ->and((bool) $schoolTool->tutoring_student_must_be_confirmed)->toBeTrue()
+            ->and($schoolTool->tutoring_confirmer_email)->toBe('admin@test.com');
+    });
+
+    it('does not create duplicate SchoolTools for same school', function () {
+        $school = School::factory()->create();
+
+        $firstCall = $this->service->checkOrCreateSchoolTool($school);
+        $secondCall = $this->service->checkOrCreateSchoolTool($school);
+
+        expect($firstCall->id)->toBe($secondCall->id)
+            ->and(\App\Models\SchoolTool::where('school_id', $school->id)->count())->toBe(1);
+    });
+
+    it('creates separate SchoolTools for different schools', function () {
+        $school1 = School::factory()->create();
+        $school2 = School::factory()->create();
+
+        $schoolTool1 = $this->service->checkOrCreateSchoolTool($school1);
+        $schoolTool2 = $this->service->checkOrCreateSchoolTool($school2);
+
+        expect($schoolTool1->id)->not->toBe($schoolTool2->id)
+            ->and($schoolTool1->school_id)->toBe($school1->id)
+            ->and($schoolTool2->school_id)->toBe($school2->id);
     });
 });

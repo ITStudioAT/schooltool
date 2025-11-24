@@ -8,6 +8,8 @@ use App\Models\User;
 use App\Notifications\StandardEmail;
 use App\Services\UserService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Models\Role;
 
@@ -747,7 +749,7 @@ describe('update2Fa', function () {
         $result = $this->service->update2Fa($user, '2fa@example.com');
 
         $user->refresh();
-        
+
         expect($result)->toBe(TwoFaResult::TWO_FA_SET)
             ->and($user->is_2fa)->toBe(1)
             ->and($user->email_2fa)->toBe('2fa@example.com')
@@ -765,9 +767,301 @@ describe('update2Fa', function () {
         $result = $this->service->update2Fa($user, 'new2fa@example.com');
 
         $user->refresh();
-        
+
         expect($result)->toBe(TwoFaResult::TWO_FA_SET)
             ->and($user->is_2fa)->toBe(1)
             ->and($user->email_2fa)->toBe('new2fa@example.com');
+    });
+});
+
+describe('isEmailInSchoolAvailable', function () {
+    it('returns true when email is available in school', function () {
+        $school = School::factory()->create();
+
+        $result = $this->service->isEmailInSchoolAvailable($school->id, 'available@example.com');
+
+        expect($result)->toBeTrue();
+    });
+
+    it('returns false when email exists in school', function () {
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+
+        User::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'email' => 'taken@example.com',
+        ]);
+
+        $result = $this->service->isEmailInSchoolAvailable($school->id, 'taken@example.com');
+
+        expect($result)->toBeFalse();
+    });
+
+    it('returns true when email exists in different school', function () {
+        $school1 = School::factory()->create();
+        $school2 = School::factory()->create();
+        $schoolyear1 = Schoolyear::factory()->create(['school_id' => $school1->id]);
+
+        User::factory()->create([
+            'school_id' => $school1->id,
+            'schoolyear_id' => $schoolyear1->id,
+            'email' => 'user@example.com',
+        ]);
+
+        $result = $this->service->isEmailInSchoolAvailable($school2->id, 'user@example.com');
+
+        expect($result)->toBeTrue();
+    });
+});
+
+describe('sendEmailVerification', function () {
+    it('sends verification code to specified email', function () {
+        Notification::fake();
+
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+
+        $user = User::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'email' => 'old@example.com',
+        ]);
+
+        $this->service->sendEmailVerification($user, 'new@example.com');
+
+        $user->refresh();
+        expect($user->token_2fa)->not->toBeNull()
+            ->and($user->token_2fa_expires_at)->not->toBeNull();
+
+        Notification::assertSentTo(
+            Notification::route('mail', 'new@example.com'),
+            StandardEmail::class
+        );
+    });
+
+    it('generates 6-digit token', function () {
+        Notification::fake();
+
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+
+        $user = User::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+        ]);
+
+        $this->service->sendEmailVerification($user, 'verify@example.com');
+
+        $user->refresh();
+        expect($user->token_2fa)->toBeString()
+            ->and((int) $user->token_2fa)->toBeGreaterThanOrEqual(100000)
+            ->and((int) $user->token_2fa)->toBeLessThanOrEqual(999999);
+    });
+});
+
+describe('checkEmailVerification', function () {
+    it('returns true when token is valid and not expired', function () {
+        $user = User::factory()->create([
+            'token_2fa' => '123456',
+            'token_2fa_expires_at' => now()->addMinutes(10),
+        ]);
+
+        $result = $this->service->checkEmailVerification($user, '123456');
+
+        expect($result)->toBeTrue();
+    });
+
+    it('returns false when token is invalid', function () {
+        $user = User::factory()->create([
+            'token_2fa' => '123456',
+            'token_2fa_expires_at' => now()->addMinutes(10),
+        ]);
+
+        $result = $this->service->checkEmailVerification($user, '654321');
+
+        expect($result)->toBeFalse();
+    });
+
+    it('returns false when token is expired', function () {
+        $user = User::factory()->create([
+            'token_2fa' => '123456',
+            'token_2fa_expires_at' => now()->subMinutes(10),
+        ]);
+
+        $result = $this->service->checkEmailVerification($user, '123456');
+
+        expect($result)->toBeFalse();
+    });
+
+    it('returns false when token_2fa_expires_at is null', function () {
+        $user = User::factory()->create([
+            'token_2fa' => '123456',
+            'token_2fa_expires_at' => null,
+        ]);
+
+        $result = $this->service->checkEmailVerification($user, '123456');
+
+        expect($result)->toBeFalse();
+    });
+});
+
+describe('setPasswordOrSendCode', function () {
+    it('sends code when no status provided', function () {
+        Notification::fake();
+
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+
+        $user = User::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'email' => 'user@example.com',
+        ]);
+
+        $data = ['password' => 'newpassword123'];
+
+        $result = $this->service->setPasswordOrSendCode($user, $data);
+
+        expect($result['status'])->toBe('CONFIRM_PASSWORD');
+
+        $user->refresh();
+        expect($user->token_2fa)->not->toBeNull();
+
+        Notification::assertSentTo(
+            Notification::route('mail', 'user@example.com'),
+            StandardEmail::class
+        );
+    });
+
+    it('sets password when token is valid and status is CONFIRM_PASSWORD', function () {
+        Notification::fake();
+
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+
+        $user = User::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'email' => 'user@example.com',
+            'token_2fa' => '123456',
+            'token_2fa_expires_at' => now()->addMinutes(10),
+        ]);
+
+        $data = [
+            'password' => 'newpassword123',
+            'status' => 'CONFIRM_PASSWORD',
+            'token_2fa' => '123456',
+        ];
+
+        $result = $this->service->setPasswordOrSendCode($user, $data);
+
+        expect($result['status'])->toBe('OK');
+
+        $user->refresh();
+        expect(Hash::check('newpassword123', $user->password))->toBeTrue()
+            ->and(Auth::check())->toBeTrue();
+    });
+
+    it('sets password when token is valid and status is RE_CONFIRM_PASSWORD', function () {
+        Notification::fake();
+
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+
+        $user = User::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'email' => 'user@example.com',
+            'token_2fa' => '123456',
+            'token_2fa_expires_at' => now()->addMinutes(10),
+        ]);
+
+        $data = [
+            'password' => 'newpassword123',
+            'status' => 'RE_CONFIRM_PASSWORD',
+            'token_2fa' => '123456',
+        ];
+
+        $result = $this->service->setPasswordOrSendCode($user, $data);
+
+        expect($result['status'])->toBe('OK');
+    });
+
+    it('resends code when token is invalid', function () {
+        Notification::fake();
+
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+
+        $user = User::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'email' => 'user@example.com',
+            'token_2fa' => '123456',
+            'token_2fa_expires_at' => now()->addMinutes(10),
+        ]);
+
+        $data = [
+            'password' => 'newpassword123',
+            'status' => 'CONFIRM_PASSWORD',
+            'token_2fa' => '654321', // Wrong token
+        ];
+
+        $result = $this->service->setPasswordOrSendCode($user, $data);
+
+        expect($result['status'])->toBe('RE_CONFIRM_PASSWORD')
+            ->and($result)->not->toHaveKey('token_2fa');
+    });
+
+    it('resends code when token is expired', function () {
+        Notification::fake();
+
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+
+        $user = User::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'email' => 'user@example.com',
+            'token_2fa' => '123456',
+            'token_2fa_expires_at' => now()->subMinutes(10), // Expired
+        ]);
+
+        $data = [
+            'password' => 'newpassword123',
+            'status' => 'CONFIRM_PASSWORD',
+            'token_2fa' => '123456',
+        ];
+
+        $result = $this->service->setPasswordOrSendCode($user, $data);
+
+        expect($result['status'])->toBe('RE_CONFIRM_PASSWORD');
+    });
+
+    it('logs in user after successful password change', function () {
+        Notification::fake();
+
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+
+        $user = User::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'email' => 'user@example.com',
+            'token_2fa' => '123456',
+            'token_2fa_expires_at' => now()->addMinutes(10),
+        ]);
+
+        $data = [
+            'password' => 'newpassword123',
+            'status' => 'CONFIRM_PASSWORD',
+            'token_2fa' => '123456',
+        ];
+
+        $this->service->setPasswordOrSendCode($user, $data);
+
+        expect(Auth::check())->toBeTrue()
+            ->and(Auth::id())->toBe($user->id);
     });
 });
