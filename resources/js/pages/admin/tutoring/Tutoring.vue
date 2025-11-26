@@ -8,6 +8,7 @@
         </v-card>
         <v-row class="w-100" dense>
             <Settings v-if="main_action == 'settings'" />
+            <Subjects v-if="main_action == 'subjects'" />
         </v-row>
     </v-container>
 </template>
@@ -20,9 +21,10 @@ import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
 import Settings from './components/Settings.vue'
+import Subjects from './components/Subjects.vue'
 
 export default {
-    components: { ItsMenuButton, ItsGridBox, Settings },
+    components: { ItsMenuButton, ItsGridBox, Settings, Subjects },
 
     async beforeMount() {
         this.adminStore = useAdminStore()

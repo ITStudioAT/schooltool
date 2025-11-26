@@ -1,6 +1,6 @@
 <template>
     <v-col cols="12" md="6" xl="4" v-if="data">
-        <its-grid-box color="primary" title="Einstellungen" class="w-100">
+        <its-grid-box color="primary" title="Einstellungen" icon="mdi-cog" class="w-100">
             <div class="d-flex flex-row align-start">
                 <v-card tile flat color="transparent" class="w-100">
                     <!-- ANZEIGE EINSTELLUNGEN -->
