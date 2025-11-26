@@ -96,7 +96,6 @@
                 </div>
             </v-card-text>
         </v-card>
-        <v-card>{{ licence }}</v-card>
     </div>
 </template>
 
@@ -145,10 +144,10 @@ export default {
             var path = '/homepage/'
             switch (licence.name) {
                 case 'Anmeldetool':
-                    path += 'register/'
+                    path += 'register'
                     break
                 case 'Tutoring':
-                    path += 'tutoring/'
+                    path += 'tutoring'
                     break
             }
             path += '?school=' + school.short_name

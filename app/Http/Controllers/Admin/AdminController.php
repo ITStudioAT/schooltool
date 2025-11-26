@@ -254,8 +254,8 @@ class AdminController extends Controller
         $adminService = new AdminService();
         $validated = $request->validated();
 
-
         $data = $adminService->checkLogin($validated['data']);
+
         $data = $adminService->check2Fa($data);
 
         if ($data['step'] == 'LOGIN_SUCCESS') {

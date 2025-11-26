@@ -160,7 +160,8 @@ class AdminService
 
         if (count($schools) == 1) {
             $data['school_id'] = $schools->first()->id;
-            $data = $this->passwordUnkownSendToken($data);
+            $data['school'] = new SchoolResource($schools->first());
+            // 2025-11-26 $data = $this->passwordUnkownSendToken($data);
         } else {
             $data['school'] = null;
             $data['schools'] = $schools ? SchoolResource::collection($schools) : [];
@@ -202,6 +203,7 @@ class AdminService
     public function check2Fa($data): array
     {
         $user = User::where('email', $data['email'])->where('school_id', $data['school']['id'])->first();
+        \Debugbar::info($user->is_2fa);
         if ($user->is_2fa) {
             $this->setToken2Fa($user, $data, 'Code für Login');
             $data['step'] = 'LOGIN_ENTER_TOKEN';
