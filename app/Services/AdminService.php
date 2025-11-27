@@ -203,7 +203,6 @@ class AdminService
     public function check2Fa($data): array
     {
         $user = User::where('email', $data['email'])->where('school_id', $data['school']['id'])->first();
-        \Debugbar::info($user->is_2fa);
         if ($user->is_2fa) {
             $this->setToken2Fa($user, $data, 'Code für Login');
             $data['step'] = 'LOGIN_ENTER_TOKEN';

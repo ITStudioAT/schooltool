@@ -28,7 +28,6 @@ use App\Services\AdminNavigationService;
 use App\Services\AdminService;
 use App\Services\LicenceService;
 use App\Traits\HasRoleTrait;
-use Barryvdh\Debugbar\Facades\Debugbar;
 use Composer\InstalledVersions;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;

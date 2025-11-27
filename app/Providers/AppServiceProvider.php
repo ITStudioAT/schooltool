@@ -19,7 +19,9 @@ class AppServiceProvider extends ServiceProvider
     {
 
         $loader = \Illuminate\Foundation\AliasLoader::getInstance();
-        $loader->alias('Debugbar', \Barryvdh\Debugbar\Facades\Debugbar::class);
+        if (config('app.env') === 'local') {
+            $loader->alias('Debugbar', \Barryvdh\Debugbar\Facades\Debugbar::class);
+        }
     }
 
     /**
