@@ -13,13 +13,21 @@
                             <its-menu-button title="Fächer" subtitle="anlegen" icon="mdi-plus-circle-multiple" color="primary" @click="addSubjects" />
                         </div>
                     </v-card-text>
-                    <v-card-text>
-                        {{ action }}
-                    </v-card-text>
 
                     <!-- ÄNDERN EINSTELLUNGEN -->
                     <v-card-text v-if="action == 'add_subjects'">
-                        <v-form ref="form" v-model="is_valid" @submit.prevent="">
+                        <v-card-title>Neue Fächer hinzufügen</v-card-title>
+                        <v-alert type="info">
+                            <div>
+                                Die Zeilen, in denen
+                                <i>Abkürzung</i>
+                                und
+                                <i>Lange Bezeichnung</i>
+                                angegeben sind, werden angelegt.
+                            </div>
+                            <div>E-Mail Mentor darf frei bleiben.</div>
+                        </v-alert>
+                        <v-form ref="form" v-model="is_valid" @submit.prevent="doAddSubjects(subjects)">
                             <v-container>
                                 <v-row>
                                     <v-col cols="2">Kurzbez.</v-col>
@@ -27,13 +35,17 @@
                                     <v-col cols="5">E-Mail Mentor</v-col>
                                 </v-row>
 
-                                <v-row>
+                                <v-row v-for="(subject, i) in subjects" :key="i">
                                     <v-col cols="2">
-                                        <v-text-field v-model="data.short_name" label="Abkürzung" :rules="[required(), maxLength(10)]" />
+                                        <v-text-field
+                                            v-model="subject.short_name"
+                                            label="Abkürzung"
+                                            :rules="[maxLength(10)]"
+                                            @input="subject.short_name = subject.short_name?.toUpperCase()" />
                                     </v-col>
-                                    <v-col cols="5"><v-text-field v-model="data.long_name" label="Lange Bezeichnung" :rules="[required(), maxLength(255)]" /></v-col>
+                                    <v-col cols="5"><v-text-field v-model="subject.long_name" label="Lange Bezeichnung" :rules="[maxLength(255)]" /></v-col>
                                     <v-col cols="5">
-                                        <v-text-field v-model="data.email_mentor" label="E-Mail Mentor" :rules="[mail(), maxLength(255)]" />
+                                        <v-text-field v-model="subject.email_mentor" label="E-Mail Mentor" :rules="[mailOrNull(), maxLength(255)]" />
                                     </v-col>
                                 </v-row>
                             </v-container>
@@ -43,6 +55,14 @@
                                 <v-btn color="success" flat tile type="submit" tabindex="2">Speichern</v-btn>
                             </div>
                         </v-form>
+                    </v-card-text>
+                    <v-card-text>
+                        SUBJECTS:
+                        {{ subjects }}
+                    </v-card-text>
+                    <v-card-text>
+                        DATA:
+                        {{ data }}
                     </v-card-text>
                 </v-card>
             </div>
@@ -78,6 +98,7 @@ export default {
             adminStore: null,
             schoolToolStore: null,
             is_valid: false,
+            subjects: [],
         }
     },
 
@@ -87,7 +108,16 @@ export default {
     },
 
     methods: {
+        async doAddSubjects(data) {
+            console.log(data)
+        },
+
         addSubjects() {
+            this.subjects = Array.from({ length: 5 }, () => ({
+                short_name: '',
+                long_name: '',
+                email_mentor: '',
+            }))
             this.action = 'add_subjects'
         },
         abortSubjects() {
