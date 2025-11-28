@@ -509,4 +509,21 @@ class UserController extends Controller
 
         return response()->noContent();
     }
+
+    public function toggleIsActive(Request $request, AdminService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'user_id' => 'required|integer|exists:users,id',
+        ]);
+
+        $user = User::findOrFail($validated['user_id']);
+        $user->is_active = !$user->is_active;
+        $user->save();
+
+        return response()->json(new UserResource($user), 200);
+    }
 }
