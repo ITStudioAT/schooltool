@@ -57,7 +57,7 @@
                     <div class="text-body-2">E-Mail: {{ data.email }}</div>
 
                     <v-alert class="mt-4" color="warning">
-                        <div>Der Benutzer ist auf gesperrt.</div>
+                        <div>Der Benutzer ist gesperrt!</div>
                         <div class="mt-2">Wenden Sie sich an Ihren Administrator.</div>
                     </v-alert>
                 </v-card-text>

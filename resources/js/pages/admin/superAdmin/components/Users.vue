@@ -22,7 +22,7 @@
                                 flat
                                 tile
                                 class="text-caption"
-                                @click="selected_role = role.name"
+                                @click="changeSelectedRole(role.name)"
                                 v-for="role in roles"
                                 :key="role.name">
                                 {{ role.name }}
@@ -208,6 +208,10 @@ export default {
     },
 
     methods: {
+        changeSelectedRole(role_name) {
+            this.selected_users = []
+            this.selected_role = role_name
+        },
         async toggleIsActive(user_id) {
             await this.userStore.toggleIsActive(user_id)
             await this.userStore.index(this.meta.current_page)
