@@ -51,6 +51,10 @@
                             <v-card tile flat color="transparent" :disabled="data.status == 'CONFIRM_EMAIL' || data.status == 'RE_CONFIRM_EMAIL'">
                                 <v-text-field autofocus flat rounded="0" v-model="data.last_name" label="Nachname" :rules="[required(), maxLength(255)]" />
                                 <v-text-field flat rounded="0" v-model="data.first_name" label="Vorname" :rules="[maxLength(255)]" />
+                                <v-radio-group v-model="data.sex" :rules="[required()]">
+                                    <v-radio label="Männlich" value="m" color="blue"></v-radio>
+                                    <v-radio label="Weiblich" value="f" color="pink"></v-radio>
+                                </v-radio-group>
                                 <v-text-field flat rounded="0" v-model="data.email" label="E-Mail" :rules="[required(), mail(), maxLength(255)]" />
                             </v-card>
                         </v-card-text>
@@ -240,6 +244,7 @@ export default {
                 last_name: this.auth.auth_user.last_name,
                 first_name: this.auth.auth_user.first_name,
                 email: this.auth.auth_user.email,
+                sex: this.auth.auth_user.sex,
             }
             this.action = 'profile'
         },

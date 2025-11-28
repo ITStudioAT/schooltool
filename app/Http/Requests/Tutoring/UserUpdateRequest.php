@@ -27,6 +27,7 @@ class UserUpdateRequest extends FormRequest
             'data.email' => 'required|email|max:255',
             'data.last_name' => 'required|string|max:255',
             'data.first_name' => 'nullable|string|max:255',
+            'data.sex' => 'required|string|in:m,f',
             'data.status' => 'nullable|string|max:255',
             'data.token_2fa' => 'nullable|string|size:6',
         ];

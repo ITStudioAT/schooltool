@@ -38,6 +38,12 @@
                     <v-form ref="form" v-model="is_valid" @submit.prevent="createUser(data)" class="my-4">
                         <v-text-field autofocus v-model="data.last_name" label="Dein Nachname" :rules="[required(), maxLength(255)]" tabindex="1" />
                         <v-text-field v-model="data.first_name" label="Dein Vorname" :rules="[maxLength(255)]" tabindex="1" />
+
+                        <v-radio-group v-model="data.sex" :rules="[required()]">
+                            <v-radio label="Männlich" value="m" color="blue"></v-radio>
+                            <v-radio label="Weiblich" value="f" color="pink"></v-radio>
+                        </v-radio-group>
+
                         <div class="d-flex flex-row align-center justify-space-between mt-4">
                             <v-btn color="warning" slim flat rounded="0" @click="data.status = ''">Zurück</v-btn>
                             <v-btn color="success" slim flat rounded="0" type="submit" v-if="data.email" tabindex="2">Weiter</v-btn>

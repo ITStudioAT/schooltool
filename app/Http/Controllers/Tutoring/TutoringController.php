@@ -48,7 +48,6 @@ class TutoringController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-
         $school = $auth_user->selectedSchool;
 
         $data = [
@@ -83,9 +82,7 @@ class TutoringController extends Controller
     {
         $validated = $request->validated();
         $data = $validated['data'];
-        \Debugbar::info('before TutoringService->confirmEmail', $data);
         $data = $service->confirmEmail($data);
-        \Debugbar::info('after TutoringService->confirmEmail', $data);
         return response()->json($data, 200);
     }
 
