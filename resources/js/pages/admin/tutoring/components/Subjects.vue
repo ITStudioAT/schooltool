@@ -3,18 +3,49 @@
         <its-grid-box color="primary" title="Fächer" icon="mdi-television-shimmer" class="w-100">
             <div class="d-flex flex-row align-start">
                 <v-card tile flat color="transparent" class="w-100">
-                    <!-- ANZEIGE EINSTELLUNGEN -->
+                    <!-- ANZEIGE FÄCHER -->
                     <v-card-text class="text-body-1 d-flex flex-column ga-2" v-if="action == ''">
-                        <div class="d-flex flex-row align-center justify-space-between w-100">
-                            <div>Fächer</div>
-                        </div>
+                        <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap ga-2 align-center w-100" :disabled="action_2 != ''">
+                            <v-chip-group selected-class="text-primary">
+                                <v-chip color="primary" v-for="subject in subjects" :key="subject.id" @click="selectSubject(subject)">
+                                    {{ subject.long_name + ' (' + subject.short_name + ')' }}
+                                </v-chip>
+                            </v-chip-group>
+                        </v-card>
+                        <!-- Anzeige ausgewähltes Fach -->
+                        <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between" :disabled="action_2 != ''" v-if="selected_subject">
+                            <div>
+                                <div class="text-body-1 font-weight-medium">{{ selected_subject.long_name + ' (' + selected_subject.short_name + ')' }}</div>
+                                <div class="text-body-2 mt-2" v-if="selected_subject.email_mentor">{{ '✉️ ' + selected_subject.email_mentor }}</div>
+                            </div>
+                            <div class="d-flex flex-row align-center ga-2">
+                                <v-btn flat tile size="small" color="warning" icon="mdi-delete" @click="delete_level++" v-if="delete_level == 0" />
+                                <v-btn flat tile size="small" color="success" icon="mdi-delete-off" @click="delete_level = 0" v-if="delete_level == 1" />
+                                <v-btn flat tile size="small" color="error" icon="mdi-delete" @click="deleteSubject(selected_subject)" v-if="delete_level == 1" />
+                                <v-btn flat tile size="small" color="primary" icon="mdi-pencil" @click="editSubject(selected_subject)" v-if="delete_level == 0" />
+                            </div>
+                        </v-card>
 
-                        <div class="mt-4">
-                            <its-menu-button title="Fächer" subtitle="anlegen" icon="mdi-plus-circle-multiple" color="primary" @click="addSubjects" />
-                        </div>
+                        <v-card tile flat color="transparent" v-if="selected_subject && action_2 == 'edit_subject'">
+                            <v-form ref="form" v-model="is_valid" @submit.prevent="updateSubject(data)">
+                                <div class="text-h4">Fach ändern</div>
+                                <v-text-field autofocus v-model="data.short_name" label="Kurzbezeichnung" :rules="[required(), maxLength(10)]" tabindex="1" />
+                                <v-text-field v-model="data.long_name" label="Bezeichnung" :rules="[required(), maxLength(255)]" />
+                                <v-text-field v-model="data.email_mentor" label="E-Mail Mentor" :rules="[mail(), maxLength(255)]" />
+
+                                <div class="d-flex flex-row align-center justify-space-between">
+                                    <v-btn color="warning" flat tile @click="action_2 = ''">Abbruch</v-btn>
+                                    <v-btn color="success" flat tile type="submit" tabindex="2">Speichern</v-btn>
+                                </div>
+                            </v-form>
+                        </v-card>
+
+                        <v-card tile flat color="transparent" class="mt-4" :disabled="action_2 != ''">
+                            <its-menu-button title="Fächer" subtitle="anlegen" icon="mdi-plus-circle-multiple" color="primary" @click="createSubjects" />
+                        </v-card>
                     </v-card-text>
 
-                    <!-- ÄNDERN EINSTELLUNGEN -->
+                    <!-- HINZUFÜGEN FÄCHER -->
                     <v-card-text v-if="action == 'add_subjects'">
                         <v-card-title>Neue Fächer hinzufügen</v-card-title>
                         <v-alert type="info">
@@ -27,7 +58,7 @@
                             </div>
                             <div>E-Mail Mentor darf frei bleiben.</div>
                         </v-alert>
-                        <v-form ref="form" v-model="is_valid" @submit.prevent="doAddSubjects(subjects)">
+                        <v-form ref="form" v-model="is_valid" @submit.prevent="doCreateSubjects(my_subjects)">
                             <v-container>
                                 <v-row>
                                     <v-col cols="2">Kurzbez.</v-col>
@@ -35,7 +66,7 @@
                                     <v-col cols="5">E-Mail Mentor</v-col>
                                 </v-row>
 
-                                <v-row v-for="(subject, i) in subjects" :key="i">
+                                <v-row v-for="(subject, i) in my_subjects" :key="i">
                                     <v-col cols="2">
                                         <v-text-field
                                             v-model="subject.short_name"
@@ -56,14 +87,6 @@
                             </div>
                         </v-form>
                     </v-card-text>
-                    <v-card-text>
-                        SUBJECTS:
-                        {{ subjects }}
-                    </v-card-text>
-                    <v-card-text>
-                        DATA:
-                        {{ data }}
-                    </v-card-text>
                 </v-card>
             </div>
         </its-grid-box>
@@ -74,8 +97,10 @@ import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolToolStore } from '@/stores/admin/SchoolToolStore'
+import { useSubjectStore } from '@/stores/admin/tutoring/SubjectStore'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
+import { th } from 'vuetify/locale'
 
 export default {
     setup() {
@@ -86,8 +111,8 @@ export default {
 
     async beforeMount() {
         this.adminStore = useAdminStore()
-        this.schoolToolStore = useSchoolToolStore()
-        await this.schoolToolStore.loadConfig()
+        this.subjectStore = useSubjectStore()
+        await this.subjectStore.index()
         this.action = ''
     },
 
@@ -96,24 +121,51 @@ export default {
     data() {
         return {
             adminStore: null,
-            schoolToolStore: null,
+            subjectStore: null,
             is_valid: false,
-            subjects: [],
+            my_subjects: [],
+            selected_subject: null,
+            delete_level: 0,
         }
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, ['action']),
-        ...mapWritableState(useSchoolToolStore, ['data']),
+        ...mapWritableState(useAdminStore, ['action', 'action_2']),
+        ...mapWritableState(useSubjectStore, ['subjects', 'data']),
     },
 
     methods: {
-        async doAddSubjects(data) {
-            console.log(data)
+        async deleteSubject(subject) {
+            if (!(await this.subjectStore.deleteSubject(subject))) return
+            this.selected_subject = null
+            await this.subjectStore.index()
+            this.delete_level = 0
         },
 
-        addSubjects() {
-            this.subjects = Array.from({ length: 5 }, () => ({
+        async updateSubject(subject) {
+            if (!(await this.subjectStore.updateSubject(subject))) return
+            await this.subjectStore.index()
+            this.selected_subject = this.subjects.find((s) => s.id === subject.id)
+            this.action_2 = ''
+        },
+
+        editSubject(subject) {
+            this.data = { ...subject }
+            this.action_2 = 'edit_subject'
+        },
+        selectSubject(subject) {
+            this.selected_subject = subject
+        },
+        async doCreateSubjects(data) {
+            console.log(data)
+            if (!(await this.subjectStore.createSubjects(data))) return
+
+            await this.subjectStore.index()
+            this.action = ''
+        },
+
+        createSubjects() {
+            this.my_subjects = Array.from({ length: 5 }, () => ({
                 short_name: '',
                 long_name: '',
                 email_mentor: '',

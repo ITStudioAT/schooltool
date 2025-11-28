@@ -121,6 +121,12 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     /* SANCTUM - admin, register_admin */
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,tutoring_admin'])->group(function () {
+        Route::apiResource('/admin/tutoring/subjects', \App\Http\Controllers\Admin\Tutoring\SubjectController::class);
+        Route::post('/admin/tutoring/create_subjects', [\App\Http\Controllers\Admin\Tutoring\SubjectController::class, 'createSubjects']);
+    });
+
+    /* SANCTUM - admin, register_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:admin,register_admin'])->group(function () {
 
         //Roles
