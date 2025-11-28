@@ -151,7 +151,11 @@ class AdminService
 
     public function checkEmail($data): array
     {
-        $users = User::where('email', $data['email'])->get();
+        $users = User::where('email', $data['email'])
+            ->whereHas('roles', function ($query) {
+                $query->where('name', 'like', '%admin%');
+            })
+            ->get();
         $data['users_count'] = $users->count();
 
         $ids = $users->pluck('school_id');
