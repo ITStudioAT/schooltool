@@ -40,6 +40,28 @@
                         @click="logout" />
                 </v-card>
             </v-card-text>
+            <!-- MENÜ 2. Zeile -->
+            <v-card-text>
+                <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2" :disabled="action != ''">
+                    <its-menu-button title="Nachilfe" subtitle="anbieten" icon="mdi-offer" :color="action == 'search' ? 'button_primary_selected' : 'button_primary'" @click="" />
+                    <its-menu-button
+                        title="Nachilfe"
+                        subtitle="suchen"
+                        icon="mdi-card-search"
+                        :color="action == 'offer' ? 'button_primary_selected' : 'button_primary'"
+                        @click="" />
+                </v-card>
+            </v-card-text>
+
+            <!-- ANGEBOTE -->
+            <v-card-text>
+                <h1>ANGEBOTE</h1>
+            </v-card-text>
+
+            <!-- SUCHEN -->
+            <v-card-text>
+                <h1>SUCHEN</h1>
+            </v-card-text>
 
             <!-- PROFIL -->
             <v-card-text v-if="action == 'profile'">

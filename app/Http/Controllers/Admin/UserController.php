@@ -521,6 +521,9 @@ class UserController extends Controller
         ]);
 
         $user = User::findOrFail($validated['user_id']);
+        if ($user->hasRole(['super_admin', 'admin'])) {
+            abort(403, 'Der Super-Admin oder Admin kann nicht deaktiviert werden');
+        }
         $user->is_active = !$user->is_active;
         $user->save();
 
