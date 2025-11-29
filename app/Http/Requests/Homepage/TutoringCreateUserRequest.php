@@ -27,7 +27,7 @@ class TutoringCreateUserRequest extends FormRequest
             'data.status' => 'in:NEW_USER',
             'data.last_name' => 'required|string|max:255',
             'data.first_name' => 'nullable|string|max:255',
-            'data.sex' => 'required|string|in:m,f',
+            'data.sex' => 'required|string|in:m,f,d',
         ];
     }
 }

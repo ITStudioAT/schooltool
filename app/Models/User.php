@@ -143,6 +143,14 @@ class User extends Authenticatable
         ];
     }
 
+    public function scopeBySchoolAndRole($query, $schoolId, $roleName)
+    {
+        return $query->where('school_id', $schoolId)
+            ->whereHas('roles', function ($q) use ($roleName) {
+                $q->where('name', $roleName);
+            });
+    }
+
     public function selectedSchool(): BelongsTo
     {
         return $this->belongsTo(School::class, 'school_id');
@@ -236,7 +244,6 @@ class User extends Authenticatable
 
     public function hasDependencies(): bool
     {
-
         if (RegisterDateBooking::where('user_id', $this->id)->count() > 0) return true;
         return false;
     }

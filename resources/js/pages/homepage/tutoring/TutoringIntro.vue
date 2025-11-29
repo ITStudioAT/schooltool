@@ -42,6 +42,7 @@
                         <v-radio-group v-model="data.sex" :rules="[required()]">
                             <v-radio label="Männlich" value="m" color="blue"></v-radio>
                             <v-radio label="Weiblich" value="f" color="pink"></v-radio>
+                            <v-radio label="Divers" value="d" color="yellow"></v-radio>
                         </v-radio-group>
 
                         <div class="d-flex flex-row align-center justify-space-between mt-4">

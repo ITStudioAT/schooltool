@@ -54,6 +54,7 @@
                                 <v-radio-group v-model="data.sex" :rules="[required()]">
                                     <v-radio label="Männlich" value="m" color="blue"></v-radio>
                                     <v-radio label="Weiblich" value="f" color="pink"></v-radio>
+                                    <v-radio label="Divers" value="d" color="yellow"></v-radio>
                                 </v-radio-group>
                                 <v-text-field flat rounded="0" v-model="data.email" label="E-Mail" :rules="[required(), mail(), maxLength(255)]" />
                             </v-card>

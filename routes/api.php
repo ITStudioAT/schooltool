@@ -91,15 +91,19 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/users/save_password',  [UserController::class, 'savePassword']);
         Route::post('/admin/users/save_password_with_code',  [UserController::class, 'savePasswordWithCode']);
 
-        Route::get('/admin/users20/load_users', [\App\Http\Controllers\Admin\UserController::class, 'loadUsers']);
-        Route::post('/admin/users20/update', [\App\Http\Controllers\Admin\UserController::class, 'updateUser']);
-        Route::post('/admin/users20/store', [\App\Http\Controllers\Admin\UserController::class, 'storeUser']);
-        Route::post('/admin/users20/delete_users', [\App\Http\Controllers\Admin\UserController::class, 'deleteUsers']);
-        Route::post('/admin/users20/toggle_is_active', [\App\Http\Controllers\Admin\UserController::class, 'toggleIsActive']);
+
 
         // RegisterUsers
         Route::get('/admin/register_users',  [\App\Http\Controllers\Admin\RegisterUserController::class, 'index']);
         Route::post('/admin/register_users/delete_register_users',  [\App\Http\Controllers\Admin\RegisterUserController::class, 'deleteRegisterUsers']);
+    });
+
+    /* SANCTUM - admin */
+    Route::middleware(['auth:sanctum', 'api-allowed:admin'])->group(function () {
+        Route::get('/admin/users20/load_users', [\App\Http\Controllers\Admin\UserController::class, 'loadUsers']);
+        Route::post('/admin/users20/update', [\App\Http\Controllers\Admin\UserController::class, 'updateUser']);
+        Route::post('/admin/users20/store', [\App\Http\Controllers\Admin\UserController::class, 'storeUser']);
+        Route::post('/admin/users20/delete_users', [\App\Http\Controllers\Admin\UserController::class, 'deleteUsers']);
     });
 
     /* SANCTUM - tutoring_user */
@@ -113,18 +117,20 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     /* SANCTUM - admin, tutoring_admin, register_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:admin,tutoring_admin,register_admin'])->group(function () {
         Route::get('/admin/school_tools/load_config', [\App\Http\Controllers\Admin\SchoolToolController::class, 'loadConfig']);
+        Route::post('/admin/users20/toggle_is_active', [\App\Http\Controllers\Admin\UserController::class, 'toggleIsActive']);
     });
 
 
     /* SANCTUM - admin, tutoring_admin */
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,tutoring_admin'])->group(function () {});
+
+    /* SANCTUM - admin, tutoring_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:admin,tutoring_admin'])->group(function () {
         Route::post('/admin/school_tools/save_tutoring_settings', [\App\Http\Controllers\Admin\SchoolToolController::class, 'saveTutoringSettings']);
-    });
-
-    /* SANCTUM - admin, register_admin */
-    Route::middleware(['auth:sanctum', 'api-allowed:admin,tutoring_admin'])->group(function () {
         Route::apiResource('/admin/tutoring/subjects', \App\Http\Controllers\Admin\Tutoring\SubjectController::class);
+        Route::apiResource('/admin/tutoring/users', \App\Http\Controllers\Admin\Tutoring\UserController::class);
         Route::post('/admin/tutoring/create_subjects', [\App\Http\Controllers\Admin\Tutoring\SubjectController::class, 'createSubjects']);
+        Route::post('/admin/tutoring/delete_users', [\App\Http\Controllers\Admin\Tutoring\UserController::class, 'deleteUsers']);
     });
 
     /* SANCTUM - admin, register_admin */

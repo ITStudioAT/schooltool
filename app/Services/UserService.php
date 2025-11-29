@@ -35,7 +35,7 @@ class UserService
     {
         if (User::where('school_id', $school_id)->where('email', $data['email'])->first()) abort(409, 'E-Mail existiert bereits');
 
-        $user_roles = $data['roles'];
+        $user_roles = $data['roles'] ?? [];
         unset($data['roles']);
 
         $data['school_id'] = $school_id;
@@ -60,12 +60,12 @@ class UserService
 
     public function update($data): User
     {
-        if (!$user = User::findOrFail($data['id'])) abort(404, 'Benutzer wurde nich gefunden');
+        if (!$user = User::findOrFail($data['id'])) abort(404, 'Benutzer wurde nicht gefunden');
 
         if (User::whereNot('id', $user->id)->where('school_id', $user->school_id)->where('email', $data['email'])->first()) abort(409, 'E-Mail existiert bereits');
 
 
-        $user_roles = $data['roles'];
+        $user_roles = $data['roles'] ?? [];
         unset($data['roles']);
 
         $user->update($data);
@@ -366,5 +366,16 @@ class UserService
         ];
 
         Notification::route('mail', $email)->notify(new StandardEmail($mail));
+    }
+
+    public function deleteTutoringUsers($data)
+    {
+        foreach ($data as $id) {
+            $user = User::findOrFail($id);
+            if (!$user->hasDependencies() && $user->roles->count() === 1 && $user->hasRole('tutoring_user')) {
+                $user->syncRoles([]);
+                $user->delete();
+            }
+        }
     }
 }

@@ -26,10 +26,7 @@ class RegisterUserController extends Controller
         $currentPage = $validated['page'] ?? 1;
         $search_string = $validated['search_string'] ?? null;
 
-
         $register = Register::findOrFail($validated['register_id']);
-
-
 
         $users = $register->users()
             ->with([

@@ -1,11 +1,11 @@
 <?php
 
-namespace App\Http\Requests\Tutoring;
+namespace App\Http\Requests\Admin\Tutoring;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 
-class UserUpdateRequest extends FormRequest
+class UserStoreRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -23,13 +23,10 @@ class UserUpdateRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'data.id' => 'required|integer|exists:users,id',
-            'data.email' => 'required|email|max:255',
-            'data.last_name' => 'required|string|max:255',
-            'data.first_name' => 'nullable|string|max:255',
-            'data.sex' => 'required|string|in:m,f,d',
-            'data.status' => 'nullable|string|max:255',
-            'data.token_2fa' => 'nullable|string|size:6',
+            'last_name' => 'required|string|max:255',
+            'first_name' => 'nullable|string|max:255',
+            'email' => 'required|email|max:255',
+            'sex' => 'required|in:m,f,d',
         ];
     }
 }

@@ -17,7 +17,7 @@ class SubjectController extends Controller
      */
     public function index()
     {
-        if (! $auth_user = $this->userHasRole(['tutoring_admin'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -47,7 +47,7 @@ class SubjectController extends Controller
      */
     public function update(SubjectUpdateSubjectRequest $request, TutoringSubject $subject)
     {
-        if (! $auth_user = $this->userHasRole(['tutoring_admin'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -63,7 +63,7 @@ class SubjectController extends Controller
      */
     public function destroy(TutoringSubject $subject)
     {
-        if (! $auth_user = $this->userHasRole(['tutoring_admin'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -76,7 +76,7 @@ class SubjectController extends Controller
     public function createSubjects(SubjectCreateSubjectsRequest $request, SubjectService $service)
     {
 
-        if (! $auth_user = $this->userHasRole(['tutoring_admin'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
