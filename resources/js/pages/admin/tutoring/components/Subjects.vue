@@ -31,7 +31,15 @@
                                 <div class="text-h4">Fach ändern</div>
                                 <v-text-field autofocus v-model="data.short_name" label="Kurzbezeichnung" :rules="[required(), maxLength(10)]" tabindex="1" />
                                 <v-text-field v-model="data.long_name" label="Bezeichnung" :rules="[required(), maxLength(255)]" />
-                                <v-text-field v-model="data.email_mentor" label="E-Mail Mentor" :rules="[mail(), maxLength(255)]" />
+
+                                <!-- ✅ Email Mentors als Array -->
+                                <div v-for="(mentor, index) in data.email_mentors" :key="index" class="d-flex flex-row align-center ga-2">
+                                    <v-text-field v-model="data.email_mentors[index]" label="E-Mail Mentor" :rules="[mailOrNull(), maxLength(255)]" />
+
+                                    <v-btn v-if="index === data.email_mentors.length - 1" tile flat icon="mdi-plus" color="primary" size="small" @click="addMentor(data)" />
+
+                                    <v-btn v-if="data.email_mentors.length > 1" tile flat icon="mdi-minus" color="error" size="small" @click="removeMentor(data, index)" />
+                                </div>
 
                                 <div class="d-flex flex-row align-center justify-space-between">
                                     <v-btn color="warning" flat tile @click="action_2 = ''">Abbruch</v-btn>
@@ -66,7 +74,7 @@
                                     <v-col cols="5">E-Mail Mentor</v-col>
                                 </v-row>
 
-                                <v-row v-for="(subject, i) in my_subjects" :key="i">
+                                <v-row v-for="(subject, i) in my_subjects" :key="i" dense class="border-md mb-2">
                                     <v-col cols="2">
                                         <v-text-field
                                             v-model="subject.short_name"
@@ -74,9 +82,31 @@
                                             :rules="[maxLength(10)]"
                                             @input="subject.short_name = subject.short_name?.toUpperCase()" />
                                     </v-col>
-                                    <v-col cols="5"><v-text-field v-model="subject.long_name" label="Lange Bezeichnung" :rules="[maxLength(255)]" /></v-col>
-                                    <v-col cols="5">
-                                        <v-text-field v-model="subject.email_mentor" label="E-Mail Mentor" :rules="[mailOrNull(), maxLength(255)]" />
+                                    <v-col cols="10"><v-text-field v-model="subject.long_name" label="Lange Bezeichnung" :rules="[maxLength(255)]" /></v-col>
+                                    <v-col cols="12">
+                                        <div v-for="(mentor, index) in subject.email_mentors" :key="index" class="d-flex flex-row align-center ga-2">
+                                            <v-text-field v-model="subject.email_mentors[index]" label="E-Mail Mentor:in" :rules="[mailOrNull(), maxLength(255)]" />
+
+                                            <v-btn
+                                                v-if="index === subject.email_mentors.length - 1"
+                                                tile
+                                                flat
+                                                icon="mdi-plus"
+                                                color="primary"
+                                                size="small"
+                                                @click="addMentor(subject)" />
+                                            <!-- ✅ Übergebe subject -->
+
+                                            <v-btn
+                                                v-if="subject.email_mentors.length > 1"
+                                                tile
+                                                flat
+                                                icon="mdi-minus"
+                                                color="error"
+                                                size="small"
+                                                @click="removeMentor(subject, index)" />
+                                            <!-- ✅ Übergebe subject und index -->
+                                        </div>
                                     </v-col>
                                 </v-row>
                             </v-container>
@@ -96,11 +126,9 @@
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
-import { useSchoolToolStore } from '@/stores/admin/SchoolToolStore'
 import { useSubjectStore } from '@/stores/admin/tutoring/SubjectStore'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
-import { th } from 'vuetify/locale'
 
 export default {
     setup() {
@@ -135,6 +163,15 @@ export default {
     },
 
     methods: {
+        addMentor(subject) {
+            subject.email_mentors.push('')
+        },
+        removeMentor(subject, index) {
+            if (subject.email_mentors.length > 1) {
+                subject.email_mentors.splice(index, 1)
+            }
+        },
+
         async deleteSubject(subject) {
             if (!(await this.subjectStore.deleteSubject(subject))) return
             this.selected_subject = null
@@ -143,7 +180,9 @@ export default {
         },
 
         async updateSubject(subject) {
+            console.log(subject)
             if (!(await this.subjectStore.updateSubject(subject))) return
+
             await this.subjectStore.index()
             this.selected_subject = this.subjects.find((s) => s.id === subject.id)
             this.action_2 = ''
@@ -168,7 +207,7 @@ export default {
             this.my_subjects = Array.from({ length: 5 }, () => ({
                 short_name: '',
                 long_name: '',
-                email_mentor: '',
+                email_mentors: [''],
             }))
             this.action = 'add_subjects'
         },

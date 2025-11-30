@@ -23,7 +23,6 @@ class UserController extends Controller
         }
 
         $validated = $request->validated();
-        $currentPage = $validated['page'] ?? 1;
         $search_string = $validated['search_string'] ?? null;
 
         $users = User::bySchoolAndRole($auth_user->school_id, 'tutoring_user')

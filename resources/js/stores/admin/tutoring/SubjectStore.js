@@ -71,6 +71,17 @@ export const useSubjectStore = defineStore('AdminTutoringSubjectStore', {
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
+                /*
+                const payload = {
+                    id: data.id,
+                    short_name: data.short_name,
+                    long_name: data.long_name,
+                    email_mentors: data.email_mentors ? [...data.email_mentors] : [], // ✅ Array kopieren
+                }
+
+                console.log(payload)
+                */
+
                 const response = await axios.put(`/api/admin/tutoring/subjects/${data.id}`, { data })
                 this.subject = response.data
 

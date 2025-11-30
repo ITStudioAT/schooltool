@@ -43,24 +43,55 @@
             <!-- MENÜ 2. Zeile -->
             <v-card-text>
                 <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2" :disabled="action != ''">
-                    <its-menu-button title="Nachilfe" subtitle="anbieten" icon="mdi-offer" :color="action == 'search' ? 'button_primary_selected' : 'button_primary'" @click="" />
+                    <its-menu-button
+                        title="Nachilfe"
+                        subtitle="anbieten"
+                        icon="mdi-offer"
+                        :color="action == 'search' ? 'button_primary_selected' : 'button_primary'"
+                        @click="createOffer" />
+
+                    <!--
                     <its-menu-button
                         title="Nachilfe"
                         subtitle="suchen"
                         icon="mdi-card-search"
                         :color="action == 'offer' ? 'button_primary_selected' : 'button_primary'"
                         @click="" />
+                        -->
                 </v-card>
             </v-card-text>
 
             <!-- ANGEBOTE -->
             <v-card-text>
-                <h1>ANGEBOTE</h1>
+                <h1>DEINE ANGEBOTE</h1>
             </v-card-text>
 
-            <!-- SUCHEN -->
-            <v-card-text>
-                <h1>SUCHEN</h1>
+            <!-- ANGEBOT  -->
+            <v-card-text v-if="action == 'create_offer'">
+                <v-card tile flat color="tutoring_card" max-width="600">
+                    <v-form ref="form" v-model="is_valid" @submit.prevent="doCreateOffer(data)">
+                        <v-card-title class="bg-tutoring_card_title mb-2">Angebot erstellen</v-card-title>
+                        <!-- Nachanme, Vorname, E-Mail eingeben-->
+                        <v-card-text>
+                            <v-card tile flat color="transparent">
+                                <v-text-field autofocus flat rounded="0" v-model="data.title" label="Titel" :rules="[required(), maxLength(255)]" />
+                                <v-textarea flat rounded="0" v-model="data.description" label="Beschreibung" :rules="[maxLength(1024)]" />
+                            </v-card>
+                        </v-card-text>
+
+                        <!-- ERROR-->
+                        <v-card-text v-if="error">
+                            <v-alert type="error">{{ error?.response?.data?.message + ' (' + error?.response?.status + ')' }}</v-alert>
+                        </v-card-text>
+                        <!-- SCHLIESSEN/SPEICHERN-->
+                        <v-card-actions>
+                            <div class="d-flex flex-row align-center justify-space-between w-100">
+                                <its-menu-button subtitle="Abbruch" icon="mdi-close" color="warning" @click="action = ''" />
+                                <its-menu-button subtitle="Speichern" icon="mdi-content-save" color="success" @click="updateProfile(data)" />
+                            </div>
+                        </v-card-actions>
+                    </v-form>
+                </v-card>
             </v-card-text>
 
             <!-- PROFIL -->
@@ -237,6 +268,12 @@ export default {
     watch: {},
 
     methods: {
+        createOffer() {
+            this.action = 'create_offer'
+        },
+
+        async doCreateOffer(data) {},
+
         async updatePassword(data) {
             this.is_valid = false
             await this.$refs.form.validate()

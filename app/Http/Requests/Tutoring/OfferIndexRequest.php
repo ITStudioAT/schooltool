@@ -1,11 +1,11 @@
 <?php
 
-namespace App\Http\Requests\Admin\Tutoring;
+namespace App\Http\Requests\Tutoring;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 
-class SubjectUpdateSubjectRequest extends FormRequest
+class OfferIndexRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -23,13 +23,8 @@ class SubjectUpdateSubjectRequest extends FormRequest
     public function rules(): array
     {
         return [
-
-            'data' => 'required|array',
-            'data.id' => 'required|integer|exists:tutoring_subjects,id',
-            'data.short_name' => 'required|string|max:10',
-            'data.long_name' => 'required|string|max:255',
-            'data.email_mentors' => 'nullable|array', // ✅ Array statt email
-            'data.email_mentors.*' => 'nullable|email|max:255', // ✅ Jede E-Mail validieren
+            'search_string' => 'nullable|string|max:255',
+            'page' => 'nullable|integer',
         ];
     }
 }

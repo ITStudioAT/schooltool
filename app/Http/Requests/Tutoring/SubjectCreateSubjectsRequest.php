@@ -26,7 +26,8 @@ class SubjectCreateSubjectsRequest extends FormRequest
             'data' => 'required|array',
             'data.*.short_name' => 'nullable|string|max:10',
             'data.*.long_name' => 'nullable|string|max:255',
-            'data.*.email_mentor' => 'nullable|email',
+            'data.*.email_mentors' => 'nullable|array', // ✅ Array statt email
+            'data.*.email_mentors.*' => 'nullable|email|max:255', // ✅ Jede E-Mail validieren
         ];
     }
 }

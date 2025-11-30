@@ -18,7 +18,7 @@ class SubjectResource extends JsonResource
             'id' => $this->id,
             'short_name' => $this->short_name,
             'long_name' => $this->long_name,
-            'email_mentor' => $this->email_mentor,
+            'email_mentors' => $this->email_mentors,
         ];
     }
 }

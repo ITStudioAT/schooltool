@@ -46,6 +46,7 @@ class SubjectController extends Controller
      * Update the specified resource in storage.
      */
     public function update(SubjectUpdateSubjectRequest $request, TutoringSubject $subject)
+
     {
         if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -53,6 +54,19 @@ class SubjectController extends Controller
 
         $validated = $request->validated();
         $data = $validated['data'];
+
+        // ✅ Bereinige email_mentors: entferne leere Strings
+        if (isset($data['email_mentors'])) {
+            $data['email_mentors'] = collect($data['email_mentors'])
+                ->filter(fn($email) => !empty(trim($email)))
+                ->values()
+                ->toArray();
+
+            // Wenn Array leer ist, setze auf null
+            if (empty($data['email_mentors'])) {
+                $data['email_mentors'] = null;
+            }
+        }
 
         $subject->update($data);
         return response()->json(new SubjectResource($subject), 200);
