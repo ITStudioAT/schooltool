@@ -33,7 +33,7 @@ class AppUpdateCommand extends Command
 
         // ✅ Roles and records
         $this->info('▶ ROLES AND RECORDS');
-        $service->createRoles(['super_admin', 'admin', 'register_admin', 'register_user', 'tutoring_user', 'tutoring_admin']);
+        $service->createRoles(['super_admin', 'admin', 'register_admin', 'register_user', 'tutoring_user', 'tutoring_admin', 'teacher']);
         $this->info('✅ Roles checked');
         $recordsCreateService->initRecords();
         $this->info('✅ Init Records checked');
