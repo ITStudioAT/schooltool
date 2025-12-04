@@ -1,5 +1,6 @@
 <template>
     <div class="schooltool-background">
+        <div class="background-image"></div>
         <div class="text-container">
             <span v-for="(letter, index) in letters" :key="index" class="letter" :style="{ animationDelay: `${index * 0.1}s` }">
                 {{ letter }}
@@ -24,7 +25,7 @@
 
                     <!-- NACHHILFETOOL -->
                     <v-card color="secondary" width="300" height="170" class="d-flex flex-column">
-                        <v-card-title class="text-h5">SuSis helfen SuSis</v-card-title>
+                        <v-card-title class="text-h5">Schüler helfen Schülern</v-card-title>
 
                         <v-card-subtitle style="white-space: normal">Das Nachhilfetool für Schüler:innen. Anbieten und Anfordern von Nachhilfe.</v-card-subtitle>
 
@@ -47,6 +48,16 @@
                         </v-card-actions>
                     </v-card>
                 </div>
+            </v-card-text>
+            <v-card-text class="d-flex align-center justify-center">
+                <!-- DOKUMENTATION -->
+                <v-card color="third" width="300" class="d-flex flex-column">
+                    <v-img height="100px" src="/storage/images/undraw_reading.svg"></v-img>
+
+                    <v-card-actions class="d-flex justify-center">
+                        <v-btn class="ms-2" size="small" text="Handbuch" variant="outlined" href="/documentation" target></v-btn>
+                    </v-card-actions>
+                </v-card>
             </v-card-text>
         </v-card>
 
@@ -183,10 +194,26 @@ export default {
     z-index: 0;
 }
 
+.background-image {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url('/storage/images/background.jpg?v=2');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: 0.6; /* Transparenz anpassen */
+    z-index: -1;
+}
+
 .text-container {
     display: flex;
     gap: 0;
-    align-items: flex-end; /* Bottom-Ausrichtung */
+    align-items: flex-end;
+    position: relative;
+    z-index: 1;
 }
 
 .letter {
