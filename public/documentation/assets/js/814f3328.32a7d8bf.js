@@ -1,0 +1,1 @@
+"use strict";(globalThis.webpackChunkschooltool=globalThis.webpackChunkschooltool||[]).push([[472],{5513:e=>{e.exports=JSON.parse('{"title":"Recent posts","items":[{"title":"Herzlich Willkommen","permalink":"/documentation/blog/welcome","unlisted":false,"date":"2025-12-03T00:00:00.000Z"}]}')}}]);
