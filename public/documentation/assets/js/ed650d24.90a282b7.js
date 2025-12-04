@@ -1,0 +1,1 @@
+"use strict";(globalThis.webpackChunkschooltool=globalThis.webpackChunkschooltool||[]).push([[641],{8656:o=>{o.exports=JSON.parse('{"tags":[{"label":"Schooltool","permalink":"/documentation/blog/tags/schooltool","description":"Schooltool","count":1}]}')}}]);

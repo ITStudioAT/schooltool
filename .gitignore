@@ -20,6 +20,7 @@
 /storage/*.key
 /storage/pail
 /storage/debugbar
+/docusaurus
 /vendor
 Homestead.json
 Homestead.yaml
