@@ -32,12 +32,13 @@
                                         <div class="text-body-1 d-flex flex-row align-center justify-space-between w-100">
                                             <div class="d-flex flex-row align-center ga-2">
                                                 <v-icon color="error" size="small" icon="mdi-lock" v-if="!item.is_active" />
-                                                <div>{{ item.last_name + ' ' + item.first_name }}</div>
+                                                <div class="d-flex flex-row align-center ga-2">
+                                                    <v-icon icon="mdi-email" color="warning" v-if="!item.email_verified_at" size="small" />
+                                                    <v-icon icon="mdi-help" color="warning" v-if="!item.confirmed_at" size="small" />
+                                                    {{ item.last_name + ' ' + item.first_name }}
+                                                </div>
                                             </div>
                                             <div class="text-rigtht text-body-2">{{ item.email }}</div>
-                                        </div>
-                                        <div class="text-caption">
-                                            {{ item.roles }}
                                         </div>
                                     </div>
                                 </template>
@@ -94,6 +95,7 @@
                     </div>
                     <!-- MINDEST 1 ELEMENT AUSGEWÄHLT -->
                     <div class="d-flex flex-column ga-2" v-if="selected_users.length >= 1">
+                        <v-btn block tile flat color="success" class="text-caption" prepend-icon="mdi-delete" @click="confirmUsers(selected_users)">Bestätigen</v-btn>
                         <v-btn block tile flat color="warning" class="text-caption" prepend-icon="mdi-delete" @click="deleteUser">Löschen</v-btn>
                     </div>
                 </v-card>
@@ -250,6 +252,11 @@ export default {
 
             await this.tutoringUserStore.index()
             this.action = ''
+        },
+
+        async confirmUsers(users) {
+            if (!(await this.tutoringUserStore.confirmUsers(users))) return
+            await this.tutoringUserStore.index(this.meta.current_page)
         },
 
         editUser(user_id) {

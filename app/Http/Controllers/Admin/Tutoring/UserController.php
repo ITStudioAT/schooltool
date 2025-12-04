@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Tutoring;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\Tutoring\UserConfirmUsersRequest;
 use App\Http\Requests\Admin\Tutoring\UserDeleteUsersRequest;
 use App\Http\Requests\Admin\Tutoring\UserIndexRequest;
 use App\Http\Requests\Admin\Tutoring\UserStoreRequest;
@@ -101,6 +102,17 @@ class UserController extends Controller
 
         $validated = $request->validated();
         $service->deleteTutoringUsers($validated['data']);
+        return response()->noContent();
+    }
+
+    public function confirmUsers(UserConfirmUsersRequest $request, UserService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validated();
+        $service->confirmTutoringUsers($validated['data']);
         return response()->noContent();
     }
 

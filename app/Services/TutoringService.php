@@ -158,28 +158,30 @@ class TutoringService
             $user->confirmed_at = now();
             $user->token_2fa_2 = null;
             $user->save();
-
-
-            // E-Mail zur Info schicken 
-            $school = School::findOrFail($user->school_id);
-            $mail = [
-                'from_address' => config('schooltool.noreply_email'),
-                'from_name' => $school->long_name,
-                'logo' => asset('/storage/images/' . $school->logo),
-                'subject' => 'Nachhilfe freigeschatet',
-                'markdown' => 'mails.admin.informTutoringUserIsConfirmed',
-                'full_name' => $user->last_name . ' ' . $user->first_name,
-                'email' => $user->email,
-                'login_url' => url('/homepage/tutoring?school=' . $school->short_name),
-            ];
-
-            Notification::route('mail', $user->email)->notify(new StandardEmail($mail));
-
+            $this->sendConfirmationEmail($user);
 
             return true;
         }
 
         return false;
+    }
+
+    public function sendConfirmationEmail($user)
+    {
+        // E-Mail zur Info schicken 
+        $school = School::findOrFail($user->school_id);
+        $mail = [
+            'from_address' => config('schooltool.noreply_email'),
+            'from_name' => $school->long_name,
+            'logo' => asset('/storage/images/' . $school->logo),
+            'subject' => 'Nachhilfe freigeschatet',
+            'markdown' => 'mails.admin.informTutoringUserIsConfirmed',
+            'full_name' => $user->last_name . ' ' . $user->first_name,
+            'email' => $user->email,
+            'login_url' => url('/homepage/tutoring?school=' . $school->short_name),
+        ];
+
+        Notification::route('mail', $user->email)->notify(new StandardEmail($mail));
     }
 
     public function checkLoginRequirement($data)

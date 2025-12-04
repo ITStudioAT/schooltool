@@ -9,6 +9,7 @@ use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
 use App\Notifications\StandardEmail;
+use App\Services\TutoringService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -376,6 +377,21 @@ class UserService
             if (!$user->hasDependencies() && $user->roles->count() === 1 && $user->hasRole('tutoring_user')) {
                 $user->syncRoles([]);
                 $user->delete();
+            }
+        }
+    }
+
+    public function confirmTutoringUsers($data)
+    {
+        $turoringService = new TutoringService();
+        foreach ($data as $id) {
+            $user = User::findOrFail($id);
+
+            if ($user->hasRole('tutoring_user') && $user->email_verified_at && !$user->confirmed_at) {
+                $user->confirmed_at = now();
+                $user->save();
+
+                $turoringService->sendConfirmationEmail($user);
             }
         }
     }
