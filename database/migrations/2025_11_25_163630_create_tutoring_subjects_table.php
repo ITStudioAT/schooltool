@@ -16,6 +16,7 @@ return new class extends Migration
             $table->foreignId('school_id');
             $table->string('short_name')->nullable();
             $table->string('long_name')->nullable();
+            $table->boolean('must_be_accepted')->default(true);
             $table->json('email_mentors')->nullable();
             $table->timestamps();
         });

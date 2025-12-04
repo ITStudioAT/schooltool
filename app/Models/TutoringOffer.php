@@ -11,6 +11,7 @@ class TutoringOffer extends Model
 
 
     protected $casts = [
+        'classes' => 'array',
         'time_table' => 'array',
         'price_per_hour' => 'decimal:2',
         'is_active' => 'boolean',

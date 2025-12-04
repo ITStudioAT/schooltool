@@ -95,6 +95,7 @@ class TutoringService
             $user->email_verified_at = now();
             $user->save();
             $data['status'] = 'EMAIL_VERIFIED';
+            $data = $this->checkUserConfirmation($data);
         } else {
             $this->sendCodeToUser($user);
             $data['status'] = 'CONFIRM_EMAIL_AGAIN';

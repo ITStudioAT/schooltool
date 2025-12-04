@@ -28,6 +28,7 @@ class SubjectUpdateSubjectRequest extends FormRequest
             'data.id' => 'required|integer|exists:tutoring_subjects,id',
             'data.short_name' => 'required|string|max:10',
             'data.long_name' => 'required|string|max:255',
+            'data.must_be_accepted' => 'boolean',
             'data.email_mentors' => 'nullable|array', // ✅ Array statt email
             'data.email_mentors.*' => 'nullable|email|max:255', // ✅ Jede E-Mail validieren
         ];

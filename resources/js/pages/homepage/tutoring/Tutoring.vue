@@ -49,15 +49,6 @@
                         icon="mdi-offer"
                         :color="action == 'search' ? 'button_primary_selected' : 'button_primary'"
                         @click="createOffer" />
-
-                    <!--
-                    <its-menu-button
-                        title="Nachilfe"
-                        subtitle="suchen"
-                        icon="mdi-card-search"
-                        :color="action == 'offer' ? 'button_primary_selected' : 'button_primary'"
-                        @click="" />
-                        -->
                 </v-card>
             </v-card-text>
 
@@ -66,151 +57,19 @@
                 <h1>DEINE ANGEBOTE</h1>
             </v-card-text>
 
-            <!-- ANGEBOT  -->
-            <v-card-text v-if="action == 'create_offer'">
-                <v-card tile flat color="tutoring_card" max-width="600">
-                    <v-form ref="form" v-model="is_valid" @submit.prevent="doCreateOffer(data)">
-                        <v-card-title class="bg-tutoring_card_title mb-2">Angebot erstellen</v-card-title>
-                        <!-- Nachanme, Vorname, E-Mail eingeben-->
-                        <v-card-text>
-                            <v-card tile flat color="transparent">
-                                <v-text-field autofocus flat rounded="0" v-model="data.title" label="Titel" :rules="[required(), maxLength(255)]" />
-                                <v-textarea flat rounded="0" v-model="data.description" label="Beschreibung" :rules="[maxLength(1024)]" />
-                            </v-card>
-                        </v-card-text>
-
-                        <!-- ERROR-->
-                        <v-card-text v-if="error">
-                            <v-alert type="error">{{ error?.response?.data?.message + ' (' + error?.response?.status + ')' }}</v-alert>
-                        </v-card-text>
-                        <!-- SCHLIESSEN/SPEICHERN-->
-                        <v-card-actions>
-                            <div class="d-flex flex-row align-center justify-space-between w-100">
-                                <its-menu-button subtitle="Abbruch" icon="mdi-close" color="warning" @click="action = ''" />
-                                <its-menu-button subtitle="Speichern" icon="mdi-content-save" color="success" @click="updateProfile(data)" />
-                            </div>
-                        </v-card-actions>
-                    </v-form>
-                </v-card>
-            </v-card-text>
-
             <!-- PROFIL -->
-            <v-card-text v-if="action == 'profile'">
-                <v-card tile flat color="tutoring_card" max-width="600">
-                    <v-form ref="form" v-model="is_valid" @submit.prevent="updateProfile(data)">
-                        <v-card-title class="bg-tutoring_card_title mb-2">Profil ändern</v-card-title>
-                        <!-- Nachanme, Vorname, E-Mail eingeben-->
-                        <v-card-text>
-                            <v-card tile flat color="transparent" :disabled="data.status == 'CONFIRM_EMAIL' || data.status == 'RE_CONFIRM_EMAIL'">
-                                <v-text-field autofocus flat rounded="0" v-model="data.last_name" label="Nachname" :rules="[required(), maxLength(255)]" />
-                                <v-text-field flat rounded="0" v-model="data.first_name" label="Vorname" :rules="[maxLength(255)]" />
-                                <v-radio-group v-model="data.sex" :rules="[required()]">
-                                    <v-radio label="Männlich" value="m" color="blue"></v-radio>
-                                    <v-radio label="Weiblich" value="f" color="pink"></v-radio>
-                                    <v-radio label="Divers" value="d" color="yellow"></v-radio>
-                                </v-radio-group>
-                                <v-text-field flat rounded="0" v-model="data.email" label="E-Mail" :rules="[required(), mail(), maxLength(255)]" />
-                            </v-card>
-                        </v-card-text>
-                        <!-- Neue E-Mail: Bestätigungscode eingeben -->
-                        <v-card-text v-if="data.status == 'CONFIRM_EMAIL'">
-                            <v-alert class="mt-4" color="primary">
-                                <div class="mt-2">Wir haben Dir eine E-Mail an deine neue E-Mail-Adresse mit einem Code geschickt. Bitte gib den Code hier ein.</div>
-                            </v-alert>
-                            <v-otp-input autofocus v-model="data.token_2fa" />
-                        </v-card-text>
-                        <!-- Neue E-Mail: Bestätigungscode war falsch, erneut Bestätigungscode eingeben -->
-                        <v-card-text v-if="data.status == 'RE_CONFIRM_EMAIL'">
-                            <v-alert class="mt-4" color="primary">
-                                <div class="mt-2">Der Code war falsch oder abgelaufen.</div>
-                                <div class="mt-2">Wir haben Dir erneut eine E-Mail an deine neue E-Mail-Adresse mit einem Code geschickt. Bitte gib den Code hier ein.</div>
-                            </v-alert>
-                            <v-otp-input autofocus v-model="data.token_2fa" />
-                        </v-card-text>
-                        <!-- ERROR-->
-                        <v-card-text v-if="error">
-                            <v-alert type="error">{{ error?.response?.data?.message + ' (' + error?.response?.status + ')' }}</v-alert>
-                        </v-card-text>
-                        <!-- SCHLIESSEN/SPEICHERN-->
-                        <v-card-actions>
-                            <div class="d-flex flex-row align-center justify-space-between w-100">
-                                <its-menu-button subtitle="Abbruch" icon="mdi-close" color="warning" @click="action = ''" />
-                                <its-menu-button subtitle="Speichern" icon="mdi-content-save" color="success" @click="updateProfile(data)" />
-                            </div>
-                        </v-card-actions>
-                    </v-form>
-                </v-card>
-            </v-card-text>
+            <Profile v-if="action == 'profile'" />
 
-            <!-- PASSWORD -->
-            <v-card-text v-if="action == 'password'">
-                <v-card tile flat color="tutoring_card" max-width="600">
-                    <v-form ref="form" v-model="is_valid" @submit.prevent="updatePassword(data)">
-                        <v-card-title class="bg-tutoring_card_title mb-2">Kennwort ändern</v-card-title>
-                        <v-card-text>
-                            <v-card tile flat color="transparent" :disabled="data.status == 'CONFIRM_PASSWORD' || data.status == 'RE_CONFIRM_PASSWORD'">
-                                <v-text-field
-                                    flat
-                                    tile
-                                    autofocus
-                                    label="Kennwort"
-                                    :append-icon="is_password_visible ? 'mdi-eye' : 'mdi-eye-off'"
-                                    :type="is_password_visible ? 'text' : 'password'"
-                                    @click:append="() => (is_password_visible = !is_password_visible)"
-                                    :rules="[required(), minLength(8), maxLength(255)]"
-                                    v-model="data.password" />
+            <!-- PASSWORD   -->
+            <Password v-if="action == 'password'" />
 
-                                <v-text-field
-                                    flat
-                                    tile
-                                    label="Wiederholung Kennwort"
-                                    :append-icon="is_password_visible_confirm ? 'mdi-eye' : 'mdi-eye-off'"
-                                    :type="is_password_visible_confirm ? 'text' : 'password'"
-                                    @click:append="() => (is_password_visible_confirm = !is_password_visible_confirm)"
-                                    :rules="[required(), minLength(8), maxLength(255), passwordMatch(data.password)]"
-                                    v-model="data.password_confirm" />
-                            </v-card>
-                        </v-card-text>
+            <!-- OFFER   -->
+            <Offer v-if="action == 'create_offer'" />
 
-                        <v-card-text v-if="data.status == 'CONFIRM_PASSWORD'">
-                            <v-alert class="mt-4" color="primary">
-                                <div class="mt-2">Wir haben Dir eine E-Mail mit einem Code geschickt. Bitte gib den Code hier ein.</div>
-                            </v-alert>
-                            <v-otp-input autofocus v-model="data.token_2fa" />
-                        </v-card-text>
-                        <v-card-text v-if="data.status == 'RE_CONFIRM_PASSWORD'">
-                            <v-alert class="mt-4" color="primary">
-                                <div class="mt-2">Der Code war falsch oder abgelaufen.</div>
-                                <div class="mt-2">Wir haben Dir eine erneut E-Mail mit einem Code geschickt. Bitte gib den Code hier ein.</div>
-                            </v-alert>
-                            <v-otp-input autofocus v-model="data.token_2fa" />
-                        </v-card-text>
-
-                        <!-- ERROR -->
-                        <v-card-text v-if="error">
-                            <v-alert type="error">{{ error?.response?.data?.message + ' (' + error?.response?.status + ')' }}</v-alert>
-                        </v-card-text>
-                        <!-- SCHLIESSEN/SPEICHERN-->
-                        <v-card-actions>
-                            <div class="d-flex flex-row align-center justify-space-between w-100">
-                                <its-menu-button subtitle="Abbruch" icon="mdi-close" color="warning" @click="action = ''" />
-                                <its-menu-button subtitle="Speichern" icon="mdi-content-save" color="success" @click="updatePassword(data)" />
-                            </div>
-                        </v-card-actions>
-                    </v-form>
-                </v-card>
-            </v-card-text>
-
-            <!-- DATA
+            <!-- SUBJECTS -->
             <v-card-text>
-                <v-list>
-                    <v-list-item v-for="(value, key) in data" :key="key">
-                        <v-list-item-title>{{ key }}</v-list-item-title>
-                        <v-list-item-subtitle>{{ value }}</v-list-item-subtitle>
-                    </v-list-item>
-                </v-list>
+                {{ action }}
             </v-card-text>
-            -->
 
             <!-- AUTH
             <v-card-text>
@@ -231,18 +90,23 @@ import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useTutoringStore } from '@/stores/tutoring/TutoringStore'
 import { useUserStore } from '@/stores/tutoring/UserStore'
+import { useSubjectStore } from '@/stores/tutoring/SubjectStore'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
+import Profile from './components/Profile.vue'
+import Password from './components/Password.vue'
+import Offer from './components/Offer.vue'
 
 export default {
     setup() {
         return useValidationRulesSetup()
     },
-    components: { ItsMenuButton, ItsGridBox },
+    components: { ItsMenuButton, ItsGridBox, Profile, Password, Offer },
 
     async beforeMount() {
         this.tutoringStore = useTutoringStore()
         this.userStore = useUserStore()
+        this.subjectStore = useSubjectStore()
         await this.tutoringStore.loadAuth()
     },
 
@@ -257,12 +121,15 @@ export default {
             is_valid: false,
             is_password_visible: false,
             is_password_visible_confirm: false,
+            selectedSubject: null,
+            step: 0,
         }
     },
 
     computed: {
         ...mapWritableState(useTutoringStore, ['auth', 'action']),
         ...mapWritableState(useUserStore, ['error', 'data']),
+        ...mapWritableState(useSubjectStore, ['subjects']),
     },
 
     watch: {},
@@ -272,48 +139,11 @@ export default {
             this.action = 'create_offer'
         },
 
-        async doCreateOffer(data) {},
-
-        async updatePassword(data) {
-            this.is_valid = false
-            await this.$refs.form.validate()
-            if (!this.is_valid) return
-            if (!(await this.userStore.updatePassword(data))) return
-
-            if (this.data.status != 'OK') return
-
-            await this.tutoringStore.loadAuth()
-            this.action = ''
-        },
-
-        async updateProfile(data) {
-            this.is_valid = false
-            await this.$refs.form.validate()
-            if (!this.is_valid) return
-            if (!(await this.userStore.update(data))) return
-
-            if (this.data.status != 'OK') return
-
-            await this.tutoringStore.loadAuth()
-            this.action = ''
-        },
         editProfile() {
-            this.error = null
-            this.data = {
-                id: this.auth.auth_user.id,
-                last_name: this.auth.auth_user.last_name,
-                first_name: this.auth.auth_user.first_name,
-                email: this.auth.auth_user.email,
-                sex: this.auth.auth_user.sex,
-            }
             this.action = 'profile'
         },
 
         editPassword() {
-            this.error = null
-            this.data = {
-                id: this.auth.auth_user.id,
-            }
             this.action = 'password'
         },
 

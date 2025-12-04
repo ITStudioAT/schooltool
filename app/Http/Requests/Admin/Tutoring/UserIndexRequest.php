@@ -24,6 +24,7 @@ class UserIndexRequest extends FormRequest
     {
         return [
             'search_string' => 'nullable|string|max:255',
+            'selected_filter' => 'nullable|string|max:255',
             'page' => 'nullable|integer',
         ];
     }

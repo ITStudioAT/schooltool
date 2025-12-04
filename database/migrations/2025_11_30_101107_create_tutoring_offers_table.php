@@ -18,6 +18,7 @@ return new class extends Migration
             $table->foreignId('subject_id');
             $table->string('title');
             $table->string('description', 1024)->nullable();
+            $table->json('classes')->nullable();
             $table->json('time_table')->nullable();
             $table->date('active_until')->nullable();
             $table->boolean('is_active')->default(true);

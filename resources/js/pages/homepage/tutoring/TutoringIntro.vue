@@ -79,7 +79,7 @@
                     </v-form>
                 </v-card-text>
 
-                <!-- Login mit Code war erfolgreich -->
+                <!-- E-Mail wurde erfolgreich bestätigt -->
                 <v-card-text v-if="data.status == 'EMAIL_VERIFIED'">
                     <div class="text-h6 font-weight-medium">E-Mail erfolgreich bestätigt!</div>
                     <div class="text-body-2">E-Mail: {{ data.email }}</div>
@@ -266,6 +266,7 @@ export default {
         },
 
         async loginWithPassword(data) {
+            console.log(data)
             if (!(await this.tutoringStore.loginWithPassword(data))) return
         },
 

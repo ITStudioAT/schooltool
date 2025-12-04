@@ -13,5 +13,6 @@ class TutoringSubject extends Model
 
     protected $casts = [
         'email_mentors' => 'array',
+        'must_be_accepted' => 'boolean',
     ];
 }

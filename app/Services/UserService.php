@@ -10,6 +10,7 @@ use App\Models\Schoolyear;
 use App\Models\User;
 use App\Notifications\StandardEmail;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
@@ -377,5 +378,21 @@ class UserService
                 $user->delete();
             }
         }
+    }
+
+    public function cleanTutoringUsers($school_id)
+    // Löschen aller Tutoring Users, die nicht mehr benötigt werden (keine E-Mail bestätigt)
+    {
+        User::bySchoolAndRole($school_id, 'tutoring_user')
+            ->whereNull('email_verified_at')
+            ->whereHas('roles', function ($query) {
+                $query->havingRaw('COUNT(*) = 1');
+            }, '=', 1)
+            ->get()
+            ->each(function ($user) {
+                DB::table('queue_tests')->where('user_id', $user->id)->delete();
+                $user->removeRole('tutoring_user');
+                $user->delete();
+            });
     }
 }

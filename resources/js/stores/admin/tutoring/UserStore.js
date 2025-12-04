@@ -11,6 +11,8 @@ export const useTutoringUserStore = defineStore('AdminTutoringUserStore', {
         user: null,
         error: null,
         data: {},
+        count_deletable_users: 0,
+        selected_filter: null,
     }),
 
     actions: {
@@ -20,10 +22,12 @@ export const useTutoringUserStore = defineStore('AdminTutoringUserStore', {
             const adminStore = useAdminStore()
             adminStore.is_loading++
             const search_string = this.search_string
+            const selected_filter = this.selected_filter
             try {
-                const response = await axios.get('/api/admin/tutoring/users', { params: { search_string, page } })
+                const response = await axios.get('/api/admin/tutoring/users', { params: { search_string, selected_filter, page } })
                 this.users = response.data.data
                 this.meta = response.data.meta
+                this.count_deletable_users = response.data.count_deletable_users
                 return true
             } catch (error) {
                 this.error = error
@@ -92,6 +96,26 @@ export const useTutoringUserStore = defineStore('AdminTutoringUserStore', {
                     timeout: 3000,
                 })
 
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.timeout,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async cleanUsers() {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.post(`/api/admin/tutoring/clean_users`, {})
                 return true
             } catch (error) {
                 notification.notify({

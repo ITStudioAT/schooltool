@@ -13,6 +13,17 @@
                             <v-btn color="primary" slim flat tile class="text-caption" @click="unselectAll">Alle abwählen [{{ selected_users.length }}]</v-btn>
                         </v-card>
 
+                        <!-- Andere Selektionen: -->
+                        <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2 mt-2" :disabled="action != ''">
+                            <v-btn :color="selected_filter == null ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleFilter(null)">Alle</v-btn>
+                            <v-btn :color="selected_filter == 'confirmation' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleFilter('confirmation')">
+                                Bestätigung ausstehend
+                            </v-btn>
+                            <v-btn :color="selected_filter == 'email' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleFilter('email')">
+                                E-Mail nicht bestätigt
+                            </v-btn>
+                        </v-card>
+
                         <!-- RECORDS -->
                         <v-list dense variant="elevated" select-strategy="leaf" v-model:selected="selected_users" color="success-lighten-2">
                             <v-list-item dense v-for="item in users" :key="item.id" :value="item.id">
@@ -43,6 +54,17 @@
                     <!-- AUSWAHl EGAL -->
                     <div class="d-flex flex-column ga-2">
                         <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-plus" @click="createUser">Hinzufügen</v-btn>
+
+                        <!-- Bereinigen -->
+                        <v-card tile flat color="transparent" class="d-flex flex-column ga-2" v-if="count_deletable_users > 0">
+                            <!-- AUSWAHl EGAL -->
+                            <div class="text-body-1 font-weight-medium">Bereinigung Benutzer</div>
+                            <div class="text-caption">Sie können alle Benutzer löschen, bei denen die E-Mail nicht bestätigt wurde (vermutlich falsche E-Mail).</div>
+                            <div>Anzahl: {{ count_deletable_users }}</div>
+                            <div class="d-flex flex-column ga-2">
+                                <v-btn block tile flat color="warning" class="text-caption" prepend-icon="mdi-vacuum" @click="cleanUsers">Bereinigen</v-btn>
+                            </div>
+                        </v-card>
                     </div>
                     <!-- GENAU 1 ELEMENT AUSGEWÄHLT -->
                     <div class="d-flex flex-column ga-2" v-if="selected_users.length == 1">
@@ -142,6 +164,7 @@ import FileUpload from '@/pages/components/FileUpload.vue'
 
 import { useTutoringUserStore } from '@/stores/admin/tutoring/UserStore'
 import { useUserStore } from '@/stores/admin/UserStore20'
+import { registerRuntimeCompiler } from 'vue'
 
 export default {
     setup() {
@@ -173,12 +196,21 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'config']),
-        ...mapWritableState(useTutoringUserStore, ['users', 'meta', 'selected_users', 'search_string', 'data', 'answer', 'role']),
+        ...mapWritableState(useTutoringUserStore, ['users', 'meta', 'selected_users', 'search_string', 'data', 'answer', 'role', 'count_deletable_users', 'selected_filter']),
     },
 
     watch: {},
 
     methods: {
+        async cleanUsers() {
+            await this.tutoringUserStore.cleanUsers()
+            await this.tutoringUserStore.index(this.meta.current_page)
+        },
+
+        async toggleFilter(item) {
+            this.selected_filter = item
+            await this.tutoringUserStore.index(this.meta.current_page)
+        },
         async toggleIsActive(user_id) {
             await this.userStore.toggleIsActive(user_id)
             await this.tutoringUserStore.index(this.meta.current_page)

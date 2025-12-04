@@ -141,6 +141,9 @@ class TutoringController extends Controller
         $validated = $request->validated();
         $data = $validated['data'];
 
+        $data = $service->checkLoginRequirement($data);
+        if (isset($data['status'])) return response()->json($data, 200);
+
         $data = $service->loginWithPassword($data);
 
         return response()->json($data, 200);

@@ -42,7 +42,6 @@ export const useSubjectStore = defineStore('AdminTutoringSubjectStore', {
             adminStore.is_loading++
             try {
                 const response = await axios.post('/api/admin/tutoring/create_subjects', { data })
-                this.data = response.data
 
                 notification.notify({
                     message: 'Fach/Fächer erfolgreich erstellt.',

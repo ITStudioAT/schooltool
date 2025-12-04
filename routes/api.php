@@ -112,6 +112,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/homepage/tutoring/update_password', [\App\Http\Controllers\Tutoring\UserController::class, 'updatePassword']);
         Route::get('/homepage/tutoring/logout', [\App\Http\Controllers\Tutoring\UserController::class, 'logout']);
         Route::get('/homepage/tutoring/load_auth', [\App\Http\Controllers\Tutoring\TutoringController::class, 'loadAuth']);
+        Route::apiResource('/homepage/tutoring/subjects', \App\Http\Controllers\Tutoring\SubjectController::class);
     });
 
     /* SANCTUM - admin, tutoring_admin, register_admin */
@@ -131,6 +132,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/tutoring/users', \App\Http\Controllers\Admin\Tutoring\UserController::class);
         Route::post('/admin/tutoring/create_subjects', [\App\Http\Controllers\Admin\Tutoring\SubjectController::class, 'createSubjects']);
         Route::post('/admin/tutoring/delete_users', [\App\Http\Controllers\Admin\Tutoring\UserController::class, 'deleteUsers']);
+        Route::post('/admin/tutoring/clean_users', [\App\Http\Controllers\Admin\Tutoring\UserController::class, 'cleanUsers']);
     });
 
     /* SANCTUM - admin, register_admin */

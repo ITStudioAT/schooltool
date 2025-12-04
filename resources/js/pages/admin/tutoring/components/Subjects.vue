@@ -6,7 +6,7 @@
                     <!-- ANZEIGE FÄCHER -->
                     <v-card-text class="text-body-1 d-flex flex-column ga-2" v-if="action == ''">
                         <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap ga-2 align-center w-100" :disabled="action_2 != ''">
-                            <v-chip-group selected-class="text-primary">
+                            <v-chip-group selected-class="text-primary" column>
                                 <v-chip color="primary" v-for="subject in subjects" :key="subject.id" @click="selectSubject(subject)">
                                     {{ subject.long_name + ' (' + subject.short_name + ')' }}
                                 </v-chip>
@@ -31,7 +31,7 @@
                                 <div class="text-h4">Fach ändern</div>
                                 <v-text-field autofocus v-model="data.short_name" label="Kurzbezeichnung" :rules="[required(), maxLength(10)]" tabindex="1" />
                                 <v-text-field v-model="data.long_name" label="Bezeichnung" :rules="[required(), maxLength(255)]" />
-
+                                <v-checkbox v-model="data.must_be_accepted" label="Muss akzeptiert werden" />
                                 <!-- ✅ Email Mentors als Array -->
                                 <div v-for="(mentor, index) in data.email_mentors" :key="index" class="d-flex flex-row align-center ga-2">
                                     <v-text-field v-model="data.email_mentors[index]" label="E-Mail Mentor" :rules="[mailOrNull(), maxLength(255)]" />
@@ -48,7 +48,7 @@
                             </v-form>
                         </v-card>
 
-                        <v-card tile flat color="transparent" class="mt-4" :disabled="action_2 != ''">
+                        <v-card tile flat color="transparent" class="mt-4" v-if="action_2 == ''">
                             <its-menu-button title="Fächer" subtitle="anlegen" icon="mdi-plus-circle-multiple" color="primary" @click="createSubjects" />
                         </v-card>
                     </v-card-text>
@@ -70,8 +70,9 @@
                             <v-container>
                                 <v-row>
                                     <v-col cols="2">Kurzbez.</v-col>
-                                    <v-col cols="5">Bezeichnung</v-col>
-                                    <v-col cols="5">E-Mail Mentor</v-col>
+                                    <v-col cols="10">Bezeichnung</v-col>
+                                    <v-col cols="10">E-Mail Mentor</v-col>
+                                    <v-col cols="2">Akzeptiert</v-col>
                                 </v-row>
 
                                 <v-row v-for="(subject, i) in my_subjects" :key="i" dense class="border-md mb-2">
@@ -83,7 +84,7 @@
                                             @input="subject.short_name = subject.short_name?.toUpperCase()" />
                                     </v-col>
                                     <v-col cols="10"><v-text-field v-model="subject.long_name" label="Lange Bezeichnung" :rules="[maxLength(255)]" /></v-col>
-                                    <v-col cols="12">
+                                    <v-col cols="10">
                                         <div v-for="(mentor, index) in subject.email_mentors" :key="index" class="d-flex flex-row align-center ga-2">
                                             <v-text-field v-model="subject.email_mentors[index]" label="E-Mail Mentor:in" :rules="[mailOrNull(), maxLength(255)]" />
 
@@ -108,6 +109,7 @@
                                             <!-- ✅ Übergebe subject und index -->
                                         </div>
                                     </v-col>
+                                    <v-col cols="2"><v-checkbox v-model="subject.must_be_accepted" label="Akzept." /></v-col>
                                 </v-row>
                             </v-container>
 
@@ -196,10 +198,10 @@ export default {
             this.selected_subject = subject
         },
         async doCreateSubjects(data) {
-            console.log(data)
             if (!(await this.subjectStore.createSubjects(data))) return
 
             await this.subjectStore.index()
+            this.selected_subject = null
             this.action = ''
         },
 
