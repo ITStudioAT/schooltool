@@ -1,1 +1,0 @@
-"use strict";(globalThis.webpackChunkschooltool=globalThis.webpackChunkschooltool||[]).push([[767],{7248:o=>{o.exports=JSON.parse('{"authors":[{"name":"Dipl.-Ing. G\xfcnther Kron","title":"Informatik-Professor am Christian-Doppler-Gymnasium Salzburg, Web-Entwickler","url":"https://schooltool.at","imageURL":"/documentation/img/kron.png","key":"kron","page":null,"count":1}]}')}}]);
