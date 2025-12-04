@@ -27,7 +27,8 @@ class SubjectService
                     ],
                     [
                         'long_name' => $subject['long_name'],
-                        'email_mentors' => !empty($emailMentors) ? $emailMentors : null, // ✅ Array oder null
+                        'must_be_accepted' => $subject['must_be_accepted'] ?? false,
+                        'email_mentors' => $emailMentors, // ✅ Immer ein Array (leer oder gefüllt)
                     ]
                 );
             }

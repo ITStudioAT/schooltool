@@ -16,7 +16,10 @@
                         <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between" :disabled="action_2 != ''" v-if="selected_subject">
                             <div>
                                 <div class="text-body-1 font-weight-medium">{{ selected_subject.long_name + ' (' + selected_subject.short_name + ')' }}</div>
-                                <div class="text-body-2 mt-2" v-if="selected_subject.email_mentor">{{ '✉️ ' + selected_subject.email_mentor }}</div>
+                                <div v-if="selected_subject.email_mentors?.length" class="mt-2">
+                                    <div class="text-body-2 text-grey-darken-1 mb-1">Mentoren:</div>
+                                    <div v-for="(mentor, index) in selected_subject.email_mentors" :key="index" class="text-body-2 ml-2">✉️ {{ mentor }}</div>
+                                </div>
                             </div>
                             <div class="d-flex flex-row align-center ga-2">
                                 <v-btn flat tile size="small" color="warning" icon="mdi-delete" @click="delete_level++" v-if="delete_level == 0" />
@@ -32,14 +35,19 @@
                                 <v-text-field autofocus v-model="data.short_name" label="Kurzbezeichnung" :rules="[required(), maxLength(10)]" tabindex="1" />
                                 <v-text-field v-model="data.long_name" label="Bezeichnung" :rules="[required(), maxLength(255)]" />
                                 <v-checkbox v-model="data.must_be_accepted" label="Muss akzeptiert werden" />
+
                                 <!-- ✅ Email Mentors als Array -->
-                                <div v-for="(mentor, index) in data.email_mentors" :key="index" class="d-flex flex-row align-center ga-2">
-                                    <v-text-field v-model="data.email_mentors[index]" label="E-Mail Mentor" :rules="[mailOrNull(), maxLength(255)]" />
+                                <div class="text-body-2 mb-2">E-Mail Mentoren</div>
+                                <template v-if="data.email_mentors && data.email_mentors.length > 0">
+                                    <div v-for="(mentor, index) in data.email_mentors" :key="index" class="d-flex flex-row align-center ga-2 mb-2">
+                                        <v-text-field v-model="data.email_mentors[index]" label="E-Mail Mentor" :rules="[mailOrNull(), maxLength(255)]" />
+                                        <v-btn v-if="index === data.email_mentors.length - 1" tile flat icon="mdi-plus" color="primary" size="small" @click="addMentor(data)" />
+                                        <v-btn tile flat icon="mdi-minus" color="error" size="small" @click="removeMentor(data, index)" />
+                                    </div>
+                                </template>
 
-                                    <v-btn v-if="index === data.email_mentors.length - 1" tile flat icon="mdi-plus" color="primary" size="small" @click="addMentor(data)" />
-
-                                    <v-btn v-if="data.email_mentors.length > 1" tile flat icon="mdi-minus" color="error" size="small" @click="removeMentor(data, index)" />
-                                </div>
+                                <!-- ✅ Button wenn Array leer ist -->
+                                <v-btn v-else tile flat prepend-icon="mdi-plus" color="primary" size="small" @click="addMentor(data)" class="mb-4">E-Mail Mentor hinzufügen</v-btn>
 
                                 <div class="d-flex flex-row align-center justify-space-between">
                                     <v-btn color="warning" flat tile @click="action_2 = ''">Abbruch</v-btn>
@@ -166,12 +174,14 @@ export default {
 
     methods: {
         addMentor(subject) {
+            if (!subject.email_mentors) {
+                subject.email_mentors = []
+            }
             subject.email_mentors.push('')
         },
+
         removeMentor(subject, index) {
-            if (subject.email_mentors.length > 1) {
-                subject.email_mentors.splice(index, 1)
-            }
+            subject.email_mentors.splice(index, 1)
         },
 
         async deleteSubject(subject) {
@@ -191,7 +201,10 @@ export default {
         },
 
         editSubject(subject) {
-            this.data = { ...subject }
+            this.data = {
+                ...subject,
+                email_mentors: subject.email_mentors ? [...subject.email_mentors] : [],
+            }
             this.action_2 = 'edit_subject'
         },
         selectSubject(subject) {
