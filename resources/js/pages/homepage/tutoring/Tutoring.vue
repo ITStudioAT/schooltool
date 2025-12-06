@@ -52,10 +52,8 @@
                 </v-card>
             </v-card-text>
 
-            <!-- ANGEBOTE -->
-            <v-card-text>
-                <h1>DEINE ANGEBOTE</h1>
-            </v-card-text>
+            <!-- MEINE ANGEBOTE -->
+            <MyOffers v-if="action == ''" />
 
             <!-- PROFIL -->
             <Profile v-if="action == 'profile'" />
@@ -96,12 +94,13 @@ import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import Profile from './components/Profile.vue'
 import Password from './components/Password.vue'
 import Offer from './components/Offer.vue'
+import MyOffers from './components/MyOffers.vue'
 
 export default {
     setup() {
         return useValidationRulesSetup()
     },
-    components: { ItsMenuButton, ItsGridBox, Profile, Password, Offer },
+    components: { ItsMenuButton, ItsGridBox, Profile, Password, Offer, MyOffers },
 
     async beforeMount() {
         this.tutoringStore = useTutoringStore()

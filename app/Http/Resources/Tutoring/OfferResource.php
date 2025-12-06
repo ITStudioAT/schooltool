@@ -24,7 +24,16 @@ class OfferResource extends JsonResource
             'price_per_hour' => $this->price_per_hour,
             'is_group' => $this->is_group,
             'max_group_members' => $this->max_group_members,
+            'must_be_accepted' => $this->must_be_accepted,
+            'email_mentor' => $this->email_mentor,
+            'accepted_at' => $this->accepted_at,
             'click_count' => $this->click_count,
+            'subject' => $this->whenLoaded('subject', function () {
+                return [
+                    'short_name' => $this->subject->short_name,
+                    'long_name' => $this->subject->long_name,
+                ];
+            }),
         ];
     }
 }

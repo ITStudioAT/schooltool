@@ -1,5 +1,6 @@
 import 'vuetify/styles'
 import { createVuetify } from 'vuetify'
+import { de } from 'vuetify/locale'
 
 const lightTheme = {
     dark: false,
@@ -21,10 +22,8 @@ const lightTheme = {
         success: '#00897B', // teal.darken1
         // For errors, alerts
         error: '#E53935', // red.darken1
-
         button_primary: '#5c6c62', // indigo.darken1
         button_primary_selected: '#37474F', // indigo.darken1
-
         // Tutoring
         tutoring_background: '#5c6c62',
         tutoring_text: '#fbf0d4',
@@ -57,6 +56,11 @@ const darkTheme = {
 }
 
 export default createVuetify({
+    locale: {
+        locale: 'de',
+        fallback: 'en',
+        messages: { de },
+    },
     theme: {
         defaultTheme: 'light',
         variations: {
@@ -65,8 +69,8 @@ export default createVuetify({
             darken: 4,
         },
         themes: {
-            light: lightTheme, // Use your custom theme here
-            dark: darkTheme, // Use your custom theme here
+            light: lightTheme,
+            dark: darkTheme,
         },
     },
 })

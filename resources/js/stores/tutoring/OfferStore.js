@@ -12,6 +12,7 @@ export const useOfferStore = defineStore('TutoringOfferStore', {
             meta: null,
             error: null,
             data: {},
+            my_offers: null,
         }
     },
 
@@ -22,9 +23,30 @@ export const useOfferStore = defineStore('TutoringOfferStore', {
             homepageStore.is_loading++
             const search_string = this.search_string
             try {
-                const response = await axios.get(`/api/admin/tutoring/offers`, { params: { search_string, page } })
+                const response = await axios.get(`/api/homepage/tutoring/offers`, { params: { search_string, page } })
                 this.offers = response.data.data
                 this.meta = response.data.meta
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
+        async loadMyOffers() {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+            try {
+                const response = await axios.get(`/api/homepage/tutoring/load_my_offers`, {})
+                this.my_offers = response.data
                 return true
             } catch (error) {
                 notification.notify({
@@ -44,7 +66,7 @@ export const useOfferStore = defineStore('TutoringOfferStore', {
             const homepageStore = useHomepageStore()
             homepageStore.is_loading++
             try {
-                const response = await axios.put(`/api/admin/tutoring/offers/${data.id}`, data)
+                const response = await axios.put(`/api/homepage/tutoring/offers/${data.id}`, data)
                 this.saved_offer = response.data
                 return true
             } catch (error) {
@@ -54,6 +76,7 @@ export const useOfferStore = defineStore('TutoringOfferStore', {
                     type: 'error',
                     timeout: this.timeout,
                 })
+                this.error = error
                 return false
             } finally {
                 homepageStore.is_loading--
@@ -65,7 +88,7 @@ export const useOfferStore = defineStore('TutoringOfferStore', {
             const homepageStore = useHomepageStore()
             homepageStore.is_loading++
             try {
-                const response = await axios.post(`/api/admin/tutoring/offers`, data)
+                const response = await axios.post(`/api/homepage/tutoring/offers`, data)
                 this.saved_offer = response.data
                 return true
             } catch (error) {
@@ -75,6 +98,7 @@ export const useOfferStore = defineStore('TutoringOfferStore', {
                     type: 'error',
                     timeout: this.timeout,
                 })
+                this.error = error
                 return false
             } finally {
                 homepageStore.is_loading--
@@ -86,7 +110,7 @@ export const useOfferStore = defineStore('TutoringOfferStore', {
             const homepageStore = useHomepageStore()
             homepageStore.is_loading++
             try {
-                this.answer = await axios.delete(`/api/admin/tutoring/offers/${data.id}`, {})
+                this.answer = await axios.delete(`/api/homepage/tutoring/offers/${data.id}`, {})
 
                 notification.notify({
                     message: 'Das Angebot wurden gelöscht.',

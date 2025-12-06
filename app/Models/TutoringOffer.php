@@ -15,5 +15,11 @@ class TutoringOffer extends Model
         'time_table' => 'array',
         'price_per_hour' => 'decimal:2',
         'is_active' => 'boolean',
+        'must_be_accepted' => 'boolean'
     ];
+
+    public function subject()
+    {
+        return $this->belongsTo(TutoringSubject::class, 'subject_id');
+    }
 }

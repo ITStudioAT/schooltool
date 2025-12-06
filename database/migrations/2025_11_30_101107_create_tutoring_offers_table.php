@@ -25,6 +25,10 @@ return new class extends Migration
             $table->decimal('price_per_hour', 8, 2);
             $table->boolean('is_group')->default(false);
             $table->unsignedInteger('max_group_members')->nullable()->default(2);
+            $table->boolean('must_be_accepted')->default(true);
+            $table->string('email_mentor')->nullable();
+            $table->date('accepted_at')->nullable();
+
             $table->unsignedInteger('click_count')->nullable()->default(0);
             $table->timestamps();
         });

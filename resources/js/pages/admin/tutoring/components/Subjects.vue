@@ -16,7 +16,7 @@
                         <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between" :disabled="action_2 != ''" v-if="selected_subject">
                             <div>
                                 <div class="text-body-1 font-weight-medium">{{ selected_subject.long_name + ' (' + selected_subject.short_name + ')' }}</div>
-                                <div v-if="selected_subject.email_mentors?.length" class="mt-2">
+                                <div v-if="selected_subject.email_mentors?.length && selected_subject.must_be_accepted" class="mt-2">
                                     <div class="text-body-2 text-grey-darken-1 mb-1">Mentoren:</div>
                                     <div v-for="(mentor, index) in selected_subject.email_mentors" :key="index" class="text-body-2 ml-2">✉️ {{ mentor }}</div>
                                 </div>
