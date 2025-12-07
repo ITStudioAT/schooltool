@@ -16,6 +16,12 @@
                             <div>{{ data.tutoring_confirmer_email }}</div>
                         </div>
 
+                        <hr />
+                        <div class="d-flex flex-row align-center justify-space-between w-100">
+                            <div>Anzahl gleichzeitiger Angebote pro Schüler:in (0=unbegrenzt):</div>
+                            <div>{{ data.tutoring_max_offers_per_student }}</div>
+                        </div>
+
                         <div class="mt-4">
                             <its-menu-button title="Einstellungen" subtitle="ändern" icon="mdi-cog" color="primary" @click="editSettings" />
                         </div>
@@ -32,6 +38,12 @@
                                 :rules="[required(), mail()]"
                                 v-if="data_new.tutoring_student_must_be_confirmed"
                                 tabindex="1" />
+
+                            <v-text-field
+                                v-model="data_new.tutoring_max_offers_per_student"
+                                label="Anzahl gleichzeitiger Angebote pro Schüler:in (0=unbegrenzt)"
+                                :rules="[required(), min(0)]"
+                                tabindex="2" />
 
                             <div class="d-flex flex-row align-center justify-space-between">
                                 <v-btn color="warning" flat tile @click="abortSettings">Abbruch</v-btn>

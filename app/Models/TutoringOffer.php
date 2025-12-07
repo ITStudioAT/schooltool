@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\TutoringSubject;
+use Illuminate\Database\Eloquent\Casts\AsArrayObject;
 use Illuminate\Database\Eloquent\Model;
 
 class TutoringOffer extends Model
@@ -11,7 +13,7 @@ class TutoringOffer extends Model
 
 
     protected $casts = [
-        'classes' => 'array',
+        'classes' => AsArrayObject::class,
         'time_table' => 'array',
         'price_per_hour' => 'decimal:2',
         'is_active' => 'boolean',

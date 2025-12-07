@@ -6,9 +6,6 @@
                 <MyOffer v-for="offer in my_offers" :key="offer.id" :offer="offer" />
             </v-card-text>
         </v-card>
-        <v-card>
-            {{ my_offers }}
-        </v-card>
     </v-card-text>
 </template>
 

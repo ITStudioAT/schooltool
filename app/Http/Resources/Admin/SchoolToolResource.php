@@ -18,6 +18,7 @@ class SchoolToolResource extends JsonResource
             'id' => $this->id,
             'tutoring_student_must_be_confirmed' => $this->tutoring_student_must_be_confirmed ? true : false,
             'tutoring_confirmer_email' => $this->tutoring_confirmer_email,
+            'tutoring_max_offers_per_student' => $this->tutoring_max_offers_per_student,
 
         ];
     }

@@ -26,6 +26,7 @@ class SchoolToolSaveTutoringSettingsRequest extends FormRequest
             'data.id' => ['required', 'integer', 'exists:school_tools,id'],
             'data.tutoring_student_must_be_confirmed' => ['required', 'boolean'],
             'data.tutoring_confirmer_email' => ['nullable', 'email', 'max:255'],
+            'data.tutoring_max_offers_per_student' => ['integer', 'min:0'],
         ];
     }
 }
