@@ -24,4 +24,9 @@ class TutoringOffer extends Model
     {
         return $this->belongsTo(TutoringSubject::class, 'subject_id');
     }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
 }
