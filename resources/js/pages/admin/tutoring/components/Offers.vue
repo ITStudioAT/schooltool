@@ -7,13 +7,54 @@
                         <!-- SEARCHFIELD -->
                         <SearchField :store="offerStore" selected_field="selected_offers" />
 
-                        <!-- Abwählen / Auswählen-->
+                        <!-- // NUR EINFACHAUSWAHL MÖGLICH Abwählen / Auswählen
                         <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2 mt-2" :disabled="action != ''">
                             <v-btn color="primary" slim flat tile class="text-caption" @click="selectAll">Alle auswählen [{{ offers.length - selected_offers.length }}]</v-btn>
                             <v-btn color="primary" slim flat tile class="text-caption" @click="unselectAll">Alle abwählen [{{ selected_offers.length }}]</v-btn>
                         </v-card>
+                        -->
 
                         <!-- Andere Selektionen: -->
+                        <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2 mt-2" :disabled="action != ''">
+                            <v-btn color="primary" slim flat tile class="text-caption" @click="toggleAccepted">
+                                <div class="d-flex flex-row align-center ga-2" v-if="select_accepted == 'all'">
+                                    <div>Alle</div>
+                                    <div>
+                                        <v-icon size="small" icon="mdi-check" color="success" />
+                                        <v-icon size="small" icon="mdi-help" color="warning" />
+                                    </div>
+                                </div>
+                                <div class="d-flex flex-row align-center ga-2" v-if="select_accepted == 'yes'">
+                                    <div>Nur genehmigte</div>
+                                    <v-icon size="small" icon="mdi-check" color="success" />
+                                </div>
+                                <div class="d-flex flex-row align-center ga-2" v-if="select_accepted == 'no'">
+                                    <div>Nur offene</div>
+                                    <v-icon size="small" icon="mdi-help" color="warning" />
+                                </div>
+                            </v-btn>
+                            <v-btn color="primary" slim flat tile class="text-caption" @click="toggleOnline">
+                                <div class="d-flex flex-row align-center ga-2" v-if="select_online == 'all'">
+                                    <div>Alle</div>
+                                    <div>
+                                        <v-icon size="small" icon="mdi-cloud" color="success" />
+                                        <v-icon size="small" icon="mdi-cloud-off" color="error" />
+                                    </div>
+                                </div>
+                                <div class="d-flex flex-row align-center ga-2" v-if="select_online == 'yes'">
+                                    <div>Nur online</div>
+                                    <div>
+                                        <v-icon size="small" icon="mdi-cloud" color="success" />
+                                    </div>
+                                </div>
+                                <div class="d-flex flex-row align-center ga-2" v-if="select_online == 'no'">
+                                    <div>Nur offline</div>
+                                    <div>
+                                        <v-icon size="small" icon="mdi-cloud-off" color="error" />
+                                    </div>
+                                </div>
+                            </v-btn>
+                        </v-card>
 
                         <!-- RECORDS -->
                         <v-list dense variant="elevated" select-strategy="single-leaf" v-model:selected="selected_offers" color="success-lighten-2">
@@ -42,7 +83,7 @@
                             </v-list-item>
                         </v-list>
                         <div>
-                            {{ offers }}
+                            {{ selectedOffer?.accepted_at }}
                         </div>
 
                         <!-- PAGINATION-->
@@ -50,14 +91,60 @@
                 </v-card>
                 <!-- MENÜ -->
                 <v-card tile flat color="transparent" style="width: 150px" class="d-flex flex-column ga-2">
-                    <!-- AUSWAHl EGAL -->
-                    <div class="d-flex flex-column ga-2">
-                        <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-plus" @click="createUser">Hinzufügen</v-btn>
+                    <!-- GENAU EINES AUSGEWÄHLT -->
+                    <div class="d-flex flex-column ga-2" v-if="selected_offers.length == 1">
+                        <v-btn
+                            block
+                            tile
+                            flat
+                            color="warning"
+                            class="text-caption"
+                            prepend-icon="mdi-help"
+                            @click="doRecordtoggleAccepted(selectedOffer.id)"
+                            v-if="selectedOffer.accepted_at">
+                            Nicht genehm.
+                        </v-btn>
+                        <v-btn
+                            block
+                            tile
+                            flat
+                            color="success"
+                            class="text-caption"
+                            prepend-icon="mdi-check"
+                            @click="doRecordtoggleAccepted(selectedOffer.id)"
+                            v-if="!selectedOffer.accepted_at">
+                            Genehmigen
+                        </v-btn>
+                        <div v-if="selectedOffer.accepted_at">
+                            <v-btn
+                                block
+                                tile
+                                flat
+                                color="warning"
+                                class="text-caption"
+                                prepend-icon="mdi-cloud-off"
+                                @click="doRecordtoggleActive(selectedOffer.id)"
+                                v-if="selectedOffer.is_active">
+                                Offline
+                            </v-btn>
+                            <v-btn
+                                block
+                                tile
+                                flat
+                                color="success"
+                                class="text-caption"
+                                prepend-icon="mdi-cloud"
+                                @click="doRecordtoggleActive(selectedOffer.id)"
+                                v-if="!selectedOffer.is_active">
+                                Online
+                            </v-btn>
+                        </div>
                     </div>
                 </v-card>
             </div>
         </its-grid-box>
     </v-col>
+    <!-- ##### ANGEBOT IM DETAIL ##### -->
     <v-col cols="12" md="6" xl="4" v-if="selected_offers.length == 1">
         <its-grid-box
             color="primary"
@@ -215,7 +302,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'config']),
-        ...mapWritableState(useOfferStore, ['offers', 'selected_offers']),
+        ...mapWritableState(useOfferStore, ['offers', 'selected_offers', 'select_accepted', 'select_online', 'meta']),
 
         selectedOffer() {
             const id = this.selected_offers[0]
@@ -242,6 +329,47 @@ export default {
     watch: {},
 
     methods: {
+        async doRecordtoggleAccepted(id) {
+            await this.offerStore.toggleAccepted(id)
+            await this.offerStore.index(this.meta.current_page)
+        },
+        async doRecordtoggleActive(id) {
+            await this.offerStore.toggleActive(id)
+            await this.offerStore.index(this.meta.current_page)
+        },
+
+        async toggleAccepted() {
+            switch (this.select_accepted) {
+                case 'all':
+                    this.select_accepted = 'yes'
+                    break
+                case 'yes':
+                    this.select_accepted = 'no'
+                    break
+                case 'no':
+                    this.select_accepted = 'all'
+                    break
+            }
+
+            this.selected_offers = []
+            await this.offerStore.index()
+        },
+        async toggleOnline() {
+            switch (this.select_online) {
+                case 'all':
+                    this.select_online = 'yes'
+                    break
+                case 'yes':
+                    this.select_online = 'no'
+                    break
+                case 'no':
+                    this.select_online = 'all'
+                    break
+            }
+            this.selected_offers = []
+            await this.offerStore.index()
+        },
+
         selectAll() {
             this.selected_offers = this.offers.map((item) => item.id)
         },

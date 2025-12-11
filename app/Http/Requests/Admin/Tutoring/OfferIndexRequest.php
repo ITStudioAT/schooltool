@@ -25,6 +25,8 @@ class OfferIndexRequest extends FormRequest
         return [
             'search_string' => 'nullable|string|max:255',
             'page' => 'nullable|integer',
+            'select_accepted' => 'required|string|max:10',
+            'select_online' => 'required|string|max:10',
         ];
     }
 }

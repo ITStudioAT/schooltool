@@ -19,10 +19,53 @@ class OfferController extends Controller
         if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
-        $validated = $request->validated();
-        $search_string = $validated['search_string'] ?? null;
 
-        $offers = TutoringOffer::where('school_id', $auth_user->school_id)->with('subject')->with('user')->paginate(config('schooltool.pagination'));
+        $validated = $request->validated();
+
+        $search_string = $validated['search_string'] ?? null;
+        $select_accepted = $validated['select_accepted'];
+        $select_online = $validated['select_online'];
+
+        $query = TutoringOffer::where('school_id', $auth_user->school_id)
+            ->with(['subject', 'user']);
+
+        // Search filter
+        if ($search_string) {
+            $query->where(function ($q) use ($search_string) {
+                $q->where('title', 'like', "%{$search_string}%")
+                    ->orWhere('description', 'like', "%{$search_string}%")
+                    ->orWhere('email_mentor', 'like', "%{$search_string}%")
+                    ->orWhereHas('user', function ($subQuery) use ($search_string) {
+                        $subQuery->where('last_name', 'like', "%{$search_string}%")
+                            ->orWhere('first_name', 'like', "%{$search_string}%")
+                            ->orWhere('email', 'like', "%{$search_string}%");
+                    })
+                    ->orWhereHas('subject', function ($subQuery) use ($search_string) {
+                        $subQuery->where('short_name', 'like', "%{$search_string}%")
+                            ->orWhere('long_name', 'like', "%{$search_string}%");
+                    });
+            });
+        }
+
+        // Accepted filter
+        if ($select_accepted !== 'all') {
+            if ($select_accepted === 'yes') {
+                $query->whereNotNull('accepted_at');
+            } elseif ($select_accepted === 'no') {
+                $query->whereNull('accepted_at');
+            }
+        }
+
+        // Online/Active filter
+        if ($select_online !== 'all') {
+            if ($select_online === 'yes') {
+                $query->where('is_active', true);
+            } elseif ($select_online === 'no') {
+                $query->where('is_active', false);
+            }
+        }
+
+        $offers = $query->paginate(config('schooltool.pagination'));
 
         return response()->json([
             'data' => OfferResource::collection($offers),
@@ -60,5 +103,45 @@ class OfferController extends Controller
     public function destroy(TutoringOffer $tutoringOffer)
     {
         //
+    }
+
+    public function toggleAcceptedOffer(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'id' => 'required|integer|exists:tutoring_offers,id',
+        ]);
+
+        $offer = TutoringOffer::findOrFail($validated['id']);
+
+        if ($offer->accepted_at) {
+            $offer->accepted_at = null;
+            $offer->is_active = false;
+        } else {
+            $offer->accepted_at = now();
+        }
+        $offer->save();
+        return response()->noContent();
+    }
+
+    public function toggleActiveOffer(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'id' => 'required|integer|exists:tutoring_offers,id',
+
+        ]);
+
+        $offer = TutoringOffer::findOrFail($validated['id']);
+
+        $offer->is_active = !$offer->is_active;
+        $offer->save();
+        return response()->noContent();
     }
 }
