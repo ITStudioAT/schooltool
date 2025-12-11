@@ -1,6 +1,6 @@
 <template>
     <v-app>
-        <v-navigation-drawer v-model="show_navigation_drawer" color="primary" v-if="config && config.is_auth">
+        <v-navigation-drawer v-model="show_navigation_drawer" color="primary" v-if="config && config.is_auth && config.roles.some((item) => admins.includes(item))">
             <v-toolbar color="appbar">
                 <v-toolbar-title>
                     <img :src="'/storage/images/' + config?.logo" alt="Logo" class="logo" height="24" />
@@ -18,7 +18,7 @@
             </v-list>
         </v-navigation-drawer>
 
-        <v-app-bar flat color="primary" v-if="config && config.is_auth">
+        <v-app-bar flat color="primary" v-if="config && config.is_auth && config.roles.some((item) => admins.includes(item))">
             <template #prepend>
                 <v-btn icon="mdi-menu-open" v-if="!show_navigation_drawer" @click="show_navigation_drawer = true" />
                 <img :src="'/storage/images/' + config?.selected_school?.logo + '?t=' + Date.now()" alt="Logo" height="60px" class="pl-2" v-if="config?.selected_school?.logo" />
@@ -60,6 +60,7 @@ export default {
     data() {
         return {
             adminStore: null,
+            admins: ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teacher', 'lunch_admin'],
         }
     },
 
