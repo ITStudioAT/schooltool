@@ -48,6 +48,10 @@ Route::middleware(['throttle:global', 'throttle:web', 'web-allowed'])->group(fun
         return view('homepage');
     });
 
+    Route::get('/homepage/cashier/', function () {
+        return view('homepage');
+    });
+
     Route::get('/', function () {
         return view('homepage');
     });
