@@ -1,10 +1,10 @@
 <template>
-    <v-card tile flat border="md" width="300" min-height="200" class="d-flex flex-column">
+    <v-card tile flat border="md" width="300" min-height="200" class="d-flex flex-column" v-if="action == ''">
         <v-card-title>{{ offer.subject.short_name }}</v-card-title>
         <v-card-subtitle>{{ offer.subject.long_name }}</v-card-subtitle>
         <v-card-text>
             <div class="text-body-1">{{ offer.title }}</div>
-            <div class="text-body-2">{{ offer.description }}</div>
+            <div class="text-body-2" style="white-space: pre-line">{{ offer.description }}</div>
         </v-card-text>
 
         <v-card-text class="text-body-1">
@@ -54,16 +54,16 @@
                     <div>ONLINE</div>
                 </v-card-title>
                 <div class="d-flex justify-end">
-                    <v-btn tile flat size="small" color="error">Ausschalten</v-btn>
+                    <v-btn tile flat size="small" color="error" @click="toggleActive(offer)">Ausschalten</v-btn>
                 </div>
             </v-card>
             <v-card tile flat class="mt-2" v-if="!offer.is_active">
                 <v-card-title class="d-flex flex-row align-center ga-2 bg-error">
-                    <v-icon icon="mdi-web" />
+                    <v-icon icon="mdi-web-off" />
                     <div>OFFLINE</div>
                 </v-card-title>
                 <div class="d-flex justify-end">
-                    <v-btn tile flat size="small" color="success">Einschalten</v-btn>
+                    <v-btn tile flat size="small" color="success" @click="toggleActive(offer)">Einschalten</v-btn>
                 </div>
             </v-card>
         </v-card-text>
@@ -78,27 +78,43 @@
         <!-- MENÜ - Bleibt immer unten -->
         <v-card-text class="h-100 d-flex align-end justify-end">
             <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap justify-center align-center ga-2">
+                <its-menu-button title="Angebot" subtitle="ändern" icon="mdi-pencil" color="primary" @click="editOffer(offer)" />
                 <its-menu-button title="Angebot" subtitle="löschen" icon="mdi-delete" color="warning" @click="delete_level = 1" v-if="delete_level == 0" />
                 <its-menu-button title="Angebot" subtitle="nicht löschen" icon="mdi-delete-off" color="success" @click="delete_level = 0" v-if="delete_level == 1" />
                 <its-menu-button title="Angebot" subtitle="löschen" icon="mdi-delete" color="error" @click="" v-if="delete_level == 1" />
             </v-card>
         </v-card-text>
     </v-card>
+    <!-- OFFER   -->
+
+    <Offer :offer="offer" v-if="action == 'edit_offer'" @finished="reloadOffers" />
 </template>
 <script>
+import { mapWritableState } from 'pinia'
+import { useOfferStore } from '@/stores/tutoring/OfferStore'
+import { useTutoringStore } from '@/stores/tutoring/TutoringStore'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
+import Offer from './Offer.vue'
 export default {
     props: ['offer'],
 
-    components: { ItsMenuButton },
+    components: { ItsMenuButton, Offer },
+    async beforeMount() {
+        this.offerStore = useOfferStore()
+        this.tutoringStore = useTutoringStore()
+    },
 
     data() {
         return {
             delete_level: 0,
+            offerStore: null,
         }
     },
 
     computed: {
+        ...mapWritableState(useTutoringStore, ['action']),
+        ...mapWritableState(useOfferStore, []),
+
         selectedClasses() {
             // Konvertiere Object zu Array der ausgewählten Keys
             return Object.entries(this.offer.classes || {})
@@ -126,6 +142,19 @@ export default {
             const year = date.getFullYear()
 
             return `${day}.${month}.${year} (${weekday})`
+        },
+    },
+
+    methods: {
+        async reloadOffers() {
+            await this.offerStore.loadMyOffers()
+        },
+        async toggleActive(offer) {
+            await this.offerStore.toggleActive(offer.id)
+            offer.is_active = !offer.is_active
+        },
+        editOffer(offer) {
+            this.action = 'edit_offer'
         },
     },
 }

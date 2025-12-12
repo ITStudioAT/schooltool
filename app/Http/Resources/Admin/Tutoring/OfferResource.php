@@ -40,6 +40,7 @@ class OfferResource extends JsonResource
                     'last_name' => $this->user->last_name,
                     'first_name' => $this->user->first_name,
                     'email' => $this->user->email,
+                    'schoolclass' => $this->user->schoolclass,
                 ];
             }),
 

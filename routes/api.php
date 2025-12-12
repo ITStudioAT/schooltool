@@ -70,7 +70,6 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/homepage/tutoring/login_with_token',  [\App\Http\Controllers\Tutoring\TutoringController::class, 'loginWithToken']);
     Route::post('/homepage/tutoring/login_with_password',  [\App\Http\Controllers\Tutoring\TutoringController::class, 'loginWithPassword']);
 
-
     /* SANCTUM */
     Route::middleware(['auth:sanctum'])->group(function () {
         // navigation, menus
@@ -115,6 +114,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/homepage/tutoring/load_my_offers', [\App\Http\Controllers\Tutoring\OfferController::class, 'loadMyOffers']);
         Route::apiResource('/homepage/tutoring/subjects', \App\Http\Controllers\Tutoring\SubjectController::class);
         Route::apiResource('/homepage/tutoring/offers', \App\Http\Controllers\Tutoring\OfferController::class);
+        Route::post('/homepage/tutoring/toggle_offer',  [\App\Http\Controllers\Tutoring\OfferController::class, 'toggleOffer']);
     });
 
     /* SANCTUM - admin, tutoring_admin, register_admin */

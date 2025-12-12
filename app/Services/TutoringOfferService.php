@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\TutoringOffer;
 use App\Models\TutoringSubject;
+use DebugBar\DebugBar;
 
 class TutoringOfferService
 {
@@ -35,10 +36,21 @@ class TutoringOfferService
             $data['accepted_at'] = now();
         }
 
-
-
-
         $offer = TutoringOffer::create($data);
+        return $offer;
+    }
+
+    public function update($offer, $data)
+    {
+        if ($offer->must_be_accepted) {
+            $data['accepted_at'] = null;
+            $data['is_active'] = false;
+        }
+
+        $offer->update($data);
+
+
+
         return $offer;
     }
 }

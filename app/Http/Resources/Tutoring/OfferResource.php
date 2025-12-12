@@ -31,6 +31,7 @@ class OfferResource extends JsonResource
             'click_count' => $this->click_count,
             'subject' => $this->whenLoaded('subject', function () {
                 return [
+                    'id' => $this->subject->id,
                     'short_name' => $this->subject->short_name,
                     'long_name' => $this->subject->long_name,
                 ];

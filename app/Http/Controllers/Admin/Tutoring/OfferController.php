@@ -92,17 +92,21 @@ class OfferController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, TutoringOffer $tutoringOffer)
-    {
-        //
-    }
+    public function update(Request $request, TutoringOffer $tutoringOffer) {}
 
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(TutoringOffer $tutoringOffer)
+    public function destroy(TutoringOffer $offer)
     {
-        //
+
+        if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $offer->delete();
+
+        return response()->noContent();
     }
 
     public function toggleAcceptedOffer(Request $request)

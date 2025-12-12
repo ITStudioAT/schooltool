@@ -27,6 +27,7 @@ class UserStoreRequest extends FormRequest
             'first_name' => 'nullable|string|max:255',
             'email' => 'required|email|max:255',
             'sex' => 'required|in:m,f,d',
+            'schoolclass' => 'required|string|max:10',
         ];
     }
 }

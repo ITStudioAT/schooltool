@@ -37,7 +37,13 @@
                     <div class="text-body-2">E-Mail: {{ data.email }}</div>
                     <v-form ref="form" v-model="is_valid" @submit.prevent="createUser(data)" class="my-4">
                         <v-text-field autofocus v-model="data.last_name" label="Dein Nachname" :rules="[required(), maxLength(255)]" tabindex="1" />
-                        <v-text-field v-model="data.first_name" label="Dein Vorname" :rules="[maxLength(255)]" tabindex="1" />
+                        <v-text-field v-model="data.first_name" label="Dein Vorname" :rules="[maxLength(255)]" tabindex="2" />
+                        <v-text-field
+                            v-model="data.schoolclass"
+                            label="Deine Klasse"
+                            :rules="[required(), maxLength(10)]"
+                            tabindex="3"
+                            @update:modelValue="data.schoolclass = $event?.toUpperCase()" />
 
                         <v-radio-group v-model="data.sex" :rules="[required()]">
                             <v-radio label="Männlich" value="m" color="blue"></v-radio>

@@ -92,7 +92,7 @@ export const useOfferStore = defineStore('AdminTutoringOfferStore', {
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
-                this.answer = await axios.delete(`/api/homepage/admin/offers/${data.id}`, {})
+                this.answer = await axios.delete(`/api/admin/tutoring/offers/${data.id}`, {})
 
                 notification.notify({
                     message: 'Das Angebot wurden gelöscht.',

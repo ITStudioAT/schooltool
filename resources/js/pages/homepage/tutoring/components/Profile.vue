@@ -14,6 +14,7 @@
                             <v-radio label="Weiblich" value="f" color="pink"></v-radio>
                             <v-radio label="Divers" value="d" color="yellow"></v-radio>
                         </v-radio-group>
+                        <v-text-field flat rounded="0" v-model="data.schoolclass" label="Schulklasse" :rules="[required(), maxLength(10)]" />
                         <v-text-field flat rounded="0" v-model="data.email" label="E-Mail" :rules="[required(), mail(), maxLength(255)]" />
                     </v-card>
                 </v-card-text>
@@ -108,6 +109,7 @@ export default {
                 last_name: this.auth.auth_user.last_name,
                 first_name: this.auth.auth_user.first_name,
                 email: this.auth.auth_user.email,
+                schoolclass: this.auth.auth_user.schoolclass,
                 sex: this.auth.auth_user.sex,
             }
         },

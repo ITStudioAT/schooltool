@@ -67,7 +67,7 @@
                                             {{ item.subject.short_name + ': ' + item.title }}
                                         </div>
                                         <div class="d-flex flex-row align-center ga-2">
-                                            {{ item?.user?.last_name + ' ' + item?.user?.first_name + ' (' + item?.user?.email + ')' }}
+                                            {{ item?.user?.last_name + ' ' + item?.user?.first_name + ' (' + item?.user?.schoolclass + ', ' + item?.user?.email + ')' }}
                                         </div>
 
                                         <div class="text-body-2 d-flex flex-row align-center ga-2 w-100" v-if="!item.accepted_at">
@@ -82,9 +82,6 @@
                                 </template>
                             </v-list-item>
                         </v-list>
-                        <div>
-                            {{ selectedOffer?.accepted_at }}
-                        </div>
 
                         <!-- PAGINATION-->
                     </v-card-text>
@@ -139,6 +136,11 @@
                                 Online
                             </v-btn>
                         </div>
+                        <v-btn block tile flat color="warning" class="text-caption" prepend-icon="mdi-delete" @click="delete_level++" v-if="delete_level == 0">Löschen</v-btn>
+                        <v-btn block tile flat color="success" class="text-caption" prepend-icon="mdi-delete-off" @click="delete_level = 0" v-if="delete_level == 1">Löschen</v-btn>
+                        <v-btn block tile flat color="error" class="text-caption" prepend-icon="mdi-delete" @click="doDelete(selectedOffer)" v-if="delete_level == 1">
+                            Löschen
+                        </v-btn>
                     </div>
                 </v-card>
             </div>
@@ -155,7 +157,7 @@
             <!-- Beschreibung -->
             <div class="bg-primary-lighten-3">
                 <label class="text-subtitle-2 mt-2 d-block">Beschreibung des Angebots:</label>
-                <div class="text-body-1">
+                <div class="text-body-1" style="white-space: pre-line">
                     {{ selectedOffer.description }}
                 </div>
             </div>
@@ -164,8 +166,11 @@
             <div>
                 <label class="text-subtitle-2 mt-2 d-block">Anbieter:</label>
                 <div class="text-body-1">
-                    <div>
-                        {{ selectedOffer.user.last_name + ' ' + selectedOffer.user.first_name }}
+                    <div class="d-flex align-center ga-2">
+                        <div>
+                            {{ selectedOffer.user.last_name + ' ' + selectedOffer.user.first_name }}
+                        </div>
+                        <div>{{ selectedOffer.user.schoolclass }}</div>
                     </div>
                     <div class="d-flex flex-row align-center ga-2">
                         <v-icon icon="mdi-mail" />
@@ -227,7 +232,7 @@
                         <div>Mentor:</div>
                         <div class="d-flex flex-row align-center ga-2">
                             <v-icon icon="mdi-mail" />
-                            {{ selectedOffer.email_mentor }}
+                            {{ selectedOffer?.email_mentor }}
                         </div>
                     </div>
                 </div>
@@ -248,7 +253,7 @@
 
                 <div class="text-body-1 d-flex flex-row align-center ga-2" v-if="selectedOffer.is_active && selectedOffer.active_until">
                     <div>Aktiv bis:</div>
-                    <div>{{ selectedOffer.active_until }}</div>
+                    <div>{{ selectedOffer?.active_until }}</div>
                 </div>
             </div>
 
@@ -257,7 +262,7 @@
                 <label class="text-subtitle-2 mt-2 d-block">Informationen:</label>
                 <div class="text-body-1 d-flex flex-row align-center ga-2">
                     <div>Anzahl Klicks:</div>
-                    <div>{{ selectedOffer.click_count }}</div>
+                    <div>{{ selectedOffer?.click_count }}</div>
                 </div>
             </div>
         </its-grid-box>
@@ -297,6 +302,7 @@ export default {
             adminStore: null,
             offerStore: null,
             is_valid: false,
+            delete_level: 0,
         }
     },
 
@@ -329,6 +335,13 @@ export default {
     watch: {},
 
     methods: {
+        async doDelete(offer) {
+            console.log(offer)
+            this.selected_offers = []
+            this.delete_level = 0
+            await this.offerStore.delete(offer)
+            await this.offerStore.index(this.meta.current_page)
+        },
         async doRecordtoggleAccepted(id) {
             await this.offerStore.toggleAccepted(id)
             await this.offerStore.index(this.meta.current_page)

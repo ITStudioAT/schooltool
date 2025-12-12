@@ -116,6 +116,9 @@
                     <v-col cols="12">
                         <v-text-field v-model="data.email" label="E-Mail" :rules="[mail(), maxLength(255)]" />
                     </v-col>
+                    <v-col cols="12">
+                        <v-text-field v-model="data.schoolclass" label="Schulklasse" :rules="[required(), maxLength(10)]" />
+                    </v-col>
                     <v-radio-group v-model="data.sex" :rules="[required()]">
                         <v-radio label="Männlich" value="m" color="blue"></v-radio>
                         <v-radio label="Weiblich" value="f" color="pink"></v-radio>

@@ -229,6 +229,7 @@ describe('createUser', function () {
                 'email' => 'newuser@test.com',
                 'first_name' => 'John',
                 'last_name' => 'Doe',
+                'sex' => 'm',
                 'school_id' => $this->school->id,
             ],
         ];

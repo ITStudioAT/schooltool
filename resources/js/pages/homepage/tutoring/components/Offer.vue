@@ -54,11 +54,11 @@
                             </v-card-text>
                         </v-card>
                         <!-- OFFER STEP 0: Auswahl Fach -->
-                        <v-card tile flat color="transparent" v-if="step == 0">
+                        <v-card v-if="step == 0">
                             <v-card-text>
                                 <label class="text-subtitle-2 mb-2 d-block">Wähle das Fach aus, in dem Du Nachhilfe anbieten möchtest:</label>
-                                <v-chip-group selected-class="text-success" column color="primary">
-                                    <v-chip color="primary" v-for="subject in subjects" :key="subject.id" @click="selectSubject(subject)">
+                                <v-chip-group selected-class="text-success" column color="primary" v-model="selectedSubjectId">
+                                    <v-chip color="primary" v-for="subject in subjects" :key="subject.id" :value="subject.id" @click="selectSubject(subject)">
                                         {{ subject.long_name + ' (' + subject.short_name + ')' }}
                                     </v-chip>
                                 </v-chip-group>
@@ -177,12 +177,13 @@
                         <v-card class="mt-4" v-if="step == 7 && selectedSubject.must_be_accepted">
                             <v-card-text>
                                 <v-alert type="success">
-                                    <div>Das Angebot für Nachhilfe wurde erstellt.</div>
+                                    <div v-if="data.id">Das Angebot für Nachhilfe wurde geändert.</div>
+                                    <div v-if="!data.id">Das Angebot für Nachhilfe wurde erstellt.</div>
                                     <div>Bitte warte nun auf die Freigabe durch den/die Lehrer:in. Du bekommst Bescheid!</div>
                                 </v-alert>
                                 <div class="mt-4 d-flex flex-row align-center justify-space-between">
                                     <div></div>
-                                    <v-btn tile flat color="primary" @click="action = ''">Fertig</v-btn>
+                                    <v-btn tile flat color="primary" @click="finished">Fertig</v-btn>
                                 </div>
                             </v-card-text>
                         </v-card>
@@ -191,12 +192,13 @@
                         <v-card class="mt-4" v-if="step == 7 && !selectedSubject.must_be_accepted">
                             <v-card-text>
                                 <v-alert type="success">
-                                    <div>Das Angebot für Nachhilfe wurde erstellt.</div>
+                                    <div v-if="data.id">Das Angebot für Nachhilfe wurde geändert.</div>
+                                    <div v-if="!data.id">Das Angebot für Nachhilfe wurde erstellt.</div>
                                     <div>Es wurde bereits online gestellt!</div>
                                 </v-alert>
                                 <div class="mt-4 d-flex flex-row align-center justify-space-between">
                                     <div></div>
-                                    <v-btn tile flat color="primary" @click="action = ''">Fertig</v-btn>
+                                    <v-btn tile flat color="primary" @click="finished">Fertig</v-btn>
                                 </div>
                             </v-card-text>
                         </v-card>
@@ -211,18 +213,11 @@
                 <v-card-actions>
                     <div class="d-flex flex-row align-center justify-space-between w-100">
                         <its-menu-button subtitle="Abbruch" icon="mdi-close" color="warning" @click="action = ''" v-if="step <= 6" />
-                        <its-menu-button subtitle="Erstellen" icon="mdi-check" color="success" @click="doCreateOffer(data)" v-if="step == 6" />
+                        <its-menu-button :subtitle="data.id ? 'Speichern' : 'Erstellen'" icon="mdi-check" color="success" @click="doCreateOffer(data)" v-if="step == 6" />
                     </div>
                 </v-card-actions>
             </v-form>
         </v-card>
-    </v-card-text>
-    <v-card-text>
-        {{ step }}
-    </v-card-text>
-
-    <v-card-text>
-        {{ error }}
     </v-card-text>
 </template>
 
@@ -240,6 +235,9 @@ export default {
     setup() {
         return useValidationRulesSetup()
     },
+    props: ['offer'],
+    emits: ['finished'],
+
     components: { ItsMenuButton, ItsGridBox },
 
     async beforeMount() {
@@ -249,7 +247,7 @@ export default {
         this.offerStore = useOfferStore()
         await this.tutoringStore.loadAuth()
         await this.subjectStore.index()
-        this.createOffer()
+        this.createOffer(this.offer)
         this.error = null
         this.is_loaded = true
     },
@@ -268,6 +266,7 @@ export default {
             is_password_visible: false,
             is_password_visible_confirm: false,
             selectedSubject: null,
+            selectedSubjectId: null,
             step: 0,
             is_loaded: false,
             message: [],
@@ -335,9 +334,23 @@ export default {
         },
     },
 
-    watch: {},
+    watch: {
+        selectedSubjectId() {
+            if (this.selectedSubjectId) {
+                this.selectedSubject = this.subjects.find((subject) => subject.id == this.selectedSubjectId)
+                this.data.title = 'Biete ' + this.selectedSubject.long_name + ' Nachhilfe'
+            } else {
+                this.selectedSubject = null
+            }
+        },
+    },
 
     methods: {
+        finished() {
+            this.$emit('finished')
+            this.action = ''
+        },
+
         async nextStep(item) {
             switch (item) {
                 case 'subject':
@@ -367,7 +380,7 @@ export default {
                     this.step++
                     break
                 case 'active_until':
-                    if (this.data.active_until) {
+                    if (this.data.is_active_until) {
                         if (!this.data.active_until) {
                             this.message[this.step] = 'Bitte wähle ein Datum aus, bis zu dem das Angebot gültig ist.'
                             return
@@ -382,6 +395,8 @@ export default {
                             this.message[this.step] = 'Das gewählte Datum liegt in der Vergangenheit. Bitte wähle ein zukünftiges Datum.'
                             return
                         }
+                    } else {
+                        this.data.active_until = null
                     }
 
                     this.message = []
@@ -406,23 +421,64 @@ export default {
             }
         },
         selectSubject(subject) {
-            this.selectedSubject = subject
-            this.data.title = 'Biete ' + subject.long_name + ' Nachhilfe'
-        },
-        createOffer() {
-            this.data = {
-                title: '',
-                description: '',
-                classes: { 1: false, 2: false, 3: false, 4: false, 5: false, 6: false, 7: false, 8: false, 9: false },
-                is_active_until: false,
-                is_group: false,
-                max_group_members: 2,
-                price_per_hour: 0,
+            /*
+            if (!this.selectedSubject) {
+                this.selectedSubject = subject
+                this.selectedSubjectId = subject.id
+                this.data.title = 'Biete ' + subject.long_name + ' Nachhilfe'
+            } else {
+                this.selectedSubject = null
+                this.selectedSubjectId = null
             }
+                */
+        },
+        createOffer(offer) {
+            if (!offer) {
+                this.data = {
+                    title: '',
+                    description: '',
+                    subject_id: null,
+                    classes: { 1: false, 2: false, 3: false, 4: false, 5: false, 6: false, 7: false, 8: false, 9: false },
+                    active_until: null,
+                    is_active_until: false,
+                    is_group: false,
+                    max_group_members: 2,
+                    price_per_hour: 0,
+                    email_mentor: '',
+                }
+                this.selectedSubject = null
+                this.selectedSubjectId = null
+                this.step = 0 // Start bei Step 0 für neues Angebot
+                return
+            }
+
+            // Offer vorhanden - bearbeiten
+            this.data = {
+                id: offer.id,
+                title: offer.title ?? '',
+                description: offer.description ?? '',
+                subject_id: offer.subject?.id ?? null, // ← Auch hier sicher mit ?.
+                classes: offer.classes ?? { 1: false, 2: false, 3: false, 4: false, 5: false, 6: false, 7: false, 8: false, 9: false },
+                active_until: offer.active_until ?? null,
+                is_active_until: offer.active_until ? true : false,
+                is_group: offer.is_group ?? false,
+                max_group_members: offer.max_group_members ?? 2,
+                price_per_hour: parseFloat(offer.price_per_hour) ?? 0,
+                email_mentor: offer.email_mentor ?? '',
+            }
+
+            this.selectedSubject = this.subjects.find((subject) => subject.id == offer.subject?.id)
+            this.selectedSubjectId = offer.subject?.id
+            this.step = 0 // Start bei Step 6 für Bearbeitung (Übersicht)
         },
 
         async doCreateOffer(data) {
-            if (!(await this.offerStore.store(data))) return
+            if (data.id) {
+                if (!(await this.offerStore.update(data))) return
+            } else {
+                if (!(await this.offerStore.store(data))) return
+            }
+
             this.step++
         },
     },

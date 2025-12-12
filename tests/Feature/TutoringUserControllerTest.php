@@ -56,6 +56,7 @@ describe('update', function () {
                 'first_name' => 'Jane',
                 'last_name' => 'Smith',
                 'email' => 'tutoring@test.com', // Same email
+                'sex' => 'm',
             ],
         ];
 
@@ -78,6 +79,7 @@ describe('update', function () {
                 'first_name' => 'John',
                 'last_name' => 'Doe',
                 'email' => 'newemail@test.com',
+                'sex' => 'm',
             ],
         ];
 
@@ -103,6 +105,7 @@ describe('update', function () {
                 'first_name' => 'John',
                 'last_name' => 'Doe',
                 'email' => 'confirmed@test.com',
+                'sex' => 'm',
                 'status' => 'CONFIRM_EMAIL',
                 'token_2fa' => '123456',
             ],
@@ -131,6 +134,7 @@ describe('update', function () {
                 'first_name' => 'John',
                 'last_name' => 'Doe',
                 'email' => 'newemail@test.com',
+                'sex' => 'm',
                 'status' => 'CONFIRM_EMAIL',
                 'token_2fa' => '999999', // Wrong token
             ],
@@ -157,6 +161,7 @@ describe('update', function () {
                 'first_name' => 'John',
                 'last_name' => 'Doe',
                 'email' => 'existing@test.com',
+                'sex' => 'm',
             ],
         ];
 
@@ -174,6 +179,7 @@ describe('update', function () {
                 'first_name' => 'Hacker',
                 'last_name' => 'Bad',
                 'email' => 'tutoring@test.com',
+                'sex' => 'm',
             ],
         ];
 
@@ -189,6 +195,7 @@ describe('update', function () {
                 'first_name' => 'Jane',
                 'last_name' => 'Doe',
                 'email' => 'tutoring@test.com',
+                'sex' => 'm',
             ],
         ];
 

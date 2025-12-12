@@ -5,11 +5,12 @@ namespace App\Http\Controllers\Tutoring;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Tutoring\OfferIndexRequest;
 use App\Http\Requests\Tutoring\OfferStoreRequest;
+use App\Http\Requests\Tutoring\OfferToggleOfferRequest;
+use App\Http\Requests\Tutoring\OfferUpdateRequest;
 use App\Http\Resources\Admin\PaginateResource;
 use App\Http\Resources\Tutoring\OfferResource;
 use App\Models\TutoringOffer;
 use App\Services\TutoringOfferService;
-use Barryvdh\Debugbar\Facades\Debugbar;
 use Illuminate\Http\Request;
 
 class OfferController extends Controller
@@ -72,11 +73,17 @@ class OfferController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, TutoringOffer $tutoringOffer)
+    public function update(OfferUpdateRequest $request, TutoringOffer $offer, TutoringOfferService $service)
     {
         if (! $auth_user = $this->userHasRole(['tutoring_user'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+
+        $validated = $request->validated();
+
+        $offer = $service->update($offer, $validated);
+
+        return response()->json(new OfferResource($offer), 200);
     }
 
     /**
@@ -104,5 +111,19 @@ class OfferController extends Controller
             ->get();
 
         return response()->json(OfferResource::collection($offers), 200);
+    }
+
+    public function toggleOffer(OfferToggleOfferRequest $request)
+    {
+        if (! $auth_user = $this->userHasRole(['tutoring_user'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validated();
+
+        $offer = TutoringOffer::where('id', $validated['id'])->where('user_id', $auth_user->id)->first();
+        $offer->is_active = !$offer->is_active;
+        $offer->save();
+        return response()->noContent();
     }
 }

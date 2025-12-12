@@ -10,7 +10,7 @@
                             <img :src="'/storage/images/' + auth.school_logo" alt="Logo" style="width: 100%; height: 100%; object-fit: contain" />
                         </div>
                     </div>
-                    <div class="text-body-1">{{ auth.auth_user.last_name + ' ' + auth.auth_user.first_name }}</div>
+                    <div class="text-body-1">{{ auth.auth_user.last_name + ' ' + auth.auth_user.first_name + ', ' + auth?.auth_user?.schoolclass }}</div>
                 </div>
             </v-card-text>
 
@@ -53,7 +53,7 @@
             </v-card-text>
 
             <!-- MEINE ANGEBOTE -->
-            <MyOffers v-if="action == ''" />
+            <MyOffers v-if="action == '' || action == 'edit_offer'" />
 
             <!-- PROFIL -->
             <Profile v-if="action == 'profile'" />

@@ -131,5 +131,26 @@ export const useOfferStore = defineStore('TutoringOfferStore', {
                 homepageStore.is_loading--
             }
         },
+
+        async toggleActive(id) {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+            try {
+                const response = await axios.post(`/api/homepage/tutoring/toggle_offer`, { id })
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.timeout,
+                })
+                this.error = error
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
     },
 })
