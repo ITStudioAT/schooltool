@@ -17,7 +17,7 @@ class RegisterUserController extends Controller
 {
     public function index(RegisterUserIndexRequest $request)
     {
-        if (! $auth_user = $this->userHasRole(['admin', 'user'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -80,7 +80,7 @@ class RegisterUserController extends Controller
 
     public function deleteRegisterUsers(RegisterUserDeleteRegisterUsersRequest $request, RegisterUserService $service)
     {
-        if (! $auth_user = $this->userHasRole(['admin', 'user'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
         $validated = $request->validated();
