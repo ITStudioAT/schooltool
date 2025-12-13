@@ -81,7 +81,7 @@ class SubjectController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        // TODO : Prüfen der Depenencies
+        if ($subject->hasDependencies()) abort(422, "Es existieren noch Abhängigkeiten.");
 
         $subject->delete();
         return response()->noContent();

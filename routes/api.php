@@ -84,7 +84,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     /* SANCTUM - user */
-    Route::middleware(['auth:sanctum', 'api-allowed:user,admin,register_admin'])->group(function () {
+    Route::middleware(['auth:sanctum', 'api-allowed:user,admin,register_admin,tutoring_admin'])->group(function () {
         Route::put('/admin/users/update_profile/{user}',  [UserController::class, 'updateProfile']);
         Route::post('/admin/users/update_with_code',  [UserController::class, 'updateWithCode']);
         Route::post('/admin/users/save_password',  [UserController::class, 'savePassword']);
@@ -142,7 +142,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     /* SANCTUM - admin, register_admin */
-    Route::middleware(['auth:sanctum', 'api-allowed:admin,register_admin'])->group(function () {
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,register_admin,tutoring_admin'])->group(function () {
 
         //Roles
         Route::get('/admin/roles/load_roles', [\App\Http\Controllers\Admin\RoleController::class, 'loadRoles']);

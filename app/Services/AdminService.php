@@ -251,7 +251,7 @@ class AdminService
         }
 
 
-        if (! $user->hasAnyRole(['super_admin', 'admin', 'register_admin'])) {
+        if (! $user->hasAnyRole(['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teacher'])) {
             // Benutzer hat keine der angegebenen Rollen
             abort(423, 'Login aufgrund fehlender Berechtigungen nicht möglich.');
         }
@@ -282,7 +282,7 @@ class AdminService
         }
 
 
-        if (! $user->hasAnyRole(['super_admin', 'admin', 'user', 'register_admin'])) {
+        if (! $user->hasAnyRole(['super_admin', 'admin', 'user', 'register_admin', 'tutoring_admin', 'teacher'])) {
             // Benutzer hat keine der angegebenen Rollen
             abort(423, 'Login aufgrund der Berechtigungen nicht möglich.');
         }

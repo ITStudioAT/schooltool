@@ -50,6 +50,10 @@ Route::middleware(['throttle:global', 'throttle:web', 'web-allowed'])->group(fun
         return view('homepage');
     });
 
+    Route::get('/homepage/tutoring_overview/', function () {
+        return view('homepage');
+    });
+
     Route::get('/homepage/tutoring/', function () {
         return view('homepage');
     })->middleware(['auth:sanctum']);

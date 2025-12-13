@@ -169,7 +169,6 @@ import FileUpload from '@/pages/components/FileUpload.vue'
 
 import { useTutoringUserStore } from '@/stores/admin/tutoring/UserStore'
 import { useUserStore } from '@/stores/admin/UserStore20'
-import { registerRuntimeCompiler } from 'vue'
 
 export default {
     setup() {

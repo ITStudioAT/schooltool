@@ -183,7 +183,7 @@ class UserController extends Controller
 
     public function show(User $user)
     {
-        if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'tutoring_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -277,10 +277,8 @@ class UserController extends Controller
     {
 
 
-        info("da");
-
         if (! $auth_user = $this->userHasAtLeastOneRole()) {
-            abort(403, 'Sie haben keine Berechtigung');
+            abort(403, 'Sie haben keine Berechtigungx');
         }
         $validated = $request->validated();
         unset($validated['id']);
@@ -512,7 +510,7 @@ class UserController extends Controller
 
     public function toggleIsActive(Request $request, AdminService $service)
     {
-        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+        if (! $auth_user = $this->userHasRole(['super_admin', 'admin', 'tutoring_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 

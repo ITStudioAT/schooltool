@@ -146,7 +146,7 @@ export default {
                     path += 'register/'
                     break
                 case 'Tutoring':
-                    path += 'tutoring_intro/'
+                    path += 'tutoring_overview/'
                     break
             }
             path += '?school=' + school.short_name
