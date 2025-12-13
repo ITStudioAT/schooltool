@@ -2,63 +2,59 @@
 
 namespace App\Http\Middleware;
 
-use App\Enums\RouteResult;
-use App\Services\RouteService;
+use App\Traits\HasRoleTrait;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Redirect;
 use Symfony\Component\HttpFoundation\Response;
 
 class WebAllowed
 {
+    use HasRoleTrait;
+
+    protected array $allowed_roles;
+
     /**
      * Handle an incoming request.
      *
      * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
      */
-    public function handle(Request $request, Closure $next): Response
+    public function __construct()
+    {
+        $this->allowed_roles = [];
+    }
+
+    public function handle(Request $request, Closure $next, ...$allowed_roles): Response
     {
 
-        if ($request->is('application/error')) {
-            return $next($request); // Middleware umgehen
+        if ($request->is('admin/login')) {
+            return $next($request);
         }
 
-        $fullPath = '/' . ltrim($request->path(), '/'); // <--- WICHTIG!
-        $user = Auth::user();
+        if ($request->is('admin') || $request->is('admin/*')) {
+            if (! Auth::check()) {
+                return redirect('/admin/login');
+            }
 
-        $routeService = new RouteService();
-        $result = $routeService->checkWebRoles($user, $fullPath);
+            if (! $user = Auth::user()) {
+                return redirect('/admin/login');
+            }
 
-
-        switch ($result) {
-            case RouteResult::ALLOWED:
-                return $next($request);
-
-            case RouteResult::NOT_ALLOWED:
-                $status = 403;
-                $message = 'Sie können auf diese Seite nicht zugreifen';
-                break;
-
-            case RouteResult::NOT_EXISTS:
-                $status = 404;
-                $message = 'Die Seite konnte nicht gefunden werden';
-                break;
-
-            case RouteResult::NOT_FOUND:
-                $status = 404;
-                $message = 'Die Seite konnte nicht gefunden werden';
-                break;
-
-            default:
-                $status = 500;
-                $message = 'Fehl WebAllowed Middleware';
+            if (! $this->userHasRole($allowed_roles)) {
+                return redirect('/admin/login');
+            }
         }
 
-        return Redirect::to('/application/error?' . http_build_query([
+
+        return $next($request);
+    }
+
+    private function error($status, $message): Response
+    {
+        return response()->json([
             'status' => $status,
             'message' => $message,
             'type' => 'error',
-        ]));
+        ], $status);
     }
 }

@@ -174,4 +174,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/users_with_roles/roles',  [UserWithRoleController::class, 'saveUserRoles']);
         Route::apiResource('/admin/users_with_roles', UserWithRoleController::class);
     });
+
+    /* SANCTUM - super_admin */
+    Route::middleware(['auth:sanctum', 'api-allowed:super_admin'])->group(function () {
+        Route::get('/admin/get_log',  [\App\Http\Controllers\Admin\LogController::class, 'getLog']);
+        Route::post('/admin/delete_log',  [\App\Http\Controllers\Admin\LogController::class, 'deleteLog']);
+    });
 });
