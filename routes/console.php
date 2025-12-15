@@ -12,7 +12,6 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::job(new HealthJob)
-    ->onConnection('redis')
     ->onQueue('default')
     ->everyMinute()
     ->withoutOverlapping();
