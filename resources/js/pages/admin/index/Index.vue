@@ -127,9 +127,6 @@
                 </its-grid-box>
             </v-col>
         </v-row>
-        <v-row>
-            {{ cron_status }}
-        </v-row>
     </v-container>
 </template>
 
