@@ -1,9 +1,9 @@
 <?php
 
-use App\Jobs\HealthJob;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
+use App\Jobs\HealthJob;
 
 
 
@@ -12,6 +12,6 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::job(new HealthJob)
-    ->onQueue('default')
     ->everyMinute()
+    ->onOneServer()
     ->withoutOverlapping();
