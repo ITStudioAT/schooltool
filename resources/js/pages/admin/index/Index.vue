@@ -67,7 +67,7 @@
                                         Test aktiv
                                         <v-icon size="small" icon="mdi-dots-circle mdi-spin" />
                                     </div>
-                                    <div v-if="cron_test_status == 'finished'">fertig geprüft</div>
+                                    <div class="text-body-2" v-if="cron_test_status == 'finished'">{{ cron_status?.health_at }}</div>
                                 </v-col>
                                 <v-col cols="4" class="text-right">
                                     <div v-if="cron_test_status == 'finished'">
@@ -126,6 +126,9 @@
                     </v-card>
                 </its-grid-box>
             </v-col>
+        </v-row>
+        <v-row>
+            {{ cron_status }}
         </v-row>
     </v-container>
 </template>
