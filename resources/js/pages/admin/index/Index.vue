@@ -58,6 +58,24 @@
                                     </div>
                                 </v-col>
                             </v-row>
+
+                            <v-row no-gutters="" dense>
+                                <v-col cols="4">Cron-Job (1-2 min.)</v-col>
+                                <v-col cols="4" class="text-right">
+                                    <div v-if="cron_test_status == 'waiting'">Test wartend</div>
+                                    <div v-if="cron_test_status == 'running'">
+                                        Test aktiv
+                                        <v-icon size="small" icon="mdi-dots-circle mdi-spin" />
+                                    </div>
+                                    <div v-if="cron_test_status == 'finished'">fertig geprüft</div>
+                                </v-col>
+                                <v-col cols="4" class="text-right">
+                                    <div v-if="cron_test_status == 'finished'">
+                                        <v-icon icon="mdi-checkbox-marked " color="success" v-if="cron_test_result == 1" />
+                                        <v-icon icon="mdi-checkbox-marked" color="error" v-if="cron_test_result != 1" />
+                                    </div>
+                                </v-col>
+                            </v-row>
                         </v-card-text>
                     </v-card>
                     <v-card tile flat color="primary" class="mt-4">
@@ -143,17 +161,26 @@ export default {
             all_tests_result: 0,
             queue_test_status: 'waiting',
             queue_test_result: 0,
+            cron_test_status: 'waiting',
+            cron_test_result: 0,
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'health']),
-        ...mapWritableState(useHealthStore, ['data', 'data_2']),
+        ...mapWritableState(useHealthStore, ['data', 'data_2', 'cron_status']),
         ...mapWritableState(useSchoolStore, ['school_licences', 'school_admins']),
     },
 
     methods: {
         async runTests() {
+            // Cron-Job-Status
+            this.cron_test_status = 'running'
+            await this.healthStore.checkCronStatus()
+            console.log(this.cron_status)
+            this.cron_test_result = this.cron_status.is_healthy
+            this.cron_test_status = 'finished'
+
             this.test_step = 0
             this.all_tests_result = 0
             this.queue_test_status = 'waiting'
@@ -182,9 +209,10 @@ export default {
             this.queue_test_status = 'finished'
 
             this.all_tests_result = 1
-            if (this.queue_test_result != 1) this.all_tests_result = 999
+            if (this.queue_test_result != 1 || this.cron_test_result != 1) this.all_tests_result = 999
             this.test_step = 999
         },
+
         user(id) {
             return this.school_admins.find((a) => a.id === id)
         },

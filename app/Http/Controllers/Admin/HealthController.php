@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\QueueTest;
+use App\Models\SchoolTool;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -76,5 +78,19 @@ class HealthController extends Controller
             'processed_at' => $processedAt,
             'duration_seconds' => $duration
         ]);
+    }
+
+    public function testCron()
+    {
+        $schooltool = SchoolTool::findOrFail(1);
+        $healthy = Carbon::parse($schooltool->health_at)
+            ->greaterThan(Carbon::now()->subMinutes(2));
+
+        $data = [
+            'is_healthy' => $healthy,
+            'health_at' =>  Carbon::parse($schooltool->health_at)->format('Y-m-d H:i:s')
+        ];
+
+        return response()->json($data, 200);
     }
 }

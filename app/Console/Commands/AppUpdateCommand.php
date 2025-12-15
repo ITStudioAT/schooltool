@@ -85,6 +85,8 @@ class AppUpdateCommand extends Command
         // ✅ 5. Clear all caches
         $this->info('▶ CLEARING CACHES');
         Artisan::call('optimize:clear');
+        $this->info('▶ RESTARTING QUEUES');
+        Artisan::call('queue:restart');
         $this->line(Artisan::output());
         $this->info('✅ Caches cleared');
         $this->line(str_repeat('.', 50));

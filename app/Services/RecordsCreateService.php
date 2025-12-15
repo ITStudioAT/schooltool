@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\User;
 use Spatie\Permission\Models\Role;
@@ -29,6 +30,7 @@ class RecordsCreateService
         foreach ($schools as $school) {
             $this->checkOrCreateAdmins($school);
             $this->checkOrCreateSchoolyears($school);
+            $this->firstOrCreateSchoolTool($school);
         }
     }
 
@@ -80,6 +82,15 @@ class RecordsCreateService
                 'until' => '2026-07-10',
                 'sem_2_start' => '2026-02-16'
             ]
+        );
+    }
+
+    private function firstOrCreateSchoolTool($school)
+    // 90
+    {
+        return SchoolTool::firstOrCReate(
+            ['school_id' => $school->id],
+            []
         );
     }
 
