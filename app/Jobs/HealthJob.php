@@ -25,16 +25,8 @@ class HealthJob implements ShouldQueue
     public function handle(): void
     {
 
-        Log::info('HealthJob handle() START', [
-            'queue_connection' => config('queue.default'),
-        ]);
-
         $schooltool = SchoolTool::findOrFail(1);
         $schooltool->health_at = now();
         $schooltool->save();
-
-        Log::info('HealthJob handle() DONE', [
-            'health_at' => $schooltool->health_at?->format('Y-m-d H:i:s'),
-        ]);
     }
 }
