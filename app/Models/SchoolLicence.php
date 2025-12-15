@@ -22,8 +22,10 @@ use Illuminate\Database\Eloquent\Model;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolLicence whereSchoolId($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolLicence whereUpdatedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolLicence whereValidUntil($value)
- * @mixin \Eloquent
  * @mixin IdeHelperSchoolLicence
+ * @property-read Licence|null $licence
+ * @property-read School|null $school
+ * @mixin \Eloquent
  */
 class SchoolLicence extends Model
 {

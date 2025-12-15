@@ -25,8 +25,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Licence whereName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Licence wherePricePerYear($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Licence whereUpdatedAt($value)
- * @mixin \Eloquent
  * @mixin IdeHelperLicence
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, School> $schools
+ * @property-read int|null $schools_count
+ * @mixin \Eloquent
  */
 class Licence extends Model
 {

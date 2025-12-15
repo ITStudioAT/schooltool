@@ -29,8 +29,8 @@ use Illuminate\Database\Eloquent\Model;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Schoolyear whereSem2Start($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Schoolyear whereUntil($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Schoolyear whereUpdatedAt($value)
- * @mixin \Eloquent
  * @mixin IdeHelperSchoolyear
+ * @mixin \Eloquent
  */
 class Schoolyear extends Model
 {

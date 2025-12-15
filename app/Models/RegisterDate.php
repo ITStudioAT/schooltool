@@ -38,8 +38,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDate whereSupervisor($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDate whereTo($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDate whereUpdatedAt($value)
- * @mixin \Eloquent
  * @mixin IdeHelperRegisterDate
+ * @mixin \Eloquent
  */
 class RegisterDate extends Model
 {

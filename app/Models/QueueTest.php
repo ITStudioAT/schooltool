@@ -24,8 +24,8 @@ use Illuminate\Support\Str;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|QueueTest whereStatus($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|QueueTest whereUpdatedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|QueueTest whereUserId($value)
- * @mixin \Eloquent
  * @mixin IdeHelperQueueTest
+ * @mixin \Eloquent
  */
 class QueueTest extends Model
 {

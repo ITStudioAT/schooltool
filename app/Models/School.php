@@ -41,8 +41,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|School whereLongName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|School whereShortName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|School whereUpdatedAt($value)
- * @mixin \Eloquent
  * @mixin IdeHelperSchool
+ * @mixin \Eloquent
  */
 class School extends Model
 {

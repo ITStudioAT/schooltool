@@ -13,6 +13,7 @@ export const useOfferStore = defineStore('TutoringOfferStore', {
             error: null,
             data: {},
             my_offers: null,
+            offer_config: null,
         }
     },
 
@@ -34,6 +35,28 @@ export const useOfferStore = defineStore('TutoringOfferStore', {
                     type: 'error',
                     timeout: 3000,
                 })
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
+        async loadOfferConfig(school_name) {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+            try {
+                const response = await axios.get(`/api/homepage/tutoring/load_offer_config`, { params: { school_name } })
+                this.offer_config = response.data
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                this.error = error
                 return false
             } finally {
                 homepageStore.is_loading--

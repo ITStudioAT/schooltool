@@ -99,8 +99,18 @@ use Spatie\Permission\Traits\HasRoles;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereUuidAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User withoutPermission($permissions)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User withoutRole($roles, $guard = null)
- * @mixin \Eloquent
+ * @method bool hasRole(string|int|array|\Spatie\Permission\Contracts\Role|\Illuminate\Support\Collection $roles, string|null $guard = null)
+ * @method bool hasAnyRole(string|int|array|\Spatie\Permission\Contracts\Role|\Illuminate\Support\Collection $roles, string|null $guard = null)
+ * @method bool hasAllRoles(string|int|array|\Spatie\Permission\Contracts\Role|\Illuminate\Support\Collection $roles, string|null $guard = null)
+ * @method \Illuminate\Database\Eloquent\Collection|\Spatie\Permission\Models\Role[] getRoleNames()
+ * @mixin \Spatie\Permission\Traits\HasRoles
  * @mixin IdeHelperUser
+ * @property string|null $sex
+ * @property string $schoolclass
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User bySchoolAndRole($schoolId, $roleName)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereSchoolclass($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereSex($value)
+ * @mixin \Eloquent
  */
 class User extends Authenticatable
 {

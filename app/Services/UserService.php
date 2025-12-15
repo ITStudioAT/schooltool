@@ -411,4 +411,12 @@ class UserService
                 $user->delete();
             });
     }
+    public static function logout()
+    {
+        if (Auth::check()) {
+            Auth::guard('web')->logout();
+            session()->invalidate();
+            session()->regenerateToken();
+        }
+    }
 }

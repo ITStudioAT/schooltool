@@ -1,59 +1,87 @@
 <template>
     <div class="schooltool-background"></div>
-    <div class="h-100 w-100 d-flex flex-column align-center justify-center" style="max-width: 1024px; margin: auto">
-        <!-- Tool-Auswahl -->
-        <v-card tile flat color="transparent" class="border-md" v-if="step == ''">
-            <v-card-text>
-                <!-- ANMELDETOOL -->
-                <div class="d-flex flex-wrap justify-center ga-4">
-                    <v-card color="third" width="300" height="170" class="d-flex flex-column">
-                        <v-card-title class="text-h5">Anmeldetool</v-card-title>
+    <div class="h-100 w-100 d-flex flex-column" style="max-width: 1024px; margin: auto" v-if="offer_config">
+        <!-- Menü -->
+        <v-card flat color="primary" class="border-md">
+            <div class="d-flex flex-wrap justify-center justify-lg-start ga-4">
+                <ItsCard
+                    :title="offer_config?.auth?.user?.last_name + ' ' + offer_config?.auth?.user?.first_name"
+                    text="Hier gelangst Du zu Deinem persönlichen Bereich."
+                    color="success"
+                    button="Mein Bereich"
+                    @clickCard=""
+                    v-if="offer_config.auth.is_auth" />
 
-                        <v-card-subtitle style="white-space: normal">Hier können Sie sich zu ausgeschriebenen Events anmelden.</v-card-subtitle>
+                <ItsCard title="Abmelden" text="Hier kannst Du Dich vom System ausloggen." color="success" button="Abmelden" @clickCard="logout" v-if="offer_config.auth.is_auth" />
 
-                        <v-card-actions class="mt-auto">
-                            <v-btn class="ms-2" size="small" text="LOS" variant="outlined" @click="loadSchoolsForTool('Anmeldetool')"></v-btn>
-                        </v-card-actions>
-                    </v-card>
-                </div>
-            </v-card-text>
+                <ItsCard title="Anmelden" text="Hier gelangst Du zu Deinem persönlichen Bereich." color="secondary" button="Los" @clickCard="" v-if="!offer_config.auth.is_auth" />
+            </div>
         </v-card>
 
-        <v-card tile flat color="transparent" class="border-md w-100" max-width="600" v-if="step == 'selectSchool' && selected_school">
-            <v-card-text>
-                <div class="d-flex flex-column flex-wrap justify-center ga-4">
-                    <v-card color="third" max-width="600" class="d-flex flex-column w-100" v-if="licence">
-                        <v-card-title class="text-h5">{{ licence.name }}</v-card-title>
-
-                        <v-card-subtitle style="white-space: normal">{{ licence.long_name }}</v-card-subtitle>
-
-                        <v-card-text>
-                            <v-card tile flat width="300" color="transparent" class="text-left">
-                                <img :src="'/storage/images/' + selected_school.logo" max-height="50" max-width="150" />
-                            </v-card>
-                            <div class="text-h6">{{ selected_school.long_name }}</div>
-                        </v-card-text>
-
-                        <v-card-actions class="mt-auto">
-                            <v-btn class="ms-2" size="small" text="Zurück" color="warning" variant="flat" @click="abort('selectSchool')" />
-                            <v-btn class="ms-2" size="small" text="Weiter" variant="outlined" @click="moveTo(licence, selected_school)" />
-                        </v-card-actions>
-                    </v-card>
+        <!-- Überschrift -->
+        <v-card flat color="transparent" class="mt-4">
+            <div class="d-flex flex-row justify-center">
+                <div class="text-h6 text-md-h5 text-lg-h4 text-xl-h2">
+                    <span class="text-secondary">NACH</span>
+                    <span class="text-third font-weight-bold">HILFE</span>
+                    <span class="text-secondary">TOOL</span>
                 </div>
-            </v-card-text>
+            </div>
+        </v-card>
+
+        <v-card flat color="transparent" class="mt-4" v-if="offer_config.school">
+            <div class="d-flex justify-center">
+                <div class="d-flex flex-column align-center">
+                    <div class="text-caption">{{ offer_config.school.long_name }}</div>
+                    <div style="width: 96px; height: 48px" class="bg-primary-lighten-4">
+                        <img :src="'/storage/images/' + offer_config.school.logo" alt="Logo" style="width: 100%; height: 100%; object-fit: contain" />
+                    </div>
+                </div>
+            </div>
+        </v-card>
+
+        <!-- Suchzeile -->
+        <v-card flat color=" bg-primary" class="border-md mt-4">
+            <v-text-field label="Suche" hide-details class="large-text" append-icon="mdi-magnify" clearable />
+        </v-card>
+
+        <!-- Angebote -->
+        <v-card flat color=" bg-primary" class="border-md mt-4">
+            <ItsCard :title="offer.subject.short_name" :text="offer.title" color="secondary" button="Los" @clickCard="" v-for="offer in offers" :key="offer.id" />
+        </v-card>
+        <v-card flat color=" bg-primary" class="border-md mt-4">
+            {{ offers }}
+        </v-card>
+        <v-card flat color=" bg-primary" class="border-md mt-4">
+            {{ offer_config }}
+        </v-card>
+    </div>
+    <div class="h-100 w-100 d-flex flex-column justify-center align-center" style="max-width: 1024px; margin: auto" v-if="error">
+        <!-- Fehlermeldung -->
+        <v-card class="mt-4">
+            <v-alert type="error" :title="error.response.data.message + ' (' + error.response.status + ')'" />
         </v-card>
     </div>
 </template>
 
 <script>
 import { mapWritableState } from 'pinia'
-import { useHomepageStore } from '@/stores/homepage/HomepageStore'
+import { useTutoringStore } from '@/stores/tutoring/TutoringStore'
+import { useOfferStore } from '@/stores/tutoring/OfferStore'
+import { useUserStore } from '@/stores/tutoring/UserStore'
+import ItsCard from '@/pages/components/ItsCard.vue'
 
 export default {
-    components: {},
+    components: { ItsCard },
 
     async beforeMount() {
-        this.homepageStore = useHomepageStore()
+        this.school_name = this.$route.query.school
+
+        this.tutoringStore = useTutoringStore()
+        this.offerStore = useOfferStore()
+        this.userStore = useUserStore()
+        await this.offerStore.loadOfferConfig(this.school_name)
+        await this.offerStore.index()
     },
 
     mounted() {},
@@ -62,18 +90,27 @@ export default {
 
     data() {
         return {
-            homepageStore: null,
-            step: '',
+            tutoringStore: null,
+            offerStore: null,
+            userStore: null,
+            school_name: '',
         }
     },
 
     computed: {
-        ...mapWritableState(useHomepageStore, ['config', 'is_loading', 'schools', 'licence', 'selected_school', 'selected_school_id']),
+        ...mapWritableState(useTutoringStore, ['config']),
+        ...mapWritableState(useOfferStore, ['offer_config', 'error', 'offers']),
     },
 
     watch: {},
 
-    methods: {},
+    methods: {
+        async logout() {
+            await this.userStore.logout()
+            await this.offerStore.loadOfferConfig(this.school_name)
+            await this.offerStore.index()
+        },
+    },
 }
 </script>
 
@@ -91,5 +128,9 @@ export default {
     opacity: 0.2;
     pointer-events: none;
     z-index: -1;
+}
+
+.large-text :deep(input) {
+    font-size: 42px !important;
 }
 </style>

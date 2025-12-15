@@ -69,6 +69,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/homepage/tutoring/unknown_password',  [\App\Http\Controllers\Tutoring\TutoringController::class, 'unknownPassword']);
     Route::post('/homepage/tutoring/login_with_token',  [\App\Http\Controllers\Tutoring\TutoringController::class, 'loginWithToken']);
     Route::post('/homepage/tutoring/login_with_password',  [\App\Http\Controllers\Tutoring\TutoringController::class, 'loginWithPassword']);
+    Route::get('/homepage/tutoring/load_offer_config', [\App\Http\Controllers\Tutoring\OfferController::class, 'loadOfferConfig']);
 
     /* SANCTUM */
     Route::middleware(['auth:sanctum'])->group(function () {
@@ -109,7 +110,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::middleware(['auth:sanctum', 'api-allowed:tutoring_user'])->group(function () {
         Route::apiResource('/homepage/tutoring/users', \App\Http\Controllers\Tutoring\UserController::class);
         Route::post('/homepage/tutoring/update_password', [\App\Http\Controllers\Tutoring\UserController::class, 'updatePassword']);
-        Route::get('/homepage/tutoring/logout', [\App\Http\Controllers\Tutoring\UserController::class, 'logout']);
+        Route::post('/homepage/tutoring/logout', [\App\Http\Controllers\Tutoring\UserController::class, 'logout']);
         Route::get('/homepage/tutoring/load_auth', [\App\Http\Controllers\Tutoring\TutoringController::class, 'loadAuth']);
         Route::get('/homepage/tutoring/load_my_offers', [\App\Http\Controllers\Tutoring\OfferController::class, 'loadMyOffers']);
         Route::apiResource('/homepage/tutoring/subjects', \App\Http\Controllers\Tutoring\SubjectController::class);

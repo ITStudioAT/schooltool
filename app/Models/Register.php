@@ -69,8 +69,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereShowStudentLastName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereShowSupervisor($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereUpdatedAt($value)
- * @mixin \Eloquent
  * @mixin IdeHelperRegister
+ * @mixin \Eloquent
  */
 class Register extends Model
 {

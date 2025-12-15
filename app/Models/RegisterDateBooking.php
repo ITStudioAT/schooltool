@@ -43,8 +43,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDateBooking whereStudentLastName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDateBooking whereUpdatedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDateBooking whereUserId($value)
- * @mixin \Eloquent
  * @mixin IdeHelperRegisterDateBooking
+ * @mixin \Eloquent
  */
 class RegisterDateBooking extends Model
 {
