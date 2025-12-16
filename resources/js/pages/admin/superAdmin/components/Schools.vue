@@ -51,6 +51,8 @@
             </div>
         </its-grid-box>
     </v-col>
+
+    <!-- EDIT SCHOOL -->
     <v-col cols="12" md="6" xl="4" v-if="action == 'create_school' || action == 'edit_school'">
         <its-grid-box color="primary" :title="data.id ? 'Schule ändern' : 'Neue Schule'" class="w-100">
             <v-form ref="form" v-model="is_valid" @submit.prevent="saveSchool(data)" class="mb-4">
@@ -78,7 +80,7 @@
 
                         <!-- Logo existiert und kein Upload-Logo-->
                         <div v-if="data.logo && !data.upload_file" class="d-flex flex-row align-center justify-space-between ga-2">
-                            <img :src="'/storage/images/' + data.logo + '?t=' + Date.now()" alt="Logo" height="60px" class="pl-2" />
+                            <img :src="'/storage/images/logos/' + data.logo + '?t=' + Date.now()" alt="Logo" height="60px" class="pl-2" />
                             <v-btn tile flat color="error" class="text-caption" prepend-icon="mdi-delete" @click="removeLogo">Löschen</v-btn>
                         </div>
 
@@ -115,6 +117,9 @@
             </v-form>
         </its-grid-box>
     </v-col>
+    <div>
+        {{ data }}
+    </div>
 </template>
 
 <script>

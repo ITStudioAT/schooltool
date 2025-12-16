@@ -5,7 +5,8 @@
       "Bash(composer test:*)",
       "Bash(nul)",
       "Bash(findstr:*)",
-      "Bash(php artisan:*)"
+      "Bash(php artisan:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

@@ -57,6 +57,7 @@ describe('update', function () {
                 'last_name' => 'Smith',
                 'email' => 'tutoring@test.com', // Same email
                 'sex' => 'm',
+                'schoolclass' => '5A',
             ],
         ];
 
@@ -80,6 +81,7 @@ describe('update', function () {
                 'last_name' => 'Doe',
                 'email' => 'newemail@test.com',
                 'sex' => 'm',
+                'schoolclass' => '5A',
             ],
         ];
 
@@ -106,6 +108,7 @@ describe('update', function () {
                 'last_name' => 'Doe',
                 'email' => 'confirmed@test.com',
                 'sex' => 'm',
+                'schoolclass' => '5A',
                 'status' => 'CONFIRM_EMAIL',
                 'token_2fa' => '123456',
             ],
@@ -135,6 +138,7 @@ describe('update', function () {
                 'last_name' => 'Doe',
                 'email' => 'newemail@test.com',
                 'sex' => 'm',
+                'schoolclass' => '5A',
                 'status' => 'CONFIRM_EMAIL',
                 'token_2fa' => '999999', // Wrong token
             ],
@@ -162,6 +166,7 @@ describe('update', function () {
                 'last_name' => 'Doe',
                 'email' => 'existing@test.com',
                 'sex' => 'm',
+                'schoolclass' => '5A',
             ],
         ];
 
@@ -180,6 +185,7 @@ describe('update', function () {
                 'last_name' => 'Bad',
                 'email' => 'tutoring@test.com',
                 'sex' => 'm',
+                'schoolclass' => '5A',
             ],
         ];
 
@@ -196,6 +202,7 @@ describe('update', function () {
                 'last_name' => 'Doe',
                 'email' => 'tutoring@test.com',
                 'sex' => 'm',
+                'schoolclass' => '5A',
             ],
         ];
 
@@ -356,7 +363,7 @@ describe('logout', function () {
 
         expect(Auth::check())->toBeTrue();
 
-        $response = $this->getJson('/api/homepage/tutoring/logout');
+        $response = $this->postJson('/api/homepage/tutoring/logout');
 
         $response->assertStatus(200);
     });
@@ -364,13 +371,13 @@ describe('logout', function () {
     test('logout denies access for non tutoring user', function () {
         $this->actingAs($this->regularUser);
 
-        $response = $this->getJson('/api/homepage/tutoring/logout');
+        $response = $this->postJson('/api/homepage/tutoring/logout');
 
         $response->assertStatus(403);
     });
 
     test('logout requires authentication', function () {
-        $response = $this->getJson('/api/homepage/tutoring/logout');
+        $response = $this->postJson('/api/homepage/tutoring/logout');
 
         $response->assertStatus(401);
     });
@@ -379,7 +386,7 @@ describe('logout', function () {
         $this->actingAs($this->tutoringUser);
 
         // The logout endpoint should successfully process the logout
-        $response = $this->getJson('/api/homepage/tutoring/logout');
+        $response = $this->postJson('/api/homepage/tutoring/logout');
 
         $response->assertStatus(200);
 

@@ -230,6 +230,7 @@ describe('createUser', function () {
                 'first_name' => 'John',
                 'last_name' => 'Doe',
                 'sex' => 'm',
+                'schoolclass' => '5A',
                 'school_id' => $this->school->id,
             ],
         ];

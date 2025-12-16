@@ -37,7 +37,9 @@ class FileUploadService
         abort_unless($id, 422, 'Missing upload id');
 
         $dir = storage_path("app/private/temp/{$id}");
-        if (!is_dir($dir)) mkdir($dir, 0775, true);
+        if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+            abort(500, "Cannot create temp dir: {$dir}");
+        }
 
         $part = "{$dir}/file.part";
 
@@ -46,48 +48,66 @@ class FileUploadService
         if ($bytes === '' || $bytes === null) {
             return response('NO_CONTENT', 204);
         }
-        file_put_contents($part, $bytes, FILE_APPEND);
+
+        if (file_put_contents($part, $bytes, FILE_APPEND) === false) {
+            abort(500, "Failed writing chunk to: {$part}");
+        }
 
         // Detect completion
         $total = (int) ($request->header('Upload-Length') ?? 0);
-        $size = filesize($part) ?: 0;
+        $size  = is_file($part) ? (filesize($part) ?: 0) : 0;
 
         if ($total > 0 && $size >= $total) {
-            // Finalize
-            $name = $request->header('Upload-Name') ?: 'upload.bin';
-            $extension = pathinfo($name, PATHINFO_EXTENSION);
+            // Extension comes from original upload name header
+            $originalName = $request->header('Upload-Name') ?: 'upload.bin';
+            $extension    = pathinfo($originalName, PATHINFO_EXTENSION);
 
-            if ($new_name) {
-                $name = "{$new_name}" . ($extension ? ".{$extension}" : '');
+            // Filename base is provided by controller (e.g. logo_{schoolId})
+            $base = $new_name ?: pathinfo($originalName, PATHINFO_FILENAME) ?: 'upload';
+            $name = $base . ($extension ? ".{$extension}" : '');
+
+            // Destination directory: use the provided $upload_path under storage/
+            $destDir = storage_path(trim($upload_path, '/'));
+            if (!is_dir($destDir) && !mkdir($destDir, 0775, true) && !is_dir($destDir)) {
+                abort(500, "Cannot create dest dir: {$destDir}");
             }
 
-            $destDir = storage_path(trim($upload_path, '/'));
-            if (!is_dir($destDir)) mkdir($destDir, 0775, true);
-
             $newPath = "{$destDir}/{$name}";
-            rename($part, $newPath);
 
+            // Move finished file
+            if (!@rename($part, $newPath)) {
+                // fallback in case rename fails (e.g. cross-device)
+                if (!@copy($part, $newPath) || !@unlink($part)) {
+                    $err = error_get_last();
+                    abort(500, 'Failed to move uploaded file: ' . ($err['message'] ?? 'unknown error'));
+                }
+            }
+
+            // Optional resize
             if ($fit && is_array($fit)) {
                 $manager = ImageManager::gd();
-                $image = $manager->read($newPath);
+                $image   = $manager->read($newPath);
 
-
-                if (array_key_exists('width', $fit)  && array_key_exists('height', $fit)) {
-                    $image = $image->scale($fit['width'],  $fit['height']);
-                } elseif (array_key_exists('width', $fit)) {
-                    $image = $image->scale(width: $fit['width']);
-                } elseif (array_key_exists('height', $fit)) {
-                    $image = $image->scale(height: $fit['height']);
+                if (isset($fit['width'], $fit['height'])) {
+                    $image->scale($fit['width'], $fit['height']);
+                } elseif (isset($fit['width'])) {
+                    $image->scale(width: $fit['width']);
+                } elseif (isset($fit['height'])) {
+                    $image->scale(height: $fit['height']);
                 }
+
                 $image->save();
             }
 
-            // (Optional) image resizing AFTER upload, not during chunks
+            // Cleanup temp
+            /*
+            @unlink($part);
+            @rmdir($dir);
+            */
 
-            return $name; // FilePond serverId / confirmation
+            return $name; // FilePond confirmation / serverId
         }
 
-        // Not finished yet → ACK the chunk
         return response('OK', 200);
     }
 }

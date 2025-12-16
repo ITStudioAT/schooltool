@@ -141,12 +141,11 @@ class SchoolController extends Controller
         }
 
         $school = School::findOrFail($auth_user->school_id);
-        $logo   = 'logo';
 
         $result = $fileUploadService->uploadNext(
             $request,
-            'app/public/temp/' . $school->id,
-            $logo,
+            'app/public/images/logos',              // final target directory
+            "logo_{$school->id}",                   // required filename base
             ['width' => 200, 'height' => 100]
         );
 

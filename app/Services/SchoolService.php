@@ -60,7 +60,7 @@ class SchoolService
             'tutoring_confirmer_email' => '',
         ]);
 
-        // Folder für LOogo etc anlegen
+        // Folder für Logo etc anlegen
         $hlp_path = $school->id . '/temp';
         if (!Storage::directoryExists($hlp_path)) {
             Storage::makeDirectory($hlp_path);

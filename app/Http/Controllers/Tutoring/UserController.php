@@ -123,5 +123,7 @@ class UserController extends Controller
             Auth::guard('web')->logout();
             session()->invalidate();
         }
+
+        return response()->json(['status' => 'OK'], 200);
     }
 }
