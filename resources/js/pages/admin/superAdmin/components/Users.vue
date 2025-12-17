@@ -137,9 +137,9 @@
         <its-grid-box color="primary" title="Löschen" class="w-100">
             <v-form ref="form" v-model="is_valid" @submit.prevent="doDeleteUsers(selected_users)">
                 <v-card tile flat color="transparent" class="text-body-1">
-                    <div v-if="selected_users.length == 1">Es soll ein Benutzer gelöscht werden. Sind Sie sicher, dass Sie die markierte Schule löschen möchten?</div>
+                    <div v-if="selected_users.length == 1">Es soll ein Benutzer gelöscht werden. Sind Sie sicher, dass Sie die markierten Benutzer löschen möchten?</div>
                     <div v-if="selected_users.length > 1">
-                        Es sollen {{ selected_users.length }} Benutzer gelöscht werden. Sind Sie sicher, dass Sie die markierten Schulen löschen möchten?
+                        Es sollen {{ selected_users.length }} Benutzer gelöscht werden. Sind Sie sicher, dass Sie die markierten Benutzer löschen möchten?
                     </div>
                 </v-card>
                 <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between mt-4">

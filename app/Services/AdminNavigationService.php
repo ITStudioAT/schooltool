@@ -39,12 +39,14 @@ class AdminNavigationService
             $menu[] = ['title' => 'Nachhilfe', 'icon' => 'mdi-cast-education', 'to' => '/admin/tutoring', 'is_active' => false];
         }
 
-        // BENUTZER ALS admin
+        // TEACHER
         /*
-        if ($this->userHasRole(['admin'])) {
-            $menu[] = ['title' => 'Benutzer/Rollen', 'icon' => 'mdi-account-multiple', 'to' => '/admin/users'];
+        if ($this->userHasRole(['admin', 'teacher'])) {
+            $menu[] = ['title' => 'Lehrer', 'icon' => 'mdi-school', 'to' => '/admin/teacher', 'is_active' => false];
         }
             */
+
+
 
         // PROFILE
         $menu[] = ['title' => $user_name, 'icon' => 'mdi-account', 'to' => '/admin/profile', 'is_active' => true];
