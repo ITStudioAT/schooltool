@@ -4,9 +4,13 @@ SchoolTool beinhaltet Tools zur Unterstützung der Administration von Schulen.
 
 # Last Changes
 
+## 3.3.0 - 17.12.2025
+
+-   Tutoring alpha merged in Main
+
 ## 3.2.13 - 21.11.2025
 
--   Enztry-Point changed
+-   Entry-Point changed
 
 ## 3.2.12 - 20.11.2025
 
