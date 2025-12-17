@@ -22,21 +22,21 @@ class AdminNavigationService
         $user = User::findOrFail(Auth::user()->id);
         $user_name = substr($user->last_name . ' ' . $user->first_name, 0, 17);
 
-        $menu[] = ['title' => 'Home', 'icon' => 'mdi-home', 'to' => '/admin'];
+        $menu[] = ['title' => 'Home', 'icon' => 'mdi-home', 'to' => '/admin', 'is_active' => true];
 
         // SUPERADMIN
         if ($this->userHasRole(['super_admin'])) {
-            $menu[] = ['title' => 'Super-Admin', 'icon' => 'mdi-shield-crown', 'to' => '/admin/super_admin'];
+            $menu[] = ['title' => 'Super-Admin', 'icon' => 'mdi-shield-crown', 'to' => '/admin/super_admin', 'is_active' => true];
         }
 
         // ANMELDESYSTEM
         if ($this->userHasRole(['admin', 'register_admin'])) {
-            $menu[] = ['title' => 'Anmeldetool', 'icon' => 'mdi-calendar-cursor', 'to' => '/admin/register_system'];
+            $menu[] = ['title' => 'Anmeldetool', 'icon' => 'mdi-calendar-cursor', 'to' => '/admin/register_system', 'is_active' => true];
         }
 
         // TUTORING
         if ($this->userHasRole(['admin', 'tutoring_admin'])) {
-            $menu[] = ['title' => 'Nachhilfe', 'icon' => 'mdi-cast-education', 'to' => '/admin/tutoring'];
+            $menu[] = ['title' => 'Nachhilfe', 'icon' => 'mdi-cast-education', 'to' => '/admin/tutoring', 'is_active' => false];
         }
 
         // BENUTZER ALS admin
@@ -47,10 +47,10 @@ class AdminNavigationService
             */
 
         // PROFILE
-        $menu[] = ['title' => $user_name, 'icon' => 'mdi-account', 'to' => '/admin/profile'];
+        $menu[] = ['title' => $user_name, 'icon' => 'mdi-account', 'to' => '/admin/profile', 'is_active' => true];
 
         // ABMELDEN
-        $menu[] = ['title' => 'Abmelden', 'icon' => 'mdi-power-cycle', 'click' => 'logout'];
+        $menu[] = ['title' => 'Abmelden', 'icon' => 'mdi-power-cycle', 'click' => 'logout', 'is_active' => true];
 
         return $menu;
     }

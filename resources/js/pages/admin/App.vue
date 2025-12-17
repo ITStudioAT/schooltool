@@ -11,7 +11,7 @@
             <v-list>
                 <template v-for="(item, i) in config.menu" :key="i">
                     <!-- route item -->
-                    <v-list-item v-if="item.to" :exact="false" :title="item.title" :prepend-icon="item.icon" :to="item.to" />
+                    <v-list-item v-if="item.to" :exact="false" :title="item.title" :prepend-icon="item.icon" :to="item.to" :disabled="!item.is_active" />
                     <!-- click item -->
                     <v-list-item v-else-if="item.click" :exact="false" :title="item.title" :prepend-icon="item.icon" @click="callItemClick(item)" />
                 </template>
