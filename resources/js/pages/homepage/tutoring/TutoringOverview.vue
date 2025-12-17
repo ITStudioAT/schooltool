@@ -7,13 +7,37 @@
             </v-card>
         </div>
 
-        <v-card tile flat color="transparent" v-if="is_loaded && !is_login">
+        <!-- Überschrift -->
+        <div v-if="is_loaded">
+            <v-card flat tile>
+                <div class="d-flex flex-row justify-center">
+                    <div class="text-h6 text-md-h5 text-lg-h4 text-xl-h2">
+                        <span class="text-secondary">NACH</span>
+                        <span class="text-third font-weight-bold">HILFE</span>
+                        <span class="text-secondary">TOOL</span>
+                    </div>
+                </div>
+            </v-card>
+
+            <v-card flat tile color="transparent" class="mt-4" v-if="offer_config.school">
+                <div class="d-flex justify-center">
+                    <div class="d-flex flex-column align-center">
+                        <div class="text-caption">{{ offer_config.school.long_name }}</div>
+                        <div style="width: 96px; height: 48px" class="bg-primary-lighten-4">
+                            <img :src="'/storage/images/' + offer_config.school.logo" alt="Logo" style="width: 100%; height: 100%; object-fit: contain" />
+                        </div>
+                    </div>
+                </div>
+            </v-card>
+        </div>
+
+        <v-card tile flat class="mt-4" color="transparent" v-if="is_loaded && !is_login">
             <!-- Menü -->
             <v-card flat color="primary" class="border-md">
                 <div class="d-flex flex-wrap justify-center justify-lg-start ga-4">
                     <ItsCard
                         :title="offer_config?.auth?.user?.last_name + ' ' + offer_config?.auth?.user?.first_name"
-                        text="Hier gelangst Du zu Deinem persönlichen Bereich."
+                        text="Hier gelangst Du zu Deinem persönlichen Bereich. Dort kannst Du auch Angebote erstellen."
                         color="success"
                         button="Mein Bereich"
                         @clickCard="moveToTutoring"
@@ -37,30 +61,6 @@
                 </div>
             </v-card>
         </v-card>
-
-        <div v-if="is_loaded">
-            <!-- Überschrift -->
-            <v-card flat tile class="mt-4">
-                <div class="d-flex flex-row justify-center">
-                    <div class="text-h6 text-md-h5 text-lg-h4 text-xl-h2">
-                        <span class="text-secondary">NACH</span>
-                        <span class="text-third font-weight-bold">HILFE</span>
-                        <span class="text-secondary">TOOL</span>
-                    </div>
-                </div>
-            </v-card>
-
-            <v-card flat tile color="transparent" class="mt-4" v-if="offer_config.school">
-                <div class="d-flex justify-center">
-                    <div class="d-flex flex-column align-center">
-                        <div class="text-caption">{{ offer_config.school.long_name }}</div>
-                        <div style="width: 96px; height: 48px" class="bg-primary-lighten-4">
-                            <img :src="'/storage/images/' + offer_config.school.logo" alt="Logo" style="width: 100%; height: 100%; object-fit: contain" />
-                        </div>
-                    </div>
-                </div>
-            </v-card>
-        </div>
 
         <!-- SCHULE AUSWÄHLEN-->
         <!-- Wenn mehr als eine Schule möglich sind -->
@@ -278,8 +278,12 @@
             </v-card>
             <!-- KEINE ANGEBOT VORHANDEN-->
             <v-card v-else class="border-md mt-4">
-                <v-alert type="info" title="Aktuell sind keine Angebote vorhanden!" text="Melde Dich an und lege selbst ein Angebot an.">
+                <v-alert type="info" title="Aktuell sind keine Angebote vorhanden!" text="Melde Dich an und lege selbst ein Angebot an." v-if="!offer_config.auth.is_auth">
                     <v-btn size="small" tile flat color="primary" variant="text" class="ml-4" @click="startLogin">Los</v-btn>
+                    <v-btn size="small" tile flat color="primary" variant="text" class="ml-4" @click="moveToTutoring" v-if="offer_config.auth.is_auth">Los</v-btn>
+                </v-alert>
+                <v-alert type="info" title="Aktuell sind keine Angebote vorhanden!" text="Erstelle Dein eigenes Angebot." v-if="offer_config.auth.is_auth">
+                    <v-btn size="small" tile flat color="primary" variant="text" class="ml-4" @click="moveToTutoring" v-if="offer_config.auth.is_auth">Los</v-btn>
                 </v-alert>
             </v-card>
         </v-card>
@@ -313,13 +317,21 @@ export default {
         this.offerStore = useOfferStore()
         this.userStore = useUserStore()
 
-        this.school_name = this.$route.query.school
+        await this.offerStore.loadOfferConfig(this.school_name)
 
-        if (!this.school_name) {
-            await this.initWithoutSchool()
+        if (!this.offer_config?.auth?.is_auth) {
+            this.school_name = this.$route.query.school
+            if (!this.school_name) {
+                await this.initWithoutSchool()
+            } else {
+                await this.initWithSchool()
+            }
         } else {
+            this.school = this.offer_config.school
+            this.school_name = this.school.short_name
             await this.initWithSchool()
         }
+
         this.is_init = true
     },
 
@@ -360,7 +372,7 @@ export default {
 
     methods: {
         moveToTutoring() {
-            this.$router.push('/homepage/tutoring?school=' + this.school_name)
+            this.$router.push('/homepage/tutoring')
         },
 
         async afterLogin() {

@@ -187,10 +187,7 @@ class OfferController extends Controller
     public function loadOfferConfig(OfferLoadOfferConfigRequest $request, AuthService $authService)
     {
         $validated = $request->validated();
-        if (!isset($validated['school_name'])) abort(400, "Schulname wurde nicht angegeben!");
-        if (!$school = School::where('short_name', $validated['school_name'])->first()) abort(404, "Schule nicht gefunden!");
-
-
+        $school = null;
         $auth = $authService->getAuth();
 
         if ($auth['is_auth']) {
@@ -199,10 +196,21 @@ class OfferController extends Controller
             if (!$user->hasRole('tutoring_user')) {
                 UserService::logout();
                 $auth = $authService->getAuth();
+            } else {
+                $school = $user->selectedSchool;
             }
         }
+
+        if (!$school) {
+            if (!isset($validated['school_name'])) {
+                $school = null;
+            } else {
+                if (!$school = School::where('short_name', $validated['school_name'])->first()) $school = null;
+            }
+        }
+
         $data = [
-            'school' => new SchoolResource($school),
+            'school' => $school ? new SchoolResource($school) : null,
             'auth' => $auth,
         ];
 
