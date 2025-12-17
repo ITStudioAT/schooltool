@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
@@ -25,6 +26,9 @@ class RecordsCreateService
         // SuperAdmin-Rolle erzeugen
         $this->checkOrCreateAdminRoles();
 
+        // Lizenzen erzeugen
+        $this->checkOrCreateLicences();
+
         // Für alle Schulen einen SuperAdmin erzeugen
         $schools = School::all();
         foreach ($schools as $school) {
@@ -32,6 +36,39 @@ class RecordsCreateService
             $this->checkOrCreateSchoolyears($school);
             $this->checkOrCreateSchoolTool($school);
         }
+    }
+
+    private function checkOrCreateLicences()
+    {
+        // Anmeldetool
+        Licence::firstOrCreate(
+            ['id' => 1],
+            [
+                'name' => 'Anmeldetool',
+                'long_name' => 'Tool zum Verwalten von Anmeldeungen',
+                'price_per_year' => 200
+            ]
+        );
+
+        // Anmeldetool
+        Licence::firstOrCreate(
+            ['id' => 1],
+            [
+                'name' => 'Anmeldetool',
+                'long_name' => 'Tool zum Verwalten von Anmeldungen',
+                'price_per_year' => 200
+            ]
+        );
+
+        // Nachhilfetool
+        Licence::firstOrCreate(
+            ['id' => 2],
+            [
+                'name' => 'Nachhilfetool',
+                'long_name' => 'Tool zum Verwalten von Nachhilfe',
+                'price_per_year' => 200
+            ]
+        );
     }
 
     private function firstOrCreateSchool(): School
@@ -44,9 +81,11 @@ class RecordsCreateService
             $first = School::create([
                 'long_name' => 'Christian-Doppler-Gymnasium Salzburg',
                 'short_name' => 'CDGym',
-                'logo' => 'cdg.png',
+                'logo' => 'logo_1.png',
                 'is_selectable' => 1
             ]);
+
+            copy(storage_path('app/public/images/logo.png'), storage_path('app/public/images/logos/logo_1.png'));
         }
 
         return $first;

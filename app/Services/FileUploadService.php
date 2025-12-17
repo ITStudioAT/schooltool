@@ -62,6 +62,8 @@ class FileUploadService
             $originalName = $request->header('Upload-Name') ?: 'upload.bin';
             $extension    = pathinfo($originalName, PATHINFO_EXTENSION);
 
+
+
             // Filename base is provided by controller (e.g. logo_{schoolId})
             $base = $new_name ?: pathinfo($originalName, PATHINFO_FILENAME) ?: 'upload';
             $name = $base . ($extension ? ".{$extension}" : '');
@@ -100,10 +102,9 @@ class FileUploadService
             }
 
             // Cleanup temp
-            /*
+
             @unlink($part);
             @rmdir($dir);
-            */
 
             return $name; // FilePond confirmation / serverId
         }

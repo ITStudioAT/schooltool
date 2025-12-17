@@ -103,8 +103,6 @@ class SchoolService
 
     public function deleteSchools($ids)
     {
-
-
         foreach ($ids as $id) {
             $this->deleteSchool($id);
         }
@@ -140,15 +138,17 @@ class SchoolService
         // SchoolTool der Schule löschen
         SchoolTool::where('school_id', $id)->delete();
 
-        // Schulen lösche
+        // Schulen löschen
         $school = School::find($id);
 
         if ($school) {
 
             // Logo löschen, falls vorhanden
             if ($school->logo) {
-                Storage::disk('public')->delete("images/{$school->logo}");
+                Storage::disk('public')->delete("images/logos/{$school->logo}");
             }
+
+            File::deleteDirectory(storage_path('app/private/' . $school->id));
 
             // Schule löschen
             $school->delete();
@@ -167,7 +167,6 @@ class SchoolService
             'licences' => LicenceResource::collection($licences)
         ];
 
-        \Debugbar::info($school_id);
         $roles = ['admin', 'register_admin', 'super_admin', 'tutoring_admin'];
         $users = User::where('school_id', $school_id)
             ->role($roles)
@@ -221,14 +220,16 @@ class SchoolService
         $relPath = Str::before(ltrim($path, '/'), '?'); // strip leading slash + ?t=...
 
         // 1) Absolute paths
-        $source = storage_path('app/public/' . $relPath);      // /storage/app/private/temp/1/logo.jpg
-        $destDir = storage_path('app/public/images');           // /storage/app/public/images
+        $source = $relPath;      // /storage/app/private/temp/1/logo.jpg
+        $destDir = storage_path('app/public/images/logos');           // /storage/app/public/images/logos
 
         // 2) Build new filename
         $baseName  = pathinfo($source, PATHINFO_FILENAME);      // "logo"
         $extension = pathinfo($source, PATHINFO_EXTENSION);     // "jpg"
-        $newFilename = "{$baseName}_{$school->id}.{$extension}";  // "logo_12.jpg"
+        $newFilename = "logo_{$school->id}.{$extension}";  // "logo_12.jpg"
         $destPath = $destDir . DIRECTORY_SEPARATOR . $newFilename;
+
+
 
 
         // 3) copy the file

@@ -100,7 +100,6 @@ class TutoringService
             $this->sendCodeToUser($user);
             $data['status'] = 'CONFIRM_EMAIL_AGAIN';
         }
-        \Debugbar::info('TutoringService->confirmEmail', $data);
         return $data;
     }
 

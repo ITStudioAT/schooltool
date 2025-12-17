@@ -116,7 +116,7 @@ class SchoolController extends Controller
 
         $validated = $request->validated();
 
-        if (in_array($auth_user->school_id, $validated)) abort(409, "Eine zu löschende Schule ist aktuell ihnen zugeordnet. Das ist nicht zulässig.");
+        // if (in_array($auth_user->school_id, $validated)) abort(409, "Eine zu löschende Schule ist aktuell ihnen zugeordnet. Das ist nicht zulässig.");
 
         $service->deleteSchools($validated);
 
@@ -140,12 +140,12 @@ class SchoolController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $school = School::findOrFail($auth_user->school_id);
+        // $school = School::findOrFail($auth_user->school_id);
 
         $result = $fileUploadService->uploadNext(
             $request,
-            'app/public/images/logos',              // final target directory
-            "logo_{$school->id}",                   // required filename base
+            'app/public/temp',              // final target directory
+            "logo_{$auth_user->id}",                   // required filename base
             ['width' => 200, 'height' => 100]
         );
 
@@ -155,8 +155,8 @@ class SchoolController extends Controller
         }
 
 
-        $school->logo = $result;
-        $school->save();
+        //$school->logo = $result;
+        // $school->save();
         return response($result, 200)->header('Content-Type', 'text/plain');
 
         // return $result; // already a proper Response from the service

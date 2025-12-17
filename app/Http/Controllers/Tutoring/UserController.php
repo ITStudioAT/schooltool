@@ -119,7 +119,6 @@ class UserController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
         if (Auth::check()) {
-            \Debugbar::info('logout');
             Auth::guard('web')->logout();
             session()->invalidate();
         }
