@@ -200,11 +200,11 @@ describe('createRegisterEntries', function () {
         $this->service->createRegisterEntries();
         
         $times = RegisterDate::distinct('from')->pluck('from')->toArray();
-        
-        expect($times)->toContain('08:00')
-            ->and($times)->toContain('09:00')
-            ->and($times)->toContain('10:00')
-            ->and($times)->toContain('11:00');
+
+        expect($times)->toContain('08:00:00')
+            ->and($times)->toContain('09:00:00')
+            ->and($times)->toContain('10:00:00')
+            ->and($times)->toContain('11:00:00');
     });
     
     it('sets max_registrations to 20 for each date', function () {

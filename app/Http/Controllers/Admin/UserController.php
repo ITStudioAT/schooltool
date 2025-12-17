@@ -183,7 +183,7 @@ class UserController extends Controller
 
     public function show(User $user)
     {
-        if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'tutoring_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -277,10 +277,8 @@ class UserController extends Controller
     {
 
 
-        info("da");
-
         if (! $auth_user = $this->userHasAtLeastOneRole()) {
-            abort(403, 'Sie haben keine Berechtigung');
+            abort(403, 'Sie haben keine Berechtigungx');
         }
         $validated = $request->validated();
         unset($validated['id']);
@@ -508,5 +506,25 @@ class UserController extends Controller
         $userService->setNewUserRoles($user_ids, $role_ids);
 
         return response()->noContent();
+    }
+
+    public function toggleIsActive(Request $request, AdminService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin', 'admin', 'tutoring_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'user_id' => 'required|integer|exists:users,id',
+        ]);
+
+        $user = User::findOrFail($validated['user_id']);
+        if ($user->hasRole(['super_admin', 'admin'])) {
+            abort(403, 'Der Super-Admin oder Admin kann nicht deaktiviert werden');
+        }
+        $user->is_active = !$user->is_active;
+        $user->save();
+
+        return response()->json(new UserResource($user), 200);
     }
 }

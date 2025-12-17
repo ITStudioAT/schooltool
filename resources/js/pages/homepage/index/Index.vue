@@ -31,9 +31,8 @@
 
                         <v-card-actions class="mt-auto">
                             <div>befindet sich derzeit in Entwicklung</div>
-                            <!--
+
                             <v-btn class="ms-2" size="small" text="LOS" variant="outlined" @click="loadSchoolsForTool('Tutoring')"></v-btn>
-                            -->
                         </v-card-actions>
                     </v-card>
 
@@ -158,7 +157,7 @@ export default {
                     path += 'register'
                     break
                 case 'Tutoring':
-                    path += 'tutoring'
+                    path += 'tutoring/'
                     break
             }
             path += '?school=' + school.short_name

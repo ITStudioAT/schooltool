@@ -203,13 +203,13 @@ test('index sorts dates by from time and supervisor', function () {
     $response->assertStatus(200);
     
     $data = $response->json();
-    
+
     // First entry should be earliest time
-    expect($data[0]['from'])->toBe('08:00');
+    expect($data[0]['from'])->toBe('08:00:00');
     // Among same time, should be sorted by supervisor
     expect($data[0]['supervisor'])->toBe('Supervisor A');
     expect($data[1]['supervisor'])->toBe('Supervisor B');
-    expect($data[2]['from'])->toBe('10:00');
+    expect($data[2]['from'])->toBe('10:00:00');
 });
 
 // ============================================================================

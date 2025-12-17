@@ -32,7 +32,7 @@ class LicenceController extends Controller
             ->when($search_string, function ($query, $search_string) {
                 $query->where(function ($q) use ($search_string) {
                     $q->where('long_name', 'like', "%{$search_string}%")
-                        ->orWhere('nams', 'like', "%{$search_string}%");
+                        ->orWhere('name', 'like', "%{$search_string}%");
                 });
             })
             ->orderBy('long_name')

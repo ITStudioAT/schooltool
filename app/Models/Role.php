@@ -27,8 +27,8 @@ use Illuminate\Database\Eloquent\Relations\MorphToMany;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Role whereName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Role whereUpdatedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Role withoutPermission($permissions)
- * @mixin \Eloquent
  * @mixin IdeHelperRole
+ * @mixin \Eloquent
  */
 class Role extends SpatieRole
 {

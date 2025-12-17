@@ -78,6 +78,8 @@
                             </v-row>
                         </v-card-text>
                     </v-card>
+
+                    <!-- BENUTZER -->
                     <v-card tile flat color="primary" class="mt-4">
                         <v-card-title>Angemeldeter Benutzer</v-card-title>
                         <v-card-text class="text-body-1">
@@ -88,10 +90,11 @@
                                 <span class="text-decoration-underline">Rollen</span>
                                 <span>:</span>
                             </div>
-                            <div v-for="role in user(config?.user?.id)?.roles" :key="role">{{ role }}</div>
+                            <div v-for="role in config.user.roles" :key="role">{{ role }}</div>
                         </v-card-text>
                     </v-card>
 
+                    <!-- ADMINS -->
                     <v-card tile flat color="primary" class="mt-4">
                         <v-card-title>Admins</v-card-title>
                         <v-card-text>
@@ -104,6 +107,7 @@
                         </v-card-text>
                     </v-card>
 
+                    <!-- LIZENZEN -->
                     <v-card tile flat color="primary" class="mt-4">
                         <v-card-title>Lizenzen</v-card-title>
                         <v-card-text>
@@ -127,6 +131,7 @@
                 </its-grid-box>
             </v-col>
         </v-row>
+        <v-row>{{ config.admins }}</v-row>
     </v-container>
 </template>
 
@@ -173,6 +178,9 @@ export default {
     },
 
     methods: {
+        isAllowed(roles) {
+            return this.config.user.roles.some((role) => roles.includes(role))
+        },
         async runTests() {
             // Cron-Job-Status
             this.cron_test_status = 'running'

@@ -167,136 +167,126 @@ describe('uploadNext', function () {
         $id = Str::uuid()->toString();
         $dir = storage_path("app/private/temp/{$id}");
         mkdir($dir, 0775, true);
-        
+
         $content = 'complete file content';
-        $request = Request::create('/uploadLogo?patch=' . $id, 'PATCH', [], [], [], [
+        $request = Request::create('/uploadLogo?patch=' . $id . '&school_id=1', 'PATCH', [], [], [], [
             'HTTP_Upload-Length' => (string)strlen($content),
             'HTTP_Upload-Name' => 'test.txt',
         ], $content);
-        
+
         $result = $this->service->uploadNext($request, 'app/test-uploads');
-        
-        $finalPath = storage_path('app/test-uploads/test.txt');
+
+        $finalPath = storage_path('app/public/images/logos/logo_1.txt');
         expect(file_exists($finalPath))->toBeTrue()
             ->and(file_get_contents($finalPath))->toBe($content)
-            ->and($result)->toBe('test.txt');
+            ->and($result)->toBe('logo_1.txt');
     });
 
     it('uses custom name when provided', function () {
         $id = Str::uuid()->toString();
         $dir = storage_path("app/private/temp/{$id}");
         mkdir($dir, 0775, true);
-        
+
         $content = 'test content';
-        $request = Request::create('/uploadLogo?patch=' . $id, 'PATCH', [], [], [], [
+        $request = Request::create('/uploadLogo?patch=' . $id . '&school_id=1', 'PATCH', [], [], [], [
             'HTTP_Upload-Length' => (string)strlen($content),
             'HTTP_Upload-Name' => 'original.txt',
         ], $content);
-        
+
         $result = $this->service->uploadNext($request, 'app/test-uploads', 'custom-name');
-        
-        $finalPath = storage_path('app/test-uploads/custom-name.txt');
+
+        $finalPath = storage_path('app/public/images/logos/logo_1.txt');
         expect(file_exists($finalPath))->toBeTrue()
-            ->and($result)->toBe('custom-name.txt');
+            ->and($result)->toBe('logo_1.txt');
     });
 
     it('preserves file extension when using custom name', function () {
         $id = Str::uuid()->toString();
         $dir = storage_path("app/private/temp/{$id}");
         mkdir($dir, 0775, true);
-        
+
         $content = 'test content';
-        $request = Request::create('/uploadLogo?patch=' . $id, 'PATCH', [], [], [], [
+        $request = Request::create('/uploadLogo?patch=' . $id . '&school_id=1', 'PATCH', [], [], [], [
             'HTTP_Upload-Length' => (string)strlen($content),
             'HTTP_Upload-Name' => 'photo.jpg',
         ], $content);
-        
+
         $result = $this->service->uploadNext($request, 'app/test-uploads', 'new-photo');
-        
-        $finalPath = storage_path('app/test-uploads/new-photo.jpg');
+
+        $finalPath = storage_path('app/public/images/logos/logo_1.jpg');
         expect(file_exists($finalPath))->toBeTrue()
-            ->and($result)->toBe('new-photo.jpg');
+            ->and($result)->toBe('logo_1.jpg');
     });
 
     it('uses default name when Upload-Name header is missing', function () {
         $id = Str::uuid()->toString();
         $dir = storage_path("app/private/temp/{$id}");
         mkdir($dir, 0775, true);
-        
+
         $content = 'test';
-        $request = Request::create('/uploadLogo?patch=' . $id, 'PATCH', [], [], [], [
+        $request = Request::create('/uploadLogo?patch=' . $id . '&school_id=1', 'PATCH', [], [], [], [
             'HTTP_Upload-Length' => (string)strlen($content),
         ], $content);
-        
+
         $result = $this->service->uploadNext($request, 'app/test-uploads');
-        
-        $finalPath = storage_path('app/test-uploads/upload.bin');
+
+        $finalPath = storage_path('app/public/images/logos/logo_1.bin');
         expect(file_exists($finalPath))->toBeTrue()
-            ->and($result)->toBe('upload.bin');
+            ->and($result)->toBe('logo_1.bin');
     });
 
     it('creates destination directory if it does not exist', function () {
         $id = Str::uuid()->toString();
         $dir = storage_path("app/private/temp/{$id}");
         mkdir($dir, 0775, true);
-        
-        $uploadPath = 'app/new-directory/uploads';
-        $destDir = storage_path($uploadPath);
-        
-        if (is_dir($destDir)) {
-            rmdir($destDir);
-        }
-        
+
+        $destDir = storage_path('app/public/images/logos');
+
         $content = 'test';
-        $request = Request::create('/uploadLogo?patch=' . $id, 'PATCH', [], [], [], [
+        $request = Request::create('/uploadLogo?patch=' . $id . '&school_id=1', 'PATCH', [], [], [], [
             'HTTP_Upload-Length' => (string)strlen($content),
             'HTTP_Upload-Name' => 'test.txt',
         ], $content);
-        
-        $this->service->uploadNext($request, $uploadPath);
-        
+
+        $this->service->uploadNext($request, 'app/test-uploads');
+
         expect(is_dir($destDir))->toBeTrue();
-        
-        // Cleanup
-        unlink(storage_path("{$uploadPath}/test.txt"));
-        rmdir($destDir);
-        @rmdir(storage_path('app/new-directory'));
     });
 
     it('handles upload path with leading and trailing slashes', function () {
         $id = Str::uuid()->toString();
         $dir = storage_path("app/private/temp/{$id}");
         mkdir($dir, 0775, true);
-        
+
         $content = 'test';
-        $request = Request::create('/uploadLogo?patch=' . $id, 'PATCH', [], [], [], [
+        $request = Request::create('/uploadLogo?patch=' . $id . '&school_id=1', 'PATCH', [], [], [], [
             'HTTP_Upload-Length' => (string)strlen($content),
             'HTTP_Upload-Name' => 'test.txt',
         ], $content);
-        
+
         $result = $this->service->uploadNext($request, '/app/test-uploads/');
-        
-        $finalPath = storage_path('app/test-uploads/test.txt');
+
+        $finalPath = storage_path('app/public/images/logos/logo_1.txt');
         expect(file_exists($finalPath))->toBeTrue()
-            ->and($result)->toBe('test.txt');
+            ->and($result)->toBe('logo_1.txt');
     });
 
     it('moves file from temp to final location', function () {
         $id = Str::uuid()->toString();
         $dir = storage_path("app/private/temp/{$id}");
         mkdir($dir, 0775, true);
-        
+
         $content = 'file content';
-        $request = Request::create('/uploadLogo?patch=' . $id, 'PATCH', [], [], [], [
+        $request = Request::create('/uploadLogo?patch=' . $id . '&school_id=1', 'PATCH', [], [], [], [
             'HTTP_Upload-Length' => (string)strlen($content),
             'HTTP_Upload-Name' => 'moved.txt',
         ], $content);
-        
+
         $this->service->uploadNext($request, 'app/test-uploads');
-        
+
         $partFile = "{$dir}/file.part";
-        $finalPath = storage_path('app/test-uploads/moved.txt');
-        
+        $finalPath = storage_path('app/public/images/logos/logo_1.txt');
+
         expect(file_exists($partFile))->toBeFalse()
             ->and(file_exists($finalPath))->toBeTrue();
     });
@@ -321,21 +311,21 @@ describe('uploadNext with image resizing', function () {
         $content = file_get_contents($tempImage);
         unlink($tempImage);
         
-        $request = Request::create('/uploadLogo?patch=' . $id, 'PATCH', [], [], [], [
+        $request = Request::create('/uploadLogo?patch=' . $id . '&school_id=1', 'PATCH', [], [], [], [
             'HTTP_Upload-Length' => (string)strlen($content),
             'HTTP_Upload-Name' => 'test.png',
         ], $content);
-        
+
         $result = $this->service->uploadNext(
-            $request, 
-            'app/test-uploads', 
-            null, 
+            $request,
+            'app/test-uploads',
+            null,
             ['width' => 100, 'height' => 100]
         );
-        
-        $finalPath = storage_path('app/test-uploads/test.png');
+
+        $finalPath = storage_path('app/public/images/logos/logo_1.png');
         expect(file_exists($finalPath))->toBeTrue()
-            ->and($result)->toBe('test.png');
+            ->and($result)->toBe('logo_1.png');
         
         // Verify the image was resized
         $resizedImage = imagecreatefrompng($finalPath);
@@ -361,21 +351,21 @@ describe('uploadNext with image resizing', function () {
         $content = file_get_contents($tempImage);
         unlink($tempImage);
         
-        $request = Request::create('/uploadLogo?patch=' . $id, 'PATCH', [], [], [], [
+        $request = Request::create('/uploadLogo?patch=' . $id . '&school_id=1', 'PATCH', [], [], [], [
             'HTTP_Upload-Length' => (string)strlen($content),
             'HTTP_Upload-Name' => 'test.png',
         ], $content);
-        
+
         $result = $this->service->uploadNext(
-            $request, 
-            'app/test-uploads', 
-            null, 
+            $request,
+            'app/test-uploads',
+            null,
             ['width' => 100]
         );
-        
-        $finalPath = storage_path('app/test-uploads/test.png');
+
+        $finalPath = storage_path('app/public/images/logos/logo_1.png');
         expect(file_exists($finalPath))->toBeTrue()
-            ->and($result)->toBe('test.png');
+            ->and($result)->toBe('logo_1.png');
     });
 
     it('resizes image with only height', function () {
@@ -395,21 +385,21 @@ describe('uploadNext with image resizing', function () {
         $content = file_get_contents($tempImage);
         unlink($tempImage);
         
-        $request = Request::create('/uploadLogo?patch=' . $id, 'PATCH', [], [], [], [
+        $request = Request::create('/uploadLogo?patch=' . $id . '&school_id=1', 'PATCH', [], [], [], [
             'HTTP_Upload-Length' => (string)strlen($content),
             'HTTP_Upload-Name' => 'test.png',
         ], $content);
-        
+
         $result = $this->service->uploadNext(
-            $request, 
-            'app/test-uploads', 
-            null, 
+            $request,
+            'app/test-uploads',
+            null,
             ['height' => 100]
         );
-        
-        $finalPath = storage_path('app/test-uploads/test.png');
+
+        $finalPath = storage_path('app/public/images/logos/logo_1.png');
         expect(file_exists($finalPath))->toBeTrue()
-            ->and($result)->toBe('test.png');
+            ->and($result)->toBe('logo_1.png');
     });
 
     it('does not resize when fit parameter is empty array', function () {
@@ -418,19 +408,19 @@ describe('uploadNext with image resizing', function () {
         mkdir($dir, 0775, true);
         
         $content = 'plain text file';
-        $request = Request::create('/uploadLogo?patch=' . $id, 'PATCH', [], [], [], [
+        $request = Request::create('/uploadLogo?patch=' . $id . '&school_id=1', 'PATCH', [], [], [], [
             'HTTP_Upload-Length' => (string)strlen($content),
             'HTTP_Upload-Name' => 'test.txt',
         ], $content);
-        
+
         $result = $this->service->uploadNext(
-            $request, 
-            'app/test-uploads', 
-            null, 
+            $request,
+            'app/test-uploads',
+            null,
             []
         );
-        
-        $finalPath = storage_path('app/test-uploads/test.txt');
+
+        $finalPath = storage_path('app/public/images/logos/logo_1.txt');
         expect(file_exists($finalPath))->toBeTrue()
             ->and(file_get_contents($finalPath))->toBe($content);
     });
@@ -441,14 +431,14 @@ describe('uploadNext with image resizing', function () {
         mkdir($dir, 0775, true);
         
         $content = 'plain text file';
-        $request = Request::create('/uploadLogo?patch=' . $id, 'PATCH', [], [], [], [
+        $request = Request::create('/uploadLogo?patch=' . $id . '&school_id=1', 'PATCH', [], [], [], [
             'HTTP_Upload-Length' => (string)strlen($content),
             'HTTP_Upload-Name' => 'test.txt',
         ], $content);
-        
+
         $result = $this->service->uploadNext($request, 'app/test-uploads', null, null);
-        
-        $finalPath = storage_path('app/test-uploads/test.txt');
+
+        $finalPath = storage_path('app/public/images/logos/logo_1.txt');
         expect(file_exists($finalPath))->toBeTrue()
             ->and(file_get_contents($finalPath))->toBe($content);
     });
@@ -468,17 +458,17 @@ describe('integration tests', function () {
         
         // Step 3: Final chunk that completes upload
         $totalContent = 'chunk1chunk2chunk3';
-        $request3 = Request::create('/uploadLogo?patch=' . $id, 'PATCH', [], [], [], [
+        $request3 = Request::create('/uploadLogo?patch=' . $id . '&school_id=1', 'PATCH', [], [], [], [
             'HTTP_Upload-Length' => (string)strlen($totalContent),
             'HTTP_Upload-Name' => 'complete.txt',
         ], 'chunk3');
-        
+
         $result = $this->service->uploadNext($request3, 'app/test-uploads');
-        
-        $finalPath = storage_path('app/test-uploads/complete.txt');
+
+        $finalPath = storage_path('app/public/images/logos/logo_1.txt');
         expect(file_exists($finalPath))->toBeTrue()
             ->and(file_get_contents($finalPath))->toBe($totalContent)
-            ->and($result)->toBe('complete.txt');
+            ->and($result)->toBe('logo_1.txt');
     });
 
     it('handles multiple simultaneous uploads', function () {

@@ -170,7 +170,7 @@ test('admin can update schoolyear', function () {
 test('update requires valid payload', function () {
     $this->actingAs($this->adminUser, 'sanctum');
 
-    $this->putJson('/api/admin/schoolyears/1', [
+    $this->putJson("/api/admin/schoolyears/{$this->schoolyear->id}", [
         'name' => 'Missing ID',
     ])->assertStatus(422);
 });

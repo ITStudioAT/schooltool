@@ -1,13 +1,14 @@
 import 'vuetify/styles'
 import { createVuetify } from 'vuetify'
+import { de } from 'vuetify/locale'
 
 const lightTheme = {
     dark: false,
     colors: {
         // Main brand color for buttons, links, highlights
-        primary: '#37474F', // indigo.darken1
+        primary: '#37474F', // blue-grey-darken-3
         // Used for secondary buttons, cards, less emphasis
-        secondary: '#F39200 ', // blue-grey.lighten3
+        secondary: '#F39200 ', //
         third: '#3AAA35',
         // Optional highlight or accent tone
         accent: '#18FFFF', // cyan.accent3
@@ -21,10 +22,13 @@ const lightTheme = {
         success: '#00897B', // teal.darken1
         // For errors, alerts
         error: '#E53935', // red.darken1
-
+        button_primary: '#5c6c62', // indigo.darken1
+        button_primary_selected: '#37474F', // indigo.darken1
         // Tutoring
         tutoring_background: '#5c6c62',
         tutoring_text: '#fbf0d4',
+        tutoring_card: '#ECEFF1',
+        tutoring_card_title: '#263238',
         tutoring_secondary: '#dc8210',
     },
 }
@@ -52,16 +56,21 @@ const darkTheme = {
 }
 
 export default createVuetify({
+    locale: {
+        locale: 'de',
+        fallback: 'en',
+        messages: { de },
+    },
     theme: {
         defaultTheme: 'light',
         variations: {
-            colors: ['primary', 'secondary', 'accent', 'background', 'surface', 'text', 'success', 'error'],
+            colors: ['primary', 'secondary', 'accent', 'background', 'surface', 'text', 'success', 'error', 'tutoring_background', 'tutoring_secondary'],
             lighten: 4,
             darken: 4,
         },
         themes: {
-            light: lightTheme, // Use your custom theme here
-            dark: darkTheme, // Use your custom theme here
+            light: lightTheme,
+            dark: darkTheme,
         },
     },
 })

@@ -278,22 +278,52 @@ describe('checkRegister', function () {
 
 describe('createRegisterUser', function () {
     it('creates a new user with registration data', function () {
-        // Note: The service method has a limitation - it doesn't set school_id
-        // which is required by the database. This is a known issue in the service.
-        // Test is skipped until service is fixed to accept and set school_id.
-        $this->markTestSkipped('Service method createRegisterUser does not set required school_id field');
+        $data = [
+            'school_id' => 1,
+            'email' => 'newuser@example.com',
+        ];
+
+        $user = $this->service->createRegisterUser($data);
+
+        expect($user)->toBeInstanceOf(User::class)
+            ->and($user->email)->toBe('newuser@example.com')
+            ->and($user->school_id)->toBe(1)
+            ->and($user->register_started_at)->not->toBeNull()
+            ->and($user->exists)->toBeTrue();
     });
 
     it('hashes password during user creation', function () {
-        $this->markTestSkipped('Service method createRegisterUser does not set required school_id field');
+        $data = [
+            'school_id' => 1,
+            'email' => 'test@example.com',
+        ];
+
+        $user = $this->service->createRegisterUser($data);
+
+        expect($user->password)->not->toBeEmpty()
+            ->and(Hash::check(now()->toString(), $user->password))->toBeFalse();
     });
 
     it('sets register_as to admin', function () {
-        $this->markTestSkipped('Service method createRegisterUser does not set required school_id field');
+        $data = [
+            'school_id' => 1,
+            'email' => 'admin@example.com',
+        ];
+
+        $user = $this->service->createRegisterUser($data);
+
+        expect($user->register_as)->toBe('admin');
     });
 
     it('sets user as inactive by default', function () {
-        $this->markTestSkipped('Service method createRegisterUser does not set required school_id field');
+        $data = [
+            'school_id' => 1,
+            'email' => 'inactive@example.com',
+        ];
+
+        $user = $this->service->createRegisterUser($data);
+
+        expect($user->is_active)->toBeFalse();
     });
 });
 

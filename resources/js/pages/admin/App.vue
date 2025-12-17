@@ -21,7 +21,12 @@
         <v-app-bar flat color="primary" v-if="config && config.is_auth && config.roles.some((item) => admins.includes(item))">
             <template #prepend>
                 <v-btn icon="mdi-menu-open" v-if="!show_navigation_drawer" @click="show_navigation_drawer = true" />
-                <img :src="'/storage/images/' + config?.selected_school?.logo + '?t=' + Date.now()" alt="Logo" height="60px" class="pl-2" v-if="config?.selected_school?.logo" />
+                <img
+                    :src="'/storage/images/logos/' + config?.selected_school?.logo + '?t=' + Date.now()"
+                    alt="Logo"
+                    height="60px"
+                    class="pl-2"
+                    v-if="config?.selected_school?.logo" />
             </template>
             <template #title>
                 {{ config?.selected_school?.long_name }}

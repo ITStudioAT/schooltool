@@ -17,18 +17,19 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     $this->service = new SchoolService();
-    
+
     // Create roles
     Role::create(['name' => 'super_admin']);
     Role::create(['name' => 'admin']);
     Role::create(['name' => 'register_admin']);
-    
-    // Create a dummy user with ID 1 to ensure test users don't get ID 1
-    $dummySchool = School::factory()->create();
-    $dummySchoolyear = Schoolyear::factory()->create(['school_id' => $dummySchool->id]);
+    Role::create(['name' => 'tutoring_admin']);
+
+    // Create a dummy school and user with ID 1 to ensure they are protected from deletion
+    $this->dummySchool = School::factory()->create(['id' => 1]);
+    $dummySchoolyear = Schoolyear::factory()->create(['school_id' => $this->dummySchool->id]);
     User::factory()->create([
         'id' => 1,
-        'school_id' => $dummySchool->id,
+        'school_id' => $this->dummySchool->id,
         'schoolyear_id' => $dummySchoolyear->id,
     ]);
 });

@@ -1,77 +1,112 @@
 <template>
-    <v-container fluid class="ma-0 w-100 h-100 pa-2 d-flex align-center justify-center bg-tutoring_background text-tutoring_text">
-        <div class="d-flex flex-row border-md pa-0">
-            <img src="/storage/images/books.jpg" width="300" v-if="$vuetify.display.smAndUp" />
-
-            <v-card flat tile width="300" class="flex-grow-1 d-flex flex-column" color="transparent">
-                <v-card-title class="bg-tutoring_secondary text-uppercase text-h4">Tutoring</v-card-title>
-
-                <!-- Schulen auswählen, wenn sie nicht im Aufruf mitgeliefert wurde, z. B. ?school=cdgym -->
-                <div class="mt-4" v-if="!school">
-                    <div class="text-body-1 font-weight-bold ml-2">Bitte die Schule auswählen</div>
+    <v-container fluid class="ma-0 w-100 h-100 pa-0 d-flex align-center justify-center bg-tutoring_background text-tutoring_text">
+        <v-card tile flat class="bg-tutoring_background-lighten-1 w-100 fill-height" max-width="1024" v-if="auth">
+            <!-- HEADER -->
+            <v-card-text>
+                <div class="d-flex flex-row align-center justify-space-between">
                     <div>
-                        <v-autocomplete dense hide-details v-model="selected_school_id" :items="schools" item-title="long_name" item-value="id" label="Auswahl Schule" />
+                        <div class="text-caption">{{ auth.school_long_name }}</div>
+                        <div style="width: 96px; height: 48px">
+                            <img :src="'/storage/images/' + auth.school_logo" alt="Logo" style="width: 100%; height: 100%; object-fit: contain" />
+                        </div>
                     </div>
+                    <div class="text-body-1">{{ auth.auth_user.last_name + ' ' + auth.auth_user.first_name + ', ' + auth?.auth_user?.schoolclass }}</div>
                 </div>
+            </v-card-text>
 
-                <v-card-text v-if="school">
-                    <div>
-                        <img :src="`/storage/images/${school?.logo}`" alt="Logo" class="logo" v-if="school?.logo" height="100" />
-                    </div>
-                </v-card-text>
+            <!-- TITLE -->
+            <v-card-title class="text-h4">NACHHILFE</v-card-title>
 
-                <v-card-text v-if="school && !data.status">
-                    <v-form ref="form" v-model="is_valid" @submit.prevent="checkEmail(data)" class="mb-4">
-                        <v-text-field autofocus v-model="data.email" label="Deine E-Mail-Adresse" :rules="[required(), mail()]" tabindex="1" />
-                        <div class="d-flex flex-row align-center justify-space-between">
-                            <div></div>
-                            <v-btn color="success" slim flat rounded="0" type="submit" v-if="data.email" tabindex="2">Weiter</v-btn>
-                        </div>
-                    </v-form>
-                </v-card-text>
+            <!-- MENÜ -->
+            <v-card-text>
+                <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2" :disabled="action != ''">
+                    <its-menu-button
+                        title="Profil"
+                        subtitle="ändern"
+                        icon="mdi-account"
+                        :color="action == 'profile' ? 'button_primary_selected' : 'button_primary'"
+                        @click="editProfile" />
+                    <its-menu-button
+                        title="Kennwort"
+                        subtitle="ändern"
+                        icon="mdi-form-textbox-password"
+                        :color="action == 'password' ? 'button_primary_selected' : 'button_primary'"
+                        @click="editPassword" />
+                    <its-menu-button
+                        title="Mich"
+                        subtitle="abmelden"
+                        icon="mdi-logout"
+                        :color="action == 'logout' ? 'button_primary_selected' : 'button_primary'"
+                        @click="logout" />
+                </v-card>
+            </v-card-text>
+            <!-- MENÜ 2. Zeile -->
+            <v-card-text>
+                <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2" :disabled="action != ''">
+                    <its-menu-button
+                        title="Nachilfe"
+                        subtitle="anbieten"
+                        icon="mdi-offer"
+                        :color="action == 'search' ? 'button_primary_selected' : 'button_primary'"
+                        @click="createOffer" />
+                </v-card>
+            </v-card-text>
 
-                <v-card-text v-if="data.status == 'NEW_USER'">
-                    <div class="text-h6 font-weight-medium">Neuer Benutzer</div>
-                    <div class="text-body-2">E-Mail: {{ data.email }}</div>
-                    <v-form ref="form" v-model="is_valid" @submit.prevent="createUser(data)" class="my-4">
-                        <v-text-field autofocus v-model="data.last_name" label="Dein Nachname" :rules="[required(), maxLength(255)]" tabindex="1" />
-                        <v-text-field v-model="data.first_name" label="Dein Vorname" :rules="[maxLength(255)]" tabindex="1" />
-                        <div class="d-flex flex-row align-center justify-space-between">
-                            <div></div>
-                            <v-btn color="success" slim flat rounded="0" type="submit" v-if="data.email" tabindex="2">Weiter</v-btn>
-                        </div>
-                    </v-form>
-                </v-card-text>
-                <v-card-text>
-                    DATA:
-                    {{ data }}
-                </v-card-text>
-                <v-card-text>
-                    SCHOOL:
-                    {{ school }}
-                </v-card-text>
-            </v-card>
-        </div>
+            <!-- MEINE ANGEBOTE -->
+            <MyOffers v-if="action == '' || action == 'edit_offer'" />
+
+            <!-- PROFIL -->
+            <Profile v-if="action == 'profile'" />
+
+            <!-- PASSWORD   -->
+            <Password v-if="action == 'password'" />
+
+            <!-- OFFER   -->
+            <Offer v-if="action == 'create_offer'" />
+
+            <!-- SUBJECTS -->
+            <v-card-text>
+                {{ action }}
+            </v-card-text>
+
+            <!-- AUTH
+            <v-card-text>
+                <v-list>
+                    <v-list-item v-for="(value, key) in auth" :key="key">
+                        <v-list-item-title>{{ key }}</v-list-item-title>
+                        <v-list-item-subtitle>{{ value }}</v-list-item-subtitle>
+                    </v-list-item>
+                </v-list>
+            </v-card-text>
+            -->
+        </v-card>
     </v-container>
 </template>
 
 <script>
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
-import { useTutoringStore } from '@/stores/homepage/TutoringStore'
+import { useTutoringStore } from '@/stores/tutoring/TutoringStore'
+import { useUserStore } from '@/stores/tutoring/UserStore'
+import { useSubjectStore } from '@/stores/tutoring/SubjectStore'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
+import Profile from './components/Profile.vue'
+import Password from './components/Password.vue'
+import Offer from './components/Offer.vue'
+import MyOffers from './components/MyOffers.vue'
 
 export default {
     setup() {
         return useValidationRulesSetup()
     },
-    components: { ItsMenuButton, ItsGridBox },
+    components: { ItsMenuButton, ItsGridBox, Profile, Password, Offer, MyOffers },
 
     async beforeMount() {
         this.tutoringStore = useTutoringStore()
-        this.school_name = this.$route.query.school
-        await this.tutoringStore.loadConfig()
+        this.userStore = useUserStore()
+        this.subjectStore = useSubjectStore()
+        await this.tutoringStore.loadAuth()
     },
 
     async mounted() {},
@@ -81,52 +116,41 @@ export default {
     data() {
         return {
             tutoringStore: null,
-            school_name: null,
-
+            userStore: null,
             is_valid: false,
+            is_password_visible: false,
+            is_password_visible_confirm: false,
+            selectedSubject: null,
+            step: 0,
         }
     },
 
     computed: {
-        ...mapWritableState(useTutoringStore, ['schools', 'selected_school_id', 'school', 'data']),
+        ...mapWritableState(useTutoringStore, ['auth', 'action']),
+        ...mapWritableState(useUserStore, ['error', 'data']),
+        ...mapWritableState(useSubjectStore, ['subjects']),
     },
 
-    watch: {
-        selected_school_id: {
-            handler(newId) {
-                this.school = this.schools.find((school) => school.id === newId) || null
-            },
-            immediate: true,
-        },
-        schools: {
-            handler(newSchools) {
-                if (newSchools.length > 0 && this.school_name) {
-                    const foundSchool = newSchools.find((school) => school.short_name.toLowerCase() === this.school_name.toLowerCase())
-                    if (foundSchool) {
-                        this.school = foundSchool
-                        this.selected_school_id = foundSchool.id
-                    }
-                }
-            },
-            immediate: true,
-        },
-    },
+    watch: {},
 
     methods: {
-        async checkEmail(data) {
-            this.is_valid = false
-            await this.$refs.form.validate()
-            if (!this.is_valid) return
-            data.school_id = this.school?.id ?? null
-            if (!(await this.tutoringStore.checkEmail(data))) return
+        createOffer() {
+            this.action = 'create_offer'
         },
 
-        async createUser(data) {
-            this.is_valid = false
-            await this.$refs.form.validate()
-            if (!this.is_valid) return
-            data.school_id = this.school?.id ?? null
-            if (!(await this.tutoringStore.createUser(data))) return
+        editProfile() {
+            this.action = 'profile'
+        },
+
+        editPassword() {
+            this.action = 'password'
+        },
+
+        async logout() {
+            await this.userStore.logout()
+            await this.tutoringStore.loadAuth()
+            this.action = ''
+            this.$router.push('/homepage/tutoring_intro/?school=' + this.auth?.school_short_name)
         },
     },
 }

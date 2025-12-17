@@ -18,6 +18,7 @@ class AppUpdateCommand extends Command
         $this->output->write("\033c");
         $this->info('🚀 Starting application update...');
         $this->line(str_repeat('.', 50));
+
         // ✅ 1. Run migrations
         $this->info('▶ MIGRATIONS');
         Artisan::call('migrate', ['--force' => true]);
@@ -35,6 +36,7 @@ class AppUpdateCommand extends Command
         $this->info('▶ ROLES AND RECORDS');
         $service->createRoles(['super_admin', 'admin', 'register_admin', 'register_user', 'tutoring_user', 'tutoring_admin', 'teacher', 'lunch_admin', 'lunch_user']);
         $this->info('✅ Roles checked');
+
         $recordsCreateService->initRecords();
         $this->info('✅ Init Records checked');
         $this->line(str_repeat('.', 50));

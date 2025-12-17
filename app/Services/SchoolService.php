@@ -7,9 +7,10 @@ use App\Http\Resources\Admin\UserResource;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolLicence;
+use App\Models\SchoolTool;
 use App\Models\Schoolyear;
-use App\Models\User;
 
+use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -52,7 +53,14 @@ class SchoolService
 
         $user->assignRole('super_admin');
 
-        // Folder für LOogo etc anlegen
+        // SchoolTool - Record erzeugen 
+        $schoolTool = SchoolTool::create([
+            'school_id' =>  $school->id,
+            'tutoring_student_must_be_confirmed' => false,
+            'tutoring_confirmer_email' => '',
+        ]);
+
+        // Folder für Logo etc anlegen
         $hlp_path = $school->id . '/temp';
         if (!Storage::directoryExists($hlp_path)) {
             Storage::makeDirectory($hlp_path);
@@ -95,8 +103,6 @@ class SchoolService
 
     public function deleteSchools($ids)
     {
-
-
         foreach ($ids as $id) {
             $this->deleteSchool($id);
         }
@@ -129,15 +135,20 @@ class SchoolService
         // Schuljahr der Schule löschen
         Schoolyear::where('school_id', $id)->delete();
 
-        // Schulen lösche
+        // SchoolTool der Schule löschen
+        SchoolTool::where('school_id', $id)->delete();
+
+        // Schulen löschen
         $school = School::find($id);
 
         if ($school) {
 
             // Logo löschen, falls vorhanden
             if ($school->logo) {
-                Storage::disk('public')->delete("images/{$school->logo}");
+                Storage::disk('public')->delete("images/logos/{$school->logo}");
             }
+
+            File::deleteDirectory(storage_path('app/private/' . $school->id));
 
             // Schule löschen
             $school->delete();
@@ -209,14 +220,16 @@ class SchoolService
         $relPath = Str::before(ltrim($path, '/'), '?'); // strip leading slash + ?t=...
 
         // 1) Absolute paths
-        $source = storage_path('app/public/' . $relPath);      // /storage/app/private/temp/1/logo.jpg
-        $destDir = storage_path('app/public/images');           // /storage/app/public/images
+        $source = $relPath;      // /storage/app/private/temp/1/logo.jpg
+        $destDir = storage_path('app/public/images/logos');           // /storage/app/public/images/logos
 
         // 2) Build new filename
         $baseName  = pathinfo($source, PATHINFO_FILENAME);      // "logo"
         $extension = pathinfo($source, PATHINFO_EXTENSION);     // "jpg"
-        $newFilename = "{$baseName}_{$school->id}.{$extension}";  // "logo_12.jpg"
+        $newFilename = "logo_{$school->id}.{$extension}";  // "logo_12.jpg"
         $destPath = $destDir . DIRECTORY_SEPARATOR . $newFilename;
+
+
 
 
         // 3) copy the file

@@ -108,5 +108,25 @@ export const useUserStore = defineStore('AdminUser20Store', {
                 adminStore.is_loading--
             }
         },
+
+        async toggleIsActive(user_id) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                this.answer = await axios.post(`/api/admin/users20/toggle_is_active`, { user_id })
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.timeout,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
     },
 })

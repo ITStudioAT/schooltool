@@ -1,7 +1,14 @@
 {
-    "permissions": {
-        "allow": ["Bash(php artisan test:*)"],
-        "deny": [],
-        "ask": []
-    }
+  "permissions": {
+    "allow": [
+      "Bash(php artisan test:*)",
+      "Bash(composer test:*)",
+      "Bash(nul)",
+      "Bash(findstr:*)",
+      "Bash(php artisan:*)",
+      "Bash(dir:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
 }

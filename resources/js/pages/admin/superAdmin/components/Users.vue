@@ -22,7 +22,7 @@
                                 flat
                                 tile
                                 class="text-caption"
-                                @click="selected_role = role.name"
+                                @click="changeSelectedRole(role.name)"
                                 v-for="role in roles"
                                 :key="role.name">
                                 {{ role.name }}
@@ -35,7 +35,10 @@
                                 <template v-slot:title>
                                     <div class="w-100">
                                         <div class="text-body-1 d-flex flex-row align-center justify-space-between w-100">
-                                            <div>{{ item.last_name + ' ' + item.first_name }}</div>
+                                            <div class="d-flex flex-row align-center ga-2">
+                                                <v-icon color="error" size="small" icon="mdi-lock" v-if="!item.is_active" />
+                                                <div>{{ item.last_name + ' ' + item.first_name }}</div>
+                                            </div>
                                             <div class="text-rigtht text-body-2">{{ item.email }}</div>
                                         </div>
                                         <div class="text-caption">
@@ -60,6 +63,28 @@
                     <!-- GENAU 1 ELEMENT AUSGEWÄHLT -->
                     <div class="d-flex flex-column ga-2" v-if="selected_users.length == 1">
                         <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-pencil" @click="editUser(selected_users[0])">Ändern</v-btn>
+                        <v-btn
+                            block
+                            tile
+                            flat
+                            color="error"
+                            class="text-caption"
+                            prepend-icon="mdi-lock"
+                            @click="toggleIsActive(selected_users[0])"
+                            v-if="selectedUser(selected_users[0]).is_active">
+                            Sperren
+                        </v-btn>
+                        <v-btn
+                            block
+                            tile
+                            flat
+                            color="success"
+                            class="text-caption"
+                            prepend-icon="mdi-lock-open"
+                            @click="toggleIsActive(selected_users[0])"
+                            v-if="!selectedUser(selected_users[0]).is_active">
+                            Entsperren
+                        </v-btn>
                     </div>
                     <!-- MINDEST 1 ELEMENT AUSGEWÄHLT -->
                     <div class="d-flex flex-column ga-2" v-if="selected_users.length >= 1">
@@ -183,6 +208,17 @@ export default {
     },
 
     methods: {
+        changeSelectedRole(role_name) {
+            this.selected_users = []
+            this.selected_role = role_name
+        },
+        async toggleIsActive(user_id) {
+            await this.userStore.toggleIsActive(user_id)
+            await this.userStore.index(this.meta.current_page)
+        },
+        selectedUser(user) {
+            return this.users.find((s) => s.id === user)
+        },
         onUploadStart() {
             this.is_uploading = true
         },

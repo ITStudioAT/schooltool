@@ -51,10 +51,15 @@
             </div>
         </its-grid-box>
     </v-col>
+
+    <!-- EDIT SCHOOL -->
     <v-col cols="12" md="6" xl="4" v-if="action == 'create_school' || action == 'edit_school'">
         <its-grid-box color="primary" :title="data.id ? 'Schule ändern' : 'Neue Schule'" class="w-100">
             <v-form ref="form" v-model="is_valid" @submit.prevent="saveSchool(data)" class="mb-4">
                 <v-row dense>
+                    <v-col cols="12">
+                        {{ data?.id }}
+                    </v-col>
                     <v-col cols="12">
                         <v-text-field autofocus v-model="data.long_name" label="Schule (langer Name)" :rules="[required(), maxLength(255)]" />
                     </v-col>
@@ -69,16 +74,16 @@
                     <v-col cols="12">
                         <v-checkbox hide-details v-model="data.is_selectable" label="Auswählbar" />
                     </v-col>
-                    <v-col cols="12">
+                    <v-col cols="12" v-if="data.id">
                         <div class="text-body-1">Logo:</div>
                         <!-- Upload-Logo -->
                         <div v-if="data.upload_file">
-                            <img :src="`/storage${data.upload_file}`" alt="Logo" height="60px" class="pl-2" />
+                            <img :src="`${data.upload_file}`" alt="Logo" height="60px" class="pl-2" />
                         </div>
 
                         <!-- Logo existiert und kein Upload-Logo-->
                         <div v-if="data.logo && !data.upload_file" class="d-flex flex-row align-center justify-space-between ga-2">
-                            <img :src="'/storage/images/' + data.logo + '?t=' + Date.now()" alt="Logo" height="60px" class="pl-2" />
+                            <img :src="'/storage/images/logos/' + data.logo + '?t=' + Date.now()" alt="Logo" height="60px" class="pl-2" />
                             <v-btn tile flat color="error" class="text-caption" prepend-icon="mdi-delete" @click="removeLogo">Löschen</v-btn>
                         </div>
 
@@ -168,7 +173,7 @@ export default {
 
         fileUploadFinished(file) {
             this.is_uploading = false
-            this.data.upload_file = '/temp/' + this.config?.user?.id + '/' + file.name + '?t=' + Date.now()
+            this.data.upload_file = '/storage/temp/' + file.name + '?t=' + Date.now()
         },
 
         removeLogo() {

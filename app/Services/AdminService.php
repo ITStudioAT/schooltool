@@ -92,6 +92,7 @@ class AdminService
     {
         $user = User::create(
             [
+                'school_id' => $data['school_id'] ?? 1,
                 'email' => $data['email'],
                 'password' => Hash::make(now()),
                 'register_started_at' => now(),
@@ -255,7 +256,7 @@ class AdminService
         }
 
 
-        if (! $user->hasAnyRole(['super_admin', 'admin', 'register_admin'])) {
+        if (! $user->hasAnyRole(['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teacher'])) {
             // Benutzer hat keine der angegebenen Rollen
             abort(423, 'Login aufgrund fehlender Berechtigungen nicht möglich.');
         }
@@ -286,7 +287,7 @@ class AdminService
         }
 
 
-        if (! $user->hasAnyRole(['super_admin', 'admin', 'user', 'register_admin'])) {
+        if (! $user->hasAnyRole(['super_admin', 'admin', 'user', 'register_admin', 'tutoring_admin', 'teacher'])) {
             // Benutzer hat keine der angegebenen Rollen
             abort(423, 'Login aufgrund der Berechtigungen nicht möglich.');
         }
