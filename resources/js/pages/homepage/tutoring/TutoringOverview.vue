@@ -274,7 +274,7 @@
 
             <!-- Angebote -->
             <v-card flat color=" bg-primary" class="border-md mt-4" v-if="offers && offers.length > 0">
-                <ItsCard :title="offer.subject.short_name" :text="offer.title" color="secondary" button="Los" @clickCard="" v-for="offer in offers" :key="offer.id" />
+                <ItsCard :title="offer.subject.short_name" :text="offer.title" color="secondary" button="Anschauen" @clickCard="" v-for="offer in offers" :key="offer.id" />
             </v-card>
             <!-- KEINE ANGEBOT VORHANDEN-->
             <v-card v-else class="border-md mt-4">

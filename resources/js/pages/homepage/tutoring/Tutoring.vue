@@ -1,7 +1,7 @@
 <template>
     <div class="schooltool-background"></div>
     <!-- Überschrift SCHOOLTOOL / NACHHILFETOOL-->
-    <div>
+    <div v-if="offer_config">
         <v-card flat tile class="mt-4">
             <div class="d-flex flex-row justify-center">
                 <div class="text-h6 text-md-h5 text-lg-h4 text-xl-h2">
@@ -23,7 +23,7 @@
             </div>
         </v-card>
     </div>
-    <div class="h-100 w-100 d-flex flex-column mt-4" style="max-width: 1024px; margin: auto">
+    <div class="h-100 w-100 d-flex flex-column mt-4" style="max-width: 1024px; margin: auto" v-if="auth">
         <v-card flat tile :disabled="action != ''">
             <v-card-title>
                 {{ auth.auth_user.last_name + ' ' + auth.auth_user.first_name + ', ' + auth.auth_user.schoolclass }}
@@ -57,7 +57,7 @@
                         button="Zur Übersicht"
                         @clickCard="moveToTutoringOverview" />
 
-                    <ItsCard title="Nachhilfe anbieten" text="Hier kannst Du ein neues Nachhilfe-Angebot erstellen." color="success" button="Los" @clickCard="createOffer" />
+                    <ItsCard title="Neue Nachhilfe" text="Hier kannst Du ein neues Nachhilfe-Angebot erstellen." color="success" button="Los" @clickCard="createOffer" />
 
                     <ItsCard title="Mich abmelden" text="Hier kannst Du Dich vom System ausloggen." color="success" button="Abmelden" @clickCard="logout" />
                 </div>
@@ -77,11 +77,6 @@
             <!-- OFFER   -->
             <Offer v-if="action == 'create_offer'" />
 
-            <!-- SUBJECTS -->
-            <v-card-text>
-                {{ action }}
-            </v-card-text>
-
             <!-- AUTH
             <v-card-text>
                 <v-list>
@@ -92,6 +87,9 @@
                 </v-list>
             </v-card-text>
             -->
+        </v-card>
+        <v-card>
+            {{ offer_config }}
         </v-card>
     </div>
 </template>
@@ -154,7 +152,7 @@ export default {
 
     methods: {
         moveToTutoringOverview() {
-            this.$router.push('/homepage/tutoring_overview')
+            this.$router.push('/homepage/tutoring_overview/?school=' + this.offer_config?.school?.short_name)
         },
 
         createOffer() {
@@ -170,10 +168,11 @@ export default {
         },
 
         async logout() {
+            const school = this.offer_config?.school?.short_name
             await this.userStore.logout()
-            await this.tutoringStore.loadAuth()
+            // await this.tutoringStore.loadAuth()
             this.action = ''
-            this.$router.push('/homepage/tutoring_intro/?school=' + this.auth?.school_short_name)
+            this.$router.push('/homepage/tutoring_overview/?school=' + school)
         },
     },
 }

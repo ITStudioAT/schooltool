@@ -1,7 +1,15 @@
 # Next Changes
 
-Loading the offers for the user (if logged in / if not logged in)
+-   Check, if the offer may be created (max_offers)
+-   Send the teacher a confirmation mail
 
-## Mein Bereich
+## Login Teacher
 
-New version of login / registration
+-   See all offers to confirm
+
+## Offer overview
+
+-   More Details
+-   Register click on it
+
+## Search for offers
