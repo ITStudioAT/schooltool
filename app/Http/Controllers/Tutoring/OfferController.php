@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Tutoring;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Tutoring\OfferIndexRequest;
 use App\Http\Requests\Tutoring\OfferLoadOfferConfigRequest;
+use App\Http\Requests\Tutoring\OfferLoadOffersRequest;
 use App\Http\Requests\Tutoring\OfferStoreRequest;
 use App\Http\Requests\Tutoring\OfferToggleOfferRequest;
 use App\Http\Requests\Tutoring\OfferUpdateRequest;
@@ -55,6 +56,49 @@ class OfferController extends Controller
             'meta' => new PaginateResource($offers),
         ]);
     }
+
+
+    public function loadOffers(OfferLoadOffersRequest $request)
+    {
+
+        // Etwaig angemeldeten User laden
+        $auth_user = $this->userHasRole(['tutoring_user']);
+
+        $validated = $request->validated();
+        $search_string = $validated['search_string'] ?? null;
+        $school_name = $validated['school_name'] ?? null;
+
+
+
+        if ($auth_user) {
+            $school = $auth_user->selectedSchool;
+        } else {
+            $school = School::where('short_name', $school_name)->first();
+        }
+
+        if (!$school) abort(422, 'Keine Schule ausgewählt');
+
+        $offers = TutoringOffer::query()
+            ->with('subject')
+            ->join('tutoring_subjects', 'tutoring_subjects.id', '=', 'tutoring_offers.subject_id')
+            ->where('tutoring_offers.school_id', $school->id)
+            ->when($search_string, function ($query, $search_string) {
+                $query->where(function ($q) use ($search_string) {
+                    $q->where('tutoring_offers.title', 'like', "%{$search_string}%")
+                        ->orWhere('tutoring_offers.description', 'like', "%{$search_string}%");
+                });
+            })
+            ->orderBy('tutoring_subjects.short_name')
+            ->select('tutoring_offers.*') // important to avoid column conflicts
+            ->paginate(config('schooltool.pagination'));
+
+        return response()->json([
+            'data' => OfferResource::collection($offers),
+            'meta' => new PaginateResource($offers),
+        ]);
+    }
+
+
 
 
     /**

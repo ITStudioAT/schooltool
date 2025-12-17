@@ -208,7 +208,11 @@ export default {
             this.action_2 = 'edit_subject'
         },
         selectSubject(subject) {
-            this.selected_subject = subject
+            if (this.selected_subject != subject) {
+                this.selected_subject = subject
+            } else {
+                this.selected_subject = null
+            }
         },
         async doCreateSubjects(data) {
             if (!(await this.subjectStore.createSubjects(data))) return

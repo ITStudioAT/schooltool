@@ -32,7 +32,7 @@
                         <v-card-actions class="mt-auto">
                             <div>befindet sich derzeit in Entwicklung</div>
 
-                            <v-btn class="ms-2" size="small" text="LOS" variant="outlined" @click="loadSchoolsForTool('Tutoring')" disabled></v-btn>
+                            <v-btn class="ms-2" size="small" text="LOS" variant="outlined" @click="loadSchoolsForTool('Nachhilfetool')"></v-btn>
                         </v-card-actions>
                     </v-card>
 
@@ -70,10 +70,11 @@
 
                         <v-card-subtitle style="white-space: normal">{{ licence.long_name }}</v-card-subtitle>
 
-                        <v-card-text>
+                        <v-card-text v-if="schools.length > 0">
                             <div class="text-h6">Bitte wähle die Schule aus</div>
                             <v-autocomplete v-model="selected_school_id" :items="schools" item-title="long_name" item-value="id" label="Auswahl Schule" />
                         </v-card-text>
+                        <v-card-text class="text-body-1 font-weight-medium" v-else>Keine Schule vorhanden!</v-card-text>
 
                         <v-card-actions class="mt-auto">
                             <v-btn class="ms-2" size="small" text="Zurück" color="warning" variant="flat" @click="abort('')" />
@@ -156,8 +157,8 @@ export default {
                 case 'Anmeldetool':
                     path += 'register'
                     break
-                case 'Tutoring':
-                    path += 'tutoring/'
+                case 'Nachhilfetool':
+                    path += 'tutoring_overview/'
                     break
             }
             path += '?school=' + school.short_name
