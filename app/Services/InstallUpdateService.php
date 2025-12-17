@@ -75,6 +75,11 @@ class InstallUpdateService
         if (!Storage::disk('public')->exists($path)) {
             Storage::disk('public')->makeDirectory($path);
         }
+
+        $path = 'images/folders'; // relative to storage/app/public
+        if (!Storage::disk('public')->exists($path)) {
+            Storage::disk('public')->makeDirectory($path);
+        }
     }
 
     private function createOrCleanDirectory($path)
