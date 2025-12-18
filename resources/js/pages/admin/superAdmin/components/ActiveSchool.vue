@@ -1,6 +1,6 @@
 <template>
     <v-col cols="12" md="6" xl="4">
-        <its-grid-box color="primary" title="Aktive Schule" class="w-100">
+        <ItsGridBox color="primary" title="Aktive Schule" class="w-100">
             <div class="d-flex flex-row align-start">
                 <v-card tile flat color="transparent" class="w-100">
                     <v-card-title>{{ config.selected_school.long_name }}</v-card-title>
@@ -164,7 +164,35 @@
                     </v-card-text>
                 </v-card>
             </div>
-        </its-grid-box>
+        </ItsGridBox>
+    </v-col>
+    <v-col cols="12" md="6" xl="4" v-if="action == ''">
+        <ItsGridBox color="primary" title="Lehrer" class="w-100">
+            <div class="d-flex flex-row align-center justify-space-between text-body-1">
+                <div class="font-weight-medium">Aktive Lehrer:</div>
+                <div class="d-flex flex-row align-center ga-2">
+                    <div>
+                        {{ teachers.count_active }}
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex flex-row align-center justify-space-between text-body-1">
+                <div class="font-weight-medium">Lehrer in Liste:</div>
+                <div class="d-flex flex-row align-center ga-2">
+                    <div>
+                        {{ teachers.count }}
+                    </div>
+                </div>
+            </div>
+
+            <v-card tile flat color="transparent">
+                <v-card-text class="d-flex flex-row align-center ga-2">
+                    <ItsMenuButton title="Lehrer" subtitle="verwalten" icon="mdi-school" color="primary" @click="main_action = 'teachers'" />
+                    <ItsMenuButton title="Lehrerliste" subtitle="verwalten" icon="mdi-view-list" color="primary" @click="main_action = 'teachers_list'" />
+                </v-card-text>
+            </v-card>
+        </ItsGridBox>
     </v-col>
 </template>
 <script>
@@ -211,8 +239,8 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, ['action', 'config', 'roles']),
-        ...mapWritableState(useSchoolStore, ['selected_school', 'switchable_schools', 'school_licences', 'school_admins']),
+        ...mapWritableState(useAdminStore, ['action', 'config', 'roles', 'main_action']),
+        ...mapWritableState(useSchoolStore, ['selected_school', 'switchable_schools', 'school_licences', 'school_admins', 'teachers']),
         ...mapWritableState(useLicenceStore, ['licences']),
     },
 

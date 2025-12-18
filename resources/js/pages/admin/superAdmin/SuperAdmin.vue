@@ -12,9 +12,7 @@
                 v-if="config.roles.includes('super_admin')" />
 
             <its-menu-button subtitle="Lizenzen" icon="mdi-card-account-details" :color="main_action == 'licences' ? 'primary' : 'secondary'" @click="main_action = 'licences'" />
-
             <its-menu-button subtitle="Benutzer" icon="mdi-account-multiple" :color="main_action == 'users' ? 'primary' : 'secondary'" @click="main_action = 'users'" />
-            <its-menu-button subtitle="Lehrer" icon="mdi-school" :color="main_action == 'teachers' ? 'primary' : 'secondary'" @click="main_action = 'teachers'" />
             <its-menu-button subtitle="Log" icon="mdi-file-document" :color="main_action == 'log' ? 'primary' : 'secondary'" @click="main_action = 'log'" />
             <its-menu-button subtitle="Horizon" icon="mdi-horizontal-rotate-clockwise" color="secondary" @click="moveToHorizon" />
         </v-card>
@@ -23,7 +21,8 @@
             <Schools v-if="main_action == 'schools' && config.roles.includes('super_admin')" />
             <Licences v-if="main_action == 'licences' && config.roles.includes('super_admin')" />
             <Users v-if="main_action == 'users' && config.roles.includes('super_admin')" />
-            <Teachers v-if="main_action == 'teacher' && config.roles.includes('super_admin')" />
+            <Teachers v-if="main_action == 'teachers' && config.roles.includes('super_admin')" />
+            <TeachersList v-if="main_action == 'teachers_list' && config.roles.includes('super_admin')" />
             <Log v-if="main_action == 'log' && config.roles.includes('super_admin')" />
         </v-row>
     </v-container>
@@ -38,12 +37,14 @@ import Schools from './components/Schools.vue'
 import Licences from './components/Licences.vue'
 import Users from './components/Users.vue'
 import Teachers from './components/Teachers.vue'
+import TeachersList from './components/TeachersList.vue'
+
 import ActiveSchool from './components/ActiveSchool.vue'
 
 import Log from './components/Log.vue'
 
 export default {
-    components: { ItsMenuButton, ItsGridBox, Schools, ActiveSchool, Licences, Users, Log, Teachers },
+    components: { ItsMenuButton, ItsGridBox, Schools, ActiveSchool, Licences, Users, Log, Teachers, TeachersList },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -54,12 +55,11 @@ export default {
     data() {
         return {
             adminStore: null,
-            main_action: '',
         }
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, ['config', 'action']),
+        ...mapWritableState(useAdminStore, ['config', 'action', 'main_action']),
     },
 
     methods: {

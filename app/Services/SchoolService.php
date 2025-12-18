@@ -10,6 +10,7 @@ use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 
+use App\Models\Teacher;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -167,13 +168,16 @@ class SchoolService
             'licences' => LicenceResource::collection($licences)
         ];
 
-        $roles = ['admin', 'register_admin', 'super_admin', 'tutoring_admin', 'teacher', 'lunch_admin'];
+        $roles = ['admin', 'register_admin', 'super_admin', 'tutoring_admin',  'lunch_admin'];
         $users = User::where('school_id', $school_id)
             ->role($roles)
             ->orderBy('last_name')
             ->get();
 
         $data['admins'] = UserResource::collection($users);
+
+        $data['teachers']['count_active'] = User::where('school_id', $school_id)->role('teacher')->count();
+        $data['teachers']['count'] = Teacher::where('school_id', $school_id)->count();
 
         return $data;
     }

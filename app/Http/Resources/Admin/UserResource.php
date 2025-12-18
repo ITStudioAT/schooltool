@@ -35,7 +35,6 @@ class UserResource extends JsonResource
             'login_at' => $this->login_at ? Carbon::parse($this->login_at)->format('d.m.Y  H:i') : null,
             'login_ip' => $this->login_ip,
             'roles' => $this->roles->sortBy('name')->pluck('name')->values(),
-
         ];
     }
 }

@@ -14,6 +14,7 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
         switchable_schools: [],
         school_licences: [],
         school_admins: [],
+        teachers: [],
     }),
 
     actions: {
@@ -176,6 +177,7 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
                 const response = await axios.post(`/api/admin/schools/load_school_infos`, { school_id })
                 this.school_licences = response.data.licences
                 this.school_admins = response.data.admins
+                this.teachers = response.data.teachers
 
                 return true
             } catch (error) {

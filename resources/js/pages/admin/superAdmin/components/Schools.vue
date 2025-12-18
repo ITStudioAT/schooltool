@@ -58,9 +58,6 @@
             <v-form ref="form" v-model="is_valid" @submit.prevent="saveSchool(data)" class="mb-4">
                 <v-row dense>
                     <v-col cols="12">
-                        {{ data?.id }}
-                    </v-col>
-                    <v-col cols="12">
                         <v-text-field autofocus v-model="data.long_name" label="Schule (langer Name)" :rules="[required(), maxLength(255)]" />
                     </v-col>
                     <v-col cols="12">

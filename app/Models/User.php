@@ -8,6 +8,7 @@ use App\Models\Register;
 use App\Models\RegisterDateBooking;
 use App\Models\School;
 use App\Models\Schoolyear;
+use App\Models\TutoringOffer;
 use App\Notifications\StandardEmail;
 use App\Traits\UserTrait;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -153,6 +154,17 @@ class User extends Authenticatable
         ];
     }
 
+    public function scopeTeachers($query, $school_id = null)
+    {
+        $query->role('teacher');
+
+        if ($school_id) {
+            $query->where('school_id', $school_id);
+        }
+
+        return $query;
+    }
+
     public function scopeBySchoolAndRole($query, $schoolId, $roleName)
     {
         return $query->where('school_id', $schoolId)
@@ -255,6 +267,7 @@ class User extends Authenticatable
     public function hasDependencies(): bool
     {
         if (RegisterDateBooking::where('user_id', $this->id)->count() > 0) return true;
+        if (TutoringOffer::where('user_id', $this->id)->count() > 0) return true;
         return false;
     }
 }

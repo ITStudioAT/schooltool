@@ -23,6 +23,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
         roles: [],
         health: null,
         main_menu: '',
+        main_action: '',
     }),
 
     actions: {
