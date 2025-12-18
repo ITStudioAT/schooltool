@@ -16,6 +16,7 @@
             <its-menu-button subtitle="Benutzer" icon="mdi-account-multiple" :color="main_action == 'users' ? 'primary' : 'secondary'" @click="main_action = 'users'" />
             <its-menu-button subtitle="Lehrer" icon="mdi-school" :color="main_action == 'teachers' ? 'primary' : 'secondary'" @click="main_action = 'teachers'" />
             <its-menu-button subtitle="Log" icon="mdi-file-document" :color="main_action == 'log' ? 'primary' : 'secondary'" @click="main_action = 'log'" />
+            <its-menu-button subtitle="Horizon" icon="mdi-horizontal-rotate-clockwise" color="secondary" @click="moveToHorizon" />
         </v-card>
         <v-row class="w-100" dense>
             <ActiveSchool v-if="main_action == '' && config.roles.includes('super_admin')" />
@@ -61,6 +62,10 @@ export default {
         ...mapWritableState(useAdminStore, ['config', 'action']),
     },
 
-    methods: {},
+    methods: {
+        moveToHorizon() {
+            window.open('/horizon', '_blank')
+        },
+    },
 }
 </script>

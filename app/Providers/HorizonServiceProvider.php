@@ -18,10 +18,11 @@ class HorizonServiceProvider extends HorizonApplicationServiceProvider
         Horizon::auth(function ($request) {
             // Lokal: immer erlaubt
 
+            /*
             if (app()->environment('local')) {
                 return true;
             }
-
+*/
 
             // Production: nur super_admin
             return $request->user()?->hasRole('super_admin') ?? false;
