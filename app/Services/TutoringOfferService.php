@@ -30,7 +30,7 @@ class TutoringOfferService
 
         if ($data['must_be_accepted']) {
             $data['is_active'] = false;
-            // NotIfication an Tutor
+            // TODO Notification an Tutor
         } else {
             $data['is_active'] = true;
             $data['accepted_at'] = now();

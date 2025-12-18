@@ -23,7 +23,7 @@ class TutoringController extends Controller
 {
     public function config()
     {
-        $licenceName = 'Tutoring';
+        $licenceName = 'Nachhilfetool';
 
         $schools = School::where('is_selectable', 1)->whereHas('licences', function ($query) use ($licenceName) {
             $query->where('name', $licenceName)

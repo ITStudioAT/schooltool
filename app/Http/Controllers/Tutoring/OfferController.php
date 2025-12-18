@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Tutoring;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Tutoring\OfferIndexRequest;
 use App\Http\Requests\Tutoring\OfferLoadOfferConfigRequest;
+use App\Http\Requests\Tutoring\OfferLoadOffersRequest;
 use App\Http\Requests\Tutoring\OfferStoreRequest;
 use App\Http\Requests\Tutoring\OfferToggleOfferRequest;
 use App\Http\Requests\Tutoring\OfferUpdateRequest;
@@ -55,6 +56,49 @@ class OfferController extends Controller
             'meta' => new PaginateResource($offers),
         ]);
     }
+
+
+    public function loadOffers(OfferLoadOffersRequest $request)
+    {
+
+        // Etwaig angemeldeten User laden
+        $auth_user = $this->userHasRole(['tutoring_user']);
+
+        $validated = $request->validated();
+        $search_string = $validated['search_string'] ?? null;
+        $school_name = $validated['school_name'] ?? null;
+
+
+
+        if ($auth_user) {
+            $school = $auth_user->selectedSchool;
+        } else {
+            $school = School::where('short_name', $school_name)->first();
+        }
+
+        if (!$school) abort(422, 'Keine Schule ausgewählt');
+
+        $offers = TutoringOffer::query()
+            ->with('subject')
+            ->join('tutoring_subjects', 'tutoring_subjects.id', '=', 'tutoring_offers.subject_id')
+            ->where('tutoring_offers.school_id', $school->id)
+            ->when($search_string, function ($query, $search_string) {
+                $query->where(function ($q) use ($search_string) {
+                    $q->where('tutoring_offers.title', 'like', "%{$search_string}%")
+                        ->orWhere('tutoring_offers.description', 'like', "%{$search_string}%");
+                });
+            })
+            ->orderBy('tutoring_subjects.short_name')
+            ->select('tutoring_offers.*') // important to avoid column conflicts
+            ->paginate(config('schooltool.pagination'));
+
+        return response()->json([
+            'data' => OfferResource::collection($offers),
+            'meta' => new PaginateResource($offers),
+        ]);
+    }
+
+
 
 
     /**
@@ -143,10 +187,7 @@ class OfferController extends Controller
     public function loadOfferConfig(OfferLoadOfferConfigRequest $request, AuthService $authService)
     {
         $validated = $request->validated();
-        if (!isset($validated['school_name'])) abort(400, "Schulname wurde nicht angegeben!");
-        if (!$school = School::where('short_name', $validated['school_name'])->first()) abort(404, "Schule nicht gefunden!");
-
-
+        $school = null;
         $auth = $authService->getAuth();
 
         if ($auth['is_auth']) {
@@ -155,10 +196,21 @@ class OfferController extends Controller
             if (!$user->hasRole('tutoring_user')) {
                 UserService::logout();
                 $auth = $authService->getAuth();
+            } else {
+                $school = $user->selectedSchool;
             }
         }
+
+        if (!$school) {
+            if (!isset($validated['school_name'])) {
+                $school = null;
+            } else {
+                if (!$school = School::where('short_name', $validated['school_name'])->first()) $school = null;
+            }
+        }
+
         $data = [
-            'school' => new SchoolResource($school),
+            'school' => $school ? new SchoolResource($school) : null,
             'auth' => $auth,
         ];
 
