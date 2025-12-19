@@ -71,7 +71,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
                 const notification = useNotificationStore()
                 notification.notify({
                     message: e.message,
-                    type: 'success',
+                    type: e.status === 200 ? 'success' : 'error',
                     persistent: true,
                 })
             })

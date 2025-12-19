@@ -14,12 +14,14 @@ class TeachersListImportFinishedEvent implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
+    public $status;
     public $userId;
     public $message;
     public $data;
 
-    public function __construct($userId, $message, $data = [])
+    public function __construct($status, $userId, $message, $data = [])
     {
+        $this->status = $status;
         $this->userId = $userId;
         $this->message = $message;
         $this->data = $data;

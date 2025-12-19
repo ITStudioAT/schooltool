@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Events\TeachersListImportFinishedEvent;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\TeachersListResource;
+use App\Jobs\ImportTeachersListJob;
 use App\Models\School;
 use App\Models\Teacher;
 use App\Services\FileUploadService;
@@ -87,15 +88,9 @@ class TeachersListController extends Controller
             return $result; // "OK" or final name wrapped in Response
         }
 
-        \Debugbar::info('app/private/' . $auth_user->school_id . '/excel');
-        \Debugbar::info($result);
+        ImportTeachersListJob::dispatch($auth_user, 'app/private/' . $auth_user->school_id . '/excel/' . $result);
 
 
-        broadcast(new TeachersListImportFinishedEvent(
-            $auth_user->id,
-            'Import erfolgreich abgeschlossen!',
-            ['imported' => 150, 'failed' => 2]
-        ));
 
 
 
