@@ -20,6 +20,10 @@ return Application::configure(basePath: dirname(__DIR__))
             'web-allowed' => WebAllowed::class,
             'api-allowed' => ApiAllowed::class
         ]);
+        $middleware->validateCsrfTokens(except: [
+            '/broadcasting/auth',
+            'broadcasting/*',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

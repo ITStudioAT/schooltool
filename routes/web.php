@@ -1,6 +1,14 @@
 <?php
 
+use App\Http\Controllers\Homepage\HomepageController;
+use App\Http\Controllers\Tutoring\TutoringController;
+use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
+
+
+
+// Broadcasting wird vom BroadcastServiceProvider gehandhabt
 
 // Alles wird gethrottlet
 

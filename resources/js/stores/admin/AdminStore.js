@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { createResourceStore } from './ResourceStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
+import Echo from 'laravel-echo'
+import Pusher from 'pusher-js'
 
 const resourceStore = createResourceStore('users') // <-- first create it
 
@@ -24,10 +26,55 @@ export const useAdminStore = defineStore('AdminAdminStore', {
         health: null,
         main_menu: '',
         main_action: '',
+        echo: null,
     }),
 
     actions: {
         ...resourceStore.actions(),
+
+        async initializeEcho() {
+            // Sicherstellen, dass CSRF-Cookie vorhanden ist
+            await axios.get('/sanctum/csrf-cookie')
+
+            // Pusher global setzen
+            window.Pusher = Pusher
+
+            // Echo initialisieren
+            this.echo = new Echo({
+                broadcaster: 'pusher',
+                key: import.meta.env.VITE_PUSHER_APP_KEY,
+                cluster: import.meta.env.VITE_PUSHER_APP_CLUSTER,
+                forceTLS: true,
+                authEndpoint: '/broadcasting/auth',
+                authorizer: (channel) => {
+                    return {
+                        authorize: (socketId, callback) => {
+                            // Axios nutzt automatisch withCredentials und withXSRFToken
+                            axios.post('/broadcasting/auth', {
+                                socket_id: socketId,
+                                channel_name: channel.name
+                            })
+                            .then(response => {
+                                callback(null, response.data);
+                            })
+                            .catch(error => {
+                                console.error('Broadcasting auth error:', error);
+                                callback(error);
+                            });
+                        }
+                    };
+                },
+            })
+
+            // Private Channel für User
+            this.echo.private(`user.${this.data.id}`).listen('TeachersListImportFinishedEvent', (e) => {
+                const notification = useNotificationStore()
+                notification.notify({
+                    message: e.message,
+                    type: 'success',
+                })
+            })
+        },
 
         async loadConfig() {
             const notification = useNotificationStore()
@@ -41,6 +88,12 @@ export const useAdminStore = defineStore('AdminAdminStore', {
                 this.selected_schoolyear = this.config?.selected_schoolyear
                 this.selected_register = this.config?.selected_register
                 this.health = this.config?.health
+
+                // User-Daten setzen für Echo
+                if (this.config?.user) {
+                    this.data = this.config.user
+                }
+
                 return this.api_response.data
             } catch (error) {
                 notification.notify({

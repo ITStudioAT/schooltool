@@ -107,9 +107,14 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/users20/store', [\App\Http\Controllers\Admin\UserController::class, 'storeUser']);
         Route::post('/admin/users20/delete_users', [\App\Http\Controllers\Admin\UserController::class, 'deleteUsers']);
 
-        //schools
+        //teachers
         Route::apiResource('/admin/teachers', \App\Http\Controllers\Admin\TeacherController::class);
         Route::post('/admin/teachers/delete_teachers', [\App\Http\Controllers\Admin\TeacherController::class, 'deleteTeachers']);
+        Route::apiResource('/admin/teachers_list', \App\Http\Controllers\Admin\TeachersListController::class);
+
+
+        Route::post('/admin/teachers_list_upload', [\App\Http\Controllers\Admin\TeachersListController::class, 'upload']);
+        Route::patch('/admin/teachers_list_upload', [\App\Http\Controllers\Admin\TeachersListController::class, 'uploadNext']);
     });
 
     /* SANCTUM - tutoring_user */
@@ -171,6 +176,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/schools/delete_licence',  [\App\Http\Controllers\Admin\SchoolController::class, 'deleteLicence']);
         Route::post('/admin/schools/add_admin',  [\App\Http\Controllers\Admin\SchoolController::class, 'addAdmin']);
         Route::post('/admin/schools/delete_admin',  [\App\Http\Controllers\Admin\SchoolController::class, 'deleteAdmin']);
+
+
 
 
 

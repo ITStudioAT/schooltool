@@ -131,7 +131,7 @@
                 </its-grid-box>
             </v-col>
         </v-row>
-        <v-row>{{ config.admins }}</v-row>
+        <v-row>{{ config }}</v-row>
     </v-container>
 </template>
 
@@ -185,7 +185,6 @@ export default {
             // Cron-Job-Status
             this.cron_test_status = 'running'
             await this.healthStore.checkCronStatus()
-            console.log(this.cron_status)
             this.cron_test_result = this.cron_status.is_healthy
             this.cron_test_status = 'finished'
 

@@ -6,10 +6,11 @@ use Illuminate\Support\Facades\Schedule;
 use App\Jobs\HealthJob;
 
 
-
+/*
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
+*/
 
 Schedule::job(new HealthJob)
     ->everyMinute()
