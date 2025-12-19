@@ -81,8 +81,6 @@ export default {
         this.adminStore = useAdminStore()
         this.adminStore.initialize(this.$router)
         await this.adminStore.loadConfig()
-
-        if (this.config.is_auth) await this.adminStore.initializeEcho()
     },
 
     methods: {

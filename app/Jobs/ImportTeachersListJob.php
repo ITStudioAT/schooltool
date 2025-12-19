@@ -51,8 +51,9 @@ class ImportTeachersListJob implements ShouldQueue
 
         $created = 0;
         $updated = 0;
+        $processedTeacherIds = [];
 
-        $reader->getRows()->each(function (array $row) use ($headerMapping, $school_id, &$created, &$updated) {
+        $reader->getRows()->each(function (array $row) use ($headerMapping, $school_id, &$created, &$updated, &$processedTeacherIds) {
             // Mappe die Daten auf die Standard-Header
             $mappedRow = [];
             foreach ($headerMapping as $originalHeader => $standardHeader) {
@@ -71,6 +72,9 @@ class ImportTeachersListJob implements ShouldQueue
                 ]
             );
 
+            // Speichere die ID des verarbeiteten Lehrers
+            $processedTeacherIds[] = $teacher->id;
+
             if ($teacher->wasRecentlyCreated) {
                 $created++;
             } else {
@@ -78,12 +82,16 @@ class ImportTeachersListJob implements ShouldQueue
             }
         });
 
+        // Lösche alle Lehrer dieser Schule, die nicht in der Excel-Datei waren
+        $deleted = Teacher::where('school_id', $school_id)
+            ->whereNotIn('id', $processedTeacherIds)
+            ->delete();
 
         broadcast(new TeachersListImportFinishedEvent(
             200,
             $this->user->id,
-            'Die Lehrerliste (Excel) wurde erfolgreich importiert (' . $created . ' neu, ' . $updated . ' geprüft)',
-            ['created' => $created, 'updated' => $updated]
+            'Die Lehrerliste (Excel) wurde erfolgreich importiert (' . $created . ' neu, ' . $updated . ' geprüft, ' . $deleted . ' gelöscht)',
+            ['created' => $created, 'updated' => $updated, 'deleted' => $deleted]
         ));
     }
 

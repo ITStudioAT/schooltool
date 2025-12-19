@@ -4,8 +4,8 @@
             <div class="d-flex flex-row align-start">
                 <v-card tile flat color="transparent" class="w-100">
                     <v-card-text>
-                        <!-- RECORDS 
-                        <v-list dense variant="elevated" select-strategy="leaf" v-model:selected="selected_teachers" color="success-lighten-2">
+                        <!-- RECORDS   -->
+                        <v-list density="compact" variant="elevated" select-strategy="leaf" v-model:selected="selected_teachers" color="success-lighten-2" v-if="is_upload != true">
                             <v-list-item v-for="item in teachers" :key="item.id" :value="item.id">
                                 <template v-slot:title>
                                     <v-row>
@@ -19,7 +19,6 @@
                                 </template>
                             </v-list-item>
                         </v-list>
-                        -->
 
                         <div v-if="is_upload == true">
                             <v-card-title>Upload einer Lehrer-Liste</v-card-title>
@@ -65,6 +64,7 @@
                 <v-card tile flat color="transparent" style="width: 150px" class="d-flex flex-column ga-2" v-if="is_upload == false">
                     <!-- AUSWAHl EGAL -->
                     <div class="d-flex flex-column ga-2">
+                        <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-refresh" @click="refresh">Aktualisierung</v-btn>
                         <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-import" @click="is_upload = true">Importieren</v-btn>
                         <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-plus" @click="">Hinzufügen</v-btn>
                     </div>
@@ -80,10 +80,7 @@
             </div>
         </ItsGridBox>
     </v-col>
-    <div>
-        TEACHERS:
-        {{ teachers }}
-    </div>
+    {{ config }}
 </template>
 
 <script>
@@ -129,7 +126,13 @@ export default {
     },
 
     methods: {
-        onUploadStart() {},
+        async refresh() {
+            await this.teachersListStore.index()
+        },
+        onUploadStart() {
+            // Start Pusher
+            if (this.config.is_auth) this.adminStore.initializeEcho()
+        },
 
         fileUploadFinished(file) {
             this.is_upload_finished = true

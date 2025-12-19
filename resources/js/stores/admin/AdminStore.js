@@ -50,24 +50,25 @@ export const useAdminStore = defineStore('AdminAdminStore', {
                     return {
                         authorize: (socketId, callback) => {
                             // Axios nutzt automatisch withCredentials und withXSRFToken
-                            axios.post('/broadcasting/auth', {
-                                socket_id: socketId,
-                                channel_name: channel.name
-                            })
-                            .then(response => {
-                                callback(null, response.data);
-                            })
-                            .catch(error => {
-                                console.error('Broadcasting auth error:', error);
-                                callback(error);
-                            });
-                        }
-                    };
+                            axios
+                                .post('/broadcasting/auth', {
+                                    socket_id: socketId,
+                                    channel_name: channel.name,
+                                })
+                                .then((response) => {
+                                    callback(null, response.data)
+                                })
+                                .catch((error) => {
+                                    console.error('Broadcasting auth error:', error)
+                                    callback(error)
+                                })
+                        },
+                    }
                 },
             })
 
             // Private Channel für User
-            this.echo.private(`user.${this.data.id}`).listen('TeachersListImportFinishedEvent', (e) => {
+            this.echo.private(`user.${this.config.user.id}`).listen('TeachersListImportFinishedEvent', (e) => {
                 const notification = useNotificationStore()
                 notification.notify({
                     message: e.message,
@@ -75,6 +76,17 @@ export const useAdminStore = defineStore('AdminAdminStore', {
                     persistent: true,
                 })
             })
+        },
+
+        disconnectEcho() {
+            if (this.echo) {
+                // Leave specific channel first (optional)
+                this.echo.leave(`user.${this.config.user.id}`)
+
+                // Disconnect completely
+                this.echo.disconnect()
+                this.echo = null
+            }
         },
 
         async loadConfig() {
