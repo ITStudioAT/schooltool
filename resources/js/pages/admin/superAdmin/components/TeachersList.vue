@@ -80,7 +80,6 @@
             </div>
         </ItsGridBox>
     </v-col>
-    {{ config }}
 </template>
 
 <script>
@@ -121,7 +120,7 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, ['action', 'config', 'main_action']),
+        ...mapWritableState(useAdminStore, ['action', 'config', 'main_action', 'pusher_count']),
         ...mapWritableState(useTeachersListStore, ['teachers', 'meta', 'selected_teachers', 'search_string', 'data', 'answer']),
     },
 

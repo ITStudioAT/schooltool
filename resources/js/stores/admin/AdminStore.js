@@ -27,6 +27,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
         main_menu: '',
         main_action: '',
         echo: null,
+        pusher_count: 0,
     }),
 
     actions: {
@@ -35,6 +36,8 @@ export const useAdminStore = defineStore('AdminAdminStore', {
         async initializeEcho() {
             // Sicherstellen, dass CSRF-Cookie vorhanden ist
             await axios.get('/sanctum/csrf-cookie')
+
+            this.pusher_count++
 
             // Pusher global setzen
             window.Pusher = Pusher
@@ -75,6 +78,8 @@ export const useAdminStore = defineStore('AdminAdminStore', {
                     type: e.status === 200 ? 'success' : 'error',
                     persistent: true,
                 })
+                this.pusher_count--
+                if (this.pusher_count == 0) this.disconnectEcho()
             })
         },
 
