@@ -1,7 +1,8 @@
 <!-- components/ItsNotification.vue -->
 <template>
     <v-snackbar :timer="notificationStore.type + '-lighten-4'" v-model="notificationStore.show"
-        :timeout="notificationStore.timeout" :color="notificationStore.type" min-height="70">
+        :timeout="notificationStore.persistent ? -1 : notificationStore.timeout" :color="notificationStore.type"
+        min-height="70" :location="notificationStore.persistent ? 'top right' : 'bottom'">
 
         <div class="d-flex flex-row align-center ga-2">
             <v-icon :icon="icon(notificationStore.type)" />
@@ -12,6 +13,10 @@
                 {{ notificationStore.message }}
             </div>
         </div>
+
+        <template v-slot:actions v-if="notificationStore.persistent">
+            <v-btn icon="mdi-close" variant="text" @click="notificationStore.close()"></v-btn>
+        </template>
 
     </v-snackbar>
 </template>

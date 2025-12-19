@@ -90,13 +90,13 @@ class TeachersListController extends Controller
         \Debugbar::info('app/private/' . $auth_user->school_id . '/excel');
         \Debugbar::info($result);
 
-        /*
+
         broadcast(new TeachersListImportFinishedEvent(
             $auth_user->id,
             'Import erfolgreich abgeschlossen!',
             ['imported' => 150, 'failed' => 2]
         ));
-        */
+
 
 
         return response($result, 200)->header('Content-Type', 'text/plain');

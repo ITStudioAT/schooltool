@@ -72,6 +72,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
                 notification.notify({
                     message: e.message,
                     type: 'success',
+                    persistent: true,
                 })
             })
         },
