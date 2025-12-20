@@ -1,5 +1,5 @@
 <template>
-    <v-container fluid class="ma-0 w-100 pa-2">
+    <v-container fluid class="ma-0 w-100 pa-2" v-if="config.is_auth">
         <v-row class="w-100" no-gutters v-if="config">
             <v-col cols="12" md="6" xl="4">
                 <its-grid-box color="primary" class="h-100 w-100">
@@ -151,7 +151,7 @@ export default {
         this.healthStore = useHealthStore()
         this.schoolStore = useSchoolStore()
         if (this.config?.is_auth) await this.schoolStore.loadSchoolInfos(this.config?.selected_school?.id)
-        this.runTests()
+        if (this.config?.is_auth) this.runTests()
     },
 
     unmounted() {},

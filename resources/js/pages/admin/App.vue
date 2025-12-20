@@ -87,7 +87,9 @@ export default {
         async logout() {
             // whatever your backend sequence is
             // this.$router.push('/admin')
+            console.log('logout')
             await this.adminStore.executeLogout()
+            console.log('after logout')
             //await this.adminStore.loadConfig()
             await this.$nextTick()
             this.$router.replace('/admin/login')
