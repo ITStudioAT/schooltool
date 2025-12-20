@@ -81,7 +81,7 @@ class TeacherController extends Controller
         }
         $validated = $request->validated();
 
-        $teacher = $service->update($auth_user->school_id, $validated);
+        $teacher = $service->update($auth_user, $validated);
 
         return response()->json(new TeacherResource($teacher), 200);
     }

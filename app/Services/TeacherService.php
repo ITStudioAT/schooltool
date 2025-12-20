@@ -35,11 +35,14 @@ class TeacherService
         return $user;
     }
 
-    public function update($school_id, $data)
+    public function update($auth_user, $data)
     {
+        $school_id = $auth_user->id;
 
         // Prüfen, ob User existiert
         $user = User::findOrFail($data['id']);
+
+        if ($user->hasRole('super_admin') && $user->id != $data['id']) abort(401, "Ein anderer Lehrer kann nicht gespeichrt werden, wenn dieser Super-Admin ist.");
 
         // Prüfen, ob die Update-Daten id + school_id vorhanden sind
         if ($user->school_id != $school_id) abort(401, 'Diese Änderung kann nicht durchgeführt werden.');

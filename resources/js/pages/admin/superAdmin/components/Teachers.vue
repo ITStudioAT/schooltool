@@ -18,6 +18,7 @@
                                 <template v-slot:title>
                                     <v-row>
                                         <v-col cols="2">
+                                            <v-icon color="error" size="small" icon="mdi-lock" v-if="!item.is_active" />
                                             {{ item.short }}
                                         </v-col>
                                         <v-col cols="10">
@@ -45,6 +46,28 @@
                     <!-- GENAU 1 ELEMENT AUSGEWÄHLT -->
                     <div class="d-flex flex-column ga-2" v-if="selected_teachers.length == 1">
                         <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-pencil" @click="editTeacher(selected_teachers[0])">Ändern</v-btn>
+                        <v-btn
+                            block
+                            tile
+                            flat
+                            color="error"
+                            class="text-caption"
+                            prepend-icon="mdi-lock"
+                            @click="toggleIsActive(selected_teachers[0])"
+                            v-if="selectedTeacher(selected_teachers[0]).is_active">
+                            Sperren
+                        </v-btn>
+                        <v-btn
+                            block
+                            tile
+                            flat
+                            color="success"
+                            class="text-caption"
+                            prepend-icon="mdi-lock-open"
+                            @click="toggleIsActive(selected_teachers[0])"
+                            v-if="!selectedTeacher(selected_teachers[0]).is_active">
+                            Entsperren
+                        </v-btn>
                     </div>
                     <!-- MINDEST 1 ELEMENT AUSGEWÄHLT -->
                     <div class="d-flex flex-column ga-2" v-if="selected_teachers.length >= 1">
@@ -202,6 +225,15 @@ export default {
         },
         unselectAll() {
             this.selected_teachers = []
+        },
+
+        selectedTeacher(teacher) {
+            return this.teachers.find((s) => s.id === teacher)
+        },
+
+        async toggleIsActive(user_id) {
+            await this.teacherStore.toggleIsActive(user_id)
+            await this.teacherStore.index(this.meta.current_page)
         },
     },
 }
