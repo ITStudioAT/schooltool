@@ -131,7 +131,6 @@
                 </its-grid-box>
             </v-col>
         </v-row>
-        <v-row>{{ config }}</v-row>
     </v-container>
 </template>
 

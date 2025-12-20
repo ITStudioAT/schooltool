@@ -1,9 +1,18 @@
 <template>
     <v-col cols="12" md="6" xl="4">
-        <ItsGridBox color="primary" title="Lehrerliste" class="w-100" :disabled="action != ''" v-if="teachers">
+        <ItsGridBox color="primary" title="Lehrerliste" subtitle="Diese Lehrer:innen dürfen sich am System registrieren" class="w-100" :disabled="action != ''" v-if="teachers">
             <div class="d-flex flex-row align-start">
                 <v-card tile flat color="transparent" class="w-100">
                     <v-card-text>
+                        <v-alert type="info" title="Hinweis">
+                            Diese Liste dient dazu, festzulegen, welche Lehrer:innen berechtigt sind, sich am System zu registrieren.
+                            <div class="text-caption">(Das entspricht nicht unbedingt den am System bereits tatsächlich registrierten Lehrer:inen)</div>
+                        </v-alert>
+                        <!-- Abwählen / Auswählen-->
+                        <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2 mt-2" :disabled="action != ''">
+                            <v-btn color="primary" slim flat tile class="text-caption" @click="selectAll">Alle auswählen [{{ teachers.length - selected_teachers.length }}]</v-btn>
+                            <v-btn color="primary" slim flat tile class="text-caption" @click="unselectAll">Alle abwählen [{{ selected_teachers.length }}]</v-btn>
+                        </v-card>
                         <!-- RECORDS   -->
                         <v-list density="compact" variant="elevated" select-strategy="leaf" v-model:selected="selected_teachers" color="success-lighten-2" v-if="is_upload != true">
                             <v-list-item v-for="item in teachers" :key="item.id" :value="item.id">
@@ -32,7 +41,7 @@
                                     ,
                                     <i>Vorname</i>
                                     und
-                                    <i>EMail</i>
+                                    <i>Email</i>
                                     benötigt.
                                 </div>
                             </v-card-subtitle>
@@ -66,19 +75,67 @@
                     <div class="d-flex flex-column ga-2">
                         <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-refresh" @click="refresh">Aktualisierung</v-btn>
                         <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-import" @click="is_upload = true">Importieren</v-btn>
-                        <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-plus" @click="">Hinzufügen</v-btn>
+                        <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-plus" @click="createTeacher">Hinzufügen</v-btn>
                     </div>
                     <!-- GENAU 1 ELEMENT AUSGEWÄHLT -->
-                    <div class="d-flex flex-column ga-2">
-                        <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-pencil" @click="" v-if="selected_teachers.legnth == 1">Ändern</v-btn>
+                    <div class="d-flex flex-column ga-2" v-if="selected_teachers.length == 1">
+                        <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-pencil" @click="editTeacher(selected_teachers[0])">Ändern</v-btn>
                     </div>
                     <!-- MINDEST 1 ELEMENT AUSGEWÄHLT -->
-                    <div class="d-flex flex-column ga-2">
-                        <v-btn block tile flat color="warning" class="text-caption" prepend-icon="mdi-delete" @click="" v-if="selected_teachers.length >= 1">Löschen</v-btn>
+                    <div class="d-flex flex-column ga-2" v-if="selected_teachers.length >= 1">
+                        <v-btn block tile flat color="warning" class="text-caption" prepend-icon="mdi-delete" @click="deleteTeacher">Löschen</v-btn>
                     </div>
                 </v-card>
             </div>
         </ItsGridBox>
+    </v-col>
+
+    <!-- EDIT TEACHER -->
+    <v-col cols="12" md="6" xl="4" v-if="action == 'create_teacher' || action == 'edit_teacher'">
+        <its-grid-box color="primary" :title="data.id ? 'Schule ändern' : 'Neue Schule'" class="w-100">
+            <v-form ref="form" v-model="is_valid" @submit.prevent="saveTeacher(data)" class="mb-4">
+                <v-row dense>
+                    <v-col cols="12">
+                        <v-text-field autofocus v-model="data.short" label="Kurzname" :rules="[required(), maxLength(10)]" />
+                    </v-col>
+                    <v-col cols="12">
+                        <v-text-field v-model="data.last_name" label="Nachname" :rules="[required(), maxLength(255)]" />
+                    </v-col>
+
+                    <v-col cols="12">
+                        <v-text-field v-model="data.first_name" label="Vorname" :rules="[maxLength(255)]" />
+                    </v-col>
+
+                    <v-col cols="12">
+                        <v-text-field v-model="data.email" label="E-Mail" :rules="[required(), mail(), maxLength(255)]" />
+                    </v-col>
+                </v-row>
+                <v-row>
+                    <v-col cols="12">
+                        <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between">
+                            <v-btn color="warning" flat tile @click="abort">Abbruch</v-btn>
+                            <v-btn color="success" flat tile type="submit">Speichern</v-btn>
+                        </v-card>
+                    </v-col>
+                </v-row>
+            </v-form>
+        </its-grid-box>
+    </v-col>
+
+    <!-- Löschen -->
+    <v-col cols="12" md="6" xl="4" v-if="action == 'delete_teacher'">
+        <its-grid-box color="primary" title="Löschen" class="w-100">
+            <v-form ref="form" v-model="is_valid" @submit.prevent="doDeleteTeachers(selected_teachers)">
+                <v-card tile flat color="transparent" class="text-body-1">
+                    <div v-if="selected_teachers.length == 1">Es soll ein:e Lehrer:in gelöscht werden. Sind Sie sicher?</div>
+                    <div v-if="selected_teachers.length > 1">Es sollen {{ selected_teachers.length }} Lehrer:innen gelöscht werden. Sind Sie sicher?</div>
+                </v-card>
+                <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between mt-4">
+                    <v-btn color="success" flat tile @click="action = ''">Abbruch</v-btn>
+                    <v-btn color="error" flat tile type="submit">Löschen</v-btn>
+                </v-card>
+            </v-form>
+        </its-grid-box>
     </v-col>
 </template>
 
@@ -143,6 +200,57 @@ export default {
 
         abortReturn() {
             this.main_action = ''
+        },
+
+        selectAll() {
+            this.selected_teachers = this.teachers.map((item) => item.id)
+        },
+        unselectAll() {
+            this.selected_teachers = []
+        },
+
+        async saveTeacher(data) {
+            if (this.is_uploading) return
+            this.is_valid = false
+            await this.$refs.form.validate()
+            if (!this.is_valid) return
+
+            if (data.id) {
+                if (!(await this.teacherStore.update(data))) return
+            } else {
+                if (!(await this.teacherStore.store(data))) return
+            }
+
+            this.selected_teachers = []
+            // await this.adminStore.loadConfig()
+            await this.teacherStore.index()
+            this.data = {}
+            this.action = ''
+        },
+
+        createTeacher() {
+            this.data = { is_selectable: true }
+            this.action = 'create_teacher'
+        },
+
+        editTeacher(teacher_id) {
+            const teacher = this.teachers.find((s) => s.id === teacher_id)
+            this.data = JSON.parse(JSON.stringify(teacher))
+            this.action = 'edit_teacher'
+        },
+        abort() {
+            this.action = ''
+        },
+
+        deleteTeacher() {
+            this.action = 'delete_teacher'
+        },
+
+        async doDeleteTeachers(data) {
+            if (!(await this.teacherStore.deleteTeachers(data))) return
+            this.selected_teachers = []
+            await this.teacherStore.index()
+            this.action = ''
         },
     },
 }

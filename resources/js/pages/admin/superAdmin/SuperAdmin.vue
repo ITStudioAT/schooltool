@@ -48,6 +48,7 @@ export default {
 
     async beforeMount() {
         this.adminStore = useAdminStore()
+        this.main_action = ''
     },
 
     unmounted() {},
