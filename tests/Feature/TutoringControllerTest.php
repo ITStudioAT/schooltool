@@ -38,7 +38,7 @@ beforeEach(function () {
     ]);
     $this->schoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
 
-    $this->tutoringLicence = Licence::create(['name' => 'Tutoring']);
+    $this->tutoringLicence = Licence::create(['name' => 'Nachhilfetool']);
     $this->school->licences()->attach($this->tutoringLicence->id, [
         'valid_until' => now()->addYear(),
     ]);

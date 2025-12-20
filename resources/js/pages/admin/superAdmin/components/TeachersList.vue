@@ -9,7 +9,7 @@
                             <div class="text-caption">(Das entspricht nicht unbedingt den am System bereits tatsächlich registrierten Lehrer:inen)</div>
                         </v-alert>
                         <!-- Abwählen / Auswählen-->
-                        <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2 mt-2" :disabled="action != ''">
+                        <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2 mt-2" v-if="is_upload == false">
                             <v-btn color="primary" slim flat tile class="text-caption" @click="selectAll">Alle auswählen [{{ teachers.length - selected_teachers.length }}]</v-btn>
                             <v-btn color="primary" slim flat tile class="text-caption" @click="unselectAll">Alle abwählen [{{ selected_teachers.length }}]</v-btn>
                         </v-card>
@@ -92,7 +92,7 @@
 
     <!-- EDIT TEACHER -->
     <v-col cols="12" md="6" xl="4" v-if="action == 'create_teacher' || action == 'edit_teacher'">
-        <its-grid-box color="primary" :title="data.id ? 'Schule ändern' : 'Neue Schule'" class="w-100">
+        <its-grid-box color="primary" :title="data.id ? 'Lehrer:in ändern' : 'Neue:r Lehrer:in'" class="w-100">
             <v-form ref="form" v-model="is_valid" @submit.prevent="saveTeacher(data)" class="mb-4">
                 <v-row dense>
                     <v-col cols="12">
@@ -169,7 +169,7 @@ export default {
     data() {
         return {
             adminStore: null,
-            teacherStore: null,
+            teachersListStore: null,
             is_valid: false,
             is_upload: false,
             is_upload_finished: false,
@@ -216,14 +216,14 @@ export default {
             if (!this.is_valid) return
 
             if (data.id) {
-                if (!(await this.teacherStore.update(data))) return
+                if (!(await this.teachersListStore.update(data))) return
             } else {
-                if (!(await this.teacherStore.store(data))) return
+                if (!(await this.teachersListStore.store(data))) return
             }
 
             this.selected_teachers = []
             // await this.adminStore.loadConfig()
-            await this.teacherStore.index()
+            await this.teachersListStore.index()
             this.data = {}
             this.action = ''
         },
@@ -247,9 +247,9 @@ export default {
         },
 
         async doDeleteTeachers(data) {
-            if (!(await this.teacherStore.deleteTeachers(data))) return
+            if (!(await this.teachersListStore.deleteTeachers(data))) return
             this.selected_teachers = []
-            await this.teacherStore.index()
+            await this.teachersListStore.index()
             this.action = ''
         },
     },

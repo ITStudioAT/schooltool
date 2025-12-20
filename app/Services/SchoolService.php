@@ -146,7 +146,7 @@ class SchoolService
 
             // Logo löschen, falls vorhanden
             if ($school->logo) {
-                Storage::disk('public')->delete("images/logos/{$school->logo}");
+                Storage::disk('public')->delete("images/{$school->logo}");
             }
 
             File::deleteDirectory(storage_path('app/private/' . $school->id));
@@ -168,7 +168,7 @@ class SchoolService
             'licences' => LicenceResource::collection($licences)
         ];
 
-        $roles = ['admin', 'register_admin', 'super_admin', 'tutoring_admin',  'lunch_admin'];
+        $roles = ['admin', 'register_admin', 'super_admin', 'tutoring_admin'];
         $users = User::where('school_id', $school_id)
             ->role($roles)
             ->orderBy('last_name')

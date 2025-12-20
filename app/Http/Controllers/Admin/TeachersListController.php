@@ -4,11 +4,15 @@ namespace App\Http\Controllers\Admin;
 
 use App\Events\TeachersListImportFinishedEvent;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\TeacherListStoreRequest;
+use App\Http\Requests\Admin\TeacherListUpdateRequest;
+use App\Http\Requests\Admin\TeachersListDeleteTeachers;
 use App\Http\Resources\Admin\TeachersListResource;
 use App\Jobs\ImportTeachersListJob;
 use App\Models\School;
 use App\Models\Teacher;
 use App\Services\FileUploadService;
+use App\Services\TeacherListService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Response;
@@ -31,9 +35,16 @@ class TeachersListController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
+    public function store(TeacherListStoreRequest $request, TeacherListService $service)
     {
-        //
+        if (! $auth_user = $this->userHasRole(['admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+        $validated = $request->validated();
+
+        $teacher = $service->create($auth_user->school_id, $validated);
+
+        return response()->json(new TeachersListResource($teacher), 200);
     }
 
     /**
@@ -47,9 +58,16 @@ class TeachersListController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, string $id)
+    public function update(TeacherListUpdateRequest $request, string $id, TeacherListService $service)
     {
-        //
+        if (! $auth_user = $this->userHasRole(['admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+        $validated = $request->validated();
+
+        $teacher = $service->update($auth_user->school_id, $validated);
+
+        return response()->json(new TeachersListResource($teacher), 200);
     }
 
     /**
@@ -90,10 +108,19 @@ class TeachersListController extends Controller
 
         ImportTeachersListJob::dispatch($auth_user, 'app/private/' . $auth_user->school_id . '/excel/' . $result);
 
-
-
-
-
         return response($result, 200)->header('Content-Type', 'text/plain');
+    }
+
+    public function deleteTeachers(TeachersListDeleteTeachers $request, TeacherListService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+        $validated = $request->validated();
+        $data = $validated['data'];
+
+        $service->deleteTeachers($auth_user->school_id, $validated['data']);
+
+        return response()->noContent();
     }
 }

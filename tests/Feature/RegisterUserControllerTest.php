@@ -61,6 +61,7 @@ beforeEach(function () {
     // Create admin user
     $this->adminUser = User::factory()->create([
         'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
         'first_name' => 'Admin',
         'last_name' => 'User',
         'email' => 'admin@test.com',
@@ -69,16 +70,17 @@ beforeEach(function () {
     ]);
     $this->adminUser->assignRole('admin');
 
-    // Create user with user role
+    // Create user with register_admin role
     $this->standardUser = User::factory()->create([
         'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
         'first_name' => 'Standard',
         'last_name' => 'User',
         'email' => 'user@test.com',
         'password' => Hash::make('password'),
         'email_verified_at' => now(),
     ]);
-    $this->standardUser->assignRole('user');
+    $this->standardUser->assignRole('register_admin');
 
     // Create register user without permissions
     $this->registerUser = User::factory()->create([

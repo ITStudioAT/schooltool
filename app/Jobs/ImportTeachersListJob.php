@@ -83,9 +83,12 @@ class ImportTeachersListJob implements ShouldQueue
         });
 
         // Lösche alle Lehrer dieser Schule, die nicht in der Excel-Datei waren
+        /*
         $deleted = Teacher::where('school_id', $school_id)
             ->whereNotIn('id', $processedTeacherIds)
             ->delete();
+            */
+        $deleted = 0;
 
         broadcast(new TeachersListImportFinishedEvent(
             200,

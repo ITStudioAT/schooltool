@@ -23,6 +23,7 @@ beforeEach(function () {
     Role::create(['name' => 'admin']);
     Role::create(['name' => 'register_admin']);
     Role::create(['name' => 'tutoring_admin']);
+    Role::create(['name' => 'teacher']);
 
     // Create a dummy school and user with ID 1 to ensure they are protected from deletion
     $this->dummySchool = School::factory()->create(['id' => 1]);

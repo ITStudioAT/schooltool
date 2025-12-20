@@ -117,7 +117,7 @@ class SchoolController extends Controller
 
         $validated = $request->validated();
 
-        // if (in_array($auth_user->school_id, $validated)) abort(409, "Eine zu löschende Schule ist aktuell ihnen zugeordnet. Das ist nicht zulässig.");
+        if (in_array($auth_user->school_id, $validated)) abort(409, "Eine zu löschende Schule ist aktuell ihnen zugeordnet. Das ist nicht zulässig.");
 
         $service->deleteSchools($validated);
 

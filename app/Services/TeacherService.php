@@ -50,7 +50,7 @@ class TeacherService
         }
 
         // Prüfen, ob sich E-Mail verändert hat und wenn ja, ob E-Mail noch nicht vergeben ist
-        if ($data['short'] != $user->short) {
+        if ($data['email'] != $user->email) {
             if (User::where('school_id', $school_id)->whereNot('id', $data['id'])->where('email', $data['email'])->exists()) abort(409, 'Die E-Mail des Lehrers existiert bereits.');
         }
 
