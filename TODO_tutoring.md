@@ -3,13 +3,9 @@
 -   Check, if the offer may be created (max_offers)
 -   Send the teacher a confirmation mail
 
-## Teachers-List
-
--   Create
--   Edit
--   Delete
-
 ## Login Teacher
+
+### Check, if login is teacher
 
 -   See all offers to confirm
 

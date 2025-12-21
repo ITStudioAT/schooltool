@@ -38,6 +38,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/admin/login_step_2',  [AdminController::class, 'loginStep2']);
     Route::post('/admin/login_step_3',  [AdminController::class, 'loginStep3']);
 
+    Route::post('/admin/new_teacher_step_email',  [AdminController::class, 'newTeacherStepEmail']);
+    Route::post('/admin/new_teacher_step_school',  [AdminController::class, 'newTeacherStepSchool']);
+    Route::post('/admin/new_teacher_step_code',  [AdminController::class, 'newTeacherStepCode']);
+
     Route::post('/admin/password_unknown_step_school',  [AdminController::class, 'passwordUnknownStepSchool']);
     Route::post('/admin/password_unknown_step_token',  [AdminController::class, 'passwordUnknownStepToken']);
     Route::post('/admin/password_unknown_step_password',  [AdminController::class, 'passwordUnknownStepPassword']);
@@ -87,7 +91,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     /* SANCTUM - user */
-    Route::middleware(['auth:sanctum', 'api-allowed:user,admin,register_admin,tutoring_admin'])->group(function () {
+    Route::middleware(['auth:sanctum', 'api-allowed:user,admin,register_admin,tutoring_admin,teacher'])->group(function () {
         Route::put('/admin/users/update_profile/{user}',  [UserController::class, 'updateProfile']);
         Route::post('/admin/users/update_with_code',  [UserController::class, 'updateWithCode']);
         Route::post('/admin/users/save_password',  [UserController::class, 'savePassword']);
@@ -154,8 +158,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/tutoring/toggle_accepted_offer', [\App\Http\Controllers\Admin\Tutoring\OfferController::class, 'toggleAcceptedOffer']);
     });
 
-    /* SANCTUM - admin, register_admin, tutoring_admin */
-    Route::middleware(['auth:sanctum', 'api-allowed:admin,register_admin,tutoring_admin'])->group(function () {
+    /* SANCTUM - admin, register_admin, tutoring_admin, teacher */
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,register_admin,tutoring_admin,teacher'])->group(function () {
 
         //Roles
         Route::get('/admin/roles/load_roles', [\App\Http\Controllers\Admin\RoleController::class, 'loadRoles']);
@@ -177,6 +181,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/schools/delete_licence',  [\App\Http\Controllers\Admin\SchoolController::class, 'deleteLicence']);
         Route::post('/admin/schools/add_admin',  [\App\Http\Controllers\Admin\SchoolController::class, 'addAdmin']);
         Route::post('/admin/schools/delete_admin',  [\App\Http\Controllers\Admin\SchoolController::class, 'deleteAdmin']);
+
+        // Profile
+        Route::post('/admin/users/save_2fa',  [UserController::class, 'save2Fa']);
+        Route::post('/admin/users/save_2fa_with_code',  [UserController::class, 'save2FaWithCode']);
 
 
 
@@ -220,8 +228,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/users/send_verification_email',  [UserController::class, 'sendVerificationEmail']);
         Route::post('/admin/users/confirm',  [UserController::class, 'confirm']);
         Route::post('/admin/users/save_user_roles',  [UserController::class, 'saveUserRoles']);
-        Route::post('/admin/users/save_2fa',  [UserController::class, 'save2Fa']);
-        Route::post('/admin/users/save_2fa_with_code',  [UserController::class, 'save2FaWithCode']);
+
 
 
         // roles

@@ -183,7 +183,7 @@ class UserController extends Controller
 
     public function show(User $user)
     {
-        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'tutoring_admin'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'tutoring_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -369,7 +369,7 @@ class UserController extends Controller
 
     public function save2Fa(Save2FaRequest $request)
     {
-        if (! $user = $this->userHasRole(['admin'])) {
+        if (! $user = $this->userHasRole(['admin', 'tutoring_admin', 'register_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -400,7 +400,7 @@ class UserController extends Controller
 
     public function save2FaWithCode(Save2FaWithCodeRequest $request)
     {
-        if (! $user = $this->userHasRole(['admin'])) {
+        if (! $user = $this->userHasRole(['admin', 'tutoring_admin', 'register_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 

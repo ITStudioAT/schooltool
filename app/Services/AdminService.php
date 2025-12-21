@@ -4,10 +4,12 @@ namespace App\Services;
 
 use App\Http\Resources\Admin\SchoolResource;
 use App\Models\School;
+use App\Models\Teacher;
 use App\Models\User;
 use App\Notifications\StandardEmail;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 
 class AdminService
@@ -152,24 +154,31 @@ class AdminService
 
     public function checkEmail($data): array
     {
+        // Admin-Users und Teacher selektieren
         $users = User::where('email', $data['email'])
             ->whereHas('roles', function ($query) {
-                $query->where('name', 'like', '%admin%');
+                $query->where('name', 'like', '%admin%')
+                    ->orWhere('name', 'teacher');
             })
             ->get();
+
         $data['users_count'] = $users->count();
 
-        $ids = $users->pluck('school_id');
+        if ($data['users_count'] >= 1) {
+            // Minimum ein Registrierter Admin-User oder Teacher-User wurde gefunden
+            $ids = $users->pluck('school_id');
 
-        $schools = School::whereIn('id', $ids)->orderBy('long_name')->get();
+            $schools = School::whereIn('id', $ids)->orderBy('long_name')->get();
 
-        if (count($schools) == 1) {
-            $data['school_id'] = $schools->first()->id;
-            $data['school'] = new SchoolResource($schools->first());
-            // 2025-11-26 $data = $this->passwordUnkownSendToken($data);
-        } else {
-            $data['school'] = null;
-            $data['schools'] = $schools ? SchoolResource::collection($schools) : [];
+            if (count($schools) == 1) {
+                $data['school_id'] = $schools->first()->id;
+                $data['school'] = new SchoolResource($schools->first());
+                $data['step'] = 'LOGIN_ENTER_PASSWORD';
+            } else {
+                $data['school'] = null;
+                $data['schools'] = $schools ? SchoolResource::collection($schools) : [];
+                $data['step'] = 'LOGIN_SELECT_SCHOOL';
+            }
         }
 
         return $data;
@@ -232,7 +241,6 @@ class AdminService
             'token_2fa' => $token,
             'token-expire-time' => config('schooltool.token_expire_time'),
         ];
-
 
         Notification::route('mail', $user->email)->notify(new StandardEmail($email));
     }
@@ -313,7 +321,7 @@ class AdminService
 
 
 
-    public function sendRegisterToken($select = 1, $user, $email)
+    public function sendRegisterToken($user, $email, $select = 1)
     {
         $token_2fa = $user->setToken2Fa(config('spa.token_expire_time'), $select);
 

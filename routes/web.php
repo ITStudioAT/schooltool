@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Route;
 
 // Alles wird gethrottlet
 
-Route::middleware(['throttle:global', 'throttle:web', 'web-allowed'])->group(function () {
+Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
 
     /***** ADMIN ROUTES *****/
     /* auth-routes */

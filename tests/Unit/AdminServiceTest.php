@@ -1245,7 +1245,7 @@ describe('sendRegisterToken', function () {
         config(['mail.from.address' => 'from@test.com']);
         config(['mail.from.name' => 'Test App']);
 
-        $this->service->sendRegisterToken(1, $user, 'test@example.com');
+        $this->service->sendRegisterToken($user, 'test@example.com', 1);
 
         Notification::assertSentOnDemand(\App\Notifications\StandardEmail::class);
     });
@@ -1255,7 +1255,7 @@ describe('sendRegisterToken', function () {
 
         config(['spa.token_expire_time' => 10]);
 
-        $this->service->sendRegisterToken(1, $user, 'test@example.com');
+        $this->service->sendRegisterToken($user, 'test@example.com', 1);
 
         $user->refresh();
 
@@ -1268,7 +1268,7 @@ describe('sendRegisterToken', function () {
 
         config(['spa.token_expire_time' => 10]);
 
-        $this->service->sendRegisterToken(1, $user, 'test@example.com');
+        $this->service->sendRegisterToken($user, 'test@example.com', 1);
 
         Notification::assertSentOnDemand(\App\Notifications\StandardEmail::class);
     });

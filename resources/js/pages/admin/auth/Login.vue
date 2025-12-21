@@ -15,12 +15,23 @@
                 </v-form>
                 <v-btn block color="success" slim flat rounded="0" type="submit" @click="loginStepEmail()">Weiter</v-btn>
                 <div class="text-caption text-center font-weight-light">oder</div>
-
                 <v-btn block color="primary" slim flat rounded="0" variant="text" @click="passwordUnknown">Kennwort unbekannt</v-btn>
+                <div class="text-caption text-center font-weight-light">oder</div>
+                <div class="text-center mt-2">
+                    <v-btn color="surface" slim flat rounded="0" type="submit" @click="newTeacherStepEmail">Neuer Lehrer</v-btn>
+                </div>
+
                 <div v-if="config.register_admin_allowed">
                     <div class="text-caption text-center font-weight-light">oder</div>
                     <v-btn block color="success" slim flat rounded="0" variant="text" @click="register">Neu registrieren</v-btn>
                 </div>
+
+                <v-card>
+                    {{ data }}
+                </v-card>
+                <v-card>
+                    {{ config }}
+                </v-card>
             </v-card-text>
 
             <!-- Login STEP LOGIN_SELECT_SCHOOL -->
@@ -67,6 +78,33 @@
                 <div class="text-caption text-center font-weight-light">oder</div>
                 <v-btn block color="warning" slim flat rounded="0" variant="text" @click="restartLogin">Zurück</v-btn>
             </v-card-text>
+
+            <!-- NEW TEACHER STEP NEW_TEACHER_SELECT_SCHOOL -->
+            <v-card-text v-if="step == 'NEW_TEACHER_SELECT_SCHOOL'">
+                <div class="text-h6">Neue:r Lehrer:in</div>
+                <v-card-subtitle>{{ data.email }}</v-card-subtitle>
+                <div class="text-h6 mt-4">Bitte die Schule auswählen</div>
+                <v-autocomplete v-model="selected_school_id" :items="data.schools" item-title="long_name" item-value="id" label="Auswahl Schule" />
+                <v-btn block color="success" slim flat rounded="0" @click="newTeacherStepSchool()" v-if="school">Weiter</v-btn>
+                <div class="text-caption text-center font-weight-light">oder</div>
+                <v-btn block color="warning" slim flat rounded="0" variant="text" @click="restartLogin">Zurück</v-btn>
+            </v-card-text>
+
+            <!-- NEW TEACHER STEP NEW_TEACHER_ENTER_TOKEN -->
+            <v-card-text v-if="step == 'NEW_TEACHER_INPUT_CODE' || step == 'NEW_TEACHER_TOKEN_WRONG'">
+                <div class="text-h6">Neue:r Lehrer:in</div>
+                <v-card-subtitle>{{ data.email }}</v-card-subtitle>
+                <v-alert closable type="error" text="Das Token war falsch oder abgelaufen. Versuchen Sie es erneut." v-if="step == 'NEW_TEACHER_TOKEN_WRONG'" />
+                <v-form ref="form" v-model="is_valid" @submit.prevent="newTeacherStepCode()" class="my-4">
+                    <v-alert closable color="success" type="info" text="Sie wurden als Lehrer:in erkannt. Bitte prüfen Sie Ihre E-Mails" />
+                    <div class="text-caption text-text">Bitte den Code laut E-Mail eingeben</div>
+                    <v-otp-input autofocus v-model="data.token" />
+
+                    <v-btn block color="success" slim flat rounded="0" type="submit" @click="submit">Anmelden</v-btn>
+                    <div class="text-caption text-center font-weight-light">oder</div>
+                    <v-btn block color="warning" slim flat rounded="0" variant="text" @click="restartLogin">Zurück</v-btn>
+                </v-form>
+            </v-card-text>
         </v-card>
     </v-container>
 </template>
@@ -75,7 +113,6 @@
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
-import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
 export default {
     setup() {
@@ -118,6 +155,37 @@ export default {
     },
 
     methods: {
+        async newTeacherStepEmail() {
+            this.is_valid = false
+            await this.$refs.form.validate()
+            if (!this.is_valid) return
+
+            this.data['step'] = 'NEW_TEACHER'
+            if (!(await this.adminStore.newTeacherStepEmail(this.data))) return
+
+            this.step = this.data['step']
+        },
+
+        async newTeacherStepSchool() {
+            if (!this.selected_school_id) return
+            this.data.school_id = this.selected_school_id
+            if (!(await this.adminStore.newTeacherStepSchool(this.data))) return
+            this.step = this.data['step']
+        },
+
+        async newTeacherStepCode() {
+            if (this.data?.token?.length != 6) return
+            this.data.step = 'NEW_TEACHER_INPUT_CODE'
+
+            if (!(await this.adminStore.newTeacherStepCode(this.data))) return
+            this.step = this.data['step']
+
+            if (this.step == 'NEW_TEACHER_OK') {
+                window.location.href = '/admin'
+                //await axios.get('/sanctum/csrf-cookie')
+                //                await this.adminStore.loadConfig()
+            }
+        },
         homepage() {
             window.location.href = '/'
         },
@@ -148,12 +216,8 @@ export default {
             this.data.step = 'LOGIN_ENTER_EMAIL'
             if (!(await this.adminStore.loginStepEmail(this.data))) return
 
-            if (!this.data.school) {
-                this.selected_school_id = null
-                this.step = 'LOGIN_SELECT_SCHOOL'
-            } else {
-                this.step = 'LOGIN_ENTER_PASSWORD'
-            }
+            if (!this.data.school) this.selected_school_id = null
+            this.step = this.data.step
         },
 
         async loginStep2() {

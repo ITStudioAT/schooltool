@@ -17,8 +17,9 @@ return new class extends Migration
             $table->string('last_name');
             $table->string('first_name')->nullable();
             $table->string('short');
-            $table->string('email')->unique();
+            $table->string('email');
             $table->string('token')->nullable();
+            $table->timestamp('token_expires_at')->nullable();
             $table->timestamps();
         });
     }

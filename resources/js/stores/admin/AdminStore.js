@@ -249,6 +249,75 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             }
         },
 
+        async newTeacherStepEmail(data) {
+            const notification = useNotificationStore()
+            this.is_loading++
+            this.api_response = null
+
+            try {
+                await axios.get('/sanctum/csrf-cookie')
+                this.api_response = await axios.post('/api/admin/new_teacher_step_email', data)
+                this.data = this.api_response.data
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.config?.timeout,
+                })
+                return false
+            } finally {
+                this.is_loading--
+            }
+        },
+
+        async newTeacherStepSchool(data) {
+            const notification = useNotificationStore()
+            this.is_loading++
+            this.api_response = null
+
+            try {
+                await axios.get('/sanctum/csrf-cookie')
+                this.api_response = await axios.post('/api/admin/new_teacher_step_school', data)
+                this.data = this.api_response.data
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.config?.timeout,
+                })
+                return false
+            } finally {
+                this.is_loading--
+            }
+        },
+
+        async newTeacherStepCode(data) {
+            const notification = useNotificationStore()
+            this.is_loading++
+            this.api_response = null
+
+            try {
+                await axios.get('/sanctum/csrf-cookie')
+                this.api_response = await axios.post('/api/admin/new_teacher_step_code', data)
+                this.data = this.api_response.data
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.config?.timeout,
+                })
+                return false
+            } finally {
+                this.is_loading--
+            }
+        },
+
         async loginStepEmail(data) {
             const notification = useNotificationStore()
             this.is_loading++

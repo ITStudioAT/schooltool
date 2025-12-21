@@ -191,6 +191,7 @@
                     <ItsMenuButton title="Lehrer" subtitle="verwalten" icon="mdi-school" color="primary" @click="main_action = 'teachers'" />
                     <ItsMenuButton title="Lehrerliste" subtitle="verwalten" icon="mdi-view-list" color="primary" @click="main_action = 'teachers_list'" />
                 </v-card-text>
+                <v-card-text class="text-body-2">Die Lehrerliste dient dazu, festzulegen, welche Personen sich am System als Lehrer:innen anmelden dürfen.</v-card-text>
             </v-card>
         </ItsGridBox>
     </v-col>

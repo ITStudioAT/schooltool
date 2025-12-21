@@ -12,7 +12,7 @@ class NavigationController extends Controller
         $navigationService = new AdminNavigationService();
 
 
-        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'tutoring_admin'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'tutoring_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 

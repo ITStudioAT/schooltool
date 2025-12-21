@@ -145,7 +145,6 @@ export const useUserStore = defineStore('AdminUserStore', {
         },
 
         async save2FaWithCode(data) {
-            console.log(data)
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++

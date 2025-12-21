@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Requests\Admin\AdminNewTeacherStepCodeRequest;
+use App\Http\Requests\Admin\AdminNewTeacherStepEmailRequest;
+use App\Http\Requests\Admin\AdminNewTeacherStepSchoolRequest;
 use App\Http\Requests\Admin\AdminPasswordUnknownStepSchoolRequest;
 use App\Http\Requests\Admin\AdminPasswordUnkownStepPasswordRequest;
 use App\Http\Requests\Admin\AdminPasswordUnkownStepTokenRequest;
@@ -23,11 +26,14 @@ use App\Http\Resources\Admin\UserWithRoleResource;
 use App\Models\QueueTest;
 use App\Models\Role;
 use App\Models\School;
+use App\Models\Teacher;
 use App\Models\User;
 use App\Services\AdminNavigationService;
 use App\Services\AdminService;
 use App\Services\LicenceService;
+use App\Services\TeacherListService;
 use App\Traits\HasRoleTrait;
+use Barryvdh\Debugbar\Facades\Debugbar;
 use Composer\InstalledVersions;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
@@ -103,7 +109,7 @@ class AdminController extends Controller
         }
 
         // Token zusenden
-        $adminService->sendRegisterToken(1, $user, $validated['data']['email']);
+        $adminService->sendRegisterToken($user, $validated['data']['email'], 1);
         $data = ['step' => 'REGISTER_ENTER_TOKEN'];
 
         return response()->json($data, 200);
@@ -306,5 +312,57 @@ class AdminController extends Controller
         $roles = DB::table('roles')->orderBy('name')->get();
 
         return response()->json($roles, 200);
+    }
+
+    public function newTeacherStepEmail(AdminNewTeacherStepEmailRequest $request, TeacherListService $service)
+    {
+        $validated = $request->validated();
+        $email = $validated['email'];
+
+        $data = $service->getAllTeachersNotInUsers($email);
+
+        // EMail ist berechtigt, sich als Lehrer anzumelden
+        if ($data['step'] == 'NEW_TEACHER_NO_TEACHER') abort(404, "Eine Anmeldung als neue:r Lehrer:in ist mit dieser E-Mail nicht möglich");
+
+
+        if ($data['step'] == 'NEW_TEACHER_INPUT_CODE')  $service->sendCode($data['school']['id'], $data['email']);
+
+        return response()->json($data, 200);
+    }
+
+    public function newTeacherStepSchool(AdminNewTeacherStepSchoolRequest $request, TeacherListService $service)
+    {
+        $validated = $request->validated();
+        $email = $validated['email'];
+        $school_id = $validated['school_id'];
+
+        $service->sendCode($school_id, $email);
+
+        $validated['step'] = 'NEW_TEACHER_INPUT_CODE';
+        return response()->json($validated, 200);
+    }
+
+    public function newTeacherStepCode(AdminNewTeacherStepCodeRequest $request, TeacherListService $service)
+    {
+        $validated = $request->validated();
+        $email = $validated['email'];
+        $school_id = $validated['school_id'];
+        $code = $validated['token'];
+
+        if (!$teacher = Teacher::where('school_id', $school_id)->where('email', $email)->first()) abort(404, "Kein passender Lehrer in der Liste gefunden.");
+
+        if (!$service->checkToken($teacher, $code)) {
+            // Token hat nicht gestimmt oder ist abgelaufen
+            $validated['step'] = 'NEW_TEACHER_TOKEN_WRONG';
+        } else {
+            // Alles ok, User erzeugen und login
+            $user = $service->createUserFromTeacher($validated);
+            $user->assignRole('teacher');
+            Auth::guard('web')->login($user, true);
+            session()->regenerate();
+            $validated['step'] = 'NEW_TEACHER_OK';
+        }
+
+        return response()->json($validated, 200);
     }
 }

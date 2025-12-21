@@ -2,9 +2,13 @@
 
 namespace App\Services;
 
+use App\Models\School;
 use App\Models\Teacher;
 use App\Models\User;
+use App\Notifications\StandardEmail;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 
 
 
@@ -80,5 +84,99 @@ class TeacherListService
 
         // Teacher löschen
         $teacher->delete();
+    }
+
+    public function getAllTeachersNotInUsers($email)
+    {
+        // Alle Lehrer mit dieser E-Mail finden
+        $teachers = Teacher::where('email', $email)->get();
+
+        // Nur Lehrer zurückgeben, die noch nicht als User mit gleicher E-Mail und school_id existieren
+        $teachers = $teachers->filter(function ($teacher) {
+            return !User::where('email', $teacher->email)
+                ->where('school_id', $teacher->school_id)
+                ->exists();
+        });
+
+        if ($teachers->count() > 0) {
+            // Lehrer vorhanden
+            // Zugehörige Schulen laden
+            $schoolIds = $teachers->pluck('school_id')->unique();
+            $schools = \App\Models\School::whereIn('id', $schoolIds)->get();
+
+            if ($schools->count() == 1) {
+                $school = $schools->first();
+                $schools = null;
+                $step = 'NEW_TEACHER_INPUT_CODE';
+            } else {
+                $school = null;
+                $step = 'NEW_TEACHER_SELECT_SCHOOL';
+            }
+        } else {
+            // Kein Lehrer vorhanden
+            $step = 'NEW_TEACHER_NO_TEACHER';
+            $school = null;
+            $schools = null;
+        }
+
+        $data = [
+            'step' => $step,
+            'email' => $email,
+            'school' => $school,
+            'schools' => $schools,
+        ];
+
+        return $data;
+    }
+
+    public function sendCode($school_id, $email)
+    {
+        $teacher = Teacher::where('school_id', $school_id)->where('email', $email)->first();
+
+        $teacher->token = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $teacher->token_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
+        $teacher->save();
+
+        $data = [
+            'from_address' => env('MAIL_FROM_ADDRESS'),
+            'from_name' => env('MAIL_FROM_NAME'),
+            'logo' =>  asset('/storage/images/' . config('schooltool.logo')),
+            'subject' => 'Code zum Bestätigen Ihrer Anmeldung',
+            'markdown' => 'mails.admin.sendCode',
+            'token_2fa' => $teacher->token,
+            'token-expire-time' => config('spa.token_expire_time'),
+        ];
+        Notification::route('mail', $email)->notify(new StandardEmail($data));
+    }
+
+    public function checkToken($user, $should_token): string
+    {
+        // Check if the token matches and is still valid
+        if ($user->token == $should_token && now()->isBefore($user->token_expires_at)) {
+            return true; // Token is valid and not expired
+        }
+
+        return false; // Token is invalid or expired
+    }
+
+    public function createUserFromTeacher($data)
+    {
+
+        $teacher = Teacher::where('school_id', $data['school_id'])->where('email', $data['email'])->first();
+
+        $user = User::create([
+            'school_id' => $teacher->school_id,
+            'short' => $teacher->short,
+            'last_name' => $teacher->last_name,
+            'first_name' => $teacher->first_name,
+            'email' => $teacher->email,
+            'email_verified_at' => now(),
+            'password' => Hash::make(now()),
+            'confirmed_at' => now(),
+            'login_at' => now(),
+            'login_ip' => request()->ip()
+        ]);
+
+        return $user;
     }
 }
