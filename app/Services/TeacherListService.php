@@ -123,6 +123,7 @@ class TeacherListService
             'step' => $step,
             'email' => $email,
             'school' => $school,
+            'school_id' => $school ? $school->id : null,
             'schools' => $schools,
         ];
 

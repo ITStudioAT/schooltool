@@ -9,6 +9,7 @@
                             <div class="text-caption">Version: {{ config?.version }}</div>
                         </div>
                     </template>
+                    <!-- TESTS -->
                     <v-card tile flat color="primary">
                         <v-card-text class="text-caption text-sm-body-1">
                             <v-row no-gutters="" dense>

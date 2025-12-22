@@ -27,6 +27,7 @@ class OfferIndexRequest extends FormRequest
             'page' => 'nullable|integer',
             'select_accepted' => 'required|string|max:10',
             'select_online' => 'required|string|max:10',
+            'select_only_me_concerning' => 'boolean',
         ];
     }
 }

@@ -323,8 +323,6 @@ class AdminController extends Controller
 
         // EMail ist berechtigt, sich als Lehrer anzumelden
         if ($data['step'] == 'NEW_TEACHER_NO_TEACHER') abort(404, "Eine Anmeldung als neue:r Lehrer:in ist mit dieser E-Mail nicht möglich");
-
-
         if ($data['step'] == 'NEW_TEACHER_INPUT_CODE')  $service->sendCode($data['school']['id'], $data['email']);
 
         return response()->json($data, 200);

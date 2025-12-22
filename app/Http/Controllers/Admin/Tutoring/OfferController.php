@@ -7,6 +7,8 @@ use App\Http\Requests\Admin\Tutoring\OfferIndexRequest;
 use App\Http\Resources\Admin\PaginateResource;
 use App\Http\Resources\Admin\Tutoring\OfferResource;
 use App\Models\TutoringOffer;
+use App\Models\User;
+use Barryvdh\Debugbar\Facades\Debugbar;
 use Illuminate\Http\Request;
 
 class OfferController extends Controller
@@ -16,15 +18,15 @@ class OfferController extends Controller
      */
     public function index(OfferIndexRequest $request)
     {
-        if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
         $validated = $request->validated();
-
         $search_string = $validated['search_string'] ?? null;
         $select_accepted = $validated['select_accepted'];
         $select_online = $validated['select_online'];
+        $select_only_me_concerning = filter_var($validated['select_only_me_concerning'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
         $query = TutoringOffer::where('school_id', $auth_user->school_id)
             ->with(['subject', 'user']);
@@ -65,6 +67,11 @@ class OfferController extends Controller
             }
         }
 
+        // Only me concerning filter
+        if ($select_only_me_concerning) {
+            $query->where('email_mentor', $auth_user->email);
+        }
+
         $offers = $query->paginate(config('schooltool.pagination'));
 
         return response()->json([
@@ -100,7 +107,7 @@ class OfferController extends Controller
     public function destroy(TutoringOffer $offer)
     {
 
-        if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -111,7 +118,7 @@ class OfferController extends Controller
 
     public function toggleAcceptedOffer(Request $request)
     {
-        if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -133,7 +140,7 @@ class OfferController extends Controller
 
     public function toggleActiveOffer(Request $request)
     {
-        if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -147,5 +154,24 @@ class OfferController extends Controller
         $offer->is_active = !$offer->is_active;
         $offer->save();
         return response()->noContent();
+    }
+
+    public function getStats(Request $request)
+    {
+
+        if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $data = [
+            'status' => 200,
+            'count' => TutoringOffer::where('school_id', $auth_user->school_id)->count(),
+            'students_count' => TutoringOffer::where('school_id', $auth_user->school_id)->distinct('user_id')->count('user_id'),
+            'online_count' => TutoringOffer::where('school_id', $auth_user->school_id)->where('is_active', true)->count(),
+            'accepted_count' => TutoringOffer::where('school_id', $auth_user->school_id)->whereNotNull('accepted_at')->count(),
+            'users_count' => User::where('school_id', $auth_user->school_id)->role('tutoring_user')->count()
+        ];
+
+        return response()->json($data, 200);
     }
 }

@@ -14,6 +14,8 @@ export const useOfferStore = defineStore('AdminTutoringOfferStore', {
             data: {},
             select_accepted: 'all',
             select_online: 'all',
+            select_only_me_concerning: false,
+            stats: null,
         }
     },
 
@@ -25,8 +27,11 @@ export const useOfferStore = defineStore('AdminTutoringOfferStore', {
             const search_string = this.search_string
             const select_accepted = this.select_accepted
             const select_online = this.select_online
+            const select_only_me_concerning = this.select_only_me_concerning
             try {
-                const response = await axios.get(`/api/admin/tutoring/offers`, { params: { search_string, page, select_accepted, select_online } })
+                const response = await axios.get(`/api/admin/tutoring/offers`, {
+                    params: { search_string, page, select_accepted, select_online, select_only_me_concerning: select_only_me_concerning ? 1 : 0 },
+                })
                 this.offers = response.data.data
                 this.meta = response.data.meta
                 return true
@@ -115,12 +120,33 @@ export const useOfferStore = defineStore('AdminTutoringOfferStore', {
         },
 
         async toggleAccepted(id) {
-            console.log('toggleAccepted')
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
                 const response = await axios.post(`/api/admin/tutoring/toggle_accepted_offer`, { id })
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.timeout,
+                })
+                this.error = error
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async getStats() {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.get(`/api/admin/tutoring/get_stats`, {})
+                this.stats = response.data
                 return true
             } catch (error) {
                 notification.notify({
