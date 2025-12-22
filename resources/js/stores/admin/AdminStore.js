@@ -107,11 +107,6 @@ export const useAdminStore = defineStore('AdminAdminStore', {
                 this.selected_register = this.config?.selected_register
                 this.health = this.config?.health
 
-                // User-Daten setzen für Echo
-                if (this.config?.user) {
-                    this.data = this.config.user
-                }
-
                 return this.api_response.data
             } catch (error) {
                 notification.notify({

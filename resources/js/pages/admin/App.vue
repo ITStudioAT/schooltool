@@ -1,6 +1,9 @@
 <template>
     <v-app>
-        <v-navigation-drawer v-model="show_navigation_drawer" color="primary" v-if="config && config.is_auth && config.roles.some((item) => admins.includes(item))">
+        <v-navigation-drawer
+            v-model="show_navigation_drawer"
+            color="primary"
+            v-if="config && config.is_auth && config.roles.some((item) => admins.includes(item)) && $route.path != '/admin/login'">
             <v-toolbar color="appbar">
                 <v-toolbar-title>
                     <img :src="'/storage/images/' + config?.logo" alt="Logo" class="logo" height="24" />
@@ -18,7 +21,7 @@
             </v-list>
         </v-navigation-drawer>
 
-        <v-app-bar flat color="primary" v-if="config && config.is_auth && config.roles.some((item) => admins.includes(item))">
+        <v-app-bar flat color="primary" v-if="config && config.is_auth && config.roles.some((item) => admins.includes(item)) && $route.path != '/admin/login'">
             <template #prepend>
                 <v-btn icon="mdi-menu-open" v-if="!show_navigation_drawer" @click="show_navigation_drawer = true" />
                 <img
@@ -87,9 +90,7 @@ export default {
         async logout() {
             // whatever your backend sequence is
             // this.$router.push('/admin')
-            console.log('logout')
             await this.adminStore.executeLogout()
-            console.log('after logout')
             //await this.adminStore.loadConfig()
             await this.$nextTick()
             this.$router.replace('/admin/login')

@@ -33,7 +33,9 @@ class WebAllowed
         }
 
         if ($request->is('admin') || $request->is('admin/*')) {
+            //Log::info('web-allowed: is-admin, is-admin/*');
             if (! Auth::check()) {
+                //Log::info('web-allowed: is-admin, is-admin/* !Auth->check');
                 return redirect('/admin/login');
             }
 
@@ -46,7 +48,7 @@ class WebAllowed
             }
         }
 
-
+        // Log::info('web-allowed: next');
         return $next($request);
     }
 

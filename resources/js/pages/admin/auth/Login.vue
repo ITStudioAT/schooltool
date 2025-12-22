@@ -25,13 +25,6 @@
                     <div class="text-caption text-center font-weight-light">oder</div>
                     <v-btn block color="success" slim flat rounded="0" variant="text" @click="register">Neu registrieren</v-btn>
                 </div>
-
-                <v-card>
-                    {{ data }}
-                </v-card>
-                <v-card>
-                    {{ config }}
-                </v-card>
             </v-card-text>
 
             <!-- Login STEP LOGIN_SELECT_SCHOOL -->
@@ -94,6 +87,9 @@
             <v-card-text v-if="step == 'NEW_TEACHER_INPUT_CODE' || step == 'NEW_TEACHER_TOKEN_WRONG'">
                 <div class="text-h6">Neue:r Lehrer:in</div>
                 <v-card-subtitle>{{ data.email }}</v-card-subtitle>
+                <v-card-subtitle class="mb-4">
+                    {{ data?.school?.long_name }}
+                </v-card-subtitle>
                 <v-alert closable type="error" text="Das Token war falsch oder abgelaufen. Versuchen Sie es erneut." v-if="step == 'NEW_TEACHER_TOKEN_WRONG'" />
                 <v-form ref="form" v-model="is_valid" @submit.prevent="newTeacherStepCode()" class="my-4">
                     <v-alert closable color="success" type="info" text="Sie wurden als Lehrer:in erkannt. Bitte prüfen Sie Ihre E-Mails" />
@@ -104,6 +100,21 @@
                     <div class="text-caption text-center font-weight-light">oder</div>
                     <v-btn block color="warning" slim flat rounded="0" variant="text" @click="restartLogin">Zurück</v-btn>
                 </v-form>
+                {{ data }}
+            </v-card-text>
+
+            <!-- NEW TEACHER STEP NEW_TEACHER_OK -->
+            <v-card-text v-if="step == 'NEW_TEACHER_OK'">
+                <div class="text-h6">Neue:r Lehrer:in</div>
+                <v-card-subtitle>{{ data.email }}</v-card-subtitle>
+                <v-card-subtitle class="mb-4">
+                    {{ data?.school?.long_name }}
+                </v-card-subtitle>
+                <v-alert type="success" class="mt-4">
+                    <div>Sie wurden am System registriert und eingeloggt.</div>
+                    <div>Herzliche Gratultion!</div>
+                </v-alert>
+                <v-btn block color="success" slim flat rounded="0" @click="moveAdmin">Weiter</v-btn>
             </v-card-text>
         </v-card>
     </v-container>
@@ -155,6 +166,9 @@ export default {
     },
 
     methods: {
+        moveAdmin() {
+            window.location.href = '/admin'
+        },
         async newTeacherStepEmail() {
             this.is_valid = false
             await this.$refs.form.validate()
@@ -178,13 +192,13 @@ export default {
             this.data.step = 'NEW_TEACHER_INPUT_CODE'
 
             if (!(await this.adminStore.newTeacherStepCode(this.data))) return
-            this.step = this.data['step']
 
-            if (this.step == 'NEW_TEACHER_OK') {
-                window.location.href = '/admin'
-                //await axios.get('/sanctum/csrf-cookie')
-                //                await this.adminStore.loadConfig()
-            }
+            await this.$nextTick()
+
+            window.location.href = '/admin'
+            return
+            await this.adminStore.loadConfig()
+            this.step = this.data['step']
         },
         homepage() {
             window.location.href = '/'

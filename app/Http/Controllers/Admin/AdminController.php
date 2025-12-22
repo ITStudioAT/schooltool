@@ -40,6 +40,7 @@ use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 
@@ -91,7 +92,6 @@ class AdminController extends Controller
         ];
 
         $data['health']['queue_working'] = true;
-
 
         return $data;
     }
@@ -335,6 +335,8 @@ class AdminController extends Controller
         $validated = $request->validated();
         $email = $validated['email'];
         $school_id = $validated['school_id'];
+        $school = School::findOrFail($school_id);
+        $validated['school'] = new SchoolResource($school);
 
         $service->sendCode($school_id, $email);
 
@@ -344,6 +346,7 @@ class AdminController extends Controller
 
     public function newTeacherStepCode(AdminNewTeacherStepCodeRequest $request, TeacherListService $service)
     {
+
         $validated = $request->validated();
         $email = $validated['email'];
         $school_id = $validated['school_id'];
