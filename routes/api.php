@@ -42,8 +42,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/admin/new_teacher_step_school',  [AdminController::class, 'newTeacherStepSchool']);
     Route::post('/admin/new_teacher_step_code',  [AdminController::class, 'newTeacherStepCode']);
 
+    Route::post('/admin/password_unknown_step_email',  [AdminController::class, 'passwordUnknownStepEmail']);
     Route::post('/admin/password_unknown_step_school',  [AdminController::class, 'passwordUnknownStepSchool']);
     Route::post('/admin/password_unknown_step_token',  [AdminController::class, 'passwordUnknownStepToken']);
+    Route::post('/admin/password_unknown_step_token_2',  [AdminController::class, 'passwordUnknownStepToken2']);
     Route::post('/admin/password_unknown_step_password',  [AdminController::class, 'passwordUnknownStepPassword']);
 
     Route::post('/admin/register_step_1',  [AdminController::class, 'registerStep1']);

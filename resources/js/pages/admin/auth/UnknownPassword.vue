@@ -33,13 +33,13 @@
                     <div>{{ data?.email }}</div>
                 </v-card-subtitle>
                 <div class="text-h6">Bitte die Schule auswählen</div>
-                <v-autocomplete v-model="selected_school_id" :items="data.schools" item-title="long_name" item-value="id" label="Auswahl Schule" />
-                <v-btn block color="success" slim flat rounded="0" @click="passwordUnknownStepSchool()" v-if="school">Weiter</v-btn>
+                <v-autocomplete v-model="selected_school_id" :items="schools" item-title="long_name" item-value="id" label="Auswahl Schule" />
+                <v-btn block color="success" slim flat rounded="0" @click="passwordUnknownStepSchool()" v-if="selected_school_id">Weiter</v-btn>
                 <div class="text-caption text-center font-weight-light">oder</div>
                 <v-btn block color="warning" slim flat rounded="0" variant="text" @click="restartPasswordUnknown">Zurück</v-btn>
             </v-card-text>
 
-            <!-- Kennwort vergessen PASSWORD_UNKNOWN_ENTER_TOKEN = Token_2fa -->
+            <!-- Kennwort vergessen PASSWORD_UNKNOWN_ENTER_TOKEN  -->
             <v-card-text v-if="step == 'PASSWORD_UNKNOWN_ENTER_TOKEN'">
                 <v-card-subtitle class="mb-4">
                     <div>{{ data?.email }}</div>
@@ -49,6 +49,22 @@
                     <v-alert closable color="success" type="info" text="Bitte prüfen Sie Ihre E-Mails" />
                     <div class="text-caption text-text">Bitte den Code laut E-Mail eingeben</div>
                     <v-otp-input autofocus v-model="data.token_2fa" />
+                    <v-btn block color="success" slim flat rounded="0" type="submit">Weiter</v-btn>
+                </v-form>
+                <div class="text-caption text-center font-weight-light">oder</div>
+                <v-btn block color="warning" slim flat rounded="0" variant="text" @click="restartPasswordUnknown">Zurück</v-btn>
+            </v-card-text>
+
+            <!-- Kennwort vergessen PASSWORD_UNKNOWN_ENTER_TOKEN_2 bei 2-Faktoren Authentifizierung  -->
+            <v-card-text v-if="step == 'PASSWORD_UNKNOWN_ENTER_TOKEN_2'">
+                <v-card-subtitle class="mb-4">
+                    <div>{{ data?.email }}</div>
+                    <div>{{ data?.school?.long_name }}</div>
+                </v-card-subtitle>
+                <v-form ref="form" v-model="is_valid" @submit.prevent="passwordUnknownStepToken2()" class="mb-4">
+                    <v-alert closable color="success" type="info" text="Bitte prüfen Sie Ihre E-Mails von der 2-Faktoren-EMail-Adresse" />
+                    <div class="text-caption text-text">Bitte den Code laut E-Mail eingeben</div>
+                    <v-otp-input autofocus v-model="data.token_2fa_2" />
                     <v-btn block color="success" slim flat rounded="0" type="submit">Weiter</v-btn>
                 </v-form>
                 <div class="text-caption text-center font-weight-light">oder</div>
@@ -134,20 +150,10 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, ['config', 'is_loading', 'error', 'api_response', 'load_config', 'school', 'selected_school_id', 'data']),
+        ...mapWritableState(useAdminStore, ['config', 'is_loading', 'error', 'api_response', 'load_config', 'school', 'selected_school_id', 'data', 'schools']),
     },
 
-    watch: {
-        selected_school_id() {
-            if (this.selected_school_id) {
-                this.school = this.data.schools.find((s) => s.id === this.selected_school_id)
-                this.data.school = this.school
-            } else {
-                this.school = null
-                this.data.school = null
-            }
-        },
-    },
+    watch: {},
 
     methods: {
         homepage() {
@@ -165,6 +171,7 @@ export default {
         restartPasswordUnknown() {
             this.data.password = null
             this.data.token_2fa = null
+            this.selected_school_id = null
             this.step = 'PASSWORD_UNKNOWN_ENTER_EMAIL'
         },
 
@@ -172,40 +179,34 @@ export default {
             this.is_valid = false
             await this.$refs.form.validate()
             if (!this.is_valid) return
-            this.data.step = 'LOGIN_ENTER_EMAIL'
-            if (!(await this.adminStore.loginStepEmail(this.data))) return
 
-            console.log(this.data)
-
-            if (!this.data.school) {
-                this.selected_school_id = null
-                this.step = 'PASSWORD_UNKNOWN_SELECT_SCHOOL'
-            } else {
-                this.step = 'PASSWORD_UNKNOWN_ENTER_TOKEN'
-            }
+            this.data['step'] = 'PASSWORD_UNKNOWN_ENTER_EMAIL'
+            if (!(await this.adminStore.passwordUnknownStepEmail(this.data))) return
+            this.step = this.data['step']
         },
 
         async passwordUnknownStepSchool() {
-            if (!this.school) return
-            this.step = 'xxx'
-            delete this.data.users_count
+            if (!this.selected_school_id) return
             delete this.data.schools
-            this.data.school_id = this.school.id
-            this.data.step = 'PASSWORD_UNKNOWN_SELECT_SCHOOL'
+            this.data['school_id'] = this.selected_school_id
             if (!(await this.adminStore.passwordUnknownStepSchool(this.data))) return
-            this.step = 'PASSWORD_UNKNOWN_ENTER_TOKEN'
+            this.step = this.data['step']
         },
 
         async passwordUnknownStepToken() {
             if (!this.data.token_2fa || this.data.token_2fa.length != 6) return
-            this.data.step = 'PASSWORD_UNKNOWN_STEP_TOKEN'
             if (!(await this.adminStore.passwordUnknownStepToken(this.data))) return
-            this.step = 'PASSWORD_UNKNOWN_ENTER_PASSWORD'
+            this.step = this.data['step']
+        },
+
+        async passwordUnknownStepToken2() {
+            if (!this.data.token_2fa || this.data.token_2fa.length != 6) return
+            if (!(await this.adminStore.passwordUnknownStepToken2(this.data))) return
+            this.step = this.data['step']
         },
 
         async passwordUnknownStepPassword() {
             if (!this.data.token_2fa || this.data.token_2fa.length != 6) return
-            this.data.step = 'PASSWORD_UNKNOWN_STEP_PASSWORD'
             if (!(await this.adminStore.passwordUnknownStepPassword(this.data))) return
             this.step = 'PASSWORD_UNKNOWN_FINISHED'
         },

@@ -28,6 +28,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
         main_action: '',
         echo: null,
         pusher_count: 0,
+        schools: null,
     }),
 
     actions: {
@@ -223,6 +224,27 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             }
         },
 
+        async passwordUnknownStepToken2(data) {
+            const notification = useNotificationStore()
+            this.is_loading++
+            this.api_response = null
+            try {
+                this.api_response = await axios.post('/api/admin/password_unknown_step_token_2', { data })
+                this.data = this.api_response.data
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.config?.timeout,
+                })
+                return false
+            } finally {
+                this.is_loading--
+            }
+        },
+
         async passwordUnknownStepPassword(data) {
             const notification = useNotificationStore()
             this.is_loading++
@@ -299,6 +321,30 @@ export const useAdminStore = defineStore('AdminAdminStore', {
                 await axios.get('/sanctum/csrf-cookie')
                 this.api_response = await axios.post('/api/admin/new_teacher_step_code', data)
                 this.data = this.api_response.data
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.config?.timeout,
+                })
+                return false
+            } finally {
+                this.is_loading--
+            }
+        },
+
+        async passwordUnknownStepEmail(data) {
+            const notification = useNotificationStore()
+            this.is_loading++
+            this.api_response = null
+            try {
+                await axios.get('/sanctum/csrf-cookie')
+                this.api_response = await axios.post('/api/admin/password_unknown_step_email', { data })
+                this.data = this.api_response.data
+                this.schools = this.data?.schools
+                delete this.data.schools
                 return true
             } catch (error) {
                 notification.notify({

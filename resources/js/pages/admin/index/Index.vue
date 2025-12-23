@@ -151,8 +151,10 @@ export default {
         this.adminStore = useAdminStore()
         this.healthStore = useHealthStore()
         this.schoolStore = useSchoolStore()
+        this.adminStore.is_loading++
         if (this.config?.is_auth) await this.schoolStore.loadSchoolInfos(this.config?.selected_school?.id)
         if (this.config?.is_auth) this.runTests()
+        this.adminStore.is_loading--
     },
 
     unmounted() {},

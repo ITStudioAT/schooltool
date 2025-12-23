@@ -14,49 +14,6 @@ use Illuminate\Support\Facades\Notification;
 
 class AdminService
 {
-    public function checkPasswordUnknown($data): User
-    {
-        if (! $user = User::where('email', $data['email'])->first()) {
-            abort(401, 'Kennwort zurücksetzen funktioniert mit dieser E-Mail-Adresse nicht');
-        }
-        if (! $user->confirmed_at) {
-            abort(423, 'Benutzer ist noch nicht bestätigt');
-        }
-        if (! $user->is_active) {
-            abort(423, 'Benutzer ist gesperrt');
-        }
-
-        if ($data['step'] == 'PASSWORD_UNKNOWN_ENTER_TOKEN') {
-            if (! $user->checkToken2Fa($data['token_2fa'])) {
-                abort(401, 'Kennwort zurücksetzen funktioniert nicht. Code falsch oder Zeit abgelaufen.');
-            }
-        }
-
-        if ($data['step'] == 'PASSWORD_UNKNOWN_ENTER_TOKEN_2') {
-            if (! $user->checkToken2Fa($data['token_2fa'])) {
-                abort(401, 'Kennwort zurücksetzen funktioniert nicht. Code falsch oder Zeit abgelaufen.');
-            }
-            if (! $user->checkToken2Fa_2($data['token_2fa_2'])) {
-                abort(401, 'Kennwort zurücksetzen funktioniert nicht. Code falsch oder Zeit abgelaufen.');
-            }
-        }
-
-        if ($data['step'] == 'PASSWORD_UNKNOWN_ENTER_PASSWORD') {
-            if (! $user->checkToken2Fa($data['token_2fa'])) {
-                abort(401, 'Kennwort zurücksetzen funktioniert nicht. Code falsch oder Zeit abgelaufen.');
-            }
-            if ($user->is_2fa && ! $user->checkToken2Fa_2($data['token_2fa_2'])) {
-                abort(401, 'Kennwort zurücksetzen funktioniert nicht. Code falsch oder Zeit abgelaufen.');
-            }
-
-            if ($data['password'] != $data['password_repeat']) {
-                abort(401, 'Kennwort zurücksetzen funktioniert nicht. Kennwort und Wiederholung Kennwort sind nicht identisch');
-            }
-        }
-
-        return $user;
-    }
-
     public function checkRegister($data): User | null
     {
         if ($user = User::where('email', $data['email'])->first()) {
@@ -198,13 +155,26 @@ class AdminService
     {
         if (!$user = User::where('email', $data['email'])->where('school_id', $data['school_id'])->first()) abort(404, "Kein Benutzer gefunden");
         if ($user->token_2fa != $data['token_2fa'] || !now()->isBefore($user->token_2fa_expires_at)) abort(401, "Token falsch oder abgelaufen");
-
         return $data;
+    }
+
+    public function passwordUnkownCheckToken2($data)
+    {
+        if (!$user = User::where('email', $data['email'])->where('school_id', $data['school_id'])->first()) abort(404, "Kein Benutzer gefunden");
+        if ($user->token_2fa_2 != $data['token_2fa_2'] || !now()->isBefore($user->token_2fa_2_expires_at)) abort(401, "Token falsch oder abgelaufen");
+        return $data;
+    }
+
+    public function passwordUnkownIfUserIs2FaSendToken($data)
+    {
+        if (!$user = User::where('email', $data['email'])->where('school_id', $data['school_id'])->first()) abort(404, "Kein Benutzer gefunden");
+        $data['school'] = $user->selectedSchool;
+        if ($user->is_2fa) $this->setToken2FaEmail2Fa($user, $data, "Code zum Neusetzen des Kennwortes");
+        return $user->is_2fa;
     }
 
     public function passwordUnkownSetPassword($data)
     {
-        $data = $this->passwordUnkownCheckToken($data);
         if (!$user = User::where('email', $data['email'])->where('school_id', $data['school_id'])->first()) abort(404, "Kein Benutzer gefunden");
 
         $user->password = Hash::make($data['password']);
@@ -243,6 +213,25 @@ class AdminService
         ];
 
         Notification::route('mail', $user->email)->notify(new StandardEmail($email));
+    }
+
+    public function setToken2FaEmail2Fa($user, $data, $subject)
+    {
+        $token = rand(100000, 999999);
+        $user->token_2fa_2 = $token;
+        $user->token_2fa_2_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
+        $user->save();
+        $email = [
+            'from_address' => config('schooltool.noreply_email'),
+            'from_name' => $data['school']['long_name'],
+            'logo' =>  asset('/storage/images/' . config('schooltool.logo')),
+            'subject' => $subject,
+            'markdown' => 'mails.admin.sendCode',
+            'token_2fa' => $token,
+            'token-expire-time' => config('schooltool.token_expire_time'),
+        ];
+
+        Notification::route('mail', $user->email_2fa)->notify(new StandardEmail($email));
     }
 
     public function checkLogin($data): array

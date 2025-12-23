@@ -4,7 +4,7 @@ namespace App\Http\Requests\Admin;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-class AdminPasswordUnknownStepSchoolRequest extends FormRequest
+class PasswordUnknownStepEmailRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -22,9 +22,8 @@ class AdminPasswordUnknownStepSchoolRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'data.step' => 'required|in:PASSWORD_UNKNOWN_SELECT_SCHOOL',
+            'data.step' => 'required|in:PASSWORD_UNKNOWN_ENTER_EMAIL',
             'data.email' => 'required|email|max:255',
-            'data.school_id' => 'required|integer|exists:schools,id',
         ];
     }
 }

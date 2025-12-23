@@ -5,7 +5,10 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Requests\Admin\AdminNewTeacherStepCodeRequest;
 use App\Http\Requests\Admin\AdminNewTeacherStepEmailRequest;
 use App\Http\Requests\Admin\AdminNewTeacherStepSchoolRequest;
+use App\Http\Requests\Admin\AdminPasswordUnknownStepPasswordRequest;
 use App\Http\Requests\Admin\AdminPasswordUnknownStepSchoolRequest;
+use App\Http\Requests\Admin\AdminPasswordUnknownStepToken2Request;
+use App\Http\Requests\Admin\AdminPasswordUnknownStepTokenRequest;
 use App\Http\Requests\Admin\AdminPasswordUnkownStepPasswordRequest;
 use App\Http\Requests\Admin\AdminPasswordUnkownStepTokenRequest;
 use App\Http\Requests\Admin\LoginStep2Request;
@@ -15,6 +18,7 @@ use App\Http\Requests\Admin\PasswordUnknownStep1Request;
 use App\Http\Requests\Admin\PasswordUnknownStep2Request;
 use App\Http\Requests\Admin\PasswordUnknownStep3Request;
 use App\Http\Requests\Admin\PasswordUnknownStep4Request;
+use App\Http\Requests\Admin\PasswordUnknownStepEmailRequest;
 use App\Http\Requests\Admin\RegisterStep1Request;
 use App\Http\Requests\Admin\RegisterStep2Request;
 use App\Http\Requests\Admin\RegisterStep3Request;
@@ -147,95 +151,83 @@ class AdminController extends Controller
         return response()->json($data, 200);
     }
 
+    public function passwordUnknownStepEmail(PasswordUnknownStepEmailRequest $request, AdminService $service)
+    {
+        $adminService = new AdminService();
+        $validated = $request->validated();
+
+        $data = $adminService->checkEmail($validated['data']);
+
+        if ($data['users_count'] == 0) {
+            abort(401, 'Login funktioniert mit dieser E-Mail-Adresse nicht.');
+        }
+
+        if ($data['step'] == 'LOGIN_ENTER_PASSWORD') {
+            $user = User::where('school_id', $data['school_id'])->where('email', $data['email'])->first();
+            $service->passwordUnkownSendToken($data);
+            $data['step'] = 'PASSWORD_UNKNOWN_ENTER_TOKEN';
+        }
+        if ($data['step'] == 'LOGIN_SELECT_SCHOOL') {
+            $data['step'] = 'PASSWORD_UNKNOWN_SELECT_SCHOOL';
+        }
+
+        return response()->json($data, 200);
+    }
+
 
     public function passwordUnknownStepSchool(AdminPasswordUnknownStepSchoolRequest $request, AdminService $service)
     {
         $validated = $request->validated();
         $data = $service->passwordUnkownSendToken($validated['data']);
-
+        $data['step'] = 'PASSWORD_UNKNOWN_ENTER_TOKEN';
         return response()->json($data, 200);
     }
 
-    public function passwordUnknownStepToken(AdminPasswordUnkownStepTokenRequest $request, AdminService $service)
-    {
-        $validated = $request->validated();
-        $data = $service->passwordUnkownCheckToken($validated['data']);
 
-        return response()->json($data, 200);
-    }
-
-    public function passwordUnknownStepPassword(AdminPasswordUnkownStepPasswordRequest $request, AdminService $service)
+    public function passwordUnknownStepToken(AdminPasswordUnknownStepTokenRequest $request, AdminService $service)
     {
+
         $validated = $request->validated();
 
-        $data = $service->passwordUnkownSetPassword($validated['data']);
+        $data = $validated['data'];
+        $data = $service->passwordUnkownCheckToken($data);
 
-        return response()->json($validated["data"], 200);
-    }
-
-    public function passwordUnknownStep1(PasswordUnknownStep1Request $request)
-    {
-        $adminService = new AdminService();
-        $validated = $request->validated();
-
-        $user = $adminService->checkPasswordUnknown($validated['data']);
-        // Token zusenden
-        $adminService->sendPasswordResetToken(1, $user, $user->email);
-        $data = ['step' => 'PASSWORD_UNKNOWN_ENTER_TOKEN'];
-
-        return response()->json($data, 200);
-    }
-
-    public function passwordUnknownStep2(PasswordUnknownStep2Request $request)
-    {
-        $adminService = new AdminService();
-        $validated = $request->validated();
-
-        $user = $adminService->checkPasswordUnknown($validated['data']);
-        if (! $user->is_2fa) {
-            $data = ['step' => 'PASSWORD_UNKNOWN_SUCCESS'];
-
-            return response()->json($data, 200);
+        if ($service->passwordUnkownIfUserIs2FaSendToken($data)) {
+            // Ist 2-FA-USER: Code wurde zur 2. E-Mail versandt
+            $data['step'] = 'PASSWORD_UNKNOWN_ENTER_TOKEN_2';
+        } else {
+            $data['step'] = 'PASSWORD_UNKNOWN_ENTER_PASSWORD';
         }
 
-        // User hat 2-Faktoren-Authentifizierung, es existiert jedoch keine 2. E-Mail
-        if (! $user->email_2fa) {
-            abort(401, 'Kennwort zurücksetzen funktioniert nicht. Sie haben keine weitere E-Mail-Adresse.');
-        }
-
-        // Token 2 zusenden
-        $adminService->sendPasswordResetToken(2, $user, $user->email_2fa);
-
-        $data = ['step' => 'PASSWORD_UNKNOWN_ENTER_TOKEN_2'];
-
         return response()->json($data, 200);
     }
 
-    public function passwordUnknownStep3(PasswordUnknownStep3Request $request)
+    public function passwordUnknownStepToken2(AdminPasswordUnknownStepToken2Request $request, AdminService $service)
     {
-        $adminService = new AdminService();
+
         $validated = $request->validated();
 
-        $user = $adminService->checkPasswordUnknown($validated['data']);
-        if (! $user->is_2fa) {
-            abort(401, 'Kennwort zurücksetzen funktioniert nicht. 2-Faktoren-Authentifizierung ist nicht aktiviert.');
-        }
-
-        $data = ['step' => 'PASSWORD_UNKNOWN_ENTER_PASSWORD'];
-
+        $data = $validated['data'];
+        $data = $service->passwordUnkownCheckToken($data);
+        $data = $service->passwordUnkownCheckToken2($data);
+        $data['step'] = 'PASSWORD_UNKNOWN_ENTER_PASSWORD';
         return response()->json($data, 200);
     }
 
-    public function passwordUnknownStep4(PasswordUnknownStep4Request $request)
+
+
+    public function passwordUnknownStepPassword(AdminPasswordUnknownStepPasswordRequest $request, AdminService $service)
     {
-        $adminService = new AdminService();
+
         $validated = $request->validated();
 
-        $user = $adminService->checkPasswordUnknown($validated['data']);
-        $user->setPassword($validated['data']['password']);
+        $data = $validated['data'];
+        $data = $service->passwordUnkownCheckToken($data);
 
-        $data = ['step' => 'PASSWORD_UNKNOWN_FINISHED'];
-
+        if (!$user = User::where('email', $data['email'])->where('school_id', $data['school_id'])->first()) abort(404, "Kein Benutzer gefunden");
+        if ($user->is_2fa) $data = $service->passwordUnkownCheckToken2($data);
+        $data = $service->passwordUnkownSetPassword($data);
+        $data['step'] = 'PASSWORD_UNKNOWN_FINISHED';
         return response()->json($data, 200);
     }
 
@@ -252,6 +244,9 @@ class AdminController extends Controller
 
         return response()->json($data, 200);
     }
+
+
+
 
     public function loginStep2(LoginStep2Request $request)
     // 

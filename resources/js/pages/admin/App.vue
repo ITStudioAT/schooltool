@@ -82,8 +82,10 @@ export default {
 
         // get pinia store and keep it on this
         this.adminStore = useAdminStore()
+        this.adminStore.is_loading++
         this.adminStore.initialize(this.$router)
         await this.adminStore.loadConfig()
+        this.adminStore.is_loading--
     },
 
     methods: {
