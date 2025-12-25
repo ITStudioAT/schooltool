@@ -14,6 +14,7 @@ export const useOfferStore = defineStore('TutoringOfferStore', {
             data: {},
             my_offers: null,
             offer_config: null,
+            is_offer_dialog: false,
         }
     },
 
