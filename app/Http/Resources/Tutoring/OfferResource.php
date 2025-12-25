@@ -29,6 +29,7 @@ class OfferResource extends JsonResource
             'classes' => $this->classes,
             'accepted_at' => $this->accepted_at,
             'click_count' => $this->click_count,
+            'visible_for_other_schools' => $this->visible_for_other_schools,
             'subject' => $this->whenLoaded('subject', function () {
                 return [
                     'id' => $this->subject->id,

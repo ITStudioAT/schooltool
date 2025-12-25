@@ -1,7 +1,7 @@
 <template>
     <div class="schooltool-background"></div>
     <!-- Überschrift SCHOOLTOOL / NACHHILFETOOL-->
-    <div v-if="offer_config">
+    <div v-if="auth">
         <v-card flat tile class="mt-4">
             <div class="d-flex flex-row justify-center">
                 <div class="text-h6 text-md-h5 text-lg-h4 text-xl-h2">
@@ -12,12 +12,12 @@
             </div>
         </v-card>
 
-        <v-card flat tile color="transparent" class="mt-4" v-if="offer_config.school">
+        <v-card flat tile color="transparent" class="mt-4">
             <div class="d-flex justify-center">
                 <div class="d-flex flex-column align-center">
-                    <div class="text-caption">{{ offer_config.school.long_name }}</div>
+                    <div class="text-caption">{{ auth?.school_long_name }}</div>
                     <div style="width: 96px; height: 48px" class="bg-primary-lighten-4">
-                        <img :src="'/storage/images/' + offer_config.school.logo" alt="Logo" style="width: 100%; height: 100%; object-fit: contain" />
+                        <img :src="'/storage/images/' + auth.school_logo" alt="Logo" style="width: 100%; height: 100%; object-fit: contain" />
                     </div>
                 </div>
             </div>
@@ -88,9 +88,6 @@
             </v-card-text>
             -->
         </v-card>
-        <v-card>
-            {{ offer_config }}
-        </v-card>
     </div>
 </template>
 
@@ -145,14 +142,14 @@ export default {
         ...mapWritableState(useTutoringStore, ['auth', 'action']),
         ...mapWritableState(useUserStore, ['error', 'data']),
         ...mapWritableState(useSubjectStore, ['subjects']),
-        ...mapWritableState(useOfferStore, ['offer_config']),
+        ...mapWritableState(useOfferStore, []),
     },
 
     watch: {},
 
     methods: {
         moveToTutoringOverview() {
-            this.$router.push('/homepage/tutoring_overview/?school=' + this.offer_config?.school?.short_name)
+            this.$router.push('/homepage/tutoring_overview/?school=' + this.auth?.school_short_name)
         },
 
         createOffer() {
@@ -168,7 +165,7 @@ export default {
         },
 
         async logout() {
-            const school = this.offer_config?.school?.short_name
+            const school = this.auth?.school_short_name
             await this.userStore.logout()
             // await this.tutoringStore.loadAuth()
             this.action = ''

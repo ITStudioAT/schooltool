@@ -52,6 +52,20 @@
                                     <div v-else>Das Angebot wird sofort freigeschaltet</div>
                                 </div>
                             </v-card-text>
+
+                            <v-card-text v-if="step >= 7">
+                                <div class="text-body-1 font-weight-bold d-flex flex-row align-center ga-2">
+                                    <div>Für andere Schulen sichtbar:</div>
+                                    <div v-if="data.visible_for_other_schools">
+                                        <v-icon icon="mdi-check" color="green" />
+                                        JA
+                                    </div>
+                                    <div v-else>
+                                        <v-icon icon="mdi-close" color="error" />
+                                        NEIN
+                                    </div>
+                                </div>
+                            </v-card-text>
                         </v-card>
                         <!-- OFFER STEP 0: Auswahl Fach -->
                         <v-card v-if="step == 0">
@@ -173,8 +187,21 @@
                             </v-card-text>
                         </v-card>
 
-                        <!-- OFFER STEP 7: Fertig, Bestätigung abwarten -->
-                        <v-card class="mt-4" v-if="step == 7 && selectedSubject.must_be_accepted">
+                        <!-- OFFER STEP 6: Angebot auch für andere Schulen sichtbar -->
+                        <v-card class="mt-4" v-if="step == 6">
+                            <v-card-text>
+                                <label class="text-subtitle-2 mb-2 d-block">Soll dieses Angebot auch für Schüler:innen anderer Schulen sichtbar sein?</label>
+                                <v-checkbox v-model="data.visible_for_other_schools" label="Für andere Schulen sichtbar" hide-details />
+                                <v-alert type="warning" v-if="message[6]">{{ message[6] }}</v-alert>
+                                <div class="mt-4 d-flex flex-row align-center justify-space-between">
+                                    <v-btn tile flat color="warning" @click="step--">Zurück</v-btn>
+                                    <v-btn tile flat color="primary" @click="nextStep('visible_for_other_schools')">Weiter</v-btn>
+                                </div>
+                            </v-card-text>
+                        </v-card>
+
+                        <!-- OFFER STEP 8: Fertig, Bestätigung abwarten -->
+                        <v-card class="mt-4" v-if="step == 8 && selectedSubject.must_be_accepted">
                             <v-card-text>
                                 <v-alert type="success">
                                     <div v-if="data.id">Das Angebot für Nachhilfe wurde geändert.</div>
@@ -188,8 +215,8 @@
                             </v-card-text>
                         </v-card>
 
-                        <!-- OFFER STEP 7: Fertig, keine Bestätigung nötig -->
-                        <v-card class="mt-4" v-if="step == 7 && !selectedSubject.must_be_accepted">
+                        <!-- OFFER STEP 8: Fertig, keine Bestätigung nötig -->
+                        <v-card class="mt-4" v-if="step == 8 && !selectedSubject.must_be_accepted">
                             <v-card-text>
                                 <v-alert type="success">
                                     <div v-if="data.id">Das Angebot für Nachhilfe wurde geändert.</div>
@@ -209,11 +236,12 @@
                 <v-card-text v-if="error">
                     <v-alert type="error">{{ error?.response?.data?.message + ' (' + error?.response?.status + ')' }}</v-alert>
                 </v-card-text>
-                <!-- OFFER ALWAYS AND STEP 6: SCHLIESSEN/SPEICHERN-->
+
+                <!-- OFFER ALWAYS AND STEP 7: SCHLIESSEN/SPEICHERN-->
                 <v-card-actions>
                     <div class="d-flex flex-row align-center justify-space-between w-100">
-                        <its-menu-button subtitle="Abbruch" icon="mdi-close" color="warning" @click="action = ''" v-if="step <= 6" />
-                        <its-menu-button :subtitle="data.id ? 'Speichern' : 'Erstellen'" icon="mdi-check" color="success" @click="doCreateOffer(data)" v-if="step == 6" />
+                        <its-menu-button subtitle="Abbruch" icon="mdi-close" color="warning" @click="action = ''" v-if="step <= 7" />
+                        <its-menu-button :subtitle="data.id ? 'Speichern' : 'Erstellen'" icon="mdi-check" color="success" @click="doCreateOffer(data)" v-if="step == 7" />
                     </div>
                 </v-card-actions>
             </v-form>
@@ -415,6 +443,10 @@ export default {
                         this.message[this.step] = 'Bitte eine/n Lehrer:in zur Bestätigung auswählen.'
                         return
                     }
+                    this.message = []
+                    this.step++
+                    break
+                case 'visible_for_other_schools':
                     this.message = []
                     this.step++
                     break

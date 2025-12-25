@@ -34,6 +34,7 @@ class OfferUpdateRequest extends FormRequest
             'max_group_members' => 'required|integer|min:2|max:5',
             'price_per_hour' => 'required|integer|min:0|max:100',
             'email_mentor' => 'nullable|string|max:255',
+            'visible_for_other_schools' => 'boolean'
         ];
     }
 }

@@ -65,6 +65,7 @@ class TutoringOffer extends Model
         'is_active' => 'boolean',
         'must_be_accepted' => 'boolean',
         'select_only_me_concerning' => 'nullable|boolean',
+        'visible_for_other_schools' => 'boolean'
     ];
 
     public function subject()

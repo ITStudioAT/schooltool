@@ -36,7 +36,7 @@ class AdminNavigationService
 
         // TUTORING
         if ($this->userHasRole(['admin', 'tutoring_admin', 'teacher'])) {
-            $menu[] = ['title' => 'Nachhilfe', 'icon' => 'mdi-cast-education', 'to' => '/admin/tutoring', 'is_active' => false];
+            $menu[] = ['title' => 'Nachhilfe', 'icon' => 'mdi-cast-education', 'to' => '/admin/tutoring', 'is_active' => true];
         }
 
         // TEACHER

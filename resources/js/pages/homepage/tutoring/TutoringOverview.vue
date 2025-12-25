@@ -265,16 +265,36 @@
                 </v-card-text>
             </v-card>
         </div>
-
+        <!-- SUCHLEISTE -->
+        <v-expansion-panels v-model="search_panel" color="primary" v-if="offers && offers.length > 0 && offer_config && offer_config.auth.is_auth" class="mt-4">
+            <v-expansion-panel>
+                <v-expansion-panel-title class="text-body-1 font-weight-medium">Suche</v-expansion-panel-title>
+                <v-expansion-panel-text>
+                    <v-checkbox-btn color="success" v-model="search.only_in_my_school" label="Nur in Deiner Schule suchen" />
+                    <div class="d-flex flex-row align-center ga-2">
+                        <v-checkbox-btn color="pink" v-model="search.only_girls" label="Nachhilfe nur von Mädchen" />
+                        <v-checkbox-btn color="blue" v-model="search.only_boys" label="Nachhilfe nur von Burschen" />
+                    </div>
+                    <v-text-field label="Suchtext" v-model="search_text" hide-details class="large-text mt-4" append-icon="mdi-magnify" clearable />
+                    <div class="text-right mt-4">
+                        <v-btn size="large" tile flat color="success" @click="">Jetzt suchen</v-btn>
+                    </div>
+                </v-expansion-panel-text>
+            </v-expansion-panel>
+        </v-expansion-panels>
+        <!-- Angebote -->
         <v-card tile flat color="transparent" v-if="is_loaded && !is_login">
-            <!-- Suchzeile -->
             <v-card flat color=" bg-primary" class="border-md mt-4" v-if="offers && offers.length > 0">
-                <v-text-field label="Suche" hide-details class="large-text" append-icon="mdi-magnify" clearable />
-            </v-card>
-
-            <!-- Angebote -->
-            <v-card flat color=" bg-primary" class="border-md mt-4" v-if="offers && offers.length > 0">
-                <ItsCard :title="offer.subject.short_name" :text="offer.title" color="secondary" button="Anschauen" @clickCard="" v-for="offer in offers" :key="offer.id" />
+                <ItsCard
+                    :title="offer.subject.short_name"
+                    :subtitle="offer.subject.long_name"
+                    :text="offer.title"
+                    :description="offer.description"
+                    color="secondary"
+                    button="Anschauen"
+                    @clickCard=""
+                    v-for="offer in offers"
+                    :key="offer.id" />
             </v-card>
             <!-- KEINE ANGEBOT VORHANDEN-->
             <v-card v-else class="border-md mt-4">
@@ -286,6 +306,15 @@
                     <v-btn size="small" tile flat color="primary" variant="text" class="ml-4" @click="moveToTutoring" v-if="offer_config.auth.is_auth">Los</v-btn>
                 </v-alert>
             </v-card>
+        </v-card>
+
+        <v-card>
+            offers:
+            {{ offers }}
+        </v-card>
+        <v-card class="mt-4">
+            OFFER_CONFIG:
+            {{ offer_config }}
         </v-card>
     </div>
 
@@ -349,11 +378,14 @@ export default {
             is_init: false,
             is_login: false,
             is_valid: false,
+            search: { only_in_my_school: true },
+            search_text: '',
+            search_panel: null,
         }
     },
 
     computed: {
-        ...mapWritableState(useTutoringStore, ['config', 'schools', 'selected_school_id', 'data']),
+        ...mapWritableState(useTutoringStore, ['schools', 'selected_school_id', 'data']),
         ...mapWritableState(useOfferStore, ['offer_config', 'error', 'offers']),
     },
 
@@ -367,6 +399,19 @@ export default {
                     window.location.href = window.location.pathname + '?' + params.toString()
                 }
             }
+        },
+        'search.only_girls'(newValue) {
+            if (newValue) this.search.only_boys = false
+        },
+        'search.only_boys'(newValue) {
+            if (newValue) this.search.only_girls = false
+        },
+        search: {
+            handler(newValue) {
+                console.log('search changed after:', newValue)
+            },
+            deep: true,
+            flush: 'post',
         },
     },
 
@@ -475,6 +520,6 @@ export default {
 }
 
 .large-text :deep(input) {
-    font-size: 42px !important;
+    font-size: 28px !important;
 }
 </style>
