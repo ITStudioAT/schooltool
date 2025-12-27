@@ -167,11 +167,22 @@ class OfferController extends Controller
         $data = [
             'status' => 200,
             'count' => TutoringOffer::where('school_id', $auth_user->school_id)->count(),
-            'students_count' => TutoringOffer::where('school_id', $auth_user->school_id)->distinct('user_id')->count('user_id'),
+            'students_count' => TutoringOffer::where('school_id', $auth_user->school_id)->distinct()->count('user_id'),
             'online_count' => TutoringOffer::where('school_id', $auth_user->school_id)->where('is_active', true)->count(),
             'accepted_count' => TutoringOffer::where('school_id', $auth_user->school_id)->whereNotNull('accepted_at')->count(),
             'users_count' => User::where('school_id', $auth_user->school_id)->role('tutoring_user')->count()
         ];
+
+        $offerUserIds = TutoringOffer::where('school_id', $auth_user->school_id)
+            ->pluck('user_id')
+            ->unique();
+
+        // Welche davon sind tutoring_user?
+        $validUsers = User::whereIn('id', $offerUserIds)
+            ->role('tutoring_user')
+            ->count();
+
+        DebugBar::info($offerUserIds, $validUsers);
 
         return response()->json($data, 200);
     }

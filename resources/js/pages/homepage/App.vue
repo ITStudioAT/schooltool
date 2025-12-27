@@ -4,7 +4,7 @@
             <v-main>
                 <router-view />
                 <ItsNotification />
-                <v-overlay :model-value="is_loading > 0" class="align-center justify-center" contained opacity="0.0">
+                <v-overlay :model-value="is_loading > 0" class="align-center justify-center" contained opacity="0.1">
                     <!-- <v-progress-circular indeterminate size="70" width="7" /> -->
                     <!--
                     <v-progress-circular indeterminate size="small" />

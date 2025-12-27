@@ -1,34 +1,4 @@
 <template>
-    <!-- STATISTIK -->
-    <v-col cols="12" md="6" xl="4" v-if="stats">
-        <ItsGridBox color="primary" title="Statistik" class="w-100" :disabled="action != ''">
-            <v-card tile flat color="transparent" class="w-100">
-                <v-card-text class="text-body-1 d-flex flex-column ga-2">
-                    <div class="d-flex flex-row align-center justify-space-between pa-1">
-                        <div>Anzahl Angebote:</div>
-                        <div>{{ stats.count }}</div>
-                    </div>
-                    <div class="d-flex flex-row align-center justify-space-between pa-1 bg-secondary-lighten-1">
-                        <div>Freigegebene Angebote:</div>
-                        <div>{{ stats.accepted_count }}</div>
-                    </div>
-                    <div class="d-flex flex-row align-center justify-space-between pa-1">
-                        <div>Angebote online:</div>
-                        <div>{{ stats.online_count }}</div>
-                    </div>
-                    <div class="d-flex flex-row align-center justify-space-between pa-1 bg-secondary-lighten-1">
-                        <div>Anzahl Schüler:innen mit Angeboten:</div>
-                        <div>{{ stats.students_count }}</div>
-                    </div>
-                    <div class="d-flex flex-row align-center justify-space-between pa-1">
-                        <div>Anzahl angemeldeter Schüler:innen:</div>
-                        <div>{{ stats.users_count }}</div>
-                    </div>
-                </v-card-text>
-            </v-card>
-        </ItsGridBox>
-    </v-col>
-
     <!-- FREIZUGEBENDE ANGEBOTE-->
     <v-col cols="12" md="6" xl="4" v-if="offers">
         <ItsGridBox color="primary" title="Freizugebende Angebote" subtitle="Diese Angebot warten auf Deine Freigabe" class="w-100" :disabled="action != ''">
@@ -177,6 +147,40 @@
             </div>
         </ItsGridBox>
     </v-col>
+
+    <!-- STATISTIK -->
+    <v-col cols="12" md="6" xl="4" v-if="stats">
+        <ItsGridBox color="primary" title="Statistik" class="w-100" :disabled="action != ''">
+            <v-card tile flat color="transparent" class="w-100">
+                <v-card-text class="text-body-1 d-flex flex-column ga-2">
+                    <div class="d-flex flex-row align-center justify-space-between pa-1 font-weight-medium">
+                        <div>Anzahl Angebote:</div>
+                        <div>{{ stats.count }}</div>
+                    </div>
+                    <div class="d-flex flex-row align-center justify-space-between pa-1 bg-secondary-lighten-1">
+                        <div>… davon freigegeben:</div>
+                        <div>{{ stats.accepted_count }}</div>
+                    </div>
+                    <div class="d-flex flex-row align-center justify-space-between pa-1">
+                        <div>… davon Online:</div>
+                        <div>{{ stats.online_count }}</div>
+                    </div>
+
+                    <v-divider />
+
+                    <div class="d-flex flex-row align-center justify-space-between pa-1 font-weight-medium">
+                        <div>Anzahl angemeldeter Schüler:innen:</div>
+                        <div>{{ stats.users_count }}</div>
+                    </div>
+                    <div class="d-flex flex-row align-center justify-space-between pa-1 bg-secondary-lighten-1">
+                        <div>… davon mit Angeboten:</div>
+                        <div>{{ stats.students_count }}</div>
+                    </div>
+                </v-card-text>
+            </v-card>
+        </ItsGridBox>
+    </v-col>
+
     <!-- ##### ANGEBOT IM DETAIL ##### -->
     <v-col cols="12" md="6" xl="4" v-if="selected_offers.length == 1">
         <its-grid-box

@@ -7,6 +7,7 @@ use App\Models\RegisterDateBooking;
 use App\Models\Role;
 use App\Models\School;
 use App\Models\Schoolyear;
+use App\Models\TutoringOffer;
 use App\Models\User;
 use App\Notifications\StandardEmail;
 use App\Services\TutoringService;
@@ -84,6 +85,11 @@ class UserService
                 if ($role['name'] == 'register_user') {
                     if (RegisterDateBooking::where('user_id', $user->id)->count() > 0) continue;
                 }
+                // tutoring_user prüfen, ob es eine TutoringOffer gibt.
+                if ($role['name'] == 'tutoring_user') {
+                    if (TutoringOffer::where('user_id', $user->id)->count() > 0) continue;
+                }
+
                 $user->removeRole($role['name']);
             }
         }
