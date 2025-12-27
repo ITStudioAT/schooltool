@@ -89,20 +89,27 @@
                 </v-expansion-panel-text>
             </v-expansion-panel>
         </v-expansion-panels>
+
         <!-- Angebote -->
         <v-card tile flat color="transparent" v-if="is_loaded && !is_login">
             <!-- Alle Angebote anzeigen -->
-            <v-card flat color=" bg-primary" class="border-md mt-4" v-if="offers && offers.length > 0">
-                <ItsCard
-                    :title="offer.subject.short_name"
-                    :subtitle="offer.subject.long_name"
-                    :text="offer.title"
-                    :description="offer.description"
-                    color="secondary"
-                    button="Anschauen"
-                    @clickCard="showOffersDetail(offer)"
-                    v-for="offer in offers"
-                    :key="offer.id" />
+
+            <v-card flat color="bg-primary" class="border-md mt-4 d-flex flex-row flex-wrap ga-2" v-if="offers && offers.length > 0">
+                <div class="d-flex" style="width: 300px" v-for="offer in offers" :key="offer.id">
+                    <ItsCard
+                        :title="offer.school.short_name"
+                        :subtitle="offer.subject.short_name + ': ' + offer.subject.long_name"
+                        :text="offer.title"
+                        :description="offer.description"
+                        color="success"
+                        button="Anschauen"
+                        @clickCard="showOffersDetail(offer)"
+                        :key="offer.id" />
+                </div>
+                <div>
+                    meta:
+                    {{ meta }}
+                </div>
             </v-card>
 
             <!-- KEINE ANGEBOT VORHANDEN-->
@@ -194,7 +201,7 @@ export default {
 
     computed: {
         ...mapWritableState(useTutoringStore, ['schools', 'selected_school_id', 'data']),
-        ...mapWritableState(useOfferStore, ['offer_config', 'error', 'offers', 'is_offer_dialog']),
+        ...mapWritableState(useOfferStore, ['offer_config', 'error', 'offers', 'is_offer_dialog', 'meta']),
     },
 
     watch: {

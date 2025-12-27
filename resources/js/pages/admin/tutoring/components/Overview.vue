@@ -325,6 +325,7 @@ export default {
         this.offerStore = useOfferStore()
         this.select_only_me_concerning = true
         this.selected_offers = []
+        this.select_accepted = 'no'
         await this.offerStore.getStats()
         await this.offerStore.index()
     },

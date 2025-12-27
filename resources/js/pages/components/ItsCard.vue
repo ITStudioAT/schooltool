@@ -5,8 +5,8 @@
         <v-card-text class="text-body-2" v-if="text">{{ text }}</v-card-text>
 
         <v-card-text class="text-body-2" style="white-space: pre-line" v-if="description">
-            {{ description.substr(0, 40) }}
-            <span v-if="description.length > 40">…</span>
+            {{ description.substr(0, 60) }}
+            <span v-if="description.length > 60">…</span>
         </v-card-text>
 
         <v-card-actions class="mt-auto d-flex flex-row align-center" :class="justify ? justify : 'justify-end'">

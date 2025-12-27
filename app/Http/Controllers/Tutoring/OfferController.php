@@ -11,6 +11,7 @@ use App\Http\Requests\Tutoring\OfferToggleOfferRequest;
 use App\Http\Requests\Tutoring\OfferUpdateRequest;
 use App\Http\Resources\Admin\PaginateResource;
 use App\Http\Resources\Homepage\SchoolResource;
+use App\Http\Resources\Tutoring\OfferNotLoggedInResource;
 use App\Http\Resources\Tutoring\OfferResource;
 use App\Models\School;
 use App\Models\TutoringOffer;
@@ -18,6 +19,7 @@ use App\Services\AuthService;
 use App\Services\TutoringOfferService;
 use App\Services\UserService;
 use Barryvdh\Debugbar\Facades\Debugbar;
+use DebugBar\DebugBar as DebugBarAlias;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -68,34 +70,55 @@ class OfferController extends Controller
         $search_string = $validated['search_string'] ?? null;
         $school_name = $validated['school_name'] ?? null;
 
+        // Unterscheiden, ob ein eingeloggter User die Aangebote sehen will oder ein nicht eingeloggter User
 
 
         if ($auth_user) {
+            // ANZEIGEN FÜR EINEN EINGELOGTTEN USER
             $school = $auth_user->selectedSchool;
         } else {
+            // ANZEIGEN FÜR EINEN NICHT EINGELOGTEN USER
             $school = School::where('short_name', $school_name)->first();
         }
 
         if (!$school) abort(422, 'Keine Schule ausgewählt');
 
-        $offers = TutoringOffer::query()
-            ->with('subject')
-            ->join('tutoring_subjects', 'tutoring_subjects.id', '=', 'tutoring_offers.subject_id')
-            ->where('tutoring_offers.school_id', $school->id)
-            ->when($search_string, function ($query, $search_string) {
-                $query->where(function ($q) use ($search_string) {
-                    $q->where('tutoring_offers.title', 'like', "%{$search_string}%")
-                        ->orWhere('tutoring_offers.description', 'like', "%{$search_string}%");
-                });
-            })
-            ->orderBy('tutoring_subjects.short_name')
-            ->select('tutoring_offers.*') // important to avoid column conflicts
-            ->paginate(config('schooltool.pagination'));
+        if ($auth_user) {
+            // ANZEIGEN FÜR EINEN EINGELOGTTEN USER
 
-        return response()->json([
-            'data' => OfferResource::collection($offers),
-            'meta' => new PaginateResource($offers),
-        ]);
+            $offers = TutoringOffer::query()
+                ->with('subject')
+                ->join('tutoring_subjects', 'tutoring_subjects.id', '=', 'tutoring_offers.subject_id')
+                ->where('tutoring_offers.school_id', $school->id)
+                ->whereNotNull('accepted_at')
+                ->when($search_string, function ($query, $search_string) {
+                    $query->where(function ($q) use ($search_string) {
+                        $q->where('tutoring_offers.title', 'like', "%{$search_string}%")
+                            ->orWhere('tutoring_offers.description', 'like', "%{$search_string}%");
+                    });
+                })
+                ->orderBy('tutoring_subjects.short_name')
+                ->select('tutoring_offers.*') // important to avoid column conflicts
+                ->paginate(config('schooltool.pagination'));
+        } else {
+            // ANZEIGEN FÜR EINEN NICHT EINGELOGTEN USER
+            $offers = TutoringOffer::query()
+                ->with('subject')
+                ->with('school')
+                ->join('tutoring_subjects', 'tutoring_subjects.id', '=', 'tutoring_offers.subject_id')
+                ->join('schools', 'schools.id', '=', 'tutoring_offers.school_id')
+                ->where('tutoring_offers.school_id', $school->id)
+                ->whereNotNull('accepted_at')
+                ->orderBy('tutoring_subjects.short_name')
+                ->select('tutoring_offers.*') // important to avoid column conflicts
+                ->paginate(config('schooltool.pagination'));
+
+
+            return response()->json([
+                'data' => OfferNotLoggedInResource::collection($offers),
+                'meta' => new PaginateResource($offers),
+            ]);
+        }
     }
 
 

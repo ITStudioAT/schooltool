@@ -292,6 +292,7 @@ export default {
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.offerStore = useOfferStore()
+        this.select_only_me_concerning = false
         await this.offerStore.index()
     },
 
@@ -308,7 +309,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'config']),
-        ...mapWritableState(useOfferStore, ['offers', 'selected_offers', 'select_accepted', 'select_online', 'meta']),
+        ...mapWritableState(useOfferStore, ['offers', 'selected_offers', 'select_accepted', 'select_online', 'meta', 'select_only_me_concerning']),
 
         selectedOffer() {
             const id = this.selected_offers[0]

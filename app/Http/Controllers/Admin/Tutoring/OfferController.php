@@ -67,6 +67,7 @@ class OfferController extends Controller
             }
         }
 
+
         // Only me concerning filter
         if ($select_only_me_concerning) {
             $query->where('email_mentor', $auth_user->email);

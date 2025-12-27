@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Models\School;
 use App\Models\TutoringSubject;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Casts\AsArrayObject;
 use Illuminate\Database\Eloquent\Model;
 
@@ -76,5 +78,10 @@ class TutoringOffer extends Model
     public function user()
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    public function school()
+    {
+        return $this->belongsTo(School::class, 'school_id');
     }
 }
