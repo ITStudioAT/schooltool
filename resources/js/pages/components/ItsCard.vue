@@ -1,6 +1,9 @@
 <template>
     <v-card :color="color" width="300" min-height="170" class="d-flex flex-column">
-        <v-card-title class="text-h6">{{ title }}</v-card-title>
+        <v-card-title class="text-h6 d-flex flex-row align-center justify-space-between">
+            <div>{{ title }}</div>
+            <v-icon :icon="mark_icon ? mark_icon : 'mdi-star'" :color="mark_color ? mark_color : 'primary'" v-if="is_mark" />
+        </v-card-title>
         <v-card-subtitle style="white-space: normal" v-if="subtitle">{{ subtitle }}</v-card-subtitle>
         <v-card-text class="text-body-2" v-if="text">{{ text }}</v-card-text>
 
@@ -17,7 +20,7 @@
 </template>
 <script>
 export default {
-    props: ['title', 'subtitle', 'color', 'text', 'description', 'subtext', 'justify', 'button'],
+    props: ['title', 'subtitle', 'color', 'text', 'description', 'subtext', 'justify', 'button', 'is_mark', 'mark_icon', 'mark_color'],
     emits: ['clickCard'],
 
     data() {

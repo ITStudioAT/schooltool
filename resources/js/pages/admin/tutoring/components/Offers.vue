@@ -196,6 +196,13 @@
                 </div>
             </div>
 
+            <!-- Gültig bis -->
+            <div>
+                <label class="text-subtitle-2 mt-2 d-block">Gültig bis:</label>
+                <div class="text-body-1" v-if="!selectedOffer.active_until">UNENDLICH</div>
+                <div class="text-body-1" v-if="selectedOffer.active_until">{{ formattedActiveUntil }}</div>
+            </div>
+
             <!-- Gruppenangebot -->
             <div>
                 <label class="text-subtitle-2 mt-2 d-block">Gruppenangebot:</label>
@@ -249,11 +256,6 @@
                 <div class="text-body-1 d-flex flex-row align-center ga-2" v-if="!selectedOffer.is_active">
                     <v-icon icon="mdi-cloud-off" color="error" />
                     <div>OFFLINE</div>
-                </div>
-
-                <div class="text-body-1 d-flex flex-row align-center ga-2" v-if="selectedOffer.is_active && selectedOffer.active_until">
-                    <div>Aktiv bis:</div>
-                    <div>{{ selectedOffer?.active_until }}</div>
                 </div>
             </div>
 
@@ -330,6 +332,19 @@ export default {
 
         oberstufeClasses() {
             return this.selectedClasses.filter((num) => num > 4).map((num) => `${num}. Klasse`)
+        },
+        formattedActiveUntil() {
+            if (!this.selectedOffer.active_until) return ''
+
+            const date = new Date(this.selectedOffer.active_until)
+            const weekdays = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag']
+            const weekday = weekdays[date.getDay()]
+
+            const day = String(date.getDate()).padStart(2, '0')
+            const month = String(date.getMonth() + 1).padStart(2, '0')
+            const year = date.getFullYear()
+
+            return `${day}.${month}.${year} (${weekday})`
         },
     },
 

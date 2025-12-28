@@ -73,25 +73,36 @@
             @logout="logout" />
 
         <!-- SUCHLEISTE -->
-        <v-expansion-panels v-model="search_panel" color="primary" v-if="offers && offers.length > 0 && offer_config && offer_config.auth.is_auth" class="mt-4">
+        <!-- SUCHLEISTE -->
+        <v-expansion-panels v-model="search_panel" color="primary" v-if="offer_config && offer_config.auth.is_auth" class="mt-4">
             <v-expansion-panel>
                 <v-expansion-panel-title class="text-body-1 font-weight-medium">Suche</v-expansion-panel-title>
                 <v-expansion-panel-text>
-                    <v-checkbox-btn color="success" v-model="search.only_in_my_school" label="Nur in Deiner Schule suchen" />
-                    <div class="d-flex flex-row align-center ga-2">
-                        <v-checkbox-btn color="pink" v-model="search.only_girls" label="Nachhilfe nur von Mädchen" />
-                        <v-checkbox-btn color="blue" v-model="search.only_boys" label="Nachhilfe nur von Burschen" />
-                    </div>
-                    <v-text-field label="Suchtext" v-model="search_text" hide-details class="large-text mt-4" append-icon="mdi-magnify" clearable />
-                    <div class="text-right mt-4">
-                        <v-btn size="large" tile flat color="success" @click="">Jetzt suchen</v-btn>
-                    </div>
+                    <v-form @submit.prevent="searchNow">
+                        <v-checkbox-btn color="success" v-model="search.only_in_my_school" label="Nur in Deiner Schule suchen" readonly />
+                        <div class="d-flex flex-row align-center ga-2">
+                            <v-checkbox-btn color="pink" v-model="search.only_girls" label="Nachhilfe nur von Mädchen" />
+                            <v-checkbox-btn color="blue" v-model="search.only_boys" label="Nachhilfe nur von Burschen" />
+                        </div>
+                        <v-text-field
+                            label="Suchtext"
+                            v-model="search_string"
+                            hide-details
+                            class="large-text mt-4"
+                            append-icon="mdi-magnify"
+                            clearable
+                            @keyup.enter="searchNow"
+                            @click:clear="searchNow" />
+                        <div class="text-right mt-4">
+                            <v-btn size="large" tile flat color="success" type="submit">Jetzt suchen</v-btn>
+                        </div>
+                    </v-form>
                 </v-expansion-panel-text>
             </v-expansion-panel>
         </v-expansion-panels>
 
         <!-- Angebote -->
-        <v-card tile flat color="transparent" v-if="is_loaded && !is_login">
+        <v-card tile flat border-md color="transparent" v-if="is_loaded && !is_login">
             <!-- Alle Angebote anzeigen -->
 
             <v-card flat color="bg-primary" class="border-md mt-4 d-flex flex-row flex-wrap ga-2" v-if="offers && offers.length > 0">
@@ -104,35 +115,30 @@
                         color="success"
                         button="Anschauen"
                         @clickCard="showOffersDetail(offer)"
+                        :is_mark="offer.is_own_offer"
                         :key="offer.id" />
-                </div>
-                <div>
-                    meta:
-                    {{ meta }}
                 </div>
             </v-card>
 
+            <!-- is_own_offer-->
+
             <!-- KEINE ANGEBOT VORHANDEN-->
             <v-card v-else class="border-md mt-4">
-                <v-alert type="info" title="Aktuell sind keine Angebote vorhanden!" text="Melde Dich an und lege selbst ein Angebot an." v-if="!offer_config.auth.is_auth">
+                <v-alert
+                    type="info"
+                    color="secondary"
+                    title="Aktuell sind keine Angebote vorhanden!"
+                    text="Melde Dich an und lege selbst ein Angebot an."
+                    v-if="!offer_config.auth.is_auth">
                     <v-btn size="small" tile flat color="primary" variant="text" class="ml-4" @click="startLogin">Los</v-btn>
                     <v-btn size="small" tile flat color="primary" variant="text" class="ml-4" @click="moveToTutoring" v-if="offer_config.auth.is_auth">Los</v-btn>
                 </v-alert>
-                <v-alert type="info" title="Aktuell sind keine Angebote vorhanden!" text="Erstelle Dein eigenes Angebot." v-if="offer_config.auth.is_auth">
+                <v-alert type="info" color="secondary" title="Aktuell sind keine Angebote vorhanden!" text="Erstelle Dein eigenes Angebot." v-if="offer_config.auth.is_auth">
                     <v-btn size="small" tile flat color="primary" variant="text" class="ml-4" @click="moveToTutoring" v-if="offer_config.auth.is_auth">Los</v-btn>
                 </v-alert>
             </v-card>
         </v-card>
         <OffersDetail :offer="selected_offer" v-if="is_offer_dialog" />
-
-        <v-card>
-            offers:
-            {{ offers }}
-        </v-card>
-        <v-card class="mt-4">
-            OFFER_CONFIG:
-            {{ offer_config }}
-        </v-card>
     </div>
 
     <div class="h-100 w-100 d-flex flex-column justify-center align-center" style="max-width: 1024px; margin: auto" v-if="error">
@@ -170,6 +176,7 @@ export default {
                 await this.initWithSchool()
             }
         } else {
+            this.search = this.offer_config.auth.user.tutoring_filter
             this.school = this.offer_config.school
             this.school_name = this.school.short_name
             await this.initWithSchool()
@@ -192,8 +199,7 @@ export default {
             is_loaded: false,
             is_init: false,
             is_login: false,
-            search: { only_in_my_school: true },
-            search_text: '',
+            search: {},
             search_panel: null,
             selected_offer: null,
         }
@@ -201,7 +207,7 @@ export default {
 
     computed: {
         ...mapWritableState(useTutoringStore, ['schools', 'selected_school_id', 'data']),
-        ...mapWritableState(useOfferStore, ['offer_config', 'error', 'offers', 'is_offer_dialog', 'meta']),
+        ...mapWritableState(useOfferStore, ['offer_config', 'error', 'offers', 'is_offer_dialog', 'meta', 'search_string']),
     },
 
     watch: {
@@ -222,8 +228,8 @@ export default {
             if (newValue) this.search.only_girls = false
         },
         search: {
-            handler(newValue) {
-                console.log('search changed after:', newValue)
+            async handler(newValue) {
+                this.offerStore.setUserSearchCriteria(newValue)
             },
             deep: true,
             flush: 'post',
@@ -231,7 +237,12 @@ export default {
     },
 
     methods: {
-        showOffersDetail(offer) {
+        async searchNow() {
+            await this.offerStore.loadOffers(this.school_name)
+        },
+
+        async showOffersDetail(offer) {
+            await this.offerStore.clickCount(offer.id)
             this.selected_offer = offer
             this.is_offer_dialog = true
         },

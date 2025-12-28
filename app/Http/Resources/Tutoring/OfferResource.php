@@ -4,6 +4,7 @@ namespace App\Http\Resources\Tutoring;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Auth;
 
 class OfferResource extends JsonResource
 {
@@ -37,6 +38,15 @@ class OfferResource extends JsonResource
                     'long_name' => $this->subject->long_name,
                 ];
             }),
+            'school' => $this->whenLoaded('school', function () {
+                return [
+                    'id' => $this->school->id,
+                    'short_name' => $this->school->short_name,
+                    'long_name' => $this->school->long_name,
+                ];
+            }),
+            'is_own_offer' => $this->user_id === Auth::id()
+
         ];
     }
 }

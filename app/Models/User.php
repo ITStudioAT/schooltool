@@ -139,7 +139,7 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
-        'tutoring_filter' => 'array',
+
     ];
 
     /**
@@ -152,6 +152,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'token_2fa_expires_at' => 'datetime',
+            'tutoring_filter' => 'array',
         ];
     }
 

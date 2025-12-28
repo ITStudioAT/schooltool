@@ -108,6 +108,27 @@ export const useOfferStore = defineStore('TutoringOfferStore', {
             }
         },
 
+        async clickCount(offer_id) {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+            try {
+                const response = await axios.post(`/api/homepage/tutoring/click_count`, { offer_id: offer_id })
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.timeout,
+                })
+                this.error = error
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
         async update(data) {
             const notification = useNotificationStore()
             const homepageStore = useHomepageStore()
@@ -137,6 +158,27 @@ export const useOfferStore = defineStore('TutoringOfferStore', {
             try {
                 const response = await axios.post(`/api/homepage/tutoring/offers`, data)
                 this.saved_offer = response.data
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.timeout,
+                })
+                this.error = error
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
+        async setUserSearchCriteria(data) {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+            try {
+                const response = await axios.post(`/api/homepage/tutoring/set_user_search_criteria`, data)
                 return true
             } catch (error) {
                 notification.notify({

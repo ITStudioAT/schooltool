@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Tutoring\OfferIndexRequest;
 use App\Http\Requests\Tutoring\OfferLoadOfferConfigRequest;
 use App\Http\Requests\Tutoring\OfferLoadOffersRequest;
+use App\Http\Requests\Tutoring\OfferSetUserSearchCriteriaRequest;
 use App\Http\Requests\Tutoring\OfferStoreRequest;
 use App\Http\Requests\Tutoring\OfferToggleOfferRequest;
 use App\Http\Requests\Tutoring\OfferUpdateRequest;
@@ -14,6 +15,7 @@ use App\Http\Resources\Homepage\SchoolResource;
 use App\Http\Resources\Tutoring\OfferNotLoggedInResource;
 use App\Http\Resources\Tutoring\OfferResource;
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\TutoringOffer;
 use App\Services\AuthService;
 use App\Services\TutoringOfferService;
@@ -70,6 +72,8 @@ class OfferController extends Controller
         $search_string = $validated['search_string'] ?? null;
         $school_name = $validated['school_name'] ?? null;
 
+
+
         // Unterscheiden, ob ein eingeloggter User die Aangebote sehen will oder ein nicht eingeloggter User
 
 
@@ -84,22 +88,57 @@ class OfferController extends Controller
         if (!$school) abort(422, 'Keine Schule ausgewählt');
 
         if ($auth_user) {
-            // ANZEIGEN FÜR EINEN EINGELOGTTEN USER
+            // ANZEIGEN FÜR EINEN EINGELOGGTEN USER
+
+            $filter = $auth_user->tutoring_filter ?? [];
 
             $offers = TutoringOffer::query()
                 ->with('subject')
+                ->with('school')
                 ->join('tutoring_subjects', 'tutoring_subjects.id', '=', 'tutoring_offers.subject_id')
-                ->where('tutoring_offers.school_id', $school->id)
-                ->whereNotNull('accepted_at')
-                ->when($search_string, function ($query, $search_string) {
+                ->join('schools', 'schools.id', '=', 'tutoring_offers.school_id')
+                ->join('users', 'users.id', '=', 'tutoring_offers.user_id')
+                ->whereNotNull('tutoring_offers.accepted_at')
+                ->where('tutoring_offers.is_active', true)
+                ->where(function ($query) {
+                    $query->whereNull('tutoring_offers.active_until')
+                        ->orWhere('tutoring_offers.active_until', '>=', now()->toDateString());
+                })
+                // School filter
+                ->where(function ($query) use ($filter, $auth_user) {
+                    if (!empty($filter['only_in_my_school'])) {
+                        $query->where('tutoring_offers.school_id', $auth_user->school_id);
+                    } else {
+                        $schoolIds = $filter['school_ids'] ?? [];
+                        $schoolIds[] = $auth_user->school_id;
+                        $query->whereIn('tutoring_offers.school_id', $schoolIds);
+                    }
+                })
+                // Sex filter
+                ->where(function ($query) use ($filter) {
+                    if (!empty($filter['only_boys'])) {
+                        $query->where('users.sex', 'm');
+                    } elseif (!empty($filter['only_girls'])) {
+                        $query->where('users.sex', 'f');
+                    }
+                })
+                // Search filter
+                ->when($search_string, function ($query) use ($search_string) {
                     $query->where(function ($q) use ($search_string) {
                         $q->where('tutoring_offers.title', 'like', "%{$search_string}%")
-                            ->orWhere('tutoring_offers.description', 'like', "%{$search_string}%");
+                            ->orWhere('tutoring_offers.description', 'like', "%{$search_string}%")
+                            ->orWhere('tutoring_subjects.long_name', 'like', "%{$search_string}%")
+                            ->orWhere('tutoring_subjects.short_name', 'like', "%{$search_string}%");
                     });
                 })
                 ->orderBy('tutoring_subjects.short_name')
-                ->select('tutoring_offers.*') // important to avoid column conflicts
+                ->select('tutoring_offers.*')
                 ->paginate(config('schooltool.pagination'));
+
+            return response()->json([
+                'data' => OfferResource::collection($offers),
+                'meta' => new PaginateResource($offers),
+            ]);
         } else {
             // ANZEIGEN FÜR EINEN NICHT EINGELOGTEN USER
             $offers = TutoringOffer::query()
@@ -109,8 +148,13 @@ class OfferController extends Controller
                 ->join('schools', 'schools.id', '=', 'tutoring_offers.school_id')
                 ->where('tutoring_offers.school_id', $school->id)
                 ->whereNotNull('accepted_at')
+                ->where('is_active', true)
+                ->where(function ($query) {
+                    $query->whereNull('active_until')
+                        ->orWhere('active_until', '>=', now()->toDateString());
+                })
                 ->orderBy('tutoring_subjects.short_name')
-                ->select('tutoring_offers.*') // important to avoid column conflicts
+                ->select('tutoring_offers.*')
                 ->paginate(config('schooltool.pagination'));
 
 
@@ -202,7 +246,30 @@ class OfferController extends Controller
         $validated = $request->validated();
 
         $offer = TutoringOffer::where('id', $validated['id'])->where('user_id', $auth_user->id)->first();
-        $offer->is_active = !$offer->is_active;
+
+        if (! $offer->is_active) {
+            // Offer ist im moment nicht aktiv
+            $schooltool = SchoolTool::findOrFail($auth_user->school_id);
+            $max = $schooltool->tutoring_max_offers_per_student;
+
+            if (!$max || $max == 0) {
+                $offer->is_active = true;
+            } else {
+                $activeOffersCount = TutoringOffer::where('user_id', $auth_user->id)->where('school_id', $auth_user->school_id)
+                    ->where('is_active', true)
+                    ->count();
+
+                if ($activeOffersCount >= $max) {
+                    abort(422, 'Du kannst nur maximal ' . $max . ' aktive Nachhilfeangebote haben.');
+                } else {
+                    $offer->is_active = true;
+                }
+            }
+        } else {
+            // Offer ist im moment aktiv
+            $offer->is_active = false;
+        }
+
         $offer->save();
         return response()->noContent();
     }
@@ -238,5 +305,61 @@ class OfferController extends Controller
         ];
 
         return response()->json($data, 200);
+    }
+
+    public function clickCount(Request $request)
+    {
+        $validated = $request->validate([
+            'offer_id' => 'required|integer|exists:tutoring_offers,id',
+        ]);
+
+        $offer = TutoringOffer::find($validated['offer_id']);
+        $ip = request()->ip();
+        $now = now()->timestamp;
+        $oneHourAgo = now()->subHour()->timestamp;
+
+        $clickIps = $offer->click_ips ?? [];
+
+        // Alte/ungültige Einträge filtern
+        $clickIps = array_filter($clickIps, function ($entry) use ($oneHourAgo) {
+            return is_array($entry)
+                && isset($entry['ip'], $entry['timestamp'])
+                && $entry['timestamp'] > $oneHourAgo;
+        });
+
+        // Prüfen ob IP in der letzten Stunde bereits geklickt hat
+        $ipExists = collect($clickIps)->contains('ip', $ip);
+
+        if (!$ipExists) {
+            // IP hinzufügen
+            $clickIps[] = [
+                'ip' => $ip,
+                'timestamp' => $now,
+            ];
+
+            // Max 5 behalten (älteste entfernen)
+            if (count($clickIps) > 5) {
+                array_shift($clickIps);
+            }
+
+            $offer->click_ips = array_values($clickIps);
+            $offer->click_count += 1;
+            $offer->save();
+        }
+
+        return response()->noContent();
+    }
+
+    public function setUserSearchCriteria(OfferSetUserSearchCriteriaRequest $request)
+    {
+        if (! $auth_user = $this->userHasRole(['tutoring_user'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validated();
+        $auth_user->tutoring_filter = $validated;
+        $auth_user->save();
+
+        return response()->noContent();
     }
 }

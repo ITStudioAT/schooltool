@@ -1,44 +1,9 @@
 <template>
-    <v-card tile flat border="md" width="300" min-height="200" class="d-flex flex-column" v-if="action == ''">
+    <v-card tile flat border-md width="300" min-height="200" class="d-flex flex-column" v-if="action == ''">
         <v-card-title>{{ offer.subject.short_name }}</v-card-title>
         <v-card-subtitle>{{ offer.subject.long_name }}</v-card-subtitle>
-        <v-card-text>
-            <div class="text-body-1">{{ offer.title }}</div>
-            <div class="text-body-2" style="white-space: pre-line">{{ offer.description }}</div>
-        </v-card-text>
 
-        <v-card-text class="text-body-1">
-            <div v-if="unterstufeClasses.length > 0" class="mb-2">
-                <strong>Unterstufe:</strong>
-                <div class="text-body-2">
-                    {{ unterstufeClasses.join(', ') }}
-                </div>
-            </div>
-            <div v-if="oberstufeClasses.length > 0">
-                <strong>Oberstufe:</strong>
-                <div class="text-body-2">
-                    {{ oberstufeClasses.join(', ') }}
-                </div>
-            </div>
-        </v-card-text>
-
-        <v-card-text class="text-body-1">
-            <div class="text-body-1 font-weight-bold">
-                Gültig bis:
-                <span v-if="offer.active_until">{{ formattedActiveUntil }}</span>
-                <span v-else>unendlich</span>
-            </div>
-        </v-card-text>
-
-        <v-card-text>
-            <div class="text-body-1 font-weight-bold">
-                <div v-if="!offer.is_group">Einzelunterricht</div>
-                <div v-else>Gruppenunterricht</div>
-                <div v-if="offer.is_group">Maximal {{ offer.max_group_members }} Teilnehmer in der Gruppe</div>
-                <div>Kosten pro Stunde: {{ parseFloat(offer.price_per_hour) }} Euro</div>
-            </div>
-        </v-card-text>
-
+        <!-- NICHT/FREIGEGEBEN und ONLINE-STATUS-->
         <v-card-text v-if="!offer.accepted_at">
             <v-alert type="warning">
                 <div>Bestätigung ausstehend</div>
@@ -68,10 +33,56 @@
             </v-card>
         </v-card-text>
 
+        <!-- ANZAHL KLICKS -->
         <v-card-text class="text-body-1 flex-grow-1">
+            <div class="text-body-1 font-weight-bold d-flex flex-row align-center">
+                <div>Bisherige Klicks:</div>
+                <v-badge color="info" :content="offer.click_count" inline rounded="circle" height="32" width="32" class="ml-2">
+                    <template v-slot:badge>
+                        <span style="font-size: 1.2rem">{{ offer.click_count }}</span>
+                    </template>
+                </v-badge>
+            </div>
+        </v-card-text>
+
+        <!-- TITLE und DESCRIPTION -->
+        <v-card-text class="mt-4">
+            <div class="text-body-1">{{ offer.title }}</div>
+            <div class="text-body-2" style="white-space: pre-line">{{ offer.description }}</div>
+        </v-card-text>
+
+        <!-- KLASSEN -->
+        <v-card-text class="text-body-1">
+            <div v-if="unterstufeClasses.length > 0" class="mb-2">
+                <strong>Unterstufe:</strong>
+                <div class="text-body-2">
+                    {{ unterstufeClasses.join(', ') }}
+                </div>
+            </div>
+            <div v-if="oberstufeClasses.length > 0">
+                <strong>Oberstufe:</strong>
+                <div class="text-body-2">
+                    {{ oberstufeClasses.join(', ') }}
+                </div>
+            </div>
+        </v-card-text>
+
+        <!-- GÜLTIG BIS -->
+        <v-card-text class="text-body-1">
             <div class="text-body-1 font-weight-bold">
-                Bisherige Klicks:
-                <span>{{ offer.click_count }}</span>
+                Gültig bis:
+                <span v-if="offer.active_until">{{ formattedActiveUntil }}</span>
+                <span v-else>unendlich</span>
+            </div>
+        </v-card-text>
+
+        <!-- EINZEL-/GRUPPENUNTERRICHT und PREIS -->
+        <v-card-text>
+            <div class="text-body-1 font-weight-bold">
+                <div v-if="!offer.is_group">Einzelunterricht</div>
+                <div v-else>Gruppenunterricht</div>
+                <div v-if="offer.is_group">Maximal {{ offer.max_group_members }} Teilnehmer in der Gruppe</div>
+                <div>Kosten pro Stunde: {{ parseFloat(offer.price_per_hour) }} Euro</div>
             </div>
         </v-card-text>
 
@@ -150,7 +161,7 @@ export default {
             await this.offerStore.loadMyOffers()
         },
         async toggleActive(offer) {
-            await this.offerStore.toggleActive(offer.id)
+            if (!(await this.offerStore.toggleActive(offer.id))) return
             offer.is_active = !offer.is_active
         },
         editOffer(offer) {
@@ -159,3 +170,10 @@ export default {
     },
 }
 </script>
+<style>
+.large-badge :deep(.v-badge__badge) {
+    font-size: 1rem;
+    min-width: 24px;
+    height: 24px;
+}
+</style>

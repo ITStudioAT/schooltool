@@ -2,6 +2,11 @@
     <v-dialog v-model="is_offer_dialog" max-width="500">
         <v-card class="w-100">
             <v-card-title>
+                {{ offer.school.short_name }}
+            </v-card-title>
+            <v-card-subtitle>{{ offer.school.long_name }}</v-card-subtitle>
+
+            <v-card-title>
                 {{ offer.subject.short_name }}
             </v-card-title>
             <v-card-subtitle>{{ offer.subject.long_name }}</v-card-subtitle>
