@@ -2,9 +2,12 @@
 
 namespace App\Services;
 
+use App\Models\School;
 use App\Models\TutoringOffer;
 use App\Models\TutoringSubject;
-use DebugBar\DebugBar;
+use App\Notifications\StandardEmail;
+
+use Illuminate\Support\Facades\Notification;
 
 class TutoringOfferService
 {
@@ -52,5 +55,28 @@ class TutoringOfferService
 
 
         return $offer;
+    }
+
+
+    public function sendOfferToMentor($offer)
+    {
+        $data = [];
+        $data['student'] = $offer->user->last_name . ' ' . $offer->user->first_name . ' ( ' . $offer->user->schoolclass . ' )';
+        $data['student_email'] = $offer->user->email;
+        $data['subject'] = $offer->subject->short_name . ' (' . $offer->subject->long_name . ')';
+        $data['offer'] = $offer;
+
+        $school = $offer->school;
+
+        $mail = [
+            'from_address' => config('schooltool.noreply_email'),
+            'from_name' => $school->long_name,
+            'logo' => asset('/storage/images/' . $school->logo),
+            'subject' => 'Nachhilfe-Angebot wurde aktualisiert',
+            'markdown' => 'mails.homepage.offerCreatedOrUpdated',
+            'data' => $data,
+        ];
+
+        Notification::route('mail', $offer->email_mentor)->notify(new StandardEmail($mail));
     }
 }

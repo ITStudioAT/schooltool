@@ -229,7 +229,9 @@ export default {
         },
         search: {
             async handler(newValue) {
-                this.offerStore.setUserSearchCriteria(newValue)
+                console.log(newValue)
+                await this.offerStore.setUserSearchCriteria(newValue)
+                await this.searchNow()
             },
             deep: true,
             flush: 'post',

@@ -206,6 +206,7 @@ class OfferController extends Controller
         $validated = $request->validated();
 
         $offer = $service->update($offer, $validated);
+        if ($offer->must_be_accepted) $service->sendOfferToMentor($offer);
 
         return response()->json(new OfferResource($offer), 200);
     }
