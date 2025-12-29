@@ -6,6 +6,7 @@ import Register_Part2 from '@/pages/homepage/register/RegisterPart2.vue'
 import Application_Error from '@/pages/homepage/error/Error.vue'
 import TutoringOverview from '@/pages/homepage/tutoring/TutoringOverview.vue'
 import Tutoring from '@/pages/homepage/tutoring/Tutoring.vue'
+import TutoringResponse from '@/pages/homepage/tutoring/responses/TutoringResponse.vue'
 
 const routes = [
     { path: '/', component: Index },
@@ -15,6 +16,7 @@ const routes = [
     { path: '/homepage/error', component: Application_Error },
     { path: '/homepage/tutoring_overview', component: TutoringOverview },
     { path: '/homepage/tutoring', component: Tutoring },
+    { path: '/homepage/tutoring_response', component: TutoringResponse },
 ]
 
 const router = createRouter({

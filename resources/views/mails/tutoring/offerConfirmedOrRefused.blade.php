@@ -1,7 +1,7 @@
 <x-mail::message :logo="$logo">
 # {{ $data['subject'] }}
 
-Es wurde folgendes Nachhilfe-Angebot erstellt/aktualisiert:
+Es wurde folgendes Nachhilfe-Angebot genehmigt/abgelehnt:
 
 {{ $data['data']['student'] }}<br>
 {{ $data['data']['student_email'] }}<br>
@@ -33,36 +33,7 @@ JA (max. {{ $data['data']['offer']['max_group_members'] }} Teilnehmer)
 @else
 NEIN
 @endif
-
 </x-mail::panel>
-
-<br><br>
-
-<x-mail::button :url="$data['data']['url_confirm']" color="success">
-
-Genehmigen
-
-</x-mail::button>
-
-
-oder
-
-
-<x-mail::button :url="$data['data']['url_refuse']" color="error">
-
-Ablehnen
-
-</x-mail::button>
-
-
-oder 
-
-
-<x-mail::button :url="$data['data']['url_login']" color="primary">
-
-Einloggen um Angebot zu verwalten
-
-</x-mail::button>
 
 <br><br>
 

@@ -511,7 +511,7 @@ export default {
                 if (!(await this.offerStore.store(data))) return
             }
 
-            // this.step++
+            this.step++
         },
     },
 }

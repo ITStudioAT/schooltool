@@ -6,8 +6,12 @@ use App\Models\School;
 use App\Models\TutoringOffer;
 use App\Models\TutoringSubject;
 use App\Notifications\StandardEmail;
+use Barryvdh\Debugbar\Facades\Debugbar;
+use Carbon\Carbon;
+use function Symfony\Component\Clock\now;
 
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Str;
 
 class TutoringOfferService
 {
@@ -52,8 +56,6 @@ class TutoringOfferService
 
         $offer->update($data);
 
-
-
         return $offer;
     }
 
@@ -65,6 +67,19 @@ class TutoringOfferService
         $data['student_email'] = $offer->user->email;
         $data['subject'] = $offer->subject->short_name . ' (' . $offer->subject->long_name . ')';
         $data['offer'] = $offer;
+
+        $offer->token = Str::uuid();;
+        $offer->token_expires_at = Carbon::now()->addMinutes((int) config('schooltool.token_expire_time'));
+        $offer->save();
+
+        $url_confirm = url('/homepage/tutoring/offer?action=confirm&offer_id=' . $offer->id . '&token=' . $offer->token . '&email_mentor=' . $offer->email_mentor);
+        $url_refuse = url('/homepage/tutoring/offer/?action=refuse&offer_id=' . $offer->id . '&token=' . $offer->token . '&email_mentor=' . $offer->email_mentor);
+        $url_login = url('/admin/login');
+
+        $data['url_confirm'] = $url_confirm;
+        $data['url_refuse'] = $url_refuse;
+        $data['url_login'] = $url_login;
+
 
         $school = $offer->school;
 
@@ -78,5 +93,68 @@ class TutoringOfferService
         ];
 
         Notification::route('mail', $offer->email_mentor)->notify(new StandardEmail($mail));
+    }
+
+    public function offerConfirmRefuse($data)
+    {
+        /*
+            'action' => 'required|string|in:confirm,refuse',
+            'offer_id' => 'required|integer|exists:tutoring_offers,id',
+            'token' => 'required|string',
+            'email_mentor' => 'required|email',
+        */
+
+        $offer = TutoringOffer::findOrFail($data['offer_id']);
+        $subject = $offer->subject;
+
+        // Prüfen der Gültigkeit des E-Mail-Mentors
+        if ($data['email_mentor'] != $offer->email_mentor) abort(403, 'E-Mail-Adresse des Tutors ist ungültig.');
+        Debugbar::info(
+            $data['token'],
+            $offer->token,
+            Carbon::parse($offer->token_expires_at)->toDateTimeString(),
+            Carbon::now()->toDateTimeString()
+        );
+        if ($data['token'] !== $offer->token || Carbon::parse($offer->token_expires_at)->lt(now())) {
+            abort(403, 'Token ungültig oder abgelaufen.');
+        }
+
+
+        if ($data['action'] == 'confirm') {
+            $offer->accepted_at = now();
+            $offer->save();
+        }
+
+        return true;
+    }
+
+    public function sendConfirmRefuseEmail($action, $offer_id)
+    {
+        $offer = TutoringOffer::findOrFail($offer_id);
+        $subject = $offer->subject;
+        $school = $offer->school;
+
+        if ($action == 'confirm') {
+            $subject = 'Nachhilfe-Angebot wurde bestätigt';
+        } else {
+            $subject = 'Nachhilfe-Angebot wurde abgelehnt';
+        }
+
+        $data = [];
+        $data['student'] = $offer->user->last_name . ' ' . $offer->user->first_name . ' ( ' . $offer->user->schoolclass . ' )';
+        $data['student_email'] = $offer->user->email;
+        $data['subject'] = $offer->subject->short_name . ' (' . $offer->subject->long_name . ')';
+        $data['offer'] = $offer;
+
+        $mail = [
+            'from_address' => config('schooltool.noreply_email'),
+            'from_name' => $school->long_name,
+            'logo' => asset('/storage/images/' . $school->logo),
+            'subject' => $subject,
+            'markdown' => 'mails.tutoring.offerConfirmedOrRefused',
+            'data' => $data,
+        ];
+
+        Notification::route('mail', $offer->user->email)->notify(new StandardEmail($mail));
     }
 }

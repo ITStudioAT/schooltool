@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Tutoring;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Tutoring\OfferConfirmRefuseRequest;
 use App\Http\Requests\Tutoring\OfferIndexRequest;
 use App\Http\Requests\Tutoring\OfferLoadOfferConfigRequest;
 use App\Http\Requests\Tutoring\OfferLoadOffersRequest;
@@ -24,6 +25,7 @@ use Barryvdh\Debugbar\Facades\Debugbar;
 use DebugBar\DebugBar as DebugBarAlias;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class OfferController extends Controller
 {
@@ -362,5 +364,25 @@ class OfferController extends Controller
         $auth_user->save();
 
         return response()->noContent();
+    }
+
+    public function offerConfirmRefuse(OfferConfirmRefuseRequest $request, TutoringOfferService $service)
+    {
+        $validated = $request->validated();
+
+        // Agebot bestätigen oder ablehnen
+        $service->offerConfirmRefuse($validated);
+
+        // Bestätigungs-/Ablehnungs-E-Mail senden
+        $service->sendConfirmRefuseEmail($validated['action'], $validated['offer_id']);
+
+        $offer = TutoringOffer::findOrFail($validated['offer_id']);
+        $user = $offer->user;
+
+        if ($validated['action'] == 'confirm') {
+            return redirect('/homepage/tutoring_response?title=' . urlencode($offer->title) . '&subtitle=' . $user->last_name . ' ' . $user->first_name . ' (' . $user->schoolclass . ')&text=' . urlencode($offer->description) . '&status=GENEHMIGT');
+        } else {
+            return redirect('/homepage/tutoring_response?title=' . urlencode($offer->title) . '&subtitle=' . $user->last_name . ' ' . $user->first_name . ' (' . $user->schoolclass . ')&text=' . urlencode($offer->description) . '&status=ABGELEHNT');
+        }
     }
 }

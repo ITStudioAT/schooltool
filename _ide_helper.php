@@ -1284,6 +1284,7 @@ namespace  {
     class Pdf extends \Barryvdh\DomPDF\Facade\Pdf {}
     class Debugbar extends \Barryvdh\Debugbar\Facades\Debugbar {}
     class PDF extends \Barryvdh\DomPDF\Facade\Pdf {}
+    class Horizon extends \Laravel\Horizon\Horizon {}
     class LaravelPdf extends \Pdf {}
 }
 

@@ -1,0 +1,31 @@
+<?php
+
+namespace App\Http\Requests\Tutoring;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class OfferConfirmRefuseRequest extends FormRequest
+{
+    /**
+     * Determine if the user is authorized to make this request.
+     */
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    /**
+     * Get the validation rules that apply to the request.
+     *
+     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     */
+    public function rules(): array
+    {
+        return [
+            'action' => 'required|string|in:confirm,refuse',
+            'offer_id' => 'required|integer|exists:tutoring_offers,id',
+            'token' => 'required|string',
+            'email_mentor' => 'required|email',
+        ];
+    }
+}

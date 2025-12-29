@@ -34,6 +34,8 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
 
 
     Route::get('/homepage/tutoring/confirm-user',  [\App\Http\Controllers\Tutoring\TutoringController::class, 'confirmUser']);
+    Route::get('homepage/tutoring/offer',  [\App\Http\Controllers\Tutoring\OfferController::class, 'offerConfirmRefuse']);
+    ///homepage/tutoring/offer
 
     /* restliche admin-Routen */
     Route::get('/admin/{any?}', function () {
@@ -51,6 +53,10 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
     });
 
     Route::get('/homepage/register2/', function () {
+        return view('homepage');
+    });
+
+    Route::get('/homepage/tutoring_response/', function () {
         return view('homepage');
     });
 
