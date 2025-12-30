@@ -36,30 +36,6 @@ beforeEach(function () {
     Role::create(['name' => 'user', 'guard_name' => 'web']);
 });
 
-describe('routing', function () {
-    test('routing redirects to register for Anmeldetool licence', function () {
-        // Note: This route does not exist in current implementation
-        // Skipping until route is implemented
-        $this->markTestSkipped('Route /api/homepage/routing not implemented yet');
-    });
-
-    test('routing redirects to error on service error', function () {
-        $this->markTestSkipped('Route /api/homepage/routing not implemented yet');
-    });
-
-    test('routing handles missing school parameter', function () {
-        $this->markTestSkipped('Route /api/homepage/routing not implemented yet');
-    });
-
-    test('routing handles missing licence parameter', function () {
-        $this->markTestSkipped('Route /api/homepage/routing not implemented yet');
-    });
-
-    test('routing falls back to redirect url for unknown licence', function () {
-        $this->markTestSkipped('Route /api/homepage/routing not implemented yet');
-    });
-});
-
 describe('loadSchoolsForTool', function () {
     test('load schools for tool returns licence and associated schools', function () {
         $response = $this->getJson('/api/homepage/load_schools_for_tool?tool=Anmeldetool');
