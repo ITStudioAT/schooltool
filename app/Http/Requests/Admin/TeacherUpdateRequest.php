@@ -27,7 +27,7 @@ class TeacherUpdateRequest extends FormRequest
             'last_name' => 'required|string|max:255',
             'first_name' => 'nullable|string|max:255',
             'short' => 'nullable|string|max:10',
-            'email' => 'required|string|max:255',
+            'email' => 'required|email|max:255',
         ];
     }
 }

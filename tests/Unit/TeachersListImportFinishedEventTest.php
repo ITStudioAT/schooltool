@@ -52,15 +52,15 @@ describe('TeachersListImportFinishedEvent', function () {
         expect($channels)->toBeArray()
             ->toHaveCount(1)
             ->and($channels[0])->toBeInstanceOf(PrivateChannel::class)
-            ->and($channels[0]->name)->toBe("user.{$userId}");
+            ->and($channels[0]->name)->toBe("private-user.{$userId}");
     });
 
     it('broadcasts on different channel for different users', function () {
         $event1 = new TeachersListImportFinishedEvent(200, 1, 'Message 1');
         $event2 = new TeachersListImportFinishedEvent(200, 2, 'Message 2');
 
-        expect($event1->broadcastOn()[0]->name)->toBe('user.1')
-            ->and($event2->broadcastOn()[0]->name)->toBe('user.2');
+        expect($event1->broadcastOn()[0]->name)->toBe('private-user.1')
+            ->and($event2->broadcastOn()[0]->name)->toBe('private-user.2');
     });
 
     it('implements ShouldBroadcast interface', function () {

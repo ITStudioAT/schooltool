@@ -158,6 +158,11 @@ describe('create', function () {
 
 describe('update', function () {
     it('updates teacher with valid data', function () {
+        $authUser = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+
         $teacher = User::factory()->create([
             'school_id' => $this->school->id,
             'schoolyear_id' => $this->schoolyear->id,
@@ -176,7 +181,7 @@ describe('update', function () {
             'email' => 'maria@example.com',
         ];
 
-        $updated = $this->service->update($this->school->id, $data);
+        $updated = $this->service->update($authUser, $data);
 
         expect($updated->short)->toBe('MUS')
             ->and($updated->first_name)->toBe('Maria')
@@ -186,6 +191,11 @@ describe('update', function () {
 
     it('throws 401 when school_id does not match', function () {
         $otherSchool = School::factory()->create();
+
+        $authUser = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
 
         $teacher = User::factory()->create([
             'school_id' => $otherSchool->id,
@@ -201,10 +211,15 @@ describe('update', function () {
             'email' => 'maria@example.com',
         ];
 
-        $this->service->update($this->school->id, $data);
+        $this->service->update($authUser, $data);
     })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Diese Änderung kann nicht durchgeführt werden.');
 
     it('throws 409 when new short is already taken by another teacher', function () {
+        $authUser = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+
         $teacher1 = User::factory()->create([
             'school_id' => $this->school->id,
             'schoolyear_id' => $this->schoolyear->id,
@@ -227,10 +242,15 @@ describe('update', function () {
             'email' => 'max@example.com',
         ];
 
-        $this->service->update($this->school->id, $data);
+        $this->service->update($authUser, $data);
     })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Das Kurzzeichen des Lehrers existiert bereits.');
 
     it('throws 409 when new email is already taken by another teacher', function () {
+        $authUser = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+
         $teacher1 = User::factory()->create([
             'school_id' => $this->school->id,
             'schoolyear_id' => $this->schoolyear->id,
@@ -253,10 +273,15 @@ describe('update', function () {
             'email' => 'existing@example.com', // Already taken
         ];
 
-        $this->service->update($this->school->id, $data);
+        $this->service->update($authUser, $data);
     })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Die E-Mail des Lehrers existiert bereits.');
 
     it('allows updating to same short', function () {
+        $authUser = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+
         $teacher = User::factory()->create([
             'school_id' => $this->school->id,
             'schoolyear_id' => $this->schoolyear->id,
@@ -274,13 +299,18 @@ describe('update', function () {
             'email' => 'max@example.com',
         ];
 
-        $updated = $this->service->update($this->school->id, $data);
+        $updated = $this->service->update($authUser, $data);
 
         expect($updated->short)->toBe('KRO')
             ->and($updated->first_name)->toBe('Maria');
     });
 
     it('throws ModelNotFoundException when teacher does not exist', function () {
+        $authUser = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+
         $data = [
             'id' => 99999,
             'short' => 'KRO',
@@ -289,7 +319,7 @@ describe('update', function () {
             'email' => 'max@example.com',
         ];
 
-        $this->service->update($this->school->id, $data);
+        $this->service->update($authUser, $data);
     })->throws(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
 });
 

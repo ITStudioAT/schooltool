@@ -297,18 +297,18 @@ test('password reset validates user exists and is active', function () {
         'token_2fa' => '123456',
         'token_2fa_expires_at' => now()->addMinutes(10),
     ]);
-    
+
     $data = [
         'data' => [
-            'step' => 'PASSWORD_UNKNOWN_STEP_TOKEN',
+            'step' => 'PASSWORD_UNKNOWN_ENTER_TOKEN',
             'email' => $this->user->email,
             'school_id' => $this->school->id,
             'token_2fa' => '123456',
         ],
     ];
-    
+
     $response = $this->postJson('/api/admin/password_unknown_step_token', $data);
-    
+
     $response->assertStatus(200);
 });
 

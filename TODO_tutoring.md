@@ -1,18 +1,14 @@
 # Next Changes
 
--   Check, if the offer may be created (max_offers)
--   Send the teacher a confirmation mail
+## Student offer interested
 
-## Login Teacher
+-   Communicate between students
 
-### Check, if login is teacher
+## Buttons beautifuller
 
--   See all offers to confirm
+## EMail Logo
 
-## Offer overview
-
--   More Details
--   Register click on it
+## Tests with a lot of data
 
 ## Search for offers
 

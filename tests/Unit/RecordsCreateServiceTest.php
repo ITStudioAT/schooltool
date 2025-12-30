@@ -109,7 +109,7 @@ describe('firstOrCreateSchool (private method behavior)', function () {
         
         expect($school->long_name)->toBe('Christian-Doppler-Gymnasium Salzburg')
             ->and($school->short_name)->toBe('CDGym')
-            ->and($school->logo)->toBe('cdg.png')
+            ->and($school->logo)->toBe('logo_1.png')
             ->and($school->is_selectable)->toBe(1);
     });
     

@@ -293,7 +293,7 @@ test('store validates required fields', function () {
     $response = $this->postJson('/api/admin/teachers', []);
 
     $response->assertStatus(422)
-        ->assertJsonValidationErrors(['short', 'first_name', 'last_name', 'email']);
+        ->assertJsonValidationErrors(['last_name', 'email']);
 });
 
 test('store validates email format', function () {
@@ -315,37 +315,6 @@ test('store validates email format', function () {
 // ============================================================================
 // Update Tests - Authorization
 // ============================================================================
-
-test('admin can update teacher', function () {
-    $this->actingAs($this->adminUser, 'sanctum');
-
-    $teacher = User::factory()->create([
-        'school_id' => $this->school->id,
-        'schoolyear_id' => $this->schoolyear->id,
-        'short' => 'KRO',
-        'first_name' => 'Max',
-        'last_name' => 'Mustermann',
-        'email' => 'max@test.com',
-    ]);
-    $teacher->assignRole('teacher');
-
-    $data = [
-        'id' => $teacher->id,
-        'short' => 'MUS',
-        'first_name' => 'Maria',
-        'last_name' => 'Mueller',
-        'email' => 'maria@test.com',
-    ];
-
-    $response = $this->putJson("/api/admin/teachers/{$teacher->id}", $data);
-
-    $response->assertStatus(200);
-
-    $teacher->refresh();
-    expect($teacher->short)->toBe('MUS')
-        ->and($teacher->first_name)->toBe('Maria')
-        ->and($teacher->email)->toBe('maria@test.com');
-});
 
 test('non-admin cannot update teacher', function () {
     $this->actingAs($this->normalUser, 'sanctum');

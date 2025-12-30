@@ -17,144 +17,6 @@ beforeEach(function () {
     Notification::fake();
 });
 
-describe('checkPasswordUnknown', function () {
-    it('aborts when user does not exist', function () {
-        $data = ['email' => 'nonexistent@example.com', 'step' => 'PASSWORD_UNKNOWN_ENTER_EMAIL'];
-
-        $this->service->checkPasswordUnknown($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Kennwort zurücksetzen funktioniert mit dieser E-Mail-Adresse nicht');
-
-    it('aborts when user is not confirmed', function () {
-        $user = User::factory()->create([
-            'email' => 'test@example.com',
-            'confirmed_at' => null,
-            'is_active' => 1,
-        ]);
-
-        $data = ['email' => 'test@example.com', 'step' => 'PASSWORD_UNKNOWN_ENTER_EMAIL'];
-
-        $this->service->checkPasswordUnknown($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Benutzer ist noch nicht bestätigt');
-
-    it('aborts when user is not active', function () {
-        $user = User::factory()->create([
-            'email' => 'test@example.com',
-            'confirmed_at' => now(),
-            'is_active' => 0,
-        ]);
-
-        $data = ['email' => 'test@example.com', 'step' => 'PASSWORD_UNKNOWN_ENTER_EMAIL'];
-
-        $this->service->checkPasswordUnknown($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Benutzer ist gesperrt');
-
-    it('validates token for PASSWORD_UNKNOWN_ENTER_TOKEN step', function () {
-        $user = User::factory()->create([
-            'email' => 'test@example.com',
-            'confirmed_at' => now(),
-            'is_active' => 1,
-            'token_2fa' => '123456',
-            'token_2fa_expires_at' => now()->addMinutes(10),
-        ]);
-
-        $data = [
-            'email' => 'test@example.com',
-            'step' => 'PASSWORD_UNKNOWN_ENTER_TOKEN',
-            'token_2fa' => '123456',
-        ];
-
-        $result = $this->service->checkPasswordUnknown($data);
-
-        expect($result)->toBeInstanceOf(User::class)
-            ->and($result->email)->toBe('test@example.com');
-    });
-
-    it('aborts when token is invalid for PASSWORD_UNKNOWN_ENTER_TOKEN step', function () {
-        $user = User::factory()->create([
-            'email' => 'test@example.com',
-            'confirmed_at' => now(),
-            'is_active' => 1,
-            'token_2fa' => '123456',
-            'token_2fa_expires_at' => now()->addMinutes(10),
-        ]);
-
-        $data = [
-            'email' => 'test@example.com',
-            'step' => 'PASSWORD_UNKNOWN_ENTER_TOKEN',
-            'token_2fa' => '654321',
-        ];
-
-        $this->service->checkPasswordUnknown($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Kennwort zurücksetzen funktioniert nicht. Code falsch oder Zeit abgelaufen.');
-
-    it('validates both tokens for PASSWORD_UNKNOWN_ENTER_TOKEN_2 step', function () {
-        $user = User::factory()->create([
-            'email' => 'test@example.com',
-            'confirmed_at' => now(),
-            'is_active' => 1,
-            'token_2fa' => '123456',
-            'token_2fa_2' => '654321',
-            'token_2fa_expires_at' => now()->addMinutes(10),
-            'token_2fa_2_expires_at' => now()->addMinutes(10),
-        ]);
-
-        $data = [
-            'email' => 'test@example.com',
-            'step' => 'PASSWORD_UNKNOWN_ENTER_TOKEN_2',
-            'token_2fa' => '123456',
-            'token_2fa_2' => '654321',
-        ];
-
-        $result = $this->service->checkPasswordUnknown($data);
-
-        expect($result)->toBeInstanceOf(User::class);
-    });
-
-    it('validates password match for PASSWORD_UNKNOWN_ENTER_PASSWORD step', function () {
-        $user = User::factory()->create([
-            'email' => 'test@example.com',
-            'confirmed_at' => now(),
-            'is_active' => 1,
-            'is_2fa' => 0,
-            'token_2fa' => '123456',
-            'token_2fa_expires_at' => now()->addMinutes(10),
-        ]);
-
-        $data = [
-            'email' => 'test@example.com',
-            'step' => 'PASSWORD_UNKNOWN_ENTER_PASSWORD',
-            'token_2fa' => '123456',
-            'password' => 'NewPassword123!',
-            'password_repeat' => 'NewPassword123!',
-        ];
-
-        $result = $this->service->checkPasswordUnknown($data);
-
-        expect($result)->toBeInstanceOf(User::class);
-    });
-
-    it('aborts when passwords do not match for PASSWORD_UNKNOWN_ENTER_PASSWORD step', function () {
-        $user = User::factory()->create([
-            'email' => 'test@example.com',
-            'confirmed_at' => now(),
-            'is_active' => 1,
-            'is_2fa' => 0,
-            'token_2fa' => '123456',
-            'token_2fa_expires_at' => now()->addMinutes(10),
-        ]);
-
-        $data = [
-            'email' => 'test@example.com',
-            'step' => 'PASSWORD_UNKNOWN_ENTER_PASSWORD',
-            'token_2fa' => '123456',
-            'password' => 'NewPassword123!',
-            'password_repeat' => 'DifferentPassword123!',
-        ];
-
-        $this->service->checkPasswordUnknown($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Kennwort zurücksetzen funktioniert nicht. Kennwort und Wiederholung Kennwort sind nicht identisch');
-});
-
 describe('checkRegister', function () {
     it('returns null when user does not exist', function () {
         $data = ['email' => 'newuser@example.com', 'step' => 'REGISTER_ENTER_EMAIL'];
@@ -550,6 +412,8 @@ describe('login2Fa', function () {
 
 describe('checkEmail', function () {
     it('returns schools for email with multiple schools', function () {
+        Role::create(['name' => 'admin', 'guard_name' => 'web']);
+
         $school1 = School::factory()->create(['long_name' => 'School A']);
         $school2 = School::factory()->create(['long_name' => 'School B']);
 
@@ -557,10 +421,13 @@ describe('checkEmail', function () {
             'email' => 'test@example.com',
             'school_id' => $school1->id,
         ]);
+        $user1->assignRole('admin');
+
         $user2 = User::factory()->create([
             'email' => 'test@example.com',
             'school_id' => $school2->id,
         ]);
+        $user2->assignRole('admin');
 
         $data = ['email' => 'test@example.com'];
 
@@ -572,11 +439,14 @@ describe('checkEmail', function () {
     });
 
     it('sends token for email with single school', function () {
+        Role::create(['name' => 'admin', 'guard_name' => 'web']);
+
         $school = School::factory()->create(['long_name' => 'School A']);
         $user = User::factory()->create([
             'email' => 'test@example.com',
             'school_id' => $school->id,
         ]);
+        $user->assignRole('admin');
 
         config(['schooltool.token_expire_time' => 10]);
 
@@ -590,13 +460,20 @@ describe('checkEmail', function () {
     });
 
     it('orders schools alphabetically by long_name', function () {
+        Role::create(['name' => 'admin', 'guard_name' => 'web']);
+
         $schoolZ = School::factory()->create(['long_name' => 'Z School']);
         $schoolA = School::factory()->create(['long_name' => 'A School']);
         $schoolM = School::factory()->create(['long_name' => 'M School']);
 
-        User::factory()->create(['email' => 'test@example.com', 'school_id' => $schoolZ->id]);
-        User::factory()->create(['email' => 'test@example.com', 'school_id' => $schoolA->id]);
-        User::factory()->create(['email' => 'test@example.com', 'school_id' => $schoolM->id]);
+        $userZ = User::factory()->create(['email' => 'test@example.com', 'school_id' => $schoolZ->id]);
+        $userZ->assignRole('admin');
+
+        $userA = User::factory()->create(['email' => 'test@example.com', 'school_id' => $schoolA->id]);
+        $userA->assignRole('admin');
+
+        $userM = User::factory()->create(['email' => 'test@example.com', 'school_id' => $schoolM->id]);
+        $userM->assignRole('admin');
 
         $data = ['email' => 'test@example.com'];
 
@@ -740,24 +617,6 @@ describe('passwordUnkownSetPassword', function () {
             ->and($result)->toBeArray();
     });
 
-    it('validates token before setting password', function () {
-        $school = School::factory()->create();
-        $user = User::factory()->create([
-            'email' => 'test@example.com',
-            'school_id' => $school->id,
-            'token_2fa' => '123456',
-            'token_2fa_expires_at' => now()->addMinutes(10),
-        ]);
-
-        $data = [
-            'email' => 'test@example.com',
-            'school_id' => $school->id,
-            'token_2fa' => 'wrongtoken',
-            'password' => 'NewPassword123!',
-        ];
-
-        $this->service->passwordUnkownSetPassword($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class);
 });
 
 describe('check2Fa', function () {

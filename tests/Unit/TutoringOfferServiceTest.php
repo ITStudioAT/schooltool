@@ -177,7 +177,7 @@ describe('create', function () {
     });
 
     it('sets accepted_at to now when must_be_accepted is false', function () {
-        $beforeCreation = now();
+        $beforeCreation = \Carbon\Carbon::now();
 
         $data = [
             'subject_id' => $this->subject->id,
@@ -188,11 +188,11 @@ describe('create', function () {
 
         $offer = $this->service->create($this->school->id, $this->user->id, $data);
 
-        $afterCreation = now();
+        $afterCreation = \Carbon\Carbon::now();
 
         expect($offer->accepted_at)->not->toBeNull()
-            ->and($offer->accepted_at->isAfter($beforeCreation->subSecond()))->toBeTrue()
-            ->and($offer->accepted_at->isBefore($afterCreation->addSecond()))->toBeTrue();
+            ->and(\Carbon\Carbon::parse($offer->accepted_at)->isAfter($beforeCreation->subSecond()))->toBeTrue()
+            ->and(\Carbon\Carbon::parse($offer->accepted_at)->isBefore($afterCreation->addSecond()))->toBeTrue();
     });
 
     it('does not set accepted_at when must_be_accepted is true', function () {

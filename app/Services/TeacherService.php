@@ -37,7 +37,7 @@ class TeacherService
 
     public function update($auth_user, $data)
     {
-        $school_id = $auth_user->id;
+        $school_id = $auth_user->school_id;
 
         // Prüfen, ob User existiert
         $user = User::findOrFail($data['id']);
