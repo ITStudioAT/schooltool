@@ -1,12 +1,14 @@
 # Next Changes
 
-## Student offer interested
-
--   Communicate between students
+## Select Offers from more schools
 
 ## Buttons beautifuller
 
 ## EMail Logo
+
+## Student offer interested
+
+-   Communicate between students
 
 ## Tests with a lot of data
 
