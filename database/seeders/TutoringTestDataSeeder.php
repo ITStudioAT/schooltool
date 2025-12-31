@@ -358,6 +358,16 @@ class TutoringTestDataSeeder extends Seeder
             $firstName = $this->firstNames[$gender][array_rand($this->firstNames[$gender])];
             $lastName = $this->lastNames[array_rand($this->lastNames)];
 
+            // Bestimme Geschlecht (sex): mostly m oder f, rarely d
+            $sexRand = rand(1, 100);
+            if ($sexRand <= 50) {
+                $sex = 'm'; // 50% männlich
+            } elseif ($sexRand <= 98) {
+                $sex = 'f'; // 48% weiblich
+            } else {
+                $sex = 'd'; // 2% divers
+            }
+
             // Generiere eindeutige Email (nur lokale Prüfung für Performance)
             $baseEmail = strtolower($firstName . '.' . $lastName);
             $emailCounter = $i + 10000; // Start höher um Konflikte mit Schülern zu vermeiden
@@ -382,6 +392,7 @@ class TutoringTestDataSeeder extends Seeder
                 'first_name' => $firstName,
                 'last_name' => $lastName,
                 'short' => $short,
+                'sex' => $sex,
                 'is_active' => 1,
                 'confirmed_at' => now(),
                 'email_verified_at' => now(),
@@ -408,6 +419,16 @@ class TutoringTestDataSeeder extends Seeder
             $firstName = $this->firstNames[$gender][array_rand($this->firstNames[$gender])];
             $lastName = $this->lastNames[array_rand($this->lastNames)];
 
+            // Bestimme Geschlecht (sex): mostly m oder f, rarely d
+            $sexRand = rand(1, 100);
+            if ($sexRand <= 50) {
+                $sex = 'm'; // 50% männlich
+            } elseif ($sexRand <= 98) {
+                $sex = 'f'; // 48% weiblich
+            } else {
+                $sex = 'd'; // 2% divers
+            }
+
             // Generiere eindeutige Email (nur lokale Prüfung für Performance)
             $baseEmail = strtolower($firstName . '.' . $lastName);
             $emailCounter = $i;
@@ -427,6 +448,7 @@ class TutoringTestDataSeeder extends Seeder
                 'password' => $this->hashedPassword,
                 'first_name' => $firstName,
                 'last_name' => $lastName,
+                'sex' => $sex,
                 'is_active' => 1,
                 'confirmed_at' => now(),
                 'email_verified_at' => now(),

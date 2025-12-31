@@ -89,6 +89,16 @@ class TutoringTestDataSmallSeeder extends Seeder
 
             // Erstelle 2 Lehrer
             for ($i = 0; $i < 2; $i++) {
+                // Bestimme Geschlecht (sex): mostly m oder f, rarely d
+                $sexRand = rand(1, 100);
+                if ($sexRand <= 50) {
+                    $sex = 'm'; // 50% männlich
+                } elseif ($sexRand <= 98) {
+                    $sex = 'f'; // 48% weiblich
+                } else {
+                    $sex = 'd'; // 2% divers
+                }
+
                 $teacher = User::create([
                     'school_id' => $school->id,
                     'email' => "teacher{$i}@test-school.at",
@@ -96,6 +106,7 @@ class TutoringTestDataSmallSeeder extends Seeder
                     'first_name' => 'Lehrer',
                     'last_name' => "Test{$i}",
                     'short' => 'TEST',
+                    'sex' => $sex,
                     'is_active' => 1,
                     'confirmed_at' => now(),
                     'email_verified_at' => now(),
@@ -112,12 +123,23 @@ class TutoringTestDataSmallSeeder extends Seeder
                 $firstName = $this->firstNames[$gender][array_rand($this->firstNames[$gender])];
                 $lastName = $this->lastNames[array_rand($this->lastNames)];
 
+                // Bestimme Geschlecht (sex): mostly m oder f, rarely d
+                $sexRand = rand(1, 100);
+                if ($sexRand <= 50) {
+                    $sex = 'm'; // 50% männlich
+                } elseif ($sexRand <= 98) {
+                    $sex = 'f'; // 48% weiblich
+                } else {
+                    $sex = 'd'; // 2% divers
+                }
+
                 $student = User::create([
                     'school_id' => $school->id,
                     'email' => strtolower($firstName . '.' . $lastName . $i) . '@test-school.at',
                     'password' => Hash::make('password'),
                     'first_name' => $firstName,
                     'last_name' => $lastName,
+                    'sex' => $sex,
                     'is_active' => 1,
                     'confirmed_at' => now(),
                     'email_verified_at' => now(),
