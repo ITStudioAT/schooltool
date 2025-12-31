@@ -93,7 +93,7 @@
                         <v-card-subtitle style="white-space: normal">{{ licence.long_name }}</v-card-subtitle>
 
                         <v-card-text>
-                            <v-card tile flat width="300" color="transparent" class="text-left">
+                            <v-card tile flat width="300" color="transparent" class="text-left" v-if="selected_school.logo">
                                 <img :src="'/storage/images/' + selected_school.logo" max-height="50" max-width="150" />
                             </v-card>
                             <div class="text-h6">{{ selected_school.long_name }}</div>

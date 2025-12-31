@@ -23,7 +23,7 @@
                 <div class="d-flex justify-center">
                     <div class="d-flex flex-column align-center">
                         <div class="text-caption">{{ offer_config.school.long_name }}</div>
-                        <div style="width: 96px; height: 48px" class="bg-primary-lighten-4">
+                        <div style="width: 96px; height: 48px" class="bg-primary-lighten-4" v-if="offer_config.school.logo">
                             <img :src="'/storage/images/' + offer_config.school.logo" alt="Logo" style="width: 100%; height: 100%; object-fit: contain" />
                         </div>
                     </div>
