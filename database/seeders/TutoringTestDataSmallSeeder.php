@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\TutoringOffer;
 use App\Models\TutoringSubject;
 use App\Models\User;
@@ -58,6 +59,15 @@ class TutoringTestDataSmallSeeder extends Seeder
             // Füge Nachhilfetool Lizenz hinzu (ID: 2) mit Gültigkeit bis 2026-07-10
             $school->licences()->attach(2, ['valid_until' => '2026-07-10']);
             $this->command->info('✓ Nachhilfetool Lizenz hinzugefügt (gültig bis 2026-07-10)');
+
+            // Erstelle SchoolTool Record
+            SchoolTool::create([
+                'school_id' => $school->id,
+                'tutoring_student_must_be_confirmed' => 1,
+                'tutoring_confirmer_email' => 'kron@naturwelt.at',
+                'tutoring_max_offers_per_student' => 4, // Mitte zwischen 3-5
+            ]);
+            $this->command->info('✓ SchoolTool Einstellungen erstellt');
 
             // Erstelle Super-Admin (kron@naturwelt.at)
             $superAdmin = User::create([
