@@ -12,10 +12,6 @@
 
 -   Communicate between students
 
-## Tests with a lot of data
-
-## Search for offers
-
 # Ideas
 
 ## Calendar
