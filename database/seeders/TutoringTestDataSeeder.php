@@ -519,6 +519,14 @@ class TutoringTestDataSeeder extends Seeder
                 $mentorEmail = $subject->email_mentors[array_rand($subject->email_mentors)];
             }
 
+            // Wenn must_be_accepted == false, dann email_mentor = null und accepted_at = now()
+            if (!$subject->must_be_accepted) {
+                $mentorEmail = null;
+                $acceptedAt = now()->format('Y-m-d');
+            } else {
+                $acceptedAt = $isConfirmed ? now()->subDays(rand(1, 30))->format('Y-m-d') : null;
+            }
+
             TutoringOffer::create([
                 'school_id' => $school->id,
                 'user_id' => $student->id,
@@ -534,7 +542,7 @@ class TutoringTestDataSeeder extends Seeder
                 'max_group_members' => rand(0, 10) > 7 ? rand(2, 5) : null,
                 'must_be_accepted' => $subject->must_be_accepted,
                 'email_mentor' => $mentorEmail,
-                'accepted_at' => $isConfirmed ? now()->subDays(rand(1, 30))->format('Y-m-d') : null,
+                'accepted_at' => $acceptedAt,
                 'click_count' => rand(0, 50),
             ]);
 

@@ -174,6 +174,15 @@ class TutoringTestDataSmallSeeder extends Seeder
                     ],
                 ];
 
+                // Wenn must_be_accepted == false, dann email_mentor = null und accepted_at = now()
+                $mentorEmail = 'teacher1@test-school.at';
+                $acceptedAt = now()->format('Y-m-d');
+
+                if (!$subject->must_be_accepted) {
+                    $mentorEmail = null;
+                    $acceptedAt = now()->format('Y-m-d');
+                }
+
                 TutoringOffer::create([
                     'school_id' => $school->id,
                     'user_id' => $student->id,
@@ -187,9 +196,9 @@ class TutoringTestDataSmallSeeder extends Seeder
                     'price_per_hour' => 15,
                     'is_group' => false,
                     'max_group_members' => null,
-                    'must_be_accepted' => true,
-                    'email_mentor' => 'teacher1@test-school.at',
-                    'accepted_at' => now()->format('Y-m-d'),
+                    'must_be_accepted' => $subject->must_be_accepted,
+                    'email_mentor' => $mentorEmail,
+                    'accepted_at' => $acceptedAt,
                     'click_count' => 0,
                 ]);
             }
