@@ -105,19 +105,44 @@
         <v-card tile flat border-md color="transparent" v-if="is_loaded && !is_login">
             <!-- Alle Angebote anzeigen -->
 
-            <v-card flat color="bg-primary" class="border-md mt-4 d-flex flex-row flex-wrap ga-2" v-if="offers && offers.length > 0">
-                <div class="d-flex" style="width: 300px" v-for="offer in offers" :key="offer.id">
-                    <ItsCard
-                        :title="offer.school.short_name"
-                        :subtitle="offer.subject.short_name + ': ' + offer.subject.long_name"
-                        :text="offer.title"
-                        :description="offer.description"
-                        color="success"
-                        button="Anschauen"
-                        @clickCard="showOffersDetail(offer)"
-                        :is_mark="offer.is_own_offer"
-                        :key="offer.id" />
+            <v-card flat color="transparent" class="border-md mt-4 pa-2" v-if="offers && offers.length > 0">
+                <div class="d-flex flex-row flex-wrap ga-2 justify-md-center">
+                    <div style="width: 300px" v-for="offer in offers" :key="offer.id">
+                        <ItsCard
+                            class="h-100"
+                            :title="offer.school.short_name"
+                            :subtitle="offer.subject.short_name + ': ' + offer.subject.long_name"
+                            :text="offer.title"
+                            :description="offer.description"
+                            color="success"
+                            button="Anschauen"
+                            @clickCard="showOffersDetail(offer)"
+                            :is_mark="offer.is_own_offer"
+                            :key="offer.id" />
+                    </div>
                 </div>
+                <v-card-text class="d-flex flex-row align-center justify-space-between">
+                    <v-btn
+                        tile
+                        flat
+                        size="x-large"
+                        prepend-icon="mdi-arrow-left"
+                        color="primary"
+                        :disabled="meta.current_page == 1"
+                        @click="offerStore.loadOffers(school_name, meta.current_page - 1)">
+                        Vorherige
+                    </v-btn>
+                    <v-btn
+                        tile
+                        flat
+                        size="x-large"
+                        append-icon="mdi-arrow-right"
+                        color="primary"
+                        :disabled="meta.current_page == meta.last_page"
+                        @click="offerStore.loadOffers(school_name, meta.current_page + 1)">
+                        Nächste
+                    </v-btn>
+                </v-card-text>
             </v-card>
 
             <!-- is_own_offer-->
