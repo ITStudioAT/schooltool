@@ -32,7 +32,7 @@ class TutoringTestDataCommand extends Command
         switch ($action) {
             case 'add':
                 $this->info('📝 Füge Tutoring Test-Daten hinzu (100 Schulen, ~100.000 Benutzer)...');
-                $this->info('⏱️  Dies kann 5-15 Minuten dauern...');
+                $this->info('⏱️  Dies dauert ca. 3-5 Minuten...');
                 $this->call('db:seed', ['--class' => TutoringTestDataSeeder::class]);
                 break;
 

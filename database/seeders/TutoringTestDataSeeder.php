@@ -166,6 +166,9 @@ class TutoringTestDataSeeder extends Seeder
     // Wochentage für Zeitplan
     private array $weekdays = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag'];
 
+    // Cached hashed password (performance optimization)
+    private string $hashedPassword;
+
     /**
      * Run the database seeds.
      */
@@ -173,6 +176,11 @@ class TutoringTestDataSeeder extends Seeder
     {
         try {
             $this->command->info('🎓 Starte Tutoring Test Daten Seeding...');
+
+            // Hash password ONCE for all users (major performance boost!)
+            $this->command->info('🔐 Generiere Passwort-Hash...');
+            $this->hashedPassword = Hash::make('password');
+            $this->command->info('✓ Passwort-Hash erstellt');
 
             // Erstelle Rollen falls nicht vorhanden (ohne Transaktion)
             $this->createRoles();
@@ -266,11 +274,12 @@ class TutoringTestDataSeeder extends Seeder
         $superAdmin = User::create([
             'school_id' => $school->id,
             'email' => 'kron@naturwelt.at',
-            'password' => Hash::make('password'),
+            'password' => $this->hashedPassword,
             'first_name' => 'Super',
             'last_name' => 'Admin',
             'is_active' => 1,
             'confirmed_at' => now(),
+            'email_verified_at' => now(),
         ]);
 
         $superAdmin->assignRole('super_admin');
@@ -349,27 +358,33 @@ class TutoringTestDataSeeder extends Seeder
             $firstName = $this->firstNames[$gender][array_rand($this->firstNames[$gender])];
             $lastName = $this->lastNames[array_rand($this->lastNames)];
 
-            // Generiere eindeutige Email mit garantierter Eindeutigkeit
+            // Generiere eindeutige Email (nur lokale Prüfung für Performance)
             $baseEmail = strtolower($firstName . '.' . $lastName);
             $emailCounter = $i + 10000; // Start höher um Konflikte mit Schülern zu vermeiden
             $email = $baseEmail . $emailCounter . '@' . $domain . '.at';
 
             // Falls Email bereits existiert, erhöhe Counter bis eindeutig
-            while (in_array($email, $usedEmails) || User::where('email', $email)->exists()) {
+            while (in_array($email, $usedEmails)) {
                 $emailCounter++;
                 $email = $baseEmail . $emailCounter . '@' . $domain . '.at';
             }
 
             $usedEmails[] = $email;
 
+            // Generiere Lehrer-Kürzel (3-4 Zeichen)
+            $shortLength = rand(3, 4);
+            $short = strtoupper(substr($lastName, 0, $shortLength));
+
             $teacher = User::create([
                 'school_id' => $school->id,
                 'email' => $email,
-                'password' => Hash::make('password'),
+                'password' => $this->hashedPassword,
                 'first_name' => $firstName,
                 'last_name' => $lastName,
+                'short' => $short,
                 'is_active' => 1,
                 'confirmed_at' => now(),
+                'email_verified_at' => now(),
             ]);
 
             $teacher->assignRole('teacher');
@@ -393,13 +408,13 @@ class TutoringTestDataSeeder extends Seeder
             $firstName = $this->firstNames[$gender][array_rand($this->firstNames[$gender])];
             $lastName = $this->lastNames[array_rand($this->lastNames)];
 
-            // Generiere eindeutige Email mit garantierter Eindeutigkeit
+            // Generiere eindeutige Email (nur lokale Prüfung für Performance)
             $baseEmail = strtolower($firstName . '.' . $lastName);
             $emailCounter = $i;
             $email = $baseEmail . $emailCounter . '@' . $domain . '.at';
 
             // Falls Email bereits existiert, erhöhe Counter bis eindeutig
-            while (in_array($email, $usedEmails) || User::where('email', $email)->exists()) {
+            while (in_array($email, $usedEmails)) {
                 $emailCounter++;
                 $email = $baseEmail . $emailCounter . '@' . $domain . '.at';
             }
@@ -409,11 +424,12 @@ class TutoringTestDataSeeder extends Seeder
             $student = User::create([
                 'school_id' => $school->id,
                 'email' => $email,
-                'password' => Hash::make('password'),
+                'password' => $this->hashedPassword,
                 'first_name' => $firstName,
                 'last_name' => $lastName,
                 'is_active' => 1,
                 'confirmed_at' => now(),
+                'email_verified_at' => now(),
             ]);
 
             $student->assignRole('tutoring_user');

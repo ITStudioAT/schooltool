@@ -104,7 +104,10 @@ Jedes Fach hat:
 
 ## ⚠️ Wichtige Hinweise
 
-1. **Performance**: Das Erstellen von 100.000+ Datensätzen kann mehrere Minuten dauern.
+1. **Performance**:
+   - **Optimiert**: Das Erstellen von 100.000+ Datensätzen dauert ca. **3-5 Minuten**
+   - **Passwort-Hashing**: Der Passwort-Hash wird nur EINMAL erstellt und wiederverwendet
+   - **Pro Schule**: Ca. 2-3 Sekunden für 1.000 Schüler + 10 Lehrer + 200 Angebote
 
 2. **Datenbank**: Die Daten werden in Transaktionen erstellt. Bei Fehlern wird alles zurückgerollt.
 

@@ -61,7 +61,8 @@ php artisan tutoring:test-data remove
 
 ## ⏱️ Geschätzte Ausführungszeit
 
-- **Erstellen**: 5-15 Minuten
+- **Erstellen**: 3-5 Minuten (100 Schulen, ~100.000 Benutzer)
+- **Erstellen (klein)**: 5-10 Sekunden (1 Schule, 10 Schüler)
 - **Löschen**: 1-2 Minuten
 
 ---

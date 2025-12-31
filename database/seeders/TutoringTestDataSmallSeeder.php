@@ -68,6 +68,7 @@ class TutoringTestDataSmallSeeder extends Seeder
                 'last_name' => 'Admin',
                 'is_active' => 1,
                 'confirmed_at' => now(),
+                'email_verified_at' => now(),
             ]);
             $superAdmin->assignRole('super_admin');
             $this->command->info('✓ Super-Admin erstellt: kron@naturwelt.at');
@@ -94,8 +95,10 @@ class TutoringTestDataSmallSeeder extends Seeder
                     'password' => Hash::make('password'),
                     'first_name' => 'Lehrer',
                     'last_name' => "Test{$i}",
+                    'short' => 'TEST',
                     'is_active' => 1,
                     'confirmed_at' => now(),
+                    'email_verified_at' => now(),
                 ]);
                 $teacher->assignRole('teacher');
             }
@@ -117,6 +120,7 @@ class TutoringTestDataSmallSeeder extends Seeder
                     'last_name' => $lastName,
                     'is_active' => 1,
                     'confirmed_at' => now(),
+                    'email_verified_at' => now(),
                 ]);
                 $student->assignRole('tutoring_user');
                 $students[] = $student;
