@@ -94,6 +94,9 @@ class OfferController extends Controller
 
             $filter = $auth_user->tutoring_filter ?? [];
 
+            // School IDs aus dem schools Array extrahieren
+            $schoolIds = collect($filter['schools'] ?? [])->pluck('id')->toArray();
+
             $offers = TutoringOffer::query()
                 ->with('subject')
                 ->with('school')
@@ -107,11 +110,10 @@ class OfferController extends Controller
                         ->orWhere('tutoring_offers.active_until', '>=', now()->toDateString());
                 })
                 // School filter
-                ->where(function ($query) use ($filter, $auth_user) {
+                ->where(function ($query) use ($filter, $auth_user, $schoolIds) {
                     if (!empty($filter['only_in_my_school'])) {
                         $query->where('tutoring_offers.school_id', $auth_user->school_id);
                     } else {
-                        $schoolIds = $filter['school_ids'] ?? [];
                         $schoolIds[] = $auth_user->school_id;
                         $query->whereIn('tutoring_offers.school_id', $schoolIds);
                     }
@@ -130,7 +132,9 @@ class OfferController extends Controller
                         $q->where('tutoring_offers.title', 'like', "%{$search_string}%")
                             ->orWhere('tutoring_offers.description', 'like', "%{$search_string}%")
                             ->orWhere('tutoring_subjects.long_name', 'like', "%{$search_string}%")
-                            ->orWhere('tutoring_subjects.short_name', 'like', "%{$search_string}%");
+                            ->orWhere('tutoring_subjects.short_name', 'like', "%{$search_string}%")
+                            ->orWhere('schools.long_name', 'like', "%{$search_string}%")
+                            ->orWhere('schools.short_name', 'like', "%{$search_string}%");
                     });
                 })
                 ->orderBy('tutoring_subjects.short_name')
@@ -362,6 +366,8 @@ class OfferController extends Controller
         $validated = $request->validated();
         $auth_user->tutoring_filter = $validated;
         $auth_user->save();
+
+        // Debugbar::info('Tutoring search criteria updated', $validated);
 
         return response()->noContent();
     }

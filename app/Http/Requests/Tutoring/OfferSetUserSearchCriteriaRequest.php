@@ -26,6 +26,8 @@ class OfferSetUserSearchCriteriaRequest extends FormRequest
             "only_in_my_school" => 'boolean',
             "only_girls" => 'boolean',
             "only_boys" => 'boolean',
+            "schools" => 'array',
+            "schools.*.id" => 'integer|exists:schools,id',
         ];
     }
 }

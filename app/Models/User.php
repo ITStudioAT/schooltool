@@ -156,6 +156,10 @@ class User extends Authenticatable
         ];
     }
 
+    protected $attributes = [
+        'tutoring_filter' => '{"only_boys":false,"only_girls":false,"only_in_my_school":false,"schools":[]}',
+    ];
+
     public function scopeTeachers($query, $school_id = null)
     {
         $query->role('teacher');

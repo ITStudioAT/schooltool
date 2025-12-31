@@ -73,13 +73,43 @@
             @logout="logout" />
 
         <!-- SUCHLEISTE -->
-        <!-- SUCHLEISTE -->
         <v-expansion-panels v-model="search_panel" color="primary" v-if="offer_config && offer_config.auth.is_auth" class="mt-4">
             <v-expansion-panel>
                 <v-expansion-panel-title class="text-body-1 font-weight-medium">Suche</v-expansion-panel-title>
                 <v-expansion-panel-text>
                     <v-form @submit.prevent="searchNow">
-                        <v-checkbox-btn color="success" v-model="search.only_in_my_school" label="Nur in Deiner Schule suchen" readonly />
+                        <v-checkbox-btn color="success" v-model="search.only_in_my_school" label="Nur in Deiner Schule suchen" />
+
+                        <div class="my-4">
+                            <div class="text-body-1 font-weight-medium" v-if="search.only_in_my_school">Jetzt kannst Du nach Angeboten in Deiner Schule suchen.</div>
+                            <div class="text-body-1 font-weight-medium" v-if="!search.only_in_my_school">
+                                Jetzt kannst Du auch in anderen Schulen, die Du dir aussuchst, nach Angeboten suchen.
+                            </div>
+                            <div v-if="search.only_in_my_school === false" class="d-flex flex-row align-center ga-2 mt-2">
+                                <v-autocomplete
+                                    v-model="add_school_id"
+                                    :items="availableSchools"
+                                    item-title="long_name"
+                                    item-value="id"
+                                    label="Schule auswählen"
+                                    clearable
+                                    hide-details />
+                                <v-btn icon="mdi-plus" color="success" @click="addSchool(add_school_id)" />
+                            </div>
+
+                            <div v-if="search.schools && search.schools.length > 0 && !search.only_in_my_school" class="d-flex flex-row align-center flex-wrap ga-2 mt-2">
+                                <div class="text-body-1 font-weight-medium">Ausgewählte Schulen:</div>
+                                <v-chip
+                                    v-for="school in search.schools"
+                                    :key="school.id"
+                                    color="secondary"
+                                    closable
+                                    @click:close="search.schools = search.schools.filter((s) => s.id !== school.id)">
+                                    {{ school.school.long_name }}
+                                </v-chip>
+                            </div>
+                        </div>
+
                         <div class="d-flex flex-row align-center ga-2">
                             <v-checkbox-btn color="pink" v-model="search.only_girls" label="Nachhilfe nur von Mädchen" />
                             <v-checkbox-btn color="blue" v-model="search.only_boys" label="Nachhilfe nur von Burschen" />
@@ -179,9 +209,11 @@ import { mapWritableState } from 'pinia'
 import { useTutoringStore } from '@/stores/tutoring/TutoringStore'
 import { useOfferStore } from '@/stores/tutoring/OfferStore'
 import { useUserStore } from '@/stores/tutoring/UserStore'
+import { useHomepageStore } from '@/stores/homepage/HomepageStore'
 import ItsCard from '@/pages/components/ItsCard.vue'
 import SchoolAndUser from '@/pages/homepage/tutoring/components/TutoringOverview/SchoolAndUser.vue'
 import OffersDetail from '@/pages/homepage/tutoring/components/TutoringOverview/OffersDetail.vue'
+import { id } from 'vuetify/locale'
 
 export default {
     components: { ItsCard, SchoolAndUser, SchoolAndUser, OffersDetail },
@@ -190,6 +222,9 @@ export default {
         this.tutoringStore = useTutoringStore()
         this.offerStore = useOfferStore()
         this.userStore = useUserStore()
+        this.homepageStore = useHomepageStore()
+
+        await this.homepageStore.loadSchoolsForTool('Nachhilfetool')
 
         await this.offerStore.loadOfferConfig(this.school_name)
 
@@ -219,6 +254,7 @@ export default {
             tutoringStore: null,
             offerStore: null,
             userStore: null,
+            homepageStore: null,
             school: null,
             school_name: '',
             is_loaded: false,
@@ -227,12 +263,26 @@ export default {
             search: {},
             search_panel: null,
             selected_offer: null,
+            add_school_id: null,
         }
     },
 
     computed: {
-        ...mapWritableState(useTutoringStore, ['schools', 'selected_school_id', 'data']),
+        ...mapWritableState(useTutoringStore, ['selected_school_id', 'data']),
         ...mapWritableState(useOfferStore, ['offer_config', 'error', 'offers', 'is_offer_dialog', 'meta', 'search_string']),
+        ...mapWritableState(useHomepageStore, ['schools']),
+
+        availableSchools() {
+            return this.schools.filter((school) => {
+                // Exclude user's own school
+                if (school.id === this.offer_config?.school?.id) return false
+
+                // Exclude already selected schools
+                if (this.search.schools?.some((s) => s.id === school.id)) return false
+
+                return true
+            })
+        },
     },
 
     watch: {
@@ -257,6 +307,7 @@ export default {
                 console.log(newValue)
                 await this.offerStore.setUserSearchCriteria(newValue)
                 await this.searchNow()
+                await this.offerStore.loadOfferConfig(this.school_name)
             },
             deep: true,
             flush: 'post',
@@ -264,6 +315,20 @@ export default {
     },
 
     methods: {
+        async addSchool(school_id) {
+            if (!school_id) return
+
+            if (!this.search.schools) {
+                this.search.schools = []
+            }
+            this.search.schools.push({
+                id: school_id,
+                school: this.schools.find((s) => s.id === school_id),
+            })
+
+            this.add_school_id = null
+        },
+
         async searchNow() {
             await this.offerStore.loadOffers(this.school_name)
         },
