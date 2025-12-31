@@ -61,18 +61,21 @@ class AppUpdateCommand extends Command
             $scriptDir = base_path('scripts');
             $posixScript = $scriptDir . DIRECTORY_SEPARATOR . 'build_frontend.sh';
             $winScript   = $scriptDir . DIRECTORY_SEPARATOR . 'build_frontend.cmd';
+
             if ($isWindows) {
                 $this->info('▶ Windows detected');
-                $command = 'cmd /C ' . escapeshellarg($winScript);
+                // Use array syntax to avoid shell interpretation issues with special characters
+                $process = new Process(['cmd', '/C', $winScript], base_path());
             } else {
                 $this->info('▶ Non-Windows detected');
-                $command = 'bash -lc ' . escapeshellarg($posixScript);
+                $process = new Process(['bash', '-lc', $posixScript], base_path());
             }
-            $process = Process::fromShellCommandline($command, base_path());
+
             $process->setTimeout(900); // 15 minutes
             $process->run(function ($type, $buffer) {
                 echo $buffer;
             });
+
             if ($process->isSuccessful()) {
                 $this->info('✅ Frontend build completed');
             } else {
