@@ -55,7 +55,9 @@
                                         </div>
                                         <div class="text-body-2 d-flex flex-row align-center ga-2 w-100" v-if="item.accepted_at">
                                             <v-icon size="small" color="success" icon="mdi-check" />
-                                            <div class="opacity-60">{{ item.email_mentor + ' (' + item.accepted_at + ')' }}</div>
+                                            <div class="opacity-60" v-if="item.email_mentor">{{ item.email_mentor }}</div>
+                                            <div class="opacity-60" v-if="!item.email_mentor">automatisch akzeptiert</div>
+                                            <div class="opacity-60">{{ ' (' + item.accepted_at + ')' }}</div>
                                         </div>
                                     </div>
                                 </template>
@@ -261,6 +263,7 @@ import SearchField from '@/pages/components/SearchField.vue'
 import Pagination from '@/pages/components/Pagination.vue'
 
 import { useOfferStore } from '@/stores/admin/tutoring/OfferStore'
+import { splitKeyCombination } from 'vuetify/lib/composables/hotkey/hotkey-parsing.mjs'
 
 // SPECIFIC
 
@@ -334,7 +337,6 @@ export default {
 
     methods: {
         async doDelete(offer) {
-            console.log(offer)
             this.selected_offers = []
             this.delete_level = 0
             await this.offerStore.delete(offer)

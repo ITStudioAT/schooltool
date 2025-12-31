@@ -83,21 +83,8 @@ class TutoringTestDataSmallSeeder extends Seeder
             $superAdmin->assignRole('super_admin');
             $this->command->info('✓ Super-Admin erstellt: kron@naturwelt.at');
 
-            // Erstelle 3 Fächer
-            $subjectModels = [];
-            foreach ($this->subjects as $subject) {
-                $subjectModels[] = TutoringSubject::create([
-                    'school_id' => $school->id,
-                    'short_name' => $subject['short'],
-                    'long_name' => $subject['long'],
-                    'must_be_accepted' => true,
-                    'email_mentors' => ['teacher1@test-school.at', 'teacher2@test-school.at'],
-                ]);
-            }
-
-            $this->command->info('✓ ' . count($subjectModels) . ' Fächer erstellt');
-
-            // Erstelle 2 Lehrer
+            // Erstelle 2 Lehrer (ZUERST, da Fächer auf Lehrer-Emails referenzieren)
+            $teachers = [];
             for ($i = 0; $i < 2; $i++) {
                 // Bestimme Geschlecht (sex): mostly m oder f, rarely d
                 $sexRand = rand(1, 100);
@@ -122,9 +109,31 @@ class TutoringTestDataSmallSeeder extends Seeder
                     'email_verified_at' => now(),
                 ]);
                 $teacher->assignRole('teacher');
+                $teachers[] = $teacher;
             }
 
             $this->command->info('✓ 2 Lehrer erstellt');
+
+            // Erstelle 3 Fächer (mit echten Lehrer-Emails)
+            $subjectModels = [];
+            foreach ($this->subjects as $subject) {
+                // Wähle zufällig 1-2 Lehrer aus den erstellten Lehrern
+                $mentorCount = min(rand(1, 2), count($teachers));
+                $shuffledTeachers = $teachers;
+                shuffle($shuffledTeachers);
+                $selectedTeachers = array_slice($shuffledTeachers, 0, $mentorCount);
+                $mentors = array_map(fn($teacher) => $teacher->email, $selectedTeachers);
+
+                $subjectModels[] = TutoringSubject::create([
+                    'school_id' => $school->id,
+                    'short_name' => $subject['short'],
+                    'long_name' => $subject['long'],
+                    'must_be_accepted' => true,
+                    'email_mentors' => $mentors,
+                ]);
+            }
+
+            $this->command->info('✓ ' . count($subjectModels) . ' Fächer erstellt');
 
             // Erstelle 10 Schüler
             $students = [];
@@ -175,13 +184,12 @@ class TutoringTestDataSmallSeeder extends Seeder
                 ];
 
                 // Wenn must_be_accepted == false, dann email_mentor = null und accepted_at = now()
-                $mentorEmail = 'teacher1@test-school.at';
-                $acceptedAt = now()->format('Y-m-d');
-
-                if (!$subject->must_be_accepted) {
-                    $mentorEmail = null;
-                    $acceptedAt = now()->format('Y-m-d');
+                // Sonst wähle einen zufälligen Mentor aus den Subject-Mentoren
+                $mentorEmail = null;
+                if ($subject->must_be_accepted && $subject->email_mentors && count($subject->email_mentors) > 0) {
+                    $mentorEmail = $subject->email_mentors[array_rand($subject->email_mentors)];
                 }
+                $acceptedAt = now()->format('Y-m-d');
 
                 TutoringOffer::create([
                     'school_id' => $school->id,

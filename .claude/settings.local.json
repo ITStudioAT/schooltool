@@ -11,7 +11,8 @@
       "Bash(grep:*)",
       "Bash(cat:*)",
       "Bash(build_frontend.cmd)",
-      "Bash(cmd /C scripts\\\\build_frontend.cmd:*)"
+      "Bash(cmd /C scripts\\\\build_frontend.cmd:*)",
+      "Bash(php:*)"
     ],
     "deny": [],
     "ask": []

@@ -109,16 +109,10 @@ class TutoringOfferService
 
         // Prüfen der Gültigkeit des E-Mail-Mentors
         if ($data['email_mentor'] != $offer->email_mentor) abort(403, 'E-Mail-Adresse des Tutors ist ungültig.');
-        Debugbar::info(
-            $data['token'],
-            $offer->token,
-            Carbon::parse($offer->token_expires_at)->toDateTimeString(),
-            Carbon::now()->toDateTimeString()
-        );
+
         if ($data['token'] !== $offer->token || Carbon::parse($offer->token_expires_at)->lt(now())) {
             abort(403, 'Token ungültig oder abgelaufen.');
         }
-
 
         if ($data['action'] == 'confirm') {
             $offer->accepted_at = now();

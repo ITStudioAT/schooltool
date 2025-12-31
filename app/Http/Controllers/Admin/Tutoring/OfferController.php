@@ -8,6 +8,7 @@ use App\Http\Resources\Admin\PaginateResource;
 use App\Http\Resources\Admin\Tutoring\OfferResource;
 use App\Models\TutoringOffer;
 use App\Models\User;
+use App\Services\TutoringOfferService;
 use Barryvdh\Debugbar\Facades\Debugbar;
 use Illuminate\Http\Request;
 
@@ -117,7 +118,7 @@ class OfferController extends Controller
         return response()->noContent();
     }
 
-    public function toggleAcceptedOffer(Request $request)
+    public function toggleAcceptedOffer(Request $request, TutoringOfferService $service)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -132,8 +133,10 @@ class OfferController extends Controller
         if ($offer->accepted_at) {
             $offer->accepted_at = null;
             $offer->is_active = false;
+            $service->sendConfirmRefuseEmail('reject', $offer->id);
         } else {
             $offer->accepted_at = now();
+            $service->sendConfirmRefuseEmail('confirm', $offer->id);
         }
         $offer->save();
         return response()->noContent();
@@ -181,8 +184,6 @@ class OfferController extends Controller
         $validUsers = User::whereIn('id', $offerUserIds)
             ->role('tutoring_user')
             ->count();
-
-        DebugBar::info($offerUserIds, $validUsers);
 
         return response()->json($data, 200);
     }

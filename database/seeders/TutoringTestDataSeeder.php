@@ -199,11 +199,11 @@ class TutoringTestDataSeeder extends Seeder
                     $currentIndex = $index + 1;
                     $this->command->info("Verarbeite Schule {$currentIndex}/{$schoolCount}: {$school->long_name}");
 
-                    // Erstelle 10 Fächer pro Schule
-                    $subjects = $this->createSubjects($school);
-
-                    // Erstelle 10 Lehrer pro Schule
+                    // Erstelle 10 Lehrer pro Schule (ZUERST, da Fächer auf Lehrer-Emails referenzieren)
                     $teachers = $this->createTeachers($school, 10);
+
+                    // Erstelle 10 Fächer pro Schule (mit echten Lehrer-Emails)
+                    $subjects = $this->createSubjects($school, $teachers);
 
                     // Erstelle 1000 Schüler pro Schule
                     $students = $this->createStudents($school, 1000);
@@ -325,19 +325,17 @@ class TutoringTestDataSeeder extends Seeder
     /**
      * Erstelle Fächer für eine Schule
      */
-    private function createSubjects(School $school): array
+    private function createSubjects(School $school, array $teachers): array
     {
         $subjectModels = [];
 
         foreach ($this->subjects as $subject) {
-            // Wähle 2-4 zufällige Lehrer-Emails für Mentoren
-            $mentorCount = rand(2, 4);
-            $mentors = [];
-            for ($i = 0; $i < $mentorCount; $i++) {
-                $lastName = $this->lastNames[array_rand($this->lastNames)];
-                $firstName = $this->firstNames['männlich'][array_rand($this->firstNames['männlich'])];
-                $mentors[] = strtolower($firstName . '.' . $lastName) . '@' . $this->getSchoolDomain($school) . '.at';
-            }
+            // Wähle 2-4 zufällige Lehrer-Emails aus den tatsächlich erstellten Lehrern
+            $mentorCount = min(rand(2, 4), count($teachers));
+            $shuffledTeachers = $teachers;
+            shuffle($shuffledTeachers);
+            $selectedTeachers = array_slice($shuffledTeachers, 0, $mentorCount);
+            $mentors = array_map(fn($teacher) => $teacher->email, $selectedTeachers);
 
             $subjectModel = TutoringSubject::create([
                 'school_id' => $school->id,
