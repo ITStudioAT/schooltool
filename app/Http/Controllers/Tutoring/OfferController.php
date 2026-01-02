@@ -292,7 +292,7 @@ class OfferController extends Controller
         $school = null;
         $auth = $authService->getAuth();
 
-        Log::info($auth['is_auth']);
+        Log::info('is_auth: ' . $auth['is_auth']);
         if ($auth['is_auth']) {
             /** @var \App\Models\User $user */
             Log::info(Auth::user());
@@ -306,8 +306,8 @@ class OfferController extends Controller
                 $school = $user->selectedSchool;
             }
         }
+        Log::info($validated['school_name']);
 
-        Log::info(3);
         if (!$school) {
             if (!isset($validated['school_name'])) {
                 $school = null;
@@ -315,6 +315,8 @@ class OfferController extends Controller
                 if (!$school = School::where('short_name', $validated['school_name'])->first()) $school = null;
             }
         }
+
+        Log::info($school);
 
         $data = [
             'school' => $school ? new SchoolResource($school) : null,

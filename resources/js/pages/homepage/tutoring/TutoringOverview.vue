@@ -231,7 +231,6 @@ export default {
         this.homepageStore = useHomepageStore()
 
         await this.homepageStore.loadSchoolsForTool('Nachhilfetool')
-
         await this.offerStore.loadOfferConfig(this.school_name)
 
         if (!this.offer_config?.auth?.is_auth) {
@@ -348,7 +347,12 @@ export default {
         },
 
         async afterLogin() {
+            // TODO
+            await this.homepageStore.loadSchoolsForTool('Nachhilfetool')
+            await this.offerStore.loadOfferConfig(this.school_name)
             await this.initWithSchool()
+            this.search = this.offer_config.auth.user.tutoring_filter
+            this.school = this.offer_config.school
             this.is_login = false
         },
         startLogin() {
