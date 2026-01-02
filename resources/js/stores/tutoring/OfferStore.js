@@ -15,6 +15,8 @@ export const useOfferStore = defineStore('TutoringOfferStore', {
             my_offers: null,
             offer_config: null,
             is_offer_dialog: false,
+            send_request_status: null,
+            offer_request: null,
         }
     },
 
@@ -114,6 +116,8 @@ export const useOfferStore = defineStore('TutoringOfferStore', {
             homepageStore.is_loading++
             try {
                 const response = await axios.post(`/api/homepage/tutoring/send_request`, { offer_id: offer_id, request_message: request_message })
+                this.send_request_status = response.data.status
+                this.offer_request = response.data.offer_request
                 return true
             } catch (error) {
                 notification.notify({

@@ -2,8 +2,10 @@
 
 namespace App\Services;
 
+use App\Http\Resources\Tutoring\OfferRequestResource;
 use App\Models\School;
 use App\Models\TutoringOffer;
+use App\Models\TutoringOfferRequest;
 use App\Models\TutoringSubject;
 use App\Notifications\StandardEmail;
 use Barryvdh\Debugbar\Facades\Debugbar;
@@ -150,5 +152,35 @@ class TutoringOfferService
         ];
 
         Notification::route('mail', $offer->user->email)->notify(new StandardEmail($mail));
+    }
+
+    public function sendOfferRequest($user_id, $offer_id, $message)
+    {
+
+        $offer = TutoringOffer::findOrFail($offer_id);
+
+        $offerRequest = TutoringOfferRequest::where('school_id', $offer->school_id)->where('offer_id', $offer->id)->where('from_user_id', $user_id)->where('to_user_id', $offer->user_id)->first();
+
+        if (!$offerRequest) {
+            // Anfrage wurde bisher nicht erstellt
+            $offerRequest = TutoringOfferRequest::create([
+                'school_id' => $offer->school_id,
+                'offer_id' => $offer->id,
+                'from_user_id' => $user_id,
+                'to_user_id' => $offer->user_id,
+                'message' => $message,
+                'is_serious' => true,
+                'sent_at' => now(),
+            ]);
+
+            $data = ['status' => 'NEW_REQUEST', 'offer_request' => new OfferRequestResource($offerRequest)];
+        } else {
+            // Anfrage wurde bereits erstellt
+            $offerRequest->last_sent_at = now();
+            $offerRequest->save();
+            $data = ['status' => 'EXISTING_REQUEST', 'offer_request' => new OfferRequestResource($offerRequest)];
+        }
+
+        return $data;
     }
 }

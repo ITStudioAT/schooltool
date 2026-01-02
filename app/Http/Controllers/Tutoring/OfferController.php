@@ -7,6 +7,7 @@ use App\Http\Requests\Tutoring\OfferConfirmRefuseRequest;
 use App\Http\Requests\Tutoring\OfferIndexRequest;
 use App\Http\Requests\Tutoring\OfferLoadOfferConfigRequest;
 use App\Http\Requests\Tutoring\OfferLoadOffersRequest;
+use App\Http\Requests\Tutoring\OfferSendRequestRequest;
 use App\Http\Requests\Tutoring\OfferSetUserSearchCriteriaRequest;
 use App\Http\Requests\Tutoring\OfferStoreRequest;
 use App\Http\Requests\Tutoring\OfferToggleOfferRequest;
@@ -292,21 +293,16 @@ class OfferController extends Controller
         $school = null;
         $auth = $authService->getAuth();
 
-        Log::info('is_auth: ' . $auth['is_auth']);
         if ($auth['is_auth']) {
             /** @var \App\Models\User $user */
-            Log::info(Auth::user());
             $user = Auth::user();
             if (!$user->hasRole('tutoring_user')) {
                 UserService::logout();
                 $auth = $authService->getAuth();
-                Log::info(1);
             } else {
-                Log::info(2);
                 $school = $user->selectedSchool;
             }
         }
-        Log::info($validated['school_name']);
 
         if (!$school) {
             if (!isset($validated['school_name'])) {
@@ -316,7 +312,7 @@ class OfferController extends Controller
             }
         }
 
-        Log::info($school);
+
 
         $data = [
             'school' => $school ? new SchoolResource($school) : null,
@@ -404,8 +400,20 @@ class OfferController extends Controller
         }
     }
 
-    public function sendRequest(Request $request)
+    public function sendRequest(OfferSendRequestRequest $request, TutoringOfferService $service)
     {
-        Debugbar::info('OfferController: sendRequest called', $request->all());
+
+        if (! $auth_user = $this->userHasRole(['tutoring_user'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validated();
+
+        $offer_id = $validated['offer_id'];
+        $message = $validated['request_message'] ?? null;
+
+        $data = $service->sendOfferRequest($auth_user->id, $offer_id, $message);
+
+        return response()->json($data, 200);
     }
 }

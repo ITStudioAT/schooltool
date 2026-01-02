@@ -19,7 +19,7 @@ return new class extends Migration
             $table->foreignId('to_user_id');
             $table->text('message')->nullable();
             $table->boolean('is_serious')->default(false);
-            $table->date('archived_at')->nullable();
+            $table->timestamp('archived_at')->nullable();
             $table->timestamps();
         });
     }

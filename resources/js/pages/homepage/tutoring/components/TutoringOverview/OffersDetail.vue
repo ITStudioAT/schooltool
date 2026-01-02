@@ -51,7 +51,7 @@
                 <v-btn color="success" text="Kontakt" @click="is_contact = true" v-if="config.auth.is_auth" />
                 <v-btn class="ms-auto" text="Fertig" @click="is_offer_dialog = false" />
             </v-card-actions>
-            <v-form ref="form" v-model="is_valid" @submit.prevent="sendRequest" class="mb-4">
+            <v-form ref="form" v-model="is_valid" @submit.prevent="sendRequest" class="mb-4" v-if="!send_request_status">
                 <v-card-text v-if="is_contact">
                     <div class="text-body-1 font-weight-medium">Deine Anfrage:</div>
                     <v-alert type="info">Bitte schicke nur eine ernst gemeinte Anfrage ab!</v-alert>
@@ -63,6 +63,21 @@
                     <v-btn color="success" type="submit" text="Absenden" v-if="is_serious_request" />
                 </v-card-actions>
             </v-form>
+            <v-card-text v-if="send_request_status == 'NEW_REQUEST'">
+                <v-alert type="success">Deine Anfrage wurde versandt! Bitte warte auf die Antwort.</v-alert>
+            </v-card-text>
+
+            <v-card-text v-if="send_request_status == 'EXISTING_REQUEST'">
+                <v-alert type="warning">Du hast bereits eine Anfrage geschickt! Bitte warte auf die Antwort.</v-alert>
+            </v-card-text>
+            <v-card-actions v-if="send_request_status == 'EXISTING_REQUEST' || send_request_status == 'NEW_REQUEST'">
+                <div></div>
+                <v-btn class="ms-auto" text="Fertig" @click="sendRequestFinished" />
+            </v-card-actions>
+
+            <v-card-text>
+                {{ offer_request }}
+            </v-card-text>
         </v-card>
     </v-dialog>
 </template>
@@ -91,7 +106,7 @@ export default {
         }
     },
     computed: {
-        ...mapWritableState(useOfferStore, ['is_offer_dialog']),
+        ...mapWritableState(useOfferStore, ['is_offer_dialog', 'send_request_status', 'offer_request']),
 
         selectedClasses() {
             // Konvertiere Object zu Array der ausgewählten Keys
@@ -124,6 +139,11 @@ export default {
     },
 
     methods: {
+        sendRequestFinished() {
+            this.offer_request = null
+            this.send_request_status = null
+            this.is_offer_dialog = false
+        },
         async sendRequest() {
             if (!this.is_serious_request) return
             this.is_valid = false

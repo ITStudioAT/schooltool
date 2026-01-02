@@ -33,8 +33,8 @@
 
         <v-card tile flat class="mt-4" color="transparent" v-if="is_loaded && !is_login">
             <!-- Menü -->
-            <v-card flat color="primary" class="border-md">
-                <div class="d-flex flex-wrap justify-center justify-lg-start ga-4">
+            <v-card flat color="primary" class="border-md" v-if="action == ''">
+                <div class="d-flex flex-wrap justify-center ga-2">
                     <ItsCard
                         :title="offer_config?.auth?.user?.last_name + ' ' + offer_config?.auth?.user?.first_name"
                         text="Hier gelangst Du zu Deinem persönlichen Bereich. Dort kannst Du auch Angebote erstellen."
@@ -44,9 +44,17 @@
                         v-if="offer_config.auth.is_auth" />
 
                     <ItsCard
+                        title="Deine Anfragen"
+                        text="Hier kannst Du nachschauen, welche Anfragen Du bereits gestellt hast."
+                        color="success"
+                        button="Meine Anfragen"
+                        @clickCard="action = 'my_requests'"
+                        v-if="offer_config.auth.is_auth" />
+
+                    <ItsCard
                         title="Mich abmelden"
                         text="Hier kannst Du Dich vom System ausloggen."
-                        color="success"
+                        color="warning"
                         button="Abmelden"
                         @clickCard="logout"
                         v-if="offer_config.auth.is_auth" />
@@ -58,6 +66,12 @@
                         button="Los"
                         @clickCard="startLogin"
                         v-if="!offer_config.auth.is_auth" />
+                </div>
+            </v-card>
+
+            <v-card flat color="primary" class="border-md" v-if="action == 'my_requests'">
+                <div class="d-flex flex-wrap justify-center ga-2">
+                    <ItsCard title="Zurück" text="Zurück zur Übersicht." color="success" button="Zurück" @clickCard="action = ''" />
                 </div>
             </v-card>
         </v-card>
@@ -73,7 +87,7 @@
             @logout="logout" />
 
         <!-- SUCHLEISTE -->
-        <v-expansion-panels v-model="search_panel" color="primary" v-if="offer_config && offer_config.auth.is_auth" class="mt-4">
+        <v-expansion-panels v-model="search_panel" color="primary" v-if="offer_config && offer_config.auth.is_auth && action == ''" class="mt-4">
             <v-expansion-panel>
                 <v-expansion-panel-title class="text-body-1 font-weight-medium">Suche</v-expansion-panel-title>
                 <v-expansion-panel-text>
@@ -131,17 +145,12 @@
             </v-expansion-panel>
         </v-expansion-panels>
 
-        <div>
-            xxx offer_config:
-            {{ offer_config }}
-        </div>
-
         <!-- Angebote -->
-        <v-card tile flat border-md color="transparent" v-if="is_loaded && !is_login">
+        <v-card tile flat border-md color="transparent" v-if="is_loaded && !is_login && action == ''">
             <!-- Alle Angebote anzeigen -->
 
             <v-card flat color="transparent" class="border-md mt-4 pa-2" v-if="offers && offers.length > 0">
-                <div class="d-flex flex-row flex-wrap ga-2 justify-md-center">
+                <div class="d-flex flex-row flex-wrap ga-2 justify-center">
                     <div style="width: 300px" v-for="offer in offers" :key="offer.id">
                         <ItsCard
                             class="h-100"
@@ -201,6 +210,9 @@
 
         <!-- ANEGBOT IM DETAIL -->
         <OffersDetail :offer="selected_offer" :config="offer_config" v-if="is_offer_dialog" />
+
+        <!-- MEINE ANFRAGEN -->
+        <MyRequests v-if="action == 'my_requests'" />
     </div>
 
     <div class="h-100 w-100 d-flex flex-column justify-center align-center" style="max-width: 1024px; margin: auto" v-if="error">
@@ -220,9 +232,10 @@ import { useHomepageStore } from '@/stores/homepage/HomepageStore'
 import ItsCard from '@/pages/components/ItsCard.vue'
 import SchoolAndUser from '@/pages/homepage/tutoring/components/TutoringOverview/SchoolAndUser.vue'
 import OffersDetail from '@/pages/homepage/tutoring/components/TutoringOverview/OffersDetail.vue'
+import MyRequests from '@/pages/homepage/tutoring/components/MyRequests.vue'
 
 export default {
-    components: { ItsCard, SchoolAndUser, SchoolAndUser, OffersDetail },
+    components: { ItsCard, SchoolAndUser, SchoolAndUser, OffersDetail, MyRequests },
 
     async beforeMount() {
         this.tutoringStore = useTutoringStore()
@@ -273,7 +286,7 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useTutoringStore, ['selected_school_id', 'data']),
+        ...mapWritableState(useTutoringStore, ['selected_school_id', 'data', 'action']),
         ...mapWritableState(useOfferStore, ['offer_config', 'error', 'offers', 'is_offer_dialog', 'meta', 'search_string']),
         ...mapWritableState(useHomepageStore, ['schools']),
 
