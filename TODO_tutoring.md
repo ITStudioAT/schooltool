@@ -1,12 +1,10 @@
 # Next Changes
 
-## Select Offers from more schools
-
-## EMail Logo
-
 ## Student offer interested
 
 -   Communicate between students
+
+## EMail Logo
 
 # Ideas
 

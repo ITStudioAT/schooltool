@@ -183,6 +183,19 @@ class TutoringTestDataSmallSeeder extends Seeder
                     ],
                 ];
 
+                // Erstelle Klassen-Struktur (1-9 mit boolean)
+                $classes = [
+                    '1' => true,
+                    '2' => true,
+                    '3' => true,
+                    '4' => true,
+                    '5' => false,
+                    '6' => false,
+                    '7' => false,
+                    '8' => false,
+                    '9' => false,
+                ];
+
                 // Wenn must_be_accepted == false, dann email_mentor = null und accepted_at = now()
                 // Sonst wähle einen zufälligen Mentor aus den Subject-Mentoren
                 $mentorEmail = null;
@@ -197,7 +210,7 @@ class TutoringTestDataSmallSeeder extends Seeder
                     'subject_id' => $subject->id,
                     'title' => $subject->long_name . ' Nachhilfe',
                     'description' => 'Test-Angebot für ' . $subject->long_name,
-                    'classes' => ['1. Klasse', '2. Klasse'],
+                    'classes' => $classes,
                     'time_table' => $timeTable,
                     'active_until' => now()->addMonths(3)->format('Y-m-d'),
                     'is_active' => true,
@@ -208,6 +221,7 @@ class TutoringTestDataSmallSeeder extends Seeder
                     'email_mentor' => $mentorEmail,
                     'accepted_at' => $acceptedAt,
                     'click_count' => 0,
+                    'visible_for_other_schools' => rand(0, 1) === 1, // 50% sichtbar für andere Schulen
                 ]);
             }
 

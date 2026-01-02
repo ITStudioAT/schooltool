@@ -502,11 +502,27 @@ class TutoringTestDataSeeder extends Seeder
                 $isActive = false;
             }
 
-            // Wähle 1-3 zufällige Klassen
-            $numClasses = rand(1, 3);
-            $shuffledClasses = $this->classes;
-            shuffle($shuffledClasses);
-            $selectedClasses = array_slice($shuffledClasses, 0, $numClasses);
+            // Erstelle Klassen-Struktur (1-9 mit boolean)
+            $classes = [
+                '1' => false,
+                '2' => false,
+                '3' => false,
+                '4' => false,
+                '5' => false,
+                '6' => false,
+                '7' => false,
+                '8' => false,
+                '9' => false,
+            ];
+
+            // Wähle 1-4 zufällige Klassen und setze sie auf true
+            $numClasses = rand(1, 4);
+            $availableClasses = range(1, 9);
+            shuffle($availableClasses);
+            $selectedClassNumbers = array_slice($availableClasses, 0, $numClasses);
+            foreach ($selectedClassNumbers as $classNumber) {
+                $classes[(string)$classNumber] = true;
+            }
 
             // Erstelle Zeitplan
             $timeTable = $this->generateTimeTable();
@@ -531,7 +547,7 @@ class TutoringTestDataSeeder extends Seeder
                 'subject_id' => $subject->id,
                 'title' => $subject->long_name . ' Nachhilfe',
                 'description' => 'Ich biete professionelle Nachhilfe in ' . $subject->long_name . ' an. Langjährige Erfahrung und gute Noten garantiert!',
-                'classes' => $selectedClasses,
+                'classes' => $classes,
                 'time_table' => $timeTable,
                 'active_until' => now()->addMonths(rand(1, 6))->format('Y-m-d'),
                 'is_active' => $isActive,
@@ -542,6 +558,7 @@ class TutoringTestDataSeeder extends Seeder
                 'email_mentor' => $mentorEmail,
                 'accepted_at' => $acceptedAt,
                 'click_count' => rand(0, 50),
+                'visible_for_other_schools' => rand(0, 1) === 1, // 50% sichtbar für andere Schulen
             ]);
 
             // Fortschrittsanzeige alle 50 Angebote

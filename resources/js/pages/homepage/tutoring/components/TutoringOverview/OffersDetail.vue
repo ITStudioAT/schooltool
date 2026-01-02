@@ -47,18 +47,36 @@
                     <div>Kosten pro Stunde: {{ parseFloat(offer.price_per_hour) }} Euro</div>
                 </div>
             </v-card-text>
-            <v-card-actions>
-                <v-btn class="ms-auto" text="Ok" @click="is_offer_dialog = false"></v-btn>
+            <v-card-actions v-if="!is_contact">
+                <v-btn color="success" text="Kontakt" @click="is_contact = true" v-if="config.auth.is_auth" />
+                <v-btn class="ms-auto" text="Fertig" @click="is_offer_dialog = false" />
             </v-card-actions>
+            <v-form ref="form" v-model="is_valid" @submit.prevent="sendRequest" class="mb-4">
+                <v-card-text v-if="is_contact">
+                    <div class="text-body-1 font-weight-medium">Deine Anfrage:</div>
+                    <v-alert type="info">Bitte schicke nur eine ernst gemeinte Anfrage ab!</v-alert>
+                    <v-textarea autofocus v-model="request_message" label="Deine Nachricht" :rules="[maxLength(1024)]" counter="1024"></v-textarea>
+                    <v-checkbox color="success" v-model="is_serious_request" label="Ich bestätige, dass es sich um eine ernst gemeinte Anfrage handelt." />
+                </v-card-text>
+                <v-card-actions class="d-flex flex-row align-center justify-space-between w-100" v-if="is_contact">
+                    <v-btn color="error" text="Abbruch" @click="is_contact = false" />
+                    <v-btn color="success" type="submit" text="Absenden" v-if="is_serious_request" />
+                </v-card-actions>
+            </v-form>
         </v-card>
     </v-dialog>
 </template>
 <script>
+import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useOfferStore } from '@/stores/tutoring/OfferStore'
 
 export default {
-    props: ['offer'],
+    setup() {
+        return useValidationRulesSetup()
+    },
+
+    props: ['offer', 'config'],
     async beforeMount() {
         this.offerStore = useOfferStore()
     },
@@ -66,6 +84,10 @@ export default {
         return {
             offerStore: null,
             dialog: false,
+            is_contact: false,
+            request_message: '',
+            is_serious_request: false,
+            is_valid: false,
         }
     },
     computed: {
@@ -98,6 +120,17 @@ export default {
             const year = date.getFullYear()
 
             return `${day}.${month}.${year} (${weekday})`
+        },
+    },
+
+    methods: {
+        async sendRequest() {
+            if (!this.is_serious_request) return
+            this.is_valid = false
+            await this.$refs.form.validate()
+            if (!this.is_valid) return
+
+            if (!this.offerStore.sendRequest(this.offer.id, this.request_message)) return
         },
     },
 }

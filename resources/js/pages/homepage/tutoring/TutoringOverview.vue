@@ -131,6 +131,11 @@
             </v-expansion-panel>
         </v-expansion-panels>
 
+        <div>
+            xxx offer_config:
+            {{ offer_config }}
+        </div>
+
         <!-- Angebote -->
         <v-card tile flat border-md color="transparent" v-if="is_loaded && !is_login">
             <!-- Alle Angebote anzeigen -->
@@ -193,7 +198,9 @@
                 </v-alert>
             </v-card>
         </v-card>
-        <OffersDetail :offer="selected_offer" v-if="is_offer_dialog" />
+
+        <!-- ANEGBOT IM DETAIL -->
+        <OffersDetail :offer="selected_offer" :config="offer_config" v-if="is_offer_dialog" />
     </div>
 
     <div class="h-100 w-100 d-flex flex-column justify-center align-center" style="max-width: 1024px; margin: auto" v-if="error">
@@ -213,7 +220,6 @@ import { useHomepageStore } from '@/stores/homepage/HomepageStore'
 import ItsCard from '@/pages/components/ItsCard.vue'
 import SchoolAndUser from '@/pages/homepage/tutoring/components/TutoringOverview/SchoolAndUser.vue'
 import OffersDetail from '@/pages/homepage/tutoring/components/TutoringOverview/OffersDetail.vue'
-import { id } from 'vuetify/locale'
 
 export default {
     components: { ItsCard, SchoolAndUser, SchoolAndUser, OffersDetail },
@@ -304,7 +310,6 @@ export default {
         },
         search: {
             async handler(newValue) {
-                console.log(newValue)
                 await this.offerStore.setUserSearchCriteria(newValue)
                 await this.searchNow()
                 await this.offerStore.loadOfferConfig(this.school_name)
@@ -352,10 +357,14 @@ export default {
             this.is_login = true
         },
         async initWithSchool() {
+            console.log('initWithSchool: before: offerStore.loadOfferConfig')
             await this.offerStore.loadOfferConfig(this.school_name)
+            console.log('initWithSchool: after: offerStore.loadOfferConfig')
             this.school = this.offer_config.school
             this.data.school_id = this.school.id
+            console.log('initWithSchool: before: offerStore.loadOffers')
             await this.offerStore.loadOffers(this.school_name)
+            console.log('initWithSchool: after: offerStore.loadOffers')
             this.is_loaded = true
         },
         async initWithoutSchool() {

@@ -108,6 +108,27 @@ export const useOfferStore = defineStore('TutoringOfferStore', {
             }
         },
 
+        async sendRequest(offer_id, request_message) {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+            try {
+                const response = await axios.post(`/api/homepage/tutoring/send_request`, { offer_id: offer_id, request_message: request_message })
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.timeout,
+                })
+                this.error = error
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
         async clickCount(offer_id) {
             const notification = useNotificationStore()
             const homepageStore = useHomepageStore()

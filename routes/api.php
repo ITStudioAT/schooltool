@@ -137,6 +137,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/homepage/tutoring/subjects', \App\Http\Controllers\Tutoring\SubjectController::class);
         Route::apiResource('/homepage/tutoring/offers', \App\Http\Controllers\Tutoring\OfferController::class);
         Route::post('/homepage/tutoring/toggle_offer',  [\App\Http\Controllers\Tutoring\OfferController::class, 'toggleOffer']);
+        Route::post('/homepage/tutoring/send_request',  [\App\Http\Controllers\Tutoring\OfferController::class, 'sendRequest']);
     });
 
     /* SANCTUM - admin, tutoring_admin, register_admin */

@@ -74,8 +74,6 @@ class OfferController extends Controller
         $search_string = $validated['search_string'] ?? null;
         $school_name = $validated['school_name'] ?? null;
 
-
-
         // Unterscheiden, ob ein eingeloggter User die Aangebote sehen will oder ein nicht eingeloggter User
 
 
@@ -114,8 +112,15 @@ class OfferController extends Controller
                     if (!empty($filter['only_in_my_school'])) {
                         $query->where('tutoring_offers.school_id', $auth_user->school_id);
                     } else {
-                        $schoolIds[] = $auth_user->school_id;
-                        $query->whereIn('tutoring_offers.school_id', $schoolIds);
+                        $query->where(function ($q) use ($auth_user, $schoolIds) {
+                            // Eigene Schule immer erlaubt
+                            $q->where('tutoring_offers.school_id', $auth_user->school_id)
+                                // Andere Schulen nur wenn visible_for_other_schools = true
+                                ->orWhere(function ($sub) use ($schoolIds) {
+                                    $sub->whereIn('tutoring_offers.school_id', $schoolIds)
+                                        ->where('tutoring_offers.visible_for_other_schools', true);
+                                });
+                        });
                     }
                 })
                 // Sex filter
@@ -287,17 +292,22 @@ class OfferController extends Controller
         $school = null;
         $auth = $authService->getAuth();
 
+        Log::info($auth['is_auth']);
         if ($auth['is_auth']) {
             /** @var \App\Models\User $user */
+            Log::info(Auth::user());
             $user = Auth::user();
             if (!$user->hasRole('tutoring_user')) {
                 UserService::logout();
                 $auth = $authService->getAuth();
+                Log::info(1);
             } else {
+                Log::info(2);
                 $school = $user->selectedSchool;
             }
         }
 
+        Log::info(3);
         if (!$school) {
             if (!isset($validated['school_name'])) {
                 $school = null;
@@ -390,5 +400,10 @@ class OfferController extends Controller
         } else {
             return redirect('/homepage/tutoring_response?title=' . urlencode($offer->title) . '&subtitle=' . $user->last_name . ' ' . $user->first_name . ' (' . $user->schoolclass . ')&text=' . urlencode($offer->description) . '&status=ABGELEHNT');
         }
+    }
+
+    public function sendRequest(Request $request)
+    {
+        Debugbar::info('OfferController: sendRequest called', $request->all());
     }
 }
