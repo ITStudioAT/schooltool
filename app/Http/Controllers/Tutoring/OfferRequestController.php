@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Tutoring;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Tutoring\OfferRequestIndexRequest;
 use App\Models\TutoringOfferRequest;
 use Illuminate\Http\Request;
 
@@ -11,9 +12,20 @@ class OfferRequestController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(OfferRequestIndexRequest $request)
     {
-        //
+        if (! $auth_user = $this->userHasRole(['tutoring_user'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validated();
+        // $search_string = $validated['search_string'] ?? null;
+
+        $requests = TutoringOfferRequest::where('from_user_id', $auth_user->id)
+            ->orderBy('created_at')
+            ->paginate(config('schooltool.pagination'));
+
+        return response()->json($requests, 200);
     }
 
     /**

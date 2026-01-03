@@ -5,10 +5,30 @@
 
             <!-- Es existieren Angebote -->
             <v-card-text class="d-flex flex-row flex-wrap ga-2" v-if="my_requests && my_requests.length > 0">
-                Meine Anfrage
-                <!--
-                <MyOffer v-for="offer in my_offers" :key="offer.id" :offer="offer" />
-                -->
+                <v-card
+                    v-for="request in formattedRequests"
+                    :key="request.id"
+                    tile
+                    flat
+                    class="border-md flex-grow-1 px-4 py-3"
+                    color="transparent"
+                    style="min-width: 320px; max-width: 420px">
+                    <div class="d-flex flex-row justify-space-between flex-wrap ga-2">
+                        <div class="text-body-1 font-weight-medium">Anfrage zu Angebot #{{ request.offer_id }}</div>
+                        <div class="text-caption text-medium-emphasis">Erstellt am {{ request.createdLabel }}</div>
+                    </div>
+
+                    <div class="text-body-2 mt-2" v-if="request.message">
+                        {{ request.message }}
+                    </div>
+                    <div class="text-body-2 font-italic text-medium-emphasis mt-2" v-else>Keine Nachricht angegeben.</div>
+
+                    <div class="d-flex flex-row flex-wrap ga-2 mt-3">
+                        <v-chip size="small" color="info" v-if="request.sentLabel">Gesendet: {{ request.sentLabel }}</v-chip>
+                        <v-chip size="small" color="info" v-if="request.seenLabel">Gesehen: {{ request.seenLabel }}</v-chip>
+                        <v-chip size="small" color="warning" v-if="request.archived_at">Archiviert</v-chip>
+                    </div>
+                </v-card>
             </v-card-text>
 
             <!-- Es existieren KEINE Angebote -->
@@ -54,10 +74,35 @@ export default {
 
     computed: {
         ...mapWritableState(useRequestStore, ['my_requests']),
+        formattedRequests() {
+            if (!Array.isArray(this.my_requests)) return []
+            return this.my_requests.map((request) => {
+                const createdLabel = this.formatDate(request.created_at) || '-'
+                const sentLabel = this.formatDate(request.last_sent_at || request.sent_at)
+                const seenLabel = this.formatDate(request.last_seen_at || request.seen_at)
+
+                return {
+                    ...request,
+                    createdLabel,
+                    sentLabel,
+                    seenLabel,
+                }
+            })
+        },
     },
 
     watch: {},
 
-    methods: {},
+    methods: {
+        formatDate(value) {
+            if (!value) return null
+            const date = new Date(value)
+            if (Number.isNaN(date.getTime())) return value
+            return new Intl.DateTimeFormat('de-DE', {
+                dateStyle: 'medium',
+                timeStyle: 'short',
+            }).format(date)
+        },
+    },
 }
 </script>

@@ -189,8 +189,6 @@
                 </v-card-text>
             </v-card>
 
-            <!-- is_own_offer-->
-
             <!-- KEINE ANGEBOT VORHANDEN-->
             <v-card v-else class="border-md mt-4">
                 <v-alert
