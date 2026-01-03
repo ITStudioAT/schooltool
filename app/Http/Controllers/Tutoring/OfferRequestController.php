@@ -4,7 +4,10 @@ namespace App\Http\Controllers\Tutoring;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Tutoring\OfferRequestIndexRequest;
+use App\Http\Resources\Admin\PaginateResource;
+use App\Http\Resources\Tutoring\OfferRequestResource;
 use App\Models\TutoringOfferRequest;
+use Barryvdh\Debugbar\Facades\Debugbar;
 use Illuminate\Http\Request;
 
 class OfferRequestController extends Controller
@@ -22,10 +25,19 @@ class OfferRequestController extends Controller
         // $search_string = $validated['search_string'] ?? null;
 
         $requests = TutoringOfferRequest::where('from_user_id', $auth_user->id)
+            ->with('school')
+            ->with('offer')
+            ->with('offer.subject')
             ->orderBy('created_at')
             ->paginate(config('schooltool.pagination'));
 
-        return response()->json($requests, 200);
+        Debugbar::info($requests);
+
+
+        return response()->json([
+            'data' => OfferRequestResource::collection($requests),
+            'meta' => new PaginateResource($requests),
+        ]);
     }
 
     /**

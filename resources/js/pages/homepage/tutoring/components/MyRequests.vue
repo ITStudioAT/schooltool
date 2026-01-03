@@ -4,39 +4,54 @@
             <v-card-title class="bg-tutoring_card_title mb-2">Meine Anfragen</v-card-title>
 
             <!-- Es existieren Angebote -->
-            <v-card-text class="d-flex flex-row flex-wrap ga-2" v-if="my_requests && my_requests.length > 0">
-                <v-card
-                    v-for="request in formattedRequests"
-                    :key="request.id"
-                    tile
-                    flat
-                    class="border-md flex-grow-1 px-4 py-3"
-                    color="transparent"
-                    style="min-width: 320px; max-width: 420px">
-                    <div class="d-flex flex-row justify-space-between flex-wrap ga-2">
-                        <div class="text-body-1 font-weight-medium">Anfrage zu Angebot #{{ request.offer_id }}</div>
-                        <div class="text-caption text-medium-emphasis">Erstellt am {{ request.createdLabel }}</div>
-                    </div>
+            <v-card-text v-if="requests && requests.length > 0">
+                <v-card v-for="request in requests" :key="request.id" tile flat class="d-flex flex-row align-start justify-space-between ga-2 border-md" color="transparent">
+                    <v-card tile flat color="transparent" class="w-100">
+                        <div class="d-flex flex-row justify-space-between flex-wrap ga-2">
+                            <div class="text-body-1 font-weight-medium">Anfrage {{ request.school.short_name + ' (' + request.school.long_name + ')' }}</div>
 
-                    <div class="text-body-2 mt-2" v-if="request.message">
-                        {{ request.message }}
-                    </div>
+                            <div class="text-caption text-medium-emphasis">Erstellt am: {{ request.sent_at }}</div>
+                        </div>
+                        <div class="text-body-1 font-weight-medium">{{ request.offer.subject.short_name + ': ' + request.offer.subject.long_name }}</div>
+                        <div class="text-body-2 mt-2" v-if="request.offer.title">
+                            {{ request.offer.title + ': ' + request.offer.description }}
+                        </div>
+                        <div class="d-flex flex-row align-center flex-wrap ga-2 mt-2">
+                            <v-chip size="small" color="info" v-if="request.last_sent_at">Zuletzt Gesendet: {{ request.last_sent_at }}</v-chip>
+                            <v-chip size="small" color="success" v-if="request.last_seen_at">Gelesen: {{ request.last_seen_at }}</v-chip>
+                            <v-chip size="small" color="warning" v-if="!request.seen_at">Noch nicht gelesen</v-chip>
+                        </div>
+                        <!--
+                        <div class="text-body-2 mt-2" v-if="request.message">
+                            {{ request }}
+                        </div>
+                        -->
+
+                        <!--
                     <div class="text-body-2 font-italic text-medium-emphasis mt-2" v-else>Keine Nachricht angegeben.</div>
 
                     <div class="d-flex flex-row flex-wrap ga-2 mt-3">
-                        <v-chip size="small" color="info" v-if="request.sentLabel">Gesendet: {{ request.sentLabel }}</v-chip>
-                        <v-chip size="small" color="info" v-if="request.seenLabel">Gesehen: {{ request.seenLabel }}</v-chip>
+                        <v-chip size="small" color="info" v-if="request.sentLabel">Gesendet: {{}}</v-chip>
+                        <v-chip size="small" color="info" v-if="request.seenLabel">Gesehen: {{}}</v-chip>
                         <v-chip size="small" color="warning" v-if="request.archived_at">Archiviert</v-chip>
                     </div>
+                    --></v-card>
+                    <v-card style="width: 100px; flex-shrink: 0" class="h-100 d-flex flex-column ga-2" tile flat color="transparent">
+                        <v-btn block tile flat size="small" color="warning">Löschen</v-btn>
+                        <v-btn block tile flat size="small" color="primary">Archivieren</v-btn>
+                    </v-card>
                 </v-card>
+
+                <v-card-text class="d-flex flex-row flex-wrap ga-2 align-center justify-space-between">
+                    <v-btn tile flat size="x-large" prepend-icon="mdi-arrow-left" color="primary" :disabled="meta.current_page == 1" @click="">Vorherige</v-btn>
+                    <v-btn tile flat size="x-large" append-icon="mdi-arrow-right" color="primary" :disabled="meta.current_page == meta.last_page" @click="">Nächste</v-btn>
+                </v-card-text>
             </v-card-text>
 
             <!-- Es existieren KEINE Angebote -->
             <v-card-text class="d-flex flex-row flex-wrap ga-2" v-else>
                 <v-alert type="warning" title="Keine Anfrage vorhanden" text="Du hast noch kein Anfrage erstellt. Klicke auf ein Angebot und danach auf 'Kontakt'."></v-alert>
             </v-card-text>
-
-            <v-card-text>my_requests: {{ my_requests }}</v-card-text>
         </v-card>
     </v-card-text>
 </template>
@@ -57,7 +72,7 @@ export default {
 
     async beforeMount() {
         this.requestStore = useRequestStore()
-        await this.requestStore.loadMyRequests()
+        await this.requestStore.index()
         this.is_loaded = true
     },
 
@@ -73,22 +88,7 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useRequestStore, ['my_requests']),
-        formattedRequests() {
-            if (!Array.isArray(this.my_requests)) return []
-            return this.my_requests.map((request) => {
-                const createdLabel = this.formatDate(request.created_at) || '-'
-                const sentLabel = this.formatDate(request.last_sent_at || request.sent_at)
-                const seenLabel = this.formatDate(request.last_seen_at || request.seen_at)
-
-                return {
-                    ...request,
-                    createdLabel,
-                    sentLabel,
-                    seenLabel,
-                }
-            })
-        },
+        ...mapWritableState(useRequestStore, ['requests', 'meta']),
     },
 
     watch: {},

@@ -21,6 +21,28 @@ export const useRequestStore = defineStore('TutoringRequestStore', {
     },
 
     actions: {
+        async index(page = null) {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+            try {
+                const response = await axios.get(`/api/homepage/tutoring/offer_requests`, { params: { page } })
+                this.requests = response.data.data
+                this.meta = response.data.meta
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
         async loadMyRequests() {
             const notification = useNotificationStore()
             const homepageStore = useHomepageStore()

@@ -17,6 +17,37 @@ class OfferRequestResource extends JsonResource
         return [
             'id' => $this->id,
             'message' => $this->message,
+            'sent_at' => $this->sent_at,
+            'last_sent_at' => $this->last_sent_at,
+            'seen_at' => $this->seen_at,
+            'last_seen_at' => $this->last_seen_at,
+            'school' => $this->whenLoaded('school', function () {
+                return [
+                    'id' => $this->school->id,
+                    'short_name' => $this->school->short_name,
+                    'long_name' => $this->school->long_name,
+
+                ];
+            }),
+            'offer' => $this->whenLoaded('offer', function () {
+                return [
+                    'id' => $this->offer->id,
+                    'title' => $this->offer->title,
+                    'description' => $this->offer->description,
+                    'is_active' => $this->offer->is_active,
+                    'active_until' => $this->offer->active_until,
+                    'price_per_hour' => $this->offer->price_per_hour,
+                    'is_group' => $this->offer->is_group,
+                    'max_group_members' => $this->offer->max_group_members,
+                    'classes' => $this->offer->classes,
+                    'accepted_at' => $this->offer->accepted_at,
+                    'subject' => $this->offer->relationLoaded('subject') ? [
+                        'id' => $this->offer->subject->id,
+                        'short_name' => $this->offer->subject->short_name,
+                        'long_name' => $this->offer->subject->long_name,
+                    ] : null,
+                ];
+            }),
 
         ];
     }
