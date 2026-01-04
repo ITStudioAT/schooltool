@@ -2,9 +2,12 @@
 
 ## Student offer interested
 
--   Communicate between students
-
-## Kein Kontakt zu eigenen Angeboten
+-   When sending a request: count the requests
+-   Gesendete Archivieren
+-   Gesendete Löschen
+-   Empfangene Archivieren
+-   Nachfragen statt Kontakt, wenn bereits angefragt wurde
+-   Kein Kontakt zu eigenen Angeboten
 
 ## EMail Logo
 

@@ -16,6 +16,9 @@ class TutoringTestDataSeeder extends Seeder
 {
     // Echte österreichische Gymnasien
     private array $austrianSchools = [
+        // Wichtige Test-Schulen zuerst (für die ersten 10)
+        ['short_name' => 'ABG-SB', 'long_name' => 'Akademisches Gymnasium Salzburg', 'domain' => 'akg-salzburg'],
+        ['short_name' => 'ABG-IBK', 'long_name' => 'Akademisches Gymnasium Innsbruck', 'domain' => 'akg-innsbruck'],
         ['short_name' => 'AKG', 'long_name' => 'Akademisches Gymnasium Wien', 'domain' => 'akg-wien'],
         ['short_name' => 'BRG1', 'long_name' => 'BRG 1 Stubenbastei Wien', 'domain' => 'brg1'],
         ['short_name' => 'GRG3', 'long_name' => 'GRG 3 Hagenmüllergasse Wien', 'domain' => 'grg3'],
@@ -24,8 +27,6 @@ class TutoringTestDataSeeder extends Seeder
         ['short_name' => 'BRG4', 'long_name' => 'BRG 4 Waltergasse Wien', 'domain' => 'brg4'],
         ['short_name' => 'GRG19', 'long_name' => 'GRG 19 Billrothstraße Wien', 'domain' => 'grg19'],
         ['short_name' => 'BRG18', 'long_name' => 'BRG 18 Schopenhauerstraße Wien', 'domain' => 'brg18'],
-        ['short_name' => 'GRG23', 'long_name' => 'GRG 23 Draschestraße Wien', 'domain' => 'grg23'],
-        ['short_name' => 'BORG3', 'long_name' => 'BORG 3 Landstraßer Hauptstraße Wien', 'domain' => 'borg3'],
         ['short_name' => 'STG', 'long_name' => 'Stiftsgymnasium Melk', 'domain' => 'stiftmelk'],
         ['short_name' => 'BRG-KR', 'long_name' => 'BRG Krems', 'domain' => 'brgkrems'],
         ['short_name' => 'GYM-STP', 'long_name' => 'Gymnasium St. Pölten', 'domain' => 'gymstpoelten'],
@@ -57,7 +58,6 @@ class TutoringTestDataSeeder extends Seeder
         ['short_name' => 'BRG-GM', 'long_name' => 'BRG Gmunden', 'domain' => 'brggmunden'],
         ['short_name' => 'GRG-VK', 'long_name' => 'GRG Vöcklabruck', 'domain' => 'grgvoecklabruck'],
         ['short_name' => 'BG-SB', 'long_name' => 'Bundesgymnasium Salzburg', 'domain' => 'bgsalzburg'],
-        ['short_name' => 'ABG-SB', 'long_name' => 'Akademisches Gymnasium Salzburg', 'domain' => 'akg-salzburg'],
         ['short_name' => 'BRG-HA', 'long_name' => 'BRG Hallein', 'domain' => 'brghallein'],
         ['short_name' => 'GYM-ZS', 'long_name' => 'Gymnasium Zell am See', 'domain' => 'gymzellamsee'],
         ['short_name' => 'BG-TB', 'long_name' => 'Bundesgymnasium Tamsweg', 'domain' => 'bgtamsweg'],
@@ -67,7 +67,6 @@ class TutoringTestDataSeeder extends Seeder
         ['short_name' => 'BG-ST', 'long_name' => 'Bundesgymnasium Straßwalchen', 'domain' => 'bgstrasswalchen'],
         ['short_name' => 'GRG-OB', 'long_name' => 'GRG Oberndorf', 'domain' => 'grgobern dorf'],
         ['short_name' => 'BG-IBK', 'long_name' => 'Bundesgymnasium Innsbruck', 'domain' => 'bginnsbruck'],
-        ['short_name' => 'ABG-IBK', 'long_name' => 'Akademisches Gymnasium Innsbruck', 'domain' => 'akg-innsbruck'],
         ['short_name' => 'BRG-KU', 'long_name' => 'BRG Kufstein', 'domain' => 'brgkufstein'],
         ['short_name' => 'GYM-IM', 'long_name' => 'Gymnasium Imst', 'domain' => 'gymimst'],
         ['short_name' => 'BG-LI', 'long_name' => 'Bundesgymnasium Lienz', 'domain' => 'bglienz'],
@@ -223,7 +222,7 @@ class TutoringTestDataSeeder extends Seeder
 
             $this->command->info('✅ Tutoring Test Daten erfolgreich erstellt!');
             $this->command->info('📊 Zusammenfassung:');
-            $this->command->info('   - Schulen: ' . School::whereIn('short_name', array_column($this->austrianSchools, 'short_name'))->count());
+            $this->command->info('   - Schulen: ' . count($schools));
             $this->command->info('   - Super-Admins: ' . User::role('super_admin')->where('email', 'kron@naturwelt.at')->count());
             $this->command->info('   - Schüler: ~' . User::role('tutoring_user')->count());
             $this->command->info('   - Lehrer: ~' . User::role('teacher')->count());
@@ -287,13 +286,16 @@ class TutoringTestDataSeeder extends Seeder
     }
 
     /**
-     * Erstelle 100 österreichische Schulen
+     * Erstelle 10 österreichische Schulen
      */
     private function createSchools(): array
     {
         $schools = [];
 
-        foreach ($this->austrianSchools as $schoolData) {
+        // Nur die ersten 10 Schulen verwenden
+        $selectedSchools = array_slice($this->austrianSchools, 0, 10);
+
+        foreach ($selectedSchools as $schoolData) {
             $school = School::create([
                 'short_name' => $schoolData['short_name'],
                 'long_name' => $schoolData['long_name'],

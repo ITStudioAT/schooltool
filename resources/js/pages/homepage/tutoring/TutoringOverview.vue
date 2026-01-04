@@ -34,13 +34,21 @@
         <v-card tile flat class="mt-4" color="transparent" v-if="is_loaded && !is_login">
             <!-- Menü -->
             <v-card flat color="primary" class="border-md" v-if="action == ''">
-                <div class="d-flex flex-wrap justify-center ga-2">
+                <div class="d-flex flex-wrap justify-center justify-md-start ga-2">
                     <ItsCard
                         :title="offer_config?.auth?.user?.last_name + ' ' + offer_config?.auth?.user?.first_name"
                         text="Hier gelangst Du zu Deinem persönlichen Bereich. Dort kannst Du auch Angebote erstellen."
                         color="success"
                         button="Mein Bereich"
                         @clickCard="moveToTutoring"
+                        v-if="offer_config.auth.is_auth" />
+
+                    <ItsCard
+                        title="Erhaltene Anfragen"
+                        text="Hier kannst Du nachschauen, welche Anfragen Du erhalten hast."
+                        color="success"
+                        button="Erhaltene Anfragen"
+                        @clickCard="action = 'received_requests'"
                         v-if="offer_config.auth.is_auth" />
 
                     <ItsCard
@@ -76,6 +84,13 @@
                 </div>
                 <div class="d-flex flex-wrap justify-center ga-2">
                     <ItsCard title="Archiv" text="Zeige alle archivierten Anfragen an." color="success" button="Zum Archiv" @clickCard="" />
+                </div>
+            </v-card>
+
+            <!-- Menü für ERHALTENE ANFRAGEN -->
+            <v-card flat color="primary" class="border-md d-flex flex-row align-start flex-wrap ga-2" v-if="action == 'received_requests'">
+                <div class="d-flex flex-wrap justify-center ga-2">
+                    <ItsCard title="Zurück" text="Zurück zur Übersicht." color="success" button="Zurück" @clickCard="action = ''" />
                 </div>
             </v-card>
         </v-card>
@@ -215,6 +230,9 @@
 
         <!-- MEINE ANFRAGEN -->
         <MyRequests v-if="action == 'my_requests'" />
+
+        <!-- ERHALTENE ANFRAGEN -->
+        <ReceivedRequests v-if="action == 'received_requests'" />
     </div>
 
     <div class="h-100 w-100 d-flex flex-column justify-center align-center" style="max-width: 1024px; margin: auto" v-if="error">
@@ -235,9 +253,10 @@ import ItsCard from '@/pages/components/ItsCard.vue'
 import SchoolAndUser from '@/pages/homepage/tutoring/components/TutoringOverview/SchoolAndUser.vue'
 import OffersDetail from '@/pages/homepage/tutoring/components/TutoringOverview/OffersDetail.vue'
 import MyRequests from '@/pages/homepage/tutoring/components/MyRequests.vue'
+import ReceivedRequests from '@/pages/homepage/tutoring/components/ReceivedRequests.vue'
 
 export default {
-    components: { ItsCard, SchoolAndUser, SchoolAndUser, OffersDetail, MyRequests },
+    components: { ItsCard, SchoolAndUser, SchoolAndUser, OffersDetail, MyRequests, ReceivedRequests },
 
     async beforeMount() {
         this.tutoringStore = useTutoringStore()
@@ -376,14 +395,10 @@ export default {
             this.is_login = true
         },
         async initWithSchool() {
-            console.log('initWithSchool: before: offerStore.loadOfferConfig')
             await this.offerStore.loadOfferConfig(this.school_name)
-            console.log('initWithSchool: after: offerStore.loadOfferConfig')
             this.school = this.offer_config.school
             this.data.school_id = this.school.id
-            console.log('initWithSchool: before: offerStore.loadOffers')
             await this.offerStore.loadOffers(this.school_name)
-            console.log('initWithSchool: after: offerStore.loadOffers')
             this.is_loaded = true
         },
         async initWithoutSchool() {
