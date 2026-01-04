@@ -28,10 +28,9 @@ class OfferRequestController extends Controller
             ->with('school')
             ->with('offer')
             ->with('offer.subject')
-            ->orderBy('created_at')
+            ->orderBy('sent_at', 'DESC')
             ->paginate(config('schooltool.pagination'));
 
-        Debugbar::info($requests);
 
 
         return response()->json([
@@ -70,18 +69,5 @@ class OfferRequestController extends Controller
     public function destroy(TutoringOfferRequest $tutoringOfferRequest)
     {
         //
-    }
-
-    public function loadMyRequests(Request $request)
-    {
-        if (! $auth_user = $this->userHasRole(['tutoring_user'])) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
-
-        $requests = TutoringOfferRequest::where('from_user_id', $auth_user->id)
-            ->orderBy('created_at')
-            ->get();
-
-        return response()->json($requests, 200);
     }
 }

@@ -7,11 +7,12 @@ use App\Models\School;
 use App\Models\TutoringOffer;
 use App\Models\TutoringOfferRequest;
 use App\Models\TutoringSubject;
+use App\Models\User;
 use App\Notifications\StandardEmail;
 use Barryvdh\Debugbar\Facades\Debugbar;
 use Carbon\Carbon;
-use function Symfony\Component\Clock\now;
 
+use function Symfony\Component\Clock\now;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 
@@ -172,7 +173,6 @@ class TutoringOfferService
                 'is_serious' => true,
                 'sent_at' => now(),
             ]);
-
             $data = ['status' => 'NEW_REQUEST', 'offer_request' => new OfferRequestResource($offerRequest)];
         } else {
             // Anfrage wurde bereits erstellt
@@ -182,5 +182,41 @@ class TutoringOfferService
         }
 
         return $data;
+    }
+
+    public function sendOfferRequestEmail($offerRequest, $status)
+    {
+
+        $offerRequest = TutoringOfferRequest::findOrFail($offerRequest->id);
+
+        $school = $offerRequest->school;
+        $user = $offerRequest->to_user;
+
+        $offerRequest->token = Str::uuid();;
+        $offerRequest->token_expires_at = Carbon::now()->addMinutes((int) config('schooltool.token_expire_time'));
+        $offerRequest->save();
+
+        if ($status == 'NEW_REQUEST') {
+            $subject = 'Neue Anfrage für Ihr Nachhilfe-Angebot';
+        } else {
+            $subject = 'Erinnerung: Anfrage für Ihr Nachhilfe-Angebot';
+        }
+
+        $data = [
+            'url' => url('/homepage/tutoring/offer-request?id=' . $offerRequest->id . '&token=' . $offerRequest->token),
+        ];
+
+        $mail = [
+            'from_address' => config('schooltool.noreply_email'),
+            'from_name' => $school->long_name,
+            'logo' => asset('/storage/images/' . $school->logo),
+            'subject' => $subject,
+            'markdown' => 'mails.tutoring.offerRequest',
+            'data' => $data,
+        ];
+
+        // Debugbar::info('Prepared email data:', $data);
+
+        Notification::route('mail', $user->email)->notify(new StandardEmail($mail));
     }
 }

@@ -194,6 +194,7 @@ class OfferController extends Controller
         if (!$answer['status']) abort($answer['code'], $answer['message']);
 
         $offer = $service->create($auth_user->school_id, $auth_user->id, $validated);
+        if ($offer->must_be_accepted) $service->sendOfferToMentor($offer);
 
         return response()->json(new OfferResource($offer), 200);
     }
@@ -262,7 +263,7 @@ class OfferController extends Controller
 
         if (! $offer->is_active) {
             // Offer ist im moment nicht aktiv
-            $schooltool = SchoolTool::findOrFail($auth_user->school_id);
+            $schooltool = SchoolTool::where('school_id', $auth_user->school_id)->first();
             $max = $schooltool->tutoring_max_offers_per_student;
 
             if (!$max || $max == 0) {
@@ -413,6 +414,7 @@ class OfferController extends Controller
         $message = $validated['request_message'] ?? null;
 
         $data = $service->sendOfferRequest($auth_user->id, $offer_id, $message);
+        $service->sendOfferRequestEmail($data['offer_request'], $data['status']);
 
         return response()->json($data, 200);
     }

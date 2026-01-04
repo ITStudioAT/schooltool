@@ -69,9 +69,13 @@
                 </div>
             </v-card>
 
-            <v-card flat color="primary" class="border-md" v-if="action == 'my_requests'">
+            <!-- Menü für MEINE ANFRAGEN -->
+            <v-card flat color="primary" class="border-md d-flex flex-row align-start flex-wrap ga-2" v-if="action == 'my_requests'">
                 <div class="d-flex flex-wrap justify-center ga-2">
                     <ItsCard title="Zurück" text="Zurück zur Übersicht." color="success" button="Zurück" @clickCard="action = ''" />
+                </div>
+                <div class="d-flex flex-wrap justify-center ga-2">
+                    <ItsCard title="Archiv" text="Zeige alle archivierten Anfragen an." color="success" button="Zum Archiv" @clickCard="" />
                 </div>
             </v-card>
         </v-card>

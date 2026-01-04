@@ -4,22 +4,22 @@
             <v-card-title class="bg-tutoring_card_title mb-2">Meine Anfragen</v-card-title>
 
             <!-- Es existieren Angebote -->
-            <v-card-text v-if="requests && requests.length > 0">
-                <v-card v-for="request in requests" :key="request.id" tile flat class="d-flex flex-row align-start justify-space-between ga-2 border-md" color="transparent">
-                    <v-card tile flat color="transparent" class="w-100">
+            <v-card-text v-if="requests && requests.length > 0" class="pa-0">
+                <v-card v-for="request in requests" :key="request.id" tile flat class="d-flex flex-row align-start justify-space-between ga-2 border-md mb-2" color="transparent">
+                    <v-card tile flat color="transparent" class="w-100 pa-2">
                         <div class="d-flex flex-row justify-space-between flex-wrap ga-2">
                             <div class="text-body-1 font-weight-medium">Anfrage {{ request.school.short_name + ' (' + request.school.long_name + ')' }}</div>
 
-                            <div class="text-caption text-medium-emphasis">Erstellt am: {{ request.sent_at }}</div>
+                            <div class="text-caption text-medium-emphasis">Gesendet am: {{ request.sent_at }}</div>
                         </div>
                         <div class="text-body-1 font-weight-medium">{{ request.offer.subject.short_name + ': ' + request.offer.subject.long_name }}</div>
                         <div class="text-body-2 mt-2" v-if="request.offer.title">
                             {{ request.offer.title + ': ' + request.offer.description }}
                         </div>
                         <div class="d-flex flex-row align-center flex-wrap ga-2 mt-2">
-                            <v-chip size="small" color="info" v-if="request.last_sent_at">Zuletzt Gesendet: {{ request.last_sent_at }}</v-chip>
-                            <v-chip size="small" color="success" v-if="request.last_seen_at">Gelesen: {{ request.last_seen_at }}</v-chip>
-                            <v-chip size="small" color="warning" v-if="!request.seen_at">Noch nicht gelesen</v-chip>
+                            <v-chip size="small" color="info" v-if="request.last_sent_at">Zuletzt nachgefragt: {{ request.last_sent_at }}</v-chip>
+                            <v-chip size="small" color="success" v-if="request.last_seen_at || request.seen_at">Gelesen: {{ request.last_seen_at || request.seen_at }}</v-chip>
+                            <v-chip size="small" color="warning" v-if="!request.seen_at && !request.last_seen_at">Noch nicht gelesen</v-chip>
                         </div>
                         <!--
                         <div class="text-body-2 mt-2" v-if="request.message">
@@ -37,14 +37,32 @@
                     </div>
                     --></v-card>
                     <v-card style="width: 100px; flex-shrink: 0" class="h-100 d-flex flex-column ga-2" tile flat color="transparent">
-                        <v-btn block tile flat size="small" color="warning">Löschen</v-btn>
+                        <v-btn block tile flat size="small" color="warning" v-if="!request.seen_at && !request.last_seen_at">Löschen</v-btn>
                         <v-btn block tile flat size="small" color="primary">Archivieren</v-btn>
                     </v-card>
                 </v-card>
 
                 <v-card-text class="d-flex flex-row flex-wrap ga-2 align-center justify-space-between">
-                    <v-btn tile flat size="x-large" prepend-icon="mdi-arrow-left" color="primary" :disabled="meta.current_page == 1" @click="">Vorherige</v-btn>
-                    <v-btn tile flat size="x-large" append-icon="mdi-arrow-right" color="primary" :disabled="meta.current_page == meta.last_page" @click="">Nächste</v-btn>
+                    <v-btn
+                        tile
+                        flat
+                        size="x-large"
+                        prepend-icon="mdi-arrow-left"
+                        color="primary"
+                        :disabled="meta.current_page == 1"
+                        @click="requestStore.index(meta.current_page - 1)">
+                        Vorherige
+                    </v-btn>
+                    <v-btn
+                        tile
+                        flat
+                        size="x-large"
+                        append-icon="mdi-arrow-right"
+                        color="primary"
+                        :disabled="meta.current_page == meta.last_page"
+                        @click="requestStore.index(meta.current_page + 1)">
+                        Nächste
+                    </v-btn>
                 </v-card-text>
             </v-card-text>
 
