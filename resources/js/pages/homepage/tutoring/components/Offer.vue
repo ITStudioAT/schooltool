@@ -221,7 +221,7 @@
                                 <v-alert type="success">
                                     <div v-if="data.id">Das Angebot für Nachhilfe wurde geändert.</div>
                                     <div v-if="!data.id">Das Angebot für Nachhilfe wurde erstellt.</div>
-                                    <div>Es wurde bereits online gestellt!</div>
+                                    <div v-if="!selectedSubject.is_active">Es kann jederzeit online gestellt werden!</div>
                                 </v-alert>
                                 <div class="mt-4 d-flex flex-row align-center justify-space-between">
                                     <div></div>
@@ -230,6 +230,9 @@
                             </v-card-text>
                         </v-card>
                     </v-card>
+                </v-card-text>
+                <v-card-text>
+                    {{ offer }}
                 </v-card-text>
 
                 <!-- ERROR-->
@@ -240,7 +243,7 @@
                 <!-- OFFER ALWAYS AND STEP 7: SCHLIESSEN/SPEICHERN-->
                 <v-card-actions>
                     <div class="d-flex flex-row align-center justify-space-between w-100">
-                        <its-menu-button subtitle="Abbruch" icon="mdi-close" color="warning" @click="action = ''" v-if="step <= 7" />
+                        <its-menu-button subtitle="Abbruch" icon="mdi-close" color="warning" @click="finished" v-if="step <= 7" />
                         <its-menu-button :subtitle="data.id ? 'Speichern' : 'Erstellen'" icon="mdi-check" color="success" @click="doCreateOffer(data)" v-if="step == 7" />
                     </div>
                 </v-card-actions>
@@ -269,6 +272,8 @@ export default {
     components: { ItsMenuButton, ItsGridBox },
 
     async beforeMount() {
+        console.log('Offer.beforeMount')
+        console.log(this.offer)
         this.tutoringStore = useTutoringStore()
         this.userStore = useUserStore()
         this.subjectStore = useSubjectStore()

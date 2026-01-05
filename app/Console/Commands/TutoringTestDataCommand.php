@@ -326,30 +326,48 @@ class TutoringTestDataCommand extends Command
      */
     protected function createDummyOffers($user)
     {
-        $subjects = \App\Models\TutoringSubject::inRandomOrder()->limit(5)->get();
+        $subjects = \App\Models\TutoringSubject::where('school_id', $user->school_id)
+            ->inRandomOrder()
+            ->limit(5)
+            ->get();
 
         if ($subjects->isEmpty()) {
-            $this->error('❌ Keine TutoringSubjects gefunden!');
+            $this->error('❌ Keine TutoringSubjects für school_id ' . $user->school_id . ' gefunden!');
             return collect();
         }
 
         $offers = collect();
 
         foreach ($subjects as $subject) {
+            $mustBeAccepted = rand(0, 1);
+            $acceptedAt = $mustBeAccepted ? now()->subDays(rand(1, 30)) : null;
+            $isActive = $acceptedAt !== null; // is_active nur true wenn accepted_at gesetzt ist
+
             $offer = \App\Models\TutoringOffer::create([
                 'school_id' => $user->school_id,
                 'user_id' => $user->id,
                 'subject_id' => $subject->id,
                 'title' => "Nachhilfe in {$subject->name}",
                 'description' => 'Test-Angebot für Demo-Zwecke',
-                'classes' => ['5', '6', '7', '8'],
+                'classes' => [
+                    '1' => false,
+                    '2' => false,
+                    '3' => false,
+                    '4' => false,
+                    '5' => true,
+                    '6' => true,
+                    '7' => true,
+                    '8' => true,
+                    '9' => false,
+                ],
                 'time_table' => null,
                 'active_until' => now()->addMonths(3)->format('Y-m-d'),
-                'is_active' => true,
+                'is_active' => $isActive,
                 'price_per_hour' => rand(10, 25),
                 'is_group' => rand(0, 1),
                 'max_group_members' => rand(0, 1) ? rand(2, 5) : null,
-                'must_be_accepted' => false,
+                'must_be_accepted' => $mustBeAccepted,
+                'accepted_at' => $acceptedAt,
                 'created_at' => now()->subDays(rand(1, 60)),
             ]);
 

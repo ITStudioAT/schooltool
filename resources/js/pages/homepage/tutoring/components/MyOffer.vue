@@ -1,5 +1,5 @@
 <template>
-    <v-card tile flat border-md width="300" min-height="200" class="d-flex flex-column" v-if="action == ''">
+    <v-card tile flat border-md width="300" min-height="200" class="d-flex flex-column" v-if="action == '' && !is_edit">
         <v-card-title>{{ offer.subject.short_name }}</v-card-title>
         <v-card-subtitle>{{ offer.subject.long_name }}</v-card-subtitle>
 
@@ -44,6 +44,7 @@
                 </v-badge>
             </div>
         </v-card-text>
+        <v-card-text>offer.id:{{ offer.id }}</v-card-text>
 
         <!-- TITLE und DESCRIPTION -->
         <v-card-text class="mt-4">
@@ -96,9 +97,9 @@
             </v-card>
         </v-card-text>
     </v-card>
-    <!-- OFFER   -->
 
-    <Offer :offer="offer" v-if="action == 'edit_offer'" @finished="reloadOffers" />
+    <!-- OFFER   -->
+    <Offer :offer="offer_to_edit" v-if="is_edit" @finished="reloadOffers" />
 </template>
 <script>
 import { mapWritableState } from 'pinia'
@@ -119,6 +120,8 @@ export default {
         return {
             delete_level: 0,
             offerStore: null,
+            offer_to_edit: null,
+            is_edit: false,
         }
     },
 
@@ -158,6 +161,7 @@ export default {
 
     methods: {
         async reloadOffers() {
+            this.is_edit = false
             await this.offerStore.loadMyOffers()
         },
         async toggleActive(offer) {
@@ -165,6 +169,8 @@ export default {
             offer.is_active = !offer.is_active
         },
         editOffer(offer) {
+            this.offer_to_edit = offer
+            this.is_edit = true
             this.action = 'edit_offer'
         },
     },

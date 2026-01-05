@@ -22,8 +22,14 @@ class OfferStoreRequest extends FormRequest
      */
     public function rules(): array
     {
+        $user = Auth::user();
+
         return [
-            'subject_id' => 'required|integer|exists:tutoring_subjects,id',
+            'subject_id' => [
+                'required',
+                'integer',
+                'exists:tutoring_subjects,id,school_id,' . $user->school_id
+            ],
             'title' => 'required|string|max:255',
             'description' => 'nullable|string|max:1024',
             'classes' => 'required|array',

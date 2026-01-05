@@ -55,6 +55,10 @@ class TutoringOfferService
         if ($offer->must_be_accepted) {
             $data['accepted_at'] = null;
             $data['is_active'] = false;
+        } else {
+            if (!$offer->accepted_at) {
+                $data['accepted_at'] = now();
+            }
         }
 
         $offer->update($data);

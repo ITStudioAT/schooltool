@@ -59,7 +59,7 @@
 
                     <ItsCard title="Neue Nachhilfe" text="Hier kannst Du ein neues Nachhilfe-Angebot erstellen." color="success" button="Los" @clickCard="createOffer" />
 
-                    <ItsCard title="Mich abmelden" text="Hier kannst Du Dich vom System ausloggen." color="success" button="Abmelden" @clickCard="logout" />
+                    <ItsCard title="Mich abmelden" text="Hier kannst Du Dich vom System ausloggen." color="warning" button="Abmelden" @clickCard="logout" />
                 </div>
             </v-card>
         </v-card>
