@@ -2,7 +2,6 @@
 
 ## Student offer interested
 
--   When sending a request: count the requests
 -   Gesendete Archivieren
 -   Gesendete Löschen
 -   Empfangene Archivieren

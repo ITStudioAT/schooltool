@@ -55,11 +55,13 @@
                     color="success"
                     text="Kontakt"
                     @click="is_contact = true"
-                    v-if="config.auth.is_auth && (!offer.my_request || (offer.my_request && offer.my_request.sent_count < 3))" />
+                    v-if="config.auth.is_auth && !offer.is_own_offer && (!offer.my_request || (offer.my_request && offer.my_request.sent_count < 3))" />
 
-                <v-chip size="small" color="warning" v-if="config.auth.is_auth && offer.my_request && offer.my_request.sent_count >= 3">
+                <v-chip size="small" color="warning" v-if="config.auth.is_auth && !offer.is_own_offer && offer.my_request && offer.my_request.sent_count >= 3">
                     Bereits {{ offer?.my_request?.sent_count }}x nachgefragt
                 </v-chip>
+
+                <v-chip size="small" color="info" v-if="config.auth.is_auth && offer.is_own_offer">Das ist dein eigenes Angebot</v-chip>
 
                 <v-btn class="ms-auto" text="Fertig" @click="is_offer_dialog = false" />
             </v-card-actions>

@@ -164,6 +164,8 @@ class TutoringOfferService
 
         $offer = TutoringOffer::findOrFail($offer_id);
 
+
+
         $offerRequest = TutoringOfferRequest::where('school_id', $offer->school_id)->where('offer_id', $offer->id)->where('from_user_id', $user_id)->where('to_user_id', $offer->user_id)->first();
 
         if (!$offerRequest) {
