@@ -381,7 +381,7 @@ export default {
         },
 
         async afterLogin() {
-            // TODO
+            await axios.get('/sanctum/csrf-cookie')
             await this.homepageStore.loadSchoolsForTool('Nachhilfetool')
             await this.offerStore.loadOfferConfig(this.school_name)
             await this.initWithSchool()

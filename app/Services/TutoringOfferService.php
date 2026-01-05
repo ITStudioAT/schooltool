@@ -176,10 +176,14 @@ class TutoringOfferService
                 'message' => $message,
                 'is_serious' => true,
                 'sent_at' => now(),
+                'sent_count' => 1,
+                'sent_count' => 0,
             ]);
             $data = ['status' => 'NEW_REQUEST', 'offer_request' => new OfferRequestResource($offerRequest)];
         } else {
             // Anfrage wurde bereits erstellt
+
+            $offerRequest->sent_count = $offerRequest->sent_count + 1;
             $offerRequest->last_sent_at = now();
             $offerRequest->save();
             $data = ['status' => 'EXISTING_REQUEST', 'offer_request' => new OfferRequestResource($offerRequest)];

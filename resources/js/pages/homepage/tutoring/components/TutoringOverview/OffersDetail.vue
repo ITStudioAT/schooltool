@@ -47,8 +47,20 @@
                     <div>Kosten pro Stunde: {{ parseFloat(offer.price_per_hour) }} Euro</div>
                 </div>
             </v-card-text>
+            <v-card-text>
+                {{ offer.my_request }}
+            </v-card-text>
             <v-card-actions v-if="!is_contact">
-                <v-btn color="success" text="Kontakt" @click="is_contact = true" v-if="config.auth.is_auth" />
+                <v-btn
+                    color="success"
+                    text="Kontakt"
+                    @click="is_contact = true"
+                    v-if="config.auth.is_auth && (!offer.my_request || (offer.my_request && offer.my_request.sent_count < 3))" />
+
+                <v-chip size="small" color="warning" v-if="config.auth.is_auth && offer.my_request && offer.my_request.sent_count >= 3">
+                    Bereits {{ offer?.my_request?.sent_count }}x nachgefragt
+                </v-chip>
+
                 <v-btn class="ms-auto" text="Fertig" @click="is_offer_dialog = false" />
             </v-card-actions>
             <v-form ref="form" v-model="is_valid" @submit.prevent="sendRequest" class="mb-4" v-if="!send_request_status">
@@ -74,10 +86,6 @@
                 <div></div>
                 <v-btn class="ms-auto" text="Fertig" @click="sendRequestFinished" />
             </v-card-actions>
-
-            <v-card-text>
-                {{ offer_request }}
-            </v-card-text>
         </v-card>
     </v-dialog>
 </template>

@@ -17,7 +17,11 @@
                             {{ request.offer.title + ': ' + request.offer.description }}
                         </div>
                         <div class="d-flex flex-row align-center flex-wrap ga-2 mt-2">
-                            <v-chip size="small" color="info" v-if="request.last_sent_at">Zuletzt nachgefragt: {{ request.last_sent_at }}</v-chip>
+                            <v-chip size="small" color="info" v-if="request.last_sent_at">
+                                Zuletzt nachgefragt
+                                <span v-if="request.sent_count > 0">&nbsp;({{ request.sent_count }}x)</span>
+                                : {{ request.last_sent_at }}
+                            </v-chip>
                             <v-chip size="small" color="success" v-if="request.last_seen_at || request.seen_at">Gelesen: {{ request.last_seen_at || request.seen_at }}</v-chip>
                             <v-chip size="small" color="warning" v-if="!request.seen_at && !request.last_seen_at">Noch nicht gelesen</v-chip>
                         </div>

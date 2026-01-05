@@ -192,7 +192,6 @@ export default {
         },
 
         async updateSubject(subject) {
-            console.log(subject)
             if (!(await this.subjectStore.updateSubject(subject))) return
 
             await this.subjectStore.index()

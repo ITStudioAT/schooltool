@@ -272,8 +272,6 @@ export default {
     components: { ItsMenuButton, ItsGridBox },
 
     async beforeMount() {
-        console.log('Offer.beforeMount')
-        console.log(this.offer)
         this.tutoringStore = useTutoringStore()
         this.userStore = useUserStore()
         this.subjectStore = useSubjectStore()

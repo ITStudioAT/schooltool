@@ -17,10 +17,11 @@ class OfferRequestResource extends JsonResource
         return [
             'id' => $this->id,
             'message' => $this->message,
-            'sent_at' => $this->sent_at,
-            'last_sent_at' => $this->last_sent_at,
-            'seen_at' => $this->seen_at,
-            'last_seen_at' => $this->last_seen_at,
+            'sent_at' => $this->sent_at?->format('Y-m-d H:i:s'),
+            'sent_count' => $this->sent_count,
+            'last_sent_at' => $this->last_sent_at?->format('Y-m-d H:i:s'),
+            'seen_at' => $this->seen_at?->format('Y-m-d H:i:s'),
+            'last_seen_at' => $this->last_seen_at?->format('Y-m-d H:i:s'),
             'school' => $this->whenLoaded('school', function () {
                 return [
                     'id' => $this->school->id,

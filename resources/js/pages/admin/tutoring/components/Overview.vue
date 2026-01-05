@@ -354,7 +354,6 @@ export default {
 
     methods: {
         async doDelete(offer) {
-            console.log(offer)
             this.selected_offers = []
             this.delete_level = 0
             await this.offerStore.delete(offer)

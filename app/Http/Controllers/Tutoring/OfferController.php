@@ -19,6 +19,7 @@ use App\Http\Resources\Tutoring\OfferResource;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\TutoringOffer;
+use App\Models\TutoringOfferRequest;
 use App\Services\AuthService;
 use App\Services\TutoringOfferService;
 use App\Services\UserService;
@@ -99,6 +100,9 @@ class OfferController extends Controller
             $offers = TutoringOffer::query()
                 ->with('subject')
                 ->with('school')
+                ->with(['requests' => function ($query) use ($auth_user) {
+                    $query->where('from_user_id', $auth_user->id);
+                }])
                 ->join('tutoring_subjects', 'tutoring_subjects.id', '=', 'tutoring_offers.subject_id')
                 ->join('schools', 'schools.id', '=', 'tutoring_offers.school_id')
                 ->join('users', 'users.id', '=', 'tutoring_offers.user_id')
@@ -414,7 +418,12 @@ class OfferController extends Controller
         $message = $validated['request_message'] ?? null;
 
         $data = $service->sendOfferRequest($auth_user->id, $offer_id, $message);
-        $service->sendOfferRequestEmail($data['offer_request'], $data['status']);
+
+        $offerRequest = TutoringOfferRequest::findOrFail($data['offer_request']['id']);
+        if ($offerRequest->sent_count < 3) {
+            // Es wird maximal 3 x eine EMail an den Empfänger versendet
+            $service->sendOfferRequestEmail($data['offer_request'], $data['status']);
+        }
 
         return response()->json($data, 200);
     }

@@ -72,10 +72,6 @@ export const useRequestStore = defineStore('TutoringRequestStore', {
 
             try {
                 const response = await axios.post(`/api/homepage/tutoring/request_mail_clicked`, { request_id })
-
-                console.log(response.data)
-                console.log(this.requests)
-
                 const index = this.requests.findIndex((r) => r.id === response.data.id)
                 if (index !== -1) {
                     this.requests[index] = response.data
