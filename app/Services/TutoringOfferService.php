@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Http\Resources\Tutoring\OfferRequestResource;
+use App\Http\Resources\Tutoring\OfferResource;
 use App\Models\School;
 use App\Models\TutoringOffer;
 use App\Models\TutoringOfferRequest;
@@ -162,7 +163,7 @@ class TutoringOfferService
     public function sendOfferRequest($user_id, $offer_id, $message)
     {
 
-        $offer = TutoringOffer::findOrFail($offer_id);
+        $offer = TutoringOffer::with(['school', 'subject', 'requests'])->findOrFail($offer_id);
 
 
 
@@ -179,16 +180,16 @@ class TutoringOfferService
                 'is_serious' => true,
                 'sent_at' => now(),
                 'sent_count' => 1,
-                'sent_count' => 0,
             ]);
-            $data = ['status' => 'NEW_REQUEST', 'offer_request' => new OfferRequestResource($offerRequest)];
+            $offer = TutoringOffer::with(['school', 'subject', 'requests'])->findOrFail($offer_id);
+            $data = ['status' => 'NEW_REQUEST', 'offer_request' => new OfferRequestResource($offerRequest), 'offer' => new OfferResource($offer)];
         } else {
             // Anfrage wurde bereits erstellt
-
             $offerRequest->sent_count = $offerRequest->sent_count + 1;
             $offerRequest->last_sent_at = now();
             $offerRequest->save();
-            $data = ['status' => 'EXISTING_REQUEST', 'offer_request' => new OfferRequestResource($offerRequest)];
+            $offer = TutoringOffer::with(['school', 'subject', 'requests'])->findOrFail($offer_id);
+            $data = ['status' => 'EXISTING_REQUEST', 'offer_request' => new OfferRequestResource($offerRequest), 'offer' => new OfferResource($offer)];
         }
 
         return $data;

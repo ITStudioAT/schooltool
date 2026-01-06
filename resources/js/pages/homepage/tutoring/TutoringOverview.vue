@@ -171,12 +171,14 @@
             <v-card flat color="transparent" class="border-md mt-4 pa-2" v-if="offers && offers.length > 0">
                 <div class="d-flex flex-row flex-wrap ga-2 justify-center">
                     <div style="width: 300px" v-for="offer in offers" :key="offer.id">
-                        <ItsCard
+                        <OfferCard
                             class="h-100"
-                            :title="offer.school.short_name"
-                            :subtitle="offer.subject.short_name + ': ' + offer.subject.long_name"
-                            :text="offer.title"
+                            :school_short_name="offer.school.short_name"
+                            :school_long_name="offer.school.long_name"
+                            :subject="offer.subject.short_name + ': ' + offer.subject.long_name"
+                            :title="offer.title"
                             :description="offer.description"
+                            :my_request="offer.my_request"
                             color="success"
                             button="Anschauen"
                             @clickCard="showOffersDetail(offer)"
@@ -250,13 +252,14 @@ import { useOfferStore } from '@/stores/tutoring/OfferStore'
 import { useUserStore } from '@/stores/tutoring/UserStore'
 import { useHomepageStore } from '@/stores/homepage/HomepageStore'
 import ItsCard from '@/pages/components/ItsCard.vue'
+import OfferCard from '@/pages/homepage/tutoring/components/OfferCard.vue'
 import SchoolAndUser from '@/pages/homepage/tutoring/components/TutoringOverview/SchoolAndUser.vue'
 import OffersDetail from '@/pages/homepage/tutoring/components/TutoringOverview/OffersDetail.vue'
 import MyRequests from '@/pages/homepage/tutoring/components/MyRequests.vue'
 import ReceivedRequests from '@/pages/homepage/tutoring/components/ReceivedRequests.vue'
 
 export default {
-    components: { ItsCard, SchoolAndUser, SchoolAndUser, OffersDetail, MyRequests, ReceivedRequests },
+    components: { ItsCard, SchoolAndUser, SchoolAndUser, OffersDetail, MyRequests, ReceivedRequests, OfferCard },
 
     async beforeMount() {
         this.tutoringStore = useTutoringStore()

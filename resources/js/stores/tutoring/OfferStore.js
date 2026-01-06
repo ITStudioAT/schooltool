@@ -17,6 +17,7 @@ export const useOfferStore = defineStore('TutoringOfferStore', {
             is_offer_dialog: false,
             send_request_status: null,
             offer_request: null,
+            actual_offer: null,
         }
     },
 
@@ -118,6 +119,12 @@ export const useOfferStore = defineStore('TutoringOfferStore', {
                 const response = await axios.post(`/api/homepage/tutoring/send_request`, { offer_id: offer_id, request_message: request_message })
                 this.send_request_status = response.data.status
                 this.offer_request = response.data.offer_request
+                this.actual_offer = response.data.offer
+                // Ersetzen der Offer in d er Liste der Offers
+                const index = this.offers.findIndex((o) => o.id === this.actual_offer.id)
+                if (index !== -1) {
+                    this.offers[index] = this.actual_offer
+                }
                 return true
             } catch (error) {
                 notification.notify({

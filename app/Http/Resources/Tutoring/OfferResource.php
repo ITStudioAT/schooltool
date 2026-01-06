@@ -53,6 +53,7 @@ class OfferResource extends JsonResource
                     'sent_at' => $request->sent_at?->format('Y-m-d H:i:s'),
                     'sent_count' => $request->sent_count,
                     'seen_at' => $request->seen_at?->format('Y-m-d H:i:s'),
+                    'mail_at' => $request->mail_at?->format('Y-m-d H:i:s'),
                     'message' => $request->message,
                     // weitere Felder die du brauchst
                 ] : null;

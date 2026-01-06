@@ -47,13 +47,11 @@
                     <div>Kosten pro Stunde: {{ parseFloat(offer.price_per_hour) }} Euro</div>
                 </div>
             </v-card-text>
-            <v-card-text>
-                {{ offer.my_request }}
-            </v-card-text>
+
             <v-card-actions v-if="!is_contact">
                 <v-btn
                     color="success"
-                    text="Kontakt"
+                    :text="offer.my_request ? 'Nachfragen' : 'Kontakt'"
                     @click="is_contact = true"
                     v-if="config.auth.is_auth && !offer.is_own_offer && (!offer.my_request || (offer.my_request && offer.my_request.sent_count < 3))" />
 
@@ -65,11 +63,19 @@
 
                 <v-btn class="ms-auto" text="Fertig" @click="is_offer_dialog = false" />
             </v-card-actions>
+
+            <!-- IS_CONTACT -->
             <v-form ref="form" v-model="is_valid" @submit.prevent="sendRequest" class="mb-4" v-if="!send_request_status">
                 <v-card-text v-if="is_contact">
                     <div class="text-body-1 font-weight-medium">Deine Anfrage:</div>
                     <v-alert type="info">Bitte schicke nur eine ernst gemeinte Anfrage ab!</v-alert>
-                    <v-textarea autofocus v-model="request_message" label="Deine Nachricht" :rules="[maxLength(1024)]" counter="1024"></v-textarea>
+                    <v-textarea
+                        autofocus
+                        v-model="request_message"
+                        label="Deine Nachricht"
+                        :rules="[maxLength(1024)]"
+                        counter="1024"
+                        v-if="!offer?.my_request?.sent_count || offer?.my_request?.sent_count == 0" />
                     <v-checkbox color="success" v-model="is_serious_request" label="Ich bestätige, dass es sich um eine ernst gemeinte Anfrage handelt." />
                 </v-card-text>
                 <v-card-actions class="d-flex flex-row align-center justify-space-between w-100" v-if="is_contact">
@@ -116,7 +122,7 @@ export default {
         }
     },
     computed: {
-        ...mapWritableState(useOfferStore, ['is_offer_dialog', 'send_request_status', 'offer_request']),
+        ...mapWritableState(useOfferStore, ['is_offer_dialog', 'send_request_status', 'offer_request', 'actual_offer']),
 
         selectedClasses() {
             // Konvertiere Object zu Array der ausgewählten Keys
