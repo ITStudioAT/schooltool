@@ -2,11 +2,11 @@
 
 ## Student offer interested
 
+-   Wenn Status geantwortet, dann soll kein Nachfragen mehr möglich sein!
 -   Gesendete Archivieren
 -   Gesendete Löschen
 -   Empfangene Archivieren
 -   Nur ohne archivierte Anzeigen
--   Einstieg auf die richtige Seite bei Info durch E-Mail über Request
 
 ## EMail Logo
 

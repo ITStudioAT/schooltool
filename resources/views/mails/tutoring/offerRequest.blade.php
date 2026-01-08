@@ -6,7 +6,7 @@ Um die Anfrage zu öffnen, klicke einfach auf folgenden Button:
 
 
 <x-mail::button :url="$data['data']['url']">
-Anfrage öffnen
+Anfragen öffnen
 </x-mail::button>
 
 

@@ -282,6 +282,9 @@ export default {
             this.school = this.offer_config.school
             this.school_name = this.school.short_name
             await this.initWithSchool()
+            console.log(this.offer_config.auth.is_auth)
+
+            if (this.$route.query.received_requests == 'true') this.action = 'received_requests'
         }
 
         this.is_init = true

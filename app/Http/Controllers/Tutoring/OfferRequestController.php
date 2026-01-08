@@ -133,20 +133,31 @@ class OfferRequestController extends Controller
     {
         $validated = $request->validated();
 
-        /*
-                if (Auth::check()) {
-            Auth::guard('web')->logout();
-            session()->invalidate();
-        }
+        $userService = new UserService();
 
-        */
+
         $user =  $service->getUserFromOfferRequest($validated['email'], $validated['id'], $validated['token']);
-        $auth_user = Auth::user();
-        if ($auth_user && $user->id != $auth_user->id) {
-            $userService = new UserService();
-            $userService->logout();
+        if (!$user) {
+            return redirect()->to('/homepage/tutoring_response?' . http_build_query([
+                'title' => 'Fehler',
+                'subtitle' => 'Fehler beim Anmelden',
+                'text' => 'Es ist ein Fehler beim Anmelden aufgetreten. Bitte melde dich anders an.',
+                'status' => 422
+            ]));
         }
 
-        // TODO
+        // Wenn ein User eingeloggt wäre, dann ausloggen
+        $auth_user = Auth::user();
+        if ($auth_user) $userService->logout();
+
+
+        // Login des Users
+        Auth::guard('web')->login($user, true);
+        session()->regenerate();
+
+        //
+        return redirect()->to(
+            '/homepage/tutoring_overview?school=ABG-SB&received_requests=true'
+        );
     }
 }
