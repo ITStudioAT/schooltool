@@ -14,6 +14,7 @@ use Barryvdh\Debugbar\Facades\Debugbar;
 use Carbon\Carbon;
 
 use function Symfony\Component\Clock\now;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 
@@ -214,7 +215,7 @@ class TutoringOfferService
         }
 
         $data = [
-            'url' => url('/homepage/tutoring/offer-request?id=' . $offerRequest->id . '&token=' . $offerRequest->token),
+            'url' => url('/homepage/tutoring/offer_request?email='  . $user->email . '&id=' . $offerRequest->id . '&token=' . $offerRequest->token),
         ];
 
         $mail = [
@@ -229,5 +230,15 @@ class TutoringOfferService
         // Debugbar::info('Prepared email data:', $data);
 
         Notification::route('mail', $user->email)->notify(new StandardEmail($mail));
+    }
+
+    public function getUserFromOfferRequest($email, $offer_request_id, $token)
+    {
+        $offerRequest = TutoringOfferRequest::find($offer_request_id);
+        if (!$offerRequest) return null;
+        if ($offerRequest->token !== $token) return null;
+        if ($offerRequest->token_expires_at < now()) return null;
+        if ($offerRequest->to_user->email !== $email) return null;
+        return $offerRequest?->to_user;
     }
 }

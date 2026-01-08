@@ -5,12 +5,17 @@ namespace App\Http\Controllers\Tutoring;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Tutoring\OfferRequestIndexRequest;
 use App\Http\Requests\Tutoring\OfferRequestMailClickedRequest;
+use App\Http\Requests\Tutoring\OfferRequestRequest;
 use App\Http\Resources\Admin\PaginateResource;
 use App\Http\Resources\Tutoring\OfferRequestResource;
 use App\Http\Resources\Tutoring\ReceivedOfferRequestResource;
 use App\Models\TutoringOfferRequest;
+use App\Services\TutoringOfferService;
+use App\Services\UserService;
 use Barryvdh\Debugbar\Facades\Debugbar;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class OfferRequestController extends Controller
 {
@@ -122,5 +127,26 @@ class OfferRequestController extends Controller
         return response()->json(
             new ReceivedOfferRequestResource($request),
         );
+    }
+
+    public function offerRequest(OfferRequestRequest $request, TutoringOfferService $service)
+    {
+        $validated = $request->validated();
+
+        /*
+                if (Auth::check()) {
+            Auth::guard('web')->logout();
+            session()->invalidate();
+        }
+
+        */
+        $user =  $service->getUserFromOfferRequest($validated['email'], $validated['id'], $validated['token']);
+        $auth_user = Auth::user();
+        if ($auth_user && $user->id != $auth_user->id) {
+            $userService = new UserService();
+            $userService->logout();
+        }
+
+        // TODO
     }
 }
