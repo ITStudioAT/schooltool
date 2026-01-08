@@ -7,10 +7,12 @@ use App\Models\RegisterDateBooking;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
+use DebugBar\DebugBar;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Facades\Log;
 
 /**
  * @property int $id
@@ -129,12 +131,12 @@ class Register extends Model
             'register_id',            // FK on pivot to registers.id
             'user_id'                 // FK on pivot to users.id
         )
-        ->withPivot('school_id', 'schoolyear_id', 'register_date_id')
-        ->distinct();                // avoid duplicates when user has multiple bookings
+            ->withPivot('school_id', 'schoolyear_id', 'register_date_id')
+            ->distinct();                // avoid duplicates when user has multiple bookings
     }
 
     public function hasDependencies(): bool
     {
-        return false;
+        return $this->dates->count() != 0;
     }
 }

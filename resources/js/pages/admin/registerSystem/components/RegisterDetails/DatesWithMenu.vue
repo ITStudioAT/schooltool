@@ -16,6 +16,7 @@
                     </div>
                 </v-form>
             </v-card>
+
             <!-- Tage zur Auswahl -->
             <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2" :disabled="action != ''">
                 <its-menu-button
@@ -186,8 +187,8 @@
                         </div>
 
                         <div class="d-flex flex-row align-center justify-space-between mt-4">
-                            <v-btn color="success" slim flat @click="abortDelete">Abbruch</v-btn>
-                            <v-btn color="error" slim flat type="submit" v-if="countRegistrations(selected_register_dates) == 0">Löschen</v-btn>
+                            <v-btn color="success" slim flat @click="abortDelete" :disabled="is_deleting">Abbruch</v-btn>
+                            <v-btn color="error" slim flat type="submit" v-if="countRegistrations(selected_register_dates) == 0" :disabled="is_deleting">Löschen</v-btn>
                         </div>
                     </v-form>
                 </its-grid-box>
@@ -237,6 +238,7 @@ export default {
             search_string: '',
             is_valid: false,
             subaction: '',
+            is_deleting: false,
         }
     },
 
@@ -297,13 +299,7 @@ export default {
                 return date
             })
         },
-        async refresh() {
-            this.search_string = ''
-            if (this.days.length == 0) return
-            if (!this.selected_day) this.selected_day = this.days[0]
-            await this.loadRegisterDates(this.selected_day.date)
-            this.selected_register_dates = []
-        },
+
         async search(search_string) {
             if (!search_string || search_string == '') {
                 await this.loadRegisterDates(this.selected_day.date)
@@ -335,11 +331,40 @@ export default {
         },
 
         async doDeleteDates(register_dates) {
+            const old_id = this.selected_day.id
             if (!(await this.registerDateStore.deleteRegisterDates(register_dates))) return
+            this.is_deleting = true
+            await this.adminStore.loadConfig()
             await this.registerDateStore.loadDays()
-            this.selected_day = this.days.find((item) => item.id === this.selected_day.id)
+
+            this.selected_day = this.days.find((day) => day.id === old_id)
+
+            const day = this.days.find((day) => day.id === old_id)
+
+            if (day) {
+                this.selected_day = day
+            } else {
+                // day ist undefined
+                this.selected_day = null
+            }
             this.refresh()
+            this.is_deleting = false
             this.action = ''
+        },
+
+        async refresh() {
+            this.search_string = ''
+            if (this.days.length == 0) {
+                this.register_dates = []
+                return
+            }
+            if (!this.selected_day && this.days.length >= 1) this.selected_day = this.days[0]
+            if (this.selected_day) {
+                await this.loadRegisterDates(this.selected_day.date)
+            } else {
+                this.register_dates = []
+            }
+            this.selected_register_dates = []
         },
 
         selectDay(day) {

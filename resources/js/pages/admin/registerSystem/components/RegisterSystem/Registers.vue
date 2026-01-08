@@ -205,9 +205,9 @@ export default {
 
         async destroy(data) {
             var answer = false
-            answer = await this.registerStore.destroy(data)
+            if (!(await this.registerStore.destroy(data))) return
             await this.loadRegisters()
-            if (answer) this.action = ''
+            this.action = ''
             this.selected_register = null
         },
 
