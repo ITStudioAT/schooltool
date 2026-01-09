@@ -26,7 +26,7 @@ class TutoringOfferService
             'status' => true,
             'code' => 200,
             'message' => 'Speicherung möglich',
-            'data' => $data
+            'data' => $data,
         ];
         return $answer;
     }

@@ -141,6 +141,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/homepage/tutoring/offer_requests', \App\Http\Controllers\Tutoring\OfferRequestController::class);
         Route::get('/homepage/tutoring/received_offer_requests', [\App\Http\Controllers\Tutoring\OfferRequestController::class, 'receivedRequests']);
         Route::post('/homepage/tutoring/request_mail_clicked', [\App\Http\Controllers\Tutoring\OfferRequestController::class, 'requestMailClicked']);
+        Route::post('/homepage/tutoring/to_archive', [\App\Http\Controllers\Tutoring\OfferRequestController::class, 'toArchive']);
+        Route::post('/homepage/tutoring/to_active', [\App\Http\Controllers\Tutoring\OfferRequestController::class, 'toActive']);
 
         //api/homepage/tutoring/offer_requests
     });

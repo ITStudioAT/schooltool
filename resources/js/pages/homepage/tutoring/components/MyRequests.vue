@@ -1,7 +1,10 @@
 <template>
     <v-card-text v-if="is_loaded">
         <v-card tile flat color="tutoring_card">
-            <v-card-title class="bg-tutoring_card_title mb-2">Meine Anfragen</v-card-title>
+            <v-card-title class="bg-tutoring_card_title mb-2">
+                <span v-if="!show_archived">Meine aktiven Anfragen</span>
+                <span v-if="show_archived">Meine archivierten Anfragen</span>
+            </v-card-title>
 
             <!-- Es existieren Angebote -->
             <v-card-text v-if="requests && requests.length > 0" class="pa-0">
@@ -37,7 +40,8 @@
                         <v-btn block tile flat size="small" color="error" v-if="!request.seen_at && !request.last_seen_at && delete_level == 1" @click="doDelete(request)">
                             Löschen?
                         </v-btn>
-                        <v-btn block tile flat size="small" color="primary">Archivieren</v-btn>
+                        <v-btn block tile flat size="small" color="primary" @click="toArchive(request)" v-if="!request.archived_at">Archivieren</v-btn>
+                        <v-btn block tile flat size="small" color="success" @click="toActive(request)" v-if="request.archived_at">Aktivieren</v-btn>
                     </v-card>
                 </v-card>
 
@@ -106,16 +110,33 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useRequestStore, ['requests', 'meta']),
+        ...mapWritableState(useRequestStore, ['requests', 'meta', 'show_archived']),
     },
 
-    watch: {},
+    watch: {
+        show_archived: {
+            async handler() {
+                await this.requestStore.index()
+            },
+            // immediate: true  // falls du beim Mount auch laden willst
+        },
+    },
 
     methods: {
         async doDelete(request) {
             await this.requestStore.delete(request.id)
             await this.requestStore.index(this.meta.current_page)
             this.delete_level = 0
+        },
+
+        async toArchive(request) {
+            await this.requestStore.toArchive(request.id)
+            await this.requestStore.index(this.meta.current_page)
+        },
+
+        async toActive(request) {
+            await this.requestStore.toActive(request.id)
+            await this.requestStore.index(this.meta.current_page)
         },
 
         formatDate(value) {

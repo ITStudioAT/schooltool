@@ -17,6 +17,8 @@ export const useRequestStore = defineStore('TutoringRequestStore', {
             is_request_dialog: false,
             send_request_status: null,
             request_request: null,
+            show_archived: false,
+            show_archived_to_user: false,
         }
     },
 
@@ -24,9 +26,10 @@ export const useRequestStore = defineStore('TutoringRequestStore', {
         async index(page = null) {
             const notification = useNotificationStore()
             const homepageStore = useHomepageStore()
+            const show_archived = this.show_archived
             homepageStore.is_loading++
             try {
-                const response = await axios.get(`/api/homepage/tutoring/offer_requests`, { params: { page } })
+                const response = await axios.get(`/api/homepage/tutoring/offer_requests`, { params: { page, show_archived } })
                 this.requests = response.data.data
                 this.meta = response.data.meta
                 return true
@@ -97,6 +100,46 @@ export const useRequestStore = defineStore('TutoringRequestStore', {
             homepageStore.is_loading++
             try {
                 await axios.delete(`/api/homepage/tutoring/offer_requests/${request_id}`)
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
+        async toArchive(request_id) {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+            try {
+                await axios.post(`/api/homepage/tutoring/to_archive/`, { request_id })
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
+        async toActive(request_id) {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+            try {
+                await axios.post(`/api/homepage/tutoring/to_active/`, { request_id })
                 return true
             } catch (error) {
                 notification.notify({

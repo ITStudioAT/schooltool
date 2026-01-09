@@ -83,7 +83,8 @@
                     <ItsCard title="Zurück" text="Zurück zur Übersicht." color="success" button="Zurück" @clickCard="action = ''" />
                 </div>
                 <div class="d-flex flex-wrap justify-center ga-2">
-                    <ItsCard title="Archiv" text="Zeige alle archivierten Anfragen an." color="success" button="Zum Archiv" @clickCard="" />
+                    <ItsCard title="Archiv" text="Zeige alle archivierten Anfragen an." color="success" button="Zum Archiv" @clickCard="toArchive(true)" v-if="!show_archived" />
+                    <ItsCard title="Archiv" text="Zeige alle aktiven Anfragen an." color="success" button="Zu den aktiven" @clickCard="toArchive(false)" v-if="show_archived" />
                 </div>
             </v-card>
 
@@ -249,6 +250,7 @@
 import { mapWritableState } from 'pinia'
 import { useTutoringStore } from '@/stores/tutoring/TutoringStore'
 import { useOfferStore } from '@/stores/tutoring/OfferStore'
+import { useRequestStore } from '@/stores/tutoring/RequestStore'
 import { useUserStore } from '@/stores/tutoring/UserStore'
 import { useHomepageStore } from '@/stores/homepage/HomepageStore'
 import ItsCard from '@/pages/components/ItsCard.vue'
@@ -264,6 +266,7 @@ export default {
     async beforeMount() {
         this.tutoringStore = useTutoringStore()
         this.offerStore = useOfferStore()
+        this.requestStore = useRequestStore()
         this.userStore = useUserStore()
         this.homepageStore = useHomepageStore()
 
@@ -316,6 +319,7 @@ export default {
         ...mapWritableState(useTutoringStore, ['selected_school_id', 'data', 'action']),
         ...mapWritableState(useOfferStore, ['offer_config', 'error', 'offers', 'is_offer_dialog', 'meta', 'search_string']),
         ...mapWritableState(useHomepageStore, ['schools']),
+        ...mapWritableState(useRequestStore, ['show_archived']),
 
         availableSchools() {
             return this.schools.filter((school) => {
@@ -359,6 +363,10 @@ export default {
     },
 
     methods: {
+        toArchive(status) {
+            this.show_archived = status
+        },
+
         async addSchool(school_id) {
             if (!school_id) return
 

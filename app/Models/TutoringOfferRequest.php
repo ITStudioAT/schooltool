@@ -16,6 +16,8 @@ class TutoringOfferRequest extends Model
         'seen_at' => 'datetime:Y-m-d H:i:s',
         'last_sent_at' => 'datetime:Y-m-d H:i:s',
         'last_seen_at' => 'datetime:Y-m-d H:i:s',
+        'archived_at' => 'datetime:Y-m-d H:i:s',
+        'to_user_archived_at' => 'datetime:Y-m-d H:i:s',
         'token_expires_at' => 'datetime:Y-m-d H:i:s',
     ];
 

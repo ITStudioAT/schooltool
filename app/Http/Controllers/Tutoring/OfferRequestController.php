@@ -30,11 +30,15 @@ class OfferRequestController extends Controller
 
         $validated = $request->validated();
         // $search_string = $validated['search_string'] ?? null;
+        $show_archived = filter_var($validated['show_archived'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
         $requests = TutoringOfferRequest::where('from_user_id', $auth_user->id)
-            ->with('school')
-            ->with('offer')
-            ->with('offer.subject')
+            ->when(
+                $show_archived,
+                fn($query) => $query->whereNotNull('archived_at'),
+                fn($query) => $query->whereNull('archived_at')
+            )
+            ->with(['school', 'offer.subject'])
             ->orderBy('sent_at', 'DESC')
             ->paginate(config('schooltool.pagination'));
 
@@ -169,5 +173,41 @@ class OfferRequestController extends Controller
         return redirect()->to(
             '/homepage/tutoring_overview?school=ABG-SB&received_requests=true'
         );
+    }
+
+    public function toArchive(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['tutoring_user'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'request_id' => ['integer', 'exists:tutoring_offer_requests,id'],
+        ]);
+
+        $request = TutoringOfferRequest::findOrFail($validated['request_id']);
+        $request->archived_at = now();
+        $request->save();
+
+
+        return response()->json(new OfferRequestResource($request), 200);
+    }
+
+    public function toActive(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['tutoring_user'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'request_id' => ['integer', 'exists:tutoring_offer_requests,id'],
+        ]);
+
+        $request = TutoringOfferRequest::findOrFail($validated['request_id']);
+        $request->archived_at = null;
+        $request->save();
+
+
+        return response()->json(new OfferRequestResource($request), 200);
     }
 }

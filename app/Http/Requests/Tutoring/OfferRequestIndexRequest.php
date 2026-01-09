@@ -24,6 +24,7 @@ class OfferRequestIndexRequest extends FormRequest
     {
         return [
             'page' => 'nullable|integer',
+            'show_archived' => 'sometimes|nullable',
         ];
     }
 }
