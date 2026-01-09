@@ -2,7 +2,6 @@
 
 ## Student offer interested
 
--   Wenn Status geantwortet, dann soll kein Nachfragen mehr möglich sein!
 -   Gesendete Archivieren
 -   Gesendete Löschen
 -   Empfangene Archivieren

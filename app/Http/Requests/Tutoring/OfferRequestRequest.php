@@ -22,8 +22,8 @@ class OfferRequestRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'email' => ['required', 'email', 'exists:users,email'],
-            'id' => ['required', 'integer', 'exists:tutoring_offer_requests,id'],
+            'email' => ['required', 'email'],
+            'id' => ['required', 'integer'],
             'token' => ['required', 'uuid']
         ];
     }

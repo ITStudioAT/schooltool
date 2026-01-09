@@ -142,7 +142,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/homepage/tutoring/received_offer_requests', [\App\Http\Controllers\Tutoring\OfferRequestController::class, 'receivedRequests']);
         Route::post('/homepage/tutoring/request_mail_clicked', [\App\Http\Controllers\Tutoring\OfferRequestController::class, 'requestMailClicked']);
 
-        //request_mail_clicked
+        //api/homepage/tutoring/offer_requests
     });
 
     /* SANCTUM - admin, tutoring_admin, register_admin */

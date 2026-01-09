@@ -90,5 +90,25 @@ export const useRequestStore = defineStore('TutoringRequestStore', {
                 homepageStore.is_loading--
             }
         },
+
+        async delete(request_id) {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+            try {
+                await axios.delete(`/api/homepage/tutoring/offer_requests/${request_id}`)
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
     },
 })

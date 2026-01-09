@@ -22,6 +22,7 @@ class OfferRequestResource extends JsonResource
             'last_sent_at' => $this->last_sent_at?->format('Y-m-d H:i:s'),
             'seen_at' => $this->seen_at?->format('Y-m-d H:i:s'),
             'last_seen_at' => $this->last_seen_at?->format('Y-m-d H:i:s'),
+            'mail_at' => $this->mail_at?->format('Y-m-d H:i:s'),
             'school' => $this->whenLoaded('school', function () {
                 return [
                     'id' => $this->school->id,

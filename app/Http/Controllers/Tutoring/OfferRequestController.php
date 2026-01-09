@@ -106,9 +106,16 @@ class OfferRequestController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(TutoringOfferRequest $tutoringOfferRequest)
+    public function destroy(TutoringOfferRequest $offerRequest)
     {
-        //
+        if (! $auth_user = $this->userHasRole(['tutoring_user'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        if (!$auth_user->id == $offerRequest->from_user_id) abort(422, "Du bist nicht berechtigt, diese Anfrage zu löschen.");
+        $offerRequest->delete();
+
+        return response()->noContent();
     }
 
     public function requestMailClicked(OfferRequestMailClickedRequest $request)
@@ -137,11 +144,14 @@ class OfferRequestController extends Controller
 
 
         $user =  $service->getUserFromOfferRequest($validated['email'], $validated['id'], $validated['token']);
+
+        Log::info($user);
+
         if (!$user) {
             return redirect()->to('/homepage/tutoring_response?' . http_build_query([
                 'title' => 'Fehler',
                 'subtitle' => 'Fehler beim Anmelden',
-                'text' => 'Es ist ein Fehler beim Anmelden aufgetreten. Bitte melde dich anders an.',
+                'text' => 'Es ist ein Fehler beim Anmelden aufgetreten oder die Anfrage wurde gelöscht.',
                 'status' => 422
             ]));
         }

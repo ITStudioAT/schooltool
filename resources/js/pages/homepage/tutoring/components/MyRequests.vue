@@ -17,17 +17,26 @@
                             {{ request.offer.title + ': ' + request.offer.description }}
                         </div>
                         <div class="d-flex flex-row align-center flex-wrap ga-2 mt-2">
-                            <v-chip size="small" color="info" v-if="request.last_sent_at">
+                            <v-chip size="small" color="info" v-if="request.last_sent_at && !request.mail_at">
                                 Zuletzt nachgefragt
                                 <span v-if="request.sent_count > 0">&nbsp;({{ request.sent_count }}x)</span>
                                 : {{ request.last_sent_at }}
                             </v-chip>
-                            <v-chip size="small" color="success" v-if="request.last_seen_at || request.seen_at">Gelesen: {{ request.last_seen_at || request.seen_at }}</v-chip>
-                            <v-chip size="small" color="warning" v-if="!request.seen_at && !request.last_seen_at">Noch nicht gelesen</v-chip>
+                            <v-chip size="small" color="success" v-if="request.mail_at">Beantwortet: {{ request.mail_at }}</v-chip>
+                            <v-chip size="small" color="success" v-if="request.seen_at && !request.mail_at">Gelesen: {{ request.seen_at }}</v-chip>
+                            <v-chip size="small" color="warning" v-if="!request.seen_at">Noch nicht gelesen</v-chip>
                         </div>
                     </v-card>
                     <v-card style="width: 100px; flex-shrink: 0" class="h-100 d-flex flex-column ga-2" tile flat color="transparent">
-                        <v-btn block tile flat size="small" color="warning" v-if="!request.seen_at && !request.last_seen_at">Löschen</v-btn>
+                        <v-btn block tile flat size="small" color="warning" v-if="!request.seen_at && !request.last_seen_at && delete_level == 0" @click="delete_level = 1">
+                            Löschen
+                        </v-btn>
+                        <v-btn block tile flat size="small" color="success" v-if="!request.seen_at && !request.last_seen_at && delete_level == 1" @click="delete_level = 0">
+                            N. Löschen
+                        </v-btn>
+                        <v-btn block tile flat size="small" color="error" v-if="!request.seen_at && !request.last_seen_at && delete_level == 1" @click="doDelete(request)">
+                            Löschen?
+                        </v-btn>
                         <v-btn block tile flat size="small" color="primary">Archivieren</v-btn>
                     </v-card>
                 </v-card>
@@ -92,6 +101,7 @@ export default {
         return {
             requestStore: null,
             is_loaded: false,
+            delete_level: 0,
         }
     },
 
@@ -102,6 +112,12 @@ export default {
     watch: {},
 
     methods: {
+        async doDelete(request) {
+            await this.requestStore.delete(request.id)
+            await this.requestStore.index(this.meta.current_page)
+            this.delete_level = 0
+        },
+
         formatDate(value) {
             if (!value) return null
             const date = new Date(value)
