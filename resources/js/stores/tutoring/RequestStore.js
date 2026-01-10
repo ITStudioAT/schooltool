@@ -18,7 +18,7 @@ export const useRequestStore = defineStore('TutoringRequestStore', {
             send_request_status: null,
             request_request: null,
             show_archived: false,
-            show_archived_to_user: false,
+            show_to_user_archived: false,
         }
     },
 

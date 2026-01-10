@@ -121,7 +121,7 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useRequestStore, ['requests', 'meta']),
+        ...mapWritableState(useRequestStore, ['requests', 'meta', 'show_to_user_archived']),
     },
 
     watch: {},

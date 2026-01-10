@@ -93,6 +93,22 @@
                 <div class="d-flex flex-wrap justify-center ga-2">
                     <ItsCard title="Zurück" text="Zurück zur Übersicht." color="success" button="Zurück" @clickCard="action = ''" />
                 </div>
+                <div class="d-flex flex-wrap justify-center ga-2">
+                    <ItsCard
+                        title="Archiv"
+                        text="Zeige alle archivierten Anfragen an."
+                        color="success"
+                        button="Zum Archiv"
+                        @clickCard="toToUserArchive(true)"
+                        v-if="!show_to_user_archived" />
+                    <ItsCard
+                        title="Archiv"
+                        text="Zeige alle aktiven Anfragen an."
+                        color="success"
+                        button="Zu den aktiven"
+                        @clickCard="toToUserArchive(false)"
+                        v-if="show_to_user_archived" />
+                </div>
             </v-card>
         </v-card>
 
@@ -319,7 +335,7 @@ export default {
         ...mapWritableState(useTutoringStore, ['selected_school_id', 'data', 'action']),
         ...mapWritableState(useOfferStore, ['offer_config', 'error', 'offers', 'is_offer_dialog', 'meta', 'search_string']),
         ...mapWritableState(useHomepageStore, ['schools']),
-        ...mapWritableState(useRequestStore, ['show_archived']),
+        ...mapWritableState(useRequestStore, ['show_archived', 'show_to_user_archived']),
 
         availableSchools() {
             return this.schools.filter((school) => {
@@ -365,6 +381,10 @@ export default {
     methods: {
         toArchive(status) {
             this.show_archived = status
+        },
+
+        toToUserArchive(status) {
+            this.show_to_user_archived = status
         },
 
         async addSchool(school_id) {
