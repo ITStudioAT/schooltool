@@ -90,6 +90,14 @@ class RegisterController extends Controller
         $validated['school_id'] = $auth_user->school_id;
         $validated['schoolyear_id'] = $auth_user->schoolyear_id;
 
+        // HTML sanitizen - nur erlaubte Tags zulassen
+        if (isset($validated['description_on_website'])) {
+            $validated['description_on_website'] = strip_tags(
+                $validated['description_on_website'],
+                '<p><br><strong><b><u><em><i>'
+            );
+        }
+
         $register = Register::create($validated);
         return response()->json(new RegisterResource($register), 200);
     }
@@ -111,6 +119,16 @@ class RegisterController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
         $validated = $request->validated();
+
+        // HTML sanitizen - nur erlaubte Tags zulassen
+        if (isset($validated['description_on_website'])) {
+            $validated['description_on_website'] = strip_tags(
+                $validated['description_on_website'],
+                '<p><br><strong><b><u><em><i>'
+            );
+        }
+
+
         $register->update($validated);
         return response()->json(new RegisterResource($register), 200);
     }

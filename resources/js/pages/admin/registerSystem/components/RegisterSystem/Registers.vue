@@ -51,7 +51,10 @@
             <its-grid-box color="primary" :title="data.id ? selected_register.name : 'Neues Anmeldesystem anlegen'" class="h-100 w-100">
                 <v-form ref="form" v-model="is_valid" @submit.prevent="save(data)" class="mb-4">
                     <v-text-field autofocus v-model="data.name" label="Bezeichnung" :rules="[required(), maxLength(255)]" />
-                    <v-textarea v-model="data.description_on_website" label="Beschreibung am Bildschirm" :rules="[maxLength(1024)]" />
+                    <div class="mb-4">
+                        <label class="text-caption text-medium-emphasis">Beschreibung am Bildschirm</label>
+                        <its-rich-text-editor v-model="data.description_on_website" />
+                    </div>
 
                     <v-text-field v-model="data.max_registrations" label="Max. Anmeldungen gesamt (0=unendlich)" :rules="[required(), min(0)]" />
 
@@ -128,6 +131,7 @@
     </v-row>
 </template>
 <script>
+import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
@@ -141,7 +145,7 @@ export default {
         return useValidationRulesSetup()
     },
 
-    components: { ItsMenuButton, ItsGridBox },
+    components: { ItsMenuButton, ItsGridBox, ItsRichTextEditor },
 
     async beforeMount() {
         this.adminStore = useAdminStore()

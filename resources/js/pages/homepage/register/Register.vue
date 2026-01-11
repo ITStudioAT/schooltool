@@ -43,9 +43,7 @@
 
             <!-- description_on_website anzeigen -->
             <v-alert closable tile color="primary" border="start" border-color="secondary" class="mt-4" v-if="active_register.description_on_website">
-                <div style="white-space: pre-line">
-                    {{ active_register.description_on_website }}
-                </div>
+                <div v-html="active_register.description_on_website"></div>
             </v-alert>
         </v-card>
 
@@ -243,7 +241,7 @@ export default {
             if (!(await this.registerStore.checkEmail(data))) return
         },
         startRegister() {
-            Object.keys(this.data).forEach(key => delete this.data[key])
+            Object.keys(this.data).forEach((key) => delete this.data[key])
             this.data.school_id = this.config?.school?.id
             if (this.registers.length == 1) this.data.step = 'EMAIL'
             if (this.registers.length > 1) {

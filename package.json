@@ -19,6 +19,9 @@
         "vite": "^7.0.0"
     },
     "dependencies": {
+        "@tiptap/extension-underline": "^3.15.3",
+        "@tiptap/starter-kit": "^3.15.3",
+        "@tiptap/vue-3": "^3.15.3",
         "@vitejs/plugin-vue": "^6.0.1",
         "filepond": "^4.32.10",
         "filepond-plugin-file-validate-type": "^1.2.9",
