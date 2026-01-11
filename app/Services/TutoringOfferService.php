@@ -2,14 +2,19 @@
 
 namespace App\Services;
 
+use App\Http\Resources\Tutoring\OfferRequestResource;
+use App\Http\Resources\Tutoring\OfferResource;
 use App\Models\School;
 use App\Models\TutoringOffer;
+use App\Models\TutoringOfferRequest;
 use App\Models\TutoringSubject;
+use App\Models\User;
 use App\Notifications\StandardEmail;
 use Barryvdh\Debugbar\Facades\Debugbar;
 use Carbon\Carbon;
-use function Symfony\Component\Clock\now;
 
+use function Symfony\Component\Clock\now;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 
@@ -21,7 +26,7 @@ class TutoringOfferService
             'status' => true,
             'code' => 200,
             'message' => 'Speicherung möglich',
-            'data' => $data
+            'data' => $data,
         ];
         return $answer;
     }
@@ -52,6 +57,10 @@ class TutoringOfferService
         if ($offer->must_be_accepted) {
             $data['accepted_at'] = null;
             $data['is_active'] = false;
+        } else {
+            if (!$offer->accepted_at) {
+                $data['accepted_at'] = now();
+            }
         }
 
         $offer->update($data);
@@ -109,16 +118,10 @@ class TutoringOfferService
 
         // Prüfen der Gültigkeit des E-Mail-Mentors
         if ($data['email_mentor'] != $offer->email_mentor) abort(403, 'E-Mail-Adresse des Tutors ist ungültig.');
-        Debugbar::info(
-            $data['token'],
-            $offer->token,
-            Carbon::parse($offer->token_expires_at)->toDateTimeString(),
-            Carbon::now()->toDateTimeString()
-        );
+
         if ($data['token'] !== $offer->token || Carbon::parse($offer->token_expires_at)->lt(now())) {
             abort(403, 'Token ungültig oder abgelaufen.');
         }
-
 
         if ($data['action'] == 'confirm') {
             $offer->accepted_at = now();
@@ -156,5 +159,86 @@ class TutoringOfferService
         ];
 
         Notification::route('mail', $offer->user->email)->notify(new StandardEmail($mail));
+    }
+
+    public function sendOfferRequest($user_id, $offer_id, $message)
+    {
+
+        $offer = TutoringOffer::with(['school', 'subject', 'requests'])->findOrFail($offer_id);
+
+
+
+        $offerRequest = TutoringOfferRequest::where('school_id', $offer->school_id)->where('offer_id', $offer->id)->where('from_user_id', $user_id)->where('to_user_id', $offer->user_id)->first();
+
+        if (!$offerRequest) {
+            // Anfrage wurde bisher nicht erstellt
+            $offerRequest = TutoringOfferRequest::create([
+                'school_id' => $offer->school_id,
+                'offer_id' => $offer->id,
+                'from_user_id' => $user_id,
+                'to_user_id' => $offer->user_id,
+                'message' => $message,
+                'is_serious' => true,
+                'sent_at' => now(),
+                'sent_count' => 1,
+            ]);
+            $offer = TutoringOffer::with(['school', 'subject', 'requests'])->findOrFail($offer_id);
+            $data = ['status' => 'NEW_REQUEST', 'offer_request' => new OfferRequestResource($offerRequest), 'offer' => new OfferResource($offer)];
+        } else {
+            // Anfrage wurde bereits erstellt
+            $offerRequest->sent_count = $offerRequest->sent_count + 1;
+            $offerRequest->last_sent_at = now();
+            $offerRequest->save();
+            $offer = TutoringOffer::with(['school', 'subject', 'requests'])->findOrFail($offer_id);
+            $data = ['status' => 'EXISTING_REQUEST', 'offer_request' => new OfferRequestResource($offerRequest), 'offer' => new OfferResource($offer)];
+        }
+
+        return $data;
+    }
+
+    public function sendOfferRequestEmail($offerRequest, $status)
+    {
+
+        $offerRequest = TutoringOfferRequest::findOrFail($offerRequest->id);
+
+        $school = $offerRequest->school;
+        $user = $offerRequest->to_user;
+
+        $offerRequest->token = Str::uuid();;
+        $offerRequest->token_expires_at = Carbon::now()->addMinutes((int) config('schooltool.token_expire_time'));
+        $offerRequest->save();
+
+        if ($status == 'NEW_REQUEST') {
+            $subject = 'Neue Anfrage für Ihr Nachhilfe-Angebot';
+        } else {
+            $subject = 'Erinnerung: Anfrage für Ihr Nachhilfe-Angebot';
+        }
+
+        $data = [
+            'url' => url('/homepage/tutoring/offer_request?email='  . $user->email . '&id=' . $offerRequest->id . '&token=' . $offerRequest->token),
+        ];
+
+        $mail = [
+            'from_address' => config('schooltool.noreply_email'),
+            'from_name' => $school->long_name,
+            'logo' => asset('/storage/images/' . $school->logo),
+            'subject' => $subject,
+            'markdown' => 'mails.tutoring.offerRequest',
+            'data' => $data,
+        ];
+
+        // Debugbar::info('Prepared email data:', $data);
+
+        Notification::route('mail', $user->email)->notify(new StandardEmail($mail));
+    }
+
+    public function getUserFromOfferRequest($email, $offer_request_id, $token)
+    {
+        $offerRequest = TutoringOfferRequest::find($offer_request_id);
+        if (!$offerRequest) return null;
+        if ($offerRequest->token !== $token) return null;
+        if ($offerRequest->token_expires_at < now()) return null;
+        if ($offerRequest->to_user->email !== $email) return null;
+        return $offerRequest?->to_user;
     }
 }

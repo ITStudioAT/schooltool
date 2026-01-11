@@ -385,6 +385,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             const notification = useNotificationStore()
             this.is_loading++
             this.api_response = null
+
             try {
                 await axios.get('/sanctum/csrf-cookie')
                 this.api_response = await axios.post('/api/admin/login_step_2', { data })

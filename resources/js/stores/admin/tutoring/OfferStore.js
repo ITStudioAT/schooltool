@@ -163,7 +163,6 @@ export const useOfferStore = defineStore('AdminTutoringOfferStore', {
         },
 
         async toggleActive(id) {
-            console.log('toggleActive')
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++

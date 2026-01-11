@@ -15,6 +15,9 @@ export const useOfferStore = defineStore('TutoringOfferStore', {
             my_offers: null,
             offer_config: null,
             is_offer_dialog: false,
+            send_request_status: null,
+            offer_request: null,
+            actual_offer: null,
         }
     },
 
@@ -102,6 +105,35 @@ export const useOfferStore = defineStore('TutoringOfferStore', {
                     type: 'error',
                     timeout: 3000,
                 })
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
+        async sendRequest(offer_id, request_message) {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+            try {
+                const response = await axios.post(`/api/homepage/tutoring/send_request`, { offer_id: offer_id, request_message: request_message })
+                this.send_request_status = response.data.status
+                this.offer_request = response.data.offer_request
+                this.actual_offer = response.data.offer
+                // Ersetzen der Offer in d er Liste der Offers
+                const index = this.offers.findIndex((o) => o.id === this.actual_offer.id)
+                if (index !== -1) {
+                    this.offers[index] = this.actual_offer
+                }
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.timeout,
+                })
+                this.error = error
                 return false
             } finally {
                 homepageStore.is_loading--

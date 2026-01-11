@@ -15,45 +15,24 @@
                         -->
 
                         <!-- Andere Selektionen: -->
-                        <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2 mt-2" :disabled="action != ''">
-                            <v-btn color="primary" slim flat tile class="text-caption" @click="toggleAccepted">
-                                <div class="d-flex flex-row align-center ga-2" v-if="select_accepted == 'all'">
-                                    <div>Alle</div>
-                                    <div>
-                                        <v-icon size="small" icon="mdi-check" color="success" />
-                                        <v-icon size="small" icon="mdi-help" color="warning" />
-                                    </div>
-                                </div>
-                                <div class="d-flex flex-row align-center ga-2" v-if="select_accepted == 'yes'">
-                                    <div>Nur genehmigte</div>
-                                    <v-icon size="small" icon="mdi-check" color="success" />
-                                </div>
-                                <div class="d-flex flex-row align-center ga-2" v-if="select_accepted == 'no'">
-                                    <div>Nur offene</div>
-                                    <v-icon size="small" icon="mdi-help" color="warning" />
-                                </div>
-                            </v-btn>
-                            <v-btn color="primary" slim flat tile class="text-caption" @click="toggleOnline">
-                                <div class="d-flex flex-row align-center ga-2" v-if="select_online == 'all'">
-                                    <div>Alle</div>
-                                    <div>
-                                        <v-icon size="small" icon="mdi-cloud" color="success" />
-                                        <v-icon size="small" icon="mdi-cloud-off" color="error" />
-                                    </div>
-                                </div>
-                                <div class="d-flex flex-row align-center ga-2" v-if="select_online == 'yes'">
-                                    <div>Nur online</div>
-                                    <div>
-                                        <v-icon size="small" icon="mdi-cloud" color="success" />
-                                    </div>
-                                </div>
-                                <div class="d-flex flex-row align-center ga-2" v-if="select_online == 'no'">
-                                    <div>Nur offline</div>
-                                    <div>
-                                        <v-icon size="small" icon="mdi-cloud-off" color="error" />
-                                    </div>
-                                </div>
-                            </v-btn>
+                        <v-card tile flat color="transparent" class="mt-2" :disabled="action != ''">
+                            <div class="text-body-2 font-weight-medium">Genehmigung:</div>
+                            <div class="d-flex flex-row flex-wrap align-center ga-2">
+                                <v-btn :color="select_accepted == 'all' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleAccepted('all')">Alle</v-btn>
+                                <v-btn :color="select_accepted == 'no' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleAccepted('no')">
+                                    Nur Offene
+                                </v-btn>
+                                <v-btn :color="select_accepted == 'yes' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleAccepted('yes')">
+                                    Nur Genehmtigte
+                                </v-btn>
+                            </div>
+
+                            <div class="text-body-2 font-weight-medium mt-2">Online:</div>
+                            <div class="d-flex flex-row flex-wrap align-center ga-2">
+                                <v-btn :color="select_online == 'all' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleOnline('all')">Alle</v-btn>
+                                <v-btn :color="select_online == 'yes' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleOnline('yes')">Nur Online</v-btn>
+                                <v-btn :color="select_online == 'no' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleOnline('no')">Nur Offline</v-btn>
+                            </div>
                         </v-card>
 
                         <!-- RECORDS -->
@@ -76,7 +55,9 @@
                                         </div>
                                         <div class="text-body-2 d-flex flex-row align-center ga-2 w-100" v-if="item.accepted_at">
                                             <v-icon size="small" color="success" icon="mdi-check" />
-                                            <div class="opacity-60">{{ item.email_mentor + ' (' + item.accepted_at + ')' }}</div>
+                                            <div class="opacity-60" v-if="item.email_mentor">{{ item.email_mentor }}</div>
+                                            <div class="opacity-60" v-if="!item.email_mentor">automatisch akzeptiert</div>
+                                            <div class="opacity-60">{{ ' (' + item.accepted_at + ')' }}</div>
                                         </div>
                                     </div>
                                 </template>
@@ -84,6 +65,7 @@
                         </v-list>
 
                         <!-- PAGINATION-->
+                        <Pagination :meta="meta" :store="offerStore" selected_field="selected_offers" />
                     </v-card-text>
                 </v-card>
                 <!-- MENÜ -->
@@ -281,6 +263,7 @@ import SearchField from '@/pages/components/SearchField.vue'
 import Pagination from '@/pages/components/Pagination.vue'
 
 import { useOfferStore } from '@/stores/admin/tutoring/OfferStore'
+import { splitKeyCombination } from 'vuetify/lib/composables/hotkey/hotkey-parsing.mjs'
 
 // SPECIFIC
 
@@ -295,6 +278,8 @@ export default {
         this.adminStore = useAdminStore()
         this.offerStore = useOfferStore()
         this.select_only_me_concerning = false
+        this.select_accepted = 'all'
+        this.select_online = 'all'
         await this.offerStore.index()
     },
 
@@ -352,7 +337,6 @@ export default {
 
     methods: {
         async doDelete(offer) {
-            console.log(offer)
             this.selected_offers = []
             this.delete_level = 0
             await this.offerStore.delete(offer)
@@ -367,34 +351,13 @@ export default {
             await this.offerStore.index(this.meta.current_page)
         },
 
-        async toggleAccepted() {
-            switch (this.select_accepted) {
-                case 'all':
-                    this.select_accepted = 'yes'
-                    break
-                case 'yes':
-                    this.select_accepted = 'no'
-                    break
-                case 'no':
-                    this.select_accepted = 'all'
-                    break
-            }
-
+        async toggleAccepted(status) {
+            this.select_accepted = status
             this.selected_offers = []
             await this.offerStore.index()
         },
-        async toggleOnline() {
-            switch (this.select_online) {
-                case 'all':
-                    this.select_online = 'yes'
-                    break
-                case 'yes':
-                    this.select_online = 'no'
-                    break
-                case 'no':
-                    this.select_online = 'all'
-                    break
-            }
+        async toggleOnline(status) {
+            this.select_online = status
             this.selected_offers = []
             await this.offerStore.index()
         },

@@ -9,7 +9,11 @@
       "Bash(dir:*)",
       "Bash(composer show:*)",
       "Bash(grep:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(build_frontend.cmd)",
+      "Bash(cmd /C scripts\\\\build_frontend.cmd:*)",
+      "Bash(php:*)",
+      "Bash(del create_offer_requests.php)"
     ],
     "deny": [],
     "ask": []

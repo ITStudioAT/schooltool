@@ -3,16 +3,15 @@
 namespace App\Http\Requests\Tutoring;
 
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Support\Facades\Auth;
 
-class OfferSetUserSearchCriteriaRequest extends FormRequest
+class OfferRequestRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
      */
     public function authorize(): bool
     {
-        return Auth::check();
+        return true;
     }
 
     /**
@@ -23,11 +22,9 @@ class OfferSetUserSearchCriteriaRequest extends FormRequest
     public function rules(): array
     {
         return [
-            "only_in_my_school" => 'boolean',
-            "only_girls" => 'boolean',
-            "only_boys" => 'boolean',
-            "schools" => 'array',
-            "schools.*.id" => 'integer|exists:schools,id',
+            'email' => ['required', 'email'],
+            'id' => ['required', 'integer'],
+            'token' => ['required', 'uuid']
         ];
     }
 }

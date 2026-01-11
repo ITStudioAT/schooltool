@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\School;
 use App\Models\TutoringOffer;
+use App\Models\TutoringOfferRequest;
 use App\Models\TutoringSubject;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -53,6 +54,11 @@ class TutoringTestDataCleanupSeeder extends Seeder
 
             $this->command->info('Gefundene Test-Schulen: ' . count($testSchools));
 
+            // Lösche TutoringOfferRequests (müssen vor Angeboten gelöscht werden wegen Foreign Key)
+            $offerRequestsCount = TutoringOfferRequest::whereIn('school_id', $schoolIds)->count();
+            TutoringOfferRequest::whereIn('school_id', $schoolIds)->delete();
+            $this->command->info("✓ {$offerRequestsCount} Tutoring Offer Requests gelöscht");
+
             // Lösche Tutoring Angebote
             $offersCount = TutoringOffer::whereIn('school_id', $schoolIds)->count();
             TutoringOffer::whereIn('school_id', $schoolIds)->delete();
@@ -101,6 +107,32 @@ class TutoringTestDataCleanupSeeder extends Seeder
             User::whereIn('school_id', $schoolIds)->delete();
             $this->command->info("✓ {$usersCount} Benutzer (Schüler & Lehrer) gelöscht");
 
+            // Lösche zusätzlich den Test-Benutzer hallo@itstudio.at falls vorhanden
+            $testUser = User::where('email', 'hallo@itstudio.at')->first();
+            if ($testUser) {
+                // Lösche zugehörige OfferRequests
+                $testUserOfferRequestsCount = TutoringOfferRequest::where('from_user_id', $testUser->id)
+                    ->orWhere('to_user_id', $testUser->id)
+                    ->count();
+                TutoringOfferRequest::where('from_user_id', $testUser->id)
+                    ->orWhere('to_user_id', $testUser->id)
+                    ->delete();
+
+                // Lösche zugehörige Angebote
+                $testUserOffersCount = TutoringOffer::where('user_id', $testUser->id)->count();
+                TutoringOffer::where('user_id', $testUser->id)->delete();
+
+                // Lösche Rollen-Zuweisungen
+                DB::table('model_has_roles')
+                    ->where('model_id', $testUser->id)
+                    ->where('model_type', User::class)
+                    ->delete();
+
+                // Lösche den Benutzer
+                $testUser->delete();
+                $this->command->info("✓ Test-Benutzer hallo@itstudio.at gelöscht ({$testUserOfferRequestsCount} OfferRequests, {$testUserOffersCount} Angebote)");
+            }
+
             // Lösche Schul-Lizenzen
             $licencesCount = DB::table('school_licences')
                 ->whereIn('school_id', $schoolIds)
@@ -127,6 +159,7 @@ class TutoringTestDataCleanupSeeder extends Seeder
             $this->command->info("   - Benutzer gelöscht: {$usersCount}");
             $this->command->info("   - Fächer gelöscht: {$subjectsCount}");
             $this->command->info("   - Tutoring Angebote gelöscht: {$offersCount}");
+            $this->command->info("   - Tutoring Offer Requests gelöscht: {$offerRequestsCount}");
 
         } catch (\Exception $e) {
             DB::rollBack();

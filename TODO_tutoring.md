@@ -1,18 +1,10 @@
 # Next Changes
 
-## Select Offers from more schools
-
-## Buttons beautifuller
-
-## EMail Logo
-
 ## Student offer interested
 
--   Communicate between students
+-   Empfangene Archivieren
 
-## Tests with a lot of data
-
-## Search for offers
+## EMail Logo
 
 # Ideas
 

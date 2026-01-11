@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\TutoringOffer;
 use App\Models\TutoringSubject;
 use App\Models\User;
@@ -15,6 +16,9 @@ class TutoringTestDataSeeder extends Seeder
 {
     // Echte österreichische Gymnasien
     private array $austrianSchools = [
+        // Wichtige Test-Schulen zuerst (für die ersten 10)
+        ['short_name' => 'ABG-SB', 'long_name' => 'Akademisches Gymnasium Salzburg', 'domain' => 'akg-salzburg'],
+        ['short_name' => 'ABG-IBK', 'long_name' => 'Akademisches Gymnasium Innsbruck', 'domain' => 'akg-innsbruck'],
         ['short_name' => 'AKG', 'long_name' => 'Akademisches Gymnasium Wien', 'domain' => 'akg-wien'],
         ['short_name' => 'BRG1', 'long_name' => 'BRG 1 Stubenbastei Wien', 'domain' => 'brg1'],
         ['short_name' => 'GRG3', 'long_name' => 'GRG 3 Hagenmüllergasse Wien', 'domain' => 'grg3'],
@@ -23,8 +27,6 @@ class TutoringTestDataSeeder extends Seeder
         ['short_name' => 'BRG4', 'long_name' => 'BRG 4 Waltergasse Wien', 'domain' => 'brg4'],
         ['short_name' => 'GRG19', 'long_name' => 'GRG 19 Billrothstraße Wien', 'domain' => 'grg19'],
         ['short_name' => 'BRG18', 'long_name' => 'BRG 18 Schopenhauerstraße Wien', 'domain' => 'brg18'],
-        ['short_name' => 'GRG23', 'long_name' => 'GRG 23 Draschestraße Wien', 'domain' => 'grg23'],
-        ['short_name' => 'BORG3', 'long_name' => 'BORG 3 Landstraßer Hauptstraße Wien', 'domain' => 'borg3'],
         ['short_name' => 'STG', 'long_name' => 'Stiftsgymnasium Melk', 'domain' => 'stiftmelk'],
         ['short_name' => 'BRG-KR', 'long_name' => 'BRG Krems', 'domain' => 'brgkrems'],
         ['short_name' => 'GYM-STP', 'long_name' => 'Gymnasium St. Pölten', 'domain' => 'gymstpoelten'],
@@ -56,7 +58,6 @@ class TutoringTestDataSeeder extends Seeder
         ['short_name' => 'BRG-GM', 'long_name' => 'BRG Gmunden', 'domain' => 'brggmunden'],
         ['short_name' => 'GRG-VK', 'long_name' => 'GRG Vöcklabruck', 'domain' => 'grgvoecklabruck'],
         ['short_name' => 'BG-SB', 'long_name' => 'Bundesgymnasium Salzburg', 'domain' => 'bgsalzburg'],
-        ['short_name' => 'ABG-SB', 'long_name' => 'Akademisches Gymnasium Salzburg', 'domain' => 'akg-salzburg'],
         ['short_name' => 'BRG-HA', 'long_name' => 'BRG Hallein', 'domain' => 'brghallein'],
         ['short_name' => 'GYM-ZS', 'long_name' => 'Gymnasium Zell am See', 'domain' => 'gymzellamsee'],
         ['short_name' => 'BG-TB', 'long_name' => 'Bundesgymnasium Tamsweg', 'domain' => 'bgtamsweg'],
@@ -66,7 +67,6 @@ class TutoringTestDataSeeder extends Seeder
         ['short_name' => 'BG-ST', 'long_name' => 'Bundesgymnasium Straßwalchen', 'domain' => 'bgstrasswalchen'],
         ['short_name' => 'GRG-OB', 'long_name' => 'GRG Oberndorf', 'domain' => 'grgobern dorf'],
         ['short_name' => 'BG-IBK', 'long_name' => 'Bundesgymnasium Innsbruck', 'domain' => 'bginnsbruck'],
-        ['short_name' => 'ABG-IBK', 'long_name' => 'Akademisches Gymnasium Innsbruck', 'domain' => 'akg-innsbruck'],
         ['short_name' => 'BRG-KU', 'long_name' => 'BRG Kufstein', 'domain' => 'brgkufstein'],
         ['short_name' => 'GYM-IM', 'long_name' => 'Gymnasium Imst', 'domain' => 'gymimst'],
         ['short_name' => 'BG-LI', 'long_name' => 'Bundesgymnasium Lienz', 'domain' => 'bglienz'],
@@ -198,11 +198,11 @@ class TutoringTestDataSeeder extends Seeder
                     $currentIndex = $index + 1;
                     $this->command->info("Verarbeite Schule {$currentIndex}/{$schoolCount}: {$school->long_name}");
 
-                    // Erstelle 10 Fächer pro Schule
-                    $subjects = $this->createSubjects($school);
-
-                    // Erstelle 10 Lehrer pro Schule
+                    // Erstelle 10 Lehrer pro Schule (ZUERST, da Fächer auf Lehrer-Emails referenzieren)
                     $teachers = $this->createTeachers($school, 10);
+
+                    // Erstelle 10 Fächer pro Schule (mit echten Lehrer-Emails)
+                    $subjects = $this->createSubjects($school, $teachers);
 
                     // Erstelle 1000 Schüler pro Schule
                     $students = $this->createStudents($school, 1000);
@@ -222,7 +222,7 @@ class TutoringTestDataSeeder extends Seeder
 
             $this->command->info('✅ Tutoring Test Daten erfolgreich erstellt!');
             $this->command->info('📊 Zusammenfassung:');
-            $this->command->info('   - Schulen: ' . School::whereIn('short_name', array_column($this->austrianSchools, 'short_name'))->count());
+            $this->command->info('   - Schulen: ' . count($schools));
             $this->command->info('   - Super-Admins: ' . User::role('super_admin')->where('email', 'kron@naturwelt.at')->count());
             $this->command->info('   - Schüler: ~' . User::role('tutoring_user')->count());
             $this->command->info('   - Lehrer: ~' . User::role('teacher')->count());
@@ -286,13 +286,16 @@ class TutoringTestDataSeeder extends Seeder
     }
 
     /**
-     * Erstelle 100 österreichische Schulen
+     * Erstelle 10 österreichische Schulen
      */
     private function createSchools(): array
     {
         $schools = [];
 
-        foreach ($this->austrianSchools as $schoolData) {
+        // Nur die ersten 10 Schulen verwenden
+        $selectedSchools = array_slice($this->austrianSchools, 0, 10);
+
+        foreach ($selectedSchools as $schoolData) {
             $school = School::create([
                 'short_name' => $schoolData['short_name'],
                 'long_name' => $schoolData['long_name'],
@@ -307,6 +310,14 @@ class TutoringTestDataSeeder extends Seeder
             // Füge Nachhilfetool Lizenz hinzu (ID: 2) mit Gültigkeit bis 2026-07-10
             $school->licences()->attach(2, ['valid_until' => '2026-07-10']);
 
+            // Erstelle SchoolTool Record
+            SchoolTool::create([
+                'school_id' => $school->id,
+                'tutoring_student_must_be_confirmed' => rand(1, 10) <= 8 ? 1 : 0, // 80% müssen bestätigt werden
+                'tutoring_confirmer_email' => 'kron@naturwelt.at',
+                'tutoring_max_offers_per_student' => rand(3, 5), // 3-5 Angebote pro Student
+            ]);
+
             $schools[] = $school;
         }
 
@@ -316,19 +327,17 @@ class TutoringTestDataSeeder extends Seeder
     /**
      * Erstelle Fächer für eine Schule
      */
-    private function createSubjects(School $school): array
+    private function createSubjects(School $school, array $teachers): array
     {
         $subjectModels = [];
 
         foreach ($this->subjects as $subject) {
-            // Wähle 2-4 zufällige Lehrer-Emails für Mentoren
-            $mentorCount = rand(2, 4);
-            $mentors = [];
-            for ($i = 0; $i < $mentorCount; $i++) {
-                $lastName = $this->lastNames[array_rand($this->lastNames)];
-                $firstName = $this->firstNames['männlich'][array_rand($this->firstNames['männlich'])];
-                $mentors[] = strtolower($firstName . '.' . $lastName) . '@' . $this->getSchoolDomain($school) . '.at';
-            }
+            // Wähle 2-4 zufällige Lehrer-Emails aus den tatsächlich erstellten Lehrern
+            $mentorCount = min(rand(2, 4), count($teachers));
+            $shuffledTeachers = $teachers;
+            shuffle($shuffledTeachers);
+            $selectedTeachers = array_slice($shuffledTeachers, 0, $mentorCount);
+            $mentors = array_map(fn($teacher) => $teacher->email, $selectedTeachers);
 
             $subjectModel = TutoringSubject::create([
                 'school_id' => $school->id,
@@ -358,6 +367,16 @@ class TutoringTestDataSeeder extends Seeder
             $firstName = $this->firstNames[$gender][array_rand($this->firstNames[$gender])];
             $lastName = $this->lastNames[array_rand($this->lastNames)];
 
+            // Bestimme Geschlecht (sex): mostly m oder f, rarely d
+            $sexRand = rand(1, 100);
+            if ($sexRand <= 50) {
+                $sex = 'm'; // 50% männlich
+            } elseif ($sexRand <= 98) {
+                $sex = 'f'; // 48% weiblich
+            } else {
+                $sex = 'd'; // 2% divers
+            }
+
             // Generiere eindeutige Email (nur lokale Prüfung für Performance)
             $baseEmail = strtolower($firstName . '.' . $lastName);
             $emailCounter = $i + 10000; // Start höher um Konflikte mit Schülern zu vermeiden
@@ -382,6 +401,7 @@ class TutoringTestDataSeeder extends Seeder
                 'first_name' => $firstName,
                 'last_name' => $lastName,
                 'short' => $short,
+                'sex' => $sex,
                 'is_active' => 1,
                 'confirmed_at' => now(),
                 'email_verified_at' => now(),
@@ -408,6 +428,16 @@ class TutoringTestDataSeeder extends Seeder
             $firstName = $this->firstNames[$gender][array_rand($this->firstNames[$gender])];
             $lastName = $this->lastNames[array_rand($this->lastNames)];
 
+            // Bestimme Geschlecht (sex): mostly m oder f, rarely d
+            $sexRand = rand(1, 100);
+            if ($sexRand <= 50) {
+                $sex = 'm'; // 50% männlich
+            } elseif ($sexRand <= 98) {
+                $sex = 'f'; // 48% weiblich
+            } else {
+                $sex = 'd'; // 2% divers
+            }
+
             // Generiere eindeutige Email (nur lokale Prüfung für Performance)
             $baseEmail = strtolower($firstName . '.' . $lastName);
             $emailCounter = $i;
@@ -427,6 +457,7 @@ class TutoringTestDataSeeder extends Seeder
                 'password' => $this->hashedPassword,
                 'first_name' => $firstName,
                 'last_name' => $lastName,
+                'sex' => $sex,
                 'is_active' => 1,
                 'confirmed_at' => now(),
                 'email_verified_at' => now(),
@@ -473,11 +504,27 @@ class TutoringTestDataSeeder extends Seeder
                 $isActive = false;
             }
 
-            // Wähle 1-3 zufällige Klassen
-            $numClasses = rand(1, 3);
-            $shuffledClasses = $this->classes;
-            shuffle($shuffledClasses);
-            $selectedClasses = array_slice($shuffledClasses, 0, $numClasses);
+            // Erstelle Klassen-Struktur (1-9 mit boolean)
+            $classes = [
+                '1' => false,
+                '2' => false,
+                '3' => false,
+                '4' => false,
+                '5' => false,
+                '6' => false,
+                '7' => false,
+                '8' => false,
+                '9' => false,
+            ];
+
+            // Wähle 1-4 zufällige Klassen und setze sie auf true
+            $numClasses = rand(1, 4);
+            $availableClasses = range(1, 9);
+            shuffle($availableClasses);
+            $selectedClassNumbers = array_slice($availableClasses, 0, $numClasses);
+            foreach ($selectedClassNumbers as $classNumber) {
+                $classes[(string)$classNumber] = true;
+            }
 
             // Erstelle Zeitplan
             $timeTable = $this->generateTimeTable();
@@ -488,13 +535,21 @@ class TutoringTestDataSeeder extends Seeder
                 $mentorEmail = $subject->email_mentors[array_rand($subject->email_mentors)];
             }
 
+            // Wenn must_be_accepted == false, dann email_mentor = null und accepted_at = now()
+            if (!$subject->must_be_accepted) {
+                $mentorEmail = null;
+                $acceptedAt = now()->format('Y-m-d');
+            } else {
+                $acceptedAt = $isConfirmed ? now()->subDays(rand(1, 30))->format('Y-m-d') : null;
+            }
+
             TutoringOffer::create([
                 'school_id' => $school->id,
                 'user_id' => $student->id,
                 'subject_id' => $subject->id,
                 'title' => $subject->long_name . ' Nachhilfe',
                 'description' => 'Ich biete professionelle Nachhilfe in ' . $subject->long_name . ' an. Langjährige Erfahrung und gute Noten garantiert!',
-                'classes' => $selectedClasses,
+                'classes' => $classes,
                 'time_table' => $timeTable,
                 'active_until' => now()->addMonths(rand(1, 6))->format('Y-m-d'),
                 'is_active' => $isActive,
@@ -503,8 +558,9 @@ class TutoringTestDataSeeder extends Seeder
                 'max_group_members' => rand(0, 10) > 7 ? rand(2, 5) : null,
                 'must_be_accepted' => $subject->must_be_accepted,
                 'email_mentor' => $mentorEmail,
-                'accepted_at' => $isConfirmed ? now()->subDays(rand(1, 30))->format('Y-m-d') : null,
+                'accepted_at' => $acceptedAt,
                 'click_count' => rand(0, 50),
+                'visible_for_other_schools' => rand(0, 1) === 1, // 50% sichtbar für andere Schulen
             ]);
 
             // Fortschrittsanzeige alle 50 Angebote

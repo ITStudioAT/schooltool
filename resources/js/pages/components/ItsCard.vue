@@ -4,7 +4,13 @@
             <div>{{ title }}</div>
             <v-icon :icon="mark_icon ? mark_icon : 'mdi-star'" :color="mark_color ? mark_color : 'primary'" v-if="is_mark" />
         </v-card-title>
+        <!--
         <v-card-subtitle style="white-space: normal" v-if="subtitle">{{ subtitle }}</v-card-subtitle>
+        -->
+        <v-card-text v-if="subtitle">
+            <v-chip size="small">{{ subtitle }}</v-chip>
+        </v-card-text>
+
         <v-card-text class="text-body-2" v-if="text">{{ text }}</v-card-text>
 
         <v-card-text class="text-body-2" style="white-space: pre-line" v-if="description">

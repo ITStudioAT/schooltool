@@ -101,4 +101,9 @@ class TutoringOffer extends Model
     {
         return $this->belongsTo(School::class, 'school_id');
     }
+
+    public function requests()
+    {
+        return $this->hasMany(TutoringOfferRequest::class, 'offer_id');
+    }
 }

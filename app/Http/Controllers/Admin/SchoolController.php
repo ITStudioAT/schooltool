@@ -132,8 +132,6 @@ class SchoolController extends Controller
 
         $id = $fileUploadService->upload();
 
-        Log::info('uploadLogo:' . $id);
-
         return response($id, 200)->header('Content-Type', 'text/plain');
     }
 
@@ -142,8 +140,6 @@ class SchoolController extends Controller
         if (! $auth_user = $this->userHasRole(['admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
-
-        Log::info('uploadLogoNext');
 
         // $school = School::findOrFail($auth_user->school_id);
 

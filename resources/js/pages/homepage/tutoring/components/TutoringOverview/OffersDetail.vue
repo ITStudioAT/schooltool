@@ -47,18 +47,80 @@
                     <div>Kosten pro Stunde: {{ parseFloat(offer.price_per_hour) }} Euro</div>
                 </div>
             </v-card-text>
-            <v-card-actions>
-                <v-btn class="ms-auto" text="Ok" @click="is_offer_dialog = false"></v-btn>
+            <v-card-text>
+                offer.my_request:
+                {{ offer.my_request }}
+            </v-card-text>
+
+            <v-card-actions v-if="!is_contact">
+                <v-btn
+                    color="success"
+                    :text="offer.my_request ? 'Nachfragen' : 'Kontakt'"
+                    @click="is_contact = true"
+                    v-if="
+                        config.auth.is_auth && !offer.is_own_offer && !offer?.my_request?.mail_at && (!offer.my_request || (offer.my_request && offer.my_request.sent_count < 3))
+                    " />
+
+                <v-chip
+                    size="small"
+                    color="warning"
+                    v-if="config.auth.is_auth && !offer.is_own_offer && offer.my_request && !offer?.my_request?.mail_at && offer.my_request.sent_count >= 3">
+                    Bereits {{ offer?.my_request?.sent_count }}x nachgefragt
+                </v-chip>
+
+                <v-chip size="small" color="info" v-if="config.auth.is_auth && !offer.is_own_offer && offer.my_request && offer?.my_request?.mail_at">
+                    Bereits Antwort bekommen
+                </v-chip>
+
+                <v-chip size="small" color="info" v-if="config.auth.is_auth && offer.is_own_offer">Das ist dein eigenes Angebot</v-chip>
+
+                <v-btn class="ms-auto" text="Fertig" @click="is_offer_dialog = false" />
+            </v-card-actions>
+
+            <!-- IS_CONTACT -->
+            <v-form ref="form" v-model="is_valid" @submit.prevent="sendRequest" class="mb-4" v-if="!send_request_status">
+                <v-card-text v-if="is_contact">
+                    <div class="text-body-1 font-weight-medium">Deine Anfrage:</div>
+                    <v-alert type="info">Bitte schicke nur eine ernst gemeinte Anfrage ab!</v-alert>
+                    <v-textarea
+                        autofocus
+                        v-model="request_message"
+                        label="Deine Nachricht"
+                        :rules="[maxLength(1024)]"
+                        counter="1024"
+                        v-if="!offer?.my_request?.sent_count || offer?.my_request?.sent_count == 0" />
+                    <v-checkbox color="success" v-model="is_serious_request" label="Ich bestätige, dass es sich um eine ernst gemeinte Anfrage handelt." />
+                </v-card-text>
+                <v-card-actions class="d-flex flex-row align-center justify-space-between w-100" v-if="is_contact">
+                    <v-btn color="error" text="Abbruch" @click="is_contact = false" />
+                    <v-btn color="success" type="submit" text="Absenden" v-if="is_serious_request" />
+                </v-card-actions>
+            </v-form>
+            <v-card-text v-if="send_request_status == 'NEW_REQUEST'">
+                <v-alert type="success">Deine Anfrage wurde versandt! Bitte warte auf die Antwort.</v-alert>
+            </v-card-text>
+
+            <v-card-text v-if="send_request_status == 'EXISTING_REQUEST'">
+                <v-alert type="warning">Du hast bereits eine Anfrage geschickt! Bitte warte auf die Antwort.</v-alert>
+            </v-card-text>
+            <v-card-actions v-if="send_request_status == 'EXISTING_REQUEST' || send_request_status == 'NEW_REQUEST'">
+                <div></div>
+                <v-btn class="ms-auto" text="Fertig" @click="sendRequestFinished" />
             </v-card-actions>
         </v-card>
     </v-dialog>
 </template>
 <script>
+import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useOfferStore } from '@/stores/tutoring/OfferStore'
 
 export default {
-    props: ['offer'],
+    setup() {
+        return useValidationRulesSetup()
+    },
+
+    props: ['offer', 'config'],
     async beforeMount() {
         this.offerStore = useOfferStore()
     },
@@ -66,10 +128,14 @@ export default {
         return {
             offerStore: null,
             dialog: false,
+            is_contact: false,
+            request_message: '',
+            is_serious_request: false,
+            is_valid: false,
         }
     },
     computed: {
-        ...mapWritableState(useOfferStore, ['is_offer_dialog']),
+        ...mapWritableState(useOfferStore, ['is_offer_dialog', 'send_request_status', 'offer_request', 'actual_offer']),
 
         selectedClasses() {
             // Konvertiere Object zu Array der ausgewählten Keys
@@ -98,6 +164,22 @@ export default {
             const year = date.getFullYear()
 
             return `${day}.${month}.${year} (${weekday})`
+        },
+    },
+
+    methods: {
+        sendRequestFinished() {
+            this.offer_request = null
+            this.send_request_status = null
+            this.is_offer_dialog = false
+        },
+        async sendRequest() {
+            if (!this.is_serious_request) return
+            this.is_valid = false
+            await this.$refs.form.validate()
+            if (!this.is_valid) return
+
+            if (!this.offerStore.sendRequest(this.offer.id, this.request_message)) return
         },
     },
 }

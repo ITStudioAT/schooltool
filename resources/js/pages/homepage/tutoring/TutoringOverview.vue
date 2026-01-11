@@ -23,7 +23,7 @@
                 <div class="d-flex justify-center">
                     <div class="d-flex flex-column align-center">
                         <div class="text-caption">{{ offer_config.school.long_name }}</div>
-                        <div style="width: 96px; height: 48px" class="bg-primary-lighten-4">
+                        <div style="width: 96px; height: 48px" class="bg-primary-lighten-4" v-if="offer_config.school.logo">
                             <img :src="'/storage/images/' + offer_config.school.logo" alt="Logo" style="width: 100%; height: 100%; object-fit: contain" />
                         </div>
                     </div>
@@ -33,8 +33,8 @@
 
         <v-card tile flat class="mt-4" color="transparent" v-if="is_loaded && !is_login">
             <!-- Menü -->
-            <v-card flat color="primary" class="border-md">
-                <div class="d-flex flex-wrap justify-center justify-lg-start ga-4">
+            <v-card flat color="primary" class="border-md" v-if="action == ''">
+                <div class="d-flex flex-wrap justify-center justify-md-start ga-2">
                     <ItsCard
                         :title="offer_config?.auth?.user?.last_name + ' ' + offer_config?.auth?.user?.first_name"
                         text="Hier gelangst Du zu Deinem persönlichen Bereich. Dort kannst Du auch Angebote erstellen."
@@ -44,9 +44,25 @@
                         v-if="offer_config.auth.is_auth" />
 
                     <ItsCard
+                        title="Erhaltene Anfragen"
+                        text="Hier kannst Du nachschauen, welche Anfragen Du erhalten hast."
+                        color="success"
+                        button="Erhaltene Anfragen"
+                        @clickCard="action = 'received_requests'"
+                        v-if="offer_config.auth.is_auth" />
+
+                    <ItsCard
+                        title="Deine Anfragen"
+                        text="Hier kannst Du nachschauen, welche Anfragen Du bereits gestellt hast."
+                        color="success"
+                        button="Meine Anfragen"
+                        @clickCard="action = 'my_requests'"
+                        v-if="offer_config.auth.is_auth" />
+
+                    <ItsCard
                         title="Mich abmelden"
                         text="Hier kannst Du Dich vom System ausloggen."
-                        color="success"
+                        color="warning"
                         button="Abmelden"
                         @clickCard="logout"
                         v-if="offer_config.auth.is_auth" />
@@ -58,6 +74,40 @@
                         button="Los"
                         @clickCard="startLogin"
                         v-if="!offer_config.auth.is_auth" />
+                </div>
+            </v-card>
+
+            <!-- Menü für MEINE ANFRAGEN -->
+            <v-card flat color="primary" class="border-md d-flex flex-row align-start flex-wrap ga-2" v-if="action == 'my_requests'">
+                <div class="d-flex flex-wrap justify-center ga-2">
+                    <ItsCard title="Zurück" text="Zurück zur Übersicht." color="success" button="Zurück" @clickCard="action = ''" />
+                </div>
+                <div class="d-flex flex-wrap justify-center ga-2">
+                    <ItsCard title="Archiv" text="Zeige alle archivierten Anfragen an." color="success" button="Zum Archiv" @clickCard="toArchive(true)" v-if="!show_archived" />
+                    <ItsCard title="Archiv" text="Zeige alle aktiven Anfragen an." color="success" button="Zu den aktiven" @clickCard="toArchive(false)" v-if="show_archived" />
+                </div>
+            </v-card>
+
+            <!-- Menü für ERHALTENE ANFRAGEN -->
+            <v-card flat color="primary" class="border-md d-flex flex-row align-start flex-wrap ga-2" v-if="action == 'received_requests'">
+                <div class="d-flex flex-wrap justify-center ga-2">
+                    <ItsCard title="Zurück" text="Zurück zur Übersicht." color="success" button="Zurück" @clickCard="action = ''" />
+                </div>
+                <div class="d-flex flex-wrap justify-center ga-2">
+                    <ItsCard
+                        title="Archiv"
+                        text="Zeige alle archivierten Anfragen an."
+                        color="success"
+                        button="Zum Archiv"
+                        @clickCard="toToUserArchive(true)"
+                        v-if="!show_to_user_archived" />
+                    <ItsCard
+                        title="Archiv"
+                        text="Zeige alle aktiven Anfragen an."
+                        color="success"
+                        button="Zu den aktiven"
+                        @clickCard="toToUserArchive(false)"
+                        v-if="show_to_user_archived" />
                 </div>
             </v-card>
         </v-card>
@@ -73,13 +123,43 @@
             @logout="logout" />
 
         <!-- SUCHLEISTE -->
-        <!-- SUCHLEISTE -->
-        <v-expansion-panels v-model="search_panel" color="primary" v-if="offer_config && offer_config.auth.is_auth" class="mt-4">
+        <v-expansion-panels v-model="search_panel" color="primary" v-if="offer_config && offer_config.auth.is_auth && action == ''" class="mt-4">
             <v-expansion-panel>
                 <v-expansion-panel-title class="text-body-1 font-weight-medium">Suche</v-expansion-panel-title>
                 <v-expansion-panel-text>
                     <v-form @submit.prevent="searchNow">
-                        <v-checkbox-btn color="success" v-model="search.only_in_my_school" label="Nur in Deiner Schule suchen" readonly />
+                        <v-checkbox-btn color="success" v-model="search.only_in_my_school" label="Nur in Deiner Schule suchen" />
+
+                        <div class="my-4">
+                            <div class="text-body-1 font-weight-medium" v-if="search.only_in_my_school">Jetzt kannst Du nach Angeboten in Deiner Schule suchen.</div>
+                            <div class="text-body-1 font-weight-medium" v-if="!search.only_in_my_school">
+                                Jetzt kannst Du auch in anderen Schulen, die Du dir aussuchst, nach Angeboten suchen.
+                            </div>
+                            <div v-if="search.only_in_my_school === false" class="d-flex flex-row align-center ga-2 mt-2">
+                                <v-autocomplete
+                                    v-model="add_school_id"
+                                    :items="availableSchools"
+                                    item-title="long_name"
+                                    item-value="id"
+                                    label="Schule auswählen"
+                                    clearable
+                                    hide-details />
+                                <v-btn icon="mdi-plus" color="success" @click="addSchool(add_school_id)" />
+                            </div>
+
+                            <div v-if="search.schools && search.schools.length > 0 && !search.only_in_my_school" class="d-flex flex-row align-center flex-wrap ga-2 mt-2">
+                                <div class="text-body-1 font-weight-medium">Ausgewählte Schulen:</div>
+                                <v-chip
+                                    v-for="school in search.schools"
+                                    :key="school.id"
+                                    color="secondary"
+                                    closable
+                                    @click:close="search.schools = search.schools.filter((s) => s.id !== school.id)">
+                                    {{ school.school.long_name }}
+                                </v-chip>
+                            </div>
+                        </div>
+
                         <div class="d-flex flex-row align-center ga-2">
                             <v-checkbox-btn color="pink" v-model="search.only_girls" label="Nachhilfe nur von Mädchen" />
                             <v-checkbox-btn color="blue" v-model="search.only_boys" label="Nachhilfe nur von Burschen" />
@@ -102,25 +182,50 @@
         </v-expansion-panels>
 
         <!-- Angebote -->
-        <v-card tile flat border-md color="transparent" v-if="is_loaded && !is_login">
+        <v-card tile flat border-md color="transparent" v-if="is_loaded && !is_login && action == ''">
             <!-- Alle Angebote anzeigen -->
 
-            <v-card flat color="bg-primary" class="border-md mt-4 d-flex flex-row flex-wrap ga-2" v-if="offers && offers.length > 0">
-                <div class="d-flex" style="width: 300px" v-for="offer in offers" :key="offer.id">
-                    <ItsCard
-                        :title="offer.school.short_name"
-                        :subtitle="offer.subject.short_name + ': ' + offer.subject.long_name"
-                        :text="offer.title"
-                        :description="offer.description"
-                        color="success"
-                        button="Anschauen"
-                        @clickCard="showOffersDetail(offer)"
-                        :is_mark="offer.is_own_offer"
-                        :key="offer.id" />
+            <v-card flat color="transparent" class="border-md mt-4 pa-2" v-if="offers && offers.length > 0">
+                <div class="d-flex flex-row flex-wrap ga-2 justify-center">
+                    <div style="width: 300px" v-for="offer in offers" :key="offer.id">
+                        <OfferCard
+                            class="h-100"
+                            :school_short_name="offer.school.short_name"
+                            :school_long_name="offer.school.long_name"
+                            :subject="offer.subject.short_name + ': ' + offer.subject.long_name"
+                            :title="offer.title"
+                            :description="offer.description"
+                            :my_request="offer.my_request"
+                            color="success"
+                            button="Anschauen"
+                            @clickCard="showOffersDetail(offer)"
+                            :is_mark="offer.is_own_offer"
+                            :key="offer.id" />
+                    </div>
                 </div>
+                <v-card-text class="d-flex flex-row align-center justify-space-between">
+                    <v-btn
+                        tile
+                        flat
+                        size="x-large"
+                        prepend-icon="mdi-arrow-left"
+                        color="primary"
+                        :disabled="meta.current_page == 1"
+                        @click="offerStore.loadOffers(school_name, meta.current_page - 1)">
+                        Vorherige
+                    </v-btn>
+                    <v-btn
+                        tile
+                        flat
+                        size="x-large"
+                        append-icon="mdi-arrow-right"
+                        color="primary"
+                        :disabled="meta.current_page == meta.last_page"
+                        @click="offerStore.loadOffers(school_name, meta.current_page + 1)">
+                        Nächste
+                    </v-btn>
+                </v-card-text>
             </v-card>
-
-            <!-- is_own_offer-->
 
             <!-- KEINE ANGEBOT VORHANDEN-->
             <v-card v-else class="border-md mt-4">
@@ -138,7 +243,15 @@
                 </v-alert>
             </v-card>
         </v-card>
-        <OffersDetail :offer="selected_offer" v-if="is_offer_dialog" />
+
+        <!-- ANEGBOT IM DETAIL -->
+        <OffersDetail :offer="selected_offer" :config="offer_config" v-if="is_offer_dialog" />
+
+        <!-- MEINE ANFRAGEN -->
+        <MyRequests v-if="action == 'my_requests'" />
+
+        <!-- ERHALTENE ANFRAGEN -->
+        <ReceivedRequests v-if="action == 'received_requests'" />
     </div>
 
     <div class="h-100 w-100 d-flex flex-column justify-center align-center" style="max-width: 1024px; margin: auto" v-if="error">
@@ -153,19 +266,27 @@
 import { mapWritableState } from 'pinia'
 import { useTutoringStore } from '@/stores/tutoring/TutoringStore'
 import { useOfferStore } from '@/stores/tutoring/OfferStore'
+import { useRequestStore } from '@/stores/tutoring/RequestStore'
 import { useUserStore } from '@/stores/tutoring/UserStore'
+import { useHomepageStore } from '@/stores/homepage/HomepageStore'
 import ItsCard from '@/pages/components/ItsCard.vue'
+import OfferCard from '@/pages/homepage/tutoring/components/OfferCard.vue'
 import SchoolAndUser from '@/pages/homepage/tutoring/components/TutoringOverview/SchoolAndUser.vue'
 import OffersDetail from '@/pages/homepage/tutoring/components/TutoringOverview/OffersDetail.vue'
+import MyRequests from '@/pages/homepage/tutoring/components/MyRequests.vue'
+import ReceivedRequests from '@/pages/homepage/tutoring/components/ReceivedRequests.vue'
 
 export default {
-    components: { ItsCard, SchoolAndUser, SchoolAndUser, OffersDetail },
+    components: { ItsCard, SchoolAndUser, SchoolAndUser, OffersDetail, MyRequests, ReceivedRequests, OfferCard },
 
     async beforeMount() {
         this.tutoringStore = useTutoringStore()
         this.offerStore = useOfferStore()
+        this.requestStore = useRequestStore()
         this.userStore = useUserStore()
+        this.homepageStore = useHomepageStore()
 
+        await this.homepageStore.loadSchoolsForTool('Nachhilfetool')
         await this.offerStore.loadOfferConfig(this.school_name)
 
         if (!this.offer_config?.auth?.is_auth) {
@@ -180,6 +301,9 @@ export default {
             this.school = this.offer_config.school
             this.school_name = this.school.short_name
             await this.initWithSchool()
+            console.log(this.offer_config.auth.is_auth)
+
+            if (this.$route.query.received_requests == 'true') this.action = 'received_requests'
         }
 
         this.is_init = true
@@ -194,6 +318,7 @@ export default {
             tutoringStore: null,
             offerStore: null,
             userStore: null,
+            homepageStore: null,
             school: null,
             school_name: '',
             is_loaded: false,
@@ -202,12 +327,27 @@ export default {
             search: {},
             search_panel: null,
             selected_offer: null,
+            add_school_id: null,
         }
     },
 
     computed: {
-        ...mapWritableState(useTutoringStore, ['schools', 'selected_school_id', 'data']),
+        ...mapWritableState(useTutoringStore, ['selected_school_id', 'data', 'action']),
         ...mapWritableState(useOfferStore, ['offer_config', 'error', 'offers', 'is_offer_dialog', 'meta', 'search_string']),
+        ...mapWritableState(useHomepageStore, ['schools']),
+        ...mapWritableState(useRequestStore, ['show_archived', 'show_to_user_archived']),
+
+        availableSchools() {
+            return this.schools.filter((school) => {
+                // Exclude user's own school
+                if (school.id === this.offer_config?.school?.id) return false
+
+                // Exclude already selected schools
+                if (this.search.schools?.some((s) => s.id === school.id)) return false
+
+                return true
+            })
+        },
     },
 
     watch: {
@@ -229,9 +369,9 @@ export default {
         },
         search: {
             async handler(newValue) {
-                console.log(newValue)
                 await this.offerStore.setUserSearchCriteria(newValue)
                 await this.searchNow()
+                await this.offerStore.loadOfferConfig(this.school_name)
             },
             deep: true,
             flush: 'post',
@@ -239,6 +379,28 @@ export default {
     },
 
     methods: {
+        toArchive(status) {
+            this.show_archived = status
+        },
+
+        toToUserArchive(status) {
+            this.show_to_user_archived = status
+        },
+
+        async addSchool(school_id) {
+            if (!school_id) return
+
+            if (!this.search.schools) {
+                this.search.schools = []
+            }
+            this.search.schools.push({
+                id: school_id,
+                school: this.schools.find((s) => s.id === school_id),
+            })
+
+            this.add_school_id = null
+        },
+
         async searchNow() {
             await this.offerStore.loadOffers(this.school_name)
         },
@@ -253,7 +415,12 @@ export default {
         },
 
         async afterLogin() {
+            await axios.get('/sanctum/csrf-cookie')
+            await this.homepageStore.loadSchoolsForTool('Nachhilfetool')
+            await this.offerStore.loadOfferConfig(this.school_name)
             await this.initWithSchool()
+            this.search = this.offer_config.auth.user.tutoring_filter
+            this.school = this.offer_config.school
             this.is_login = false
         },
         startLogin() {

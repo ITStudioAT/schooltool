@@ -5,7 +5,7 @@ namespace App\Http\Requests\Tutoring;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 
-class OfferSetUserSearchCriteriaRequest extends FormRequest
+class OfferSendRequestRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -23,11 +23,8 @@ class OfferSetUserSearchCriteriaRequest extends FormRequest
     public function rules(): array
     {
         return [
-            "only_in_my_school" => 'boolean',
-            "only_girls" => 'boolean',
-            "only_boys" => 'boolean',
-            "schools" => 'array',
-            "schools.*.id" => 'integer|exists:schools,id',
+            'offer_id' => ['required', 'integer', 'exists:tutoring_offers,id'],
+            'request_message' => ['nullable', 'string', 'max:1024'],
         ];
     }
 }

@@ -46,6 +46,12 @@ class TutoringService
 
         unset($data['status']);
         $data['password'] = Hash::make(now());
+        $data['tutoring_filter'] = [
+            'schools' => [],
+            'only_boys' => false,
+            'only_girls' => false,
+            'only_in_my_school' => true
+        ];
 
         $user = User::create($data);
 

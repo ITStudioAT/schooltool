@@ -54,7 +54,7 @@ class HomepageController extends Controller
 
         $data = [
             'licence' => new LicenceResource($licence),
-            'schools' => SchoolResource::collection($licence->schools)
+            'schools' => SchoolResource::collection($licence->schools->sortBy('long_name')->values())
         ];
 
         return response()->json($data, 200);
@@ -75,6 +75,7 @@ class HomepageController extends Controller
 
         // Laden aller auswählbaren Schulen
         $schools = School::selectables()->get();
+
 
         // Wenn es eine Schule gibt, die gültige Lizenzen holen
         if ($isSchoolValid) {

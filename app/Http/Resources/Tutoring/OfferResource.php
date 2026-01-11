@@ -45,7 +45,19 @@ class OfferResource extends JsonResource
                     'long_name' => $this->school->long_name,
                 ];
             }),
-            'is_own_offer' => $this->user_id === Auth::id()
+            'is_own_offer' => $this->user_id === Auth::id(),
+            'my_request' => $this->whenLoaded('requests', function () {
+                $request = $this->requests->first();
+                return $request ? [
+                    'id' => $request->id,
+                    'sent_at' => $request->sent_at?->format('Y-m-d H:i:s'),
+                    'sent_count' => $request->sent_count,
+                    'seen_at' => $request->seen_at?->format('Y-m-d H:i:s'),
+                    'mail_at' => $request->mail_at?->format('Y-m-d H:i:s'),
+                    'message' => $request->message,
+                    // weitere Felder die du brauchst
+                ] : null;
+            }),
 
         ];
     }

@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\TutoringOffer;
 use App\Models\TutoringSubject;
 use App\Models\User;
@@ -59,6 +60,15 @@ class TutoringTestDataSmallSeeder extends Seeder
             $school->licences()->attach(2, ['valid_until' => '2026-07-10']);
             $this->command->info('✓ Nachhilfetool Lizenz hinzugefügt (gültig bis 2026-07-10)');
 
+            // Erstelle SchoolTool Record
+            SchoolTool::create([
+                'school_id' => $school->id,
+                'tutoring_student_must_be_confirmed' => 1,
+                'tutoring_confirmer_email' => 'kron@naturwelt.at',
+                'tutoring_max_offers_per_student' => 4, // Mitte zwischen 3-5
+            ]);
+            $this->command->info('✓ SchoolTool Einstellungen erstellt');
+
             // Erstelle Super-Admin (kron@naturwelt.at)
             $superAdmin = User::create([
                 'school_id' => $school->id,
@@ -73,22 +83,19 @@ class TutoringTestDataSmallSeeder extends Seeder
             $superAdmin->assignRole('super_admin');
             $this->command->info('✓ Super-Admin erstellt: kron@naturwelt.at');
 
-            // Erstelle 3 Fächer
-            $subjectModels = [];
-            foreach ($this->subjects as $subject) {
-                $subjectModels[] = TutoringSubject::create([
-                    'school_id' => $school->id,
-                    'short_name' => $subject['short'],
-                    'long_name' => $subject['long'],
-                    'must_be_accepted' => true,
-                    'email_mentors' => ['teacher1@test-school.at', 'teacher2@test-school.at'],
-                ]);
-            }
-
-            $this->command->info('✓ ' . count($subjectModels) . ' Fächer erstellt');
-
-            // Erstelle 2 Lehrer
+            // Erstelle 2 Lehrer (ZUERST, da Fächer auf Lehrer-Emails referenzieren)
+            $teachers = [];
             for ($i = 0; $i < 2; $i++) {
+                // Bestimme Geschlecht (sex): mostly m oder f, rarely d
+                $sexRand = rand(1, 100);
+                if ($sexRand <= 50) {
+                    $sex = 'm'; // 50% männlich
+                } elseif ($sexRand <= 98) {
+                    $sex = 'f'; // 48% weiblich
+                } else {
+                    $sex = 'd'; // 2% divers
+                }
+
                 $teacher = User::create([
                     'school_id' => $school->id,
                     'email' => "teacher{$i}@test-school.at",
@@ -96,14 +103,37 @@ class TutoringTestDataSmallSeeder extends Seeder
                     'first_name' => 'Lehrer',
                     'last_name' => "Test{$i}",
                     'short' => 'TEST',
+                    'sex' => $sex,
                     'is_active' => 1,
                     'confirmed_at' => now(),
                     'email_verified_at' => now(),
                 ]);
                 $teacher->assignRole('teacher');
+                $teachers[] = $teacher;
             }
 
             $this->command->info('✓ 2 Lehrer erstellt');
+
+            // Erstelle 3 Fächer (mit echten Lehrer-Emails)
+            $subjectModels = [];
+            foreach ($this->subjects as $subject) {
+                // Wähle zufällig 1-2 Lehrer aus den erstellten Lehrern
+                $mentorCount = min(rand(1, 2), count($teachers));
+                $shuffledTeachers = $teachers;
+                shuffle($shuffledTeachers);
+                $selectedTeachers = array_slice($shuffledTeachers, 0, $mentorCount);
+                $mentors = array_map(fn($teacher) => $teacher->email, $selectedTeachers);
+
+                $subjectModels[] = TutoringSubject::create([
+                    'school_id' => $school->id,
+                    'short_name' => $subject['short'],
+                    'long_name' => $subject['long'],
+                    'must_be_accepted' => true,
+                    'email_mentors' => $mentors,
+                ]);
+            }
+
+            $this->command->info('✓ ' . count($subjectModels) . ' Fächer erstellt');
 
             // Erstelle 10 Schüler
             $students = [];
@@ -112,12 +142,23 @@ class TutoringTestDataSmallSeeder extends Seeder
                 $firstName = $this->firstNames[$gender][array_rand($this->firstNames[$gender])];
                 $lastName = $this->lastNames[array_rand($this->lastNames)];
 
+                // Bestimme Geschlecht (sex): mostly m oder f, rarely d
+                $sexRand = rand(1, 100);
+                if ($sexRand <= 50) {
+                    $sex = 'm'; // 50% männlich
+                } elseif ($sexRand <= 98) {
+                    $sex = 'f'; // 48% weiblich
+                } else {
+                    $sex = 'd'; // 2% divers
+                }
+
                 $student = User::create([
                     'school_id' => $school->id,
                     'email' => strtolower($firstName . '.' . $lastName . $i) . '@test-school.at',
                     'password' => Hash::make('password'),
                     'first_name' => $firstName,
                     'last_name' => $lastName,
+                    'sex' => $sex,
                     'is_active' => 1,
                     'confirmed_at' => now(),
                     'email_verified_at' => now(),
@@ -142,23 +183,45 @@ class TutoringTestDataSmallSeeder extends Seeder
                     ],
                 ];
 
+                // Erstelle Klassen-Struktur (1-9 mit boolean)
+                $classes = [
+                    '1' => true,
+                    '2' => true,
+                    '3' => true,
+                    '4' => true,
+                    '5' => false,
+                    '6' => false,
+                    '7' => false,
+                    '8' => false,
+                    '9' => false,
+                ];
+
+                // Wenn must_be_accepted == false, dann email_mentor = null und accepted_at = now()
+                // Sonst wähle einen zufälligen Mentor aus den Subject-Mentoren
+                $mentorEmail = null;
+                if ($subject->must_be_accepted && $subject->email_mentors && count($subject->email_mentors) > 0) {
+                    $mentorEmail = $subject->email_mentors[array_rand($subject->email_mentors)];
+                }
+                $acceptedAt = now()->format('Y-m-d');
+
                 TutoringOffer::create([
                     'school_id' => $school->id,
                     'user_id' => $student->id,
                     'subject_id' => $subject->id,
                     'title' => $subject->long_name . ' Nachhilfe',
                     'description' => 'Test-Angebot für ' . $subject->long_name,
-                    'classes' => ['1. Klasse', '2. Klasse'],
+                    'classes' => $classes,
                     'time_table' => $timeTable,
                     'active_until' => now()->addMonths(3)->format('Y-m-d'),
                     'is_active' => true,
                     'price_per_hour' => 15,
                     'is_group' => false,
                     'max_group_members' => null,
-                    'must_be_accepted' => true,
-                    'email_mentor' => 'teacher1@test-school.at',
-                    'accepted_at' => now()->format('Y-m-d'),
+                    'must_be_accepted' => $subject->must_be_accepted,
+                    'email_mentor' => $mentorEmail,
+                    'accepted_at' => $acceptedAt,
                     'click_count' => 0,
+                    'visible_for_other_schools' => rand(0, 1) === 1, // 50% sichtbar für andere Schulen
                 ]);
             }
 
