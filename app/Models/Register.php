@@ -78,8 +78,27 @@ class Register extends Model
 {
     use HasFactory;
 
-    protected $guarded = [];
-
+    protected $fillable = [
+        'school_id',
+        'schoolyear_id',
+        'name',
+        'description_on_website',
+        'max_registrations',
+        'show_phone',
+        'must_phone',
+        'show_student_last_name',
+        'must_student_last_name',
+        'show_student_first_name',
+        'must_student_first_name',
+        'show_student_birthdate',
+        'must_student_birthdate',
+        'show_booked',
+        'show_end_time',
+        'show_supervisor',
+        'is_active',
+        'show_note',
+        'must_note',
+    ];
 
     protected $casts = [
         'is_active' => 'boolean',

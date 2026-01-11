@@ -44,8 +44,18 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class RegisterDate extends Model
 {
     use HasFactory;
-    
-    protected $guarded = [];
+
+    protected $fillable = [
+        'school_id',
+        'schoolyear_id',
+        'register_id',
+        'supervisor',
+        'date',
+        'from',
+        'to',
+        'max_registrations',
+        'is_locked',
+    ];
 
     public function bookings(): HasMany
     {

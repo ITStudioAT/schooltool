@@ -29,7 +29,11 @@ use Illuminate\Database\Eloquent\Model;
  */
 class SchoolLicence extends Model
 {
-    protected $guarded = [];
+    protected $fillable = [
+        'school_id',
+        'licence_id',
+        'valid_until',
+    ];
 
     public function licence()
     {

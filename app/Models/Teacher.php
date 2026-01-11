@@ -7,7 +7,14 @@ use Illuminate\Database\Eloquent\Model;
 
 class Teacher extends Model
 {
-    protected $guarded = [];
+    protected $fillable = [
+        'school_id',
+        'email',
+        'first_name',
+        'last_name',
+    ];
+
+    // Protected fields: token, token_expires_at (managed by setToken method)
 
     public function setToken($minutes): string
     {

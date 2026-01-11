@@ -2,7 +2,6 @@
 
 namespace App\Traits;
 
-use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 
 trait HasRoleTrait
@@ -29,8 +28,6 @@ trait HasRoleTrait
             return false;
         }
 
-
-        $user = User::find($user->id);
         return $user;
     }
 
@@ -47,8 +44,6 @@ trait HasRoleTrait
         if (! $user->roles()->exists()) {
             return false;
         }
-
-        $user = User::find($user->id);
 
         return $user;
     }

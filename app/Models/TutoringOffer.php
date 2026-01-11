@@ -56,9 +56,25 @@ use Illuminate\Database\Eloquent\Model;
  */
 class TutoringOffer extends Model
 {
+    protected $fillable = [
+        'school_id',
+        'user_id',
+        'subject_id',
+        'title',
+        'description',
+        'classes',
+        'time_table',
+        'active_until',
+        'is_active',
+        'price_per_hour',
+        'is_group',
+        'max_group_members',
+        'must_be_accepted',
+        'email_mentor',
+        'click_count',
+    ];
 
-    protected $guarded = [];
-
+    // Protected fields: accepted_at (managed by admin approval process)
 
     protected $casts = [
         'classes' => AsArrayObject::class,

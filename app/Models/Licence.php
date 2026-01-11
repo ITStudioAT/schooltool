@@ -32,7 +32,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  */
 class Licence extends Model
 {
-    protected $guarded = [];
+    protected $fillable = [
+        'name',
+        'long_name',
+        'price_per_year',
+        'is_selectable',
+    ];
 
     public function schools(): BelongsToMany
     {

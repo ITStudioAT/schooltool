@@ -35,8 +35,14 @@ use Illuminate\Database\Eloquent\Model;
 class Schoolyear extends Model
 {
     use HasFactory;
-    
-    protected $guarded = [];
+
+    protected $fillable = [
+        'school_id',
+        'name',
+        'from',
+        'until',
+        'sem_2_start',
+    ];
 
 
     public function hasDependencies(): bool

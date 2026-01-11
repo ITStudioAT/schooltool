@@ -130,7 +130,24 @@ class User extends Authenticatable
 
     protected $guard_name = 'web';
 
-    protected $guarded = [];
+    protected $fillable = [
+        'school_id',
+        'schoolyear_id',
+        'register_id',
+        'email',
+        'password',
+        'last_name',
+        'first_name',
+        'phone',
+        'sex',
+        'schoolclass',
+        'register_as',
+    ];
+
+    // Protected fields that should NOT be mass assignable:
+    // email_verified_at, confirmed_at, is_2fa, token_2fa, token_2fa_expires_at,
+    // token_2fa_2, token_2fa_2_expires_at, email_2fa, email_2fa_verified_at,
+    // is_active, uuid, uuid_at, login_at, login_ip, remember_token, register_started_at
     /**
      * The attributes that should be hidden for serialization.
      *

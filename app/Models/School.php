@@ -48,7 +48,13 @@ class School extends Model
 {
     use HasFactory;
 
-    protected $guarded = [];
+    protected $fillable = [
+        'long_name',
+        'short_name',
+        'email',
+        'logo',
+        'is_selectable',
+    ];
 
     public function licences(): BelongsToMany
     {

@@ -26,5 +26,10 @@ use Illuminate\Database\Eloquent\Model;
  */
 class SchoolTool extends Model
 {
-    protected $guarded = [];
+    protected $fillable = [
+        'school_id',
+        'tutoring_student_must_be_confirmed',
+        'tutoring_confirmer_email',
+        'tutoring_max_offers_per_student',
+    ];
 }

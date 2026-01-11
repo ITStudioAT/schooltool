@@ -33,7 +33,13 @@ class TutoringSubject extends Model
 {
     use HasFactory;
 
-    protected $guarded = [];
+    protected $fillable = [
+        'school_id',
+        'short_name',
+        'long_name',
+        'must_be_accepted',
+        'email_mentors',
+    ];
 
     protected $casts = [
         'email_mentors' => 'array',

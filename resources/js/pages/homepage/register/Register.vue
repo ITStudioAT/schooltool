@@ -1,4 +1,5 @@
 <template>
+    <canvas ref="particleCanvas" class="particle-canvas"></canvas>
     <v-container fluid class="h-100 w-100 d-flex flex-column align-center justify-center" v-if="config">
         <v-card class="mx-auto w-100" max-width="600" tile flat color="primary">
             <v-card-title class="d-flex flex-row align-center">
@@ -135,8 +136,6 @@ export default {
         return useValidationRulesSetup()
     },
 
-    components: {},
-
     async beforeMount() {
         this.registerStore = useRegisterStore()
         this.school_name = this.$route.query.school
@@ -157,38 +156,28 @@ export default {
     },
 
     mounted() {
-        // Particle System initialisieren
-        const particleSystem = useParticles({
-            count: 50,
-            lineOpacity: 0.15,
-            connectionDistance: 120,
-            speed: 0.3,
-        })
-
-        this.$nextTick(() => {
-            particleSystem.init(this.$refs.particleCanvas)
-        })
-
-        window.addEventListener('resize', particleSystem.resizeCanvas)
-
-        // Cleanup speichern
-        this._particleCleanup = particleSystem.cleanup
+        // Particle System nur initialisieren wenn config geladen ist
+        if (this.config) {
+            this.initParticleSystem()
+        }
     },
 
     unmounted() {
         if (this._particleCleanup) {
             this._particleCleanup()
         }
+        if (this._resizeHandler) {
+            window.removeEventListener('resize', this._resizeHandler)
+        }
     },
 
     data() {
         return {
-            homepageStore: null,
             registerStore: null,
             school_name: '',
-            app_name: '',
             is_valid: false,
             _particleCleanup: null,
+            _resizeHandler: null,
         }
     },
 
@@ -196,13 +185,38 @@ export default {
         ...mapWritableState(useRegisterStore, ['config', 'registers', 'active_register', 'selected_register_id', 'data']),
     },
 
-    watch: {},
     methods: {
+        initParticleSystem() {
+            // Particle System initialisieren
+            const particleSystem = useParticles({
+                count: 50,
+                lineOpacity: 0.15,
+                connectionDistance: 120,
+                speed: 0.3,
+            })
+
+            this.$nextTick(() => {
+                particleSystem.init(this.$refs.particleCanvas)
+            })
+
+            window.addEventListener('resize', particleSystem.resizeCanvas)
+
+            // Cleanup speichern
+            this._particleCleanup = particleSystem.cleanup
+            this._resizeHandler = particleSystem.resizeCanvas
+        },
+
         async confirmEmail(data) {
-            if (!this.registerStore.confirmEmail(data)) return
+            this.is_valid = false
+            await this.$refs.form.validate()
+            if (!this.is_valid) return
+            if (!(await this.registerStore.confirmEmail(data))) return
         },
 
         async loginToken(data) {
+            this.is_valid = false
+            await this.$refs.form.validate()
+            if (!this.is_valid) return
             if (!(await this.registerStore.loginToken(data))) return
 
             this.$router.push('/homepage/register2')
@@ -221,11 +235,15 @@ export default {
             this.is_valid = false
             await this.$refs.form.validate()
             if (!this.is_valid) return
+            if (!this.active_register) {
+                console.error('active_register is null')
+                return
+            }
             this.data.register_id = this.active_register.id
             if (!(await this.registerStore.checkEmail(data))) return
         },
         startRegister() {
-            this.data = {}
+            Object.keys(this.data).forEach(key => delete this.data[key])
             this.data.school_id = this.config?.school?.id
             if (this.registers.length == 1) this.data.step = 'EMAIL'
             if (this.registers.length > 1) {
@@ -242,6 +260,16 @@ export default {
 }
 </script>
 <style scoped>
+.particle-canvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
+}
+
 .logo {
     display: block;
     max-height: 90px; /* or 2em, relative to font size */

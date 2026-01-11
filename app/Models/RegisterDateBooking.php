@@ -49,8 +49,18 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class RegisterDateBooking extends Model
 {
     use HasFactory;
-    
-    protected $guarded = [];
+
+    protected $fillable = [
+        'school_id',
+        'schoolyear_id',
+        'register_id',
+        'register_date_id',
+        'user_id',
+        'student_last_name',
+        'student_first_name',
+        'student_birthdate',
+        'note',
+    ];
 
     public function user(): BelongsTo
     {
