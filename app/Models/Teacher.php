@@ -13,9 +13,13 @@ class Teacher extends Model
         'first_name',
         'last_name',
         'short',
+        'token',
+        'token_expires_at',
     ];
 
-    // Protected fields: token, token_expires_at (managed by setToken method)
+    protected $casts = [
+        'token_expires_at' => 'datetime',
+    ];
 
     public function setToken($minutes): string
     {

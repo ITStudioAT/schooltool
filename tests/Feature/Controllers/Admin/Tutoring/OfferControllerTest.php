@@ -137,24 +137,24 @@ describe('index', function () {
 
         $student = User::factory()->create(['school_id' => $this->school->id]);
 
-        TutoringOffer::create([
+        $acceptedOffer = TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $student->id,
             'subject_id' => $this->subject->id,
             'title' => 'Accepted Offer',
-            'accepted_at' => now(),
             'is_active' => true,
             'is_group' => 0,
             'must_be_accepted' => false,
             'price_per_hour' => 10.00,
         ]);
+        $acceptedOffer->accepted_at = now();
+        $acceptedOffer->save();
 
         TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $student->id,
             'subject_id' => $this->subject->id,
             'title' => 'Pending Offer',
-            'accepted_at' => null,
             'is_active' => true,
             'is_group' => 0,
             'must_be_accepted' => false,
@@ -174,24 +174,24 @@ describe('index', function () {
 
         $student = User::factory()->create(['school_id' => $this->school->id]);
 
-        TutoringOffer::create([
+        $acceptedOffer = TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $student->id,
             'subject_id' => $this->subject->id,
             'title' => 'Accepted Offer',
-            'accepted_at' => now(),
             'is_active' => true,
             'is_group' => 0,
             'must_be_accepted' => false,
             'price_per_hour' => 10.00,
         ]);
+        $acceptedOffer->accepted_at = now();
+        $acceptedOffer->save();
 
         TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $student->id,
             'subject_id' => $this->subject->id,
             'title' => 'Pending Offer',
-            'accepted_at' => null,
             'is_active' => true,
             'is_group' => 0,
             'must_be_accepted' => false,
@@ -576,12 +576,13 @@ describe('toggleAcceptedOffer', function () {
             'user_id' => $student->id,
             'subject_id' => $this->subject->id,
             'title' => 'Test Offer',
-            'accepted_at' => now(),
             'is_active' => true,
             'is_group' => 0,
             'must_be_accepted' => false,
             'price_per_hour' => 10.00,
         ]);
+        $offer->accepted_at = now();
+        $offer->save();
 
         $response = $this->actingAs($admin)->postJson('/api/admin/tutoring/toggle_accepted_offer', ['id' => $offer->id]);
 
@@ -733,17 +734,18 @@ describe('getStats', function () {
         $student2->assignRole('tutoring_user');
 
         // Create offers
-        TutoringOffer::create([
+        $activeAcceptedOffer = TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $student1->id,
             'subject_id' => $this->subject->id,
             'title' => 'Active Accepted',
             'is_active' => true,
-            'accepted_at' => now(),
             'is_group' => 0,
             'must_be_accepted' => false,
             'price_per_hour' => 10.00,
         ]);
+        $activeAcceptedOffer->accepted_at = now();
+        $activeAcceptedOffer->save();
 
         TutoringOffer::create([
             'school_id' => $this->school->id,
@@ -751,7 +753,6 @@ describe('getStats', function () {
             'subject_id' => $this->subject->id,
             'title' => 'Inactive Pending',
             'is_active' => false,
-            'accepted_at' => null,
             'is_group' => 0,
             'must_be_accepted' => false,
             'price_per_hour' => 10.00,

@@ -143,7 +143,7 @@ class TutoringOfferService
 
     public function sendConfirmRefuseEmail($action, $offer_id)
     {
-        $offer = TutoringOffer::findOrFail($offer_id);
+        $offer = TutoringOffer::with(['user', 'subject', 'school'])->findOrFail($offer_id);
         $subject = $offer->subject;
         $school = $offer->school;
 
@@ -157,7 +157,13 @@ class TutoringOfferService
         $data['student'] = $offer->user->last_name . ' ' . $offer->user->first_name . ' ( ' . $offer->user->schoolclass . ' )';
         $data['student_email'] = $offer->user->email;
         $data['subject'] = $offer->subject->short_name . ' (' . $offer->subject->long_name . ')';
-        $data['offer'] = $offer;
+
+        // Convert offer to array to avoid serialization issues with AsArrayObject cast
+        $offerArray = $offer->toArray();
+        // Ensure classes is a collection-like object that has toArray() method
+        $classes = is_array($offerArray['classes']) ? $offerArray['classes'] : [];
+        $offerArray['classes'] = collect($classes);
+        $data['offer'] = $offerArray;
 
         $mail = [
             'from_address' => config('schooltool.noreply_email'),

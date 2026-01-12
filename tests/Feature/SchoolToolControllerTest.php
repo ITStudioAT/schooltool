@@ -30,13 +30,18 @@ beforeEach(function () {
     Role::create(['name' => 'register_admin', 'guard_name' => 'web']);
     Role::create(['name' => 'user', 'guard_name' => 'web']);
 
-    // Create school tool
-    $this->schoolTool = SchoolTool::create([
+    // Create school tool with ID 1 using DB insert to force the ID
+    \Illuminate\Support\Facades\DB::table('school_tools')->insert([
         'id' => 1,
         'school_id' => $this->school->id,
-        'tutoring_student_must_be_confirmed' => false,
+        'tutoring_student_must_be_confirmed' => 0,
         'tutoring_confirmer_email' => 'admin@test.com',
+        'tutoring_max_offers_per_student' => 0,
+        'created_at' => now(),
+        'updated_at' => now(),
     ]);
+
+    $this->schoolTool = SchoolTool::find(1);
 
     $this->admin = User::factory()->create([
         'school_id' => $this->school->id,

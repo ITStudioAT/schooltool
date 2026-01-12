@@ -83,8 +83,9 @@ describe('index', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
         ]);
+        $offer1->accepted_at = now();
+        $offer1->save();
 
         $response = $this->actingAs($this->user)->getJson('/api/homepage/tutoring/offers');
 
@@ -109,8 +110,9 @@ describe('index', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
         ]);
+        $offer1->accepted_at = now();
+        $offer1->save();
 
         $offer2 = TutoringOffer::create([
             'school_id' => $this->school->id,
@@ -123,8 +125,9 @@ describe('index', function () {
             'max_group_members' => 2,
             'price_per_hour' => 20,
             'is_active' => true,
-            'accepted_at' => now(),
         ]);
+        $offer2->accepted_at = now();
+        $offer2->save();
 
         $response = $this->actingAs($this->user)
             ->getJson('/api/homepage/tutoring/offers?search_string=algebra');
@@ -145,7 +148,7 @@ describe('index', function () {
             'must_be_accepted' => false,
         ]);
 
-        TutoringOffer::create([
+        $offer = TutoringOffer::create([
             'school_id' => $otherSchool->id,
             'user_id' => $otherUser->id,
             'subject_id' => $otherSubject->id,
@@ -156,8 +159,9 @@ describe('index', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
         ]);
+        $offer->accepted_at = now();
+        $offer->save();
 
         $response = $this->actingAs($this->user)->getJson('/api/homepage/tutoring/offers');
 
@@ -340,8 +344,9 @@ describe('update', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
         ]);
+        $offer->accepted_at = now();
+        $offer->save();
 
         $data = [
             'id' => $offer->id,
@@ -371,8 +376,9 @@ describe('update', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
         ]);
+        $offer->accepted_at = now();
+        $offer->save();
 
         $data = [
             'id' => $offer->id,
@@ -401,8 +407,9 @@ describe('update', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
         ]);
+        $offer->accepted_at = now();
+        $offer->save();
 
         $data = [
             'id' => $offer->id,
@@ -443,8 +450,9 @@ describe('update', function () {
             'email_mentor' => 'mentor@school.com',
             'must_be_accepted' => true,
             'is_active' => true,
-            'accepted_at' => now(),
         ]);
+        $offer->accepted_at = now();
+        $offer->save();
 
         $data = [
             'id' => $offer->id,
@@ -480,8 +488,9 @@ describe('update', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
         ]);
+        $offer->accepted_at = now();
+        $offer->save();
 
         $response = $this->actingAs($this->user)->putJson("/api/homepage/tutoring/offers/{$offer->id}", [
             'id' => $offer->id,
@@ -518,8 +527,9 @@ describe('loadMyOffers', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
         ]);
+        $offer1->accepted_at = now();
+        $offer1->save();
 
         $offer2 = TutoringOffer::create([
             'school_id' => $this->school->id,
@@ -544,7 +554,7 @@ describe('loadMyOffers', function () {
         $otherUser = User::factory()->create(['school_id' => $this->school->id]);
         $otherUser->assignRole('tutoring_user');
 
-        TutoringOffer::create([
+        $offer1 = TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
             'subject_id' => $this->subject->id,
@@ -554,10 +564,11 @@ describe('loadMyOffers', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
         ]);
+        $offer1->accepted_at = now();
+        $offer1->save();
 
-        TutoringOffer::create([
+        $offer2 = TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $otherUser->id,
             'subject_id' => $this->subject->id,
@@ -567,8 +578,9 @@ describe('loadMyOffers', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
         ]);
+        $offer2->accepted_at = now();
+        $offer2->save();
 
         $response = $this->actingAs($this->user)->getJson('/api/homepage/tutoring/load_my_offers');
 
@@ -601,8 +613,9 @@ describe('loadMyOffers', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
         ]);
+        $offer1->accepted_at = now();
+        $offer1->save();
 
         $offer2 = TutoringOffer::create([
             'school_id' => $this->school->id,
@@ -614,8 +627,9 @@ describe('loadMyOffers', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
         ]);
+        $offer2->accepted_at = now();
+        $offer2->save();
 
         $response = $this->actingAs($this->user)->getJson('/api/homepage/tutoring/load_my_offers');
 
@@ -639,8 +653,9 @@ describe('toggleOffer', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
         ]);
+        $offer->accepted_at = now();
+        $offer->save();
 
         $response = $this->postJson('/api/homepage/tutoring/toggle_offer', ['id' => $offer->id]);
 
@@ -660,8 +675,9 @@ describe('toggleOffer', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
         ]);
+        $offer->accepted_at = now();
+        $offer->save();
 
         $response = $this->actingAs($user)->postJson('/api/homepage/tutoring/toggle_offer', ['id' => $offer->id]);
 
@@ -679,8 +695,9 @@ describe('toggleOffer', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
         ]);
+        $offer->accepted_at = now();
+        $offer->save();
 
         $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/toggle_offer', ['id' => $offer->id]);
 
@@ -718,7 +735,7 @@ describe('toggleOffer', function () {
     it('prevents activating when max offers limit is reached', function () {
         // Create 3 active offers (max limit)
         for ($i = 1; $i <= 3; $i++) {
-            TutoringOffer::create([
+            $offer = TutoringOffer::create([
                 'school_id' => $this->school->id,
                 'user_id' => $this->user->id,
                 'subject_id' => $this->subject->id,
@@ -728,8 +745,9 @@ describe('toggleOffer', function () {
                 'max_group_members' => 2,
                 'price_per_hour' => 15,
                 'is_active' => true,
-                'accepted_at' => now(),
             ]);
+            $offer->accepted_at = now();
+            $offer->save();
         }
 
         // Create inactive offer to toggle
@@ -755,7 +773,7 @@ describe('toggleOffer', function () {
 
         // Create many active offers
         for ($i = 1; $i <= 10; $i++) {
-            TutoringOffer::create([
+            $offer = TutoringOffer::create([
                 'school_id' => $this->school->id,
                 'user_id' => $this->user->id,
                 'subject_id' => $this->subject->id,
@@ -765,8 +783,9 @@ describe('toggleOffer', function () {
                 'max_group_members' => 2,
                 'price_per_hour' => 15,
                 'is_active' => true,
-                'accepted_at' => now(),
             ]);
+            $offer->accepted_at = now();
+            $offer->save();
         }
 
         $inactiveOffer = TutoringOffer::create([
@@ -808,7 +827,7 @@ describe('toggleOffer', function () {
 
 describe('loadOffers', function () {
     it('loads offers for authenticated tutoring user', function () {
-        TutoringOffer::create([
+        $offer = TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
             'subject_id' => $this->subject->id,
@@ -818,8 +837,9 @@ describe('loadOffers', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
         ]);
+        $offer->accepted_at = now();
+        $offer->save();
 
         $response = $this->actingAs($this->user)->getJson('/api/homepage/tutoring/load_offers');
 
@@ -831,7 +851,7 @@ describe('loadOffers', function () {
     });
 
     it('loads offers for non-authenticated user with school_name', function () {
-        TutoringOffer::create([
+        $offer = TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
             'subject_id' => $this->subject->id,
@@ -841,8 +861,9 @@ describe('loadOffers', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
         ]);
+        $offer->accepted_at = now();
+        $offer->save();
 
         $response = $this->getJson('/api/homepage/tutoring/load_offers?school_name=TestSchool');
 
@@ -860,7 +881,7 @@ describe('loadOffers', function () {
     });
 
     it('returns only accepted and active offers', function () {
-        TutoringOffer::create([
+        $offer1 = TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
             'subject_id' => $this->subject->id,
@@ -870,10 +891,11 @@ describe('loadOffers', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
         ]);
+        $offer1->accepted_at = now();
+        $offer1->save();
 
-        TutoringOffer::create([
+        $offer2 = TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
             'subject_id' => $this->subject->id,
@@ -883,8 +905,9 @@ describe('loadOffers', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => false,
-            'accepted_at' => now(),
         ]);
+        $offer2->accepted_at = now();
+        $offer2->save();
 
         TutoringOffer::create([
             'school_id' => $this->school->id,
@@ -914,7 +937,7 @@ describe('loadOffers', function () {
             'must_be_accepted' => false,
         ]);
 
-        TutoringOffer::create([
+        $offer1 = TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
             'subject_id' => $uniqueSubject->id,
@@ -925,10 +948,11 @@ describe('loadOffers', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
         ]);
+        $offer1->accepted_at = now();
+        $offer1->save();
 
-        TutoringOffer::create([
+        $offer2 = TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
             'subject_id' => $this->subjectWithApproval->id,
@@ -939,9 +963,10 @@ describe('loadOffers', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
             'email_mentor' => 'mentor@school.com',
         ]);
+        $offer2->accepted_at = now();
+        $offer2->save();
 
         $response = $this->actingAs($this->user)->getJson('/api/homepage/tutoring/load_offers?search_string=UNIQUESEARCHXYZ123');
 
@@ -950,7 +975,7 @@ describe('loadOffers', function () {
     });
 
     it('excludes expired offers', function () {
-        TutoringOffer::create([
+        $offer1 = TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
             'subject_id' => $this->subject->id,
@@ -960,11 +985,12 @@ describe('loadOffers', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
             'active_until' => now()->addDays(7),
         ]);
+        $offer1->accepted_at = now();
+        $offer1->save();
 
-        TutoringOffer::create([
+        $offer2 = TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
             'subject_id' => $this->subject->id,
@@ -974,9 +1000,10 @@ describe('loadOffers', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
             'active_until' => now()->subDays(1),
         ]);
+        $offer2->accepted_at = now();
+        $offer2->save();
 
         $response = $this->getJson('/api/homepage/tutoring/load_offers?school_name=TestSchool');
 
@@ -997,9 +1024,10 @@ describe('clickCount', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
             'click_count' => 0,
         ]);
+        $offer->accepted_at = now();
+        $offer->save();
 
         $response = $this->postJson('/api/homepage/tutoring/click_count', ['offer_id' => $offer->id]);
 
@@ -1022,9 +1050,10 @@ describe('clickCount', function () {
             'max_group_members' => 2,
             'price_per_hour' => 15,
             'is_active' => true,
-            'accepted_at' => now(),
             'click_count' => 0,
         ]);
+        $offer->accepted_at = now();
+        $offer->save();
 
         // First click
         $this->postJson('/api/homepage/tutoring/click_count', ['offer_id' => $offer->id]);

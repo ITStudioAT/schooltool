@@ -153,7 +153,7 @@ class TeacherListService
     public function checkToken($user, $should_token): string
     {
         // Check if the token matches and is still valid
-        if ($user->token == $should_token && now()->isBefore($user->token_expires_at)) {
+        if ($user->token == $should_token && $user->token_expires_at && !$user->token_expires_at->isPast()) {
             return true; // Token is valid and not expired
         }
 
@@ -167,6 +167,7 @@ class TeacherListService
 
         $user = User::create([
             'school_id' => $teacher->school_id,
+            'short' => $teacher->short,
             'last_name' => $teacher->last_name,
             'first_name' => $teacher->first_name,
             'email' => $teacher->email,

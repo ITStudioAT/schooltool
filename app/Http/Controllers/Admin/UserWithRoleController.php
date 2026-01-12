@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use App\Http\Requests\Admin\IndexUserWithRoleRequest;
 use App\Http\Requests\Admin\SavePasswordRequest;
@@ -98,14 +99,23 @@ class UserWithRoleController extends Controller
         $validated = $this->convertConfirmedVerified($validated);
         $validated['password'] = Hash::make(now());
 
-        // Extract is_active before create since it's not fillable
+        // Extract protected fields before create since they're not fillable
         $is_active = $validated['is_active'] ?? false;
-        unset($validated['is_active']);
+        $confirmed_at = $validated['confirmed_at'] ?? null;
+        $email_verified_at = $validated['email_verified_at'] ?? null;
+
+        unset($validated['is_active'], $validated['confirmed_at'], $validated['email_verified_at']);
 
         $user = User::create($validated);
 
-        // Set is_active after creation
+        // Set protected fields after creation
         $user->is_active = $is_active;
+        if ($confirmed_at !== null) {
+            $user->confirmed_at = $confirmed_at;
+        }
+        if ($email_verified_at !== null) {
+            $user->email_verified_at = $email_verified_at;
+        }
         $user->save();
 
         return response()->json(new UserWithRoleResource($user), 200);
@@ -127,16 +137,34 @@ class UserWithRoleController extends Controller
 
         $validated = $this->convertConfirmedVerified($validated, $user);
 
-        // Extract is_active before update since it's not fillable
-        $is_active = $validated['is_active'] ?? null;
-        unset($validated['is_active']);
+        // Extract protected fields before update since they're not fillable
+        $has_is_active = array_key_exists('is_active', $validated);
+        $has_confirmed_at = array_key_exists('confirmed_at', $validated);
+        $has_email_verified_at = array_key_exists('email_verified_at', $validated);
 
+        $is_active = $validated['is_active'] ?? null;
+        $confirmed_at = $validated['confirmed_at'] ?? null;
+        $email_verified_at = $validated['email_verified_at'] ?? null;
+
+        unset($validated['is_active'], $validated['confirmed_at'], $validated['email_verified_at'], $validated['id']);
+
+        // Update fillable fields first
         $user->update($validated);
 
-        // Set is_active after update if provided
-        if ($is_active !== null) {
-            $user->is_active = $is_active;
-            $user->save();
+        // Update protected fields using raw DB query if any were provided
+        if ($has_is_active || $has_confirmed_at || $has_email_verified_at) {
+            $updates = [];
+            if ($has_is_active) {
+                $updates['is_active'] = $is_active;
+            }
+            if ($has_confirmed_at) {
+                $updates['confirmed_at'] = $confirmed_at;
+            }
+            if ($has_email_verified_at) {
+                $updates['email_verified_at'] = $email_verified_at;
+            }
+            DB::table('users')->where('id', $user->id)->update($updates);
+            $user->refresh();
         }
 
         return response()->json(new UserWithRoleResource($user), 200);

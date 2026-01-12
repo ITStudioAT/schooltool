@@ -27,14 +27,19 @@ beforeEach(function () {
     ]);
 
     // Create SchoolTool record with ID 1 (required by the job)
-    $this->schoolTool = SchoolTool::create([
+    // Use DB insert to force ID 1
+    \Illuminate\Support\Facades\DB::table('school_tools')->insert([
         'id' => 1,
         'school_id' => $this->school->id,
         'tutoring_student_must_be_confirmed' => 0,
         'tutoring_confirmer_email' => null,
         'tutoring_max_offers_per_student' => 5,
         'health_at' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
     ]);
+
+    $this->schoolTool = SchoolTool::find(1);
 });
 
 describe('handle', function () {
@@ -62,11 +67,11 @@ describe('handle', function () {
     });
 
     it('updates existing health_at timestamp', function () {
-        $oldTimestamp = now()->subHours(2)->toDateTimeString();
+        $oldTimestamp = now()->subHours(2);
         $this->schoolTool->health_at = $oldTimestamp;
         $this->schoolTool->save();
 
-        expect($this->schoolTool->health_at)->toBe($oldTimestamp);
+        expect($this->schoolTool->health_at->toDateTimeString())->toBe($oldTimestamp->toDateTimeString());
 
         $job = new HealthJob();
         $job->handle();

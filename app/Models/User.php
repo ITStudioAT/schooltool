@@ -138,6 +138,7 @@ class User extends Authenticatable
         'password',
         'last_name',
         'first_name',
+        'short',
         'phone',
         'sex',
         'schoolclass',

@@ -423,67 +423,67 @@ describe('sendTokenForLogin', function () {
 
 describe('checkToken', function () {
     it('returns true for valid token and future expiry', function () {
-        $this->user->update([
-            'token_2fa' => '123456',
-            'token_2fa_expires_at' => Carbon::now()->addMinutes(10),
-        ]);
-        
+        // Use direct assignment since token_2fa fields are not fillable
+        $this->user->token_2fa = '123456';
+        $this->user->token_2fa_expires_at = Carbon::now()->addMinutes(10);
+        $this->user->save();
+
         $data = ['token_2fa' => '123456'];
-        
+
         $result = $this->service->checkToken($this->user, $data);
-        
+
         expect($result)->toBeTrue();
     });
-    
+
     it('returns false for invalid token', function () {
-        $this->user->update([
-            'token_2fa' => '123456',
-            'token_2fa_expires_at' => Carbon::now()->addMinutes(10),
-        ]);
-        
+        // Use direct assignment since token_2fa fields are not fillable
+        $this->user->token_2fa = '123456';
+        $this->user->token_2fa_expires_at = Carbon::now()->addMinutes(10);
+        $this->user->save();
+
         $data = ['token_2fa' => '999999'];
-        
+
         $result = $this->service->checkToken($this->user, $data);
-        
+
         expect($result)->toBeFalse();
     });
-    
+
     it('returns false for expired token', function () {
-        $this->user->update([
-            'token_2fa' => '123456',
-            'token_2fa_expires_at' => Carbon::now()->subMinutes(10),
-        ]);
-        
+        // Use direct assignment since token_2fa fields are not fillable
+        $this->user->token_2fa = '123456';
+        $this->user->token_2fa_expires_at = Carbon::now()->subMinutes(10);
+        $this->user->save();
+
         $data = ['token_2fa' => '123456'];
-        
+
         $result = $this->service->checkToken($this->user, $data);
-        
+
         expect($result)->toBeFalse();
     });
-    
+
     it('returns false when token matches but is expired', function () {
-        $this->user->update([
-            'token_2fa' => '123456',
-            'token_2fa_expires_at' => Carbon::now()->subSeconds(1),
-        ]);
-        
+        // Use direct assignment since token_2fa fields are not fillable
+        $this->user->token_2fa = '123456';
+        $this->user->token_2fa_expires_at = Carbon::now()->subSeconds(1);
+        $this->user->save();
+
         $data = ['token_2fa' => '123456'];
-        
+
         $result = $this->service->checkToken($this->user, $data);
-        
+
         expect($result)->toBeFalse();
     });
-    
+
     it('returns true when token is exactly at expiry boundary', function () {
-        $this->user->update([
-            'token_2fa' => '123456',
-            'token_2fa_expires_at' => Carbon::now()->addSeconds(1),
-        ]);
-        
+        // Use direct assignment since token_2fa fields are not fillable
+        $this->user->token_2fa = '123456';
+        $this->user->token_2fa_expires_at = Carbon::now()->addSeconds(1);
+        $this->user->save();
+
         $data = ['token_2fa' => '123456'];
-        
+
         $result = $this->service->checkToken($this->user, $data);
-        
+
         expect($result)->toBeTrue();
     });
 });
