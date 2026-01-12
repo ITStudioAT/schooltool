@@ -12,6 +12,7 @@ class Teacher extends Model
         'email',
         'first_name',
         'last_name',
+        'short',
     ];
 
     // Protected fields: token, token_expires_at (managed by setToken method)

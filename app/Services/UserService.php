@@ -42,12 +42,14 @@ class UserService
         unset($data['roles']);
 
         $data['school_id'] = $school_id;
-        $data['email_verified_at'] = now();
-        $data['is_active'] = true;
-        $data['confirmed_at'] = now();
         $data['password'] = Hash::make(now());
 
         $user = User::create($data);
+
+        $user->email_verified_at = now();
+        $user->is_active = true;
+        $user->confirmed_at = now();
+        $user->save();
 
         foreach ($user_roles as $role) {
 

@@ -54,12 +54,13 @@ class AdminService
                 'school_id' => $data['school_id'] ?? 1,
                 'email' => $data['email'],
                 'password' => Hash::make(now()),
-                'register_started_at' => now(),
                 'register_as' => 'admin',
-                'is_active' => false,
-
             ]
         );
+
+        $user->register_started_at = now();
+        $user->is_active = false;
+        $user->save();
 
         return $user;
     }
@@ -70,10 +71,12 @@ class AdminService
             'last_name' => $data['last_name'],
             'first_name' => $data['first_name'] ?? null,
             'password' => Hash::make($data['password']),
-            'register_started_at' => null,
-            'confirmed_at' => config('spa.registered_admin_must_be_confirmed') ? null : now(),
-            'is_active' => config('spa.registered_admin_must_be_confirmed') ? 0 : 1,
         ]);
+
+        $user->register_started_at = null;
+        $user->confirmed_at = config('spa.registered_admin_must_be_confirmed') ? null : now();
+        $user->is_active = config('spa.registered_admin_must_be_confirmed') ? 0 : 1;
+        $user->save();
 
         return $user;
     }

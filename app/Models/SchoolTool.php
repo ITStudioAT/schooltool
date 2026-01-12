@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -22,14 +23,22 @@ use Illuminate\Database\Eloquent\Model;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereTutoringMaxOffersPerStudent($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereTutoringStudentMustBeConfirmed($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereUpdatedAt($value)
+ * @method static \Database\Factories\SchoolToolFactory factory($count = null, $state = [])
  * @mixin \Eloquent
  */
 class SchoolTool extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
         'school_id',
         'tutoring_student_must_be_confirmed',
         'tutoring_confirmer_email',
         'tutoring_max_offers_per_student',
+        'health_at',
+    ];
+
+    protected $casts = [
+        'health_at' => 'datetime',
     ];
 }

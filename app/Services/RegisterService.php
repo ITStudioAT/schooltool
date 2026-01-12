@@ -211,7 +211,12 @@ class RegisterService
 
     public function checkToken($user, $data): bool
     {
-        return $user->token_2fa === $data['token_2fa'] &&
-            Carbon::parse($user->token_2fa_expires_at)->isFuture();
+        // Reload from database to get latest values
+        $user = $user->fresh();
+
+        return $user &&
+            $user->token_2fa === $data['token_2fa'] &&
+            $user->token_2fa_expires_at !== null &&
+            !$user->token_2fa_expires_at->isPast();
     }
 }

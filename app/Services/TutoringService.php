@@ -113,7 +113,7 @@ class TutoringService
     {
         $user = User::findOrFail($data['user_id']);
         if (!$user->confirmed_at) {
-            $schoolTool = SchoolTool::findOrFail(1);
+            $schoolTool = SchoolTool::where('school_id', $user->school_id)->firstOrFail();
             if ($schoolTool->tutoring_student_must_be_confirmed) {
                 // User muss gemäß Konfiguration confirmed werden
                 $data['status'] = 'USER_MUST_BE_CONFIRMED';

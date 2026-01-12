@@ -85,7 +85,18 @@ class RecordsCreateService
                 'is_selectable' => 1
             ]);
 
-            copy(storage_path('app/public/images/logo.png'), storage_path('app/public/images/logos/logo_1.png'));
+            $sourceLogo = storage_path('app/public/images/logo.png');
+            $destLogo = storage_path('app/public/images/logos/logo_1.png');
+
+            // Only copy logo if source file exists
+            if (file_exists($sourceLogo)) {
+                // Ensure destination directory exists
+                $destDir = dirname($destLogo);
+                if (!is_dir($destDir)) {
+                    mkdir($destDir, 0755, true);
+                }
+                copy($sourceLogo, $destLogo);
+            }
         }
 
         return $first;
@@ -168,10 +179,12 @@ class RecordsCreateService
                 'password' => env('SA_PW'),
                 'first_name' => 'Günther',
                 'last_name' => 'Kron',
-                'email_verified_at' => now(),
-                'confirmed_at' => now(),
-                'is_active' => 1,
             ]);
+
+            $user->email_verified_at = now();
+            $user->confirmed_at = now();
+            $user->is_active = 1;
+            $user->save();
         }
 
         $user->assignRole($role);

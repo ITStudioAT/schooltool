@@ -58,14 +58,23 @@ class RegisterDateBookingService
         $user = User::where('school_id', $school_id)->where('email', $validated['email'])->first();
         if (!$user) {
             $validated['school_id'] =  $school_id;
-            $validated['email_verified_at'] = now();
-            $validated['confirmed_at'] = now();
             $validated['password'] = Hash::make(now());
             $user = User::create($validated);
+
+            $user->email_verified_at = now();
+            $user->confirmed_at = now();
+            $user->is_active = 1;
+            $user->save();
         } else {
-            if (!$user->email_verified_at) $validated['email_verified_at'] = now();
-            if (!$user->confirmed_at) $validated['confirmed_at'] = now();
             $user->update($validated);
+
+            if (!$user->email_verified_at) {
+                $user->email_verified_at = now();
+            }
+            if (!$user->confirmed_at) {
+                $user->confirmed_at = now();
+            }
+            $user->save();
         }
         $user->assignRole('register_user');
 

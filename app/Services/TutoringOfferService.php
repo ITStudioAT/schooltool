@@ -45,25 +45,35 @@ class TutoringOfferService
             // TODO Notification an Tutor
         } else {
             $data['is_active'] = true;
-            $data['accepted_at'] = now();
         }
 
         $offer = TutoringOffer::create($data);
+
+        if (!$data['must_be_accepted']) {
+            $offer->accepted_at = now();
+            $offer->save();
+        }
+
         return $offer;
     }
 
     public function update($offer, $data)
     {
         if ($offer->must_be_accepted) {
-            $data['accepted_at'] = null;
             $data['is_active'] = false;
-        } else {
-            if (!$offer->accepted_at) {
-                $data['accepted_at'] = now();
-            }
         }
 
         $offer->update($data);
+
+        if ($offer->must_be_accepted) {
+            $offer->accepted_at = null;
+            $offer->save();
+        } else {
+            if (!$offer->accepted_at) {
+                $offer->accepted_at = now();
+                $offer->save();
+            }
+        }
 
         return $offer;
     }

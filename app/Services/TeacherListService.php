@@ -167,16 +167,18 @@ class TeacherListService
 
         $user = User::create([
             'school_id' => $teacher->school_id,
-            'short' => $teacher->short,
             'last_name' => $teacher->last_name,
             'first_name' => $teacher->first_name,
             'email' => $teacher->email,
-            'email_verified_at' => now(),
             'password' => Hash::make(now()),
-            'confirmed_at' => now(),
-            'login_at' => now(),
-            'login_ip' => request()->ip()
         ]);
+
+        $user->email_verified_at = now();
+        $user->confirmed_at = now();
+        $user->is_active = 1;
+        $user->login_at = now();
+        $user->login_ip = request()->ip();
+        $user->save();
 
         return $user;
     }

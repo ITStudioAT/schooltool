@@ -98,7 +98,15 @@ class UserWithRoleController extends Controller
         $validated = $this->convertConfirmedVerified($validated);
         $validated['password'] = Hash::make(now());
 
+        // Extract is_active before create since it's not fillable
+        $is_active = $validated['is_active'] ?? false;
+        unset($validated['is_active']);
+
         $user = User::create($validated);
+
+        // Set is_active after creation
+        $user->is_active = $is_active;
+        $user->save();
 
         return response()->json(new UserWithRoleResource($user), 200);
     }
@@ -119,7 +127,17 @@ class UserWithRoleController extends Controller
 
         $validated = $this->convertConfirmedVerified($validated, $user);
 
+        // Extract is_active before update since it's not fillable
+        $is_active = $validated['is_active'] ?? null;
+        unset($validated['is_active']);
+
         $user->update($validated);
+
+        // Set is_active after update if provided
+        if ($is_active !== null) {
+            $user->is_active = $is_active;
+            $user->save();
+        }
 
         return response()->json(new UserWithRoleResource($user), 200);
     }

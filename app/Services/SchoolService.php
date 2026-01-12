@@ -48,9 +48,12 @@ class SchoolService
             'first_name' => env('SA_FIRST_NAME'),
             'email' => env('SA_EMAIL'),
             'password' => env('SA_PW'),
-            'email_verified_at' => now(),
-            'confirmed_at' => now(),
         ]);
+
+        $user->email_verified_at = now();
+        $user->confirmed_at = now();
+        $user->is_active = 1;
+        $user->save();
 
         $user->assignRole('super_admin');
 
@@ -266,11 +269,15 @@ class SchoolService
 
         $data['school_id'] = $school_id;
         $data['schoolyear_id'] = $schoolyear_id;
-        $data['email_verified_at'] = now();
         $data['password'] = Hash::make(now());
-        $data['confirmed_at'] = now();
 
         $user = User::create($data);
+
+        $user->email_verified_at = now();
+        $user->confirmed_at = now();
+        $user->is_active = 1;
+        $user->save();
+
         $user->assignRole($roles);
         return $user;
     }
