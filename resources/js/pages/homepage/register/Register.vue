@@ -212,9 +212,11 @@ export default {
         },
 
         async loginToken(data) {
+            /*
             this.is_valid = false
             await this.$refs.form.validate()
             if (!this.is_valid) return
+            */
             if (!(await this.registerStore.loginToken(data))) return
 
             this.$router.push('/homepage/register2')

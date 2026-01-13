@@ -18,10 +18,9 @@
                 <v-card-title>{{ active_register.name }}</v-card-title>
 
                 <!-- description_on_website anzeigen -->
+                <!-- description_on_website anzeigen -->
                 <v-alert closable tile color="primary" border="start" border-color="secondary" class="mt-4" v-if="active_register.description_on_website">
-                    <div style="white-space: pre-line">
-                        {{ active_register.description_on_website }}
-                    </div>
+                    <div v-html="active_register.description_on_website"></div>
                 </v-alert>
 
                 <v-card-text class="bg-secondary">
