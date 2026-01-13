@@ -9,172 +9,140 @@ use App\Models\Schoolyear;
 use App\Models\User;
 use Spatie\Permission\Models\Role;
 
-
 class RecordsCreateService
 {
-
-
-    // Initialisierung der Records wie bei App-Start
-    public function initRecords()
+    public function initRecords(): void
     {
-        // Schule erzeugen
         $school = $this->firstOrCreateSchool();
-
-        // Schuljahr erzeugen
-        $schoolyear = $this->firstOrCreateSchoolyear($school);
-
-        // SuperAdmin-Rolle erzeugen
+        $this->firstOrCreateSchoolyear($school);
         $this->checkOrCreateAdminRoles();
-
-        // Lizenzen erzeugen
         $this->checkOrCreateLicences();
 
-        // Für alle Schulen einen SuperAdmin erzeugen
-        $schools = School::all();
-        foreach ($schools as $school) {
+        foreach (School::all() as $school) {
             $this->checkOrCreateAdmins($school);
             $this->checkOrCreateSchoolyears($school);
             $this->checkOrCreateSchoolTool($school);
         }
     }
 
-    private function checkOrCreateLicences()
+    private function checkOrCreateLicences(): void
     {
-        // Anmeldetool
-        Licence::firstOrCreate(
-            ['id' => 1],
-            [
-                'name' => 'Anmeldetool',
-                'long_name' => 'Tool zum Verwalten von Anmeldeungen',
-                'price_per_year' => 200
-            ]
-        );
-
-        // Anmeldetool
         Licence::firstOrCreate(
             ['id' => 1],
             [
                 'name' => 'Anmeldetool',
                 'long_name' => 'Tool zum Verwalten von Anmeldungen',
-                'price_per_year' => 200
+                'price_per_year' => 200,
             ]
         );
 
-        // Nachhilfetool
         Licence::firstOrCreate(
             ['id' => 2],
             [
                 'name' => 'Nachhilfetool',
                 'long_name' => 'Tool zum Verwalten von Nachhilfe',
-                'price_per_year' => 200
+                'price_per_year' => 200,
             ]
         );
     }
 
     private function firstOrCreateSchool(): School
     {
-        // Schulen zählen
-        $first = School::first();
+        $school = School::first();
 
-        // Wenn keine Schule existiert, dann erzeugen
-        if (!$first) {
-            $first = School::create([
-                'long_name' => 'Christian-Doppler-Gymnasium Salzburg',
-                'short_name' => 'CDGym',
-                'logo' => 'logo_1.png',
-                'is_selectable' => 1
-            ]);
-
-            $sourceLogo = storage_path('app/public/images/logo.png');
-            $destLogo = storage_path('app/public/images/logos/logo_1.png');
-
-            // Only copy logo if source file exists
-            if (file_exists($sourceLogo)) {
-                // Ensure destination directory exists
-                $destDir = dirname($destLogo);
-                if (!is_dir($destDir)) {
-                    mkdir($destDir, 0755, true);
-                }
-                copy($sourceLogo, $destLogo);
-            }
+        if ($school) {
+            return $school;
         }
 
-        return $first;
+        $school = School::create([
+            'long_name' => 'Christian-Doppler-Gymnasium Salzburg',
+            'short_name' => 'CDGym',
+            'logo' => 'logo_1.png',
+            'is_selectable' => 1,
+        ]);
+
+        $this->copyDefaultLogo();
+
+        return $school;
     }
 
-
-    private function checkOrCreateSchoolyears($school)
+    private function copyDefaultLogo(): void
     {
-        $schoolyears = config('schooltool.schoolyears');
+        $sourceLogo = storage_path('app/public/images/logo.png');
+        $destLogo = storage_path('app/public/images/logos/logo_1.png');
+
+        if (! file_exists($sourceLogo)) {
+            return;
+        }
+
+        $destDir = dirname($destLogo);
+        if (! is_dir($destDir)) {
+            mkdir($destDir, 0755, true);
+        }
+
+        copy($sourceLogo, $destLogo);
+    }
+
+    private function checkOrCreateSchoolyears(School $school): void
+    {
+        $schoolyears = config('schooltool.schoolyears', []);
+
         foreach ($schoolyears as $schoolyear) {
-            Schoolyear::firstOrCReate(
+            Schoolyear::firstOrCreate(
                 [
                     'school_id' => $school->id,
-                    'name' =>  $schoolyear['name']
+                    'name' => $schoolyear['name'],
                 ],
                 [
                     'from' => $schoolyear['from'],
                     'until' => $schoolyear['to'],
-                    'sem_2_start' => $schoolyear['sem_2_start']
+                    'sem_2_start' => $schoolyear['sem_2_start'],
                 ]
             );
         }
     }
 
-    private function firstOrCreateSchoolyear($school): Schoolyear
-    // 90
+    private function firstOrCreateSchoolyear(School $school): Schoolyear
     {
-        return Schoolyear::firstOrCReate(
+        return Schoolyear::firstOrCreate(
             ['school_id' => $school->id],
             [
                 'name' => 'Schuljahr 2025/26',
                 'from' => '2025-09-08',
                 'until' => '2026-07-10',
-                'sem_2_start' => '2026-02-16'
+                'sem_2_start' => '2026-02-16',
             ]
         );
     }
 
-    private function firstOrCreateSchoolTool($school)
-    // 90
+    private function firstOrCreateSchoolTool(School $school): SchoolTool
     {
-        return SchoolTool::firstOrCReate(
+        return SchoolTool::firstOrCreate(
             ['school_id' => $school->id],
             []
         );
     }
 
-    private function checkOrCreateAdminRoles(): bool
+    private function checkOrCreateAdminRoles(): void
     {
-        // Checken, ob die Rolle super_admin existiert, wenn nicht erzeugen
-        Role::firstOrCreate([
-            'name' => 'super_admin',
-            'guard_name' => 'web',
-        ]);
-        Role::firstOrCreate([
-            'name' => 'admin',
-            'guard_name' => 'web',
-        ]);
-
-        return true;
+        Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
     }
 
-    private function checkOrCreateAdmins($school): bool
+    private function checkOrCreateAdmins(School $school): void
     {
-        $EMAIL_SUPER_ADMIN = 'kron@naturwelt.at';
         $schoolyear = Schoolyear::where('school_id', $school->id)->first();
-
-        $this->checkOrCreateAdmin($school, $schoolyear, $EMAIL_SUPER_ADMIN, 'super_admin');
-        return true;
+        $this->checkOrCreateAdmin($school, $schoolyear, 'kron@naturwelt.at', 'super_admin');
     }
 
-    private function checkOrCreateAdmin($school, $schoolyear, $email, $role): User
+    private function checkOrCreateAdmin(School $school, ?Schoolyear $schoolyear, string $email, string $role): User
     {
         $user = User::where('school_id', $school->id)->where('email', $email)->first();
-        if (!$user) {
+
+        if (! $user) {
             $user = User::create([
                 'school_id' => $school->id,
-                'schoolyear_id' => $schoolyear ? $schoolyear->id : null,
+                'schoolyear_id' => $schoolyear?->id,
                 'email' => $email,
                 'password' => env('SA_PW'),
                 'first_name' => 'Günther',
@@ -188,21 +156,18 @@ class RecordsCreateService
         }
 
         $user->assignRole($role);
+
         return $user;
     }
 
-    public function checkOrCreateSchoolTool($school): SchoolTool
+    public function checkOrCreateSchoolTool(School $school): SchoolTool
     {
-
-        $schoolTool = SchoolTool::where('school_id', $school->id)->first();
-        if (!$schoolTool) {
-            $schoolTool = SchoolTool::create([
-                'school_id' =>  $school->id,
+        return SchoolTool::firstOrCreate(
+            ['school_id' => $school->id],
+            [
                 'tutoring_student_must_be_confirmed' => false,
                 'tutoring_confirmer_email' => '',
-            ]);
-        }
-
-        return $schoolTool;
+            ]
+        );
     }
 }

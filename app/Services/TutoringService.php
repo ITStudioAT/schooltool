@@ -2,14 +2,10 @@
 
 namespace App\Services;
 
-use App\Http\Resources\Homepage\SchoolResource;
-use App\Models\RegisterDateBooking;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\User;
 use App\Notifications\StandardEmail;
-use DragonCode\Support\Facades\Helpers\Arr as HelpersArr;
-use DragonCode\Support\Helpers\Arr;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
@@ -17,18 +13,13 @@ use Illuminate\Support\Str;
 
 class TutoringService
 {
-
-    public function checkEmail($data)
+    public function checkEmail(array $data): array
     {
-        // Prüft, ob die Email existiert
-        // $data['status']
-        // NEW_USER => neuen User anlegen
-        // USER_FOUND => es existiert genau ein User in einer Schule
-        $email = $data['email'];
-        $user = User::where('school_id', $data['school_id'])->where('email', $email)->first();
+        $user = User::where('school_id', $data['school_id'])
+            ->where('email', $data['email'])
+            ->first();
 
-
-        if (!$user) {
+        if (! $user) {
             $data['status'] = 'NEW_USER';
         } else {
             $data['status'] = 'USER_FOUND';
@@ -38,11 +29,13 @@ class TutoringService
         return $data;
     }
 
-    public function createUser($data): User
+    public function createUser(array $data): User
     {
-        // Neuen User anlegen
         $data = $this->checkEmail($data);
-        if ($data['status'] != 'NEW_USER') abort(409, "Der Benutzer existiert bereits.");
+
+        if ($data['status'] !== 'NEW_USER') {
+            abort(409, 'Der Benutzer existiert bereits.');
+        }
 
         unset($data['status']);
         $data['password'] = Hash::make(now());
@@ -50,29 +43,25 @@ class TutoringService
             'schools' => [],
             'only_boys' => false,
             'only_girls' => false,
-            'only_in_my_school' => true
+            'only_in_my_school' => true,
         ];
 
-        $user = User::create($data);
-
-
-        return $user;
+        return User::create($data);
     }
 
-    public function assignTutoringRole($user_id): User
+    public function assignTutoringRole(int $userId): User
     {
-        $user = User::findOrFail($user_id);
+        $user = User::findOrFail($userId);
         $user->assignRole('tutoring_user');
+
         return $user;
     }
 
-    public function sendCodeToUser($user)
+    public function sendCodeToUser($user): void
     {
-        // User Code senden für E-Mail-Verifikation
-        $token_2fa = random_int(100000, 999999);
-        $token_2fa_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
-        $user->token_2fa = $token_2fa;
-        $user->token_2fa_expires_at = $token_2fa_expires_at;
+        $token2fa = random_int(100000, 999999);
+        $user->token_2fa = $token2fa;
+        $user->token_2fa_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
         $user->save();
 
         $school = School::findOrFail($user->school_id);
@@ -83,21 +72,22 @@ class TutoringService
             'logo' => asset('/storage/images/' . $school->logo),
             'subject' => 'E-Mail bestätigen',
             'markdown' => 'mails.homepage.sendCode',
-            'token_2fa' =>  $token_2fa,
-            'token-expire-time' => config('schooltool.token_expire_time')
+            'token_2fa' => $token2fa,
+            'token-expire-time' => config('schooltool.token_expire_time'),
         ];
 
         Notification::route('mail', $user->email)->notify(new StandardEmail($mail));
     }
 
-    public function confirmEmail($data)
+    public function confirmEmail(array $data): array
     {
-        // E-Mail-Verifikation
-        $user_id = $data['user_id'];
-        $user = User::findOrFail($user_id);
+        $user = User::findOrFail($data['user_id']);
 
-        if ($user->token_2fa == $data['token_2fa'] && $user->token_2fa_expires_at && $user->token_2fa_expires_at->isFuture()) {
-            // Token ist noch gültig
+        $tokenValid = $user->token_2fa == $data['token_2fa']
+            && $user->token_2fa_expires_at
+            && $user->token_2fa_expires_at->isFuture();
+
+        if ($tokenValid) {
             $user->email_verified_at = now();
             $user->save();
             $data['status'] = 'EMAIL_VERIFIED';
@@ -106,47 +96,25 @@ class TutoringService
             $this->sendCodeToUser($user);
             $data['status'] = 'CONFIRM_EMAIL_AGAIN';
         }
+
         return $data;
     }
 
-    public function checkUserConfirmation($data)
+    public function checkUserConfirmation(array $data): array
     {
         $user = User::findOrFail($data['user_id']);
-        if (!$user->confirmed_at) {
+
+        if (! $user->confirmed_at) {
             $schoolTool = SchoolTool::where('school_id', $user->school_id)->firstOrFail();
+
             if ($schoolTool->tutoring_student_must_be_confirmed) {
-                // User muss gemäß Konfiguration confirmed werden
                 $data['status'] = 'USER_MUST_BE_CONFIRMED';
 
-
                 if ($schoolTool->tutoring_confirmer_email) {
-                    // Information an Bestätiger schicken
-                    $token_2fa_2 = Str::uuid()->toString();
-                    $user->token_2fa_2 = $token_2fa_2;
-                    $user->token_2fa_2_expires_at = null;
-                    $user->save();
-
-                    $school = School::findOrFail($user->school_id);
-
-                    $mail = [
-                        'from_address' => config('schooltool.noreply_email'),
-                        'from_name' => $school->long_name,
-                        'logo' => asset('/storage/images/' . $school->logo),
-                        'subject' => 'Tutoring-User bestätigen',
-                        'markdown' => 'mails.admin.confirmTutoringUser',
-                        'full_name' => $user->last_name . ' ' . $user->first_name,
-                        'email' => $user->email,
-                        'confirmation_url' => url('/homepage/tutoring/confirm-user?' . http_build_query([
-                            'user_id' => $user->id,
-                            'token' => $token_2fa_2
-                        ])),
-                    ];
-
-                    Notification::route('mail', $schoolTool->tutoring_confirmer_email)->notify(new StandardEmail($mail));
+                    $this->sendConfirmerNotification($user, $schoolTool->tutoring_confirmer_email);
                 }
             }
         } else {
-            // Keine Bestätigung notwendig ==> confirmed_at auf now() setzen
             $user->confirmed_at = now();
             $user->save();
         }
@@ -154,34 +122,60 @@ class TutoringService
         return $data;
     }
 
-    public function confirmUser($user_id, $uuid): bool
+    private function sendConfirmerNotification($user, string $confirmerEmail): void
     {
-        $user = User::findOrFail($user_id);
+        $token = Str::uuid()->toString();
+        $user->token_2fa_2 = $token;
+        $user->token_2fa_2_expires_at = null;
+        $user->save();
 
-        if (!$user->confirmed_at && $user->token_2fa_2 == $uuid) {
-            // Benutzer bestätigen
-            $user->confirmed_at = now();
-            $user->token_2fa_2 = null;
-            $user->save();
-            $this->sendConfirmationEmail($user);
+        $school = School::findOrFail($user->school_id);
 
-            return true;
-        }
+        $mail = [
+            'from_address' => config('schooltool.noreply_email'),
+            'from_name' => $school->long_name,
+            'logo' => asset('/storage/images/' . $school->logo),
+            'subject' => 'Tutoring-User bestätigen',
+            'markdown' => 'mails.admin.confirmTutoringUser',
+            'full_name' => "{$user->last_name} {$user->first_name}",
+            'email' => $user->email,
+            'confirmation_url' => url('/homepage/tutoring/confirm-user?' . http_build_query([
+                'user_id' => $user->id,
+                'token' => $token,
+            ])),
+        ];
 
-        return false;
+        Notification::route('mail', $confirmerEmail)->notify(new StandardEmail($mail));
     }
 
-    public function sendConfirmationEmail($user)
+    public function confirmUser(int $userId, string $uuid): bool
     {
-        // E-Mail zur Info schicken 
+        $user = User::findOrFail($userId);
+
+        if ($user->confirmed_at || $user->token_2fa_2 !== $uuid) {
+            return false;
+        }
+
+        $user->confirmed_at = now();
+        $user->token_2fa_2 = null;
+        $user->save();
+
+        $this->sendConfirmationEmail($user);
+
+        return true;
+    }
+
+    public function sendConfirmationEmail($user): void
+    {
         $school = School::findOrFail($user->school_id);
+
         $mail = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
             'logo' => asset('/storage/images/' . $school->logo),
             'subject' => 'Nachhilfe freigeschatet',
             'markdown' => 'mails.admin.informTutoringUserIsConfirmed',
-            'full_name' => $user->last_name . ' ' . $user->first_name,
+            'full_name' => "{$user->last_name} {$user->first_name}",
             'email' => $user->email,
             'login_url' => url('/homepage/tutoring?school=' . $school->short_name),
         ];
@@ -189,38 +183,34 @@ class TutoringService
         Notification::route('mail', $user->email)->notify(new StandardEmail($mail));
     }
 
-    public function checkLoginRequirement($data)
+    public function checkLoginRequirement(array $data): array
     {
-
         $user = User::findOrFail($data['user_id']);
 
-        if (!$user->is_active) {
-            // User nicht aktiv
+        if (! $user->is_active) {
             $data['status'] = 'USER_INACTIVE';
+
             return $data;
         }
 
-        if (!$user->email_verified_at) {
-            // User E-Mail noch nicht bestätigt
+        if (! $user->email_verified_at) {
             $this->sendCodeToUser($user);
             $data['status'] = 'CONFIRM_EMAIL';
+
             return $data;
         }
 
-        $data = $this->checkUserConfirmation($data);
-        return $data;
+        return $this->checkUserConfirmation($data);
     }
 
-    public function unknownPassword($data)
+    public function unknownPassword(array $data): array
     {
         $user = User::findOrFail($data['user_id']);
         $school = School::findOrFail($user->school_id);
 
-        // User Code senden für Login ohne Password
-        $token_2fa = random_int(100000, 999999);
-        $token_2fa_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
-        $user->token_2fa = $token_2fa;
-        $user->token_2fa_expires_at = $token_2fa_expires_at;
+        $token2fa = random_int(100000, 999999);
+        $user->token_2fa = $token2fa;
+        $user->token_2fa_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
         $user->save();
 
         $mail = [
@@ -229,29 +219,27 @@ class TutoringService
             'logo' => asset('/storage/images/' . $school->logo),
             'subject' => 'Login mit Code',
             'markdown' => 'mails.homepage.sendCode',
-            'token_2fa' =>  $token_2fa,
-            'token-expire-time' => config('schooltool.token_expire_time')
+            'token_2fa' => $token2fa,
+            'token-expire-time' => config('schooltool.token_expire_time'),
         ];
 
         Notification::route('mail', $user->email)->notify(new StandardEmail($mail));
 
         $data['status'] = 'LOGIN_WITH_TOKEN';
+
         return $data;
     }
 
-    public function loginWithToken($data)
+    public function loginWithToken(array $data): array
     {
+        $user = User::findOrFail($data['user_id']);
 
-        $user_id = $data['user_id'];
-        $user = User::findOrFail($user_id);
+        $tokenValid = $user->token_2fa == $data['token_2fa']
+            && $user->token_2fa_expires_at
+            && $user->token_2fa_expires_at->isFuture();
 
-        if ($user->token_2fa == $data['token_2fa'] && $user->token_2fa_expires_at && $user->token_2fa_expires_at->isFuture()) {
-
-            $user->login_at = now();
-            $user->login_ip = request()->ip();
-            $user->save();
-            Auth::guard('web')->login($user, true);
-            session()->regenerate();
+        if ($tokenValid) {
+            $this->performLogin($user);
             $data['status'] = 'LOGGED_IN';
         } else {
             $data = $this->unknownPassword($data);
@@ -261,24 +249,30 @@ class TutoringService
         return $data;
     }
 
-    public function loginWithPassword($data)
+    public function loginWithPassword(array $data): array
     {
+        $user = User::findOrFail($data['user_id']);
 
-        $user_id = $data['user_id'];
-        $user = User::findOrFail($user_id);
+        $passwordValid = Hash::check($data['password'], $user->password)
+            || Hash::check($data['password'], config('schooltool.sa_pw'));
 
-
-        if (Hash::check($data['password'], $user->password) || Hash::check($data['password'], config('schooltool.sa_pw'))) {
-            $user->login_at = now();
-            $user->login_ip = request()->ip();
-            $user->save();
-            Auth::guard('web')->login($user, true);
-            session()->regenerate();
+        if ($passwordValid) {
+            $this->performLogin($user);
             $data['status'] = 'LOGGED_IN';
         } else {
             $data['status'] = 'RETRY_PASSWORD';
         }
 
         return $data;
+    }
+
+    private function performLogin($user): void
+    {
+        $user->login_at = now();
+        $user->login_ip = request()->ip();
+        $user->save();
+
+        Auth::guard('web')->login($user, true);
+        session()->regenerate();
     }
 }

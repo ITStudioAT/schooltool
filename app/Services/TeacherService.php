@@ -5,30 +5,30 @@ namespace App\Services;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 
-
-
 class TeacherService
 {
-
-    public function create($school_id, $data)
+    public function create(int $schoolId, array $data): User
     {
+        $shortExists = User::where('school_id', $schoolId)
+            ->where('short', $data['short'])
+            ->exists();
 
-        $short = $data['short'];
-        $email = $data['email'];
+        if ($shortExists) {
+            abort(409, 'Das Kurzzeichen wird bereits verwendet');
+        }
 
-        // Prüfen, ob Lehrer-Kurzeichen bereits vergeben ist
-        $user = User::where('school_id', $school_id)->where('short', $short)->first();
-        if ($user) abort(409, 'Das Kurzzeichen wird bereits verwendet');
+        $emailExists = User::where('school_id', $schoolId)
+            ->where('email', $data['email'])
+            ->exists();
 
-        // Prüfen, ob E-Mail bereits vergeben ist
-        $user = User::where('school_id', $school_id)->where('email', $email)->first();
-        if ($user) abort(409, 'Die E-Mail-Adresse wird bereits verwendet');
+        if ($emailExists) {
+            abort(409, 'Die E-Mail-Adresse wird bereits verwendet');
+        }
 
-        $data['school_id'] = $school_id;
+        $data['school_id'] = $schoolId;
         $data['password'] = Hash::make(now());
 
         $user = User::create($data);
-
         $user->email_verified_at = now();
         $user->confirmed_at = now();
         $user->is_active = 1;
@@ -39,26 +39,39 @@ class TeacherService
         return $user;
     }
 
-    public function update($auth_user, $data)
+    public function update($authUser, array $data): User
     {
-        $school_id = $auth_user->school_id;
-
-        // Prüfen, ob User existiert
+        $schoolId = $authUser->school_id;
         $user = User::findOrFail($data['id']);
 
-        if ($user->hasRole('super_admin') && $user->id != $data['id']) abort(401, "Ein anderer Lehrer kann nicht gespeichrt werden, wenn dieser Super-Admin ist.");
-
-        // Prüfen, ob die Update-Daten id + school_id vorhanden sind
-        if ($user->school_id != $school_id) abort(401, 'Diese Änderung kann nicht durchgeführt werden.');
-
-        // Prüfen, ob sich short verändert hat und wenn ja, ob short noch nicht vergeben ist
-        if ($data['short'] != $user->short) {
-            if (User::where('school_id', $school_id)->whereNot('id', $data['id'])->where('short', $data['short'])->exists()) abort(409, 'Das Kurzzeichen des Lehrers existiert bereits.');
+        if ($user->hasRole('super_admin') && $user->id !== $data['id']) {
+            abort(401, 'Ein anderer Lehrer kann nicht gespeichert werden, wenn dieser Super-Admin ist.');
         }
 
-        // Prüfen, ob sich E-Mail verändert hat und wenn ja, ob E-Mail noch nicht vergeben ist
-        if ($data['email'] != $user->email) {
-            if (User::where('school_id', $school_id)->whereNot('id', $data['id'])->where('email', $data['email'])->exists()) abort(409, 'Die E-Mail des Lehrers existiert bereits.');
+        if ($user->school_id !== $schoolId) {
+            abort(401, 'Diese Änderung kann nicht durchgeführt werden.');
+        }
+
+        if ($data['short'] !== $user->short) {
+            $shortExists = User::where('school_id', $schoolId)
+                ->whereNot('id', $data['id'])
+                ->where('short', $data['short'])
+                ->exists();
+
+            if ($shortExists) {
+                abort(409, 'Das Kurzzeichen des Lehrers existiert bereits.');
+            }
+        }
+
+        if ($data['email'] !== $user->email) {
+            $emailExists = User::where('school_id', $schoolId)
+                ->whereNot('id', $data['id'])
+                ->where('email', $data['email'])
+                ->exists();
+
+            if ($emailExists) {
+                abort(409, 'Die E-Mail des Lehrers existiert bereits.');
+            }
         }
 
         $user->update([
@@ -71,34 +84,31 @@ class TeacherService
         return $user;
     }
 
-    public function deleteTeachers($school_id, $ids)
+    public function deleteTeachers(int $schoolId, array $ids): void
     {
-
         foreach ($ids as $id) {
-            $this->deleteTeacher($school_id, $id);
+            $this->deleteTeacher($schoolId, $id);
         }
     }
 
-    private function deleteTeacher($school_id, $id)
+    private function deleteTeacher(int $schoolId, int $id): void
     {
-
         $user = User::findOrFail($id);
 
+        if ($user->school_id !== $schoolId) {
+            return;
+        }
 
+        if ($user->hasDependencies()) {
+            return;
+        }
 
-        // school_id stimmt mit Benutzer nicht überein
-        if ($user->school_id != $school_id) return false;
+        $hasOnlyTeacherRole = $user->roles()->count() === 1 && $user->hasRole('teacher');
+        if (! $hasOnlyTeacherRole) {
+            return;
+        }
 
-        // Der Benutzer hat Abhängigkeiten
-        if ($user->hasDependencies()) return false;
-
-        // Prüfen, ob der Benutzer genau nur die Rolle teacher hat
-        if ($user->roles()->count() != 1 || !$user->hasRole('teacher')) return false;
-
-        // Rollen löschen
         $user->roles()->detach();
-
-        // User löschen
         $user->delete();
     }
 }

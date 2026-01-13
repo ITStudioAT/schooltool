@@ -4,52 +4,38 @@ namespace App\Services;
 
 use App\Http\Resources\Tutoring\OfferRequestResource;
 use App\Http\Resources\Tutoring\OfferResource;
-use App\Models\School;
 use App\Models\TutoringOffer;
 use App\Models\TutoringOfferRequest;
 use App\Models\TutoringSubject;
-use App\Models\User;
 use App\Notifications\StandardEmail;
-use Barryvdh\Debugbar\Facades\Debugbar;
 use Carbon\Carbon;
-
-use function Symfony\Component\Clock\now;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 
 class TutoringOfferService
 {
-    public function isCreatingPossible($school_id, $user_id, $data)
+    public function isCreatingPossible(int $schoolId, int $userId, array $data): array
     {
-        $answer = [
+        return [
             'status' => true,
             'code' => 200,
             'message' => 'Speicherung möglich',
             'data' => $data,
         ];
-        return $answer;
     }
 
-    public function create($school_id, $user_id, $data)
+    public function create(int $schoolId, int $userId, array $data): TutoringOffer
     {
-        $data['school_id'] = $school_id;
-        $data['user_id'] = $user_id;
+        $data['school_id'] = $schoolId;
+        $data['user_id'] = $userId;
 
-        // Get Subject and check, if must_be_accepted is set
         $subject = TutoringSubject::findOrFail($data['subject_id']);
         $data['must_be_accepted'] = $subject->must_be_accepted;
-
-        if ($data['must_be_accepted']) {
-            $data['is_active'] = false;
-            // TODO Notification an Tutor
-        } else {
-            $data['is_active'] = true;
-        }
+        $data['is_active'] = ! $subject->must_be_accepted;
 
         $offer = TutoringOffer::create($data);
 
-        if (!$data['must_be_accepted']) {
+        if (! $data['must_be_accepted']) {
             $offer->accepted_at = now();
             $offer->save();
         }
@@ -57,7 +43,7 @@ class TutoringOfferService
         return $offer;
     }
 
-    public function update($offer, $data)
+    public function update(TutoringOffer $offer, array $data): TutoringOffer
     {
         if ($offer->must_be_accepted) {
             $data['is_active'] = false;
@@ -68,39 +54,37 @@ class TutoringOfferService
         if ($offer->must_be_accepted) {
             $offer->accepted_at = null;
             $offer->save();
-        } else {
-            if (!$offer->accepted_at) {
-                $offer->accepted_at = now();
-                $offer->save();
-            }
+        } elseif (! $offer->accepted_at) {
+            $offer->accepted_at = now();
+            $offer->save();
         }
 
         return $offer;
     }
 
 
-    public function sendOfferToMentor($offer)
+    public function sendOfferToMentor(TutoringOffer $offer): void
     {
-        $data = [];
-        $data['student'] = $offer->user->last_name . ' ' . $offer->user->first_name . ' ( ' . $offer->user->schoolclass . ' )';
-        $data['student_email'] = $offer->user->email;
-        $data['subject'] = $offer->subject->short_name . ' (' . $offer->subject->long_name . ')';
-        $data['offer'] = $offer;
-
-        $offer->token = Str::uuid();;
+        $offer->token = Str::uuid();
         $offer->token_expires_at = Carbon::now()->addMinutes((int) config('schooltool.token_expire_time'));
         $offer->save();
 
-        $url_confirm = url('/homepage/tutoring/offer?action=confirm&offer_id=' . $offer->id . '&token=' . $offer->token . '&email_mentor=' . $offer->email_mentor);
-        $url_refuse = url('/homepage/tutoring/offer/?action=refuse&offer_id=' . $offer->id . '&token=' . $offer->token . '&email_mentor=' . $offer->email_mentor);
-        $url_login = url('/admin/login');
-
-        $data['url_confirm'] = $url_confirm;
-        $data['url_refuse'] = $url_refuse;
-        $data['url_login'] = $url_login;
-
-
         $school = $offer->school;
+        $baseParams = http_build_query([
+            'offer_id' => $offer->id,
+            'token' => $offer->token,
+            'email_mentor' => $offer->email_mentor,
+        ]);
+
+        $data = [
+            'student' => "{$offer->user->last_name} {$offer->user->first_name} ( {$offer->user->schoolclass} )",
+            'student_email' => $offer->user->email,
+            'subject' => "{$offer->subject->short_name} ({$offer->subject->long_name})",
+            'offer' => $offer,
+            'url_confirm' => url("/homepage/tutoring/offer?action=confirm&{$baseParams}"),
+            'url_refuse' => url("/homepage/tutoring/offer?action=refuse&{$baseParams}"),
+            'url_login' => url('/admin/login'),
+        ];
 
         $mail = [
             'from_address' => config('schooltool.noreply_email'),
@@ -114,26 +98,20 @@ class TutoringOfferService
         Notification::route('mail', $offer->email_mentor)->notify(new StandardEmail($mail));
     }
 
-    public function offerConfirmRefuse($data)
+    public function offerConfirmRefuse(array $data): bool
     {
-        /*
-            'action' => 'required|string|in:confirm,refuse',
-            'offer_id' => 'required|integer|exists:tutoring_offers,id',
-            'token' => 'required|string',
-            'email_mentor' => 'required|email',
-        */
-
         $offer = TutoringOffer::findOrFail($data['offer_id']);
-        $subject = $offer->subject;
 
-        // Prüfen der Gültigkeit des E-Mail-Mentors
-        if ($data['email_mentor'] != $offer->email_mentor) abort(403, 'E-Mail-Adresse des Tutors ist ungültig.');
+        if ($data['email_mentor'] !== $offer->email_mentor) {
+            abort(403, 'E-Mail-Adresse des Tutors ist ungültig.');
+        }
 
-        if ($data['token'] !== $offer->token || Carbon::parse($offer->token_expires_at)->lt(now())) {
+        $tokenExpired = Carbon::parse($offer->token_expires_at)->lt(now());
+        if ($data['token'] !== $offer->token || $tokenExpired) {
             abort(403, 'Token ungültig oder abgelaufen.');
         }
 
-        if ($data['action'] == 'confirm') {
+        if ($data['action'] === 'confirm') {
             $offer->accepted_at = now();
             $offer->save();
         }
@@ -141,35 +119,30 @@ class TutoringOfferService
         return true;
     }
 
-    public function sendConfirmRefuseEmail($action, $offer_id)
+    public function sendConfirmRefuseEmail(string $action, int $offerId): void
     {
-        $offer = TutoringOffer::with(['user', 'subject', 'school'])->findOrFail($offer_id);
-        $subject = $offer->subject;
+        $offer = TutoringOffer::with(['user', 'subject', 'school'])->findOrFail($offerId);
         $school = $offer->school;
 
-        if ($action == 'confirm') {
-            $subject = 'Nachhilfe-Angebot wurde bestätigt';
-        } else {
-            $subject = 'Nachhilfe-Angebot wurde abgelehnt';
-        }
+        $emailSubject = $action === 'confirm'
+            ? 'Nachhilfe-Angebot wurde bestätigt'
+            : 'Nachhilfe-Angebot wurde abgelehnt';
 
-        $data = [];
-        $data['student'] = $offer->user->last_name . ' ' . $offer->user->first_name . ' ( ' . $offer->user->schoolclass . ' )';
-        $data['student_email'] = $offer->user->email;
-        $data['subject'] = $offer->subject->short_name . ' (' . $offer->subject->long_name . ')';
-
-        // Convert offer to array to avoid serialization issues with AsArrayObject cast
         $offerArray = $offer->toArray();
-        // Ensure classes is a collection-like object that has toArray() method
-        $classes = is_array($offerArray['classes']) ? $offerArray['classes'] : [];
-        $offerArray['classes'] = collect($classes);
-        $data['offer'] = $offerArray;
+        $offerArray['classes'] = collect(is_array($offerArray['classes']) ? $offerArray['classes'] : []);
+
+        $data = [
+            'student' => "{$offer->user->last_name} {$offer->user->first_name} ( {$offer->user->schoolclass} )",
+            'student_email' => $offer->user->email,
+            'subject' => "{$offer->subject->short_name} ({$offer->subject->long_name})",
+            'offer' => $offerArray,
+        ];
 
         $mail = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
             'logo' => asset('/storage/images/' . $school->logo),
-            'subject' => $subject,
+            'subject' => $emailSubject,
             'markdown' => 'mails.tutoring.offerConfirmedOrRefused',
             'data' => $data,
         ];
@@ -177,84 +150,96 @@ class TutoringOfferService
         Notification::route('mail', $offer->user->email)->notify(new StandardEmail($mail));
     }
 
-    public function sendOfferRequest($user_id, $offer_id, $message)
+    public function sendOfferRequest(int $userId, int $offerId, string $message): array
     {
+        $offer = TutoringOffer::with(['school', 'subject', 'requests'])->findOrFail($offerId);
 
-        $offer = TutoringOffer::with(['school', 'subject', 'requests'])->findOrFail($offer_id);
+        $offerRequest = TutoringOfferRequest::where('school_id', $offer->school_id)
+            ->where('offer_id', $offer->id)
+            ->where('from_user_id', $userId)
+            ->where('to_user_id', $offer->user_id)
+            ->first();
 
-
-
-        $offerRequest = TutoringOfferRequest::where('school_id', $offer->school_id)->where('offer_id', $offer->id)->where('from_user_id', $user_id)->where('to_user_id', $offer->user_id)->first();
-
-        if (!$offerRequest) {
-            // Anfrage wurde bisher nicht erstellt
+        if (! $offerRequest) {
             $offerRequest = TutoringOfferRequest::create([
                 'school_id' => $offer->school_id,
                 'offer_id' => $offer->id,
-                'from_user_id' => $user_id,
+                'from_user_id' => $userId,
                 'to_user_id' => $offer->user_id,
                 'message' => $message,
                 'is_serious' => true,
                 'sent_at' => now(),
                 'sent_count' => 1,
             ]);
-            $offer = TutoringOffer::with(['school', 'subject', 'requests'])->findOrFail($offer_id);
-            $data = ['status' => 'NEW_REQUEST', 'offer_request' => new OfferRequestResource($offerRequest), 'offer' => new OfferResource($offer)];
+            $status = 'NEW_REQUEST';
         } else {
-            // Anfrage wurde bereits erstellt
-            $offerRequest->sent_count = $offerRequest->sent_count + 1;
+            $offerRequest->sent_count++;
             $offerRequest->last_sent_at = now();
             $offerRequest->save();
-            $offer = TutoringOffer::with(['school', 'subject', 'requests'])->findOrFail($offer_id);
-            $data = ['status' => 'EXISTING_REQUEST', 'offer_request' => new OfferRequestResource($offerRequest), 'offer' => new OfferResource($offer)];
+            $status = 'EXISTING_REQUEST';
         }
 
-        return $data;
+        $offer->refresh();
+
+        return [
+            'status' => $status,
+            'offer_request' => new OfferRequestResource($offerRequest),
+            'offer' => new OfferResource($offer),
+        ];
     }
 
-    public function sendOfferRequestEmail($offerRequest, $status)
+    public function sendOfferRequestEmail($offerRequest, string $status): void
     {
-
-        $offerRequest = TutoringOfferRequest::findOrFail($offerRequest->id);
-
+        if (! $offerRequest instanceof TutoringOfferRequest) {
+            $offerRequest = TutoringOfferRequest::findOrFail($offerRequest->id ?? $offerRequest['id']);
+        }
+        $offerRequest = $offerRequest->fresh();
         $school = $offerRequest->school;
         $user = $offerRequest->to_user;
 
-        $offerRequest->token = Str::uuid();;
+        $offerRequest->token = Str::uuid();
         $offerRequest->token_expires_at = Carbon::now()->addMinutes((int) config('schooltool.token_expire_time'));
         $offerRequest->save();
 
-        if ($status == 'NEW_REQUEST') {
-            $subject = 'Neue Anfrage für Ihr Nachhilfe-Angebot';
-        } else {
-            $subject = 'Erinnerung: Anfrage für Ihr Nachhilfe-Angebot';
-        }
+        $emailSubject = $status === 'NEW_REQUEST'
+            ? 'Neue Anfrage für Ihr Nachhilfe-Angebot'
+            : 'Erinnerung: Anfrage für Ihr Nachhilfe-Angebot';
 
-        $data = [
-            'url' => url('/homepage/tutoring/offer_request?email='  . $user->email . '&id=' . $offerRequest->id . '&token=' . $offerRequest->token),
-        ];
+        $params = http_build_query([
+            'email' => $user->email,
+            'id' => $offerRequest->id,
+            'token' => $offerRequest->token,
+        ]);
 
         $mail = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
             'logo' => asset('/storage/images/' . $school->logo),
-            'subject' => $subject,
+            'subject' => $emailSubject,
             'markdown' => 'mails.tutoring.offerRequest',
-            'data' => $data,
+            'data' => ['url' => url("/homepage/tutoring/offer_request?{$params}")],
         ];
-
-        // Debugbar::info('Prepared email data:', $data);
 
         Notification::route('mail', $user->email)->notify(new StandardEmail($mail));
     }
 
-    public function getUserFromOfferRequest($email, $offer_request_id, $token)
+    public function getUserFromOfferRequest(string $email, int $offerRequestId, string $token)
     {
-        $offerRequest = TutoringOfferRequest::find($offer_request_id);
-        if (!$offerRequest) return null;
-        if ($offerRequest->token !== $token) return null;
-        if ($offerRequest->token_expires_at < now()) return null;
-        if ($offerRequest->to_user->email !== $email) return null;
-        return $offerRequest?->to_user;
+        $offerRequest = TutoringOfferRequest::find($offerRequestId);
+
+        if (! $offerRequest) {
+            return null;
+        }
+        if ($offerRequest->token !== $token) {
+            return null;
+        }
+        if ($offerRequest->token_expires_at < now()) {
+            return null;
+        }
+        if ($offerRequest->to_user->email !== $email) {
+            return null;
+        }
+
+        return $offerRequest->to_user;
     }
 }
