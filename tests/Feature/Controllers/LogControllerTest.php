@@ -80,7 +80,7 @@ describe('getLog', function () {
         $response = $this->actingAs($user)->getJson('/api/admin/get_log');
 
         $response->assertStatus(200)
-            ->assertHeader('Content-Type', 'text/plain; charset=UTF-8')
+            ->assertHeader('Content-Type', 'text/plain; charset=utf-8')
             ->assertHeader('X-Lines-Count', '3')
             ->assertHeader('X-Total-Lines', '3')
             ->assertHeader('X-Mode', 'first');

@@ -294,8 +294,9 @@ describe('confirmUser', function () {
 
         $response = $this->get('/homepage/tutoring/confirm-user?user_id=' . $user->id . '&token=' . $validUuid);
 
-        $response->assertStatus(200)
-            ->assertSee('erfolgreich bestätigt');
+        $response->assertStatus(302)
+            ->assertRedirect()
+            ->assertRedirectContains('erfolgreich bestätigt');
     });
 
     test('confirm user with invalid UUID returns failure message', function () {
@@ -311,8 +312,9 @@ describe('confirmUser', function () {
 
         $response = $this->get('/homepage/tutoring/confirm-user?user_id=' . $user->id . '&token=' . $wrongUuid);
 
-        $response->assertStatus(200)
-            ->assertSee('nicht bestätigt');
+        $response->assertStatus(302)
+            ->assertRedirect()
+            ->assertRedirectContains('nicht genehmigt');
     });
 });
 

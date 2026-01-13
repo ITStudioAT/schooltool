@@ -197,11 +197,10 @@ test('login step 2 rejects incorrect password', function () {
 });
 
 test('login step 2 handles 2fa enabled users', function () {
-    $this->user->update([
-        'is_2fa' => true,
-        'email_2fa' => 'second@example.com',
-    ]);
-    
+    $this->user->is_2fa = true;
+    $this->user->email_2fa = 'second@example.com';
+    $this->user->save();
+
     $data = [
         'data' => [
             'step' => 'LOGIN_ENTER_PASSWORD',
@@ -213,9 +212,9 @@ test('login step 2 handles 2fa enabled users', function () {
             ],
         ],
     ];
-    
+
     $response = $this->postJson('/api/admin/login_step_2', $data);
-    
+
     $response->assertStatus(200)
         ->assertJson([
             'step' => 'LOGIN_ENTER_TOKEN',
@@ -293,10 +292,9 @@ test('load roles requires authentication', function () {
 
 // Password Reset - Token Validation
 test('password reset validates user exists and is active', function () {
-    $this->user->update([
-        'token_2fa' => '123456',
-        'token_2fa_expires_at' => now()->addMinutes(10),
-    ]);
+    $this->user->token_2fa = '123456';
+    $this->user->token_2fa_expires_at = now()->addMinutes(10);
+    $this->user->save();
 
     $data = [
         'data' => [
