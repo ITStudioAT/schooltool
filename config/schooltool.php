@@ -1,7 +1,6 @@
 <?php
 
 return [
-
     'version' => '3.7.5',
     'copyright' => '(c) 2025 ITStudio.at by Günther Kron',
     'logo' => 'schooltool_white.png',
@@ -22,6 +21,5 @@ return [
         ['name' => 'Schuljahr 2033/34', 'from' => '2033-09-12', 'sem_2_start' => '2034-02-20', 'to' => '2034-07-07'],
         ['name' => 'Schuljahr 2034/35', 'from' => '2034-09-11', 'sem_2_start' => '2035-02-19', 'to' => '2035-07-06'],
         ['name' => 'Schuljahr 2035/36', 'from' => '2035-09-10', 'sem_2_start' => '2036-02-18', 'to' => '2036-07-04'],
-
-    ]
+    ],
 ];

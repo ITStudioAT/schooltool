@@ -116,7 +116,7 @@ class OfferRequestController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        if (!$auth_user->id == $offerRequest->from_user_id) abort(422, "Du bist nicht berechtigt, diese Anfrage zu löschen.");
+        if ($auth_user->id != $offerRequest->from_user_id) abort(422, "Du bist nicht berechtigt, diese Anfrage zu löschen.");
         $offerRequest->delete();
 
         return response()->noContent();
@@ -182,7 +182,7 @@ class OfferRequestController extends Controller
         }
 
         $validated = $request->validate([
-            'request_id' => ['integer', 'exists:tutoring_offer_requests,id'],
+            'request_id' => ['required', 'integer', 'exists:tutoring_offer_requests,id'],
         ]);
 
         $request = TutoringOfferRequest::findOrFail($validated['request_id']);
@@ -200,7 +200,7 @@ class OfferRequestController extends Controller
         }
 
         $validated = $request->validate([
-            'request_id' => ['integer', 'exists:tutoring_offer_requests,id'],
+            'request_id' => ['required', 'integer', 'exists:tutoring_offer_requests,id'],
         ]);
 
         $request = TutoringOfferRequest::findOrFail($validated['request_id']);

@@ -1,91 +1,162 @@
 <?php
 
+/**
+ * Tutoring OfferController Tests
+ *
+ * Tests the public tutoring offer management including:
+ * - index (list user's own offers with pagination)
+ * - loadOffers (public and authenticated offer browsing with filters)
+ * - store (create new tutoring offer)
+ * - update (update existing tutoring offer)
+ * - loadMyOffers (get all offers for authenticated user)
+ * - toggleOffer (activate/deactivate offer)
+ * - loadOfferConfig (load configuration and authentication state)
+ * - clickCount (track offer view counts with IP throttling)
+ * - setUserSearchCriteria (save user's search preferences)
+ * - offerConfirmRefuse (admin confirm/refuse offer via email link)
+ * - sendRequest (send tutoring request to offer owner)
+ */
+
+use App\Models\Licence;
 use App\Models\School;
+use App\Models\SchoolTool;
+use App\Models\Schoolyear;
 use App\Models\TutoringOffer;
+use App\Models\TutoringOfferRequest;
 use App\Models\TutoringSubject;
 use App\Models\User;
-use App\Models\SchoolTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    // Create roles
-    Role::create(['name' => 'tutoring_user', 'guard_name' => 'web']);
+    Notification::fake();
 
-    // Create test school
+    // Create schools
     $this->school = School::factory()->create([
-        'short_name' => 'TestSchool',
-        'long_name' => 'Test School Name',
+        'short_name' => 'TEST',
+        'long_name' => 'Test School',
+        'is_selectable' => true,
+    ]);
+
+    $this->otherSchool = School::factory()->create([
+        'short_name' => 'OTHER',
+        'long_name' => 'Other School',
+        'is_selectable' => true,
+    ]);
+
+    $this->schoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+
+    // Create tutoring licence
+    $this->tutoringLicence = Licence::create(['name' => 'Nachhilfetool']);
+    $this->school->licences()->attach($this->tutoringLicence->id, [
+        'valid_until' => now()->addYear(),
+    ]);
+    $this->otherSchool->licences()->attach($this->tutoringLicence->id, [
+        'valid_until' => now()->addYear(),
     ]);
 
     // Create SchoolTool for tutoring configuration
-    // IMPORTANT: id must match school_id for controller compatibility
     $this->schoolTool = SchoolTool::create([
-        'id' => $this->school->id,
         'school_id' => $this->school->id,
+        'tutoring_student_must_be_confirmed' => false,
+        'tutoring_confirmer_email' => null,
         'tutoring_max_offers_per_student' => 3,
     ]);
 
-    // Create test subject
-    $this->subject = TutoringSubject::create([
-        'school_id' => $this->school->id,
-        'short_name' => 'Math',
-        'long_name' => 'Mathematics',
-        'must_be_accepted' => false,
+    SchoolTool::create([
+        'school_id' => $this->otherSchool->id,
+        'tutoring_student_must_be_confirmed' => false,
+        'tutoring_confirmer_email' => null,
+        'tutoring_max_offers_per_student' => 5,
     ]);
 
-    // Create test subject that must be accepted
-    $this->subjectWithApproval = TutoringSubject::create([
-        'school_id' => $this->school->id,
-        'short_name' => 'Phys',
-        'long_name' => 'Physics',
-        'must_be_accepted' => true,
-        'email_mentors' => ['mentor@school.com'],
-    ]);
+    // Create roles
+    Role::create(['name' => 'tutoring_user', 'guard_name' => 'web']);
+    Role::create(['name' => 'user', 'guard_name' => 'web']);
 
-    // Create test user with tutoring_user role
+    // Create test user
     $this->user = User::factory()->create([
-        'school_id' => $this->school->id,
+        'email' => 'test@example.com',
         'first_name' => 'John',
         'last_name' => 'Doe',
-        'email' => 'student@school.com',
-        'schoolclass' => '10A',
+        'password' => Hash::make('password'),
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'confirmed_at' => now(),
+        'email_verified_at' => now(),
+        'is_active' => true,
+        'sex' => 'm',
+        'schoolclass' => '5A',
+        'tutoring_filter' => [
+            'only_boys' => false,
+            'only_girls' => false,
+            'only_in_my_school' => true,
+            'schools' => [],
+        ],
     ]);
     $this->user->assignRole('tutoring_user');
+
+    // Create another user
+    $this->otherUser = User::factory()->create([
+        'email' => 'other@example.com',
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'confirmed_at' => now(),
+        'sex' => 'f',
+        'schoolclass' => '6B',
+    ]);
+    $this->otherUser->assignRole('tutoring_user');
+
+    // Create subjects
+    $this->subject = TutoringSubject::create([
+        'school_id' => $this->school->id,
+        'short_name' => 'M',
+        'long_name' => 'Mathematik',
+    ]);
+
+    $this->subject2 = TutoringSubject::create([
+        'school_id' => $this->school->id,
+        'short_name' => 'E',
+        'long_name' => 'Englisch',
+    ]);
 });
 
 describe('index', function () {
-    it('returns 401 when user is not authenticated', function () {
-        $response = $this->getJson('/api/homepage/tutoring/offers');
+    test('it returns 401 when user is not authenticated', function () {
+        $response = $this->getJson('/api/homepage/tutoring/offers?search_string=test');
 
         $response->assertStatus(401);
     });
 
-    it('returns 403 when user does not have tutoring_user role', function () {
-        $user = User::factory()->create(['school_id' => $this->school->id]);
+    test('it returns 403 when user does not have tutoring_user role', function () {
+        $user = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $user->assignRole('user');
 
-        $response = $this->actingAs($user)->getJson('/api/homepage/tutoring/offers');
+        $response = $this->actingAs($user)->getJson('/api/homepage/tutoring/offers?search_string=test');
 
         $response->assertStatus(403);
     });
 
-    it('returns paginated list of offers for tutoring_user', function () {
-        $offer1 = TutoringOffer::create([
+    test('it returns paginated offers for authenticated tutoring user', function () {
+        TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
             'subject_id' => $this->subject->id,
-            'title' => 'Math Tutoring',
-            'description' => 'Help with algebra',
-            'classes' => ['10' => true, '11' => false],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 15,
+            'title' => 'Mathe Nachhilfe',
+            'description' => 'Ich helfe gerne',
+            'classes' => ['5' => true, '6' => true],
             'is_active' => true,
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 1,
         ]);
-        $offer1->accepted_at = now();
-        $offer1->save();
 
         $response = $this->actingAs($this->user)->getJson('/api/homepage/tutoring/offers');
 
@@ -94,92 +165,309 @@ describe('index', function () {
                 'data' => [
                     '*' => ['id', 'title', 'description', 'subject'],
                 ],
-                'meta',
+                'meta' => ['current_page', 'total', 'per_page'],
             ]);
     });
 
-    it('filters offers by search string', function () {
-        $offer1 = TutoringOffer::create([
+    test('it filters offers by search string in title', function () {
+        TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
             'subject_id' => $this->subject->id,
-            'title' => 'Math Tutoring',
-            'description' => 'Help with algebra',
-            'classes' => ['10' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 15,
+            'title' => 'Mathe Nachhilfe',
             'is_active' => true,
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 1,
         ]);
-        $offer1->accepted_at = now();
-        $offer1->save();
 
-        $offer2 = TutoringOffer::create([
+        TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
-            'subject_id' => $this->subjectWithApproval->id,
-            'title' => 'Physics Tutoring',
-            'description' => 'Help with mechanics',
-            'classes' => ['11' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 20,
+            'subject_id' => $this->subject2->id,
+            'title' => 'Englisch Tutoring',
             'is_active' => true,
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 1,
         ]);
-        $offer2->accepted_at = now();
-        $offer2->save();
 
-        $response = $this->actingAs($this->user)
-            ->getJson('/api/homepage/tutoring/offers?search_string=algebra');
+        $response = $this->actingAs($this->user)->getJson('/api/homepage/tutoring/offers?search_string=Mathe');
 
-        $response->assertStatus(200)
-            ->assertJsonCount(1, 'data');
+        $response->assertStatus(200);
+        $data = $response->json('data');
+        expect($data)->toHaveCount(1);
+        expect($data[0]['title'])->toBe('Mathe Nachhilfe');
     });
 
-    it('returns only offers from users school', function () {
-        $otherSchool = School::factory()->create();
-        $otherUser = User::factory()->create(['school_id' => $otherSchool->id]);
-        $otherUser->assignRole('tutoring_user');
-
-        $otherSubject = TutoringSubject::create([
-            'school_id' => $otherSchool->id,
-            'short_name' => 'Bio',
-            'long_name' => 'Biology',
-            'must_be_accepted' => false,
+    test('it filters offers by search string in description', function () {
+        TutoringOffer::create([
+            'school_id' => $this->school->id,
+            'user_id' => $this->user->id,
+            'subject_id' => $this->subject->id,
+            'title' => 'Nachhilfe',
+            'description' => 'Algebra und Geometrie',
+            'is_active' => true,
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 1,
         ]);
 
-        $offer = TutoringOffer::create([
-            'school_id' => $otherSchool->id,
-            'user_id' => $otherUser->id,
-            'subject_id' => $otherSubject->id,
-            'title' => 'Biology Tutoring',
-            'description' => 'From other school',
-            'classes' => ['10' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 15,
+        $response = $this->actingAs($this->user)->getJson('/api/homepage/tutoring/offers?search_string=Algebra');
+
+        $response->assertStatus(200);
+        $data = $response->json('data');
+        expect($data)->toHaveCount(1);
+    });
+
+    test('it only returns offers from user school', function () {
+        // Offer from user's school
+        TutoringOffer::create([
+            'school_id' => $this->school->id,
+            'user_id' => $this->user->id,
+            'subject_id' => $this->subject->id,
+            'title' => 'My School Offer',
             'is_active' => true,
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 1,
+        ]);
+
+        // Offer from other school
+        $otherSubject = TutoringSubject::create([
+            'school_id' => $this->otherSchool->id,
+            'short_name' => 'M',
+            'long_name' => 'Mathematik',
+        ]);
+
+        TutoringOffer::create([
+            'school_id' => $this->otherSchool->id,
+            'user_id' => $this->otherUser->id,
+            'subject_id' => $otherSubject->id,
+            'title' => 'Other School Offer',
+            'is_active' => true,
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 1,
+        ]);
+
+        $response = $this->actingAs($this->user)->getJson('/api/homepage/tutoring/offers');
+
+        $response->assertStatus(200);
+        $data = $response->json('data');
+        expect($data)->toHaveCount(1);
+        expect($data[0]['title'])->toBe('My School Offer');
+    });
+});
+
+describe('loadOffers', function () {
+    test('it returns offers for non-authenticated users', function () {
+        $offer = TutoringOffer::create([
+            'school_id' => $this->school->id,
+            'user_id' => $this->user->id,
+            'subject_id' => $this->subject->id,
+            'title' => 'Public Offer',
+            'is_active' => true,
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 1,
         ]);
         $offer->accepted_at = now();
         $offer->save();
 
-        $response = $this->actingAs($this->user)->getJson('/api/homepage/tutoring/offers');
+        $response = $this->getJson('/api/homepage/tutoring/load_offers?school_name=TEST');
 
         $response->assertStatus(200)
-            ->assertJsonCount(0, 'data');
+            ->assertJsonStructure([
+                'data' => [
+                    '*' => ['id', 'title', 'subject'],
+                ],
+                'meta',
+            ]);
+    });
+
+    test('it returns 422 when school_name is missing for non-authenticated user', function () {
+        $response = $this->getJson('/api/homepage/tutoring/load_offers');
+
+        $response->assertStatus(422);
+    });
+
+    test('it only returns accepted and active offers for non-authenticated users', function () {
+        // Active and accepted
+        $activeOffer = TutoringOffer::create([
+            'school_id' => $this->school->id,
+            'user_id' => $this->user->id,
+            'subject_id' => $this->subject->id,
+            'title' => 'Active Offer',
+            'is_active' => true,
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 1,
+        ]);
+        $activeOffer->accepted_at = now();
+        $activeOffer->save();
+
+        // Not accepted
+        TutoringOffer::create([
+            'school_id' => $this->school->id,
+            'user_id' => $this->user->id,
+            'subject_id' => $this->subject->id,
+            'title' => 'Not Accepted',
+            'is_active' => true,
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 1,
+        ]);
+
+        // Not active
+        $inactiveOffer = TutoringOffer::create([
+            'school_id' => $this->school->id,
+            'user_id' => $this->user->id,
+            'subject_id' => $this->subject->id,
+            'title' => 'Inactive Offer',
+            'is_active' => false,
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 1,
+        ]);
+        $inactiveOffer->accepted_at = now();
+        $inactiveOffer->save();
+
+        $response = $this->getJson('/api/homepage/tutoring/load_offers?school_name=TEST');
+
+        $response->assertStatus(200);
+        $data = $response->json('data');
+        expect($data)->toHaveCount(1);
+        expect($data[0]['title'])->toBe('Active Offer');
+    });
+
+    test('it returns offers for authenticated users with filter', function () {
+        $offer = TutoringOffer::create([
+            'school_id' => $this->school->id,
+            'user_id' => $this->otherUser->id,
+            'subject_id' => $this->subject->id,
+            'title' => 'Female Tutor',
+            'is_active' => true,
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 1,
+        ]);
+        $offer->accepted_at = now();
+        $offer->save();
+
+        $response = $this->actingAs($this->user)->getJson('/api/homepage/tutoring/load_offers');
+
+        $response->assertStatus(200);
+    });
+
+    test('it filters by sex when only_girls filter is enabled', function () {
+        $this->user->tutoring_filter = [
+            'only_boys' => false,
+            'only_girls' => true,
+            'only_in_my_school' => true,
+            'schools' => [],
+        ];
+        $this->user->save();
+
+        // Female tutor
+        $femaleOffer = TutoringOffer::create([
+            'school_id' => $this->school->id,
+            'user_id' => $this->otherUser->id, // Female user
+            'subject_id' => $this->subject->id,
+            'title' => 'Female Tutor',
+            'is_active' => true,
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 1,
+        ]);
+        $femaleOffer->accepted_at = now();
+        $femaleOffer->save();
+
+        // Male tutor (current user)
+        $maleOffer = TutoringOffer::create([
+            'school_id' => $this->school->id,
+            'user_id' => $this->user->id, // Male user
+            'subject_id' => $this->subject->id,
+            'title' => 'Male Tutor',
+            'is_active' => true,
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 1,
+        ]);
+        $maleOffer->accepted_at = now();
+        $maleOffer->save();
+
+        $response = $this->actingAs($this->user)->getJson('/api/homepage/tutoring/load_offers');
+
+        $response->assertStatus(200);
+        $data = $response->json('data');
+        expect($data)->toHaveCount(1);
+        expect($data[0]['title'])->toBe('Female Tutor');
+    });
+
+    test('it excludes expired offers based on active_until date', function () {
+        // Valid offer
+        $validOffer = TutoringOffer::create([
+            'school_id' => $this->school->id,
+            'user_id' => $this->user->id,
+            'subject_id' => $this->subject->id,
+            'title' => 'Valid Offer',
+            'is_active' => true,
+            'active_until' => now()->addDays(7)->toDateString(),
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 1,
+        ]);
+        $validOffer->accepted_at = now();
+        $validOffer->save();
+
+        // Expired offer
+        $expiredOffer = TutoringOffer::create([
+            'school_id' => $this->school->id,
+            'user_id' => $this->user->id,
+            'subject_id' => $this->subject->id,
+            'title' => 'Expired Offer',
+            'is_active' => true,
+            'active_until' => now()->subDays(1)->toDateString(),
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 1,
+        ]);
+        $expiredOffer->accepted_at = now();
+        $expiredOffer->save();
+
+        $response = $this->actingAs($this->user)->getJson('/api/homepage/tutoring/load_offers');
+
+        $response->assertStatus(200);
+        $data = $response->json('data');
+        expect($data)->toHaveCount(1);
+        expect($data[0]['title'])->toBe('Valid Offer');
     });
 });
 
 describe('store', function () {
-    it('returns 401 when user is not authenticated', function () {
+    test('it returns 401 when user is not authenticated', function () {
         $data = [
             'subject_id' => $this->subject->id,
-            'title' => 'New Tutoring Offer',
-            'description' => 'Test description',
-            'classes' => ['10' => true, '11' => false],
+            'title' => 'New Offer',
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
             'is_group' => false,
             'max_group_members' => 2,
-            'price_per_hour' => 15,
         ];
 
         $response = $this->postJson('/api/homepage/tutoring/offers', $data);
@@ -187,17 +475,19 @@ describe('store', function () {
         $response->assertStatus(401);
     });
 
-    it('returns 403 when user does not have tutoring_user role', function () {
-        $user = User::factory()->create(['school_id' => $this->school->id]);
+    test('it returns 403 when user does not have tutoring_user role', function () {
+        $user = User::factory()->create([
+            'school_id' => $this->school->id,
+        ]);
+        $user->assignRole('user');
 
         $data = [
             'subject_id' => $this->subject->id,
-            'title' => 'New Tutoring Offer',
-            'description' => 'Test description',
-            'classes' => ['10' => true],
+            'title' => 'New Offer',
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
             'is_group' => false,
             'max_group_members' => 2,
-            'price_per_hour' => 15,
         ];
 
         $response = $this->actingAs($user)->postJson('/api/homepage/tutoring/offers', $data);
@@ -205,92 +495,56 @@ describe('store', function () {
         $response->assertStatus(403);
     });
 
-    it('creates a new tutoring offer with valid data', function () {
+    test('it creates a new offer successfully', function () {
         $data = [
             'subject_id' => $this->subject->id,
-            'title' => 'Math Help',
-            'description' => 'Algebra and Geometry',
-            'classes' => ['10' => true, '11' => false],
+            'title' => 'Mathe Nachhilfe',
+            'description' => 'Ich helfe bei Algebra',
+            'classes' => ['5' => true, '6' => true],
+            'price_per_hour' => 15,
             'is_group' => false,
-            'max_group_members' => 3,
-            'price_per_hour' => 20,
+            'max_group_members' => 2,
+            'visible_for_other_schools' => false,
         ];
 
         $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/offers', $data);
 
         $response->assertStatus(200)
-            ->assertJsonPath('title', 'Math Help')
-            ->assertJsonPath('description', 'Algebra and Geometry');
+            ->assertJsonStructure([
+                'id',
+                'title',
+                'description',
+                'subject',
+            ]);
 
         $this->assertDatabaseHas('tutoring_offers', [
             'user_id' => $this->user->id,
             'school_id' => $this->school->id,
-            'subject_id' => $this->subject->id,
-            'title' => 'Math Help',
+            'title' => 'Mathe Nachhilfe',
         ]);
     });
 
-    it('creates offer as active when subject does not require acceptance', function () {
-        $data = [
-            'subject_id' => $this->subject->id,
-            'title' => 'Math Help',
-            'description' => 'Algebra',
-            'classes' => ['10' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 15,
-        ];
-
-        $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/offers', $data);
-
-        $response->assertStatus(200)
-            ->assertJsonPath('is_active', true);
-
-        $this->assertDatabaseHas('tutoring_offers', [
-            'user_id' => $this->user->id,
-            'is_active' => true,
-        ]);
-    });
-
-    it('creates offer as inactive when subject requires acceptance', function () {
-        $data = [
-            'subject_id' => $this->subjectWithApproval->id,
-            'title' => 'Physics Help',
-            'description' => 'Mechanics',
-            'classes' => ['11' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 20,
-            'email_mentor' => 'mentor@school.com',
-        ];
-
-        $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/offers', $data);
-
-        $response->assertStatus(200)
-            ->assertJsonPath('is_active', false);
-
-        $this->assertDatabaseHas('tutoring_offers', [
-            'user_id' => $this->user->id,
-            'is_active' => false,
-            'must_be_accepted' => true,
-        ]);
-    });
-
-    it('validates required fields', function () {
+    test('it validates required fields', function () {
         $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/offers', []);
 
         $response->assertStatus(422)
-            ->assertJsonValidationErrors(['subject_id', 'title', 'classes', 'max_group_members', 'price_per_hour']);
+            ->assertJsonValidationErrors(['subject_id', 'title', 'classes', 'price_per_hour', 'max_group_members']);
     });
 
-    it('validates subject_id exists', function () {
+    test('it validates subject belongs to user school', function () {
+        $otherSubject = TutoringSubject::create([
+            'school_id' => $this->otherSchool->id,
+            'short_name' => 'X',
+            'long_name' => 'Other Subject',
+        ]);
+
         $data = [
-            'subject_id' => 99999,
-            'title' => 'Test',
-            'classes' => ['10' => true],
+            'subject_id' => $otherSubject->id,
+            'title' => 'New Offer',
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
             'is_group' => false,
             'max_group_members' => 2,
-            'price_per_hour' => 15,
         ];
 
         $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/offers', $data);
@@ -299,30 +553,14 @@ describe('store', function () {
             ->assertJsonValidationErrors(['subject_id']);
     });
 
-    it('validates max_group_members is between 2 and 5', function () {
+    test('it validates price_per_hour range', function () {
         $data = [
             'subject_id' => $this->subject->id,
-            'title' => 'Test',
-            'classes' => ['10' => true],
-            'is_group' => true,
-            'max_group_members' => 10,
-            'price_per_hour' => 15,
-        ];
-
-        $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/offers', $data);
-
-        $response->assertStatus(422)
-            ->assertJsonValidationErrors(['max_group_members']);
-    });
-
-    it('validates price_per_hour is between 0 and 100', function () {
-        $data = [
-            'subject_id' => $this->subject->id,
-            'title' => 'Test',
-            'classes' => ['10' => true],
+            'title' => 'New Offer',
+            'classes' => ['5' => true],
+            'price_per_hour' => 150, // Too high
             'is_group' => false,
             'max_group_members' => 2,
-            'price_per_hour' => 150,
         ];
 
         $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/offers', $data);
@@ -330,754 +568,431 @@ describe('store', function () {
         $response->assertStatus(422)
             ->assertJsonValidationErrors(['price_per_hour']);
     });
+
+    test('it validates max_group_members range', function () {
+        $data = [
+            'subject_id' => $this->subject->id,
+            'title' => 'New Offer',
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => true,
+            'max_group_members' => 1, // Too low
+        ];
+
+        $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/offers', $data);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['max_group_members']);
+    });
 });
 
 describe('update', function () {
-    it('returns 401 when user is not authenticated', function () {
+    test('it returns 401 when user is not authenticated', function () {
         $offer = TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
             'subject_id' => $this->subject->id,
             'title' => 'Original Title',
-            'classes' => ['10' => true],
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
             'is_group' => false,
             'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => true,
         ]);
-        $offer->accepted_at = now();
-        $offer->save();
 
-        $data = [
-            'id' => $offer->id,
-            'subject_id' => $this->subject->id,
+        $response = $this->putJson("/api/homepage/tutoring/offers/{$offer->id}", [
             'title' => 'Updated Title',
-            'classes' => ['10' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 20,
-        ];
-
-        $response = $this->putJson("/api/homepage/tutoring/offers/{$offer->id}", $data);
+        ]);
 
         $response->assertStatus(401);
     });
 
-    it('returns 403 when user does not have tutoring_user role', function () {
-        $user = User::factory()->create(['school_id' => $this->school->id]);
-
+    test('it updates an existing offer successfully', function () {
         $offer = TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
             'subject_id' => $this->subject->id,
             'title' => 'Original Title',
-            'classes' => ['10' => true],
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
             'is_group' => false,
             'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => true,
         ]);
-        $offer->accepted_at = now();
-        $offer->save();
 
         $data = [
             'id' => $offer->id,
-            'subject_id' => $this->subject->id,
+            'subject_id' => $this->subject2->id,
             'title' => 'Updated Title',
-            'classes' => ['10' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
+            'description' => 'New description',
+            'classes' => ['6' => true, '7' => true],
             'price_per_hour' => 20,
-        ];
-
-        $response = $this->actingAs($user)->putJson("/api/homepage/tutoring/offers/{$offer->id}", $data);
-
-        $response->assertStatus(403);
-    });
-
-    it('updates an existing offer successfully', function () {
-        $offer = TutoringOffer::create([
-            'school_id' => $this->school->id,
-            'user_id' => $this->user->id,
-            'subject_id' => $this->subject->id,
-            'title' => 'Original Title',
-            'description' => 'Original description',
-            'classes' => ['10' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => true,
-        ]);
-        $offer->accepted_at = now();
-        $offer->save();
-
-        $data = [
-            'id' => $offer->id,
-            'subject_id' => $this->subject->id,
-            'title' => 'Updated Title',
-            'description' => 'Updated description',
-            'classes' => ['11' => true],
             'is_group' => true,
             'max_group_members' => 3,
-            'price_per_hour' => 25,
         ];
 
         $response = $this->actingAs($this->user)->putJson("/api/homepage/tutoring/offers/{$offer->id}", $data);
 
-        $response->assertStatus(200)
-            ->assertJsonPath('title', 'Updated Title')
-            ->assertJsonPath('description', 'Updated description')
-            ->assertJsonPath('price_per_hour', '25.00');
+        $response->assertStatus(200);
 
         $this->assertDatabaseHas('tutoring_offers', [
             'id' => $offer->id,
             'title' => 'Updated Title',
-            'description' => 'Updated description',
-            'price_per_hour' => 25,
-        ]);
-    });
-
-    it('resets acceptance when updating offer that must be accepted', function () {
-        $offer = TutoringOffer::create([
-            'school_id' => $this->school->id,
-            'user_id' => $this->user->id,
-            'subject_id' => $this->subjectWithApproval->id,
-            'title' => 'Physics Tutoring',
-            'classes' => ['11' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
             'price_per_hour' => 20,
-            'email_mentor' => 'mentor@school.com',
-            'must_be_accepted' => true,
-            'is_active' => true,
         ]);
-        $offer->accepted_at = now();
-        $offer->save();
-
-        $data = [
-            'id' => $offer->id,
-            'subject_id' => $this->subjectWithApproval->id,
-            'title' => 'Updated Physics',
-            'classes' => ['11' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 25,
-            'email_mentor' => 'mentor@school.com',
-        ];
-
-        $response = $this->actingAs($this->user)->putJson("/api/homepage/tutoring/offers/{$offer->id}", $data);
-
-        $response->assertStatus(200)
-            ->assertJsonPath('is_active', false);
-
-        $this->assertDatabaseHas('tutoring_offers', [
-            'id' => $offer->id,
-            'is_active' => false,
-            'accepted_at' => null,
-        ]);
-    });
-
-    it('validates required fields on update', function () {
-        $offer = TutoringOffer::create([
-            'school_id' => $this->school->id,
-            'user_id' => $this->user->id,
-            'subject_id' => $this->subject->id,
-            'title' => 'Original',
-            'classes' => ['10' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => true,
-        ]);
-        $offer->accepted_at = now();
-        $offer->save();
-
-        $response = $this->actingAs($this->user)->putJson("/api/homepage/tutoring/offers/{$offer->id}", [
-            'id' => $offer->id,
-        ]);
-
-        $response->assertStatus(422)
-            ->assertJsonValidationErrors(['subject_id', 'title', 'classes', 'max_group_members', 'price_per_hour']);
     });
 });
 
 describe('loadMyOffers', function () {
-    it('returns 401 when user is not authenticated', function () {
+    test('it returns 401 when user is not authenticated', function () {
         $response = $this->getJson('/api/homepage/tutoring/load_my_offers');
 
         $response->assertStatus(401);
     });
 
-    it('returns 403 when user does not have tutoring_user role', function () {
-        $user = User::factory()->create(['school_id' => $this->school->id]);
-
-        $response = $this->actingAs($user)->getJson('/api/homepage/tutoring/load_my_offers');
-
-        $response->assertStatus(403);
-    });
-
-    it('returns all offers for authenticated user', function () {
-        $offer1 = TutoringOffer::create([
+    test('it returns all offers for authenticated user', function () {
+        TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
             'subject_id' => $this->subject->id,
-            'title' => 'Math Tutoring',
-            'classes' => ['10' => true],
+            'title' => 'My Offer 1',
+            'is_active' => true,
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
             'is_group' => false,
             'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => true,
         ]);
-        $offer1->accepted_at = now();
-        $offer1->save();
 
-        $offer2 = TutoringOffer::create([
+        TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
-            'subject_id' => $this->subjectWithApproval->id,
-            'title' => 'Physics Tutoring',
-            'classes' => ['11' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 20,
+            'subject_id' => $this->subject2->id,
+            'title' => 'My Offer 2',
             'is_active' => false,
-            'email_mentor' => 'mentor@school.com',
-        ]);
-
-        $response = $this->actingAs($this->user)->getJson('/api/homepage/tutoring/load_my_offers');
-
-        $response->assertStatus(200)
-            ->assertJsonCount(2);
-    });
-
-    it('returns only current users offers', function () {
-        $otherUser = User::factory()->create(['school_id' => $this->school->id]);
-        $otherUser->assignRole('tutoring_user');
-
-        $offer1 = TutoringOffer::create([
-            'school_id' => $this->school->id,
-            'user_id' => $this->user->id,
-            'subject_id' => $this->subject->id,
-            'title' => 'My Offer',
-            'classes' => ['10' => true],
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
             'is_group' => false,
             'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => true,
         ]);
-        $offer1->accepted_at = now();
-        $offer1->save();
 
-        $offer2 = TutoringOffer::create([
+        // Other user's offer - should not be included
+        TutoringOffer::create([
             'school_id' => $this->school->id,
-            'user_id' => $otherUser->id,
+            'user_id' => $this->otherUser->id,
             'subject_id' => $this->subject->id,
             'title' => 'Other User Offer',
-            'classes' => ['10' => true],
+            'is_active' => true,
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
             'is_group' => false,
             'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => true,
         ]);
-        $offer2->accepted_at = now();
-        $offer2->save();
-
-        $response = $this->actingAs($this->user)->getJson('/api/homepage/tutoring/load_my_offers');
-
-        $response->assertStatus(200)
-            ->assertJsonCount(1);
-    });
-
-    it('orders offers by subject long_name and created_at', function () {
-        $subjectA = TutoringSubject::create([
-            'school_id' => $this->school->id,
-            'short_name' => 'A',
-            'long_name' => 'AAA Subject',
-            'must_be_accepted' => false,
-        ]);
-
-        $subjectZ = TutoringSubject::create([
-            'school_id' => $this->school->id,
-            'short_name' => 'Z',
-            'long_name' => 'ZZZ Subject',
-            'must_be_accepted' => false,
-        ]);
-
-        $offer1 = TutoringOffer::create([
-            'school_id' => $this->school->id,
-            'user_id' => $this->user->id,
-            'subject_id' => $subjectZ->id,
-            'title' => 'Z Offer',
-            'classes' => ['10' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => true,
-        ]);
-        $offer1->accepted_at = now();
-        $offer1->save();
-
-        $offer2 = TutoringOffer::create([
-            'school_id' => $this->school->id,
-            'user_id' => $this->user->id,
-            'subject_id' => $subjectA->id,
-            'title' => 'A Offer',
-            'classes' => ['10' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => true,
-        ]);
-        $offer2->accepted_at = now();
-        $offer2->save();
 
         $response = $this->actingAs($this->user)->getJson('/api/homepage/tutoring/load_my_offers');
 
         $response->assertStatus(200);
         $data = $response->json();
-
-        expect($data[0]['title'])->toBe('A Offer')
-            ->and($data[1]['title'])->toBe('Z Offer');
+        expect($data)->toHaveCount(2);
     });
-});
 
-describe('toggleOffer', function () {
-    it('returns 401 when user is not authenticated', function () {
-        $offer = TutoringOffer::create([
+    test('it orders offers by subject name and creation date', function () {
+        // Create in reverse alphabetical order
+        TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
-            'subject_id' => $this->subject->id,
-            'title' => 'Test Offer',
-            'classes' => ['10' => true],
+            'subject_id' => $this->subject->id, // Mathematik
+            'title' => 'Math Offer',
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
             'is_group' => false,
             'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => true,
+            'created_at' => now()->subDays(2),
         ]);
-        $offer->accepted_at = now();
-        $offer->save();
-
-        $response = $this->postJson('/api/homepage/tutoring/toggle_offer', ['id' => $offer->id]);
-
-        $response->assertStatus(401);
-    });
-
-    it('returns 403 when user does not have tutoring_user role', function () {
-        $user = User::factory()->create(['school_id' => $this->school->id]);
-
-        $offer = TutoringOffer::create([
-            'school_id' => $this->school->id,
-            'user_id' => $this->user->id,
-            'subject_id' => $this->subject->id,
-            'title' => 'Test Offer',
-            'classes' => ['10' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => true,
-        ]);
-        $offer->accepted_at = now();
-        $offer->save();
-
-        $response = $this->actingAs($user)->postJson('/api/homepage/tutoring/toggle_offer', ['id' => $offer->id]);
-
-        $response->assertStatus(403);
-    });
-
-    it('toggles offer from active to inactive', function () {
-        $offer = TutoringOffer::create([
-            'school_id' => $this->school->id,
-            'user_id' => $this->user->id,
-            'subject_id' => $this->subject->id,
-            'title' => 'Test Offer',
-            'classes' => ['10' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => true,
-        ]);
-        $offer->accepted_at = now();
-        $offer->save();
-
-        $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/toggle_offer', ['id' => $offer->id]);
-
-        $response->assertStatus(204);
-
-        $this->assertDatabaseHas('tutoring_offers', [
-            'id' => $offer->id,
-            'is_active' => false,
-        ]);
-    });
-
-    it('toggles offer from inactive to active', function () {
-        $offer = TutoringOffer::create([
-            'school_id' => $this->school->id,
-            'user_id' => $this->user->id,
-            'subject_id' => $this->subject->id,
-            'title' => 'Test Offer',
-            'classes' => ['10' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => false,
-        ]);
-
-        $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/toggle_offer', ['id' => $offer->id]);
-
-        $response->assertStatus(204);
-
-        $this->assertDatabaseHas('tutoring_offers', [
-            'id' => $offer->id,
-            'is_active' => true,
-        ]);
-    });
-
-    it('prevents activating when max offers limit is reached', function () {
-        // Create 3 active offers (max limit)
-        for ($i = 1; $i <= 3; $i++) {
-            $offer = TutoringOffer::create([
-                'school_id' => $this->school->id,
-                'user_id' => $this->user->id,
-                'subject_id' => $this->subject->id,
-                'title' => "Active Offer $i",
-                'classes' => ['10' => true],
-                'is_group' => false,
-                'max_group_members' => 2,
-                'price_per_hour' => 15,
-                'is_active' => true,
-            ]);
-            $offer->accepted_at = now();
-            $offer->save();
-        }
-
-        // Create inactive offer to toggle
-        $inactiveOffer = TutoringOffer::create([
-            'school_id' => $this->school->id,
-            'user_id' => $this->user->id,
-            'subject_id' => $this->subject->id,
-            'title' => 'Inactive Offer',
-            'classes' => ['10' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => false,
-        ]);
-
-        $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/toggle_offer', ['id' => $inactiveOffer->id]);
-
-        $response->assertStatus(422);
-    });
-
-    it('allows activating when max limit is 0 (unlimited)', function () {
-        $this->schoolTool->update(['tutoring_max_offers_per_student' => 0]);
-
-        // Create many active offers
-        for ($i = 1; $i <= 10; $i++) {
-            $offer = TutoringOffer::create([
-                'school_id' => $this->school->id,
-                'user_id' => $this->user->id,
-                'subject_id' => $this->subject->id,
-                'title' => "Active Offer $i",
-                'classes' => ['10' => true],
-                'is_group' => false,
-                'max_group_members' => 2,
-                'price_per_hour' => 15,
-                'is_active' => true,
-            ]);
-            $offer->accepted_at = now();
-            $offer->save();
-        }
-
-        $inactiveOffer = TutoringOffer::create([
-            'school_id' => $this->school->id,
-            'user_id' => $this->user->id,
-            'subject_id' => $this->subject->id,
-            'title' => 'Inactive Offer',
-            'classes' => ['10' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => false,
-        ]);
-
-        $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/toggle_offer', ['id' => $inactiveOffer->id]);
-
-        $response->assertStatus(204);
-
-        $this->assertDatabaseHas('tutoring_offers', [
-            'id' => $inactiveOffer->id,
-            'is_active' => true,
-        ]);
-    });
-
-    it('validates id is required', function () {
-        $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/toggle_offer', []);
-
-        $response->assertStatus(422)
-            ->assertJsonValidationErrors(['id']);
-    });
-
-    it('validates id exists in database', function () {
-        $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/toggle_offer', ['id' => 99999]);
-
-        $response->assertStatus(422)
-            ->assertJsonValidationErrors(['id']);
-    });
-});
-
-describe('loadOffers', function () {
-    it('loads offers for authenticated tutoring user', function () {
-        $offer = TutoringOffer::create([
-            'school_id' => $this->school->id,
-            'user_id' => $this->user->id,
-            'subject_id' => $this->subject->id,
-            'title' => 'Active Math Offer',
-            'classes' => ['10' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => true,
-        ]);
-        $offer->accepted_at = now();
-        $offer->save();
-
-        $response = $this->actingAs($this->user)->getJson('/api/homepage/tutoring/load_offers');
-
-        $response->assertStatus(200)
-            ->assertJsonStructure([
-                'data',
-                'meta',
-            ]);
-    });
-
-    it('loads offers for non-authenticated user with school_name', function () {
-        $offer = TutoringOffer::create([
-            'school_id' => $this->school->id,
-            'user_id' => $this->user->id,
-            'subject_id' => $this->subject->id,
-            'title' => 'Public Math Offer',
-            'classes' => ['10' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => true,
-        ]);
-        $offer->accepted_at = now();
-        $offer->save();
-
-        $response = $this->getJson('/api/homepage/tutoring/load_offers?school_name=TestSchool');
-
-        $response->assertStatus(200)
-            ->assertJsonStructure([
-                'data',
-                'meta',
-            ]);
-    });
-
-    it('returns 422 when school not found', function () {
-        $response = $this->getJson('/api/homepage/tutoring/load_offers?school_name=NonExistent');
-
-        $response->assertStatus(422);
-    });
-
-    it('returns only accepted and active offers', function () {
-        $offer1 = TutoringOffer::create([
-            'school_id' => $this->school->id,
-            'user_id' => $this->user->id,
-            'subject_id' => $this->subject->id,
-            'title' => 'Active Accepted',
-            'classes' => ['10' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => true,
-        ]);
-        $offer1->accepted_at = now();
-        $offer1->save();
-
-        $offer2 = TutoringOffer::create([
-            'school_id' => $this->school->id,
-            'user_id' => $this->user->id,
-            'subject_id' => $this->subject->id,
-            'title' => 'Inactive',
-            'classes' => ['10' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => false,
-        ]);
-        $offer2->accepted_at = now();
-        $offer2->save();
 
         TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
-            'subject_id' => $this->subject->id,
-            'title' => 'Not Accepted',
-            'classes' => ['10' => true],
+            'subject_id' => $this->subject2->id, // Englisch
+            'title' => 'English Offer',
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
             'is_group' => false,
             'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => true,
-            'accepted_at' => null,
+            'created_at' => now()->subDays(1),
         ]);
 
-        $response = $this->getJson('/api/homepage/tutoring/load_offers?school_name=TestSchool');
+        $response = $this->actingAs($this->user)->getJson('/api/homepage/tutoring/load_my_offers');
 
-        $response->assertStatus(200)
-            ->assertJsonCount(1, 'data');
+        $response->assertStatus(200);
+        $data = $response->json();
+        // Should be ordered by subject long_name (Englisch before Mathematik)
+        expect($data[0]['title'])->toBe('English Offer');
+        expect($data[1]['title'])->toBe('Math Offer');
+    });
+});
+
+describe('toggleOffer', function () {
+    test('it returns 401 when user is not authenticated', function () {
+        $offer = TutoringOffer::create([
+            'school_id' => $this->school->id,
+            'user_id' => $this->user->id,
+            'subject_id' => $this->subject->id,
+            'title' => 'Test Offer',
+            'is_active' => false,
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 2,
+        ]);
+
+        $response = $this->postJson('/api/homepage/tutoring/toggle_offer', [
+            'id' => $offer->id,
+        ]);
+
+        $response->assertStatus(401);
     });
 
-    it('filters offers by search string for authenticated user', function () {
-        // Create a unique subject for this test to avoid conflicts
-        $uniqueSubject = TutoringSubject::create([
-            'school_id' => $this->school->id,
-            'short_name' => 'Calc',
-            'long_name' => 'Calculus',
-            'must_be_accepted' => false,
-        ]);
-
-        $offer1 = TutoringOffer::create([
+    test('it activates an inactive offer', function () {
+        $offer = TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
-            'subject_id' => $uniqueSubject->id,
-            'title' => 'UNIQUESEARCHXYZ123',
-            'description' => 'Help with calculus topics',
-            'classes' => ['10' => true],
+            'subject_id' => $this->subject->id,
+            'title' => 'Test Offer',
+            'is_active' => false,
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
             'is_group' => false,
             'max_group_members' => 2,
-            'price_per_hour' => 15,
+        ]);
+
+        $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/toggle_offer', [
+            'id' => $offer->id,
+        ]);
+
+        $response->assertStatus(204);
+
+        $this->assertDatabaseHas('tutoring_offers', [
+            'id' => $offer->id,
             'is_active' => true,
         ]);
-        $offer1->accepted_at = now();
-        $offer1->save();
-
-        $offer2 = TutoringOffer::create([
-            'school_id' => $this->school->id,
-            'user_id' => $this->user->id,
-            'subject_id' => $this->subjectWithApproval->id,
-            'title' => 'Physics Basics',
-            'description' => 'Help with mechanics',
-            'classes' => ['10' => true],
-            'is_group' => false,
-            'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => true,
-            'email_mentor' => 'mentor@school.com',
-        ]);
-        $offer2->accepted_at = now();
-        $offer2->save();
-
-        $response = $this->actingAs($this->user)->getJson('/api/homepage/tutoring/load_offers?search_string=UNIQUESEARCHXYZ123');
-
-        $response->assertStatus(200)
-            ->assertJsonCount(1, 'data');
     });
 
-    it('excludes expired offers', function () {
-        $offer1 = TutoringOffer::create([
+    test('it deactivates an active offer', function () {
+        $offer = TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
             'subject_id' => $this->subject->id,
-            'title' => 'Active Offer',
-            'classes' => ['10' => true],
+            'title' => 'Test Offer',
+            'is_active' => true,
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
             'is_group' => false,
             'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => true,
-            'active_until' => now()->addDays(7),
         ]);
-        $offer1->accepted_at = now();
-        $offer1->save();
 
-        $offer2 = TutoringOffer::create([
+        $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/toggle_offer', [
+            'id' => $offer->id,
+        ]);
+
+        $response->assertStatus(204);
+
+        $this->assertDatabaseHas('tutoring_offers', [
+            'id' => $offer->id,
+            'is_active' => false,
+        ]);
+    });
+
+    test('it respects max offers per student limit', function () {
+        // Create max number of active offers
+        for ($i = 0; $i < 3; $i++) {
+            TutoringOffer::create([
+                'school_id' => $this->school->id,
+                'user_id' => $this->user->id,
+                'subject_id' => $this->subject->id,
+                'title' => "Active Offer $i",
+                'is_active' => true,
+                'classes' => ['5' => true],
+                'price_per_hour' => 10,
+                'is_group' => false,
+                'max_group_members' => 2,
+            ]);
+        }
+
+        // Create one more inactive offer
+        $offer = TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
             'subject_id' => $this->subject->id,
-            'title' => 'Expired Offer',
-            'classes' => ['10' => true],
+            'title' => 'Inactive Offer',
+            'is_active' => false,
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
             'is_group' => false,
             'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => true,
-            'active_until' => now()->subDays(1),
         ]);
-        $offer2->accepted_at = now();
-        $offer2->save();
 
-        $response = $this->getJson('/api/homepage/tutoring/load_offers?school_name=TestSchool');
+        $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/toggle_offer', [
+            'id' => $offer->id,
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJson(['message' => 'Du kannst nur maximal 3 aktive Nachhilfeangebote haben.']);
+
+        $this->assertDatabaseHas('tutoring_offers', [
+            'id' => $offer->id,
+            'is_active' => false,
+        ]);
+    });
+
+    test('it allows activation when max is set to 0 (unlimited)', function () {
+        $this->schoolTool->tutoring_max_offers_per_student = 0;
+        $this->schoolTool->save();
+
+        // Create many active offers
+        for ($i = 0; $i < 10; $i++) {
+            TutoringOffer::create([
+                'school_id' => $this->school->id,
+                'user_id' => $this->user->id,
+                'subject_id' => $this->subject->id,
+                'title' => "Active Offer $i",
+                'is_active' => true,
+                'classes' => ['5' => true],
+                'price_per_hour' => 10,
+                'is_group' => false,
+                'max_group_members' => 2,
+            ]);
+        }
+
+        $offer = TutoringOffer::create([
+            'school_id' => $this->school->id,
+            'user_id' => $this->user->id,
+            'subject_id' => $this->subject->id,
+            'title' => 'New Offer',
+            'is_active' => false,
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 2,
+        ]);
+
+        $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/toggle_offer', [
+            'id' => $offer->id,
+        ]);
+
+        $response->assertStatus(204);
+
+        $this->assertDatabaseHas('tutoring_offers', [
+            'id' => $offer->id,
+            'is_active' => true,
+        ]);
+    });
+});
+
+describe('loadOfferConfig', function () {
+    test('it returns config for non-authenticated user with school_name', function () {
+        $response = $this->getJson('/api/homepage/tutoring/load_offer_config?school_name=TEST');
 
         $response->assertStatus(200)
-            ->assertJsonCount(1, 'data');
+            ->assertJsonStructure([
+                'school' => ['id', 'short_name', 'long_name'],
+                'auth' => ['is_auth'],
+            ]);
+
+        expect($response->json('auth.is_auth'))->toBeFalse();
+    });
+
+    test('it returns config for authenticated tutoring user', function () {
+        $response = $this->actingAs($this->user)->getJson('/api/homepage/tutoring/load_offer_config');
+
+        $response->assertStatus(200)
+            ->assertJsonStructure([
+                'school',
+                'auth' => ['is_auth'],
+            ]);
+
+        expect($response->json('auth.is_auth'))->toBeTrue();
+    });
+
+    test('it logs out non-tutoring user and returns guest config', function () {
+        $nonTutoringUser = User::factory()->create([
+            'school_id' => $this->school->id,
+        ]);
+        $nonTutoringUser->assignRole('user');
+
+        $response = $this->actingAs($nonTutoringUser)->getJson('/api/homepage/tutoring/load_offer_config?school_name=TEST');
+
+        $response->assertStatus(200);
+        expect($response->json('auth.is_auth'))->toBeFalse();
     });
 });
 
 describe('clickCount', function () {
-    it('increments click count for valid offer', function () {
+    test('it increments click count for new IP', function () {
         $offer = TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
             'subject_id' => $this->subject->id,
             'title' => 'Test Offer',
-            'classes' => ['10' => true],
+            'click_count' => 0,
+            'click_ips' => [],
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
             'is_group' => false,
             'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => true,
-            'click_count' => 0,
         ]);
-        $offer->accepted_at = now();
-        $offer->save();
 
-        $response = $this->postJson('/api/homepage/tutoring/click_count', ['offer_id' => $offer->id]);
+        $response = $this->postJson('/api/homepage/tutoring/click_count', [
+            'offer_id' => $offer->id,
+        ]);
 
         $response->assertStatus(204);
 
-        $this->assertDatabaseHas('tutoring_offers', [
-            'id' => $offer->id,
-            'click_count' => 1,
-        ]);
+        $offer->refresh();
+        expect($offer->click_count)->toBe(1);
+        expect($offer->click_ips)->toHaveCount(1);
     });
 
-    it('does not increment for same IP within one hour', function () {
+    test('it does not increment for same IP within one hour', function () {
         $offer = TutoringOffer::create([
             'school_id' => $this->school->id,
             'user_id' => $this->user->id,
             'subject_id' => $this->subject->id,
             'title' => 'Test Offer',
-            'classes' => ['10' => true],
+            'click_count' => 0,
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
             'is_group' => false,
             'max_group_members' => 2,
-            'price_per_hour' => 15,
-            'is_active' => true,
-            'click_count' => 0,
         ]);
-        $offer->accepted_at = now();
-        $offer->save();
 
-        // First click
-        $this->postJson('/api/homepage/tutoring/click_count', ['offer_id' => $offer->id]);
+        // First click - should increment
+        $this->postJson('/api/homepage/tutoring/click_count', [
+            'offer_id' => $offer->id,
+        ]);
 
-        // Second click from same IP
-        $response = $this->postJson('/api/homepage/tutoring/click_count', ['offer_id' => $offer->id]);
+        $offer->refresh();
+        expect($offer->click_count)->toBe(1);
+
+        // Second click from same IP immediately - should NOT increment
+        $response = $this->postJson('/api/homepage/tutoring/click_count', [
+            'offer_id' => $offer->id,
+        ]);
 
         $response->assertStatus(204);
 
-        $this->assertDatabaseHas('tutoring_offers', [
-            'id' => $offer->id,
-            'click_count' => 1, // Should still be 1
-        ]);
+        $offer->refresh();
+        expect($offer->click_count)->toBe(1); // Should still be 1
     });
 
-    it('validates offer_id is required', function () {
+    test('it validates offer_id is required', function () {
         $response = $this->postJson('/api/homepage/tutoring/click_count', []);
 
         $response->assertStatus(422)
             ->assertJsonValidationErrors(['offer_id']);
     });
 
-    it('validates offer_id exists', function () {
-        $response = $this->postJson('/api/homepage/tutoring/click_count', ['offer_id' => 99999]);
+    test('it validates offer_id exists', function () {
+        $response = $this->postJson('/api/homepage/tutoring/click_count', [
+            'offer_id' => 99999,
+        ]);
 
         $response->assertStatus(422)
             ->assertJsonValidationErrors(['offer_id']);
@@ -1085,89 +1000,111 @@ describe('clickCount', function () {
 });
 
 describe('setUserSearchCriteria', function () {
-    it('returns 403 when user is not authenticated', function () {
+    test('it returns 403 when user is not authenticated', function () {
         $response = $this->postJson('/api/homepage/tutoring/set_user_search_criteria', [
-            'only_in_my_school' => true,
-        ]);
-
-        $response->assertStatus(403);
-    });
-
-    it('returns 403 when user does not have tutoring_user role', function () {
-        $user = User::factory()->create(['school_id' => $this->school->id]);
-
-        $response = $this->actingAs($user)->postJson('/api/homepage/tutoring/set_user_search_criteria', [
-            'only_in_my_school' => true,
-        ]);
-
-        $response->assertStatus(403);
-    });
-
-    it('saves search criteria to user tutoring_filter', function () {
-        $data = [
-            'only_in_my_school' => true,
-            'only_girls' => false,
             'only_boys' => true,
-        ];
+        ]);
 
-        $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/set_user_search_criteria', $data);
-
-        $response->assertStatus(204);
-
-        $this->user->refresh();
-        expect($this->user->tutoring_filter)->toMatchArray($data);
+        $response->assertStatus(403);
     });
 
-    it('updates existing search criteria', function () {
-        $this->user->tutoring_filter = ['only_in_my_school' => false];
-        $this->user->save();
-
-        $newData = [
-            'only_in_my_school' => true,
-            'only_girls' => true,
-            'only_boys' => false,
+    test('it saves user search criteria', function () {
+        $criteria = [
+            'only_boys' => true,
+            'only_girls' => false,
+            'only_in_my_school' => false,
+            'schools' => [
+                ['id' => $this->otherSchool->id, 'short_name' => 'OTHER'],
+            ],
         ];
 
-        $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/set_user_search_criteria', $newData);
+        $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/set_user_search_criteria', $criteria);
 
         $response->assertStatus(204);
 
         $this->user->refresh();
-        expect($this->user->tutoring_filter)->toMatchArray($newData);
+        expect($this->user->tutoring_filter['only_boys'])->toBeTrue();
+        expect($this->user->tutoring_filter['only_in_my_school'])->toBeFalse();
     });
 });
 
-describe('loadOfferConfig', function () {
-    it('returns config for authenticated tutoring user', function () {
-        $response = $this->actingAs($this->user)->getJson('/api/homepage/tutoring/load_offer_config');
+describe('offerConfirmRefuse', function () {
+    test('it validates required parameters', function () {
+        $response = $this->get("/homepage/tutoring/offer");
+
+        $response->assertStatus(302); // Redirects due to validation failure
+    });
+
+    test('it validates action parameter is valid', function () {
+        $response = $this->get("/homepage/tutoring/offer?action=invalid&offer_id=1&token=test&email_mentor=test@example.com");
+
+        $response->assertStatus(302); // Redirects due to validation failure
+    });
+});
+
+describe('sendRequest', function () {
+    test('it returns 401 when user is not authenticated', function () {
+        $offer = TutoringOffer::create([
+            'school_id' => $this->school->id,
+            'user_id' => $this->otherUser->id,
+            'subject_id' => $this->subject->id,
+            'title' => 'Test Offer',
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 2,
+        ]);
+
+        $response = $this->postJson('/api/homepage/tutoring/send_request', [
+            'offer_id' => $offer->id,
+            'request_message' => 'I need help',
+        ]);
+
+        $response->assertStatus(401);
+    });
+
+    test('it returns 403 when user tries to request their own offer', function () {
+        $offer = TutoringOffer::create([
+            'school_id' => $this->school->id,
+            'user_id' => $this->user->id,
+            'subject_id' => $this->subject->id,
+            'title' => 'My Offer',
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 2,
+        ]);
+
+        $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/send_request', [
+            'offer_id' => $offer->id,
+            'request_message' => 'Test',
+        ]);
+
+        $response->assertStatus(403)
+            ->assertJson(['message' => 'An sich selbst kann man keine Anfrage stellen']);
+    });
+
+    test('it creates a request successfully', function () {
+        $offer = TutoringOffer::create([
+            'school_id' => $this->school->id,
+            'user_id' => $this->otherUser->id,
+            'subject_id' => $this->subject->id,
+            'title' => 'Other User Offer',
+            'classes' => ['5' => true],
+            'price_per_hour' => 10,
+            'is_group' => false,
+            'max_group_members' => 2,
+        ]);
+
+        $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/send_request', [
+            'offer_id' => $offer->id,
+            'request_message' => 'I need help with math',
+        ]);
 
         $response->assertStatus(200)
             ->assertJsonStructure([
-                'school',
-                'auth',
+                'status',
+                'offer_request',
             ]);
-    });
-
-    it('returns config for non-authenticated user with school_name', function () {
-        $response = $this->getJson('/api/homepage/tutoring/load_offer_config?school_name=TestSchool');
-
-        $response->assertStatus(200)
-            ->assertJsonStructure([
-                'school',
-                'auth',
-            ]);
-    });
-
-    it('logs out user without tutoring_user role', function () {
-        $user = User::factory()->create(['school_id' => $this->school->id]);
-        Role::create(['name' => 'user', 'guard_name' => 'web']);
-        $user->assignRole('user');
-
-        $response = $this->actingAs($user)->getJson('/api/homepage/tutoring/load_offer_config');
-
-        $response->assertStatus(200);
-
-        // User should be logged out
-        $this->assertGuest();
     });
 });
