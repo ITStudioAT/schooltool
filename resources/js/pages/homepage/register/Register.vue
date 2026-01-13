@@ -117,7 +117,7 @@
 
                     <div class="d-flex flex-row align-center justify-space-between">
                         <v-btn color="warning" slim flat rounded="0" @click="startRegister">Neustart</v-btn>
-                        <v-btn color="success" slim flat rounded="0" type="submit" v-if="data.email">Weiter</v-btn>
+                        <v-btn color="success" slim flat rounded="0" type="submit" @submit.prevent="loginToken(data)" v-if="data.email">Weiter</v-btn>
                     </div>
                 </v-form>
             </v-card-text>
@@ -205,9 +205,11 @@ export default {
         },
 
         async confirmEmail(data) {
+            /*
             this.is_valid = false
             await this.$refs.form.validate()
             if (!this.is_valid) return
+            */
             if (!(await this.registerStore.confirmEmail(data))) return
         },
 
@@ -217,6 +219,7 @@ export default {
             await this.$refs.form.validate()
             if (!this.is_valid) return
             */
+
             if (!(await this.registerStore.loginToken(data))) return
 
             this.$router.push('/homepage/register2')

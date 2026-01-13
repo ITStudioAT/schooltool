@@ -119,7 +119,7 @@
                                 <v-text-field
                                     autofocus
                                     v-model="data.student_last_name"
-                                    label="Nachname des Schülers"
+                                    label="Nachname des/der Schülers/in"
                                     :rules="active_register.must_student_last_name ? [required(), maxLength(255)] : [maxLength(255)]" />
                             </v-col>
                         </v-row>
@@ -127,7 +127,7 @@
                             <v-col cols="12">
                                 <v-text-field
                                     v-model="data.student_first_name"
-                                    label="Vorname des Schülers"
+                                    label="Vorname des des/der Schülers/in"
                                     :rules="active_register.must_student_first_name ? [required(), maxLength(255)] : [maxLength(255)]" />
                             </v-col>
                         </v-row>
@@ -278,7 +278,7 @@ export default {
         },
 
         editKid() {
-            if (!this.data.student_last_name) this.data.student_last_name = this.config?.user?.last_name
+            // if (!this.data.student_last_name) this.data.student_last_name = this.config?.user?.last_name
             this.action = 'edit_kid'
         },
 
@@ -287,7 +287,7 @@ export default {
         },
         async logout() {
             await this.homepageStore.logout()
-            this.$router.push('/homepage')
+            this.$router.push('/')
         },
     },
 }
