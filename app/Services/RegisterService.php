@@ -18,8 +18,11 @@ use App\Models\User;
 use App\Services\AdminService;
 
 use App\Services\LicenceService;
+use App\Services\RegisterDateBookingService;
+use Barryvdh\Debugbar\Facades\Debugbar;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Spatie\Permission\Models\Role;
 
 class RegisterService
@@ -69,6 +72,7 @@ class RegisterService
 
     public function loadRegisterAndUser($user)
     {
+
         $school = School::findOrFail($user->school_id);
         $register = Register::findOrFail($user->register_id);
         $app = 'Anmeldetool';
@@ -94,7 +98,9 @@ class RegisterService
             $register_dates = RegisterDate::withCount('bookings')
                 ->where('register_id', $register->id)
                 ->orderBy('date')
+                ->orderBy('from')
                 ->get();
+
 
             $dates = $register_dates
                 ->sortBy('date') // oder ->sortBy(fn($d) => Carbon::parse($d->date))
