@@ -5,14 +5,6 @@
                 <router-view />
                 <ItsNotification />
                 <v-overlay :model-value="is_loading > 0" class="align-center justify-center" contained opacity="0.1">
-                    <!-- <v-progress-circular indeterminate size="70" width="7" /> -->
-                    <!--
-                    <v-progress-circular indeterminate size="small" />
-                    -->
-                    <!--
-                    <v-progress-linear indeterminate stream buffer-value="0" color="primary" />
-                    -->
-
                     <div class="loading-squares">
                         <span></span>
                         <span></span>

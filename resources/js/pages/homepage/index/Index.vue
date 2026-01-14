@@ -32,7 +32,13 @@
                         <v-card-actions class="mt-auto">
                             <div>befindet sich derzeit in Entwicklung</div>
 
-                            <v-btn class="ms-2" size="small" text="LOS" variant="outlined" @click="loadSchoolsForTool('Nachhilfetool')" disabled></v-btn>
+                            <v-btn
+                                class="ms-2"
+                                size="small"
+                                text="LOS"
+                                variant="outlined"
+                                @click="loadSchoolsForTool('Nachhilfetool')"
+                                :disabled="!config?.tutoring_active"></v-btn>
                         </v-card-actions>
                     </v-card>
 

@@ -33,11 +33,6 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
 
 
 
-    Route::get('/homepage/tutoring/confirm-user',  [\App\Http\Controllers\Tutoring\TutoringController::class, 'confirmUser']);
-    Route::get('homepage/tutoring/offer',  [\App\Http\Controllers\Tutoring\OfferController::class, 'offerConfirmRefuse']);
-    Route::get('homepage/tutoring/offer_request',  [\App\Http\Controllers\Tutoring\OfferRequestController::class, 'offerRequest']);
-    ///homepage/tutoring/offer
-
     /* restliche admin-Routen */
     Route::get('/admin/{any?}', function () {
         return view('spa::admin');
@@ -57,17 +52,22 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         return view('homepage');
     });
 
-    Route::get('/homepage/tutoring_response/', function () {
-        return view('homepage');
-    });
+    if (config('schooltool.tutoring_active') === true) {
 
-    Route::get('/homepage/tutoring_overview/', function () {
-        return view('homepage');
-    });
+        // Your existing tutoring routes
+        Route::prefix('homepage')->group(function () {
+            Route::get('tutoring_response', fn() => view('homepage'));
+            Route::get('tutoring_overview', fn() => view('homepage'));
+            Route::get('tutoring', fn() => view('homepage'))->middleware(['auth:sanctum']);
+        });
 
-    Route::get('/homepage/tutoring/', function () {
-        return view('homepage');
-    })->middleware(['auth:sanctum']);
+        // The three controller routes
+        Route::prefix('homepage/tutoring')->group(function () {
+            Route::get('confirm-user', [TutoringController::class, 'confirmUser']);
+            Route::get('offer', [\App\Http\Controllers\Tutoring\OfferController::class, 'offerConfirmRefuse']);
+            Route::get('offer_request', [\App\Http\Controllers\Tutoring\OfferRequestController::class, 'offerRequest']);
+        });
+    }
 
     Route::get('/', function () {
         return view('homepage');

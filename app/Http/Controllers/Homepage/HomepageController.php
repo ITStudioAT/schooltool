@@ -115,7 +115,8 @@ class HomepageController extends Controller
             'isLicenceValid' =>  $isLicenceValid,
             'licence' => $isLicenceValid ? new LicenceResource($licence) : null,
             'selectableSchools' => SchoolResource::collection($schools),
-            'schoolLicences' => $school ? LicenceResource::collection($schoolLicences) : []
+            'schoolLicences' => $school ? LicenceResource::collection($schoolLicences) : [],
+            'tutoring_active' => config('schooltool.tutoring_active', false)
         ];
 
         return response()->json($data, 200);
