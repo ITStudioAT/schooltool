@@ -19,47 +19,38 @@ class MakeRegisterTestRecordsCommand extends Command
      *
      * @var string
      */
-    protected $description = 'Command description';
+    protected $description = 'Create test records for registration system';
 
     /**
      * Execute the console command.
      */
-    public function handle()
+    public function handle(RegisterTestRecordsService $service): int
     {
-
-        // CLEAR CONSOLE
         $this->output->write("\033c");
 
         $this->info('🚀 Starting Test Setup for Register...');
-        $service = new RegisterTestRecordsService();
 
-
-        // Prüfen, ob Voraussetzungen passen (Schule, Schuljahr angelegt)
         $this->info('▶ CHECKING REQUIREMENTS');
-        $check = $service->checkRequirement();
-        if ($check) {
-            $this->info('✅ Requirements checked');
-        } else {
-            $this->info('⚠️ Requirements failed');
-            $this->info('⚠️ Command stopped');
+        if (! $service->checkRequirement()) {
+            $this->error('⚠️ Requirements failed - Command stopped');
+
+            return self::FAILURE;
         }
+        $this->info('✅ Requirements checked');
 
-
-        // Prüfen, ob Users anleget sind, wenn nein => anlegen
         $this->info('▶ CHECKING USERS');
-        $check = $service->checkOrCreateUsers();
-        if ($check) {
+        if ($service->checkOrCreateUsers()) {
             $this->info('✅ Users created');
         } else {
             $this->info('✅ Users already exists');
         }
 
-        // Buchungen erzeugen
         $this->info('▶ CREATING BOOKINGS');
         $service->createRegisterEntries();
         $this->info('✅ Bookings created');
 
-        // END 
         $this->info('🏁 Command finished!');
+
+        return self::SUCCESS;
     }
 }

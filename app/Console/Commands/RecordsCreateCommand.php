@@ -24,22 +24,20 @@ class RecordsCreateCommand extends Command
     /**
      * Execute the console command.
      */
-    public function handle(RecordsCreateService $service)
+    public function handle(RecordsCreateService $service): int
     {
-        // CLEAR CONSOLE
         $this->output->write("\033c");
 
-        // START 
-        $this->info('🚀 Starting application update...');
+        $this->info('🚀 Starting records initialization...');
         $this->line('..................................................');
 
-        // ROLES
         $this->info('▶ INIT RECORDS');
         $service->initRecords();
         $this->info('✅ Init Records checked');
         $this->line('..................................................');
 
-        // END 
-        $this->info('🏁 Records creates!');
+        $this->info('🏁 Records created!');
+
+        return self::SUCCESS;
     }
 }

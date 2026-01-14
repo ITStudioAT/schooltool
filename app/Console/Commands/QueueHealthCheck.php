@@ -25,17 +25,15 @@ class QueueHealthCheck extends Command
     /**
      * Execute the console command.
      */
-    public function handle()
+    public function handle(): int
     {
         $this->info('Queue Health Check wird ausgeführt...');
 
-        // 1. Check if queue worker is running
         $isRunning = $this->isQueueWorkerRunning();
 
         if ($isRunning) {
             $this->info('✓ Queue Worker läuft');
 
-            // 2. Check for stuck jobs (jobs that have been processing for too long)
             $stuckJobs = $this->checkForStuckJobs();
 
             if ($stuckJobs > 0) {
@@ -43,20 +41,19 @@ class QueueHealthCheck extends Command
                 Log::warning("Queue health check: {$stuckJobs} stuck jobs detected");
             }
 
-            return 0;
+            return self::SUCCESS;
         }
 
-        // Worker is not running
         $this->error('✗ Queue Worker läuft NICHT');
         Log::error('Queue health check: Queue worker is not running');
 
-        // Check if we should auto-restart
         if ($this->option('restart')) {
             return $this->restartQueueWorker();
         }
 
         $this->warn('Verwende --restart Option zum automatischen Neustart');
-        return 1;
+
+        return self::FAILURE;
     }
 
     /**
@@ -134,17 +131,20 @@ class QueueHealthCheck extends Command
 
             if ($this->isQueueWorkerRunning()) {
                 $this->info('✓ Queue Worker läuft jetzt');
-                return 0;
+
+                return self::SUCCESS;
             } else {
                 $this->error('✗ Neustart fehlgeschlagen - Worker läuft nicht');
                 Log::error('Queue health check: Worker restart failed - process not running');
-                return 1;
+
+                return self::FAILURE;
             }
 
         } catch (\Exception $e) {
-            $this->error('Fehler beim Neustart: ' . $e->getMessage());
-            Log::error('Queue health check: Restart error - ' . $e->getMessage());
-            return 1;
+            $this->error('Fehler beim Neustart: '.$e->getMessage());
+            Log::error('Queue health check: Restart error - '.$e->getMessage());
+
+            return self::FAILURE;
         }
     }
 

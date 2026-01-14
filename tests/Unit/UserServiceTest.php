@@ -375,12 +375,15 @@ describe('setNewSchoolyear', function () {
 
 describe('allUsersInfos', function () {
     it('returns correct user statistics', function () {
-        // Count existing users before creating new ones
-        $initialTotal = User::where('school_id', $this->school->id)->count();
-        $initialActive = User::where('school_id', $this->school->id)->where('is_active', true)->count();
-        $initial2fa = User::where('school_id', $this->school->id)->where('is_2fa', true)->count();
-        $initialVerified = User::where('school_id', $this->school->id)->whereNotNull('email_verified_at')->count();
-        $initialConfirmed = User::where('school_id', $this->school->id)->whereNotNull('confirmed_at')->count();
+        // Clear ALL users since allUsersInfos counts across all schools, not just this school
+        User::query()->delete();
+
+        // Count existing users before creating new ones (should all be 0 now)
+        $initialTotal = User::count();
+        $initialActive = User::where('is_active', true)->count();
+        $initial2fa = User::where('is_2fa', true)->count();
+        $initialVerified = User::whereNotNull('email_verified_at')->count();
+        $initialConfirmed = User::whereNotNull('confirmed_at')->count();
 
         User::factory()->count(5)->create([
             'school_id' => $this->school->id,

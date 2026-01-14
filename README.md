@@ -2,6 +2,10 @@
 
 SchoolTool beinhaltet Tools zur Unterstützung der Administration von Schulen.
 
+# Code simplifying with Claude
+
+Review recent changes using the laravel-simplifier agent
+
 # Last Changes
 
 ## 3.4.1 - 18.12.2025

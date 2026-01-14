@@ -114,6 +114,8 @@ describe('checkOrCreateUsers', function () {
     });
 
     it('creates users when 499 users exist', function () {
+        // Clear any existing users to ensure we start with exactly 499
+        User::query()->delete();
         User::factory()->count(499)->create();
         $initialCount = User::count();
 

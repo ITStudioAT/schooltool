@@ -63,8 +63,8 @@ test('is route allowed handles missing data field gracefully', function () {
         'invalid' => 'structure',
     ]);
 
-    // Controller expects 'data' key, will error without it
-    expect($response->status())->toBeIn([500, 404]);
+    // Controller returns 422 for missing data.to
+    expect($response->status())->toBe(422);
 });
 
 test('is route allowed handles empty request', function () {
@@ -72,8 +72,8 @@ test('is route allowed handles empty request', function () {
 
     $response = $this->postJson('/api/routes/is_route_allowed', []);
 
-    // Controller expects 'data' key, will error without it
-    expect($response->status())->toBeIn([500, 404]);
+    // Controller returns 422 for missing data.to
+    expect($response->status())->toBe(422);
 });
 
 test('is route allowed accepts valid request structure', function () {

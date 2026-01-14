@@ -16,8 +16,13 @@ class RouteController extends Controller
         // Checking, if the user is permitted to go the route
         // return ok, or abort
 
+        $validated = $request->validated();
 
-        $data = $request->validated()['data'];
+        if (! isset($validated['data']) || ! isset($validated['data']['to'])) {
+            abort(422, 'Ungültige Anfrage: data.to fehlt');
+        }
+
+        $data = $validated['data'];
         $fullPath = $data['to'];
         $user = auth()->user();
 

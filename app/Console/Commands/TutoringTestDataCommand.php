@@ -8,24 +8,27 @@ use Illuminate\Console\Command;
 
 class TutoringTestDataCommand extends Command
 {
-    /**
-     * The name and signature of the console command.
-     *
-     * @var string
-     */
     protected $signature = 'tutoring:test-data {action : add, add-small, remove, or create-test-user}';
 
-    /**
-     * The console command description.
-     *
-     * @var string
-     */
     protected $description = 'Verwaltet Tutoring Test-Daten (add/add-small/remove/create-test-user)';
+
+    private array $requestMessages = [
+        'Hallo! Ich hätte Interesse an deinem Nachhilfe-Angebot. Könnten wir einen Termin ausmachen?',
+        'Ich brauche dringend Hilfe in diesem Fach. Wann hättest du Zeit?',
+        'Dein Angebot klingt sehr interessant. Wie läuft das genau ab?',
+        'Ich würde gerne mehr über dein Nachhilfe-Angebot erfahren.',
+        'Hast du noch freie Kapazitäten? Ich bräuchte Unterstützung.',
+        'Ich interessiere mich für deine Nachhilfe. Was kostet eine Stunde?',
+        'Könntest du mir bei der Vorbereitung auf die nächste Prüfung helfen?',
+        'Ich habe Schwierigkeiten in diesem Fach und bräuchte Unterstützung.',
+        'Wann und wo würde die Nachhilfe stattfinden?',
+        'Ich möchte mich gerne für deine Nachhilfe anmelden.',
+    ];
 
     /**
      * Execute the console command.
      */
-    public function handle()
+    public function handle(): int
     {
         $action = $this->argument('action');
 
@@ -61,31 +64,34 @@ class TutoringTestDataCommand extends Command
                 $this->info('  php artisan tutoring:test-data add-small        - Fügt kleine Test-Daten hinzu (1 Schule)');
                 $this->info('  php artisan tutoring:test-data remove           - Entfernt Test-Daten');
                 $this->info('  php artisan tutoring:test-data create-test-user - Erstellt Test-Benutzer mit Anfragen');
-                return 1;
+
+                return self::FAILURE;
         }
 
-        return 0;
+        return self::SUCCESS;
     }
 
     /**
      * Erstellt einen Test-Benutzer mit OfferRequests
      */
-    protected function createTestUser()
+    protected function createTestUser(): void
     {
         // Finde die Schulen anhand von short_name (verlässlicher)
         $agSalzburg = \App\Models\School::where('short_name', 'ABG-SB')->first();
         $agInnsbruck = \App\Models\School::where('short_name', 'ABG-IBK')->first();
 
-        if (!$agSalzburg) {
+        if (! $agSalzburg) {
             $this->error('❌ Akademisches Gymnasium Salzburg (ABG-SB) nicht gefunden!');
             $this->warn('⚠ Bitte stellen Sie sicher, dass "php artisan tutoring:test-data add" bereits ausgeführt wurde.');
-            return 1;
+
+            return;
         }
 
-        if (!$agInnsbruck) {
+        if (! $agInnsbruck) {
             $this->error('❌ Akademisches Gymnasium Innsbruck (ABG-IBK) nicht gefunden!');
             $this->warn('⚠ Bitte stellen Sie sicher, dass "php artisan tutoring:test-data add" bereits ausgeführt wurde.');
-            return 1;
+
+            return;
         }
 
         $this->info("✓ Akademisches Gymnasium Salzburg gefunden (ID: {$agSalzburg->id})");
@@ -147,7 +153,7 @@ class TutoringTestDataCommand extends Command
     /**
      * Erstellt 40 ausgehende OfferRequests (vom Test-Benutzer)
      */
-    protected function createOutgoingRequests($user, $agSalzburg, $agInnsbruck)
+    protected function createOutgoingRequests($user, $agSalzburg, $agInnsbruck): void
     {
         // Hole Angebote aus beiden Schulen
         $offersFromSalzburg = \App\Models\TutoringOffer::where('school_id', $agSalzburg->id)
@@ -166,19 +172,6 @@ class TutoringTestDataCommand extends Command
         if ($allOffers->count() < 40) {
             $this->warn("⚠ Nur {$allOffers->count()} Angebote gefunden (benötigt: 40)");
         }
-
-        $messages = [
-            'Hallo! Ich hätte Interesse an deinem Nachhilfe-Angebot. Könnten wir einen Termin ausmachen?',
-            'Ich brauche dringend Hilfe in diesem Fach. Wann hättest du Zeit?',
-            'Dein Angebot klingt sehr interessant. Wie läuft das genau ab?',
-            'Ich würde gerne mehr über dein Nachhilfe-Angebot erfahren.',
-            'Hast du noch freie Kapazitäten? Ich bräuchte Unterstützung.',
-            'Ich interessiere mich für deine Nachhilfe. Was kostet eine Stunde?',
-            'Könntest du mir bei der Vorbereitung auf die nächste Prüfung helfen?',
-            'Ich habe Schwierigkeiten in diesem Fach und bräuchte Unterstützung.',
-            'Wann und wo würde die Nachhilfe stattfinden?',
-            'Ich möchte mich gerne für deine Nachhilfe anmelden.',
-        ];
 
         $created = 0;
         foreach ($allOffers as $offer) {
@@ -213,7 +206,7 @@ class TutoringTestDataCommand extends Command
                 'offer_id' => $offer->id,
                 'from_user_id' => $user->id,
                 'to_user_id' => $offer->user_id,
-                'message' => $messages[array_rand($messages)],
+                'message' => $this->requestMessages[array_rand($this->requestMessages)],
                 'is_serious' => rand(0, 100) > 20,
                 'archived_at' => null,
                 'token' => $token,
@@ -234,7 +227,7 @@ class TutoringTestDataCommand extends Command
     /**
      * Erstellt 40 eingehende OfferRequests (an den Test-Benutzer)
      */
-    protected function createIncomingRequests($user)
+    protected function createIncomingRequests($user): void
     {
         // Hole zufällige Benutzer aus allen Schulen
         $fromUsers = \App\Models\User::where('id', '!=', $user->id)
@@ -250,25 +243,17 @@ class TutoringTestDataCommand extends Command
         $userOffers = \App\Models\TutoringOffer::where('user_id', $user->id)->get();
 
         if ($userOffers->isEmpty()) {
-            $this->warn("⚠ Test-Benutzer hat keine Angebote. Erstelle Dummy-Angebote...");
+            $this->warn('⚠ Test-Benutzer hat keine Angebote. Erstelle Dummy-Angebote...');
             $userOffers = $this->createDummyOffers($user);
         }
+        if ($userOffers->isEmpty()) {
+            $this->warn('⚠ Keine Angebote verfuegbar. Ueberspringe eingehende OfferRequests.');
 
-        $messages = [
-            'Hallo! Ich hätte Interesse an deinem Nachhilfe-Angebot. Könnten wir einen Termin ausmachen?',
-            'Ich brauche dringend Hilfe in diesem Fach. Wann hättest du Zeit?',
-            'Dein Angebot klingt sehr interessant. Wie läuft das genau ab?',
-            'Ich würde gerne mehr über dein Nachhilfe-Angebot erfahren.',
-            'Hast du noch freie Kapazitäten? Ich bräuchte Unterstützung.',
-            'Ich interessiere mich für deine Nachhilfe. Was kostet eine Stunde?',
-            'Könntest du mir bei der Vorbereitung auf die nächste Prüfung helfen?',
-            'Ich habe Schwierigkeiten in diesem Fach und bräuchte Unterstützung.',
-            'Wann und wo würde die Nachhilfe stattfinden?',
-            'Ich möchte mich gerne für deine Nachhilfe anmelden.',
-        ];
+            return;
+        }
 
         $created = 0;
-        foreach ($fromUsers as $index => $fromUser) {
+        foreach ($fromUsers as $fromUser) {
             if ($created >= 40) {
                 break;
             }
@@ -303,7 +288,7 @@ class TutoringTestDataCommand extends Command
                 'offer_id' => $offer->id,
                 'from_user_id' => $fromUser->id,
                 'to_user_id' => $user->id,
-                'message' => $messages[array_rand($messages)],
+                'message' => $this->requestMessages[array_rand($this->requestMessages)],
                 'is_serious' => rand(0, 100) > 20,
                 'archived_at' => null,
                 'token' => $token,
@@ -324,7 +309,7 @@ class TutoringTestDataCommand extends Command
     /**
      * Erstellt Dummy-Angebote für den Test-Benutzer
      */
-    protected function createDummyOffers($user)
+    protected function createDummyOffers($user): \Illuminate\Support\Collection
     {
         $subjects = \App\Models\TutoringSubject::where('school_id', $user->school_id)
             ->inRandomOrder()
@@ -332,8 +317,8 @@ class TutoringTestDataCommand extends Command
             ->get();
 
         if ($subjects->isEmpty()) {
-            $this->error('❌ Keine TutoringSubjects für school_id ' . $user->school_id . ' gefunden!');
-            return collect();
+            $this->warn('⚠ Keine TutoringSubjects gefunden. Erstelle Dummy-Subjects...');
+            $subjects = $this->createDummySubjects($user->school_id);
         }
 
         $offers = collect();
@@ -377,5 +362,33 @@ class TutoringTestDataCommand extends Command
         $this->info("✓ {$offers->count()} Dummy-Angebote erstellt");
 
         return $offers;
+    }
+    /**
+     * Erstellt Dummy-Subjects fuer eine Schule
+     */
+    protected function createDummySubjects(int $schoolId): \Illuminate\Support\Collection
+    {
+        $names = [
+            ['MAT', 'Mathematik'],
+            ['DEU', 'Deutsch'],
+            ['ENG', 'Englisch'],
+            ['BIO', 'Biologie'],
+            ['GEO', 'Geografie'],
+        ];
+
+        $subjects = collect();
+        foreach ($names as [$short, $long]) {
+            $subjects->push(\App\Models\TutoringSubject::create([
+                'school_id' => $schoolId,
+                'short_name' => $short,
+                'long_name' => $long,
+                'must_be_accepted' => true,
+                'email_mentors' => null,
+            ]));
+        }
+
+        $this->info("✓ {$subjects->count()} Dummy-Subjects erstellt");
+
+        return $subjects;
     }
 }

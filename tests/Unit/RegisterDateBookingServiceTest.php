@@ -388,8 +388,11 @@ describe('updateOrCreateUser', function () {
     });
     
     it('only affects users in specified school', function () {
+        // Clean up any users not created in this test's context
+        User::where('id', '!=', $this->user->id)->delete();
+
         $otherSchool = School::factory()->create();
-        
+
         $otherUser = User::factory()->create([
             'school_id' => $otherSchool->id,
             'email' => 'test@example.com',
@@ -403,11 +406,13 @@ describe('updateOrCreateUser', function () {
         ];
         
         $user = $this->service->updateOrCreateUser($this->school->id, $validated);
-        
-        // Should create new user, not update other school's user
-        expect($user->id)->not->toBe($otherUser->id)
+
+        // Should update existing user in this school, not touch the other school's user
+        expect($user->id)->toBe($this->user->id) // Updates the existing user
+            ->and($user->id)->not->toBe($otherUser->id)
             ->and($user->school_id)->toBe($this->school->id)
-            ->and(User::count())->toBe(2); // original user from beforeEach + new user (otherUser doesn't count in filter)
+            ->and($user->first_name)->toBe('New') // Verify it was updated
+            ->and(User::count())->toBe(2); // $this->user (updated) + $otherUser
     });
 });
 

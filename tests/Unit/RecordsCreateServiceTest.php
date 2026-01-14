@@ -341,6 +341,9 @@ describe('checkOrCreateSchoolyears (private method behavior)', function () {
 
 describe('integration scenarios', function () {
     it('handles complete initialization from empty database', function () {
+        // Ensure database is truly empty for this integration test
+        User::query()->delete();
+
         expect(School::count())->toBe(0)
             ->and(Schoolyear::count())->toBe(0)
             ->and(Role::count())->toBe(0)

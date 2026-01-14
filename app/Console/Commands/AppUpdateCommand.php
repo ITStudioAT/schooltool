@@ -12,7 +12,7 @@ class AppUpdateCommand extends Command
 {
     protected $signature = 'app:update';
     protected $description = 'Update application: migrations, records, roles, folders, and build assets';
-    public function handle(InstallUpdateService $service, RecordsCreateService $recordsCreateService)
+    public function handle(InstallUpdateService $service, RecordsCreateService $recordsCreateService): int
     {
         // CLEAR CONSOLE
         $this->output->write("\033c");
@@ -96,5 +96,7 @@ class AppUpdateCommand extends Command
         $this->info('✅ Caches cleared');
         $this->line(str_repeat('.', 50));
         $this->info('🏁 Application update finished!');
+
+        return self::SUCCESS;
     }
 }
