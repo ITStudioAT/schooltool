@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'version' => '3.7.8',
+    'version' => '3.7.9',
     'copyright' => '(c) 2025 ITStudio.at by Günther Kron',
     'logo' => 'schooltool_white.png',
     'pagination' => 30,
