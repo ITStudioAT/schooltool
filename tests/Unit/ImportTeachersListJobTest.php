@@ -1,0 +1,652 @@
+<?php
+
+/**
+ * ImportTeachersListJob Tests
+ *
+ * Tests the teacher list import job that processes Excel files
+ * containing teacher data and creates/updates teacher records.
+ */
+
+use App\Events\TeachersListImportFinishedEvent;
+use App\Jobs\ImportTeachersListJob;
+use App\Models\School;
+use App\Models\Teacher;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Storage;
+use Spatie\Permission\Models\Role;
+use Tests\TestCase;
+
+uses(TestCase::class, RefreshDatabase::class);
+
+// Helper function to create test Excel file
+function createTestExcelFile(array $headers, array $rows): string
+{
+    $tempPath = 'app/temp/test-imports';
+    $fullPath = storage_path($tempPath);
+
+    if (!is_dir($fullPath)) {
+        mkdir($fullPath, 0775, true);
+    }
+
+    $filename = 'test-teachers-' . uniqid() . '.csv';
+    $filePath = $fullPath . '/' . $filename;
+
+    $handle = fopen($filePath, 'w');
+
+    // Write headers
+    fputcsv($handle, $headers);
+
+    // Write rows
+    foreach ($rows as $row) {
+        fputcsv($handle, $row);
+    }
+
+    fclose($handle);
+
+    return $tempPath . '/' . $filename;
+}
+
+// Helper function to clean up test files
+function cleanupTestFiles(): void
+{
+    $tempPath = storage_path('app/temp/test-imports');
+    if (is_dir($tempPath)) {
+        $files = glob($tempPath . '/*');
+        foreach ($files as $file) {
+            if (is_file($file)) {
+                @unlink($file);
+            }
+        }
+        @rmdir($tempPath);
+    }
+}
+
+beforeEach(function () {
+    Event::fake([TeachersListImportFinishedEvent::class]);
+
+    // Create required roles
+    Role::create(['name' => 'admin', 'guard_name' => 'web']);
+
+    // Create school
+    $this->school = School::factory()->create([
+        'long_name' => 'Test School',
+        'short_name' => 'TEST',
+    ]);
+
+    // Create user
+    $this->user = User::factory()->create([
+        'school_id' => $this->school->id,
+        'email' => 'test@example.com',
+    ]);
+
+    // Clean up any existing test files
+    cleanupTestFiles();
+});
+
+afterEach(function () {
+    // Clean up test files after each test
+    cleanupTestFiles();
+
+    // Clean up temp directory
+    $tempPath = storage_path('app/temp');
+    if (is_dir($tempPath)) {
+        @rmdir($tempPath);
+    }
+});
+
+describe('handle - successful imports', function () {
+    it('imports teachers from valid Excel file with standard headers', function () {
+        $filePath = createTestExcelFile(
+            ['Kurz', 'Nachname', 'Vorname', 'Email'],
+            [
+                ['MUE', 'Mueller', 'Hans', 'hans.mueller@test.de'],
+                ['SCH', 'Schmidt', 'Anna', 'anna.schmidt@test.de'],
+                ['WEB', 'Weber', 'Peter', 'peter.weber@test.de'],
+            ]
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        expect(Teacher::count())->toBe(3)
+            ->and(Teacher::where('school_id', $this->school->id)->count())->toBe(3);
+
+        $teacher = Teacher::where('email', 'hans.mueller@test.de')->first();
+        expect($teacher)->not->toBeNull()
+            ->and($teacher->short)->toBe('MUE')
+            ->and($teacher->last_name)->toBe('Mueller')
+            ->and($teacher->first_name)->toBe('Hans')
+            ->and($teacher->school_id)->toBe($this->school->id);
+    });
+
+    it('creates new teachers and broadcasts success event', function () {
+        $filePath = createTestExcelFile(
+            ['Kurz', 'Nachname', 'Vorname', 'Email'],
+            [
+                ['DOE', 'Doe', 'John', 'john.doe@test.de'],
+                ['SMI', 'Smith', 'Jane', 'jane.smith@test.de'],
+            ]
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        expect(Teacher::count())->toBe(2);
+
+        Event::assertDispatched(TeachersListImportFinishedEvent::class, function ($event) {
+            return $event->status === 200
+                && $event->userId === $this->user->id
+                && str_contains($event->message, '2 neu')
+                && $event->data['created'] === 2
+                && $event->data['updated'] === 0
+                && $event->data['deleted'] === 0;
+        });
+    });
+
+    it('updates existing teachers instead of creating duplicates', function () {
+        // Create existing teacher
+        Teacher::create([
+            'school_id' => $this->school->id,
+            'email' => 'existing@test.de',
+            'short' => 'OLD',
+            'last_name' => 'OldName',
+            'first_name' => 'OldFirst',
+        ]);
+
+        $filePath = createTestExcelFile(
+            ['Kurz', 'Nachname', 'Vorname', 'Email'],
+            [
+                ['NEW', 'NewName', 'NewFirst', 'existing@test.de'],
+            ]
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        expect(Teacher::count())->toBe(1);
+
+        $teacher = Teacher::where('email', 'existing@test.de')->first();
+        expect($teacher->short)->toBe('NEW')
+            ->and($teacher->last_name)->toBe('NewName')
+            ->and($teacher->first_name)->toBe('NewFirst');
+
+        Event::assertDispatched(TeachersListImportFinishedEvent::class, function ($event) {
+            return $event->data['created'] === 0
+                && $event->data['updated'] === 1
+                && $event->data['deleted'] === 0;
+        });
+    });
+
+    it('handles mix of new and existing teachers', function () {
+        // Create existing teacher
+        Teacher::create([
+            'school_id' => $this->school->id,
+            'email' => 'existing@test.de',
+            'short' => 'EXI',
+            'last_name' => 'Existing',
+            'first_name' => 'Teacher',
+        ]);
+
+        $filePath = createTestExcelFile(
+            ['Kurz', 'Nachname', 'Vorname', 'Email'],
+            [
+                ['EXI', 'Existing', 'Teacher', 'existing@test.de'],
+                ['NEW', 'New', 'Teacher', 'new@test.de'],
+                ['AN2', 'Another', 'New', 'another@test.de'],
+            ]
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        expect(Teacher::count())->toBe(3);
+
+        Event::assertDispatched(TeachersListImportFinishedEvent::class, function ($event) {
+            return $event->data['created'] === 2
+                && $event->data['updated'] === 1
+                && $event->data['deleted'] === 0;
+        });
+    });
+
+    it('converts short name to uppercase', function () {
+        $filePath = createTestExcelFile(
+            ['Kurz', 'Nachname', 'Vorname', 'Email'],
+            [
+                ['abc', 'Test', 'User', 'test@test.de'],
+            ]
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        $teacher = Teacher::where('email', 'test@test.de')->first();
+        expect($teacher->short)->toBe('ABC');
+    });
+});
+
+describe('handle - header variations', function () {
+    it('accepts lowercase headers', function () {
+        $filePath = createTestExcelFile(
+            ['kurz', 'nachname', 'vorname', 'email'],
+            [
+                ['MUE', 'Mueller', 'Hans', 'hans@test.de'],
+            ]
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        expect(Teacher::count())->toBe(1);
+        Event::assertDispatched(TeachersListImportFinishedEvent::class, function ($event) {
+            return $event->status === 200;
+        });
+    });
+
+    it('accepts alternative header names for Kurz', function () {
+        $filePath = createTestExcelFile(
+            ['short', 'Nachname', 'Vorname', 'Email'],
+            [
+                ['MUE', 'Mueller', 'Hans', 'hans@test.de'],
+            ]
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        expect(Teacher::count())->toBe(1);
+    });
+
+    it('accepts alternative header names for Nachname', function () {
+        $filePath = createTestExcelFile(
+            ['Kurz', 'last_name', 'Vorname', 'Email'],
+            [
+                ['MUE', 'Mueller', 'Hans', 'hans@test.de'],
+            ]
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        expect(Teacher::count())->toBe(1);
+    });
+
+    it('accepts alternative header names for Vorname', function () {
+        $filePath = createTestExcelFile(
+            ['Kurz', 'Nachname', 'first_name', 'Email'],
+            [
+                ['MUE', 'Mueller', 'Hans', 'hans@test.de'],
+            ]
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        expect(Teacher::count())->toBe(1);
+    });
+
+    it('accepts alternative header names for Email', function () {
+        $filePath = createTestExcelFile(
+            ['Kurz', 'Nachname', 'Vorname', 'e-mail'],
+            [
+                ['MUE', 'Mueller', 'Hans', 'hans@test.de'],
+            ]
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        expect(Teacher::count())->toBe(1);
+    });
+
+    it('accepts headers with extra spaces', function () {
+        $filePath = createTestExcelFile(
+            [' kurz ', ' nachname ', ' vorname ', ' email '],
+            [
+                ['MUE', 'Mueller', 'Hans', 'hans@test.de'],
+            ]
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        expect(Teacher::count())->toBe(1);
+        Event::assertDispatched(TeachersListImportFinishedEvent::class, function ($event) {
+            return $event->status === 200;
+        });
+    });
+
+    it('accepts mixed case headers', function () {
+        $filePath = createTestExcelFile(
+            ['KURZ', 'NachName', 'VorName', 'EMAIL'],
+            [
+                ['MUE', 'Mueller', 'Hans', 'hans@test.de'],
+            ]
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        expect(Teacher::count())->toBe(1);
+    });
+});
+
+describe('handle - error handling', function () {
+    it('broadcasts error when required column is missing', function () {
+        $filePath = createTestExcelFile(
+            ['Kurz', 'Nachname', 'Vorname'], // Missing Email
+            [
+                ['MUE', 'Mueller', 'Hans'],
+            ]
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        expect(Teacher::count())->toBe(0);
+
+        Event::assertDispatched(TeachersListImportFinishedEvent::class, function ($event) {
+            return $event->status === 500
+                && $event->userId === $this->user->id
+                && str_contains($event->message, 'nicht korrekt')
+                && empty($event->data);
+        });
+    });
+
+    it('broadcasts error when multiple required columns are missing', function () {
+        $filePath = createTestExcelFile(
+            ['Kurz', 'Nachname'], // Missing Vorname and Email
+            [
+                ['MUE', 'Mueller'],
+            ]
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        expect(Teacher::count())->toBe(0);
+
+        Event::assertDispatched(TeachersListImportFinishedEvent::class, function ($event) {
+            return $event->status === 500;
+        });
+    });
+
+    it('broadcasts error when headers are completely wrong', function () {
+        $filePath = createTestExcelFile(
+            ['Wrong', 'Headers', 'Here', 'Now'],
+            [
+                ['Data', 'Data', 'Data', 'Data'],
+            ]
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        expect(Teacher::count())->toBe(0);
+
+        Event::assertDispatched(TeachersListImportFinishedEvent::class, function ($event) {
+            return $event->status === 500;
+        });
+    });
+});
+
+describe('handle - multi-school isolation', function () {
+    it('only imports teachers for the user school', function () {
+        // Create another school with existing teacher
+        $otherSchool = School::factory()->create(['short_name' => 'OTHER']);
+        Teacher::create([
+            'school_id' => $otherSchool->id,
+            'email' => 'other@school.de',
+            'short' => 'OTH',
+            'last_name' => 'Other',
+            'first_name' => 'Teacher',
+        ]);
+
+        $filePath = createTestExcelFile(
+            ['Kurz', 'Nachname', 'Vorname', 'Email'],
+            [
+                ['MUE', 'Mueller', 'Hans', 'hans@test.de'],
+            ]
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        expect(Teacher::count())->toBe(2)
+            ->and(Teacher::where('school_id', $this->school->id)->count())->toBe(1)
+            ->and(Teacher::where('school_id', $otherSchool->id)->count())->toBe(1);
+    });
+
+    it('does not update teachers from other schools with same email', function () {
+        // Create teacher in another school with same email
+        $otherSchool = School::factory()->create(['short_name' => 'OTHER']);
+        $otherTeacher = Teacher::create([
+            'school_id' => $otherSchool->id,
+            'email' => 'shared@test.de',
+            'short' => 'OTH',
+            'last_name' => 'Other',
+            'first_name' => 'Teacher',
+        ]);
+
+        $filePath = createTestExcelFile(
+            ['Kurz', 'Nachname', 'Vorname', 'Email'],
+            [
+                ['MYS', 'MySchool', 'Teacher', 'shared@test.de'],
+            ]
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        expect(Teacher::count())->toBe(2);
+
+        $otherTeacher->refresh();
+        expect($otherTeacher->short)->toBe('OTH')
+            ->and($otherTeacher->last_name)->toBe('Other');
+
+        $myTeacher = Teacher::where('school_id', $this->school->id)
+            ->where('email', 'shared@test.de')
+            ->first();
+        expect($myTeacher)->not->toBeNull()
+            ->and($myTeacher->short)->toBe('MYS')
+            ->and($myTeacher->last_name)->toBe('MySchool');
+    });
+});
+
+describe('handle - edge cases', function () {
+    it('handles empty Excel file with only headers', function () {
+        $filePath = createTestExcelFile(
+            ['Kurz', 'Nachname', 'Vorname', 'Email'],
+            []
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        expect(Teacher::count())->toBe(0);
+
+        Event::assertDispatched(TeachersListImportFinishedEvent::class, function ($event) {
+            return $event->status === 200
+                && $event->data['created'] === 0
+                && $event->data['updated'] === 0;
+        });
+    });
+
+    it('handles single teacher import', function () {
+        $filePath = createTestExcelFile(
+            ['Kurz', 'Nachname', 'Vorname', 'Email'],
+            [
+                ['ONE', 'Single', 'Teacher', 'single@test.de'],
+            ]
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        expect(Teacher::count())->toBe(1);
+
+        Event::assertDispatched(TeachersListImportFinishedEvent::class, function ($event) {
+            return $event->data['created'] === 1;
+        });
+    });
+
+    it('handles large import with many teachers', function () {
+        $rows = [];
+        for ($i = 1; $i <= 50; $i++) {
+            $rows[] = [
+                'T' . str_pad($i, 2, '0', STR_PAD_LEFT),
+                'Teacher' . $i,
+                'First' . $i,
+                'teacher' . $i . '@test.de',
+            ];
+        }
+
+        $filePath = createTestExcelFile(
+            ['Kurz', 'Nachname', 'Vorname', 'Email'],
+            $rows
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        expect(Teacher::count())->toBe(50);
+
+        Event::assertDispatched(TeachersListImportFinishedEvent::class, function ($event) {
+            return $event->data['created'] === 50;
+        });
+    });
+
+    it('handles special characters in names', function () {
+        $filePath = createTestExcelFile(
+            ['Kurz', 'Nachname', 'Vorname', 'Email'],
+            [
+                ['MUE', 'Müller', 'Jürgen', 'mueller@test.de'],
+                ['SCH', "O'Brien", "Mary-Jane", 'obrien@test.de'],
+            ]
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        expect(Teacher::count())->toBe(2);
+
+        $teacher1 = Teacher::where('email', 'mueller@test.de')->first();
+        expect($teacher1->last_name)->toBe('Müller')
+            ->and($teacher1->first_name)->toBe('Jürgen');
+
+        $teacher2 = Teacher::where('email', 'obrien@test.de')->first();
+        expect($teacher2->last_name)->toBe("O'Brien")
+            ->and($teacher2->first_name)->toBe('Mary-Jane');
+    });
+
+    it('handles empty cells in data rows', function () {
+        $filePath = createTestExcelFile(
+            ['Kurz', 'Nachname', 'Vorname', 'Email'],
+            [
+                ['MUE', 'Mueller', '', 'mueller@test.de'], // Empty first name
+            ]
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        $teacher = Teacher::where('email', 'mueller@test.de')->first();
+        expect($teacher)->not->toBeNull()
+            ->and($teacher->first_name)->toBe('');
+    });
+});
+
+describe('validateAndMapHeaders', function () {
+    it('returns correct mapping for standard headers', function () {
+        $job = new ImportTeachersListJob($this->user, 'dummy-path');
+
+        $reflection = new ReflectionClass($job);
+        $method = $reflection->getMethod('validateAndMapHeaders');
+        $method->setAccessible(true);
+
+        $headers = ['Kurz', 'Nachname', 'Vorname', 'Email'];
+        $mapping = $method->invoke($job, $headers);
+
+        expect($mapping)->toBeArray()
+            ->and($mapping)->toHaveKey('Kurz')
+            ->and($mapping['Kurz'])->toBe('Kurz')
+            ->and($mapping['Nachname'])->toBe('Nachname')
+            ->and($mapping['Vorname'])->toBe('Vorname')
+            ->and($mapping['Email'])->toBe('Email');
+    });
+
+    it('returns correct mapping for alternative headers', function () {
+        $job = new ImportTeachersListJob($this->user, 'dummy-path');
+
+        $reflection = new ReflectionClass($job);
+        $method = $reflection->getMethod('validateAndMapHeaders');
+        $method->setAccessible(true);
+
+        $headers = ['short', 'lastname', 'firstname', 'mail'];
+        $mapping = $method->invoke($job, $headers);
+
+        expect($mapping)->toBeArray()
+            ->and($mapping['short'])->toBe('Kurz')
+            ->and($mapping['lastname'])->toBe('Nachname')
+            ->and($mapping['firstname'])->toBe('Vorname')
+            ->and($mapping['mail'])->toBe('Email');
+    });
+
+    it('returns false when required column is missing', function () {
+        $job = new ImportTeachersListJob($this->user, 'dummy-path');
+
+        $reflection = new ReflectionClass($job);
+        $method = $reflection->getMethod('validateAndMapHeaders');
+        $method->setAccessible(true);
+
+        $headers = ['Kurz', 'Nachname', 'Vorname']; // Missing Email
+        $mapping = $method->invoke($job, $headers);
+
+        expect($mapping)->toBeFalse();
+    });
+
+    it('handles case-insensitive header matching', function () {
+        $job = new ImportTeachersListJob($this->user, 'dummy-path');
+
+        $reflection = new ReflectionClass($job);
+        $method = $reflection->getMethod('validateAndMapHeaders');
+        $method->setAccessible(true);
+
+        $headers = ['KURZ', 'NACHNAME', 'VORNAME', 'EMAIL'];
+        $mapping = $method->invoke($job, $headers);
+
+        expect($mapping)->toBeArray()
+            ->and($mapping)->toHaveCount(4);
+    });
+
+    it('handles headers with extra whitespace', function () {
+        $job = new ImportTeachersListJob($this->user, 'dummy-path');
+
+        $reflection = new ReflectionClass($job);
+        $method = $reflection->getMethod('validateAndMapHeaders');
+        $method->setAccessible(true);
+
+        $headers = [' kurz ', ' nachname ', ' vorname ', ' email '];
+        $mapping = $method->invoke($job, $headers);
+
+        expect($mapping)->toBeArray()
+            ->and($mapping)->toHaveCount(4);
+    });
+});
+
+describe('job properties', function () {
+    it('is queueable', function () {
+        $job = new ImportTeachersListJob($this->user, 'test-path.xlsx');
+
+        expect($job)->toBeInstanceOf(\Illuminate\Contracts\Queue\ShouldQueue::class);
+    });
+
+    it('stores user and path properties', function () {
+        $path = 'app/imports/teachers.xlsx';
+        $job = new ImportTeachersListJob($this->user, $path);
+
+        expect($job->user)->toBe($this->user)
+            ->and($job->path)->toBe($path);
+    });
+});

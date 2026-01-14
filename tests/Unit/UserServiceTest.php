@@ -375,6 +375,13 @@ describe('setNewSchoolyear', function () {
 
 describe('allUsersInfos', function () {
     it('returns correct user statistics', function () {
+        // Count existing users before creating new ones
+        $initialTotal = User::where('school_id', $this->school->id)->count();
+        $initialActive = User::where('school_id', $this->school->id)->where('is_active', true)->count();
+        $initial2fa = User::where('school_id', $this->school->id)->where('is_2fa', true)->count();
+        $initialVerified = User::where('school_id', $this->school->id)->whereNotNull('email_verified_at')->count();
+        $initialConfirmed = User::where('school_id', $this->school->id)->whereNotNull('confirmed_at')->count();
+
         User::factory()->count(5)->create([
             'school_id' => $this->school->id,
             'is_active' => true,
@@ -398,12 +405,12 @@ describe('allUsersInfos', function () {
 
         $totals = collect($result)->pluck('content', 'title');
 
-        expect($totals['Gesamt'])->toBe(7)
-            ->and($totals['Aktiv'])->toBe(5)
-            ->and($totals['Mit 2-FA-Authentifizierung'])->toBe(2)
-            ->and($totals['Mit bestätigter E-Mail'])->toBe(5)
-            ->and($totals['Bestätigte'])->toBe(5)
-            ->and($totals['Nicht bestätigte'])->toBe(2);
+        expect($totals['Gesamt'])->toBe($initialTotal + 7)
+            ->and($totals['Aktiv'])->toBe($initialActive + 5)
+            ->and($totals['Mit 2-FA-Authentifizierung'])->toBe($initial2fa + 2)
+            ->and($totals['Mit bestätigter E-Mail'])->toBe($initialVerified + 5)
+            ->and($totals['Bestätigte'])->toBe($initialConfirmed + 5)
+            ->and($totals['Nicht bestätigte'])->toBe(($initialTotal + 7) - ($initialConfirmed + 5));
     });
 });
 

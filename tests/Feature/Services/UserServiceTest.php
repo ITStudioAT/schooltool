@@ -337,6 +337,9 @@ describe('allUsersInfos', function () {
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
 
         // Create users with different states
+        // Note: allUsersInfos() returns ALL users across all schools
+        $initialTotalAllSchools = User::count();
+
         User::factory()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $schoolyear->id,
@@ -369,10 +372,10 @@ describe('allUsersInfos', function () {
         expect($result)->toBeArray()
             ->toHaveCount(6);
 
-        // Check structure (including dummy user with ID 1 = 4 total users)
+        // Check structure (3 users created + dummy user = 4 total, or more if parallel tests ran)
         expect($result[0])->toHaveKeys(['title', 'content'])
             ->and($result[0]['title'])->toBe('Gesamt')
-            ->and($result[0]['content'])->toBe(4)
+            ->and($result[0]['content'])->toBe($initialTotalAllSchools + 3)
             ->and($result[1]['title'])->toBe('Aktiv')
             ->and($result[2]['title'])->toBe('Mit 2-FA-Authentifizierung')
             ->and($result[3]['title'])->toBe('Mit bestätigter E-Mail')

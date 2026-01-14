@@ -18,28 +18,36 @@ use Tests\TestCase;
 uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
-    // Create test directories
-    if (!is_dir(storage_path('app/private/excel'))) {
-        mkdir(storage_path('app/private/excel'), 0775, true);
+    // Clean up any existing Excel files BEFORE the test
+    $excelDir = storage_path('app/private/excel');
+    if (is_dir($excelDir)) {
+        $files = glob($excelDir . '/*.xlsx');
+        foreach ($files as $file) {
+            if (is_file($file)) {
+                @unlink($file);
+            }
+        }
+    } else {
+        mkdir($excelDir, 0775, true);
     }
-    
+
     // Create test data
     $this->school = School::factory()->create([
         'long_name' => 'Test School Long Name',
         'short_name' => 'Test School',
         'logo' => 'test-logo.png',
     ]);
-    
+
     $this->schoolyear = Schoolyear::factory()->create([
         'school_id' => $this->school->id,
     ]);
-    
+
     $this->register = Register::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'name' => 'Test Register 2024',
     ]);
-    
+
     $this->user = User::factory()->create([
         'first_name' => 'John',
         'last_name' => 'Doe',
@@ -48,18 +56,21 @@ beforeEach(function () {
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
     ]);
-    
+
     $this->data = [
         'register_id' => $this->register->id,
     ];
 });
 
 afterEach(function () {
-    // Clean up created Excel files
-    $files = glob(storage_path('app/private/excel/*.xlsx'));
-    foreach ($files as $file) {
-        if (is_file($file)) {
-            @unlink($file);
+    // Clean up created Excel files AFTER the test
+    $excelDir = storage_path('app/private/excel');
+    if (is_dir($excelDir)) {
+        $files = glob($excelDir . '/*.xlsx');
+        foreach ($files as $file) {
+            if (is_file($file)) {
+                @unlink($file);
+            }
         }
     }
 });

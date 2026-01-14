@@ -16,31 +16,45 @@ uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
     $this->service = new PrintRegisterService();
-    
-    // Create test directories
-    if (!is_dir(storage_path('app/private/pdf'))) {
-        mkdir(storage_path('app/private/pdf'), 0775, true);
+
+    // Clean up any existing files BEFORE the test
+    $pdfPath = storage_path('app/private/pdf');
+    $excelPath = storage_path('app/private/excel');
+
+    if (is_dir($pdfPath)) {
+        $files = glob("$pdfPath/*.pdf");
+        foreach ($files as $file) {
+            @unlink($file);
+        }
+    } else {
+        mkdir($pdfPath, 0775, true);
     }
-    if (!is_dir(storage_path('app/private/excel'))) {
-        mkdir(storage_path('app/private/excel'), 0775, true);
+
+    if (is_dir($excelPath)) {
+        $files = glob("$excelPath/*.xlsx");
+        foreach ($files as $file) {
+            @unlink($file);
+        }
+    } else {
+        mkdir($excelPath, 0775, true);
     }
-    
+
     // Create test data
     $this->school = School::factory()->create([
         'long_name' => 'Test School Long Name',
         'short_name' => 'Test School',
     ]);
-    
+
     $this->schoolyear = Schoolyear::factory()->create([
         'school_id' => $this->school->id,
     ]);
-    
+
     $this->register = Register::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'name' => 'Test Register 2024',
     ]);
-    
+
     $this->user = User::factory()->create([
         'first_name' => 'John',
         'last_name' => 'Doe',
@@ -50,10 +64,10 @@ beforeEach(function () {
 });
 
 afterEach(function () {
-    // Clean up generated files
+    // Clean up generated files AFTER the test
     $pdfPath = storage_path('app/private/pdf');
     $excelPath = storage_path('app/private/excel');
-    
+
     if (is_dir($pdfPath)) {
         $files = glob("$pdfPath/*.pdf");
         foreach ($files as $file) {
