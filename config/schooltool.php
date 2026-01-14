@@ -8,7 +8,7 @@ return [
     'token_expire_time' => 60,
     'noreply_email' => 'noreply@schooltool.at',
     'sa_pw' => env('SA_PW'),
-    'tutoring_active' => false,
+    'tutoring_active' => true,
 
     'schoolyears' => [
         ['name' => 'Schuljahr 2025/26', 'from' => '2025-09-08', 'sem_2_start' => '2026-02-16', 'to' => '2026-07-10'],
