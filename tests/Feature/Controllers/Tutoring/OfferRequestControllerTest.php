@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Controllers\Tutoring;
 
+use App\Http\Controllers\Tutoring\OfferRequestController;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
@@ -10,8 +11,11 @@ use App\Models\TutoringOffer;
 use App\Models\TutoringOfferRequest;
 use App\Models\TutoringSubject;
 use App\Models\User;
+use App\Services\TutoringOfferService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
+use Mockery;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -708,5 +712,57 @@ test('offerRequest requires id parameter', function () {
     ]));
 
     $response->assertStatus(302);
+});
+
+test('offerRequest logs in the resolved user and redirects to tutoring overview', function () {
+    $targetUser = User::factory()->create([
+        'email' => 'target@example.com',
+        'school_id' => $this->school1->id,
+        'schoolyear_id' => $this->schoolyear1->id,
+    ]);
+
+    $service = Mockery::mock(TutoringOfferService::class);
+    $service->shouldReceive('getUserFromOfferRequest')
+        ->once()
+        ->with($targetUser->email, 123, Mockery::type('string'))
+        ->andReturn($targetUser);
+
+    app()->instance(TutoringOfferService::class, $service);
+
+    $this->actingAs($this->student)
+        ->get('/homepage/tutoring/offer_request?' . http_build_query([
+            'email' => $targetUser->email,
+            'id' => 123,
+            'token' => Str::uuid()->toString(),
+        ]))
+        ->assertRedirect('/homepage/tutoring_overview?school=ABG-SB&received_requests=true');
+
+    expect(Auth::id())->toBe($targetUser->id);
+});
+
+test('offerRequest redirects to error page when user lookup fails', function () {
+    $service = Mockery::mock(TutoringOfferService::class);
+    $service->shouldReceive('getUserFromOfferRequest')
+        ->once()
+        ->andReturn(null);
+
+    app()->instance(TutoringOfferService::class, $service);
+
+    $response = $this->get('/homepage/tutoring/offer_request?' . http_build_query([
+        'email' => 'test@example.com',
+        'id' => 1,
+        'token' => Str::uuid()->toString(),
+    ]));
+
+    $response->assertStatus(302);
+
+    $location = $response->headers->get('Location');
+    $parsed = parse_url($location);
+    parse_str($parsed['query'] ?? '', $query);
+
+    expect($parsed['path'] ?? '')->toBe('/homepage/tutoring_response')
+        ->and($query['title'] ?? null)->toBe('Fehler')
+        ->and($query['subtitle'] ?? null)->toBe('Fehler beim Anmelden')
+        ->and($query['status'] ?? null)->toBe('422');
 });
 

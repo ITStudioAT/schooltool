@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\NavigationController;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
@@ -25,6 +26,8 @@ beforeEach(function () {
     Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'register_user', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'tutoring_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
     
     // Create test users
     $this->superAdmin = User::factory()->create([
@@ -114,6 +117,46 @@ test('profile menu returns menu for register admin', function () {
     $menu = $response->json('menu');
     expect($menu)->toBeArray()
         ->and(count($menu))->toBeGreaterThan(0);
+});
+
+test('profile menu returns menu for tutoring admin', function () {
+    $tutoringAdmin = User::factory()->create([
+        'first_name' => 'Tutoring',
+        'last_name' => 'Admin',
+        'email' => 'tutoringadmin@example.com',
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'confirmed_at' => now(),
+        'is_active' => true,
+    ]);
+    $tutoringAdmin->assignRole('tutoring_admin');
+
+    $this->actingAs($tutoringAdmin);
+
+    $response = $this->getJson('/api/admin/navigation/profile_menu');
+
+    $response->assertStatus(200)
+        ->assertJsonStructure(['menu']);
+});
+
+test('profile menu returns menu for teacher', function () {
+    $teacher = User::factory()->create([
+        'first_name' => 'Teacher',
+        'last_name' => 'User',
+        'email' => 'teacher@example.com',
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'confirmed_at' => now(),
+        'is_active' => true,
+    ]);
+    $teacher->assignRole('teacher');
+
+    $this->actingAs($teacher);
+
+    $response = $this->getJson('/api/admin/navigation/profile_menu');
+
+    $response->assertStatus(200)
+        ->assertJsonStructure(['menu']);
 });
 
 test('profile menu denies access for register user', function () {
@@ -236,6 +279,25 @@ test('user menu denies access for register user', function () {
     
     $response = $this->getJson('/api/admin/navigation/user_menu');
     
+    $response->assertStatus(403);
+});
+
+test('user menu denies access for teacher', function () {
+    $teacher = User::factory()->create([
+        'first_name' => 'Teacher',
+        'last_name' => 'User',
+        'email' => 'teacher2@example.com',
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'confirmed_at' => now(),
+        'is_active' => true,
+    ]);
+    $teacher->assignRole('teacher');
+
+    $this->actingAs($teacher);
+
+    $response = $this->getJson('/api/admin/navigation/user_menu');
+
     $response->assertStatus(403);
 });
 
