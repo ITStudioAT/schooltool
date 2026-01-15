@@ -470,6 +470,8 @@ export default {
     color: inherit;
     overflow: hidden;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    display: flex;
+    flex-direction: column;
 }
 
 .tool-card:hover {
@@ -506,6 +508,9 @@ export default {
 .card-content {
     position: relative;
     z-index: 1;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
 }
 
 .card-icon {
@@ -559,6 +564,7 @@ export default {
     font-weight: 600;
     font-size: 0.95rem;
     transition: gap 0.3s ease;
+    margin-top: auto;
 }
 
 .card-register .card-action {
@@ -598,6 +604,7 @@ export default {
     border-radius: 20px;
     font-size: 0.85rem;
     font-weight: 500;
+    margin-top: auto;
 }
 
 /* Documentation Section */
