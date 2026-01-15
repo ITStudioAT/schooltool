@@ -274,7 +274,7 @@ describe('checkOrCreateAdmin (private method behavior)', function () {
             'email' => 'kron@naturwelt.at',
         ]);
         
-        Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
         
         $this->service->initRecords();
         
@@ -284,7 +284,7 @@ describe('checkOrCreateAdmin (private method behavior)', function () {
     it('handles null schoolyear gracefully', function () {
         $school = School::factory()->create();
         
-        Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
         
         $this->service->initRecords();
         
@@ -385,7 +385,7 @@ describe('integration scenarios', function () {
     
     it('handles partial existing data correctly', function () {
         $existingSchool = School::factory()->create(['short_name' => 'Existing']);
-        Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
         
         $this->service->initRecords();
         
@@ -452,7 +452,7 @@ describe('edge cases', function () {
     it('handles user without schoolyear assignment', function () {
         $school = School::factory()->create();
 
-        Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
 
         $this->service->initRecords();
 
@@ -514,3 +514,4 @@ describe('checkOrCreateSchoolTool', function () {
             ->and($schoolTool2->school_id)->toBe($school2->id);
     });
 });
+

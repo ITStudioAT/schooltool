@@ -9,9 +9,9 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     // Create roles
-    Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
 
     // Create test school
     $this->school = School::factory()->create([
@@ -452,3 +452,4 @@ describe('integration tests', function () {
         $response4->assertStatus(403);
     });
 });
+

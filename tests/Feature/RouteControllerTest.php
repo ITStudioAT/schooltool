@@ -20,9 +20,9 @@ beforeEach(function () {
     $this->school = School::factory()->create();
     $this->schoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
 
-    Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
 
     $this->superAdmin = User::factory()->create([
         'school_id' => $this->school->id,
@@ -112,3 +112,4 @@ test('is route allowed handles unauthenticated requests', function () {
     // May return 401, 403, or handle gracefully depending on implementation
     expect($response->status())->toBeGreaterThanOrEqual(200);
 });
+

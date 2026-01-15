@@ -33,7 +33,7 @@ beforeEach(function () {
     $this->licence = Licence::create(['name' => 'Anmeldetool']);
     $this->school->licences()->attach($this->licence->id);
 
-    Role::create(['name' => 'user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
 });
 
 describe('loadSchoolsForTool', function () {
@@ -240,3 +240,4 @@ describe('logout', function () {
         expect(Auth::check())->toBeFalse();
     });
 });
+

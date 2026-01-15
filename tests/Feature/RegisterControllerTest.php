@@ -47,9 +47,9 @@ beforeEach(function () {
     ]);
     
     // Create roles
-    Role::create(['name' => 'admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'register_admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
     
     // Create admin user
     $this->adminUser = User::factory()->create([
@@ -623,3 +623,4 @@ test('toggleRegister returns 403 for regular user', function () {
     
     $response->assertStatus(403);
 });
+

@@ -13,10 +13,10 @@ beforeEach(function () {
     $this->service = new RouteService();
 
     // Create roles for testing
-    Role::create(['name' => 'admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'teacher', 'guard_name' => 'web']);
-    Role::create(['name' => 'student', 'guard_name' => 'web']);
-    Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'student', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
 
     // Create test route meta file
     $metaDir = base_path('routes/meta/web');
@@ -917,3 +917,4 @@ describe('edge cases', function () {
         expect($result)->toBe(RouteResult::NOT_FOUND);
     });
 });
+

@@ -27,6 +27,7 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+_ide_helper.php
 
 # Test route files
 /routes/meta/web/test.php

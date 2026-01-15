@@ -52,6 +52,18 @@ use Illuminate\Database\Eloquent\Model;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereTitle($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereUpdatedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereUserId($value)
+ * @property array<array-key, mixed>|null $click_ips
+ * @property bool $visible_for_other_schools
+ * @property string|null $token
+ * @property string|null $token_expires_at
+ * @property mixed $select_only_me_concerning
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\TutoringOfferRequest> $requests
+ * @property-read int|null $requests_count
+ * @property-read School|null $school
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereClickIps($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereToken($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereTokenExpiresAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereVisibleForOtherSchools($value)
  * @mixin \Eloquent
  */
 class TutoringOffer extends Model

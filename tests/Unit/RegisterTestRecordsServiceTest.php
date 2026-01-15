@@ -14,9 +14,22 @@ use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
+function createUsersWithUniqueEmails(int $count)
+{
+    $startId = (User::max('id') ?? 0) + 1;
+
+    return User::factory()
+        ->count($count)
+        ->sequence(fn ($sequence) => [
+            'id' => $startId + $sequence->index,
+            'email' => 'user' . ($startId + $sequence->index) . '@example.test',
+        ])
+        ->create();
+}
+
 beforeEach(function () {
     // Create required role for user factory
-    Role::create(['name' => 'register_user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'register_user', 'guard_name' => 'web']);
     
     $this->service = new RegisterTestRecordsService();
 });
@@ -74,7 +87,7 @@ describe('checkOrCreateUsers', function () {
     });
 
     it('returns false when 500 or more users exist', function () {
-        User::factory()->count(500)->create();
+        createUsersWithUniqueEmails(500);
         $initialCount = User::count();
 
         $result = $this->service->checkOrCreateUsers();
@@ -84,7 +97,7 @@ describe('checkOrCreateUsers', function () {
     });
 
     it('creates users when less than 500 exist', function () {
-        User::factory()->count(100)->create();
+        createUsersWithUniqueEmails(100);
         $initialCount = User::count();
 
         $result = $this->service->checkOrCreateUsers();
@@ -94,7 +107,7 @@ describe('checkOrCreateUsers', function () {
     });
 
     it('returns false when exactly 500 users exist', function () {
-        User::factory()->count(500)->create();
+        createUsersWithUniqueEmails(500);
         $initialCount = User::count();
 
         $result = $this->service->checkOrCreateUsers();
@@ -104,7 +117,7 @@ describe('checkOrCreateUsers', function () {
     });
 
     it('returns false when more than 500 users exist', function () {
-        User::factory()->count(600)->create();
+        createUsersWithUniqueEmails(600);
         $initialCount = User::count();
 
         $result = $this->service->checkOrCreateUsers();
@@ -116,7 +129,7 @@ describe('checkOrCreateUsers', function () {
     it('creates users when 499 users exist', function () {
         // Clear any existing users to ensure we start with exactly 499
         User::query()->delete();
-        User::factory()->count(499)->create();
+        createUsersWithUniqueEmails(499);
         $initialCount = User::count();
 
         $result = $this->service->checkOrCreateUsers();
@@ -130,7 +143,7 @@ describe('createRegisterEntries', function () {
     beforeEach(function () {
         School::factory()->create(['id' => 1]);
         Schoolyear::factory()->create(['id' => 1, 'school_id' => 1]);
-        User::factory()->count(500)->create();
+        createUsersWithUniqueEmails(500);
     });
     
     it('creates a register with correct data', function () {
@@ -312,7 +325,7 @@ describe('integration scenarios', function () {
     it('handles re-running createRegisterEntries', function () {
         School::factory()->create(['id' => 1]);
         Schoolyear::factory()->create(['id' => 1, 'school_id' => 1]);
-        User::factory()->count(500)->create();
+        createUsersWithUniqueEmails(500);
 
         $this->service->createRegisterEntries();
         $firstRegisterCount = Register::count();
@@ -326,7 +339,7 @@ describe('integration scenarios', function () {
     it('handles workflow when users already exist', function () {
         School::factory()->create(['id' => 1]);
         Schoolyear::factory()->create(['id' => 1, 'school_id' => 1]);
-        User::factory()->count(600)->create();
+        createUsersWithUniqueEmails(600);
         $initialUserCount = User::count();
 
         // Should not create more users
@@ -342,7 +355,7 @@ describe('data validation', function () {
     beforeEach(function () {
         School::factory()->create(['id' => 1]);
         Schoolyear::factory()->create(['id' => 1, 'school_id' => 1]);
-        User::factory()->count(500)->create();
+        createUsersWithUniqueEmails(500);
     });
     
     it('creates register dates with correct time ranges', function () {
@@ -405,7 +418,7 @@ describe('edge cases', function () {
     });
 
     it('handles checkOrCreateUsers when exactly at threshold', function () {
-        User::factory()->count(500)->create();
+        createUsersWithUniqueEmails(500);
         $initialCount = User::count();
 
         $result = $this->service->checkOrCreateUsers();
@@ -429,7 +442,7 @@ describe('edge cases', function () {
         Schoolyear::factory()->create(['id' => 1, 'school_id' => 1]);
         
         // Create users with specific IDs
-        $users = User::factory()->count(500)->create();
+        $users = createUsersWithUniqueEmails(500);
         
         $this->service->createRegisterEntries();
         
@@ -446,7 +459,7 @@ describe('date calculations', function () {
     it('calculates next Monday correctly', function () {
         School::factory()->create(['id' => 1]);
         Schoolyear::factory()->create(['id' => 1, 'school_id' => 1]);
-        User::factory()->count(500)->create();
+        createUsersWithUniqueEmails(500);
         
         $expectedMonday = Carbon::now()->next(Carbon::MONDAY)->toDateString();
         
@@ -460,7 +473,7 @@ describe('date calculations', function () {
     it('creates dates in chronological order', function () {
         School::factory()->create(['id' => 1]);
         Schoolyear::factory()->create(['id' => 1, 'school_id' => 1]);
-        User::factory()->count(500)->create();
+        createUsersWithUniqueEmails(500);
         
         $this->service->createRegisterEntries();
         
@@ -476,7 +489,7 @@ describe('supervisor distribution', function () {
     beforeEach(function () {
         School::factory()->create(['id' => 1]);
         Schoolyear::factory()->create(['id' => 1, 'school_id' => 1]);
-        User::factory()->count(500)->create();
+        createUsersWithUniqueEmails(500);
     });
     
     it('distributes dates evenly between groups', function () {
@@ -507,7 +520,7 @@ describe('booking distribution', function () {
     beforeEach(function () {
         School::factory()->create(['id' => 1]);
         Schoolyear::factory()->create(['id' => 1, 'school_id' => 1]);
-        User::factory()->count(500)->create();
+        createUsersWithUniqueEmails(500);
     });
     
     it('uses different users for each booking', function () {
@@ -539,3 +552,4 @@ describe('booking distribution', function () {
         expect($booking->student_last_name)->toBe($user->last_name);
     });
 });
+

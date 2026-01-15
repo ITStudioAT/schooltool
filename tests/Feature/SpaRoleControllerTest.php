@@ -27,9 +27,9 @@ beforeEach(function () {
     $this->schoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
 
     // Create base roles
-    Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
 
     $this->superAdmin = User::factory()->create([
         'school_id' => $this->school->id,
@@ -54,8 +54,8 @@ describe('index', function () {
     test('super admin can list roles', function () {
         $this->actingAs($this->superAdmin);
 
-        Role::create(['name' => 'custom_role_1', 'guard_name' => 'web']);
-        Role::create(['name' => 'custom_role_2', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'custom_role_1', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'custom_role_2', 'guard_name' => 'web']);
 
         $response = $this->getJson('/api/admin/roles');
 
@@ -84,8 +84,8 @@ describe('index', function () {
     test('index filters by search string', function () {
         $this->actingAs($this->superAdmin);
 
-        Role::create(['name' => 'teacher_role', 'guard_name' => 'web']);
-        Role::create(['name' => 'student_role', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'teacher_role', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'student_role', 'guard_name' => 'web']);
 
         $response = $this->getJson('/api/admin/roles?search_model[search_string]=teacher');
 
@@ -100,8 +100,8 @@ describe('index', function () {
     test('index orders roles by name', function () {
         $this->actingAs($this->superAdmin);
 
-        Role::create(['name' => 'zebra_role', 'guard_name' => 'web']);
-        Role::create(['name' => 'alpha_role', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'zebra_role', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'alpha_role', 'guard_name' => 'web']);
 
         $response = $this->getJson('/api/admin/roles');
 
@@ -141,7 +141,7 @@ describe('index', function () {
 
         // Create multiple roles
         for ($i = 1; $i <= 15; $i++) {
-            Role::create(['name' => "role_{$i}", 'guard_name' => 'web']);
+            Role::firstOrCreate(['name' => "role_{$i}", 'guard_name' => 'web']);
         }
 
         $response = $this->getJson('/api/admin/roles');
@@ -229,7 +229,7 @@ describe('store', function () {
     test('store validates unique name', function () {
         $this->actingAs($this->superAdmin);
 
-        Role::create(['name' => 'existing_role', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'existing_role', 'guard_name' => 'web']);
 
         $response = $this->postJson('/api/admin/roles', [
             'name' => 'existing_role',
@@ -244,7 +244,7 @@ describe('show', function () {
     test('super admin can view single role', function () {
         $this->actingAs($this->superAdmin);
 
-        $role = Role::create(['name' => 'view_test_role', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'view_test_role', 'guard_name' => 'web']);
 
         $response = $this->getJson("/api/admin/roles/{$role->id}");
 
@@ -296,7 +296,7 @@ describe('update', function () {
     test('super admin can update role', function () {
         $this->actingAs($this->superAdmin);
 
-        $role = Role::create(['name' => 'update_test', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'update_test', 'guard_name' => 'web']);
 
         $response = $this->putJson("/api/admin/roles/{$role->id}", [
             'id' => $role->id,
@@ -340,7 +340,7 @@ describe('update', function () {
     test('update denies access for admin user', function () {
         $this->actingAs($this->adminUser);
 
-        $role = Role::create(['name' => 'test_role', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'test_role', 'guard_name' => 'web']);
 
         $response = $this->putJson("/api/admin/roles/{$role->id}", [
             'id' => $role->id,
@@ -353,7 +353,7 @@ describe('update', function () {
     test('update denies access for regular user', function () {
         $this->actingAs($this->regularUser);
 
-        $role = Role::create(['name' => 'test_role', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'test_role', 'guard_name' => 'web']);
 
         $response = $this->putJson("/api/admin/roles/{$role->id}", [
             'id' => $role->id,
@@ -364,7 +364,7 @@ describe('update', function () {
     });
 
     test('update requires authentication', function () {
-        $role = Role::create(['name' => 'test_role', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'test_role', 'guard_name' => 'web']);
 
         $response = $this->putJson("/api/admin/roles/{$role->id}", [
             'id' => $role->id,
@@ -377,7 +377,7 @@ describe('update', function () {
     test('update validates required name field', function () {
         $this->actingAs($this->superAdmin);
 
-        $role = Role::create(['name' => 'test_role', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'test_role', 'guard_name' => 'web']);
 
         $response = $this->putJson("/api/admin/roles/{$role->id}", [
             'id' => $role->id,
@@ -391,8 +391,8 @@ describe('update', function () {
     test('update validates unique name', function () {
         $this->actingAs($this->superAdmin);
 
-        Role::create(['name' => 'existing_role', 'guard_name' => 'web']);
-        $role = Role::create(['name' => 'test_role', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'existing_role', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'test_role', 'guard_name' => 'web']);
 
         $response = $this->putJson("/api/admin/roles/{$role->id}", [
             'id' => $role->id,
@@ -408,7 +408,7 @@ describe('destroy', function () {
     test('super admin can delete role without dependencies', function () {
         $this->actingAs($this->superAdmin);
 
-        $role = Role::create(['name' => 'deletable_role', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'deletable_role', 'guard_name' => 'web']);
 
         $response = $this->deleteJson("/api/admin/roles/{$role->id}");
 
@@ -437,7 +437,7 @@ describe('destroy', function () {
     test('destroy denies access for admin user', function () {
         $this->actingAs($this->adminUser);
 
-        $role = Role::create(['name' => 'test_role', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'test_role', 'guard_name' => 'web']);
 
         $response = $this->deleteJson("/api/admin/roles/{$role->id}");
 
@@ -447,7 +447,7 @@ describe('destroy', function () {
     test('destroy denies access for regular user', function () {
         $this->actingAs($this->regularUser);
 
-        $role = Role::create(['name' => 'test_role', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'test_role', 'guard_name' => 'web']);
 
         $response = $this->deleteJson("/api/admin/roles/{$role->id}");
 
@@ -455,7 +455,7 @@ describe('destroy', function () {
     });
 
     test('destroy requires authentication', function () {
-        $role = Role::create(['name' => 'test_role', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'test_role', 'guard_name' => 'web']);
 
         $response = $this->deleteJson("/api/admin/roles/{$role->id}");
 
@@ -467,8 +467,8 @@ describe('destroyMultiple', function () {
     test('super admin can delete multiple roles without dependencies', function () {
         $this->actingAs($this->superAdmin);
 
-        $role1 = Role::create(['name' => 'deletable_1', 'guard_name' => 'web']);
-        $role2 = Role::create(['name' => 'deletable_2', 'guard_name' => 'web']);
+        $role1 = Role::firstOrCreate(['name' => 'deletable_1', 'guard_name' => 'web']);
+        $role2 = Role::firstOrCreate(['name' => 'deletable_2', 'guard_name' => 'web']);
 
         $response = $this->postJson('/api/admin/roles/destroy_multiple', [
             $role1->id,
@@ -484,7 +484,7 @@ describe('destroyMultiple', function () {
     test('destroy multiple prevents deletion when any role has dependencies', function () {
         $this->actingAs($this->superAdmin);
 
-        $role1 = Role::create(['name' => 'deletable', 'guard_name' => 'web']);
+        $role1 = Role::firstOrCreate(['name' => 'deletable', 'guard_name' => 'web']);
         $role2 = Role::where('name', 'admin')->first(); // Has dependencies
 
         $response = $this->postJson('/api/admin/roles/destroy_multiple', [
@@ -498,8 +498,8 @@ describe('destroyMultiple', function () {
     test('destroy multiple denies access for admin user', function () {
         $this->actingAs($this->adminUser);
 
-        $role1 = Role::create(['name' => 'test_1', 'guard_name' => 'web']);
-        $role2 = Role::create(['name' => 'test_2', 'guard_name' => 'web']);
+        $role1 = Role::firstOrCreate(['name' => 'test_1', 'guard_name' => 'web']);
+        $role2 = Role::firstOrCreate(['name' => 'test_2', 'guard_name' => 'web']);
 
         $response = $this->postJson('/api/admin/roles/destroy_multiple', [
             $role1->id,
@@ -512,7 +512,7 @@ describe('destroyMultiple', function () {
     test('destroy multiple denies access for regular user', function () {
         $this->actingAs($this->regularUser);
 
-        $role1 = Role::create(['name' => 'test_1', 'guard_name' => 'web']);
+        $role1 = Role::firstOrCreate(['name' => 'test_1', 'guard_name' => 'web']);
 
         $response = $this->postJson('/api/admin/roles/destroy_multiple', [$role1->id]);
 
@@ -520,7 +520,7 @@ describe('destroyMultiple', function () {
     });
 
     test('destroy multiple requires authentication', function () {
-        $role = Role::create(['name' => 'test_role', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'test_role', 'guard_name' => 'web']);
 
         $response = $this->postJson('/api/admin/roles/destroy_multiple', [$role->id]);
 
@@ -535,3 +535,4 @@ describe('destroyMultiple', function () {
         $response->assertStatus(204);
     });
 });
+

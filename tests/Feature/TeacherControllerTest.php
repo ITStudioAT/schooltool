@@ -35,9 +35,9 @@ beforeEach(function () {
     ]);
 
     // Create roles
-    Role::create(['name' => 'admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'teacher', 'guard_name' => 'web']);
-    Role::create(['name' => 'user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
 
     // Create admin user
     $this->adminUser = User::factory()->create([
@@ -426,3 +426,4 @@ test('deleteTeachers calls service with correct parameters', function () {
 
     $response->assertStatus(204);
 });
+

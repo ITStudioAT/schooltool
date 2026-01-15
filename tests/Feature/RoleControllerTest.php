@@ -35,7 +35,7 @@ beforeEach(function () {
         'super_admin',
         'register_admin',
         'student',
-    ])->each(fn(string $role) => Role::create([
+    ])->each(fn(string $role) => Role::firstOrCreate([
         'name' => $role,
         'guard_name' => 'web',
     ]));
@@ -120,3 +120,4 @@ test('guest receives 401 when loading roles', function () {
     $this->getJson('/api/admin/roles/load_roles')
         ->assertStatus(401);
 });
+

@@ -36,7 +36,7 @@ beforeEach(function () {
     ]);
     
     // Create roles
-    Role::create(['name' => 'admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
     
     // Create test user
     $this->user = User::factory()->create([
@@ -262,7 +262,7 @@ test('execute logout returns config data', function () {
 // Load Roles Tests
 test('load roles returns roles for super admin', function () {
     if (!Role::where('name', 'super_admin')->exists()) {
-        Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
     }
     
     $this->user->syncRoles(['super_admin']);
@@ -421,3 +421,4 @@ test('authenticated user config includes navigation menu', function () {
     
     expect($data)->toHaveKey('menu');
 });
+

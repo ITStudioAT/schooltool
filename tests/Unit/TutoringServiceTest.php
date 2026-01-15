@@ -8,6 +8,7 @@ use App\Notifications\StandardEmail;
 use App\Services\TutoringService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\RefreshDatabaseState;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
@@ -16,13 +17,17 @@ use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
+beforeAll(function () {
+    RefreshDatabaseState::$migrated = false;
+});
+
 beforeEach(function () {
     $this->service = new TutoringService();
 
     Notification::fake();
 
     // Create required role
-    Role::create(['name' => 'tutoring_user']);
+    Role::firstOrCreate(['name' => 'tutoring_user']);
 
     // Create test school and schoolyear
     $this->school = School::factory()->create([
@@ -889,3 +894,4 @@ describe('integration scenarios', function () {
         expect($loginResult['status'])->toBe('LOGGED_IN');
     });
 });
+

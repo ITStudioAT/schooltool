@@ -33,7 +33,7 @@ beforeEach(function () {
     ]);
     
     // Create admin role
-    Role::create(['name' => 'admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
     
     // Create test user
     $this->user = User::factory()->create([
@@ -483,3 +483,4 @@ test('test queue creates record with current timestamp', function () {
     expect($queueTest->dispatched_at)->toBeInstanceOf(\Carbon\Carbon::class)
         ->and($queueTest->dispatched_at->between($before, $after))->toBeTrue();
 });
+

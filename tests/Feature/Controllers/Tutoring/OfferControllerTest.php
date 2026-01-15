@@ -75,8 +75,8 @@ beforeEach(function () {
     ]);
 
     // Create roles
-    Role::create(['name' => 'tutoring_user', 'guard_name' => 'web']);
-    Role::create(['name' => 'user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'tutoring_user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
 
     // Create test user
     $this->user = User::factory()->create([
@@ -1108,3 +1108,4 @@ describe('sendRequest', function () {
             ]);
     });
 });
+

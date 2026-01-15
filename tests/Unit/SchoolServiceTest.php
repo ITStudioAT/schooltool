@@ -22,11 +22,11 @@ beforeEach(function () {
     $this->service = new SchoolService();
 
     // Create required roles
-    Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'register_admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'tutoring_admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'teacher', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'tutoring_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
 
     // Set environment variables for super admin creation
     config(['app.env' => [
@@ -640,3 +640,4 @@ describe('deleteAdmin', function () {
         $this->service->deleteAdmin($user->id, true);
     })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'hat noch gebuchte Anmeldungen');
 });
+

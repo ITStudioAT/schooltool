@@ -5,6 +5,33 @@ namespace App\Models;
 use App\Models\School;
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * @property int $id
+ * @property int $school_id
+ * @property string $last_name
+ * @property string|null $first_name
+ * @property string $short
+ * @property string $email
+ * @property string|null $token
+ * @property \Illuminate\Support\Carbon|null $token_expires_at
+ * @property \Illuminate\Support\Carbon|null $created_at
+ * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property-read School|null $school
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher newModelQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher newQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher query()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher whereCreatedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher whereEmail($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher whereFirstName($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher whereId($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher whereLastName($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher whereSchoolId($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher whereShort($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher whereToken($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher whereTokenExpiresAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher whereUpdatedAt($value)
+ * @mixin \Eloquent
+ */
 class Teacher extends Model
 {
     protected $fillable = [

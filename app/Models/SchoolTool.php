@@ -24,6 +24,8 @@ use Illuminate\Database\Eloquent\Model;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereTutoringStudentMustBeConfirmed($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereUpdatedAt($value)
  * @method static \Database\Factories\SchoolToolFactory factory($count = null, $state = [])
+ * @property \Illuminate\Support\Carbon|null $health_at
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereHealthAt($value)
  * @mixin \Eloquent
  */
 class SchoolTool extends Model

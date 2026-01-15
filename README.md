@@ -6,6 +6,13 @@ SchoolTool beinhaltet Tools zur Unterstützung der Administration von Schulen.
 
 Review recent changes using the laravel-simplifier agent
 
+# Reommented actions
+
+```
+php artisan ide-helper:generate
+php artisan ide-helper:models -W
+```
+
 # Last Changes
 
 ## 3.4.1 - 18.12.2025

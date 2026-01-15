@@ -10,8 +10,8 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     // Create tutoring_user role
-    Role::create(['name' => 'tutoring_user', 'guard_name' => 'web']);
-    Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'tutoring_user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
 
     // Create test school
     $this->school = School::factory()->create([
@@ -242,4 +242,5 @@ describe('index', function () {
         expect(array_keys($subject))->toBe($expectedKeys);
     });
 });
+
 

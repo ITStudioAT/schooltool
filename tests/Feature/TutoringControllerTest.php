@@ -51,8 +51,8 @@ beforeEach(function () {
         'tutoring_confirmer_email' => null,
     ]);
 
-    Role::create(['name' => 'tutoring_user', 'guard_name' => 'web']);
-    Role::create(['name' => 'user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'tutoring_user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
 });
 
 describe('config', function () {
@@ -446,3 +446,4 @@ describe('loginWithToken', function () {
             ->assertJson(['status' => 'RETRY_LOGIN_WITH_TOKEN']);
     });
 });
+

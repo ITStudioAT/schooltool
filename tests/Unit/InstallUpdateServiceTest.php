@@ -111,7 +111,7 @@ describe('createRoles', function () {
 describe('checkSuperAdmins', function () {
     beforeEach(function () {
         // Create super_admin role for tests
-        Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
     });
 
     it('creates super admin for school without one', function () {
@@ -610,7 +610,7 @@ describe('integration tests', function () {
 describe('edge cases and error handling', function () {
     it('handles schools without users relationship', function () {
         $school = School::factory()->create();
-        Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
         
         $this->service->checkSuperAdmins();
         
@@ -647,3 +647,4 @@ describe('edge cases and error handling', function () {
             ->and(Storage::allFiles("{$school->id}/temp"))->toBeEmpty();
     });
 });
+

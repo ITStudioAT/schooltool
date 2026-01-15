@@ -19,11 +19,11 @@ beforeEach(function () {
     $this->service = new SchoolService();
 
     // Create roles
-    Role::create(['name' => 'super_admin']);
-    Role::create(['name' => 'admin']);
-    Role::create(['name' => 'register_admin']);
-    Role::create(['name' => 'tutoring_admin']);
-    Role::create(['name' => 'teacher']);
+    Role::firstOrCreate(['name' => 'super_admin']);
+    Role::firstOrCreate(['name' => 'admin']);
+    Role::firstOrCreate(['name' => 'register_admin']);
+    Role::firstOrCreate(['name' => 'tutoring_admin']);
+    Role::firstOrCreate(['name' => 'teacher']);
 
     // Create a dummy school and user with ID 1 to ensure they are protected from deletion
     $this->dummySchool = School::factory()->create(['id' => 1]);
@@ -632,3 +632,4 @@ describe('deleteAdmin', function () {
         expect(User::find($userId))->toBeNull();
     });
 });
+

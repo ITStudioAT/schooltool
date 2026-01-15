@@ -13,7 +13,7 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     // Create tutoring_user role
-    Role::create(['name' => 'tutoring_user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'tutoring_user', 'guard_name' => 'web']);
 
     // Create test school
     $this->school = School::factory()->create([
@@ -465,3 +465,4 @@ describe('unimplemented methods', function () {
         expect(true)->toBeTrue();
     });
 });
+

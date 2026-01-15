@@ -119,7 +119,7 @@ describe('getAuth', function () {
     });
 
     it('returns roles array when user has single role', function () {
-        Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
 
         $user = User::factory()->create();
         $user->assignRole('admin');
@@ -136,9 +136,9 @@ describe('getAuth', function () {
     });
 
     it('returns roles array when user has multiple roles', function () {
-        Role::create(['name' => 'admin', 'guard_name' => 'web']);
-        Role::create(['name' => 'teacher', 'guard_name' => 'web']);
-        Role::create(['name' => 'register_admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
 
         $user = User::factory()->create();
         $user->assignRole(['admin', 'teacher', 'register_admin']);
@@ -158,7 +158,7 @@ describe('getAuth', function () {
     });
 
     it('returns correct role structure with id and name', function () {
-        $role = Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
 
         $user = User::factory()->create();
         $user->assignRole('admin');
@@ -259,11 +259,11 @@ describe('getAuth', function () {
 
     it('returns user with all available role types', function () {
         // Create all common role types
-        Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
-        Role::create(['name' => 'admin', 'guard_name' => 'web']);
-        Role::create(['name' => 'register_admin', 'guard_name' => 'web']);
-        Role::create(['name' => 'teacher', 'guard_name' => 'web']);
-        Role::create(['name' => 'user', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
 
         $user = User::factory()->create();
         $user->assignRole(['super_admin', 'admin', 'register_admin', 'teacher', 'user']);
@@ -294,7 +294,7 @@ describe('getAuth', function () {
     });
 
     it('returns AnonymousResourceCollection for roles field', function () {
-        Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
 
         $user = User::factory()->create();
         $user->assignRole('admin');
@@ -307,7 +307,7 @@ describe('getAuth', function () {
     });
 
     it('returns auth structure matches expected API format', function () {
-        Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
 
         $user = User::factory()->create([
             'email' => 'test@example.com',
@@ -331,3 +331,4 @@ describe('getAuth', function () {
             ->and($rolesData[0])->toHaveKeys(['id', 'name']);
     });
 });
+

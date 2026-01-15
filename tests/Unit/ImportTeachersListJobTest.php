@@ -67,7 +67,7 @@ beforeEach(function () {
     Event::fake([TeachersListImportFinishedEvent::class]);
 
     // Create required roles
-    Role::create(['name' => 'admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
 
     // Create school
     $this->school = School::factory()->create([
@@ -650,3 +650,4 @@ describe('job properties', function () {
             ->and($job->path)->toBe($path);
     });
 });
+

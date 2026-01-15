@@ -5,7 +5,7 @@
 
 /**
  * A helper file for Laravel, to provide autocomplete information to your IDE
- * Generated for Laravel 12.34.0.
+ * Generated for Laravel 12.46.0.
  *
  * This file should not be included in your code, only analyzed by your IDE!
  *
@@ -1274,6 +1274,16 @@ namespace Illuminate\Routing {
         public static function permission($permissions = [])
         {
             return \Illuminate\Routing\Route::permission($permissions);
+        }
+
+        /**
+         * @see \Spatie\Permission\PermissionServiceProvider::registerMacroHelpers()
+         * @param mixed $rolesOrPermissions
+         * @static
+         */
+        public static function roleOrPermission($rolesOrPermissions = [])
+        {
+            return \Illuminate\Routing\Route::roleOrPermission($rolesOrPermissions);
         }
 
             }

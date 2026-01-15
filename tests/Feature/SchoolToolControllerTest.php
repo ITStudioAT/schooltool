@@ -24,11 +24,11 @@ beforeEach(function () {
     $this->schoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
 
     // Create roles
-    Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'tutoring_admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'register_admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'tutoring_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
 
     // Create school tool with ID 1 using DB insert to force the ID
     \Illuminate\Support\Facades\DB::table('school_tools')->insert([
@@ -350,3 +350,4 @@ describe('saveTutoringSettings', function () {
         ]);
     });
 });
+

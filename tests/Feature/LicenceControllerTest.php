@@ -36,10 +36,10 @@ beforeEach(function () {
     
     // Create roles
     if (!Role::where('name', 'super_admin')->exists()) {
-        Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
     }
     if (!Role::where('name', 'admin')->exists()) {
-        Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
     }
     
     // Create super admin user
@@ -675,3 +675,4 @@ test('licence model attributes are correctly set', function () {
         ->and($licence->is_selectable)->toBe(0)
         ->and($licence->price_per_year)->toBe(999);
 });
+

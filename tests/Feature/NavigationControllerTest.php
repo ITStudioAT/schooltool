@@ -20,11 +20,11 @@ beforeEach(function () {
     ]);
     
     // Create roles
-    Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'register_admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'register_user', 'guard_name' => 'web']);
-    Role::create(['name' => 'user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'register_user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
     
     // Create test users
     $this->superAdmin = User::factory()->create([
@@ -470,3 +470,4 @@ test('user menu color coding is consistent', function () {
         expect($item['color'])->toBe('secondary');
     }
 });
+

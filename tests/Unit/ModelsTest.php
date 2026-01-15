@@ -35,13 +35,13 @@ uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
     // Create required roles for tests
-    Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'register_admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'user', 'guard_name' => 'web']);
-    Role::create(['name' => 'teacher', 'guard_name' => 'web']);
-    Role::create(['name' => 'tutoring_admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'tutoring_user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'tutoring_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'tutoring_user', 'guard_name' => 'web']);
 });
 
 describe('User Model', function () {
@@ -811,14 +811,14 @@ describe('QueueTest Model', function () {
 
 describe('Role Model', function () {
     it('can be created', function () {
-        $role = Role::create(['name' => 'test_role', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'test_role', 'guard_name' => 'web']);
 
         expect($role)->toBeInstanceOf(Role::class)
             ->and($role->id)->toBeGreaterThan(0);
     });
 
     it('has correct guard name', function () {
-        $role = Role::create(['name' => 'test_role', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'test_role', 'guard_name' => 'web']);
 
         expect($role->guard_name)->toBe('web');
     });
@@ -933,3 +933,4 @@ describe('Model Cascading and Dependencies', function () {
         expect($user->hasDependencies())->toBeFalse();
     });
 });
+

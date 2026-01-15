@@ -412,7 +412,7 @@ describe('login2Fa', function () {
 
 describe('checkEmail', function () {
     it('returns schools for email with multiple schools', function () {
-        Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
 
         $school1 = School::factory()->create(['long_name' => 'School A']);
         $school2 = School::factory()->create(['long_name' => 'School B']);
@@ -439,7 +439,7 @@ describe('checkEmail', function () {
     });
 
     it('sends token for email with single school', function () {
-        Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
 
         $school = School::factory()->create(['long_name' => 'School A']);
         $user = User::factory()->create([
@@ -460,7 +460,7 @@ describe('checkEmail', function () {
     });
 
     it('orders schools alphabetically by long_name', function () {
-        Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
 
         $schoolZ = School::factory()->create(['long_name' => 'Z School']);
         $schoolA = School::factory()->create(['long_name' => 'A School']);
@@ -715,7 +715,7 @@ describe('setToken2Fa', function () {
 describe('checkLogin', function () {
     it('validates successful login with correct credentials', function () {
         $school = School::factory()->create();
-        $role = Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $user = User::factory()->create([
             'email' => 'test@example.com',
             'school_id' => $school->id,
@@ -805,7 +805,7 @@ describe('checkLogin', function () {
 
     it('aborts when password is incorrect', function () {
         $school = School::factory()->create();
-        $role = Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $user = User::factory()->create([
             'email' => 'test@example.com',
             'school_id' => $school->id,
@@ -828,7 +828,7 @@ describe('checkLogin', function () {
 
     it('accepts admin role for login', function () {
         $school = School::factory()->create();
-        $role = Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $user = User::factory()->create([
             'email' => 'test@example.com',
             'school_id' => $school->id,
@@ -851,7 +851,7 @@ describe('checkLogin', function () {
 
     it('accepts super_admin role for login', function () {
         $school = School::factory()->create();
-        $role = Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
         $user = User::factory()->create([
             'email' => 'test@example.com',
             'school_id' => $school->id,
@@ -874,7 +874,7 @@ describe('checkLogin', function () {
 
     it('accepts register_admin role for login', function () {
         $school = School::factory()->create();
-        $role = Role::create(['name' => 'register_admin', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
         $user = User::factory()->create([
             'email' => 'test@example.com',
             'school_id' => $school->id,
@@ -899,7 +899,7 @@ describe('checkLogin', function () {
 describe('checkUserLogin', function () {
     it('validates user login with password step', function () {
         $school = School::factory()->create();
-        $role = Role::create(['name' => 'user', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
         $user = User::factory()->create([
             'email' => 'test@example.com',
             'school_id' => $school->id,
@@ -924,7 +924,7 @@ describe('checkUserLogin', function () {
 
     it('validates user login with token step', function () {
         $school = School::factory()->create();
-        $role = Role::create(['name' => 'user', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
         $user = User::factory()->create([
             'email' => 'test@example.com',
             'school_id' => $school->id,
@@ -1002,7 +1002,7 @@ describe('checkUserLogin', function () {
 
     it('aborts when password is incorrect for password step', function () {
         $school = School::factory()->create();
-        $role = Role::create(['name' => 'user', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
         $user = User::factory()->create([
             'email' => 'test@example.com',
             'school_id' => $school->id,
@@ -1024,7 +1024,7 @@ describe('checkUserLogin', function () {
 
     it('aborts when token is invalid for token step', function () {
         $school = School::factory()->create();
-        $role = Role::create(['name' => 'user', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
         $user = User::factory()->create([
             'email' => 'test@example.com',
             'school_id' => $school->id,
@@ -1049,7 +1049,7 @@ describe('checkUserLogin', function () {
 
     it('accepts user role for login', function () {
         $school = School::factory()->create();
-        $role = Role::create(['name' => 'user', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
         $user = User::factory()->create([
             'email' => 'test@example.com',
             'school_id' => $school->id,
@@ -1073,7 +1073,7 @@ describe('checkUserLogin', function () {
 
     it('accepts admin role for user login', function () {
         $school = School::factory()->create();
-        $role = Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $user = User::factory()->create([
             'email' => 'test@example.com',
             'school_id' => $school->id,
@@ -1132,3 +1132,4 @@ describe('sendRegisterToken', function () {
         Notification::assertSentOnDemand(\App\Notifications\StandardEmail::class);
     });
 });
+

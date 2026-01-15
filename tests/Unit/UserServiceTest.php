@@ -25,14 +25,14 @@ beforeEach(function () {
     Notification::fake();
 
     // Create required roles
-    Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'register_admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'register_user', 'guard_name' => 'web']);
-    Role::create(['name' => 'tutoring_admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'tutoring_user', 'guard_name' => 'web']);
-    Role::create(['name' => 'teacher', 'guard_name' => 'web']);
-    Role::create(['name' => 'user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'register_user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'tutoring_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'tutoring_user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
 
     // Create test school
     $this->school = School::factory()->create([
@@ -711,3 +711,4 @@ describe('logout', function () {
         expect(Auth::check())->toBeFalse();
     });
 });
+

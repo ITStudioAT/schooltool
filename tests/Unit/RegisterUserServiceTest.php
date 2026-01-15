@@ -15,9 +15,9 @@ beforeEach(function () {
     $this->service = new RegisterUserService();
 
     // Create required roles
-    Role::create(['name' => 'register_user']);
-    Role::create(['name' => 'admin']);
-    Role::create(['name' => 'teacher']);
+    Role::firstOrCreate(['name' => 'register_user']);
+    Role::firstOrCreate(['name' => 'admin']);
+    Role::firstOrCreate(['name' => 'teacher']);
 
     // Create test school and schoolyear
     $this->school = School::factory()->create();
@@ -269,3 +269,4 @@ describe('edge cases', function () {
             ->and(User::find($user->id))->not->toBeNull();
     });
 });
+

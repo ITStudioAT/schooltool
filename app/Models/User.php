@@ -111,6 +111,11 @@ use Spatie\Permission\Traits\HasRoles;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User bySchoolAndRole($schoolId, $roleName)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereSchoolclass($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereSex($value)
+ * @property string|null $short
+ * @property array<array-key, mixed>|null $tutoring_filter
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User teachers($school_id = null)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereShort($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereTutoringFilter($value)
  * @mixin \Eloquent
  */
 class User extends Authenticatable

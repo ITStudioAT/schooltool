@@ -17,7 +17,7 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     // Create roles
-    Role::create(['name' => 'register_user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'register_user', 'guard_name' => 'web']);
 
     // Create test school
     $this->school = School::factory()->create([
@@ -616,3 +616,4 @@ describe('deleteBooking', function () {
             ->assertJsonValidationErrors(['booking_id']);
     });
 });
+

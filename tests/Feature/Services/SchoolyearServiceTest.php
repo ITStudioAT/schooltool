@@ -13,9 +13,9 @@ beforeEach(function () {
     $this->service = new SchoolyearService();
 
     // Create necessary roles
-    Role::create(['name' => 'super_admin']);
-    Role::create(['name' => 'admin']);
-    Role::create(['name' => 'register_admin']);
+    Role::firstOrCreate(['name' => 'super_admin']);
+    Role::firstOrCreate(['name' => 'admin']);
+    Role::firstOrCreate(['name' => 'register_admin']);
 });
 
 describe('setToUser', function () {
@@ -225,3 +225,4 @@ describe('setToUser', function () {
             ->and($result->is_active)->toBe(0);
     });
 });
+

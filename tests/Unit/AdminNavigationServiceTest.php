@@ -63,7 +63,7 @@ describe('dashboardMenu', function () {
             'first_name' => 'Admin',
             'last_name' => 'Super',
         ]);
-        $role = Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
         $user->assignRole($role);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -84,7 +84,7 @@ describe('dashboardMenu', function () {
             'first_name' => 'Admin',
             'last_name' => 'Regular',
         ]);
-        $role = Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $user->assignRole($role);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -105,7 +105,7 @@ describe('dashboardMenu', function () {
             'first_name' => 'Register',
             'last_name' => 'Admin',
         ]);
-        $role = Role::create(['name' => 'register_admin', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
         $user->assignRole($role);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -144,8 +144,8 @@ describe('dashboardMenu', function () {
             'first_name' => 'Multi',
             'last_name' => 'Role',
         ]);
-        $superAdminRole = Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
-        $adminRole = Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        $superAdminRole = Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
+        $adminRole = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $user->assignRole([$superAdminRole, $adminRole]);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -192,7 +192,7 @@ describe('dashboardMenu', function () {
 describe('profileMenu', function () {
     it('returns menu items for admin role', function () {
         $user = User::factory()->create();
-        $role = Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $user->assignRole($role);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -207,7 +207,7 @@ describe('profileMenu', function () {
 
     it('returns menu items for user role', function () {
         $user = User::factory()->create();
-        $role = Role::create(['name' => 'user', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
         $user->assignRole($role);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -222,7 +222,7 @@ describe('profileMenu', function () {
 
     it('returns menu items for register_user role', function () {
         $user = User::factory()->create();
-        $role = Role::create(['name' => 'register_user', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'register_user', 'guard_name' => 'web']);
         $user->assignRole($role);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -237,7 +237,7 @@ describe('profileMenu', function () {
 
     it('returns menu items for register_admin role', function () {
         $user = User::factory()->create();
-        $role = Role::create(['name' => 'register_admin', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
         $user->assignRole($role);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -252,7 +252,7 @@ describe('profileMenu', function () {
 
     it('includes home menu item with correct properties', function () {
         $user = User::factory()->create();
-        $role = Role::create(['name' => 'user', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
         $user->assignRole($role);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -271,7 +271,7 @@ describe('profileMenu', function () {
 
     it('includes password change menu item with correct properties', function () {
         $user = User::factory()->create();
-        $role = Role::create(['name' => 'user', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
         $user->assignRole($role);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -290,7 +290,7 @@ describe('profileMenu', function () {
 
     it('includes 2FA menu item with correct properties', function () {
         $user = User::factory()->create();
-        $role = Role::create(['name' => 'user', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
         $user->assignRole($role);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -320,7 +320,7 @@ describe('profileMenu', function () {
 
     it('all menu items have empty title field', function () {
         $user = User::factory()->create();
-        $role = Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $user->assignRole($role);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -335,7 +335,7 @@ describe('profileMenu', function () {
 
     it('all menu items have secondary color', function () {
         $user = User::factory()->create();
-        $role = Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $user->assignRole($role);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -367,7 +367,7 @@ describe('userMenu', function () {
 
     it('includes roles menu item for super_admin', function () {
         $user = User::factory()->create();
-        $role = Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
         $user->assignRole($role);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -390,7 +390,7 @@ describe('userMenu', function () {
 
     it('does not include roles menu item for non super_admin', function () {
         $user = User::factory()->create();
-        $role = Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $user->assignRole($role);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -422,7 +422,7 @@ describe('userMenu', function () {
 describe('userSelection', function () {
     it('returns user selection for admin role', function () {
         $user = User::factory()->create();
-        $role = Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $user->assignRole($role);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -473,7 +473,7 @@ describe('userSelection', function () {
 
     it('returns empty array for non-admin users', function () {
         $user = User::factory()->create();
-        $role = Role::create(['name' => 'user', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
         $user->assignRole($role);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -486,7 +486,7 @@ describe('userSelection', function () {
 
     it('user selection item has correct structure', function () {
         $user = User::factory()->create();
-        $role = Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $user->assignRole($role);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -504,8 +504,8 @@ describe('userSelection', function () {
 describe('HasRoleTrait integration', function () {
     it('properly checks for multiple roles', function () {
         $user = User::factory()->create();
-        $role1 = Role::create(['name' => 'admin', 'guard_name' => 'web']);
-        $role2 = Role::create(['name' => 'register_admin', 'guard_name' => 'web']);
+        $role1 = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+        $role2 = Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
         $user->assignRole([$role1, $role2]);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -549,7 +549,7 @@ describe('menu item consistency', function () {
 
     it('menu items use consistent icon prefix', function () {
         $user = User::factory()->create();
-        $role = Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
         $user->assignRole($role);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -562,3 +562,4 @@ describe('menu item consistency', function () {
         }
     });
 });
+

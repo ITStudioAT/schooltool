@@ -30,6 +30,8 @@ use Illuminate\Database\Eloquent\Model;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Schoolyear whereUntil($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Schoolyear whereUpdatedAt($value)
  * @mixin IdeHelperSchoolyear
+ * @property int $is_active
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Schoolyear whereIsActive($value)
  * @mixin \Eloquent
  */
 class Schoolyear extends Model

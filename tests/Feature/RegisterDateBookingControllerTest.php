@@ -42,10 +42,10 @@ beforeEach(function () {
     ]);
     
     // Create roles
-    Role::create(['name' => 'admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'register_admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'register_user', 'guard_name' => 'web']);
-    Role::create(['name' => 'user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'register_user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
     
     // Create register
     $this->register = Register::factory()->create([
@@ -739,4 +739,5 @@ test('deleteBookings requires notify parameter', function () {
     $response->assertStatus(422)
         ->assertJsonValidationErrors(['notify']);
 });
+
 

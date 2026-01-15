@@ -27,8 +27,8 @@ beforeEach(function () {
     $this->school = School::factory()->create();
     $this->schoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
 
-    Role::create(['name' => 'tutoring_user', 'guard_name' => 'web']);
-    Role::create(['name' => 'user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'tutoring_user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
 
     $this->tutoringUser = User::factory()->create([
         'school_id' => $this->school->id,
@@ -394,3 +394,4 @@ describe('logout', function () {
         // in the Laravel test environment due to how actingAs() works
     });
 });
+

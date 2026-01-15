@@ -15,7 +15,7 @@ beforeEach(function () {
     $this->service = new TeacherService();
 
     // Create required role
-    Role::create(['name' => 'teacher', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
 
     // Create test school and schoolyear
     $this->school = School::factory()->create([
@@ -403,7 +403,7 @@ describe('deleteTeachers', function () {
             'email' => 'teacher@example.com',
         ]);
 
-        Role::create(['name' => 'admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $teacher->assignRole(['teacher', 'admin']);
 
         $this->service->deleteTeachers($this->school->id, [$teacher->id]);
@@ -429,3 +429,4 @@ describe('deleteTeachers', function () {
         expect(User::find($teacher->id))->toBeNull();
     });
 });
+

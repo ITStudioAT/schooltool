@@ -19,12 +19,12 @@ beforeEach(function () {
     $this->service = new UserService();
 
     // Create roles
-    Role::create(['name' => 'super_admin']);
-    Role::create(['name' => 'admin']);
-    Role::create(['name' => 'register_admin']);
-    Role::create(['name' => 'register_user']);
-    Role::create(['name' => 'teacher']);
-    Role::create(['name' => 'student']);
+    Role::firstOrCreate(['name' => 'super_admin']);
+    Role::firstOrCreate(['name' => 'admin']);
+    Role::firstOrCreate(['name' => 'register_admin']);
+    Role::firstOrCreate(['name' => 'register_user']);
+    Role::firstOrCreate(['name' => 'teacher']);
+    Role::firstOrCreate(['name' => 'student']);
 
     // Create a dummy user with ID 1
     $dummySchool = School::factory()->create();
@@ -1068,3 +1068,4 @@ describe('setPasswordOrSendCode', function () {
             ->and(Auth::id())->toBe($user->id);
     });
 });
+

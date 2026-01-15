@@ -18,7 +18,7 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     // Create roles
-    Role::create(['name' => 'tutoring_user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'tutoring_user', 'guard_name' => 'web']);
 
     // Create schools
     $this->school1 = School::factory()->create([
@@ -709,3 +709,4 @@ test('offerRequest requires id parameter', function () {
 
     $response->assertStatus(302);
 });
+

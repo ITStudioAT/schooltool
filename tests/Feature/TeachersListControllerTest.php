@@ -44,8 +44,8 @@ beforeEach(function () {
     ]);
 
     // Create roles
-    Role::create(['name' => 'admin', 'guard_name' => 'web']);
-    Role::create(['name' => 'user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
 
     // Create admin user
     $this->adminUser = User::factory()->create([
@@ -189,4 +189,5 @@ test('index orders by short and last_name', function () {
     expect($teachers[0]['short'])->toBe('KRO')
         ->and($teachers[1]['short'])->toBe('MUS');
 });
+
 
