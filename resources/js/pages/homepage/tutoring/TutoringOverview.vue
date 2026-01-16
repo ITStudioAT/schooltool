@@ -230,8 +230,8 @@
                                 </div>
 
                                 <div class="d-flex flex-row align-center ga-2 flex-wrap">
-                                    <v-checkbox-btn color="pink" v-model="search.only_girls" label="Nur von Mädchen" />
-                                    <v-checkbox-btn color="blue" v-model="search.only_boys" label="Nur von Burschen" />
+                                    <v-checkbox-btn color="pink" v-model="search.only_girls" label="Nur von Schülerinnen" />
+                                    <v-checkbox-btn color="blue" v-model="search.only_boys" label="Nur von Schülern" />
                                 </div>
                                 <v-text-field
                                     label="Suchbegriff eingeben..."
@@ -859,9 +859,12 @@ export default {
 
 .offers-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 20px;
     margin-bottom: 24px;
+    max-width: 900px;
+    margin-left: auto;
+    margin-right: auto;
 }
 
 .offer-card-wrapper {
