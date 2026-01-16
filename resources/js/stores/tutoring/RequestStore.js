@@ -49,9 +49,10 @@ export const useRequestStore = defineStore('TutoringRequestStore', {
         async receivedRequests(page = null) {
             const notification = useNotificationStore()
             const homepageStore = useHomepageStore()
+            const show_to_user_archived = this.show_to_user_archived
             homepageStore.is_loading++
             try {
-                const response = await axios.get(`/api/homepage/tutoring/received_offer_requests`, { params: { page } })
+                const response = await axios.get(`/api/homepage/tutoring/received_offer_requests`, { params: { page, show_to_user_archived } })
                 this.requests = response.data.data
                 this.meta = response.data.meta
                 return true
@@ -100,6 +101,46 @@ export const useRequestStore = defineStore('TutoringRequestStore', {
             homepageStore.is_loading++
             try {
                 await axios.delete(`/api/homepage/tutoring/offer_requests/${request_id}`)
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
+        async toUserArchive(request_id) {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+            try {
+                await axios.post(`/api/homepage/tutoring/to_user_archive/`, { request_id })
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
+        async toUserActive(request_id) {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+            try {
+                await axios.post(`/api/homepage/tutoring/to_user_active/`, { request_id })
                 return true
             } catch (error) {
                 notification.notify({

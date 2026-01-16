@@ -4,6 +4,7 @@
 
 -   Empfangene Archivieren
 -   Allow, to be searched in other schools
+-   E-Mail-Info übner das Löschen vopn Anfragen
 
 ## EMail Logo
 

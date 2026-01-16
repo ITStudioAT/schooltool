@@ -143,6 +143,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/homepage/tutoring/request_mail_clicked', [\App\Http\Controllers\Tutoring\OfferRequestController::class, 'requestMailClicked']);
         Route::post('/homepage/tutoring/to_archive', [\App\Http\Controllers\Tutoring\OfferRequestController::class, 'toArchive']);
         Route::post('/homepage/tutoring/to_active', [\App\Http\Controllers\Tutoring\OfferRequestController::class, 'toActive']);
+        Route::post('/homepage/tutoring/to_user_archive', [\App\Http\Controllers\Tutoring\OfferRequestController::class, 'toUserArchive']);
+        Route::post('/homepage/tutoring/to_user_active', [\App\Http\Controllers\Tutoring\OfferRequestController::class, 'toUserActive']);
 
         //api/homepage/tutoring/offer_requests
     });

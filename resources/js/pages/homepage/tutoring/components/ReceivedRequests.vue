@@ -24,7 +24,7 @@
                         </div>
                         <div class="text-body-1 font-weight-medium mt-2">{{ request.offer.subject.short_name + ': ' + request.offer.subject.long_name }}</div>
                         <div class="text-body-2 mt-2" v-if="request.offer.title">
-                            {{ request.offer.title + ': ' + request.offer.description }}
+                            {{ request.offer.title + ': ' + request.offer.description + ' ' + request.id + ' ' + request.to_user_archived_at }}
                         </div>
                         <v-alert type="info" icon="mdi-mail" v-if="request.message">{{ request.message }}</v-alert>
                         <v-alert type="warning" class="mt-2" v-if="!request.mail_at">
@@ -49,7 +49,11 @@
                         </div>
                     </v-card>
                     <v-card style="width: 100px; flex-shrink: 0" class="h-100 d-flex flex-column ga-2" tile flat color="transparent">
-                        <v-btn block tile flat size="small" color="primary" v-if="request.mail_at">Archivieren</v-btn>
+                        <v-btn block tile flat size="small" color="primary" @click="toUserArchive(request)" v-if="request.mail_at && !request.to_user_archived_at">
+                            Archivieren
+                        </v-btn>
+                        <v-btn block tile flat size="small" color="success" @click="toUserActive(request)" v-if="request.to_user_archived_at">Aktivieren</v-btn>
+
                         <!--
                         <v-btn block tile flat size="small" color="warning" v-if="!request.seen_at && !request.last_seen_at">Löschen</v-btn>
                         
@@ -124,9 +128,24 @@ export default {
         ...mapWritableState(useRequestStore, ['requests', 'meta', 'show_to_user_archived']),
     },
 
-    watch: {},
+    watch: {
+        show_to_user_archived: {
+            async handler() {
+                await this.requestStore.receivedRequests()
+            },
+            // immediate: true  // falls du beim Mount auch laden willst
+        },
+    },
 
     methods: {
+        async toUserArchive(request) {
+            await this.requestStore.toUserArchive(request.id)
+            await this.requestStore.receivedRequests(this.meta.current_page)
+        },
+        async toUserActive(request) {
+            await this.requestStore.toUserActive(request.id)
+            await this.requestStore.receivedRequests(this.meta.current_page)
+        },
         async mailClicked(request_id) {
             await this.requestStore.requestMailClicked(request_id)
         },

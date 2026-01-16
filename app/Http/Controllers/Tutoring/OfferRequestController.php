@@ -61,6 +61,7 @@ class OfferRequestController extends Controller
 
         $validated = $request->validated();
         // $search_string = $validated['search_string'] ?? null;
+        $show_to_user_archived = filter_var($validated['show_to_user_archived'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
         // Alle ungelesenen auf gelesen setzen
         TutoringOfferRequest::where('to_user_id', $auth_user->id)
@@ -68,6 +69,11 @@ class OfferRequestController extends Controller
             ->update(['seen_at' => now()]);
 
         $requests = TutoringOfferRequest::where('to_user_id', $auth_user->id)
+            ->when(
+                $show_to_user_archived,
+                fn($query) => $query->whereNotNull('to_user_archived_at'),
+                fn($query) => $query->whereNull('to_user_archived_at')
+            )
             ->with('school')
             ->with('offer')
             ->with('from_user')
@@ -149,8 +155,6 @@ class OfferRequestController extends Controller
 
         $user =  $service->getUserFromOfferRequest($validated['email'], $validated['id'], $validated['token']);
 
-        Log::info($user);
-
         if (!$user) {
             return redirect()->to('/homepage/tutoring_response?' . http_build_query([
                 'title' => 'Fehler',
@@ -175,6 +179,27 @@ class OfferRequestController extends Controller
         );
     }
 
+    public function toUserArchive(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['tutoring_user'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'request_id' => ['required', 'integer', 'exists:tutoring_offer_requests,id'],
+        ]);
+
+        $request = TutoringOfferRequest::findOrFail($validated['request_id']);
+
+        if ($request->to_user_id != $auth_user->id) abort(422, 'Unzulässig Aktion');
+
+        $request->to_user_archived_at = now();
+        $request->save();
+
+
+        return response()->json(new OfferRequestResource($request), 200);
+    }
+
     public function toArchive(Request $request)
     {
         if (! $auth_user = $this->userHasRole(['tutoring_user'])) {
@@ -186,6 +211,9 @@ class OfferRequestController extends Controller
         ]);
 
         $request = TutoringOfferRequest::findOrFail($validated['request_id']);
+
+        if ($request->from_user_id != $auth_user->id) abort(422, 'Unzulässig Aktion');
+
         $request->archived_at = now();
         $request->save();
 
@@ -204,7 +232,31 @@ class OfferRequestController extends Controller
         ]);
 
         $request = TutoringOfferRequest::findOrFail($validated['request_id']);
+
+        if ($request->from_user_id != $auth_user->id) abort(422, 'Unzulässig Aktion');
+
         $request->archived_at = null;
+        $request->save();
+
+
+        return response()->json(new OfferRequestResource($request), 200);
+    }
+
+    public function toUserActive(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['tutoring_user'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'request_id' => ['required', 'integer', 'exists:tutoring_offer_requests,id'],
+        ]);
+
+        $request = TutoringOfferRequest::findOrFail($validated['request_id']);
+
+        if ($request->to_user_id != $auth_user->id) abort(422, 'Unzulässig Aktion');
+
+        $request->to_user_archived_at = null;
         $request->save();
 
 
