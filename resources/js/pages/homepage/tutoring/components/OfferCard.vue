@@ -1,43 +1,47 @@
 <template>
-    <v-card :style="{ ...gradientStyle, color: textColor }" width="300" min-height="170" class="d-flex flex-column">
-        <v-card-title class="d-flex flex-row align-start justify-space-between">
-            <div class="flex-shrink-1">
-                <div class="text-body-1 font-weight-medium" v-if="school_short_name">{{ school_short_name }}</div>
-                <div class="text-caption" style="white-space: normal" v-if="school_long_name">{{ school_long_name }}</div>
-            </div>
-            <div class="d-flex flex-row ga-1 flex-grow-1 justify-end">
-                <v-icon :icon="mark_icon ? mark_icon : 'mdi-meteor'" :style="{ color: iconColor }" v-if="is_mark" />
-                <v-icon icon="mdi-mail" size="small" :style="{ color: sentIconColor }" v-if="my_request?.sent_at" />
-                <v-icon icon="mdi-eye" size="small" :style="{ color: seenIconColor }" v-if="my_request?.seen_at" />
-                <v-icon icon="mdi-email-arrow-left" size="small" :style="{ color: mailIconColor }" v-if="my_request?.mail_at" />
-            </div>
-        </v-card-title>
-        <!--
-        <v-card-subtitle style="white-space: normal" v-if="subtitle">{{ subtitle }}</v-card-subtitle>
-        -->
-        <v-card-text>
-            <v-chip size="small" v-if="subject">{{ subject }}</v-chip>
-            <div class="text-body-2 mt-2" v-if="title">{{ title }}</div>
-            <div class="text-caption mt-2" style="white-space: pre-line" v-if="description">
-                {{ description.substr(0, 160) }}
-                <span v-if="description.length > 160">…</span>
-            </div>
-        </v-card-text>
+    <div class="offer-card" :class="{ 'offer-card-own': is_mark }" @click="$emit('clickCard')">
+        <div class="card-glow"></div>
 
-        <v-card-actions class="mt-auto d-flex flex-row align-center" :class="justify ? justify : 'justify-end'">
-            <div class="text-body-2 font-weight-light" v-if="subtext">{{ subtext }}</div>
-            <v-btn size="small" :text="button" variant="outlined" @click="$emit('clickCard')" />
-        </v-card-actions>
-    </v-card>
+        <!-- Card Header -->
+        <div class="card-header">
+            <div class="subject-badge">
+                <span class="subject-short">{{ subject?.split(':')[0] || '?' }}</span>
+            </div>
+            <div class="header-info">
+                <h3 class="offer-title">{{ title }}</h3>
+                <div class="school-name">{{ school_long_name || school_short_name }}</div>
+            </div>
+            <div class="header-icons">
+                <v-icon v-if="is_mark" size="20" color="orange" class="own-badge" title="Dein Angebot">mdi-star</v-icon>
+                <v-icon v-if="my_request?.sent_at" size="18" color="primary" title="Anfrage gesendet">mdi-send-check</v-icon>
+                <v-icon v-if="my_request?.seen_at" size="18" color="success" title="Gesehen">mdi-eye-check</v-icon>
+                <v-icon v-if="my_request?.mail_at" size="18" color="info" title="E-Mail erhalten">mdi-email-check</v-icon>
+            </div>
+        </div>
+
+        <!-- Subject Chip -->
+        <div class="subject-chip-wrapper">
+            <span class="subject-chip">{{ subject }}</span>
+        </div>
+
+        <!-- Description -->
+        <div class="card-description" v-if="description">
+            <p>{{ description.substr(0, 140) }}<span v-if="description.length > 140">...</span></p>
+        </div>
+
+        <!-- Card Footer -->
+        <div class="card-footer">
+            <div class="footer-text" v-if="subtext">{{ subtext }}</div>
+            <div class="view-action">
+                <span>{{ button || 'Anschauen' }}</span>
+                <v-icon size="18">mdi-arrow-right</v-icon>
+            </div>
+        </div>
+    </div>
 </template>
-<script>
-import { useTheme } from 'vuetify'
-export default {
-    setup() {
-        const theme = useTheme()
-        return { theme }
-    },
 
+<script>
+export default {
     props: [
         'school_short_name',
         'school_long_name',
@@ -54,87 +58,214 @@ export default {
         'my_request',
     ],
     emits: ['clickCard'],
-
-    data() {
-        return {}
-    },
-    computed: {
-        gradientStyle() {
-            if (!this.color) return {}
-
-            // Hole die Farbe aus dem Vuetify Theme
-            const colorValue = this.theme.current.value.colors[this.color] || this.color
-
-            return {
-                background: `linear-gradient(-45deg, ${colorValue} 0%, ${this.adjustBrightness(colorValue, 70)} 100%)`,
-            }
-        },
-        colorValue() {
-            if (!this.color) return '#ffffff'
-            return this.theme.current.value.colors[this.color] || this.color
-        },
-        iconColor() {
-            // Dunkler für Kontrast auf hellem Gradient
-            return this.mixColors(this.colorValue, '#F0000', 0.75)
-        },
-
-        sentIconColor() {
-            return this.adjustBrightness(this.colorValue, -60)
-        },
-
-        seenIconColor() {
-            return this.mixColors(this.colorValue, '#777700', 0.5)
-        },
-
-        mailIconColor() {
-            return this.mixColors(this.colorValue, '#0077AA', 0.5)
-        },
-
-        textColor() {
-            // Nimm die hellere Gradient-Farbe für die Berechnung
-            const lighterColor = this.adjustBrightness(this.colorValue, 70)
-            const r = parseInt(lighterColor.slice(1, 3), 16)
-            const g = parseInt(lighterColor.slice(3, 5), 16)
-            const b = parseInt(lighterColor.slice(5, 7), 16)
-
-            // Berechne relative Luminanz (YIQ Formel)
-            const luminance = (r * 299 + g * 587 + b * 114) / 1000
-
-            // Höherer Schwellenwert für bessere Lesbarkeit
-            return luminance > 160 ? '#000000' : '#FFFFFF'
-        },
-    },
-
-    methods: {
-        adjustBrightness(hex, percent) {
-            // Hex zu RGB
-            let r = parseInt(hex.slice(1, 3), 16)
-            let g = parseInt(hex.slice(3, 5), 16)
-            let b = parseInt(hex.slice(5, 7), 16)
-
-            // Helligkeit anpassen
-            r = Math.max(0, Math.min(255, r + percent))
-            g = Math.max(0, Math.min(255, g + percent))
-            b = Math.max(0, Math.min(255, b + percent))
-
-            // Zurück zu Hex
-            return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
-        },
-        mixColors(color1, color2, weight = 0.5) {
-            const r1 = parseInt(color1.slice(1, 3), 16)
-            const g1 = parseInt(color1.slice(3, 5), 16)
-            const b1 = parseInt(color1.slice(5, 7), 16)
-
-            const r2 = parseInt(color2.slice(1, 3), 16)
-            const g2 = parseInt(color2.slice(3, 5), 16)
-            const b2 = parseInt(color2.slice(5, 7), 16)
-
-            const r = Math.round(r1 * (1 - weight) + r2 * weight)
-            const g = Math.round(g1 * (1 - weight) + g2 * weight)
-            const b = Math.round(b1 * (1 - weight) + b2 * weight)
-
-            return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
-        },
-    },
 }
 </script>
+
+<style scoped>
+.offer-card {
+    position: relative;
+    background: white;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.offer-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.12);
+}
+
+.offer-card-own {
+    border: 2px solid rgba(243, 146, 0, 0.3);
+}
+
+/* Card Glow */
+.card-glow {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #3AAA35, #4BC044);
+    transition: height 0.3s ease;
+}
+
+.offer-card:hover .card-glow {
+    height: 5px;
+}
+
+.offer-card-own .card-glow {
+    background: linear-gradient(90deg, #F39200, #FFB74D);
+}
+
+/* Card Header */
+.card-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 18px 18px 12px;
+    background: linear-gradient(135deg, rgba(58, 170, 53, 0.06), rgba(58, 170, 53, 0.02));
+}
+
+.offer-card-own .card-header {
+    background: linear-gradient(135deg, rgba(243, 146, 0, 0.06), rgba(243, 146, 0, 0.02));
+}
+
+.subject-badge {
+    width: 44px;
+    height: 44px;
+    background: linear-gradient(135deg, #3AAA35, #2d8a2a);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: transform 0.3s ease;
+}
+
+.offer-card:hover .subject-badge {
+    transform: scale(1.08);
+}
+
+.offer-card-own .subject-badge {
+    background: linear-gradient(135deg, #F39200, #d67f00);
+}
+
+.subject-short {
+    color: white;
+    font-weight: 700;
+    font-size: 0.85rem;
+}
+
+.header-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.offer-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #263238;
+    margin: 0 0 4px 0;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.school-name {
+    font-size: 0.75rem;
+    color: #78909C;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.header-icons {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.own-badge {
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* Subject Chip */
+.subject-chip-wrapper {
+    padding: 0 18px 12px;
+}
+
+.subject-chip {
+    display: inline-block;
+    padding: 4px 10px;
+    background: rgba(58, 170, 53, 0.1);
+    color: #2E7D32;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.offer-card-own .subject-chip {
+    background: rgba(243, 146, 0, 0.1);
+    color: #E65100;
+}
+
+/* Card Description */
+.card-description {
+    padding: 0 18px 16px;
+    flex: 1;
+}
+
+.card-description p {
+    font-size: 0.85rem;
+    color: #607D8B;
+    line-height: 1.5;
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Card Footer */
+.card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    background: #f8f9fa;
+    border-top: 1px solid #e8e8e8;
+    margin-top: auto;
+}
+
+.footer-text {
+    font-size: 0.8rem;
+    color: #78909C;
+}
+
+.view-action {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: #3AAA35;
+    transition: gap 0.3s ease;
+}
+
+.offer-card-own .view-action {
+    color: #F39200;
+}
+
+.offer-card:hover .view-action {
+    gap: 10px;
+}
+
+/* Responsive */
+@media (max-width: 400px) {
+    .card-header {
+        padding: 14px;
+    }
+
+    .subject-badge {
+        width: 38px;
+        height: 38px;
+    }
+
+    .offer-title {
+        font-size: 0.95rem;
+    }
+}
+</style>

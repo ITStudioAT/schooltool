@@ -1,118 +1,179 @@
 <template>
-    <v-card tile flat border-md width="300" min-height="200" class="d-flex flex-column" v-if="action == '' && !is_edit">
-        <v-card-title>{{ offer.subject.short_name }}</v-card-title>
-        <v-card-subtitle>{{ offer.subject.long_name }}</v-card-subtitle>
+    <!-- Offer Card -->
+    <div class="offer-card" v-if="action == '' && !is_edit">
+        <div class="card-glow" :class="{ 'glow-online': offer.is_active, 'glow-offline': !offer.is_active }"></div>
 
-        <!-- NICHT/FREIGEGEBEN und ONLINE-STATUS-->
-        <v-card-text v-if="offer.must_be_accepted && !offer.accepted_at">
-            <v-alert type="warning">
-                <div>Bestätigung ausstehend</div>
-                <div class="text-caption">{{ offer.email_mentor }}</div>
-            </v-alert>
-        </v-card-text>
-
-        <v-card-text v-if="!offer.must_be_accepted || offer.accepted_at">
-            <v-alert type="success">Freigegeben!</v-alert>
-            <v-card tile flat class="mt-2" v-if="offer.is_active">
-                <v-card-title class="d-flex flex-row align-center ga-2 bg-success">
-                    <v-icon icon="mdi-web" />
-                    <div>ONLINE</div>
-                </v-card-title>
-                <div class="d-flex justify-end">
-                    <v-btn tile flat size="small" color="error" @click="toggleActive(offer)">Ausschalten</v-btn>
-                </div>
-            </v-card>
-            <v-card tile flat class="mt-2" v-if="!offer.is_active">
-                <v-card-title class="d-flex flex-row align-center ga-2 bg-error">
-                    <v-icon icon="mdi-web-off" />
-                    <div>OFFLINE</div>
-                </v-card-title>
-                <div class="d-flex justify-end">
-                    <v-btn tile flat size="small" color="success" @click="toggleActive(offer)">Einschalten</v-btn>
-                </div>
-            </v-card>
-        </v-card-text>
-
-        <!-- ANZAHL KLICKS -->
-        <v-card-text class="text-body-1 flex-grow-1">
-            <div class="text-body-1 font-weight-bold d-flex flex-row align-center">
-                <div>Bisherige Klicks:</div>
-                <v-badge color="info" :content="offer.click_count" inline rounded="circle" height="32" width="32" class="ml-2">
-                    <template v-slot:badge>
-                        <span style="font-size: 1.2rem">{{ offer.click_count }}</span>
-                    </template>
-                </v-badge>
+        <!-- Card Header -->
+        <div class="card-header">
+            <div class="subject-badge">
+                <span class="subject-short">{{ offer.subject.short_name }}</span>
             </div>
-        </v-card-text>
-        <v-card-text>offer.id:{{ offer.id }}</v-card-text>
+            <div class="subject-info">
+                <h3 class="subject-name">{{ offer.subject.long_name }}</h3>
+                <span class="offer-title">{{ offer.title }}</span>
+            </div>
+        </div>
 
-        <!-- TITLE und DESCRIPTION -->
-        <v-card-text class="mt-4">
-            <div class="text-body-1">{{ offer.title }}</div>
-            <div class="text-body-2" style="white-space: pre-line">{{ offer.description }}</div>
-        </v-card-text>
-
-        <!-- KLASSEN -->
-        <v-card-text class="text-body-1">
-            <div v-if="unterstufeClasses.length > 0" class="mb-2">
-                <strong>Unterstufe:</strong>
-                <div class="text-body-2">
-                    {{ unterstufeClasses.join(', ') }}
+        <!-- Status Section -->
+        <div class="status-section">
+            <!-- Pending Approval -->
+            <div class="status-pending" v-if="offer.must_be_accepted && !offer.accepted_at">
+                <div class="status-icon">
+                    <v-icon size="20" color="warning">mdi-clock-outline</v-icon>
+                </div>
+                <div class="status-text">
+                    <span class="status-label">Bestätigung ausstehend</span>
+                    <span class="status-detail">{{ offer.email_mentor }}</span>
                 </div>
             </div>
-            <div v-if="oberstufeClasses.length > 0">
-                <strong>Oberstufe:</strong>
-                <div class="text-body-2">
-                    {{ oberstufeClasses.join(', ') }}
+
+            <!-- Approved -->
+            <div class="status-approved" v-if="!offer.must_be_accepted || offer.accepted_at">
+                <div class="status-badge success">
+                    <v-icon size="16">mdi-check-circle</v-icon>
+                    <span>Freigegeben</span>
+                </div>
+
+                <!-- Online/Offline Toggle -->
+                <div class="online-toggle">
+                    <div class="toggle-status" :class="{ 'is-online': offer.is_active, 'is-offline': !offer.is_active }">
+                        <v-icon size="18">{{ offer.is_active ? 'mdi-web' : 'mdi-web-off' }}</v-icon>
+                        <span>{{ offer.is_active ? 'ONLINE' : 'OFFLINE' }}</span>
+                    </div>
+                    <v-btn
+                        :color="offer.is_active ? 'error' : 'success'"
+                        variant="tonal"
+                        size="small"
+                        rounded="lg"
+                        @click="toggleActive(offer)"
+                    >
+                        {{ offer.is_active ? 'Ausschalten' : 'Einschalten' }}
+                    </v-btn>
                 </div>
             </div>
-        </v-card-text>
+        </div>
 
-        <!-- GÜLTIG BIS -->
-        <v-card-text class="text-body-1">
-            <div class="text-body-1 font-weight-bold">
-                Gültig bis:
-                <span v-if="offer.active_until">{{ formattedActiveUntil }}</span>
-                <span v-else>unendlich</span>
+        <!-- Stats Section -->
+        <div class="stats-section">
+            <div class="stat-item">
+                <div class="stat-icon">
+                    <v-icon size="20" color="primary">mdi-cursor-default-click</v-icon>
+                </div>
+                <div class="stat-info">
+                    <span class="stat-value">{{ offer.click_count }}</span>
+                    <span class="stat-label">Klicks</span>
+                </div>
             </div>
-        </v-card-text>
-
-        <!-- EINZEL-/GRUPPENUNTERRICHT und PREIS -->
-        <v-card-text>
-            <div class="text-body-1 font-weight-bold">
-                <div v-if="!offer.is_group">Einzelunterricht</div>
-                <div v-else>Gruppenunterricht</div>
-                <div v-if="offer.is_group">Maximal {{ offer.max_group_members }} Teilnehmer in der Gruppe</div>
-                <div>Kosten pro Stunde: {{ parseFloat(offer.price_per_hour) }} Euro</div>
+            <div class="stat-item">
+                <div class="stat-icon">
+                    <v-icon size="20" color="success">mdi-currency-eur</v-icon>
+                </div>
+                <div class="stat-info">
+                    <span class="stat-value">{{ parseFloat(offer.price_per_hour) }}</span>
+                    <span class="stat-label">Euro/Std.</span>
+                </div>
             </div>
-        </v-card-text>
+            <div class="stat-item">
+                <div class="stat-icon">
+                    <v-icon size="20" color="secondary">{{ offer.is_group ? 'mdi-account-group' : 'mdi-account' }}</v-icon>
+                </div>
+                <div class="stat-info">
+                    <span class="stat-value">{{ offer.is_group ? 'Gruppe' : 'Einzel' }}</span>
+                    <span class="stat-label" v-if="offer.is_group">max. {{ offer.max_group_members }}</span>
+                    <span class="stat-label" v-else>Unterricht</span>
+                </div>
+            </div>
+        </div>
 
-        <!-- MENÜ - Bleibt immer unten -->
-        <v-card-text class="h-100 d-flex align-end justify-end">
-            <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap justify-center align-center ga-2">
-                <its-menu-button title="Angebot" subtitle="ändern" icon="mdi-pencil" color="primary" @click="editOffer(offer)" />
-                <its-menu-button title="Angebot" subtitle="löschen" icon="mdi-delete" color="warning" @click="delete_level = 1" v-if="delete_level == 0" />
-                <its-menu-button title="Angebot" subtitle="nicht löschen" icon="mdi-delete-off" color="success" @click="delete_level = 0" v-if="delete_level == 1" />
-                <its-menu-button title="Angebot" subtitle="löschen" icon="mdi-delete" color="error" @click="" v-if="delete_level == 1" />
-            </v-card>
-        </v-card-text>
-    </v-card>
+        <!-- Description -->
+        <div class="description-section" v-if="offer.description">
+            <p class="description-text">{{ offer.description }}</p>
+        </div>
 
-    <!-- OFFER   -->
+        <!-- Classes Section -->
+        <div class="classes-section" v-if="unterstufeClasses.length > 0 || oberstufeClasses.length > 0">
+            <div class="classes-group" v-if="unterstufeClasses.length > 0">
+                <span class="classes-label">Unterstufe:</span>
+                <div class="classes-chips">
+                    <span class="class-chip" v-for="cls in unterstufeClasses" :key="cls">{{ cls }}</span>
+                </div>
+            </div>
+            <div class="classes-group" v-if="oberstufeClasses.length > 0">
+                <span class="classes-label">Oberstufe:</span>
+                <div class="classes-chips">
+                    <span class="class-chip chip-upper" v-for="cls in oberstufeClasses" :key="cls">{{ cls }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Valid Until -->
+        <div class="validity-section">
+            <v-icon size="16" class="mr-1">mdi-calendar-clock</v-icon>
+            <span>Gültig bis: </span>
+            <strong v-if="offer.active_until">{{ formattedActiveUntil }}</strong>
+            <strong v-else>Unbegrenzt</strong>
+        </div>
+
+        <!-- Actions -->
+        <div class="card-actions">
+            <v-btn
+                color="primary"
+                variant="flat"
+                rounded="lg"
+                @click="editOffer(offer)"
+            >
+                <v-icon start>mdi-pencil</v-icon>
+                Bearbeiten
+            </v-btn>
+
+            <v-btn
+                v-if="delete_level == 0"
+                color="warning"
+                variant="tonal"
+                rounded="lg"
+                @click="delete_level = 1"
+            >
+                <v-icon start>mdi-delete</v-icon>
+                Löschen
+            </v-btn>
+
+            <template v-if="delete_level == 1">
+                <v-btn
+                    color="success"
+                    variant="tonal"
+                    rounded="lg"
+                    @click="delete_level = 0"
+                >
+                    <v-icon start>mdi-close</v-icon>
+                    Abbruch
+                </v-btn>
+                <v-btn
+                    color="error"
+                    variant="flat"
+                    rounded="lg"
+                    @click="deleteOffer(offer)"
+                >
+                    <v-icon start>mdi-delete-forever</v-icon>
+                    Bestätigen
+                </v-btn>
+            </template>
+        </div>
+    </div>
+
+    <!-- Edit Offer -->
     <Offer :offer="offer_to_edit" v-if="is_edit" @finished="reloadOffers" />
-
-    {{ config }}
 </template>
+
 <script>
 import { mapWritableState } from 'pinia'
 import { useOfferStore } from '@/stores/tutoring/OfferStore'
 import { useTutoringStore } from '@/stores/tutoring/TutoringStore'
-import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import Offer from './Offer.vue'
+
 export default {
     props: ['offer'],
+    components: { Offer },
 
-    components: { ItsMenuButton, Offer },
     async beforeMount() {
         this.offerStore = useOfferStore()
         this.tutoringStore = useTutoringStore()
@@ -132,7 +193,6 @@ export default {
         ...mapWritableState(useOfferStore, ['offer_config']),
 
         selectedClasses() {
-            // Konvertiere Object zu Array der ausgewählten Keys
             return Object.entries(this.offer.classes || {})
                 .filter(([key, value]) => value === true)
                 .map(([key]) => parseInt(key))
@@ -146,17 +206,15 @@ export default {
         oberstufeClasses() {
             return this.selectedClasses.filter((num) => num > 4).map((num) => `${num}. Klasse`)
         },
+
         formattedActiveUntil() {
             if (!this.offer.active_until) return ''
-
             const date = new Date(this.offer.active_until)
             const weekdays = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag']
             const weekday = weekdays[date.getDay()]
-
             const day = String(date.getDate()).padStart(2, '0')
             const month = String(date.getMonth() + 1).padStart(2, '0')
             const year = date.getFullYear()
-
             return `${day}.${month}.${year} (${weekday})`
         },
     },
@@ -166,22 +224,330 @@ export default {
             this.is_edit = false
             await this.offerStore.loadMyOffers()
         },
+
         async toggleActive(offer) {
             if (!(await this.offerStore.toggleActive(offer.id))) return
             offer.is_active = !offer.is_active
         },
+
         editOffer(offer) {
             this.offer_to_edit = offer
             this.is_edit = true
             this.action = 'edit_offer'
         },
+
+        async deleteOffer(offer) {
+            if (!(await this.offerStore.deleteOffer(offer.id))) return
+            await this.offerStore.loadMyOffers()
+            this.delete_level = 0
+        },
     },
 }
 </script>
-<style>
-.large-badge :deep(.v-badge__badge) {
-    font-size: 1rem;
-    min-width: 24px;
-    height: 24px;
+
+<style scoped>
+.offer-card {
+    position: relative;
+    background: white;
+    border-radius: 16px;
+    padding: 0;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    display: flex;
+    flex-direction: column;
+    transition: all 0.3s ease;
+}
+
+.offer-card:hover {
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+    transform: translateY(-2px);
+}
+
+/* Card Glow */
+.card-glow {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+}
+
+.glow-online {
+    background: linear-gradient(90deg, #3AAA35, #4BC044);
+}
+
+.glow-offline {
+    background: linear-gradient(90deg, #78909C, #90A4AE);
+}
+
+/* Card Header */
+.card-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 20px 20px 16px;
+    background: linear-gradient(135deg, rgba(58, 170, 53, 0.06), rgba(58, 170, 53, 0.02));
+}
+
+.subject-badge {
+    width: 48px;
+    height: 48px;
+    background: linear-gradient(135deg, #3AAA35, #2d8a2a);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.subject-short {
+    color: white;
+    font-weight: 700;
+    font-size: 0.9rem;
+}
+
+.subject-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.subject-name {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #263238;
+    margin: 0 0 4px 0;
+    line-height: 1.3;
+}
+
+.offer-title {
+    font-size: 0.85rem;
+    color: #607D8B;
+    display: block;
+}
+
+/* Status Section */
+.status-section {
+    padding: 0 20px 16px;
+}
+
+.status-pending {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: rgba(255, 152, 0, 0.08);
+    border: 1px solid rgba(255, 152, 0, 0.2);
+    border-radius: 10px;
+}
+
+.status-icon {
+    flex-shrink: 0;
+}
+
+.status-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.status-label {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: #E65100;
+}
+
+.status-detail {
+    font-size: 0.75rem;
+    color: #FF9800;
+}
+
+.status-approved {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    width: fit-content;
+}
+
+.status-badge.success {
+    background: rgba(58, 170, 53, 0.1);
+    color: #2E7D32;
+}
+
+.online-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    background: #f5f5f5;
+    border-radius: 10px;
+}
+
+.toggle-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 0.85rem;
+}
+
+.toggle-status.is-online {
+    color: #2E7D32;
+}
+
+.toggle-status.is-offline {
+    color: #78909C;
+}
+
+/* Stats Section */
+.stats-section {
+    display: flex;
+    gap: 8px;
+    padding: 0 20px 16px;
+}
+
+.stat-item {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 10px;
+}
+
+.stat-icon {
+    flex-shrink: 0;
+}
+
+.stat-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-value {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: #263238;
+    line-height: 1.2;
+}
+
+.stat-label {
+    font-size: 0.7rem;
+    color: #90A4AE;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+/* Description */
+.description-section {
+    padding: 0 20px 16px;
+}
+
+.description-text {
+    font-size: 0.9rem;
+    color: #546E7A;
+    line-height: 1.5;
+    margin: 0;
+    white-space: pre-line;
+}
+
+/* Classes Section */
+.classes-section {
+    padding: 0 20px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.classes-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.classes-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #546E7A;
+}
+
+.classes-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.class-chip {
+    padding: 4px 10px;
+    background: rgba(58, 170, 53, 0.1);
+    color: #2E7D32;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.chip-upper {
+    background: rgba(243, 146, 0, 0.1);
+    color: #E65100;
+}
+
+/* Validity */
+.validity-section {
+    padding: 0 20px 16px;
+    display: flex;
+    align-items: center;
+    font-size: 0.85rem;
+    color: #607D8B;
+}
+
+.validity-section strong {
+    color: #37474F;
+    margin-left: 4px;
+}
+
+/* Card Actions */
+.card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 16px 20px;
+    background: #f8f9fa;
+    border-top: 1px solid #e0e0e0;
+    margin-top: auto;
+}
+
+.card-actions .v-btn {
+    flex: 1;
+    min-width: 100px;
+}
+
+/* Responsive */
+@media (max-width: 400px) {
+    .stats-section {
+        flex-wrap: wrap;
+    }
+
+    .stat-item {
+        flex: 1 1 45%;
+    }
+
+    .card-actions {
+        flex-direction: column;
+    }
+
+    .card-actions .v-btn {
+        width: 100%;
+    }
 }
 </style>

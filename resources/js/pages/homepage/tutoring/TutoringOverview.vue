@@ -257,63 +257,98 @@
 
             <!-- Offers Section -->
             <div class="offers-section" v-if="is_loaded && !is_login && action == ''">
-                <!-- Offers Grid -->
-                <div class="offers-grid" v-if="offers && offers.length > 0">
-                    <div class="offer-card-wrapper" v-for="offer in offers" :key="offer.id">
-                        <OfferCard
-                            class="h-100"
-                            :school_short_name="offer.school.short_name"
-                            :school_long_name="offer.school.long_name"
-                            :subject="offer.subject.short_name + ': ' + offer.subject.long_name"
-                            :title="offer.title"
-                            :description="offer.description"
-                            :my_request="offer.my_request"
-                            color="success"
-                            button="Anschauen"
-                            @clickCard="showOffersDetail(offer)"
-                            :is_mark="offer.is_own_offer" />
+                <!-- Section Header -->
+                <div class="section-header">
+                    <div class="header-icon">
+                        <v-icon size="28" color="white">mdi-book-open-page-variant</v-icon>
+                    </div>
+                    <div class="header-text">
+                        <h2 class="section-title">Verfügbare Angebote</h2>
+                        <p class="section-subtitle">{{ offers?.length || 0 }} Angebote gefunden</p>
                     </div>
                 </div>
 
+                <!-- Offers Grid -->
+                <div class="offers-grid" v-if="offers && offers.length > 0">
+                    <OfferCard
+                        v-for="offer in offers"
+                        :key="offer.id"
+                        :school_short_name="offer.school.short_name"
+                        :school_long_name="offer.school.long_name"
+                        :subject="offer.subject.short_name + ': ' + offer.subject.long_name"
+                        :title="offer.title"
+                        :description="offer.description"
+                        :my_request="offer.my_request"
+                        button="Anschauen"
+                        @clickCard="showOffersDetail(offer)"
+                        :is_mark="offer.is_own_offer" />
+                </div>
+
                 <!-- Pagination -->
-                <div class="pagination" v-if="offers && offers.length > 0">
+                <div class="pagination-card" v-if="offers && offers.length > 0 && meta.last_page > 1">
                     <v-btn
-                        variant="outlined"
+                        variant="tonal"
+                        color="primary"
                         size="large"
-                        prepend-icon="mdi-arrow-left"
+                        rounded="lg"
                         :disabled="meta.current_page == 1"
                         @click="offerStore.loadOffers(school_name, meta.current_page - 1)">
+                        <v-icon start>mdi-arrow-left</v-icon>
                         Vorherige
                     </v-btn>
-                    <span class="page-info">Seite {{ meta.current_page }} von {{ meta.last_page }}</span>
+                    <div class="page-indicator">
+                        <span class="page-current">{{ meta.current_page }}</span>
+                        <span class="page-separator">von</span>
+                        <span class="page-total">{{ meta.last_page }}</span>
+                    </div>
                     <v-btn
-                        variant="outlined"
+                        variant="tonal"
+                        color="primary"
                         size="large"
-                        append-icon="mdi-arrow-right"
+                        rounded="lg"
                         :disabled="meta.current_page == meta.last_page"
                         @click="offerStore.loadOffers(school_name, meta.current_page + 1)">
                         Nächste
+                        <v-icon end>mdi-arrow-right</v-icon>
                     </v-btn>
                 </div>
 
                 <!-- No Offers -->
-                <div class="no-offers" v-else>
-                    <v-card class="no-offers-card" elevation="8">
+                <div class="no-offers" v-if="!offers || offers.length === 0">
+                    <div class="no-offers-card">
                         <div class="no-offers-icon">
-                            <v-icon size="64" color="secondary">mdi-book-search-outline</v-icon>
+                            <v-icon size="72" color="grey-lighten-1">mdi-book-search-outline</v-icon>
                         </div>
-                        <h3>Aktuell sind keine Angebote vorhanden</h3>
-                        <p v-if="!offer_config.auth.is_auth">Melde Dich an und lege selbst ein Angebot an.</p>
-                        <p v-else>Erstelle Dein eigenes Angebot.</p>
-                        <v-btn v-if="!offer_config.auth.is_auth" color="secondary" variant="flat" size="large" @click="startLogin">
+                        <h3 class="no-offers-title">Keine Angebote gefunden</h3>
+                        <p class="no-offers-text" v-if="!offer_config.auth.is_auth">
+                            Melde Dich an und lege selbst ein Angebot an.
+                        </p>
+                        <p class="no-offers-text" v-else>
+                            Erstelle Dein eigenes Angebot und hilf anderen Schülern.
+                        </p>
+                        <v-btn
+                            v-if="!offer_config.auth.is_auth"
+                            color="orange"
+                            variant="flat"
+                            size="large"
+                            rounded="lg"
+                            @click="startLogin"
+                            class="mt-4">
                             <v-icon start>mdi-login</v-icon>
                             Jetzt anmelden
                         </v-btn>
-                        <v-btn v-else color="success" variant="flat" size="large" @click="moveToTutoring">
+                        <v-btn
+                            v-else
+                            color="success"
+                            variant="flat"
+                            size="large"
+                            rounded="lg"
+                            @click="moveToTutoring"
+                            class="mt-4">
                             <v-icon start>mdi-plus</v-icon>
                             Angebot erstellen
                         </v-btn>
-                    </v-card>
+                    </div>
                 </div>
             </div>
 
@@ -857,39 +892,87 @@ export default {
     animation: fadeInUp 0.8s ease-out 0.3s both;
 }
 
-.offers-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 20px;
+/* Section Header */
+.section-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
     margin-bottom: 24px;
-    max-width: 900px;
-    margin-left: auto;
-    margin-right: auto;
+    padding: 20px 24px;
+    background: linear-gradient(135deg, #3AAA35 0%, #2d8a2a 100%);
+    border-radius: 16px;
+    box-shadow: 0 8px 30px rgba(58, 170, 53, 0.25);
 }
 
-.offer-card-wrapper {
-    transition: transform 0.3s ease;
-}
-
-.offer-card-wrapper:hover {
-    transform: translateY(-4px);
-}
-
-/* Pagination */
-.pagination {
+.header-icon {
+    width: 56px;
+    height: 56px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
+}
+
+.header-text {
+    color: white;
+}
+
+.section-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 0;
+    line-height: 1.2;
+}
+
+.section-subtitle {
+    font-size: 0.95rem;
+    opacity: 0.9;
+    margin: 4px 0 0 0;
+}
+
+.offers-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 20px;
+    margin-bottom: 24px;
+}
+
+/* Pagination */
+.pagination-card {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
     padding: 20px;
-    background: rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.9);
     backdrop-filter: blur(10px);
     border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
     flex-wrap: wrap;
 }
 
-.page-info {
-    font-weight: 500;
+.page-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.page-current {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #3AAA35;
+}
+
+.page-separator {
+    font-size: 0.9rem;
+    color: #90A4AE;
+}
+
+.page-total {
+    font-size: 1.1rem;
+    font-weight: 600;
     color: #546E7A;
 }
 
@@ -897,30 +980,35 @@ export default {
 .no-offers {
     display: flex;
     justify-content: center;
-    padding: 40px 20px;
+    padding: 20px 0;
 }
 
 .no-offers-card {
     text-align: center;
-    padding: 48px 32px;
-    border-radius: 20px !important;
-    max-width: 400px;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    padding: 48px 40px;
+    border-radius: 20px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+    max-width: 420px;
 }
 
 .no-offers-icon {
     margin-bottom: 20px;
 }
 
-.no-offers-card h3 {
-    font-size: 1.3rem;
+.no-offers-title {
+    font-size: 1.4rem;
     font-weight: 700;
     color: #263238;
     margin: 0 0 12px 0;
 }
 
-.no-offers-card p {
+.no-offers-text {
+    font-size: 1rem;
     color: #607D8B;
-    margin: 0 0 24px 0;
+    line-height: 1.6;
+    margin: 0;
 }
 
 /* Error Container */
@@ -956,9 +1044,28 @@ export default {
         padding: 20px;
     }
 
-    .pagination {
+    .section-header {
         flex-direction: column;
-        gap: 12px;
+        text-align: center;
+        padding: 20px;
+    }
+
+    .section-title {
+        font-size: 1.25rem;
+    }
+
+    .offers-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .pagination-card {
+        flex-direction: column;
+        gap: 16px;
+        padding: 16px;
+    }
+
+    .no-offers-card {
+        padding: 32px 24px;
     }
 }
 
