@@ -415,12 +415,10 @@ class OfferController extends Controller
         $validated = $request->validated();
 
         $offer_id = $validated['offer_id'];
-        $message = $validated['request_message'] ?? null;
+        $message = $validated['request_message'] ?? '';
         $offer = TutoringOffer::findOrFail($offer_id);
 
         if ($offer->user_id == $auth_user->id) abort(403, 'An sich selbst kann man keine Anfrage stellen');
-
-
 
         $data = $service->sendOfferRequest($auth_user->id, $offer_id, $message);
 

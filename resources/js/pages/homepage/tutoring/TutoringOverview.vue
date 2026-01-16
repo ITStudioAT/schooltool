@@ -28,7 +28,9 @@
                         <v-icon size="40" color="white">mdi-account-group</v-icon>
                     </div>
                     <h1 class="brand-title">
-                        <span class="brand-nach">Nach</span><span class="brand-hilfe">hilfe</span><span class="brand-tool">Tool</span>
+                        <span class="brand-nach">Nach</span>
+                        <span class="brand-hilfe">hilfe</span>
+                        <span class="brand-tool">Tool</span>
                     </h1>
                     <p class="brand-tagline">Schüler helfen Schülern</p>
                 </div>
@@ -264,7 +266,7 @@
                     </div>
                     <div class="header-text">
                         <h2 class="section-title">Verfügbare Angebote</h2>
-                        <p class="section-subtitle">{{ offers?.length || 0 }} Angebote gefunden</p>
+                        <p class="section-subtitle">{{ meta?.total || 0 }} Angebote gefunden</p>
                     </div>
                 </div>
 
@@ -320,31 +322,13 @@
                             <v-icon size="72" color="grey-lighten-1">mdi-book-search-outline</v-icon>
                         </div>
                         <h3 class="no-offers-title">Keine Angebote gefunden</h3>
-                        <p class="no-offers-text" v-if="!offer_config.auth.is_auth">
-                            Melde Dich an und lege selbst ein Angebot an.
-                        </p>
-                        <p class="no-offers-text" v-else>
-                            Erstelle Dein eigenes Angebot und hilf anderen Schülern.
-                        </p>
-                        <v-btn
-                            v-if="!offer_config.auth.is_auth"
-                            color="orange"
-                            variant="flat"
-                            size="large"
-                            rounded="lg"
-                            @click="startLogin"
-                            class="mt-4">
+                        <p class="no-offers-text" v-if="!offer_config.auth.is_auth">Melde Dich an und lege selbst ein Angebot an.</p>
+                        <p class="no-offers-text" v-else>Erstelle Dein eigenes Angebot und hilf anderen Schülern.</p>
+                        <v-btn v-if="!offer_config.auth.is_auth" color="orange" variant="flat" size="large" rounded="lg" @click="startLogin" class="mt-4">
                             <v-icon start>mdi-login</v-icon>
                             Jetzt anmelden
                         </v-btn>
-                        <v-btn
-                            v-else
-                            color="success"
-                            variant="flat"
-                            size="large"
-                            rounded="lg"
-                            @click="moveToTutoring"
-                            class="mt-4">
+                        <v-btn v-else color="success" variant="flat" size="large" rounded="lg" @click="moveToTutoring" class="mt-4">
                             <v-icon start>mdi-plus</v-icon>
                             Angebot erstellen
                         </v-btn>
@@ -599,7 +583,7 @@ export default {
 .orb-1 {
     width: 500px;
     height: 500px;
-    background: linear-gradient(135deg, #F39200 0%, #d67f00 100%);
+    background: linear-gradient(135deg, #f39200 0%, #d67f00 100%);
     top: -150px;
     left: -150px;
     animation-delay: 0s;
@@ -608,7 +592,7 @@ export default {
 .orb-2 {
     width: 400px;
     height: 400px;
-    background: linear-gradient(135deg, #3AAA35 0%, #2d8a2a 100%);
+    background: linear-gradient(135deg, #3aaa35 0%, #2d8a2a 100%);
     bottom: -100px;
     right: -100px;
     animation-delay: -7s;
@@ -617,7 +601,7 @@ export default {
 .orb-3 {
     width: 350px;
     height: 350px;
-    background: linear-gradient(135deg, #37474F 0%, #263238 100%);
+    background: linear-gradient(135deg, #37474f 0%, #263238 100%);
     top: 60%;
     left: 30%;
     animation-delay: -14s;
@@ -625,10 +609,19 @@ export default {
 }
 
 @keyframes float {
-    0%, 100% { transform: translate(0, 0) scale(1); }
-    25% { transform: translate(30px, -30px) scale(1.05); }
-    50% { transform: translate(-20px, 20px) scale(0.95); }
-    75% { transform: translate(-30px, -20px) scale(1.02); }
+    0%,
+    100% {
+        transform: translate(0, 0) scale(1);
+    }
+    25% {
+        transform: translate(30px, -30px) scale(1.05);
+    }
+    50% {
+        transform: translate(-20px, 20px) scale(0.95);
+    }
+    75% {
+        transform: translate(-30px, -20px) scale(1.02);
+    }
 }
 
 /* Particles */
@@ -658,10 +651,21 @@ export default {
 }
 
 @keyframes drift {
-    0%, 100% { transform: translate(0, 0); opacity: 0; }
-    10% { opacity: 1; }
-    90% { opacity: 1; }
-    100% { transform: translate(80px, -80px); opacity: 0; }
+    0%,
+    100% {
+        transform: translate(0, 0);
+        opacity: 0;
+    }
+    10% {
+        opacity: 1;
+    }
+    90% {
+        opacity: 1;
+    }
+    100% {
+        transform: translate(80px, -80px);
+        opacity: 0;
+    }
 }
 
 /* Main Container */
@@ -681,8 +685,14 @@ export default {
 }
 
 @keyframes fadeInDown {
-    from { opacity: 0; transform: translateY(-30px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(-30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .brand-container {
@@ -695,7 +705,7 @@ export default {
     justify-content: center;
     width: 72px;
     height: 72px;
-    background: linear-gradient(135deg, #F39200 0%, #3AAA35 100%);
+    background: linear-gradient(135deg, #f39200 0%, #3aaa35 100%);
     border-radius: 18px;
     margin-bottom: 16px;
     box-shadow: 0 10px 40px rgba(243, 146, 0, 0.3);
@@ -703,8 +713,13 @@ export default {
 }
 
 @keyframes pulse-glow {
-    0%, 100% { box-shadow: 0 10px 40px rgba(243, 146, 0, 0.3); }
-    50% { box-shadow: 0 10px 60px rgba(58, 170, 53, 0.4); }
+    0%,
+    100% {
+        box-shadow: 0 10px 40px rgba(243, 146, 0, 0.3);
+    }
+    50% {
+        box-shadow: 0 10px 60px rgba(58, 170, 53, 0.4);
+    }
 }
 
 .brand-title {
@@ -715,13 +730,19 @@ export default {
     line-height: 1;
 }
 
-.brand-nach { color: #F39200; }
-.brand-hilfe { color: #3AAA35; }
-.brand-tool { color: #37474F; }
+.brand-nach {
+    color: #f39200;
+}
+.brand-hilfe {
+    color: #3aaa35;
+}
+.brand-tool {
+    color: #37474f;
+}
 
 .brand-tagline {
     font-size: 1.1rem;
-    color: #546E7A;
+    color: #546e7a;
     margin-top: 8px;
 }
 
@@ -749,7 +770,7 @@ export default {
 
 .school-name {
     font-weight: 500;
-    color: #37474F;
+    color: #37474f;
 }
 
 /* Menu Section */
@@ -759,11 +780,18 @@ export default {
 }
 
 @keyframes fadeInUp {
-    from { opacity: 0; transform: translateY(30px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
-.menu-grid, .sub-menu {
+.menu-grid,
+.sub-menu {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
     gap: 20px;
@@ -799,31 +827,76 @@ export default {
     height: 5px;
 }
 
-.card-user .card-glow { background: linear-gradient(90deg, #3AAA35, #4BC044); }
-.card-user .card-icon { background: rgba(58, 170, 53, 0.1); color: #3AAA35; }
-.card-user .card-action { color: #3AAA35; }
+.card-user .card-glow {
+    background: linear-gradient(90deg, #3aaa35, #4bc044);
+}
+.card-user .card-icon {
+    background: rgba(58, 170, 53, 0.1);
+    color: #3aaa35;
+}
+.card-user .card-action {
+    color: #3aaa35;
+}
 
-.card-requests .card-glow { background: linear-gradient(90deg, #3AAA35, #4BC044); }
-.card-requests .card-icon { background: rgba(58, 170, 53, 0.1); color: #3AAA35; }
-.card-requests .card-action { color: #3AAA35; }
+.card-requests .card-glow {
+    background: linear-gradient(90deg, #3aaa35, #4bc044);
+}
+.card-requests .card-icon {
+    background: rgba(58, 170, 53, 0.1);
+    color: #3aaa35;
+}
+.card-requests .card-action {
+    color: #3aaa35;
+}
 
-.card-my-requests .card-glow { background: linear-gradient(90deg, #3AAA35, #4BC044); }
-.card-my-requests .card-icon { background: rgba(58, 170, 53, 0.1); color: #3AAA35; }
-.card-my-requests .card-action { color: #3AAA35; }
+.card-my-requests .card-glow {
+    background: linear-gradient(90deg, #3aaa35, #4bc044);
+}
+.card-my-requests .card-icon {
+    background: rgba(58, 170, 53, 0.1);
+    color: #3aaa35;
+}
+.card-my-requests .card-action {
+    color: #3aaa35;
+}
 
-.card-logout .card-glow { background: linear-gradient(90deg, #F39200, #FFB74D); }
-.card-logout .card-icon { background: rgba(243, 146, 0, 0.1); color: #F39200; }
-.card-logout .card-action { color: #F39200; }
+.card-logout .card-glow {
+    background: linear-gradient(90deg, #f39200, #ffb74d);
+}
+.card-logout .card-icon {
+    background: rgba(243, 146, 0, 0.1);
+    color: #f39200;
+}
+.card-logout .card-action {
+    color: #f39200;
+}
 
-.card-login .card-glow { background: linear-gradient(90deg, #F39200, #FFB74D); }
-.card-login .card-icon { background: rgba(243, 146, 0, 0.1); color: #F39200; }
-.card-login .card-action { color: #F39200; }
+.card-login .card-glow {
+    background: linear-gradient(90deg, #f39200, #ffb74d);
+}
+.card-login .card-icon {
+    background: rgba(243, 146, 0, 0.1);
+    color: #f39200;
+}
+.card-login .card-action {
+    color: #f39200;
+}
 
-.card-back .card-glow { background: linear-gradient(90deg, #78909C, #90A4AE); }
-.card-back .card-icon { background: rgba(120, 144, 156, 0.1); color: #78909C; }
+.card-back .card-glow {
+    background: linear-gradient(90deg, #78909c, #90a4ae);
+}
+.card-back .card-icon {
+    background: rgba(120, 144, 156, 0.1);
+    color: #78909c;
+}
 
-.card-archive .card-glow { background: linear-gradient(90deg, #3AAA35, #4BC044); }
-.card-archive .card-icon { background: rgba(58, 170, 53, 0.1); color: #3AAA35; }
+.card-archive .card-glow {
+    background: linear-gradient(90deg, #3aaa35, #4bc044);
+}
+.card-archive .card-icon {
+    background: rgba(58, 170, 53, 0.1);
+    color: #3aaa35;
+}
 
 .card-content {
     position: relative;
@@ -854,7 +927,7 @@ export default {
 
 .card-description {
     font-size: 0.9rem;
-    color: #607D8B;
+    color: #607d8b;
     line-height: 1.5;
     margin: 0 0 16px 0;
 }
@@ -899,7 +972,7 @@ export default {
     gap: 16px;
     margin-bottom: 24px;
     padding: 20px 24px;
-    background: linear-gradient(135deg, #3AAA35 0%, #2d8a2a 100%);
+    background: linear-gradient(135deg, #3aaa35 0%, #2d8a2a 100%);
     border-radius: 16px;
     box-shadow: 0 8px 30px rgba(58, 170, 53, 0.25);
 }
@@ -962,18 +1035,18 @@ export default {
 .page-current {
     font-size: 1.5rem;
     font-weight: 700;
-    color: #3AAA35;
+    color: #3aaa35;
 }
 
 .page-separator {
     font-size: 0.9rem;
-    color: #90A4AE;
+    color: #90a4ae;
 }
 
 .page-total {
     font-size: 1.1rem;
     font-weight: 600;
-    color: #546E7A;
+    color: #546e7a;
 }
 
 /* No Offers */
@@ -1006,7 +1079,7 @@ export default {
 
 .no-offers-text {
     font-size: 1rem;
-    color: #607D8B;
+    color: #607d8b;
     line-height: 1.6;
     margin: 0;
 }
@@ -1036,7 +1109,8 @@ export default {
         font-size: 2rem;
     }
 
-    .menu-grid, .sub-menu {
+    .menu-grid,
+    .sub-menu {
         grid-template-columns: 1fr;
     }
 
@@ -1071,7 +1145,10 @@ export default {
 
 /* Reduced Motion */
 @media (prefers-reduced-motion: reduce) {
-    .gradient-orb, .particle, .menu-card, .logo-wrapper {
+    .gradient-orb,
+    .particle,
+    .menu-card,
+    .logo-wrapper {
         animation: none;
     }
     .menu-card:hover {

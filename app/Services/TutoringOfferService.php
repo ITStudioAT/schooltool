@@ -245,6 +245,41 @@ class TutoringOfferService
         Notification::route('mail', $user->email)->notify(new StandardEmail($mail));
     }
 
+
+    public function sendOfferRequestStornoEmail($offerRequest): void
+    {
+        if (! $offerRequest instanceof TutoringOfferRequest) {
+            $offerRequest = TutoringOfferRequest::findOrFail($offerRequest->id ?? $offerRequest['id']);
+        }
+        $offerRequest = $offerRequest->fresh();
+        $school = $offerRequest->school;
+        $user = $offerRequest->to_user;
+
+        $offerRequest->token = Str::uuid();
+        $offerRequest->token_expires_at = Carbon::now()->addMinutes((int) config('schooltool.token_expire_time'));
+        $offerRequest->save();
+
+        $emailSubject = 'Storno einer Anfrage';
+
+
+        $params = http_build_query([
+            'school' => $school->short_name,
+        ]);
+
+        // http://localhost:8000/homepage/tutoring_overview/?school=ABG-SB
+
+        $mail = [
+            'from_address' => config('schooltool.noreply_email'),
+            'from_name' => $school->long_name,
+            'logo' => asset('/storage/images/' . $school->logo),
+            'subject' => $emailSubject,
+            'markdown' => 'mails.tutoring.offerRequestStorno',
+            'data' => ['url' => url("/homepage/tutoring_overview/?{$params}")],
+        ];
+
+        Notification::route('mail', $user->email)->notify(new StandardEmail($mail));
+    }
+
     public function getUserFromOfferRequest(string $email, int $offerRequestId, string $token)
     {
         $offerRequest = TutoringOfferRequest::find($offerRequestId);

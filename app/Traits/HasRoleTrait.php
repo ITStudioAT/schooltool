@@ -6,6 +6,10 @@ use Illuminate\Support\Facades\Auth;
 
 trait HasRoleTrait
 {
+    /**
+     * @param array|string $par_roles
+     * @return \App\Models\User|false
+     */
     public function userHasRole($par_roles)
     {
         if (! is_array($par_roles)) {

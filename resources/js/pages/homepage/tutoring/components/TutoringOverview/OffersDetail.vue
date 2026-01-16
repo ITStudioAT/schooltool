@@ -47,10 +47,6 @@
                     <div>Kosten pro Stunde: {{ parseFloat(offer.price_per_hour) }} Euro</div>
                 </div>
             </v-card-text>
-            <v-card-text>
-                offer.my_request:
-                {{ offer.my_request }}
-            </v-card-text>
 
             <v-card-actions v-if="!is_contact">
                 <v-btn

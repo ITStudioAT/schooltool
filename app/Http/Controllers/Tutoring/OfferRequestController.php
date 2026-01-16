@@ -116,13 +116,16 @@ class OfferRequestController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(TutoringOfferRequest $offerRequest)
+    public function destroy(TutoringOfferRequest $offerRequest, TutoringOfferService $service)
     {
         if (! $auth_user = $this->userHasRole(['tutoring_user'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
         if ($auth_user->id != $offerRequest->from_user_id) abort(422, "Du bist nicht berechtigt, diese Anfrage zu löschen.");
+
+        // TODO senden eine Info-EMail
+        $service->sendOfferRequestStornoEmail($offerRequest);
         $offerRequest->delete();
 
         return response()->noContent();
@@ -148,7 +151,10 @@ class OfferRequestController extends Controller
 
     public function offerRequest(OfferRequestRequest $request, TutoringOfferService $service)
     {
+        // OfferRequestRequest
+
         $validated = $request->validated();
+
 
         $userService = new UserService();
 

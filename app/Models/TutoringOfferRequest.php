@@ -69,6 +69,7 @@ class TutoringOfferRequest extends Model
         'archived_at' => 'datetime:Y-m-d H:i:s',
         'to_user_archived_at' => 'datetime:Y-m-d H:i:s',
         'token_expires_at' => 'datetime:Y-m-d H:i:s',
+        'token' => 'string',
     ];
 
     public function from_user()
