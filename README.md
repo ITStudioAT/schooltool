@@ -15,6 +15,10 @@ php artisan ide-helper:models -W
 
 # Last Changes
 
+## 3.9.0
+
+-   Register: User: New UI-Design
+
 ## 3.8.4
 
 -   Tutoring: User: New UI-Design for MyRequests and ReceivedRequests

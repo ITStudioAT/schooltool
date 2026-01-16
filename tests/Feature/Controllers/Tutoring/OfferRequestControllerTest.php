@@ -765,4 +765,3 @@ test('offerRequest redirects to error page when user lookup fails', function () 
         ->and($query['subtitle'] ?? null)->toBe('Fehler beim Anmelden')
         ->and($query['status'] ?? null)->toBe('422');
 });
-
