@@ -12,6 +12,7 @@ use App\Http\Requests\Homepage\TutoringUnknownPasswordRequest;
 use App\Http\Requests\Tutoring\LoginWithPasswordRequest;
 use App\Http\Resources\Homepage\SchoolWithLicenceRecource;
 use App\Http\Resources\Homepage\UserResource;
+use App\Http\Resources\Tutoring\SchoolToolResource;
 use App\Models\School;
 use App\Models\User;
 use App\Services\TutoringService;
@@ -49,6 +50,7 @@ class TutoringController extends Controller
         }
 
         $school = $auth_user->selectedSchool;
+        $schoolTool = $school->schoolTool;
 
         $data = [
             'auth_check' => true,
@@ -57,6 +59,7 @@ class TutoringController extends Controller
             'school_long_name' => $school->long_name,
             'school_short_name' => $school->short_name,
             'school_logo' => $school->logo,
+            'school_tool' => new SchoolToolResource($schoolTool),
         ];
 
         return response()->json($data, 200);

@@ -16,7 +16,7 @@
             <div class="d-flex justify-center">
                 <div class="d-flex flex-column align-center">
                     <div class="text-caption">{{ auth?.school_long_name }}</div>
-                    <div style="width: 96px; height: 48px" class="bg-primary-lighten-4">
+                    <div style="width: 96px; height: 48px" class="bg-primary-lighten-4" v-if="auth.school_logo">
                         <img :src="'/storage/images/' + auth.school_logo" alt="Logo" style="width: 100%; height: 100%; object-fit: contain" />
                     </div>
                 </div>

@@ -7,8 +7,8 @@
                     <v-card-text class="text-body-1 d-flex flex-column ga-2" v-if="action == ''">
                         <div class="d-flex flex-row align-center justify-space-between w-100">
                             <div>Neuer Benutzer muss bestätigt werden?</div>
-                            <div v-if="data.tutoring_student_must_be_confirmed">✅ ja</div>
-                            <div v-if="!data.tutoring_student_must_be_confirmed">❌ nein</div>
+                            <div v-if="data.tutoring_student_must_be_confirmed">ja ✅</div>
+                            <div v-if="!data.tutoring_student_must_be_confirmed">nein ❌</div>
                         </div>
 
                         <div class="d-flex flex-row align-center justify-space-between w-100" v-if="data.tutoring_student_must_be_confirmed">
@@ -16,10 +16,15 @@
                             <div>{{ data.tutoring_confirmer_email }}</div>
                         </div>
 
-                        <hr />
                         <div class="d-flex flex-row align-center justify-space-between w-100">
                             <div>Anzahl gleichzeitiger Angebote pro Schüler:in (0=unbegrenzt):</div>
                             <div>{{ data.tutoring_max_offers_per_student }}</div>
+                        </div>
+
+                        <div class="d-flex flex-row align-center justify-space-between w-100">
+                            <div>Angebote auch für andere Schulen?</div>
+                            <div v-if="data.may_visible_for_other_schools">ja ✅</div>
+                            <div v-if="!data.may_visible_for_other_schools">nein ❌</div>
                         </div>
 
                         <div class="mt-4">
@@ -45,9 +50,11 @@
                                 :rules="[required(), min(0)]"
                                 tabindex="2" />
 
+                            <v-switch label="Angebote auch für andere Schulen?" v-model="data_new.may_visible_for_other_schools" color="success" tabindex="3" />
+
                             <div class="d-flex flex-row align-center justify-space-between">
                                 <v-btn color="warning" flat tile @click="abortSettings">Abbruch</v-btn>
-                                <v-btn color="success" flat tile type="submit" tabindex="2">Speichern</v-btn>
+                                <v-btn color="success" flat tile type="submit" tabindex="4">Speichern</v-btn>
                             </div>
                         </v-form>
                     </v-card-text>
@@ -99,7 +106,7 @@ export default {
             this.is_valid = false
             await this.$refs.form.validate()
             if (!this.is_valid) return
-            if (!this.schoolToolStore.saveTutoringSettings(data)) return
+            if (!(await this.schoolToolStore.saveTutoringSettings(data))) return
             this.action = ''
         },
 

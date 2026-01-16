@@ -178,12 +178,14 @@ test('school tool resource maps tutoring settings', function () {
         'tutoring_student_must_be_confirmed' => 1,
         'tutoring_confirmer_email' => 'mentor@example.test',
         'tutoring_max_offers_per_student' => 3,
+        'may_visible_for_other_schools' => 1,
     ]);
 
     $data = (new SchoolToolResource($schoolTool))->toArray(request());
 
     expect($data['tutoring_student_must_be_confirmed'])->toBeTrue()
-        ->and($data['tutoring_confirmer_email'])->toBe('mentor@example.test');
+        ->and($data['tutoring_confirmer_email'])->toBe('mentor@example.test')
+        ->and($data['may_visible_for_other_schools'])->toBeTrue();
 });
 
 test('schoolyear resource returns date fields', function () {

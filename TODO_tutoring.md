@@ -2,8 +2,7 @@
 
 ## Student offer interested
 
--   Allow, to be searched in other schools
--   E-Mail-Info über das Löschen vopn Anfragen
+-   E-Mail-Info über das Löschen vophp artisan testn Anfragen
 
 ## EMail Logo
 

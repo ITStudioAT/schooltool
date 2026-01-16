@@ -37,10 +37,13 @@ class SchoolTool extends Model
         'tutoring_student_must_be_confirmed',
         'tutoring_confirmer_email',
         'tutoring_max_offers_per_student',
+        'may_visible_for_other_schools',
         'health_at',
     ];
 
     protected $casts = [
         'health_at' => 'datetime',
+        'tutoring_student_must_be_confirmed' => 'boolean',
+        'may_visible_for_other_schools' => 'boolean',
     ];
 }

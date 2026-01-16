@@ -71,6 +71,11 @@ class School extends Model
         return $this->hasMany(Register::class);
     }
 
+    public function schoolTool(): HasOne
+    {
+        return $this->hasOne(SchoolTool::class, 'school_id');
+    }
+
 
     public function users(): HasMany
     {

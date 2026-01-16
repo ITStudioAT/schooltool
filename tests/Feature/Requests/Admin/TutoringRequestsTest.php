@@ -67,6 +67,7 @@ describe('SchoolToolSaveTutoringSettingsRequest', function () {
                 'tutoring_student_must_be_confirmed' => true,
                 'tutoring_confirmer_email' => 'admin@example.com',
                 'tutoring_max_offers_per_student' => 2,
+                'may_visible_for_other_schools' => true,
             ],
         ]);
 
@@ -77,7 +78,8 @@ describe('SchoolToolSaveTutoringSettingsRequest', function () {
         $validator = validateAdminTutoringRequest(SchoolToolSaveTutoringSettingsRequest::class, []);
 
         expect($validator->fails())->toBeTrue()
-            ->and($validator->errors()->has('data.id'))->toBeTrue();
+            ->and($validator->errors()->has('data.id'))->toBeTrue()
+            ->and($validator->errors()->has('data.may_visible_for_other_schools'))->toBeTrue();
     });
 });
 

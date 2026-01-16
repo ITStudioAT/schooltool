@@ -37,6 +37,7 @@ beforeEach(function () {
         'tutoring_student_must_be_confirmed' => 0,
         'tutoring_confirmer_email' => 'admin@test.com',
         'tutoring_max_offers_per_student' => 0,
+        'may_visible_for_other_schools' => 0,
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -79,6 +80,7 @@ describe('loadConfig', function () {
                 'id',
                 'tutoring_student_must_be_confirmed',
                 'tutoring_confirmer_email',
+                'may_visible_for_other_schools',
             ])
             ->assertJson([
                 'id' => 1,
@@ -95,6 +97,7 @@ describe('loadConfig', function () {
                 'id',
                 'tutoring_student_must_be_confirmed',
                 'tutoring_confirmer_email',
+                'may_visible_for_other_schools',
             ]);
     });
 
@@ -108,6 +111,7 @@ describe('loadConfig', function () {
                 'id',
                 'tutoring_student_must_be_confirmed',
                 'tutoring_confirmer_email',
+                'may_visible_for_other_schools',
             ]);
     });
 
@@ -124,6 +128,7 @@ describe('loadConfig', function () {
             'id',
             'tutoring_student_must_be_confirmed',
             'tutoring_confirmer_email',
+            'may_visible_for_other_schools',
         ]);
     });
 
@@ -161,6 +166,7 @@ describe('saveTutoringSettings', function () {
                 'id' => 1,
                 'tutoring_student_must_be_confirmed' => true,
                 'tutoring_confirmer_email' => 'newemail@test.com',
+                'may_visible_for_other_schools' => true,
             ],
         ];
 
@@ -171,12 +177,14 @@ describe('saveTutoringSettings', function () {
                 'id' => 1,
                 'tutoring_student_must_be_confirmed' => true,
                 'tutoring_confirmer_email' => 'newemail@test.com',
+                'may_visible_for_other_schools' => true,
             ]);
 
         $this->assertDatabaseHas('school_tools', [
             'id' => 1,
             'tutoring_student_must_be_confirmed' => true,
             'tutoring_confirmer_email' => 'newemail@test.com',
+            'may_visible_for_other_schools' => true,
         ]);
     });
 
@@ -188,6 +196,7 @@ describe('saveTutoringSettings', function () {
                 'id' => 1,
                 'tutoring_student_must_be_confirmed' => true,
                 'tutoring_confirmer_email' => 'tutoring@test.com',
+                'may_visible_for_other_schools' => false,
             ],
         ];
 
@@ -198,6 +207,7 @@ describe('saveTutoringSettings', function () {
         $this->assertDatabaseHas('school_tools', [
             'id' => 1,
             'tutoring_confirmer_email' => 'tutoring@test.com',
+            'may_visible_for_other_schools' => false,
         ]);
     });
 
@@ -211,6 +221,7 @@ describe('saveTutoringSettings', function () {
                 'id' => 1,
                 'tutoring_student_must_be_confirmed' => ! $originalValue,
                 'tutoring_confirmer_email' => 'updated@test.com',
+                'may_visible_for_other_schools' => true,
             ],
         ];
 
@@ -231,6 +242,7 @@ describe('saveTutoringSettings', function () {
                 'id' => 1,
                 'tutoring_student_must_be_confirmed' => true,
                 'tutoring_confirmer_email' => 'test@test.com',
+                'may_visible_for_other_schools' => true,
             ],
         ];
 
@@ -247,6 +259,7 @@ describe('saveTutoringSettings', function () {
                 'id' => 1,
                 'tutoring_student_must_be_confirmed' => true,
                 'tutoring_confirmer_email' => 'test@test.com',
+                'may_visible_for_other_schools' => true,
             ],
         ];
 
@@ -261,6 +274,7 @@ describe('saveTutoringSettings', function () {
                 'id' => 1,
                 'tutoring_student_must_be_confirmed' => true,
                 'tutoring_confirmer_email' => 'test@test.com',
+                'may_visible_for_other_schools' => true,
             ],
         ];
 
@@ -275,7 +289,11 @@ describe('saveTutoringSettings', function () {
         $response = $this->postJson('/api/admin/school_tools/save_tutoring_settings', []);
 
         $response->assertStatus(422)
-            ->assertJsonValidationErrors(['data.id', 'data.tutoring_student_must_be_confirmed']);
+            ->assertJsonValidationErrors([
+                'data.id',
+                'data.tutoring_student_must_be_confirmed',
+                'data.may_visible_for_other_schools',
+            ]);
     });
 
     test('save tutoring settings validates required id in data', function () {
@@ -285,6 +303,7 @@ describe('saveTutoringSettings', function () {
             'data' => [
                 'tutoring_student_must_be_confirmed' => true,
                 'tutoring_confirmer_email' => 'test@test.com',
+                'may_visible_for_other_schools' => true,
             ],
         ];
 
@@ -302,6 +321,7 @@ describe('saveTutoringSettings', function () {
                 'id' => 99999,
                 'tutoring_student_must_be_confirmed' => true,
                 'tutoring_confirmer_email' => 'test@test.com',
+                'may_visible_for_other_schools' => true,
             ],
         ];
 
@@ -320,6 +340,7 @@ describe('saveTutoringSettings', function () {
                 'id' => 1,
                 'tutoring_student_must_be_confirmed' => true,
                 'tutoring_confirmer_email' => 'invalid-email',
+                'may_visible_for_other_schools' => true,
             ],
         ];
 
@@ -337,6 +358,7 @@ describe('saveTutoringSettings', function () {
                 'id' => 1,
                 'tutoring_student_must_be_confirmed' => false,
                 'tutoring_confirmer_email' => null,
+                'may_visible_for_other_schools' => false,
             ],
         ];
 
@@ -347,6 +369,7 @@ describe('saveTutoringSettings', function () {
         $this->assertDatabaseHas('school_tools', [
             'id' => 1,
             'tutoring_confirmer_email' => null,
+            'may_visible_for_other_schools' => false,
         ]);
     });
 });

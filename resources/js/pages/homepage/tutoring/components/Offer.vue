@@ -190,8 +190,13 @@
                         <!-- OFFER STEP 6: Angebot auch für andere Schulen sichtbar -->
                         <v-card class="mt-4" v-if="step == 6">
                             <v-card-text>
-                                <label class="text-subtitle-2 mb-2 d-block">Soll dieses Angebot auch für Schüler:innen anderer Schulen sichtbar sein?</label>
-                                <v-checkbox v-model="data.visible_for_other_schools" label="Für andere Schulen sichtbar" hide-details />
+                                <!-- Darf grundätzlich für andere Schulen sichtbar sein-->
+                                <div v-if="auth.school_tool.may_visible_for_other_schools">
+                                    <label class="text-subtitle-2 mb-2 d-block">Soll dieses Angebot auch für Schüler:innen anderer Schulen sichtbar sein?</label>
+                                    <v-checkbox v-model="data.visible_for_other_schools" label="Für andere Schulen sichtbar" hide-details />
+                                </div>
+                                <!-- Darf nicht für andere Schulen sichtbar sein-->
+                                <div class="text-body-1" v-if="!auth.school_tool.may_visible_for_other_schools">Diese Angebot gilt nur innerhalb deiner Schule!</div>
                                 <v-alert type="warning" v-if="message[6]">{{ message[6] }}</v-alert>
                                 <div class="mt-4 d-flex flex-row align-center justify-space-between">
                                     <v-btn tile flat color="warning" @click="step--">Zurück</v-btn>
@@ -203,8 +208,11 @@
                         <!-- OFFER STEP 8: Fertig, Bestätigung abwarten -->
                         <v-card class="mt-4" v-if="step == 8 && selectedSubject.must_be_accepted">
                             <v-card-text>
+                                {{ selectedSubject }}
+                            </v-card-text>
+                            <v-card-text>
                                 <v-alert type="success">
-                                    <div v-if="data.id">Das Angebot für Nachhilfe wurde geändert.</div>
+                                    <div v-if="data.id">Das Angebot für Nachhilfe wurde geändert. {{ offer.id }}</div>
                                     <div v-if="!data.id">Das Angebot für Nachhilfe wurde erstellt.</div>
                                     <div>Bitte warte nun auf die Freigabe durch den/die Lehrer:in. Du bekommst Bescheid!</div>
                                 </v-alert>
@@ -230,9 +238,6 @@
                             </v-card-text>
                         </v-card>
                     </v-card>
-                </v-card-text>
-                <v-card-text>
-                    {{ offer }}
                 </v-card-text>
 
                 <!-- ERROR-->

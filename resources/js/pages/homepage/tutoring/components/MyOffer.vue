@@ -4,14 +4,14 @@
         <v-card-subtitle>{{ offer.subject.long_name }}</v-card-subtitle>
 
         <!-- NICHT/FREIGEGEBEN und ONLINE-STATUS-->
-        <v-card-text v-if="!offer.accepted_at">
+        <v-card-text v-if="offer.must_be_accepted && !offer.accepted_at">
             <v-alert type="warning">
                 <div>Bestätigung ausstehend</div>
                 <div class="text-caption">{{ offer.email_mentor }}</div>
             </v-alert>
         </v-card-text>
 
-        <v-card-text v-if="offer.accepted_at">
+        <v-card-text v-if="!offer.must_be_accepted || offer.accepted_at">
             <v-alert type="success">Freigegeben!</v-alert>
             <v-card tile flat class="mt-2" v-if="offer.is_active">
                 <v-card-title class="d-flex flex-row align-center ga-2 bg-success">
@@ -100,6 +100,8 @@
 
     <!-- OFFER   -->
     <Offer :offer="offer_to_edit" v-if="is_edit" @finished="reloadOffers" />
+
+    {{ config }}
 </template>
 <script>
 import { mapWritableState } from 'pinia'
@@ -126,8 +128,8 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useTutoringStore, ['action']),
-        ...mapWritableState(useOfferStore, []),
+        ...mapWritableState(useTutoringStore, ['action', 'config']),
+        ...mapWritableState(useOfferStore, ['offer_config']),
 
         selectedClasses() {
             // Konvertiere Object zu Array der ausgewählten Keys

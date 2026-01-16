@@ -4,10 +4,12 @@ namespace App\Services;
 
 use App\Http\Resources\Tutoring\OfferRequestResource;
 use App\Http\Resources\Tutoring\OfferResource;
+use App\Models\School;
 use App\Models\TutoringOffer;
 use App\Models\TutoringOfferRequest;
 use App\Models\TutoringSubject;
 use App\Notifications\StandardEmail;
+use Barryvdh\Debugbar\Facades\Debugbar;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
@@ -26,6 +28,14 @@ class TutoringOfferService
 
     public function create(int $schoolId, int $userId, array $data): TutoringOffer
     {
+
+        $school = School::findOrFail($schoolId);
+        $schoolTool = $school->schoolTool;
+
+        // Wenn eine Sichtbarkeit für andere Schulen generell ausgeschlossen wird => visible_for_other_schools = false
+        if (!$schoolTool->may_visible_for_other_schools) $data['visible_for_other_schools'] = false;
+
+
         $data['school_id'] = $schoolId;
         $data['user_id'] = $userId;
 
@@ -45,6 +55,18 @@ class TutoringOfferService
 
     public function update(TutoringOffer $offer, array $data): TutoringOffer
     {
+
+        $school = School::findOrFail($offer['school_id']);
+        $schoolTool = $school->schoolTool;
+        $subject = TutoringSubject::findOrFail($offer['subject_id']);
+
+        // Wenn eine Sichtbarkeit für andere Schulen generell ausgeschlossen wird => visible_for_other_schools = false
+        if (!$schoolTool->may_visible_for_other_schools) $data['visible_for_other_schools'] = false;
+
+        // Ob die Offer akzeptiert werden muss, wird vom Subject aktuell festgelegt
+        $offer->must_be_accepted = $subject->must_be_accepted;
+
+
         if ($offer->must_be_accepted) {
             $data['is_active'] = false;
         }

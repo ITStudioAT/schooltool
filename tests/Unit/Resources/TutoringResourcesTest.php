@@ -4,7 +4,9 @@ use App\Http\Resources\Tutoring\OfferNotLoggedInResource;
 use App\Http\Resources\Tutoring\OfferRequestResource;
 use App\Http\Resources\Tutoring\OfferResource as TutoringOfferResource;
 use App\Http\Resources\Tutoring\ReceivedOfferRequestResource;
+use App\Http\Resources\Tutoring\SchoolToolResource;
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\TutoringOffer;
 use App\Models\TutoringOfferRequest;
@@ -29,6 +31,22 @@ beforeEach(function () {
         'short_name' => 'MAT',
         'long_name' => 'Mathematics',
     ]);
+});
+
+test('tutoring school tool resource maps tutoring settings', function () {
+    $schoolTool = SchoolTool::create([
+        'school_id' => $this->school->id,
+        'tutoring_student_must_be_confirmed' => 1,
+        'tutoring_confirmer_email' => 'mentor@example.test',
+        'tutoring_max_offers_per_student' => 3,
+        'may_visible_for_other_schools' => 0,
+    ]);
+
+    $data = (new SchoolToolResource($schoolTool))->toArray(request());
+
+    expect($data['tutoring_student_must_be_confirmed'])->toBeTrue()
+        ->and($data['tutoring_confirmer_email'])->toBe('mentor@example.test')
+        ->and($data['may_visible_for_other_schools'])->toBeFalse();
 });
 
 test('offer not logged in resource includes subject and school when loaded', function () {

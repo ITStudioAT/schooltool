@@ -84,6 +84,7 @@ class TutoringOffer extends Model
         'must_be_accepted',
         'email_mentor',
         'click_count',
+        'visible_for_other_schools',
     ];
 
     // Protected fields: accepted_at (managed by admin approval process)

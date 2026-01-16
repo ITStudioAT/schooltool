@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\TutoringOffer;
 use App\Models\TutoringSubject;
@@ -16,6 +17,13 @@ beforeEach(function () {
 
     $this->school = School::factory()->create();
     $this->schoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+    $this->schoolTool = SchoolTool::create([
+        'school_id' => $this->school->id,
+        'tutoring_student_must_be_confirmed' => false,
+        'tutoring_confirmer_email' => null,
+        'tutoring_max_offers_per_student' => 0,
+        'may_visible_for_other_schools' => true,
+    ]);
 
     $this->user = User::factory()->create([
         'school_id' => $this->school->id,
@@ -80,6 +88,21 @@ describe('isCreatingPossible', function () {
 });
 
 describe('create', function () {
+    it('forces visible_for_other_schools to false when school disallows it', function () {
+        $this->schoolTool->update(['may_visible_for_other_schools' => false]);
+
+        $data = [
+            'subject_id' => $this->subject->id,
+            'title' => 'Mathe Nachhilfe',
+            'description' => 'Mathe Nachhilfe fr alle Klassen',
+            'price_per_hour' => 20.00,
+            'visible_for_other_schools' => true,
+        ];
+
+        $offer = $this->service->create($this->school->id, $this->user->id, $data);
+
+        expect($offer->visible_for_other_schools)->toBeFalse();
+    });
     it('creates an offer with subject that does not require acceptance', function () {
         $data = [
             'subject_id' => $this->subject->id,
@@ -299,5 +322,30 @@ describe('create', function () {
             ->and($offer2->user_id)->toBe($user2->id)
             ->and($offer1->school_id)->toBe($this->school->id)
             ->and($offer2->school_id)->toBe($this->school->id);
+    });
+});
+
+describe('update', function () {
+    it('forces visible_for_other_schools to false when school disallows it', function () {
+        $this->schoolTool->update(['may_visible_for_other_schools' => false]);
+
+        $offer = TutoringOffer::create([
+            'school_id' => $this->school->id,
+            'user_id' => $this->user->id,
+            'subject_id' => $this->subject->id,
+            'title' => 'Mathe Nachhilfe',
+            'description' => 'Mathe Nachhilfe fr alle Klassen',
+            'price_per_hour' => 20.00,
+            'visible_for_other_schools' => true,
+            'must_be_accepted' => false,
+            'is_active' => true,
+            'click_count' => 0,
+        ]);
+
+        $offer = $this->service->update($offer, [
+            'visible_for_other_schools' => true,
+        ]);
+
+        expect($offer->visible_for_other_schools)->toBeFalse();
     });
 });
