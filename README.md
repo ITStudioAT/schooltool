@@ -17,7 +17,7 @@ php artisan ide-helper:models -W
 
 ## 3.8.4
 
--   New UI-Design for MyRequests and ReceivedRequests
+-   Tutoring: User: New UI-Design for MyRequests and ReceivedRequests
 
 ## 3.8.3
 
