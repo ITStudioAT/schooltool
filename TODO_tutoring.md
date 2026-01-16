@@ -1,10 +1,8 @@
 # Next Changes
 
-## Student offer interested
+## Tutoring
 
--   E-Mail-Info über das Löschen vophp artisan testn Anfragen
-
-## EMail Logo
+-   Logo E-Mail
 
 # Ideas
 

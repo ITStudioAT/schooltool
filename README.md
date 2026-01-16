@@ -15,6 +15,10 @@ php artisan ide-helper:models -W
 
 # Last Changes
 
+## 3.8.3
+
+-   Tutoring: User: Info-E-Mail, if request is deleted
+
 ## 3.7.13 - 16.01.2025
 
 -   Tutoring: Archive received requests
