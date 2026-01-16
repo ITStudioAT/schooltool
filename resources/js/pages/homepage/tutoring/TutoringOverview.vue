@@ -807,6 +807,8 @@ export default {
     transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     overflow: hidden;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    display: flex;
+    flex-direction: column;
 }
 
 .menu-card:hover {
@@ -901,6 +903,9 @@ export default {
 .card-content {
     position: relative;
     z-index: 1;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
 }
 
 .card-icon {
@@ -939,6 +944,7 @@ export default {
     font-weight: 600;
     font-size: 0.9rem;
     transition: gap 0.3s ease;
+    margin-top: auto;
 }
 
 .menu-card:hover .card-action {

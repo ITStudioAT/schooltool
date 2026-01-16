@@ -15,6 +15,10 @@ php artisan ide-helper:models -W
 
 # Last Changes
 
+## 3.8.4
+
+-   New UI-Design for MyRequests and ReceivedRequests
+
 ## 3.8.3
 
 -   Tutoring: User: Info-E-Mail, if request is deleted
