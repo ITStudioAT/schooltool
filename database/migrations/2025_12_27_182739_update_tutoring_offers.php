@@ -11,9 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('tutoring_offers', function (Blueprint $table) {
-            $table->json('click_ips')->nullable()->after('click_count');
-        });
+        if (! Schema::hasTable('tutoring_offers')) {
+            return;
+        }
+
+        if (! Schema::hasColumn('tutoring_offers', 'click_ips')) {
+            Schema::table('tutoring_offers', function (Blueprint $table) {
+                $table->json('click_ips')->nullable()->after('click_count');
+            });
+        }
     }
 
     /**
@@ -21,8 +27,14 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('tutoring_offers', function (Blueprint $table) {
-            //
-        });
+        if (! Schema::hasTable('tutoring_offers')) {
+            return;
+        }
+
+        if (Schema::hasColumn('tutoring_offers', 'click_ips')) {
+            Schema::table('tutoring_offers', function (Blueprint $table) {
+                $table->dropColumn('click_ips');
+            });
+        }
     }
 };

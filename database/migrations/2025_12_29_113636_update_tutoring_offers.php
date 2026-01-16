@@ -11,9 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('tutoring_offers', function (Blueprint $table) {
-            $table->string('token')->nullable()->after('visible_for_other_schools');
-        });
+        if (! Schema::hasTable('tutoring_offers')) {
+            return;
+        }
+
+        if (! Schema::hasColumn('tutoring_offers', 'token')) {
+            Schema::table('tutoring_offers', function (Blueprint $table) {
+                $table->string('token')->nullable()->after('visible_for_other_schools');
+            });
+        }
     }
 
     /**
@@ -21,8 +27,14 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('tutoring_offers', function (Blueprint $table) {
-            //
-        });
+        if (! Schema::hasTable('tutoring_offers')) {
+            return;
+        }
+
+        if (Schema::hasColumn('tutoring_offers', 'token')) {
+            Schema::table('tutoring_offers', function (Blueprint $table) {
+                $table->dropColumn('token');
+            });
+        }
     }
 };

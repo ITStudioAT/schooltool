@@ -11,9 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->json('tutoring_filter')->nullable();
-        });
+        if (! Schema::hasTable('users')) {
+            return;
+        }
+
+        if (! Schema::hasColumn('users', 'tutoring_filter')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->json('tutoring_filter')->nullable();
+            });
+        }
     }
 
     /**
@@ -21,8 +27,14 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            //
-        });
+        if (! Schema::hasTable('users')) {
+            return;
+        }
+
+        if (Schema::hasColumn('users', 'tutoring_filter')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->dropColumn('tutoring_filter');
+            });
+        }
     }
 };

@@ -11,12 +11,18 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('register_dates', function (Blueprint $table) {
-            $table->unique(
-                ['school_id', 'schoolyear_id', 'register_id', 'supervisor', 'date', 'from', 'to'],
-                'register_dates_unique_slot'
-            );
-        });
+        if (! Schema::hasTable('register_dates')) {
+            return;
+        }
+
+        if (! Schema::hasIndex('register_dates', 'register_dates_unique_slot')) {
+            Schema::table('register_dates', function (Blueprint $table) {
+                $table->unique(
+                    ['school_id', 'schoolyear_id', 'register_id', 'supervisor', 'date', 'from', 'to'],
+                    'register_dates_unique_slot'
+                );
+            });
+        }
     }
 
     /**
@@ -24,8 +30,14 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('register_dates', function (Blueprint $table) {
-            //
-        });
+        if (! Schema::hasTable('register_dates')) {
+            return;
+        }
+
+        if (Schema::hasIndex('register_dates', 'register_dates_unique_slot')) {
+            Schema::table('register_dates', function (Blueprint $table) {
+                $table->dropUnique('register_dates_unique_slot');
+            });
+        }
     }
 };

@@ -11,9 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('register_date_bookings', function (Blueprint $table) {
-            $table->foreignId('user_id')->after('register_date_id');
-        });
+        if (! Schema::hasTable('register_date_bookings')) {
+            return;
+        }
+
+        if (! Schema::hasColumn('register_date_bookings', 'user_id')) {
+            Schema::table('register_date_bookings', function (Blueprint $table) {
+                $table->foreignId('user_id')->after('register_date_id');
+            });
+        }
     }
 
     /**
@@ -21,8 +27,14 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('register_date_bookings', function (Blueprint $table) {
-            //
-        });
+        if (! Schema::hasTable('register_date_bookings')) {
+            return;
+        }
+
+        if (Schema::hasColumn('register_date_bookings', 'user_id')) {
+            Schema::table('register_date_bookings', function (Blueprint $table) {
+                $table->dropColumn('user_id');
+            });
+        }
     }
 };

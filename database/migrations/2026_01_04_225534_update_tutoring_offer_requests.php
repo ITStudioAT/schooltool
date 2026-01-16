@@ -11,11 +11,25 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('tutoring_offer_requests', function (Blueprint $table) {
-            $table->integer('sent_count')->nullable()->default(0)->after('last_sent_at');
-            $table->integer('seen_count')->nullable()->default(0)->after('last_seen_at');
-            $table->timestamp('mail_at')->nullable()->after('seen_count');
-            $table->timestamp('to_user_archived_at')->nullable()->after('archived_at');
+        if (! Schema::hasTable('tutoring_offer_requests')) {
+            return;
+        }
+
+        $columns = Schema::getColumnListing('tutoring_offer_requests');
+
+        Schema::table('tutoring_offer_requests', function (Blueprint $table) use ($columns) {
+            if (!in_array('sent_count', $columns, true)) {
+                $table->integer('sent_count')->nullable()->default(0)->after('last_sent_at');
+            }
+            if (!in_array('seen_count', $columns, true)) {
+                $table->integer('seen_count')->nullable()->default(0)->after('last_seen_at');
+            }
+            if (!in_array('mail_at', $columns, true)) {
+                $table->timestamp('mail_at')->nullable()->after('seen_count');
+            }
+            if (!in_array('to_user_archived_at', $columns, true)) {
+                $table->timestamp('to_user_archived_at')->nullable()->after('archived_at');
+            }
         });
     }
 
@@ -24,8 +38,22 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('tutoring_offer_requests', function (Blueprint $table) {
-            //
-        });
+        if (! Schema::hasTable('tutoring_offer_requests')) {
+            return;
+        }
+
+        $columns = Schema::getColumnListing('tutoring_offer_requests');
+        $droppables = array_intersect($columns, [
+            'sent_count',
+            'seen_count',
+            'mail_at',
+            'to_user_archived_at',
+        ]);
+
+        if (!empty($droppables)) {
+            Schema::table('tutoring_offer_requests', function (Blueprint $table) use ($droppables) {
+                $table->dropColumn($droppables);
+            });
+        }
     }
 };

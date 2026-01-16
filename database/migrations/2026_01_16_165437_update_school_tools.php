@@ -15,9 +15,9 @@ return new class extends Migration
             return;
         }
 
-        if (! Schema::hasColumn('school_tools', 'health_at')) {
+        if (! Schema::hasColumn('school_tools', 'may_visible_for_other_schools')) {
             Schema::table('school_tools', function (Blueprint $table) {
-                $table->timestamp('health_at')->nullable();
+                $table->boolean('may_visible_for_other_schools')->default(false);
             });
         }
     }
@@ -31,9 +31,9 @@ return new class extends Migration
             return;
         }
 
-        if (Schema::hasColumn('school_tools', 'health_at')) {
+        if (Schema::hasColumn('school_tools', 'may_visible_for_other_schools')) {
             Schema::table('school_tools', function (Blueprint $table) {
-                $table->dropColumn('health_at');
+                $table->dropColumn('may_visible_for_other_schools');
             });
         }
     }

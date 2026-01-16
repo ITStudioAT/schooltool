@@ -11,13 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('school_licences', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('school_id');
-            $table->foreignId('licence_id');
-            $table->date('valid_until')->nullable();
-            $table->timestamps();
-        });
+        if (! Schema::hasTable('school_licences')) {
+            Schema::create('school_licences', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('school_id');
+                $table->foreignId('licence_id');
+                $table->date('valid_until')->nullable();
+                $table->timestamps();
+            });
+        }
     }
 
     /**

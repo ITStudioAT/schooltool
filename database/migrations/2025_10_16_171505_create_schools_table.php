@@ -11,15 +11,17 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('schools', function (Blueprint $table) {
-            $table->id();
-            $table->string('long_name')->nullable();
-            $table->string('short_name')->nullable();
-            $table->string('email')->nullable();
-            $table->string('logo')->nullable();
-            $table->boolean('is_selectable')->default(true);
-            $table->timestamps();
-        });
+        if (! Schema::hasTable('schools')) {
+            Schema::create('schools', function (Blueprint $table) {
+                $table->id();
+                $table->string('long_name')->nullable();
+                $table->string('short_name')->nullable();
+                $table->string('email')->nullable();
+                $table->string('logo')->nullable();
+                $table->boolean('is_selectable')->default(true);
+                $table->timestamps();
+            });
+        }
     }
 
     /**

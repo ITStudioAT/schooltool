@@ -11,17 +11,19 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('tutoring_offer_requests', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('school_id');
-            $table->foreignId('offer_id');
-            $table->foreignId('from_user_id');
-            $table->foreignId('to_user_id');
-            $table->text('message')->nullable();
-            $table->boolean('is_serious')->default(false);
-            $table->timestamp('archived_at')->nullable();
-            $table->timestamps();
-        });
+        if (! Schema::hasTable('tutoring_offer_requests')) {
+            Schema::create('tutoring_offer_requests', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('school_id');
+                $table->foreignId('offer_id');
+                $table->foreignId('from_user_id');
+                $table->foreignId('to_user_id');
+                $table->text('message')->nullable();
+                $table->boolean('is_serious')->default(false);
+                $table->timestamp('archived_at')->nullable();
+                $table->timestamps();
+            });
+        }
     }
 
     /**

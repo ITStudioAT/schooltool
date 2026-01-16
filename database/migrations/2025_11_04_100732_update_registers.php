@@ -11,9 +11,19 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('registers', function (Blueprint $table) {
-            $table->boolean('show_note')->default(1);
-            $table->boolean('must_note')->default(0);
+        if (! Schema::hasTable('registers')) {
+            return;
+        }
+
+        $columns = Schema::getColumnListing('registers');
+
+        Schema::table('registers', function (Blueprint $table) use ($columns) {
+            if (!in_array('show_note', $columns, true)) {
+                $table->boolean('show_note')->default(1);
+            }
+            if (!in_array('must_note', $columns, true)) {
+                $table->boolean('must_note')->default(0);
+            }
         });
     }
 
@@ -22,8 +32,17 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('registers', function (Blueprint $table) {
-            //
-        });
+        if (! Schema::hasTable('registers')) {
+            return;
+        }
+
+        $columns = Schema::getColumnListing('registers');
+        $droppables = array_intersect($columns, ['show_note', 'must_note']);
+
+        if (!empty($droppables)) {
+            Schema::table('registers', function (Blueprint $table) use ($droppables) {
+                $table->dropColumn($droppables);
+            });
+        }
     }
 };

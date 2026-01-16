@@ -11,9 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->foreignId('register_id')->after('schoolyear_id')->nullable();
-        });
+        if (! Schema::hasTable('users')) {
+            return;
+        }
+
+        if (! Schema::hasColumn('users', 'register_id')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->foreignId('register_id')->after('schoolyear_id')->nullable();
+            });
+        }
     }
 
     /**
@@ -21,8 +27,14 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            //
-        });
+        if (! Schema::hasTable('users')) {
+            return;
+        }
+
+        if (Schema::hasColumn('users', 'register_id')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->dropColumn('register_id');
+            });
+        }
     }
 };

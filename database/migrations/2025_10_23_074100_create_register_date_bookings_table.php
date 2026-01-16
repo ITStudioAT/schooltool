@@ -11,17 +11,19 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('register_date_bookings', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('school_id');
-            $table->foreignId('schoolyear_id');
-            $table->foreignId('register_id');
-            $table->foreignId('register_date_id');
-            $table->string('student_last_name')->nullable();
-            $table->string('student_first_name')->nullable();
-            $table->date('student_birthdate')->nullable();
-            $table->timestamps();
-        });
+        if (! Schema::hasTable('register_date_bookings')) {
+            Schema::create('register_date_bookings', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('school_id');
+                $table->foreignId('schoolyear_id');
+                $table->foreignId('register_id');
+                $table->foreignId('register_date_id');
+                $table->string('student_last_name')->nullable();
+                $table->string('student_first_name')->nullable();
+                $table->date('student_birthdate')->nullable();
+                $table->timestamps();
+            });
+        }
     }
 
     /**

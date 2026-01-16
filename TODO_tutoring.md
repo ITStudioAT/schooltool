@@ -2,9 +2,8 @@
 
 ## Student offer interested
 
--   Empfangene Archivieren
 -   Allow, to be searched in other schools
--   E-Mail-Info übner das Löschen vopn Anfragen
+-   E-Mail-Info über das Löschen vopn Anfragen
 
 ## EMail Logo
 

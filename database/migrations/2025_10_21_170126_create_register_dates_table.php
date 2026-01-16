@@ -11,18 +11,20 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('register_dates', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('school_id');
-            $table->foreignId('schoolyear_id');
-            $table->foreignId('register_id');
-            $table->string('supervisor')->nullable();
-            $table->date('date')->nullable();
-            $table->time('from');
-            $table->time('to');
-            $table->unsignedInteger('max_registrations')->default(0);
-            $table->timestamps();
-        });
+        if (! Schema::hasTable('register_dates')) {
+            Schema::create('register_dates', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('school_id');
+                $table->foreignId('schoolyear_id');
+                $table->foreignId('register_id');
+                $table->string('supervisor')->nullable();
+                $table->date('date')->nullable();
+                $table->time('from');
+                $table->time('to');
+                $table->unsignedInteger('max_registrations')->default(0);
+                $table->timestamps();
+            });
+        }
     }
 
     /**

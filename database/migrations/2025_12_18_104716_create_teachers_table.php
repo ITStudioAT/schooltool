@@ -11,17 +11,19 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('teachers', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('school_id');
-            $table->string('last_name');
-            $table->string('first_name')->nullable();
-            $table->string('short');
-            $table->string('email');
-            $table->string('token')->nullable();
-            $table->timestamp('token_expires_at')->nullable();
-            $table->timestamps();
-        });
+        if (! Schema::hasTable('teachers')) {
+            Schema::create('teachers', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('school_id');
+                $table->string('last_name');
+                $table->string('first_name')->nullable();
+                $table->string('short');
+                $table->string('email');
+                $table->string('token')->nullable();
+                $table->timestamp('token_expires_at')->nullable();
+                $table->timestamps();
+            });
+        }
     }
 
     /**

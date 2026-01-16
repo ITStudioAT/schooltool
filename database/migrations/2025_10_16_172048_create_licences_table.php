@@ -11,14 +11,16 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('licences', function (Blueprint $table) {
-            $table->id();
-            $table->string('name')->nullable();
-            $table->string('long_name')->nullable();
-            $table->unsignedInteger('price_per_year')->nullable();
-            $table->boolean('is_selectable')->default(true);
-            $table->timestamps();
-        });
+        if (! Schema::hasTable('licences')) {
+            Schema::create('licences', function (Blueprint $table) {
+                $table->id();
+                $table->string('name')->nullable();
+                $table->string('long_name')->nullable();
+                $table->unsignedInteger('price_per_year')->nullable();
+                $table->boolean('is_selectable')->default(true);
+                $table->timestamps();
+            });
+        }
     }
 
     /**

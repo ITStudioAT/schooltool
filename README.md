@@ -15,6 +15,10 @@ php artisan ide-helper:models -W
 
 # Last Changes
 
+## 3.7.13 - 16.01.2025
+
+-   Tutoring: Archive received requests
+
 ## 3.4.1 - 18.12.2025
 
 -   Laravel Horizon implementated
