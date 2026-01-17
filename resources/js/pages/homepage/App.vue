@@ -16,6 +16,7 @@
                 <v-row justify="center" no-gutters>
                     <v-col cols="12" class="text-center">
                         <v-btn text variant="text" to="/homepage/impressum">Impressum</v-btn>
+                        <v-btn text variant="text" @click="openCookiePrefs">Cookie-Einstellungen</v-btn>
                     </v-col>
                 </v-row>
             </v-footer>
@@ -45,7 +46,23 @@ export default {
     computed: {
         ...mapWritableState(useHomepageStore, ['config', 'error', 'school', 'licence', 'is_loading']),
     },
-    methods: {},
+    methods: {
+        openCookiePrefs() {
+            if (typeof window.showHideToggleCookiePreferencesModal === 'function') {
+                window.showHideToggleCookiePreferencesModal()
+                return
+            } else {
+                // Retry shortly after reloads when the cookie script is still loading.
+                setTimeout(() => {
+                    if (typeof window.showHideToggleCookiePreferencesModal === 'function') {
+                        window.showHideToggleCookiePreferencesModal()
+                    } else {
+                        console.warn('Cookie consent function not loaded yet.')
+                    }
+                }, 300)
+            }
+        },
+    },
 }
 </script>
 <style>

@@ -1,5 +1,7 @@
 <?php
 
+use DragonCode\Support\Helpers\Str;
+
 return [
 
     /*
@@ -128,6 +130,7 @@ return [
         // ...
         // 'Spa' => App\Facades\SpaFacade::class,
         'Pdf' => Spatie\LaravelPdf\Facades\Pdf::class,
+        'Str' => Illuminate\Support\Str::class
     ],
 
 

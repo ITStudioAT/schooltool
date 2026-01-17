@@ -15,7 +15,7 @@ php artisan ide-helper:models -W
 
 # Last Changes
 
-## 3.9.4
+## 3.9.4/3.9.5
 
 - Cookie Consent DSGVO
 
