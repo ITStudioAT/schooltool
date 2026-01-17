@@ -15,82 +15,86 @@ php artisan ide-helper:models -W
 
 # Last Changes
 
+## 3.9.4
+
+- Cookie Consent DSGVO
+
 ## 3.9.3
 
--   Manual disabled
+- Manual disabled
 
 ## 3.9.2
 
--   Register: User: Next step, when pressing enter
+- Register: User: Next step, when pressing enter
 
 ## 3.9.0/3.9.1
 
--   Register: User: New UI-Design
+- Register: User: New UI-Design
 
 ## 3.8.4
 
--   Tutoring: User: New UI-Design for MyRequests and ReceivedRequests
+- Tutoring: User: New UI-Design for MyRequests and ReceivedRequests
 
 ## 3.8.3
 
--   Tutoring: User: Info-E-Mail, if request is deleted
+- Tutoring: User: Info-E-Mail, if request is deleted
 
 ## 3.7.13 - 16.01.2025
 
--   Tutoring: Archive received requests
+- Tutoring: Archive received requests
 
 ## 3.4.1 - 18.12.2025
 
--   Laravel Horizon implementated
+- Laravel Horizon implementated
 
 ## 3.3.0 - 17.12.2025
 
--   Tutoring alpha merged in Main
+- Tutoring alpha merged in Main
 
 ## 3.2.13 - 21.11.2025
 
--   Entry-Point changed
+- Entry-Point changed
 
 ## 3.2.12 - 20.11.2025
 
--   Super-Admin: Bei Erstellung, Löschen von Schulen oder Upload von Schul-Logo: Erstellen bzw. korrekte Verwendung von Verzeichnissen
+- Super-Admin: Bei Erstellung, Löschen von Schulen oder Upload von Schul-Logo: Erstellen bzw. korrekte Verwendung von Verzeichnissen
 
 ## 3.2.11 - 17.11.2025
 
--   User-Übersicht für Super-Admin mit:
--   Selektion nach Rolle
--   Erstellen, Ändern, Löschen von Benutzern
--   More pest tests added
+- User-Übersicht für Super-Admin mit:
+- Selektion nach Rolle
+- Erstellen, Ändern, Löschen von Benutzern
+- More pest tests added
 
 ## 3.2.10 - 16.11.2025
 
--   Many pest tests added
+- Many pest tests added
 
 ## 3.2.9 - 15.11.2025
 
--   Übersicht über Benutzer im Anmeldetool
--   Bereinigen Benutzer ohne Anmeldung
+- Übersicht über Benutzer im Anmeldetool
+- Bereinigen Benutzer ohne Anmeldung
 
 ## 3.2.8 - 15.11.2025
 
--   Optionale 2-Faktoren-Authentifizierung
+- Optionale 2-Faktoren-Authentifizierung
 
 ## 3.2.7 - 15.11.2025
 
--   Deleting test-files, when updating app
--   Queue test updated
+- Deleting test-files, when updating app
+- Queue test updated
 
 ## 3.2.6 - 14.11.2025
 
--   Queue Test
+- Queue Test
 
 ## 3.2.5 - 13.11.2025
 
--   Added some Pest tests for Service-Classes
+- Added some Pest tests for Service-Classes
 
 ## 3.2.3 – 3.2.4 - 12.11.2025
 
 ### Anmeldetool
 
--   Breitere Spalten bei allen Ansichten
--   Nach Buchung löschen: sofortige Akualisierung der Buchungen
+- Breitere Spalten bei allen Ansichten
+- Nach Buchung löschen: sofortige Akualisierung der Buchungen
