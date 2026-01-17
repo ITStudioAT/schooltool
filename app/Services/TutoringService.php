@@ -69,7 +69,7 @@ class TutoringService
         $mail = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
-            'logo' => asset('/storage/images/' . $school->logo),
+            'logo' => asset('/storage/images/logos/' . $school->logo),
             'subject' => 'E-Mail bestätigen',
             'markdown' => 'mails.homepage.sendCode',
             'token_2fa' => $token2fa,
@@ -134,7 +134,7 @@ class TutoringService
         $mail = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
-            'logo' => asset('/storage/images/' . $school->logo),
+            'logo' => asset('/storage/images/logos/' . $school->logo),
             'subject' => 'Tutoring-User bestätigen',
             'markdown' => 'mails.admin.confirmTutoringUser',
             'full_name' => "{$user->last_name} {$user->first_name}",
@@ -172,7 +172,7 @@ class TutoringService
         $mail = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
-            'logo' => asset('/storage/images/' . $school->logo),
+            'logo' => asset('/storage/images/logos/' . $school->logo),
             'subject' => 'Nachhilfe freigeschatet',
             'markdown' => 'mails.admin.informTutoringUserIsConfirmed',
             'full_name' => "{$user->last_name} {$user->first_name}",
@@ -216,7 +216,7 @@ class TutoringService
         $mail = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
-            'logo' => asset('/storage/images/' . $school->logo),
+            'logo' => asset('/storage/images/logos/' . $school->logo),
             'subject' => 'Login mit Code',
             'markdown' => 'mails.homepage.sendCode',
             'token_2fa' => $token2fa,

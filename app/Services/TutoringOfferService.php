@@ -111,7 +111,7 @@ class TutoringOfferService
         $mail = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
-            'logo' => asset('/storage/images/' . $school->logo),
+            'logo' => asset('/storage/images/logos/' . $school->logo),
             'subject' => 'Nachhilfe-Angebot wurde aktualisiert',
             'markdown' => 'mails.homepage.offerCreatedOrUpdated',
             'data' => $data,
@@ -163,7 +163,7 @@ class TutoringOfferService
         $mail = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
-            'logo' => asset('/storage/images/' . $school->logo),
+            'logo' => asset('/storage/images/logos/' . $school->logo),
             'subject' => $emailSubject,
             'markdown' => 'mails.tutoring.offerConfirmedOrRefused',
             'data' => $data,
@@ -236,7 +236,7 @@ class TutoringOfferService
         $mail = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
-            'logo' => asset('/storage/images/' . $school->logo),
+            'logo' => asset('/storage/images/logos/' . $school->logo),
             'subject' => $emailSubject,
             'markdown' => 'mails.tutoring.offerRequest',
             'data' => ['url' => url("/homepage/tutoring/offer_request?{$params}")],
@@ -271,7 +271,7 @@ class TutoringOfferService
         $mail = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
-            'logo' => asset('/storage/images/' . $school->logo),
+            'logo' => asset('/storage/images/logos/' . $school->logo),
             'subject' => $emailSubject,
             'markdown' => 'mails.tutoring.offerRequestStorno',
             'data' => ['url' => url("/homepage/tutoring_overview/?{$params}")],
