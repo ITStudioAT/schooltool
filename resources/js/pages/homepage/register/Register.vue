@@ -17,7 +17,7 @@
             <div class="school-header-card">
                 <div class="school-header-content">
                     <div class="school-logo-wrapper" v-if="config?.school?.logo">
-                        <img :src="`/storage/images/${config?.school?.logo}`" alt="Logo" class="school-logo" />
+                        <img :src="`/storage/images/logos/${config?.school?.logo}`" alt="Logo" class="school-logo" />
                     </div>
                     <div class="school-icon-wrapper" v-else>
                         <v-icon size="48" color="white">mdi-school</v-icon>
@@ -67,22 +67,15 @@
                             label="Registrierung auswählen"
                             variant="outlined"
                             prepend-inner-icon="mdi-magnify"
+                            @keydown.enter.prevent="selected_register_id && selectRegister()"
                             hide-details
-                            class="mb-6"
-                        />
+                            class="mb-6" />
                         <div class="form-actions">
-                            <v-btn color="grey" variant="tonal" size="large" rounded="lg" to="/">
+                            <v-btn type="button" color="grey" variant="tonal" size="large" rounded="lg" to="/">
                                 <v-icon start>mdi-arrow-left</v-icon>
                                 Zurück
                             </v-btn>
-                            <v-btn
-                                color="success"
-                                variant="flat"
-                                size="large"
-                                rounded="lg"
-                                @click="selectRegister"
-                                :disabled="!selected_register_id"
-                            >
+                            <v-btn color="success" variant="flat" size="large" rounded="lg" type="submit" :disabled="!selected_register_id">
                                 Weiter
                                 <v-icon end>mdi-arrow-right</v-icon>
                             </v-btn>
@@ -117,36 +110,30 @@
                             <p class="step-subtitle">Bitte geben Sie Ihre E-Mail-Adresse ein</p>
                         </div>
                     </div>
-
-                    <v-form ref="form" v-model="is_valid" @submit.prevent="checkEmail(data)" class="step-form">
-                        <v-text-field
-                            autofocus
-                            v-model="data.email"
-                            label="E-Mail-Adresse"
-                            placeholder="ihre.email@beispiel.at"
-                            variant="outlined"
-                            prepend-inner-icon="mdi-email"
-                            :rules="[required(), mail()]"
-                            class="mb-6"
-                        />
-                        <div class="form-actions">
-                            <v-btn color="grey" variant="tonal" size="large" rounded="lg" to="/">
-                                <v-icon start>mdi-arrow-left</v-icon>
-                                Zurück
-                            </v-btn>
-                            <v-btn
-                                color="success"
-                                variant="flat"
-                                size="large"
-                                rounded="lg"
-                                type="submit"
-                                :disabled="!data.email"
-                            >
-                                Weiter
-                                <v-icon end>mdi-arrow-right</v-icon>
-                            </v-btn>
-                        </div>
-                    </v-form>
+                    <div>
+                        <v-form ref="form" v-model="is_valid" @submit.prevent="checkEmail(data)" class="step-form">
+                            <v-text-field
+                                autofocus
+                                v-model="data.email"
+                                label="E-Mail-Adresse"
+                                placeholder="ihre.email@beispiel.at"
+                                variant="outlined"
+                                prepend-inner-icon="mdi-email"
+                                :rules="[required(), mail()]"
+                                class="mb-6"
+                                tabindex="1" />
+                            <div class="form-actions">
+                                <v-btn type="button" color="grey" variant="tonal" size="large" rounded="lg" to="/">
+                                    <v-icon start>mdi-arrow-left</v-icon>
+                                    Zurück
+                                </v-btn>
+                                <v-btn color="success" variant="flat" size="large" rounded="lg" type="submit" :disabled="!data.email" tabindex="2">
+                                    Weiter
+                                    <v-icon end>mdi-arrow-right</v-icon>
+                                </v-btn>
+                            </div>
+                        </v-form>
+                    </div>
                 </div>
             </div>
 
@@ -173,24 +160,13 @@
 
                     <v-form ref="form" v-model="is_valid" @submit.prevent="confirmEmail(data)" class="step-form">
                         <div class="otp-label">Bitte den Code eingeben:</div>
-                        <v-otp-input
-                            autofocus
-                            v-model="data.token_2fa"
-                            class="otp-input mb-6"
-                        />
+                        <v-otp-input autofocus v-model="data.token_2fa" class="otp-input mb-6" />
                         <div class="form-actions">
-                            <v-btn color="grey" variant="tonal" size="large" rounded="lg" @click="startRegister">
+                            <v-btn type="button" color="grey" variant="tonal" size="large" rounded="lg" @click="startRegister">
                                 <v-icon start>mdi-refresh</v-icon>
                                 Neustart
                             </v-btn>
-                            <v-btn
-                                color="success"
-                                variant="flat"
-                                size="large"
-                                rounded="lg"
-                                type="submit"
-                                :disabled="!data.email"
-                            >
+                            <v-btn color="success" variant="flat" size="large" rounded="lg" type="submit" :disabled="!data.email">
                                 Bestätigen
                                 <v-icon end>mdi-check</v-icon>
                             </v-btn>
@@ -221,16 +197,14 @@
                             variant="outlined"
                             prepend-inner-icon="mdi-account"
                             :rules="[required(), maxLength(255)]"
-                            class="mb-4"
-                        />
+                            class="mb-4" />
                         <v-text-field
                             v-model="data.first_name"
                             label="Ihr Vorname"
                             variant="outlined"
                             prepend-inner-icon="mdi-account-outline"
                             :rules="[maxLength(255)]"
-                            class="mb-4"
-                        />
+                            class="mb-4" />
                         <v-text-field
                             v-if="active_register.show_phone"
                             v-model="data.phone"
@@ -238,21 +212,13 @@
                             variant="outlined"
                             prepend-inner-icon="mdi-phone"
                             :rules="[active_register.must_phone ? required() : () => true, minLength(8), maxLength(255)]"
-                            class="mb-6"
-                        />
+                            class="mb-6" />
                         <div class="form-actions">
-                            <v-btn color="grey" variant="tonal" size="large" rounded="lg" @click="startRegister">
+                            <v-btn type="button" color="grey" variant="tonal" size="large" rounded="lg" @click="startRegister">
                                 <v-icon start>mdi-refresh</v-icon>
                                 Neustart
                             </v-btn>
-                            <v-btn
-                                color="success"
-                                variant="flat"
-                                size="large"
-                                rounded="lg"
-                                type="submit"
-                                :disabled="!data.email"
-                            >
+                            <v-btn color="success" variant="flat" size="large" rounded="lg" type="submit" :disabled="!data.email">
                                 Weiter
                                 <v-icon end>mdi-arrow-right</v-icon>
                             </v-btn>
@@ -284,24 +250,13 @@
 
                     <v-form ref="form" v-model="is_valid" @submit.prevent="loginToken(data)" class="step-form">
                         <div class="otp-label">Bitte den Code eingeben:</div>
-                        <v-otp-input
-                            autofocus
-                            v-model="data.token_2fa"
-                            class="otp-input mb-6"
-                        />
+                        <v-otp-input autofocus v-model="data.token_2fa" class="otp-input mb-6" />
                         <div class="form-actions">
-                            <v-btn color="grey" variant="tonal" size="large" rounded="lg" @click="startRegister">
+                            <v-btn type="button" color="grey" variant="tonal" size="large" rounded="lg" @click="startRegister">
                                 <v-icon start>mdi-refresh</v-icon>
                                 Neustart
                             </v-btn>
-                            <v-btn
-                                color="success"
-                                variant="flat"
-                                size="large"
-                                rounded="lg"
-                                type="submit"
-                                :disabled="!data.email"
-                            >
+                            <v-btn color="success" variant="flat" size="large" rounded="lg" type="submit" :disabled="!data.email">
                                 Anmelden
                                 <v-icon end>mdi-login</v-icon>
                             </v-btn>
@@ -377,17 +332,15 @@ export default {
         },
 
         async saveUserData(data) {
-            this.is_valid = false
-            await this.$refs.form.validate()
-            if (!this.is_valid) return
+            const { valid } = await this.$refs.form.validate()
+            if (!valid) return
             if (!(await this.registerStore.saveUserData(data))) return
             this.$router.push('/homepage/register2')
         },
 
         async checkEmail(data) {
-            this.is_valid = false
-            await this.$refs.form.validate()
-            if (!this.is_valid) return
+            const { valid } = await this.$refs.form.validate()
+            if (!valid) return
             if (!this.active_register) {
                 console.error('active_register is null')
                 return
@@ -447,7 +400,7 @@ export default {
 .orb-1 {
     width: 500px;
     height: 500px;
-    background: linear-gradient(135deg, #3AAA35 0%, #2d8a2a 100%);
+    background: linear-gradient(135deg, #3aaa35 0%, #2d8a2a 100%);
     top: -150px;
     right: -150px;
     animation-delay: 0s;
@@ -456,7 +409,7 @@ export default {
 .orb-2 {
     width: 400px;
     height: 400px;
-    background: linear-gradient(135deg, #37474F 0%, #263238 100%);
+    background: linear-gradient(135deg, #37474f 0%, #263238 100%);
     bottom: -100px;
     left: -100px;
     animation-delay: -12s;
@@ -464,7 +417,8 @@ export default {
 }
 
 @keyframes float {
-    0%, 100% {
+    0%,
+    100% {
         transform: translate(0, 0) scale(1);
     }
     33% {
@@ -499,7 +453,8 @@ export default {
 }
 
 @keyframes drift {
-    0%, 100% {
+    0%,
+    100% {
         transform: translate(0, 0);
         opacity: 0;
     }
@@ -540,7 +495,7 @@ export default {
 
 /* School Header Card */
 .school-header-card {
-    background: linear-gradient(135deg, #37474F 0%, #263238 100%);
+    background: linear-gradient(135deg, #37474f 0%, #263238 100%);
     border-radius: 20px;
     padding: 28px 24px;
     box-shadow: 0 10px 40px rgba(55, 71, 79, 0.3);
@@ -553,9 +508,10 @@ export default {
 }
 
 .school-logo-wrapper {
-    width: 72px;
-    height: 72px;
-    background: white;
+    width: 96px;
+    height: 96px;
+    /* background: white; */
+    background: rgba(255, 255, 255, 0.25);
     border-radius: 16px;
     display: flex;
     align-items: center;
@@ -603,7 +559,7 @@ export default {
 
 /* Register Info Card */
 .register-info-card {
-    background: linear-gradient(135deg, #3AAA35 0%, #2d8a2a 100%);
+    background: linear-gradient(135deg, #3aaa35 0%, #2d8a2a 100%);
     border-radius: 16px;
     padding: 16px 20px;
     color: white;
@@ -650,7 +606,7 @@ export default {
     left: 0;
     right: 0;
     height: 4px;
-    background: linear-gradient(90deg, #3AAA35, #4bc044);
+    background: linear-gradient(90deg, #3aaa35, #4bc044);
 }
 
 .card-inner {
@@ -699,7 +655,7 @@ export default {
 
 .step-subtitle {
     font-size: 0.9rem;
-    color: #607D8B;
+    color: #607d8b;
     margin: 4px 0 0 0;
 }
 
@@ -725,7 +681,7 @@ export default {
 .otp-label {
     font-size: 0.95rem;
     font-weight: 500;
-    color: #546E7A;
+    color: #546e7a;
     margin-bottom: 12px;
 }
 
@@ -752,7 +708,7 @@ export default {
 
 .empty-text {
     font-size: 1rem;
-    color: #607D8B;
+    color: #607d8b;
     margin: 0;
     line-height: 1.6;
 }

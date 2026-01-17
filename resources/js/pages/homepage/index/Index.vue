@@ -18,7 +18,8 @@
                         </span>
                     </div>
                     <h1 class="brand-title">
-                        <span class="brand-school">School</span><span class="brand-tool">Tool</span>
+                        <span class="brand-school">School</span>
+                        <span class="brand-tool">Tool</span>
                     </h1>
                     <p class="brand-tagline">Digitale Werkzeuge für moderne Schulen</p>
                 </div>
@@ -36,9 +37,7 @@
                                     <v-icon size="40">mdi-calendar-check</v-icon>
                                 </div>
                                 <h3 class="card-title">Anmeldetool</h3>
-                                <p class="card-description">
-                                    Einfache Anmeldung zu Schulveranstaltungen, Elternabenden und Events.
-                                </p>
+                                <p class="card-description">Einfache Anmeldung zu Schulveranstaltungen, Elternabenden und Events.</p>
                                 <div class="card-action">
                                     <span class="action-text">Starten</span>
                                     <v-icon size="20">mdi-arrow-right</v-icon>
@@ -50,17 +49,14 @@
                         <div
                             class="tool-card card-tutoring"
                             :class="{ 'card-disabled': !config?.tutoring_active }"
-                            @click="config?.tutoring_active && loadSchoolsForTool('Nachhilfetool')"
-                        >
+                            @click="config?.tutoring_active && loadSchoolsForTool('Nachhilfetool')">
                             <div class="card-glow"></div>
                             <div class="card-content">
                                 <div class="card-icon">
                                     <v-icon size="40">mdi-account-group</v-icon>
                                 </div>
                                 <h3 class="card-title">Schüler helfen Schülern</h3>
-                                <p class="card-description">
-                                    Nachhilfe von Schülern für Schüler. Gemeinsam zum Erfolg.
-                                </p>
+                                <p class="card-description">Nachhilfe von Schülern für Schüler. Gemeinsam zum Erfolg.</p>
                                 <div class="card-action" v-if="config?.tutoring_active">
                                     <span class="action-text">Starten</span>
                                     <v-icon size="20">mdi-arrow-right</v-icon>
@@ -80,9 +76,7 @@
                                     <v-icon size="40">mdi-food</v-icon>
                                 </div>
                                 <h3 class="card-title">Mittagsmenüs</h3>
-                                <p class="card-description">
-                                    Online-Bestellung für das Schulbuffet. Schnell und unkompliziert.
-                                </p>
+                                <p class="card-description">Online-Bestellung für das Schulbuffet. Schnell und unkompliziert.</p>
                                 <div class="card-action">
                                     <span class="action-text">Zum Buffet</span>
                                     <v-icon size="20">mdi-open-in-new</v-icon>
@@ -137,8 +131,7 @@
                                 variant="outlined"
                                 prepend-inner-icon="mdi-magnify"
                                 class="school-autocomplete"
-                                hide-details
-                            />
+                                hide-details />
 
                             <div v-else class="no-schools">
                                 <v-icon size="48" color="warning">mdi-alert-circle-outline</v-icon>
@@ -159,25 +152,17 @@
                                 <p class="school-short">{{ selected_school.short_name }}</p>
                             </div>
 
-                            <div class="confirmation-actions">
-                                <v-btn
-                                    variant="outlined"
-                                    color="grey"
-                                    size="large"
-                                    @click="abort('selectSchool')"
-                                >
-                                    <v-icon start>mdi-pencil</v-icon>
-                                    Andere Schule
-                                </v-btn>
-                                <v-btn
-                                    variant="flat"
-                                    :color="licence?.name === 'Anmeldetool' ? 'success' : 'warning'"
-                                    size="large"
-                                    @click="moveTo(licence, selected_school)"
-                                >
-                                    Weiter
-                                    <v-icon end>mdi-arrow-right</v-icon>
-                                </v-btn>
+                            <div>
+                                <v-form class="confirmation-actions" @submit.prevent="moveTo(licence, selected_school)">
+                                    <v-btn variant="outlined" color="grey" size="large" @click="abort('selectSchool')">
+                                        <v-icon start>mdi-pencil</v-icon>
+                                        Andere Schule
+                                    </v-btn>
+                                    <v-btn ref="submitBtn" variant="flat" :color="licence?.name === 'Anmeldetool' ? 'success' : 'warning'" size="large" type="submit">
+                                        Weiter
+                                        <v-icon end>mdi-arrow-right</v-icon>
+                                    </v-btn>
+                                </v-form>
                             </div>
                         </div>
                     </v-card-text>
@@ -193,6 +178,7 @@
 </template>
 
 <script>
+import { nextTick } from 'vue'
 import { mapWritableState } from 'pinia'
 import { useHomepageStore } from '@/stores/homepage/HomepageStore'
 
@@ -228,11 +214,18 @@ export default {
     watch: {
         selected_school_id() {
             this.selected_school = this.schools.find((item) => item.id == this.selected_school_id)
+            nextTick(() => {
+                this.$refs.submitBtn?.$el?.focus()
+            })
         },
     },
 
     methods: {
+        doAlert() {
+            alert('1')
+        },
         moveTo(licence, school) {
+            console.log('moveTo')
             var path = '/homepage/'
             switch (licence.name) {
                 case 'Anmeldetool':
@@ -305,7 +298,7 @@ export default {
 .orb-1 {
     width: 600px;
     height: 600px;
-    background: linear-gradient(135deg, #3AAA35 0%, #2d8a2a 100%);
+    background: linear-gradient(135deg, #3aaa35 0%, #2d8a2a 100%);
     top: -200px;
     left: -200px;
     animation-delay: 0s;
@@ -314,7 +307,7 @@ export default {
 .orb-2 {
     width: 500px;
     height: 500px;
-    background: linear-gradient(135deg, #F39200 0%, #d67f00 100%);
+    background: linear-gradient(135deg, #f39200 0%, #d67f00 100%);
     bottom: -150px;
     right: -150px;
     animation-delay: -7s;
@@ -323,7 +316,7 @@ export default {
 .orb-3 {
     width: 400px;
     height: 400px;
-    background: linear-gradient(135deg, #37474F 0%, #263238 100%);
+    background: linear-gradient(135deg, #37474f 0%, #263238 100%);
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
@@ -332,7 +325,8 @@ export default {
 }
 
 @keyframes float {
-    0%, 100% {
+    0%,
+    100% {
         transform: translate(0, 0) scale(1);
     }
     25% {
@@ -387,7 +381,7 @@ export default {
     justify-content: center;
     width: 80px;
     height: 80px;
-    background: linear-gradient(135deg, #3AAA35 0%, #F39200 100%);
+    background: linear-gradient(135deg, #3aaa35 0%, #f39200 100%);
     border-radius: 20px;
     margin-bottom: 20px;
     box-shadow: 0 10px 40px rgba(58, 170, 53, 0.3);
@@ -395,7 +389,8 @@ export default {
 }
 
 @keyframes pulse-glow {
-    0%, 100% {
+    0%,
+    100% {
         box-shadow: 0 10px 40px rgba(58, 170, 53, 0.3);
     }
     50% {
@@ -412,16 +407,16 @@ export default {
 }
 
 .brand-school {
-    color: #3AAA35;
+    color: #3aaa35;
 }
 
 .brand-tool {
-    color: #37474F;
+    color: #37474f;
 }
 
 .brand-tagline {
     font-size: clamp(1rem, 3vw, 1.4rem);
-    color: #546E7A;
+    color: #546e7a;
     margin-top: 12px;
     font-weight: 400;
 }
@@ -446,7 +441,7 @@ export default {
     text-align: center;
     font-size: 1.5rem;
     font-weight: 600;
-    color: #37474F;
+    color: #37474f;
     margin-bottom: 32px;
 }
 
@@ -494,15 +489,15 @@ export default {
 }
 
 .card-register .card-glow {
-    background: linear-gradient(90deg, #3AAA35, #4BC044);
+    background: linear-gradient(90deg, #3aaa35, #4bc044);
 }
 
 .card-tutoring .card-glow {
-    background: linear-gradient(90deg, #F39200, #FFB74D);
+    background: linear-gradient(90deg, #f39200, #ffb74d);
 }
 
 .card-lunch .card-glow {
-    background: linear-gradient(90deg, #3AAA35, #4BC044);
+    background: linear-gradient(90deg, #3aaa35, #4bc044);
 }
 
 .card-content {
@@ -530,17 +525,17 @@ export default {
 
 .card-register .card-icon {
     background: linear-gradient(135deg, rgba(58, 170, 53, 0.15), rgba(58, 170, 53, 0.05));
-    color: #3AAA35;
+    color: #3aaa35;
 }
 
 .card-tutoring .card-icon {
     background: linear-gradient(135deg, rgba(243, 146, 0, 0.15), rgba(243, 146, 0, 0.05));
-    color: #F39200;
+    color: #f39200;
 }
 
 .card-lunch .card-icon {
     background: linear-gradient(135deg, rgba(58, 170, 53, 0.15), rgba(58, 170, 53, 0.05));
-    color: #3AAA35;
+    color: #3aaa35;
 }
 
 .card-title {
@@ -552,7 +547,7 @@ export default {
 
 .card-description {
     font-size: 1rem;
-    color: #607D8B;
+    color: #607d8b;
     line-height: 1.6;
     margin: 0 0 24px 0;
 }
@@ -568,15 +563,15 @@ export default {
 }
 
 .card-register .card-action {
-    color: #3AAA35;
+    color: #3aaa35;
 }
 
 .card-tutoring .card-action {
-    color: #F39200;
+    color: #f39200;
 }
 
 .card-lunch .card-action {
-    color: #3AAA35;
+    color: #3aaa35;
 }
 
 .tool-card:hover .card-action {
@@ -599,7 +594,7 @@ export default {
     align-items: center;
     gap: 6px;
     background: rgba(243, 146, 0, 0.1);
-    color: #F39200;
+    color: #f39200;
     padding: 8px 16px;
     border-radius: 20px;
     font-size: 0.85rem;
@@ -618,7 +613,7 @@ export default {
     display: inline-flex;
     align-items: center;
     gap: 10px;
-    color: #546E7A;
+    color: #546e7a;
     text-decoration: none;
     font-size: 1rem;
     font-weight: 500;
@@ -632,7 +627,7 @@ export default {
 
 .docs-link:hover {
     background: white;
-    color: #37474F;
+    color: #37474f;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
 }
 
@@ -676,11 +671,11 @@ export default {
 }
 
 .header-green {
-    background: linear-gradient(135deg, #3AAA35 0%, #2d8a2a 100%);
+    background: linear-gradient(135deg, #3aaa35 0%, #2d8a2a 100%);
 }
 
 .header-orange {
-    background: linear-gradient(135deg, #F39200 0%, #d67f00 100%);
+    background: linear-gradient(135deg, #f39200 0%, #d67f00 100%);
 }
 
 .back-btn {
@@ -728,7 +723,7 @@ export default {
 .picker-title {
     font-size: 1.25rem;
     font-weight: 600;
-    color: #37474F;
+    color: #37474f;
     margin: 0 0 24px 0;
 }
 
@@ -739,7 +734,7 @@ export default {
 .no-schools {
     text-align: center;
     padding: 24px;
-    color: #78909C;
+    color: #78909c;
 }
 
 .no-schools p {
@@ -774,7 +769,7 @@ export default {
 
 .school-short {
     font-size: 1rem;
-    color: #78909C;
+    color: #78909c;
     margin: 0;
 }
 
@@ -813,7 +808,8 @@ export default {
 }
 
 @keyframes drift {
-    0%, 100% {
+    0%,
+    100% {
         transform: translate(0, 0) rotate(0deg);
         opacity: 0;
     }

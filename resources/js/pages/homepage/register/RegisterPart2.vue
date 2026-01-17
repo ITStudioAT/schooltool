@@ -17,10 +17,10 @@
             <div class="school-header-card">
                 <div class="school-header-content">
                     <div class="school-logo-wrapper" v-if="config?.school?.logo">
-                        <img :src="`/storage/images/${config?.school?.logo}`" alt="Logo" class="school-logo" />
+                        <img :src="`/storage/images/logos/${config?.school?.logo}`" alt="Logo" class="school-logo" />
                     </div>
                     <div class="school-icon-wrapper" v-else>
-                        <v-icon size="48" color="white">mdi-school</v-icon>
+                        <v-icon size="48" color="green">mdi-school</v-icon>
                     </div>
                     <div class="school-info">
                         <h1 class="school-name">{{ config?.school?.long_name }}</h1>
@@ -87,8 +87,7 @@
                                 :variant="selected_date == date ? 'flat' : 'outlined'"
                                 size="large"
                                 class="date-chip"
-                                @click="selectDate(date)"
-                            >
+                                @click="selectDate(date)">
                                 <div class="date-chip-content">
                                     <span class="date-weekday">{{ date.weekday }}</span>
                                     <span class="date-date">{{ date.date }}</span>
@@ -107,20 +106,15 @@
                                 class="time-slot"
                                 :class="{
                                     'time-slot-selected': selected_register_date.includes(register_date.id),
-                                    'time-slot-disabled': register_date.is_locked || register_date.max_registrations - register_date.bookings_count == 0
+                                    'time-slot-disabled': register_date.is_locked || register_date.max_registrations - register_date.bookings_count == 0,
                                 }"
-                                @click="!register_date.is_locked && (register_date.max_registrations - register_date.bookings_count > 0) && toggleTimeSlot(register_date.id)"
-                            >
+                                @click="!register_date.is_locked && register_date.max_registrations - register_date.bookings_count > 0 && toggleTimeSlot(register_date.id)">
                                 <div class="time-slot-time">
                                     <v-icon size="20" class="mr-2">mdi-clock-outline</v-icon>
                                     {{ register_date.from }} - {{ register_date.to }} Uhr
                                 </div>
                                 <div class="time-slot-status">
-                                    <v-chip
-                                        size="small"
-                                        :color="getSlotStatusColor(register_date)"
-                                        variant="tonal"
-                                    >
+                                    <v-chip size="small" :color="getSlotStatusColor(register_date)" variant="tonal">
                                         <v-icon start size="14">{{ getSlotStatusIcon(register_date) }}</v-icon>
                                         {{ getSlotStatusText(register_date) }}
                                     </v-chip>
@@ -135,14 +129,7 @@
                             <v-icon start>mdi-logout</v-icon>
                             Abmelden
                         </v-btn>
-                        <v-btn
-                            color="success"
-                            variant="flat"
-                            size="large"
-                            rounded="lg"
-                            @click="editKid"
-                            :disabled="selected_register_date.length == 0"
-                        >
+                        <v-btn color="success" variant="flat" size="large" rounded="lg" @click="editKid" :disabled="selected_register_date.length == 0">
                             Weiter
                             <v-icon end>mdi-arrow-right</v-icon>
                         </v-btn>
@@ -184,13 +171,7 @@
                                 </div>
                             </div>
                             <div class="booking-actions">
-                                <v-btn
-                                    color="error"
-                                    variant="tonal"
-                                    size="small"
-                                    rounded="lg"
-                                    @click="deleteBooking(booking)"
-                                >
+                                <v-btn color="error" variant="tonal" size="small" rounded="lg" @click="deleteBooking(booking)">
                                     <v-icon start>mdi-delete</v-icon>
                                     Stornieren
                                 </v-btn>
@@ -252,8 +233,7 @@
                             variant="outlined"
                             prepend-inner-icon="mdi-account"
                             :rules="active_register.must_student_last_name ? [required(), maxLength(255)] : [maxLength(255)]"
-                            class="mb-4"
-                        />
+                            class="mb-4" />
                         <v-text-field
                             v-if="active_register.show_student_first_name"
                             v-model="data.student_first_name"
@@ -261,8 +241,7 @@
                             variant="outlined"
                             prepend-inner-icon="mdi-account-outline"
                             :rules="active_register.must_student_first_name ? [required(), maxLength(255)] : [maxLength(255)]"
-                            class="mb-4"
-                        />
+                            class="mb-4" />
                         <v-text-field
                             v-if="active_register.show_student_birthdate"
                             v-model="data.student_birthdate"
@@ -270,8 +249,7 @@
                             variant="outlined"
                             prepend-inner-icon="mdi-cake-variant"
                             :rules="active_register.must_student_birthdate ? [required(), date()] : [date()]"
-                            class="mb-4"
-                        />
+                            class="mb-4" />
                         <v-text-field
                             v-if="active_register.show_note"
                             v-model="data.note"
@@ -279,21 +257,14 @@
                             variant="outlined"
                             prepend-inner-icon="mdi-note-text"
                             :rules="active_register.must_note ? [required(), maxLength(255)] : [maxLength(255)]"
-                            class="mb-6"
-                        />
+                            class="mb-6" />
 
                         <div class="form-actions">
                             <v-btn color="grey" variant="tonal" size="large" rounded="lg" @click="backToDateSelection">
                                 <v-icon start>mdi-arrow-left</v-icon>
                                 Zurück
                             </v-btn>
-                            <v-btn
-                                color="success"
-                                variant="flat"
-                                size="large"
-                                rounded="lg"
-                                type="submit"
-                            >
+                            <v-btn color="success" variant="flat" size="large" rounded="lg" type="submit">
                                 <v-icon start>mdi-check</v-icon>
                                 Jetzt buchen
                             </v-btn>
@@ -551,7 +522,7 @@ export default {
 .orb-1 {
     width: 500px;
     height: 500px;
-    background: linear-gradient(135deg, #3AAA35 0%, #2d8a2a 100%);
+    background: linear-gradient(135deg, #3aaa35 0%, #2d8a2a 100%);
     top: -150px;
     right: -150px;
     animation-delay: 0s;
@@ -560,7 +531,7 @@ export default {
 .orb-2 {
     width: 400px;
     height: 400px;
-    background: linear-gradient(135deg, #37474F 0%, #263238 100%);
+    background: linear-gradient(135deg, #37474f 0%, #263238 100%);
     bottom: -100px;
     left: -100px;
     animation-delay: -12s;
@@ -568,7 +539,8 @@ export default {
 }
 
 @keyframes float {
-    0%, 100% {
+    0%,
+    100% {
         transform: translate(0, 0) scale(1);
     }
     33% {
@@ -603,7 +575,8 @@ export default {
 }
 
 @keyframes drift {
-    0%, 100% {
+    0%,
+    100% {
         transform: translate(0, 0);
         opacity: 0;
     }
@@ -644,7 +617,7 @@ export default {
 
 /* School Header Card */
 .school-header-card {
-    background: linear-gradient(135deg, #37474F 0%, #263238 100%);
+    background: linear-gradient(135deg, #37474f 0%, #263238 100%);
     border-radius: 20px;
     padding: 24px;
     box-shadow: 0 10px 40px rgba(55, 71, 79, 0.3);
@@ -657,16 +630,18 @@ export default {
 }
 
 .school-logo-wrapper {
-    width: 64px;
-    height: 64px;
-    background: white;
+    width: 96px;
+    height: 96px;
+    /* background: white; */
+    background: rgba(255, 255, 255, 0.25);
+
     border-radius: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
     overflow: hidden;
-    padding: 6px;
+    padding: 2px;
 }
 
 .school-logo {
@@ -707,7 +682,7 @@ export default {
 
 /* Register Info Card */
 .register-info-card {
-    background: linear-gradient(135deg, #3AAA35 0%, #2d8a2a 100%);
+    background: linear-gradient(135deg, #3aaa35 0%, #2d8a2a 100%);
     border-radius: 16px;
     padding: 16px 20px;
     color: white;
@@ -745,7 +720,7 @@ export default {
 .user-avatar {
     width: 52px;
     height: 52px;
-    background: linear-gradient(135deg, #3AAA35 0%, #2d8a2a 100%);
+    background: linear-gradient(135deg, #3aaa35 0%, #2d8a2a 100%);
     border-radius: 12px;
     display: flex;
     align-items: center;
@@ -775,7 +750,7 @@ export default {
     display: flex;
     align-items: center;
     font-size: 0.85rem;
-    color: #607D8B;
+    color: #607d8b;
 }
 
 /* Content Card */
@@ -798,11 +773,11 @@ export default {
     left: 0;
     right: 0;
     height: 4px;
-    background: linear-gradient(90deg, #3AAA35, #4bc044);
+    background: linear-gradient(90deg, #3aaa35, #4bc044);
 }
 
 .card-glow-success {
-    background: linear-gradient(90deg, #4CAF50, #66BB6A);
+    background: linear-gradient(90deg, #4caf50, #66bb6a);
 }
 
 .card-inner {
@@ -847,7 +822,7 @@ export default {
 
 .section-subtitle {
     font-size: 0.9rem;
-    color: #607D8B;
+    color: #607d8b;
     margin: 4px 0 0 0;
 }
 
@@ -859,7 +834,7 @@ export default {
 .date-label {
     font-size: 0.95rem;
     font-weight: 600;
-    color: #37474F;
+    color: #37474f;
     margin-bottom: 12px;
 }
 
@@ -904,7 +879,7 @@ export default {
 .time-label {
     font-size: 0.95rem;
     font-weight: 600;
-    color: #37474F;
+    color: #37474f;
     margin-bottom: 12px;
 }
 
@@ -933,7 +908,7 @@ export default {
 
 .time-slot-selected {
     background: #e8f5e9;
-    border-color: #4CAF50;
+    border-color: #4caf50;
 }
 
 .time-slot-disabled {
@@ -945,7 +920,7 @@ export default {
     display: flex;
     align-items: center;
     font-weight: 600;
-    color: #37474F;
+    color: #37474f;
 }
 
 /* Fixed Confirm Hint */
@@ -957,7 +932,7 @@ export default {
     z-index: 1000;
     padding: 16px 20px;
     padding-bottom: calc(16px + env(safe-area-inset-bottom));
-    background: linear-gradient(135deg, #4CAF50 0%, #2e7d32 100%);
+    background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
     color: white;
     cursor: pointer;
     box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
@@ -973,7 +948,8 @@ export default {
 }
 
 @keyframes bounce-hint {
-    0%, 100% {
+    0%,
+    100% {
         transform: translateY(0);
     }
     50% {
@@ -1027,7 +1003,7 @@ export default {
     display: flex;
     align-items: center;
     font-size: 0.95rem;
-    color: #37474F;
+    color: #37474f;
 }
 
 .booking-student {
@@ -1067,7 +1043,7 @@ export default {
 
 .appointment-label {
     font-size: 0.85rem;
-    color: #4CAF50;
+    color: #4caf50;
     font-weight: 500;
     margin-bottom: 4px;
 }
@@ -1124,7 +1100,7 @@ export default {
 
 .success-subtitle {
     font-size: 1rem;
-    color: #607D8B;
+    color: #607d8b;
     margin: 0 0 24px 0;
 }
 
@@ -1142,7 +1118,7 @@ export default {
     display: flex;
     align-items: center;
     font-size: 0.95rem;
-    color: #37474F;
+    color: #37474f;
 }
 
 /* Form Actions */
