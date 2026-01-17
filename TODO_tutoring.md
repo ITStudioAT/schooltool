@@ -1,8 +1,12 @@
 # Next Changes
 
+## DSGVO
+
 ## Tutoring
 
--   Logo E-Mail
+- Logo E-Mail
+
+### Testing
 
 # Ideas
 
