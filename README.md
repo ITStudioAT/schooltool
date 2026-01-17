@@ -15,6 +15,14 @@ php artisan ide-helper:models -W
 
 # Last Changes
 
+## 3.9.3
+
+-   Manual disabled
+
+## 3.9.2
+
+-   Register: User: Next step, when pressing enter
+
 ## 3.9.0/3.9.1
 
 -   Register: User: New UI-Design

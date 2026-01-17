@@ -86,13 +86,14 @@
                     </div>
                 </div>
 
-                <!-- Documentation Link -->
+                <!-- Documentation Link 
                 <div class="docs-section">
                     <a href="/documentation" class="docs-link">
                         <v-icon size="24">mdi-book-open-page-variant</v-icon>
                         <span>Handbuch & Dokumentation</span>
                     </a>
                 </div>
+                -->
             </div>
         </section>
 
