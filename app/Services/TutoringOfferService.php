@@ -87,7 +87,7 @@ class TutoringOfferService
 
     public function sendOfferToMentor(TutoringOffer $offer): void
     {
-        $offer->token = Str::uuid();
+        $offer->token =  (string) Str::uuid();
         $offer->token_expires_at = Carbon::now()->addMinutes((int) config('schooltool.token_expire_time'));
         $offer->save();
 
@@ -112,8 +112,45 @@ class TutoringOfferService
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
             'logo' => asset('/storage/images/logos/' . $school->logo),
-            'subject' => 'Nachhilfe-Angebot wurde aktualisiert',
+            'subject' => 'Nachhilfe-Angebot wurde erstellt/aktualisiert',
             'markdown' => 'mails.homepage.offerCreatedOrUpdated',
+            'data' => $data,
+        ];
+
+        Debugbar::info(asset('/storage/images/logos/' . $school->logo));
+
+        Notification::route('mail', $offer->email_mentor)->notify(new StandardEmail($mail));
+    }
+
+    public function sendOfferDeletedToMentor(TutoringOffer $offer): void
+    {
+        $offer->token =  (string) Str::uuid();
+        $offer->token_expires_at = Carbon::now()->addMinutes((int) config('schooltool.token_expire_time'));
+        $offer->save();
+
+        $school = $offer->school;
+        $baseParams = http_build_query([
+            'offer_id' => $offer->id,
+            'token' => $offer->token,
+            'email_mentor' => $offer->email_mentor,
+        ]);
+
+        $data = [
+            'student' => "{$offer->user->last_name} {$offer->user->first_name} ( {$offer->user->schoolclass} )",
+            'student_email' => $offer->user->email,
+            'subject' => "{$offer->subject->short_name} ({$offer->subject->long_name})",
+            'offer' => $offer,
+            'url_confirm' => url("/homepage/tutoring/offer?action=confirm&{$baseParams}"),
+            'url_refuse' => url("/homepage/tutoring/offer?action=refuse&{$baseParams}"),
+            'url_login' => url('/admin/login'),
+        ];
+
+        $mail = [
+            'from_address' => config('schooltool.noreply_email'),
+            'from_name' => $school->long_name,
+            'logo' => asset('/storage/images/logos/' . $school->logo),
+            'subject' => 'Nachhilfe-Angebot wurde gelöscht',
+            'markdown' => 'mails.tutoring.offerDeleted',
             'data' => $data,
         ];
 
@@ -219,7 +256,7 @@ class TutoringOfferService
         $school = $offerRequest->school;
         $user = $offerRequest->to_user;
 
-        $offerRequest->token = Str::uuid();
+        $offerRequest->token = (string) Str::uuid();
         $offerRequest->token_expires_at = Carbon::now()->addMinutes((int) config('schooltool.token_expire_time'));
         $offerRequest->save();
 
@@ -255,7 +292,7 @@ class TutoringOfferService
         $school = $offerRequest->school;
         $user = $offerRequest->to_user;
 
-        $offerRequest->token = Str::uuid();
+        $offerRequest->token = (string) Str::uuid();
         $offerRequest->token_expires_at = Carbon::now()->addMinutes((int) config('schooltool.token_expire_time'));
         $offerRequest->save();
 

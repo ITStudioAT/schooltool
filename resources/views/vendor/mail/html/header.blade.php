@@ -2,9 +2,10 @@
 <tr>
     <td class="header">
         <a href="{{ $url }}" style="display: inline-block;">
-            @if (trim($slot) === 'Laravel')
-            <img src="http://localhost:8000/storage/images/cdg.png" alt="Logo" width="200"
-                height="100" style="max-width:200px !important; max-height:100px !important;">
+            @if ($logo)
+            <img src="{{ $logo }}" alt="Logo" style="max-width:200px; height:auto;">
+            @elseif (trim($slot) === 'Laravel')
+            <img src="{{ asset('/storage/images/cdg.png') }}" alt="Logo" style="max-width:200px; height:auto;">
             @else
             {!! $slot !!}
             @endif

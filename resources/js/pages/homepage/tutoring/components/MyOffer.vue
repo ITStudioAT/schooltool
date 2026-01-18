@@ -40,13 +40,7 @@
                         <v-icon size="18">{{ offer.is_active ? 'mdi-web' : 'mdi-web-off' }}</v-icon>
                         <span>{{ offer.is_active ? 'ONLINE' : 'OFFLINE' }}</span>
                     </div>
-                    <v-btn
-                        :color="offer.is_active ? 'error' : 'success'"
-                        variant="tonal"
-                        size="small"
-                        rounded="lg"
-                        @click="toggleActive(offer)"
-                    >
+                    <v-btn :color="offer.is_active ? 'error' : 'success'" variant="tonal" size="small" rounded="lg" @click="toggleActive(offer)">
                         {{ offer.is_active ? 'Ausschalten' : 'Einschalten' }}
                     </v-btn>
                 </div>
@@ -109,50 +103,31 @@
         <!-- Valid Until -->
         <div class="validity-section">
             <v-icon size="16" class="mr-1">mdi-calendar-clock</v-icon>
-            <span>Gültig bis: </span>
+            <span>Gültig bis:</span>
             <strong v-if="offer.active_until">{{ formattedActiveUntil }}</strong>
             <strong v-else>Unbegrenzt</strong>
         </div>
 
         <!-- Actions -->
         <div class="card-actions">
-            <v-btn
-                color="primary"
-                variant="flat"
-                rounded="lg"
-                @click="editOffer(offer)"
-            >
-                <v-icon start>mdi-pencil</v-icon>
-                Bearbeiten
-            </v-btn>
+            <template v-if="delete_level == 0">
+                <v-btn color="primary" variant="flat" rounded="lg" @click="editOffer(offer)">
+                    <v-icon start>mdi-pencil</v-icon>
+                    Bearbeiten
+                </v-btn>
 
-            <v-btn
-                v-if="delete_level == 0"
-                color="warning"
-                variant="tonal"
-                rounded="lg"
-                @click="delete_level = 1"
-            >
-                <v-icon start>mdi-delete</v-icon>
-                Löschen
-            </v-btn>
+                <v-btn color="warning" variant="tonal" rounded="lg" @click="delete_level = 1">
+                    <v-icon start>mdi-delete</v-icon>
+                    Löschen
+                </v-btn>
+            </template>
 
             <template v-if="delete_level == 1">
-                <v-btn
-                    color="success"
-                    variant="tonal"
-                    rounded="lg"
-                    @click="delete_level = 0"
-                >
+                <v-btn color="success" variant="tonal" rounded="lg" @click="delete_level = 0">
                     <v-icon start>mdi-close</v-icon>
-                    Abbruch
+                    Abbrechen
                 </v-btn>
-                <v-btn
-                    color="error"
-                    variant="flat"
-                    rounded="lg"
-                    @click="deleteOffer(offer)"
-                >
+                <v-btn color="error" variant="flat" rounded="lg" @click="deleteOffer(offer)">
                     <v-icon start>mdi-delete-forever</v-icon>
                     Bestätigen
                 </v-btn>
@@ -237,7 +212,7 @@ export default {
         },
 
         async deleteOffer(offer) {
-            if (!(await this.offerStore.deleteOffer(offer.id))) return
+            if (!(await this.offerStore.delete(offer))) return
             await this.offerStore.loadMyOffers()
             this.delete_level = 0
         },
@@ -273,11 +248,11 @@ export default {
 }
 
 .glow-online {
-    background: linear-gradient(90deg, #3AAA35, #4BC044);
+    background: linear-gradient(90deg, #3aaa35, #4bc044);
 }
 
 .glow-offline {
-    background: linear-gradient(90deg, #78909C, #90A4AE);
+    background: linear-gradient(90deg, #78909c, #90a4ae);
 }
 
 /* Card Header */
@@ -292,7 +267,7 @@ export default {
 .subject-badge {
     width: 48px;
     height: 48px;
-    background: linear-gradient(135deg, #3AAA35, #2d8a2a);
+    background: linear-gradient(135deg, #3aaa35, #2d8a2a);
     border-radius: 12px;
     display: flex;
     align-items: center;
@@ -321,7 +296,7 @@ export default {
 
 .offer-title {
     font-size: 0.85rem;
-    color: #607D8B;
+    color: #607d8b;
     display: block;
 }
 
@@ -352,12 +327,12 @@ export default {
 .status-label {
     font-weight: 600;
     font-size: 0.85rem;
-    color: #E65100;
+    color: #e65100;
 }
 
 .status-detail {
     font-size: 0.75rem;
-    color: #FF9800;
+    color: #ff9800;
 }
 
 .status-approved {
@@ -379,7 +354,7 @@ export default {
 
 .status-badge.success {
     background: rgba(58, 170, 53, 0.1);
-    color: #2E7D32;
+    color: #2e7d32;
 }
 
 .online-toggle {
@@ -401,11 +376,11 @@ export default {
 }
 
 .toggle-status.is-online {
-    color: #2E7D32;
+    color: #2e7d32;
 }
 
 .toggle-status.is-offline {
-    color: #78909C;
+    color: #78909c;
 }
 
 /* Stats Section */
@@ -443,7 +418,7 @@ export default {
 
 .stat-label {
     font-size: 0.7rem;
-    color: #90A4AE;
+    color: #90a4ae;
     text-transform: uppercase;
     letter-spacing: 0.3px;
 }
@@ -455,7 +430,7 @@ export default {
 
 .description-text {
     font-size: 0.9rem;
-    color: #546E7A;
+    color: #546e7a;
     line-height: 1.5;
     margin: 0;
     white-space: pre-line;
@@ -479,7 +454,7 @@ export default {
 .classes-label {
     font-size: 0.8rem;
     font-weight: 600;
-    color: #546E7A;
+    color: #546e7a;
 }
 
 .classes-chips {
@@ -491,7 +466,7 @@ export default {
 .class-chip {
     padding: 4px 10px;
     background: rgba(58, 170, 53, 0.1);
-    color: #2E7D32;
+    color: #2e7d32;
     border-radius: 12px;
     font-size: 0.75rem;
     font-weight: 500;
@@ -499,7 +474,7 @@ export default {
 
 .chip-upper {
     background: rgba(243, 146, 0, 0.1);
-    color: #E65100;
+    color: #e65100;
 }
 
 /* Validity */
@@ -508,11 +483,11 @@ export default {
     display: flex;
     align-items: center;
     font-size: 0.85rem;
-    color: #607D8B;
+    color: #607d8b;
 }
 
 .validity-section strong {
-    color: #37474F;
+    color: #37474f;
     margin-left: 4px;
 }
 

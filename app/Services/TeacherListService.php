@@ -7,6 +7,7 @@ use App\Models\Teacher;
 use App\Models\User;
 use App\Notifications\StandardEmail;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 
 class TeacherListService
@@ -145,6 +146,8 @@ class TeacherListService
         $teacher->token = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         $teacher->token_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
         $teacher->save();
+
+        Log::info($email);
 
         $mail = [
             'from_address' => env('MAIL_FROM_ADDRESS'),

@@ -106,13 +106,11 @@ class TutoringController extends Controller
         $validated = $request->validated();
         $user = User::findOrFail($validated['user_id']);
 
-        Debugbar::info($validated);
-
         if ($service->confirmUser($validated['user_id'], $validated['token'])) {
 
             return redirect('/homepage/tutoring_response?title=Benutzer wurde erfolgreich bestätigt!&subtitle=' . $user->last_name . ' ' . $user->first_name . ' (' . $user->schoolclass . ')&text=Die Anfrage wurde genehmigt!&status=BESTÄTIGT');
         } else {
-            return redirect('/homepage/tutoring_response?title=Benutzer wurde abgelehnt!&subtitle=' . $user->last_name . ' ' . $user->first_name . ' (' . $user->schoolclass . ')&text=Die Anfrage wurde nicht genehmigt!&status=ABGELEHNT');
+            return redirect('/homepage/tutoring_response?title=Benutzer wurde abgelehnt!&subtitle=' . $user->last_name . ' ' . $user->first_name . ' (' . $user->schoolclass . ')&text=Eventuell erfolgte schon früher die Genehmigung!&status=ABGELEHNT');
         }
     }
 

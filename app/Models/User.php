@@ -267,7 +267,7 @@ class User extends Authenticatable
 
     public function generateUuid(): string
     {
-        $this->uuid = Str::uuid();
+        $this->uuid = (string) Str::uuid();
         $this->uuid_at = now();
         $this->save();
 

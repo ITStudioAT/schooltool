@@ -682,7 +682,7 @@ test('toActive requires request_id parameter', function () {
 // ============================
 
 test('offerRequest requires valid email', function () {
-    $token = Str::uuid();
+    $token = (string)  Str::uuid();
 
     $response = $this->get('/homepage/tutoring/offer_request?' . http_build_query([
         'email' => 'invalid-email',
@@ -704,7 +704,7 @@ test('offerRequest requires valid token format', function () {
 });
 
 test('offerRequest requires id parameter', function () {
-    $token = Str::uuid();
+    $token = (string)  Str::uuid();
 
     $response = $this->get('/homepage/tutoring/offer_request?' . http_build_query([
         'email' => 'test@example.com',

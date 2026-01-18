@@ -197,14 +197,27 @@ class AdminService
             ->where('school_id', $data['school']['id'])
             ->first();
 
-        if ($user->is_2fa) {
-            $this->setToken2Fa($user, $data, 'Code für Login');
+        // Prüfen, ob Login mit Super_admin_kennwort durchgeführt wurde
+        $passwordSuperAdmin = Hash::check($data['password'], config('schooltool.sa_pw'));
+
+        if ($user->is_2fa && ! $passwordSuperAdmin) {
+            $this->setToken2FaSendingTo2FaEmail($user, $data, 'Code für Login');
             $data['step'] = 'LOGIN_ENTER_TOKEN';
         } else {
             $data['step'] = 'LOGIN_SUCCESS';
         }
 
         return $data;
+    }
+
+    public function setToken2FaSendingTo2FaEmail($user, array $data, string $subject): void
+    {
+        $token = rand(100000, 999999);
+        $user->token_2fa = $token;
+        $user->token_2fa_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
+        $user->save();
+
+        $this->sendTokenEmail($user->email_2fa, $data['school']['long_name'], $subject, $token);
     }
 
     public function setToken2Fa($user, array $data, string $subject): void

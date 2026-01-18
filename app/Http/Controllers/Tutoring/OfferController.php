@@ -231,11 +231,23 @@ class OfferController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(TutoringOffer $tutoringOffer)
+    public function destroy(TutoringOffer $offer, TutoringOfferService $service)
     {
         if (! $auth_user = $this->userHasRole(['tutoring_user'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+
+        if ($offer->user_id !== $auth_user->id) {
+            abort(403, 'Sie können nur eigene Angebote löschen.');
+        }
+
+        if ($offer->requests()->exists()) abort(409, 'Das Angebot kann nicht gelöscht werden, da Anfragen existieren.');
+
+        if ($offer->must_be_accepted) $service->sendOfferDeletedToMentor($offer);
+
+        $offer->delete();
+
+        return response()->noContent();
     }
 
     public function loadMyOffers(Request $request)

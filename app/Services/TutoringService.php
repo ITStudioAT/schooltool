@@ -177,7 +177,7 @@ class TutoringService
             'markdown' => 'mails.admin.informTutoringUserIsConfirmed',
             'full_name' => "{$user->last_name} {$user->first_name}",
             'email' => $user->email,
-            'login_url' => url('/homepage/tutoring?school=' . $school->short_name),
+            'login_url' => url('/homepage/tutoring_overview?school=' . $school->short_name),
         ];
 
         Notification::route('mail', $user->email)->notify(new StandardEmail($mail));
