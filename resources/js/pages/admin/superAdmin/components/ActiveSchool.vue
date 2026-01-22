@@ -1,5 +1,6 @@
 <template>
-    <v-col cols="12" md="6" xl="4">
+    <!-- NUR FÜR SUPER_ADMIN -->
+    <v-col cols="12" md="6" xl="4" v-if="config.roles.includes('super_admin')">
         <ItsGridBox color="primary" title="Aktive Schule" class="w-100">
             <div class="d-flex flex-row align-start">
                 <v-card tile flat color="transparent" class="w-100">
@@ -217,10 +218,13 @@ export default {
         this.adminStore = useAdminStore()
         this.schoolStore = useSchoolStore()
         this.licenceStore = useLicenceStore()
-        await this.schoolStore.loadSwitchableSchools()
-        if (this.config.selected_school.id) await this.schoolStore.loadSchoolInfos(this.config.selected_school.id)
-        await this.licenceStore.loadLicences()
-        await this.adminStore.loadRoles()
+
+        if (this.config.roles.includes('super_admin')) {
+            await this.schoolStore.loadSwitchableSchools()
+            if (this.config.selected_school.id) await this.schoolStore.loadSchoolInfos(this.config.selected_school.id)
+            await this.licenceStore.loadLicences()
+            await this.adminStore.loadRoles()
+        }
     },
 
     unmounted() {},

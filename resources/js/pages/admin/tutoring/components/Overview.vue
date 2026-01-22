@@ -47,7 +47,10 @@
                                             {{ item.subject.short_name + ': ' + item.title }}
                                         </div>
                                         <div class="d-flex flex-row align-center ga-2">
-                                            {{ item?.user?.last_name + ' ' + item?.user?.first_name + ' (' + item?.user?.schoolclass + ', ' + item?.user?.email + ')' }}
+                                            <v-icon color="error" size="small" icon="mdi-lock" v-if="!item?.user?.is_active" />
+                                            <div>
+                                                {{ item?.user?.last_name + ' ' + item?.user?.first_name + ' (' + item?.user?.schoolclass + ', ' + item?.user?.email + ')' }}
+                                            </div>
                                         </div>
 
                                         <div class="text-body-2 d-flex flex-row align-center ga-2 w-100" v-if="!item.accepted_at">
@@ -92,6 +95,29 @@
                             v-if="!selectedOffer.accepted_at">
                             Genehmigen
                         </v-btn>
+
+                        <v-btn
+                            block
+                            tile
+                            flat
+                            color="error"
+                            class="text-caption"
+                            prepend-icon="mdi-lock"
+                            @click="toggleIsActive(selectedOffer?.user?.id)"
+                            v-if="selectedOffer?.user?.is_active">
+                            Sperren
+                        </v-btn>
+                        <v-btn
+                            block
+                            tile
+                            flat
+                            color="success"
+                            class="text-caption"
+                            prepend-icon="mdi-lock-open"
+                            @click="toggleIsActive(selectedOffer?.user?.id)"
+                            v-if="!selectedOffer?.user?.is_active">
+                            Entsperren
+                        </v-btn>
                         <div v-if="selectedOffer.accepted_at">
                             <v-btn
                                 block
@@ -121,6 +147,9 @@
                         <v-btn block tile flat color="error" class="text-caption" prepend-icon="mdi-delete" @click="doDelete(selectedOffer)" v-if="delete_level == 1">
                             Löschen
                         </v-btn>
+                    </div>
+                    <div>
+                        {{ selectedOffer?.user?.is_active }}
                     </div>
                 </v-card>
             </div>
@@ -287,6 +316,7 @@
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { useUserStore } from '@/stores/admin/UserStore20'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import SearchField from '@/pages/components/SearchField.vue'
@@ -305,6 +335,7 @@ export default {
 
     async beforeMount() {
         this.adminStore = useAdminStore()
+        this.userStore = useUserStore()
         this.offerStore = useOfferStore()
         this.select_only_me_concerning = true
         this.selected_offers = []
@@ -318,6 +349,7 @@ export default {
     data() {
         return {
             adminStore: null,
+            userStore: null,
             offerStore: null,
             is_valid: false,
             delete_level: 0,
@@ -353,6 +385,10 @@ export default {
     watch: {},
 
     methods: {
+        async toggleIsActive(user_id) {
+            await this.userStore.toggleIsActive(user_id)
+            await this.offerStore.index(this.meta.current_page)
+        },
         async doDelete(offer) {
             this.selected_offers = []
             this.delete_level = 0
@@ -361,6 +397,7 @@ export default {
             await this.offerStore.getStats()
         },
         async doRecordtoggleAccepted(id) {
+            this.selected_offers = []
             await this.offerStore.toggleAccepted(id)
             await this.offerStore.index(this.meta.current_page)
             await this.offerStore.getStats()

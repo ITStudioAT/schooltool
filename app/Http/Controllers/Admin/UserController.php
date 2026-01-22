@@ -32,6 +32,7 @@ use App\Traits\PaginationTrait;
 use Illuminate\Auth\Events\Validated;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 
 class UserController extends Controller
 {
@@ -39,7 +40,7 @@ class UserController extends Controller
 
     public function loadUsers(UserIndexRequest $request)
     {
-        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+        if (! $auth_user = $this->userHasRole(['super_admin', 'admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -72,7 +73,7 @@ class UserController extends Controller
 
     public function updateUser(UserUpdateUserRequest $request, UserService $service)
     {
-        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+        if (! $auth_user = $this->userHasRole(['super_admin', 'admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
         $validated = $request->validated();
@@ -95,7 +96,7 @@ class UserController extends Controller
 
     public function deleteUsers(UserDeleteUsersRequest $request, UserService $service)
     {
-        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+        if (! $auth_user = $this->userHasRole(['super_admin', 'admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -510,7 +511,8 @@ class UserController extends Controller
 
     public function toggleIsActive(Request $request, AdminService $service)
     {
-        if (! $auth_user = $this->userHasRole(['super_admin', 'admin', 'tutoring_admin'])) {
+        Log::info('Hallo');
+        if (! $auth_user = $this->userHasRole(['super_admin', 'admin', 'tutoring_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -524,6 +526,8 @@ class UserController extends Controller
         }
         $user->is_active = !$user->is_active;
         $user->save();
+
+        $service->informUserToBeBlockedOrNot($user);
 
         return response()->json(new UserResource($user), 200);
     }

@@ -110,7 +110,20 @@ class TutoringController extends Controller
 
             return redirect('/homepage/tutoring_response?title=Benutzer wurde erfolgreich bestätigt!&subtitle=' . $user->last_name . ' ' . $user->first_name . ' (' . $user->schoolclass . ')&text=Die Anfrage wurde genehmigt!&status=BESTÄTIGT');
         } else {
-            return redirect('/homepage/tutoring_response?title=Benutzer wurde abgelehnt!&subtitle=' . $user->last_name . ' ' . $user->first_name . ' (' . $user->schoolclass . ')&text=Eventuell erfolgte schon früher die Genehmigung!&status=ABGELEHNT');
+            return redirect('/homepage/tutoring_response?title=Benutzer wurde nicht bestätigt!&subtitle=' . $user->last_name . ' ' . $user->first_name . ' (' . $user->schoolclass . ')&text=Eventuell erfolgte schon früher die Genehmigung!&status=ZURÜCKGEWIESEN');
+        }
+    }
+
+    public function refuseUser(TutoringConfirmUserRequest $request, TutoringService $service)
+    {
+        $validated = $request->validated();
+        $user = User::findOrFail($validated['user_id']);
+
+        if ($service->refuseUser($validated['user_id'], $validated['token'])) {
+
+            return redirect('/homepage/tutoring_response?title=Benutzer wurde abgelehnt!&subtitle=' . $user->last_name . ' ' . $user->first_name . ' (' . $user->schoolclass . ')&text=Die Ablehnung wurde durchgeführt!&status=ABGELEHNT');
+        } else {
+            return redirect('/homepage/tutoring_response?title=Benutzer wurde nicht abgelehnt!&subtitle=' . $user->last_name . ' ' . $user->first_name . ' (' . $user->schoolclass . ')&text=Eventuell erfolgte schon früher die Ablehnung!&status=ZURÜCKGEWIESEN');
         }
     }
 

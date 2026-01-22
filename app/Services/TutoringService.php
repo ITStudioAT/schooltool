@@ -143,6 +143,10 @@ class TutoringService
                 'user_id' => $user->id,
                 'token' => $token,
             ])),
+            'refuse_url' => url('/homepage/tutoring/refuse-user?' . http_build_query([
+                'user_id' => $user->id,
+                'token' => $token,
+            ])),
         ];
 
         Notification::route('mail', $confirmerEmail)->notify(new StandardEmail($mail));
@@ -161,6 +165,20 @@ class TutoringService
         $user->save();
 
         $this->sendConfirmationEmail($user);
+
+        return true;
+    }
+
+    public function refuseUser(int $userId, string $uuid): bool
+    {
+        $user = User::findOrFail($userId);
+
+        if ($user->token_2fa_2 !== $uuid) {
+            return false;
+        }
+
+        $userService = new UserService();
+        $userService->deleteTutoringUsers([$userId]);
 
         return true;
     }

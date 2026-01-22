@@ -1,7 +1,7 @@
 <x-mail::message :logo="$logo">
 # {{ $data['subject'] }}
 
-Es wurde folgendes Nachhilfe-Angebot genehmigt/abgelehnt:
+
 
 {{ $data['data']['student'] }}<br>
 {{ $data['data']['student_email'] }}<br>

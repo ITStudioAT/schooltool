@@ -66,6 +66,7 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         // The three controller routes
         Route::prefix('homepage/tutoring')->group(function () {
             Route::get('confirm-user', [TutoringController::class, 'confirmUser']);
+            Route::get('refuse-user', [TutoringController::class, 'refuseUser']);
             Route::get('offer', [\App\Http\Controllers\Tutoring\OfferController::class, 'offerConfirmRefuse']);
             Route::get('offer_request', [\App\Http\Controllers\Tutoring\OfferRequestController::class, 'offerRequest']);
         });

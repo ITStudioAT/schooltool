@@ -50,9 +50,7 @@
 
                     <!-- Email Warning -->
                     <v-alert type="warning" class="mt-3" variant="tonal" rounded="lg" v-if="!request.mail_at">
-                        <div class="text-body-2">
-                            Bitte schicke Deinem Kontakt eine Antwort per E-Mail:
-                        </div>
+                        <div class="text-body-2">Bitte schicke Deinem Kontakt eine Antwort per E-Mail:</div>
                         <div class="d-flex flex-row align-center flex-wrap ga-2 mt-2">
                             <v-btn
                                 color="warning"
@@ -97,23 +95,11 @@
 
                     <!-- Card Actions -->
                     <div class="card-action">
-                        <v-btn
-                            color="primary"
-                            variant="tonal"
-                            size="small"
-                            rounded="lg"
-                            @click="toUserArchive(request)"
-                            v-if="request.mail_at && !request.to_user_archived_at">
+                        <v-btn color="primary" variant="tonal" size="small" rounded="lg" @click="toUserArchive(request)" v-if="request.mail_at && !request.to_user_archived_at">
                             <v-icon start>mdi-archive</v-icon>
                             Archivieren
                         </v-btn>
-                        <v-btn
-                            color="success"
-                            variant="tonal"
-                            size="small"
-                            rounded="lg"
-                            @click="toUserActive(request)"
-                            v-if="request.to_user_archived_at">
+                        <v-btn color="success" variant="tonal" size="small" rounded="lg" @click="toUserActive(request)" v-if="request.to_user_archived_at">
                             <v-icon start>mdi-archive-arrow-up</v-icon>
                             Aktivieren
                         </v-btn>
@@ -124,13 +110,7 @@
 
         <!-- Pagination -->
         <div class="pagination-card" v-if="requests && requests.length > 0 && meta.last_page > 1">
-            <v-btn
-                variant="tonal"
-                color="primary"
-                size="large"
-                rounded="lg"
-                :disabled="meta.current_page == 1"
-                @click="requestStore.receivedRequests(meta.current_page - 1)">
+            <v-btn variant="tonal" color="primary" size="large" rounded="lg" :disabled="meta.current_page == 1" @click="requestStore.receivedRequests(meta.current_page - 1)">
                 <v-icon start>mdi-arrow-left</v-icon>
                 Vorherige
             </v-btn>
@@ -427,6 +407,7 @@ export default {
     background: rgba(33, 150, 243, 0.08);
     border-radius: 8px;
     border-left: 3px solid #2196f3;
+    white-space: pre-line;
 }
 
 /* Card Chips */

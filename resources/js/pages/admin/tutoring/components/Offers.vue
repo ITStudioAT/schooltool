@@ -46,6 +46,7 @@
                                             {{ item.subject.short_name + ': ' + item.title }}
                                         </div>
                                         <div class="d-flex flex-row align-center ga-2">
+                                            <v-icon color="error" size="small" icon="mdi-lock" v-if="!item?.user?.is_active" />
                                             {{ item?.user?.last_name + ' ' + item?.user?.first_name + ' (' + item?.user?.schoolclass + ', ' + item?.user?.email + ')' }}
                                         </div>
 
@@ -118,6 +119,28 @@
                                 Online
                             </v-btn>
                         </div>
+                        <v-btn
+                            block
+                            tile
+                            flat
+                            color="error"
+                            class="text-caption"
+                            prepend-icon="mdi-lock"
+                            @click="toggleIsActive(selectedOffer.user.id)"
+                            v-if="selectedOffer && selectedOffer?.user?.is_active">
+                            Sperren
+                        </v-btn>
+                        <v-btn
+                            block
+                            tile
+                            flat
+                            color="success"
+                            class="text-caption"
+                            prepend-icon="mdi-lock-open"
+                            @click="toggleIsActive(selectedOffer.user.id)"
+                            v-if="selectedOffer && !selectedOffer?.user?.is_active">
+                            Entsperren
+                        </v-btn>
                         <v-btn block tile flat color="warning" class="text-caption" prepend-icon="mdi-delete" @click="delete_level++" v-if="delete_level == 0">Löschen</v-btn>
                         <v-btn block tile flat color="success" class="text-caption" prepend-icon="mdi-delete-off" @click="delete_level = 0" v-if="delete_level == 1">Löschen</v-btn>
                         <v-btn block tile flat color="error" class="text-caption" prepend-icon="mdi-delete" @click="doDelete(selectedOffer)" v-if="delete_level == 1">
@@ -263,7 +286,7 @@ import SearchField from '@/pages/components/SearchField.vue'
 import Pagination from '@/pages/components/Pagination.vue'
 
 import { useOfferStore } from '@/stores/admin/tutoring/OfferStore'
-import { splitKeyCombination } from 'vuetify/lib/composables/hotkey/hotkey-parsing.mjs'
+import { useUserStore } from '@/stores/admin/UserStore20'
 
 // SPECIFIC
 
@@ -277,6 +300,7 @@ export default {
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.offerStore = useOfferStore()
+        this.userStore = useUserStore()
         this.select_only_me_concerning = false
         this.select_accepted = 'all'
         this.select_online = 'all'
@@ -289,6 +313,7 @@ export default {
         return {
             adminStore: null,
             offerStore: null,
+            userStore: null,
             is_valid: false,
             delete_level: 0,
         }
@@ -336,6 +361,11 @@ export default {
     watch: {},
 
     methods: {
+        async toggleIsActive(user_id) {
+            await this.userStore.toggleIsActive(user_id)
+            await this.offerStore.index(this.meta.current_page)
+        },
+
         async doDelete(offer) {
             this.selected_offers = []
             this.delete_level = 0

@@ -198,7 +198,7 @@
                         </v-expansion-panel-title>
                         <v-expansion-panel-text>
                             <v-form @submit.prevent="searchNow">
-                                <v-checkbox-btn color="success" v-model="search.only_in_my_school" label="Nur in Deiner Schule suchen" />
+                                <v-checkbox-btn color="success" v-model="search.only_in_my_school" label="Nur in Deiner Schule suchen" :disabled="availableSchools.length == 0" />
 
                                 <div class="my-4">
                                     <div class="text-body-1 font-weight-medium" v-if="search.only_in_my_school">Jetzt kannst Du nach Angeboten in Deiner Schule suchen.</div>

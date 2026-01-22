@@ -361,4 +361,23 @@ class AdminService
             abort(423, 'Benutzer ist gesperrt.');
         }
     }
+
+    public function informUserToBeBlockedOrNot($user)
+    {
+
+        $school = $user->selectedSchool;
+
+        $mail = [
+            'from_address' => config('schooltool.noreply_email'),
+            'from_name' => $school->long_name,
+            'logo' => asset('/storage/images/logos' . $school->logo),
+            'subject' => $user->is_active ? 'Benutzerkonto wurde freigeschaltet' : 'Benutzerkonto wurde gesperrt',
+            'markdown' => $user->is_active ? 'mails.admin.informStudentIsNotBlocked' : 'mails.admin.informStudentIsBlocked',
+            'full_name' => $user->last_name . ' ' . $user->first_name,
+            'email' => $user->email,
+        ];
+
+
+        Notification::route('mail', $user->email)->notify(new StandardEmail($mail));
+    }
 }

@@ -150,7 +150,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     /* SANCTUM - admin, tutoring_admin, register_admin */
-    Route::middleware(['auth:sanctum', 'api-allowed:admin,tutoring_admin,register_admin'])->group(function () {
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,tutoring_admin,register_admin,teacher'])->group(function () {
         Route::get('/admin/school_tools/load_config', [\App\Http\Controllers\Admin\SchoolToolController::class, 'loadConfig']);
         Route::post('/admin/users20/toggle_is_active', [\App\Http\Controllers\Admin\UserController::class, 'toggleIsActive']);
     });
@@ -263,7 +263,11 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /* SANCTUM - super_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:super_admin'])->group(function () {
-        Route::get('/admin/get_log',  [\App\Http\Controllers\Admin\LogController::class, 'getLog']);
         Route::post('/admin/delete_log',  [\App\Http\Controllers\Admin\LogController::class, 'deleteLog']);
+    });
+
+    /* SANCTUM - super_admin, admin */
+    Route::middleware(['auth:sanctum', 'api-allowed:super_admin,admin'])->group(function () {
+        Route::get('/admin/get_log',  [\App\Http\Controllers\Admin\LogController::class, 'getLog']);
     });
 });

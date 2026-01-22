@@ -100,7 +100,6 @@
                     <div class="text-caption text-center font-weight-light">oder</div>
                     <v-btn block color="warning" slim flat rounded="0" variant="text" @click="restartLogin">Zurück</v-btn>
                 </v-form>
-                {{ data }}
             </v-card-text>
 
             <!-- NEW TEACHER STEP NEW_TEACHER_OK -->

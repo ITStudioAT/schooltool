@@ -143,16 +143,19 @@ class TeacherListService
             ->where('email', $email)
             ->first();
 
+        $school = School::findOrFail($schoolId);
+
         $teacher->token = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         $teacher->token_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
         $teacher->save();
 
+        Log::info($schoolId);
         Log::info($email);
 
         $mail = [
-            'from_address' => env('MAIL_FROM_ADDRESS'),
-            'from_name' => env('MAIL_FROM_NAME'),
-            'logo' => asset('/storage/images/' . config('schooltool.logo')),
+            'from_address' => config('schooltool.noreply_email'),
+            'from_name' => $school->long_name,
+            'logo' => asset('/storage/images/logos/' . $school->logo),
             'subject' => 'Code zum Bestätigen Ihrer Anmeldung',
             'markdown' => 'mails.admin.sendCode',
             'token_2fa' => $teacher->token,

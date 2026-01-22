@@ -25,7 +25,7 @@ class HorizonServiceProvider extends HorizonApplicationServiceProvider
 */
 
             // Production: nur super_admin
-            return $request->user()?->hasRole('super_admin') ?? false;
+            return $request->user()?->hasRole('super_admin') || $request->user()?->hasRole('admin') ?? false;
         });
     }
 

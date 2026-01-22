@@ -6,6 +6,9 @@ Es wurde folgendes Nachhilfe-Angebot gelöscht:
 {{ $data['data']['student'] }}<br>
 {{ $data['data']['student_email'] }}<br>
 
+E-Mail-Adresse zuständige Lehrkraft:<br>
+{{ $data['data']['email_mentor'] }}
+
 <strong>{{  $data['data']['subject'] }}</strong>
 
 

@@ -37,10 +37,12 @@ class OfferResource extends JsonResource
             }),
             'user' => $this->whenLoaded('user', function () {
                 return [
+                    'id' => $this->user->id,
                     'last_name' => $this->user->last_name,
                     'first_name' => $this->user->first_name,
                     'email' => $this->user->email,
                     'schoolclass' => $this->user->schoolclass,
+                    'is_active' => $this->user->is_active ? true : false,
                 ];
             }),
 

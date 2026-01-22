@@ -27,6 +27,11 @@ class AdminNavigationService
         // SUPERADMIN
         if ($this->userHasRole(['super_admin'])) {
             $menu[] = ['title' => 'Super-Admin', 'icon' => 'mdi-shield-crown', 'to' => '/admin/super_admin', 'is_active' => true];
+        } else {
+            // ADMIN
+            if ($this->userHasRole(['admin'])) {
+                $menu[] = ['title' => 'Admin', 'icon' => 'mdi-shield-crown', 'to' => '/admin/super_admin', 'is_active' => true];
+            }
         }
 
         // ANMELDESYSTEM
