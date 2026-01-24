@@ -95,7 +95,7 @@
                     </div>
                     <!-- MINDEST 1 ELEMENT AUSGEWÄHLT -->
                     <div class="d-flex flex-column ga-2" v-if="selected_users.length >= 1">
-                        <v-btn block tile flat color="success" class="text-caption" prepend-icon="mdi-delete" @click="confirmUsers(selected_users)">Bestätigen</v-btn>
+                        <v-btn block tile flat color="success" class="text-caption" prepend-icon="mdi-check" @click="confirmUsers(selected_users)">Bestätigen</v-btn>
                         <v-btn block tile flat color="warning" class="text-caption" prepend-icon="mdi-delete" @click="deleteUser">Löschen</v-btn>
                     </div>
                 </v-card>
