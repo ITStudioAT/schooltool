@@ -17,6 +17,8 @@ import SuperAdmin from '@/pages/admin/superAdmin/SuperAdmin.vue'
 
 import Tutoring from '@/pages/admin/tutoring/Tutoring.vue'
 
+import Teaching from '@/pages/admin/teaching/Teaching.vue'
+
 const routes = [
     { path: '/admin', component: Index },
     { path: '/admin/login', component: Auth_Login },
@@ -32,6 +34,7 @@ const routes = [
     { path: '/admin/register_system/details', component: RegisterSystem_Details },
     { path: '/admin/super_admin', component: SuperAdmin },
     { path: '/admin/tutoring', component: Tutoring },
+    { path: '/admin/teaching', component: Teaching },
 ]
 
 const router = createRouter({

@@ -45,11 +45,11 @@ class AdminNavigationService
         }
 
         // TEACHER
-        /*
+
         if ($this->userHasRole(['admin', 'teacher'])) {
-            $menu[] = ['title' => 'Lehrer', 'icon' => 'mdi-school', 'to' => '/admin/teacher', 'is_active' => false];
+            $menu[] = ['title' => 'Unterricht', 'icon' => 'mdi-school', 'to' => '/admin/teaching', 'is_active' => true];
         }
-            */
+
 
 
 
