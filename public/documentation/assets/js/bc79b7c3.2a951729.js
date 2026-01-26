@@ -1,0 +1,1 @@
+"use strict";(globalThis.webpackChunkschooltool=globalThis.webpackChunkschooltool||[]).push([[313],{5848:o=>{o.exports=JSON.parse('{"name":"docusaurus-plugin-content-docs","id":"anmeldetool"}')}}]);

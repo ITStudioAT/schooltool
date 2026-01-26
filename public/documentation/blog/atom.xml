@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?><?xml-stylesheet type="text/xsl" href="atom.xsl"?>
+<?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://schooltool.at/documentation/blog</id>
     <title>SchoolTool Blog</title>
@@ -12,8 +12,8 @@
         <id>https://schooltool.at/documentation/blog/welcome</id>
         <link href="https://schooltool.at/documentation/blog/welcome"/>
         <updated>2025-12-03T00:00:00.000Z</updated>
-        <summary type="html"><![CDATA[Hier können Sie aktulle Änderungen von Schooltool nachverfolgen.]]></summary>
-        <content type="html"><![CDATA[<p>Hier können Sie aktulle Änderungen von Schooltool nachverfolgen.</p>]]></content>
+        <summary type="html"><![CDATA[Hier können Sie aktuelle Änderungen von Schooltool nachverfolgen.]]></summary>
+        <content type="html"><![CDATA[<p>Hier können Sie aktuelle Änderungen von Schooltool nachverfolgen.</p>]]></content>
         <author>
             <name>Dipl.-Ing. Günther Kron</name>
             <uri>https://schooltool.at</uri>

@@ -15,6 +15,10 @@ php artisan ide-helper:models -W
 
 # Last Changes
 
+## 3.10.2
+
+- Tutoring: Manual 1/x
+
 ## 3.10.1
 
 - Tutoring: Users: Minimal adaptions

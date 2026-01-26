@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?><?xml-stylesheet type="text/xsl" href="rss.xsl"?>
+<?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
     <channel>
         <title>SchoolTool Blog</title>
@@ -13,8 +13,8 @@
             <link>https://schooltool.at/documentation/blog/welcome</link>
             <guid>https://schooltool.at/documentation/blog/welcome</guid>
             <pubDate>Wed, 03 Dec 2025 00:00:00 GMT</pubDate>
-            <description><![CDATA[Hier können Sie aktulle Änderungen von Schooltool nachverfolgen.]]></description>
-            <content:encoded><![CDATA[<p>Hier können Sie aktulle Änderungen von Schooltool nachverfolgen.</p>]]></content:encoded>
+            <description><![CDATA[Hier können Sie aktuelle Änderungen von Schooltool nachverfolgen.]]></description>
+            <content:encoded><![CDATA[<p>Hier können Sie aktuelle Änderungen von Schooltool nachverfolgen.</p>]]></content:encoded>
             <category>Schooltool</category>
         </item>
     </channel>
