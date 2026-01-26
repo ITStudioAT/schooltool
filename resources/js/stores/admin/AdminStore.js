@@ -72,16 +72,28 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             })
 
             // Private Channel für User
-            this.echo.private(`user.${this.config.user.id}`).listen('TeachersListImportFinishedEvent', (e) => {
-                const notification = useNotificationStore()
-                notification.notify({
-                    message: e.message,
-                    type: e.status === 200 ? 'success' : 'error',
-                    persistent: true,
+            this.echo
+                .private(`user.${this.config.user.id}`)
+                .listen('TeachersListImportFinishedEvent', (e) => {
+                    const notification = useNotificationStore()
+                    notification.notify({
+                        message: e.message,
+                        type: e.status === 200 ? 'success' : 'error',
+                        persistent: true,
+                    })
+                    this.pusher_count--
+                    if (this.pusher_count == 0) this.disconnectEcho()
                 })
-                this.pusher_count--
-                if (this.pusher_count == 0) this.disconnectEcho()
-            })
+                .listen('Import116FinishedEvent', (e) => {
+                    const notification = useNotificationStore()
+                    notification.notify({
+                        message: e.message,
+                        type: e.status === 200 ? 'success' : 'error',
+                        persistent: true,
+                    })
+                    this.pusher_count--
+                    if (this.pusher_count == 0) this.disconnectEcho()
+                })
         },
 
         disconnectEcho() {

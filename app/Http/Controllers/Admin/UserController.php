@@ -511,7 +511,6 @@ class UserController extends Controller
 
     public function toggleIsActive(Request $request, AdminService $service)
     {
-        Log::info('Hallo');
         if (! $auth_user = $this->userHasRole(['super_admin', 'admin', 'tutoring_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }

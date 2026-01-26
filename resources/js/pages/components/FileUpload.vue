@@ -14,6 +14,8 @@
         :allow-replace="true"
         :chunk-uploads="true"
         :chunk-force="true"
+        :allow-file-type-validation="allowedFileTypesSafe.length > 0"
+        :accepted-file-types="allowedFileTypesSafe"
         :allow-remove="false"
         :allow-revert="false"
         :label-file-processing-complete="isShortLabel ? 'OK' : 'Upload durchgeführt'"
@@ -66,7 +68,7 @@ import FilePondPluginImagePreview from 'filepond-plugin-image-preview'
 const FilePond = vueFilePond(FilePondPluginFileValidateType, FilePondPluginImagePreview)
 
 export default {
-    props: ['path', 'shortLabel', 'refreshFilePond', 'fileLabel'],
+    props: ['path', 'shortLabel', 'refreshFilePond', 'fileLabel', 'allowedFileTypes'],
     emits: [, 'fileUploadFinished', 'error', 'uploadStart'],
 
     components: { FilePond },
@@ -103,6 +105,10 @@ export default {
 
         isFileLabel() {
             return this.fileLabel !== undefined
+        },
+
+        allowedFileTypesSafe() {
+            return this.allowedFileTypes || []
         },
     },
 

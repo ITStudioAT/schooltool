@@ -127,6 +127,12 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::patch('/admin/teachers_list_upload', [\App\Http\Controllers\Admin\TeachersListController::class, 'uploadNext']);
     });
 
+    /* SANCTUM - admin, teaching_admin */
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,teaching_admin'])->group(function () {
+        Route::post('/admin/teaching_upload/{slug}', [\App\Http\Controllers\Admin\Teaching\FileUploadController::class, 'upload']);
+        Route::patch('/admin/teaching_upload/{slug}', [\App\Http\Controllers\Admin\Teaching\FileUploadController::class, 'uploadNext']);
+    });
+
     /* SANCTUM - tutoring_user */
     Route::middleware(['auth:sanctum', 'api-allowed:tutoring_user'])->group(function () {
         Route::apiResource('/homepage/tutoring/users', \App\Http\Controllers\Tutoring\UserController::class);

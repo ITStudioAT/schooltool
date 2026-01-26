@@ -11,7 +11,23 @@
                         <div>Alle auswählen > Ausführen ➜ Exportieren (XLSX)</div>
                     </v-alert>
 
-                    //TODO FILEUPLOAD
+                    <div class="text-caption">Es muss sich um eine Excel-Datei (*.xlsx) handeln.</div>
+
+                    <div v-if="!is_upload_finished">
+                        <FileUpload
+                            path="/api/admin/teaching_upload/116"
+                            fileLabel
+                            :allowedFileTypes="['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']"
+                            :refreshFilePond="refresh_file_pond"
+                            @fileUploadFinished="fileUploadFinished"
+                            @uploadStart="onUploadStart"
+                            @error="uploadError"
+                            class="mt-2" />
+                    </div>
+
+                    <v-alert type="success" class="mt-2" v-if="is_upload_finished">Datei erfolgreich hochgeladen.</v-alert>
+                    <v-alert type="error" class="mt-2" v-if="is_upload_error">Upload fehlgeschlagen.</v-alert>
+                    <v-btn color="warning" flat tile class="mt-2" v-if="is_upload_finished || is_upload_error" @click="resetUpload">Neu hochladen</v-btn>
                 </v-card>
             </div>
         </ItsGridBox>
@@ -22,9 +38,10 @@
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
+import FileUpload from '@/pages/components/FileUpload.vue'
 
 export default {
-    components: { ItsGridBox },
+    components: { ItsGridBox, FileUpload },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -35,6 +52,9 @@ export default {
     data() {
         return {
             adminStore: null,
+            is_upload_finished: false,
+            is_upload_error: false,
+            refresh_file_pond: false,
         }
     },
 
@@ -44,6 +64,24 @@ export default {
 
     watch: {},
 
-    methods: {},
+    methods: {
+        onUploadStart() {
+            this.is_upload_finished = false
+            this.is_upload_error = false
+            if (this.config?.is_auth) this.adminStore.initializeEcho()
+        },
+        fileUploadFinished() {
+            this.is_upload_finished = true
+        },
+        uploadError() {
+            this.is_upload_error = true
+            this.refresh_file_pond = !this.refresh_file_pond
+        },
+        resetUpload() {
+            this.is_upload_finished = false
+            this.is_upload_error = false
+            this.refresh_file_pond = !this.refresh_file_pond
+        },
+    },
 }
 </script>
