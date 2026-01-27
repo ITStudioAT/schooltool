@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Admin\Teaching;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\Teaching\Import116;
+use App\Jobs\Teaching\Import116Job;
 use App\Services\FileUploadService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -43,7 +43,7 @@ class FileUploadController extends Controller
         }
 
         if ($slug === '116') {
-            Import116::dispatch(
+            Import116Job::dispatch(
                 $auth_user,
                 "app/private/{$auth_user->school_id}/excel/{$slug}.xlsx"
             );

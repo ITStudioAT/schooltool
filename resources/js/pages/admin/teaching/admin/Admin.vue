@@ -25,7 +25,12 @@
                             class="mt-2" />
                     </div>
 
-                    <v-alert type="success" class="mt-2" v-if="is_upload_finished">Datei erfolgreich hochgeladen.</v-alert>
+                    <v-alert type="info" class="mt-2" v-if="is_importing">
+                        <div class="d-flex flex-row align-center ga-2">
+                            <v-progress-circular indeterminate size="26" width="3" color="primary" />
+                            <div>Datei hochgeladen. Die Verarbeitung läuft – Sie erhalten eine Meldung, sobald der Import abgeschlossen ist.</div>
+                        </div>
+                    </v-alert>
                     <v-alert type="error" class="mt-2" v-if="is_upload_error">Upload fehlgeschlagen.</v-alert>
                     <v-btn color="warning" flat tile class="mt-2" v-if="is_upload_finished || is_upload_error" @click="resetUpload">Neu hochladen</v-btn>
                 </v-card>
@@ -47,7 +52,18 @@ export default {
         this.adminStore = useAdminStore()
     },
 
-    unmounted() {},
+    mounted() {
+        this.onImportFinished = () => {
+            this.is_importing = false
+        }
+        window.addEventListener('import116-finished', this.onImportFinished)
+    },
+
+    unmounted() {
+        if (this.onImportFinished) {
+            window.removeEventListener('import116-finished', this.onImportFinished)
+        }
+    },
 
     data() {
         return {
@@ -55,6 +71,8 @@ export default {
             is_upload_finished: false,
             is_upload_error: false,
             refresh_file_pond: false,
+            is_importing: false,
+            onImportFinished: null,
         }
     },
 
@@ -69,6 +87,7 @@ export default {
             this.is_upload_finished = false
             this.is_upload_error = false
             if (this.config?.is_auth) this.adminStore.initializeEcho()
+            this.is_importing = true
         },
         fileUploadFinished() {
             this.is_upload_finished = true
@@ -76,11 +95,13 @@ export default {
         uploadError() {
             this.is_upload_error = true
             this.refresh_file_pond = !this.refresh_file_pond
+            this.is_importing = false
         },
         resetUpload() {
             this.is_upload_finished = false
             this.is_upload_error = false
             this.refresh_file_pond = !this.refresh_file_pond
+            this.is_importing = false
         },
     },
 }

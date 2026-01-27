@@ -91,6 +91,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
                         type: e.status === 200 ? 'success' : 'error',
                         persistent: true,
                     })
+                    window.dispatchEvent(new CustomEvent('import116-finished', { detail: e }))
                     this.pusher_count--
                     if (this.pusher_count == 0) this.disconnectEcho()
                 })
