@@ -176,6 +176,11 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/tutoring/confirm_users', [\App\Http\Controllers\Admin\Tutoring\UserController::class, 'confirmUsers']);
     });
 
+    /* SANCTUM - admin, teaching_admin, teacher */
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,tutoring_admin'])->group(function () {
+        Route::get('/admin/teaching/search116', [\App\Http\Controllers\Admin\Teaching\TeachingController::class, 'search116']);
+    });
+
     /* SANCTUM - admin, register_admin, tutoring_admin, teacher */
     Route::middleware(['auth:sanctum', 'api-allowed:admin,register_admin,tutoring_admin,teacher'])->group(function () {
 

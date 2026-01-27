@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\Teaching;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\Teaching\Import116Job;
+use App\Models\SchoolTool;
 use App\Services\FileUploadService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -49,6 +50,12 @@ class FileUploadController extends Controller
             );
         }
 
+        if ($this->isImport166Upload($request, $slug)) {
+            $schoolTool = SchoolTool::firstOrCreate(['school_id' => $auth_user->school_id]);
+            $schoolTool->import_166_at = now();
+            $schoolTool->save();
+        }
+
         return response($result, 200)->header('Content-Type', 'text/plain');
     }
 
@@ -60,16 +67,31 @@ class FileUploadController extends Controller
         }
 
         $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
-        if ($extension !== 'xlsx') {
-            abort(422, 'Nur XLSX-Dateien sind erlaubt.');
+        if (! in_array($extension, ['xlsx', 'xls'], true)) {
+            abort(422, 'Nur XLSX- oder XLS-Dateien sind erlaubt.');
         }
     }
 
     private function ensureAllowedSlug(string $slug): void
     {
-        $allowed = ['116'];
+        $allowed = ['116', '166'];
         if (! in_array($slug, $allowed, true)) {
             abort(422, 'Unzulässiger Dateiname.');
         }
+    }
+
+    private function isImport166Upload(Request $request, string $slug): bool
+    {
+        if ($slug === '166') {
+            return true;
+        }
+
+        $originalName = $request->header('Upload-Name');
+        if (! $originalName) {
+            return false;
+        }
+
+        $base = pathinfo($originalName, PATHINFO_FILENAME);
+        return $base === '166';
     }
 }

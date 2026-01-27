@@ -12,6 +12,9 @@
                     </v-alert>
 
                     <div class="text-caption">Es muss sich um eine Excel-Datei (*.xlsx) handeln.</div>
+                    <div class="text-caption" v-if="lastImportDisplay">
+                        Letzter Import: {{ lastImportDisplay }}
+                    </div>
 
                     <div v-if="!is_upload_finished">
                         <FileUpload
@@ -55,6 +58,7 @@ export default {
     mounted() {
         this.onImportFinished = () => {
             this.is_importing = false
+            this.last_import_116_at = new Date().toISOString()
         }
         window.addEventListener('import116-finished', this.onImportFinished)
     },
@@ -73,11 +77,19 @@ export default {
             refresh_file_pond: false,
             is_importing: false,
             onImportFinished: null,
+            last_import_116_at: null,
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'config']),
+        lastImportDisplay() {
+            const value = this.last_import_116_at || this.config?.teaching?.last_import_116_at
+            if (!value) return null
+            const date = new Date(value)
+            if (Number.isNaN(date.getTime())) return value
+            return new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+        },
     },
 
     watch: {},

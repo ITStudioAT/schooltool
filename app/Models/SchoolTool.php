@@ -39,10 +39,12 @@ class SchoolTool extends Model
         'tutoring_max_offers_per_student',
         'may_visible_for_other_schools',
         'health_at',
+        'import_166_at',
     ];
 
     protected $casts = [
         'health_at' => 'datetime',
+        'import_166_at' => 'datetime',
         'tutoring_student_must_be_confirmed' => 'boolean',
         'may_visible_for_other_schools' => 'boolean',
     ];

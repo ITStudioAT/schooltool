@@ -31,6 +31,7 @@ use App\Models\QueueTest;
 use App\Models\Role;
 use App\Models\School;
 use App\Models\Teacher;
+use App\Models\SchoolTool;
 use App\Models\User;
 use App\Services\AdminNavigationService;
 use App\Services\AdminService;
@@ -73,6 +74,11 @@ class AdminController extends Controller
         $user = Auth::check() ? Auth::user() : null;
 
 
+        $lastImport116At = null;
+        if ($user) {
+            $lastImport116At = SchoolTool::where('school_id', $user->school_id)->value('import_166_at');
+        }
+
         $data = [
             'logo' => config('schooltool.logo', ''),
             'copyright' => config('schooltool.copyright', ''),
@@ -93,6 +99,9 @@ class AdminController extends Controller
             ])) : null,
             'menu' => $user ? $navigationService->dashboardMenu() : [],
             'roles' => $user ? $user->getRoleNames() : [],
+            'teaching' => [
+                'last_import_116_at' => $lastImport116At,
+            ],
         ];
 
         $data['health']['queue_working'] = true;

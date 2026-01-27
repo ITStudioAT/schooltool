@@ -9,6 +9,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use App\Events\Import116FinishedEvent;
 use App\Models\Import116;
+use App\Models\SchoolTool;
 use Carbon\Carbon;
 use Spatie\SimpleExcel\SimpleExcelReader;
 
@@ -120,6 +121,10 @@ class Import116Job implements ShouldQueue
         } else {
             Import116::where('school_id', $schoolId)->update(['exists_date' => null]);
         }
+
+        $schoolTool = SchoolTool::firstOrCreate(['school_id' => $schoolId]);
+        $schoolTool->import_166_at = $now;
+        $schoolTool->save();
 
         broadcast(new Import116FinishedEvent(
             200,
