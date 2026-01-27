@@ -33,6 +33,7 @@ namespace Tests\Feature\Console {
             'teacher',
             'lunch_admin',
             'lunch_user',
+            'teaching_admin',
         ])->once();
         $install->shouldReceive('findOrCreateFolders')->once();
         $install->shouldReceive('clearDebugbar')->once();

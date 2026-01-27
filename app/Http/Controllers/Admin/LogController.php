@@ -9,7 +9,7 @@ class LogController extends Controller
 {
     public function getLog(Request $request)
     {
-        if (! $auth_user = $this->userHasRole(['admin'])) {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 

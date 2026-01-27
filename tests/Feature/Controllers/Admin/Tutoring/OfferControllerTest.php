@@ -5,6 +5,7 @@ use App\Models\TutoringOffer;
 use App\Models\TutoringSubject;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -430,6 +431,8 @@ describe('destroy', function () {
     });
 
     it('deletes offer for admin role', function () {
+        Notification::fake();
+
         $admin = User::factory()->create(['school_id' => $this->school->id]);
         $admin->assignRole('admin');
 
@@ -453,6 +456,8 @@ describe('destroy', function () {
     });
 
     it('deletes offer for tutoring_admin role', function () {
+        Notification::fake();
+
         $admin = User::factory()->create(['school_id' => $this->school->id]);
         $admin->assignRole('tutoring_admin');
 
@@ -475,6 +480,8 @@ describe('destroy', function () {
     });
 
     it('deletes offer for teacher role', function () {
+        Notification::fake();
+
         $teacher = User::factory()->create(['school_id' => $this->school->id]);
         $teacher->assignRole('teacher');
 

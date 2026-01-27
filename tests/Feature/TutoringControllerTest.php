@@ -314,7 +314,7 @@ describe('confirmUser', function () {
 
         $response->assertStatus(302)
             ->assertRedirect()
-            ->assertRedirectContains('nicht genehmigt');
+            ->assertRedirectContains('nicht best');
     });
 });
 

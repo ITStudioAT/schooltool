@@ -626,6 +626,7 @@ describe('check2Fa', function () {
             'email' => 'test@example.com',
             'school_id' => $school->id,
             'is_2fa' => true,
+            'email_2fa' => 'test2fa@example.com',
         ]);
 
         config(['schooltool.token_expire_time' => 10]);
@@ -633,6 +634,7 @@ describe('check2Fa', function () {
         $data = [
             'email' => 'test@example.com',
             'school' => ['id' => $school->id, 'long_name' => 'Test School', 'logo' => 'logo.png'],
+            'password' => 'somepassword',
         ];
 
         $result = $this->service->check2Fa($data);
@@ -654,6 +656,7 @@ describe('check2Fa', function () {
         $data = [
             'email' => 'test@example.com',
             'school' => ['id' => $school->id],
+            'password' => 'somepassword',
         ];
 
         $result = $this->service->check2Fa($data);
