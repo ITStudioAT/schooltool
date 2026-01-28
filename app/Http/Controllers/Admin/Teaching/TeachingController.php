@@ -44,7 +44,6 @@ class TeachingController extends Controller
             ->orderBy('first_name')
             ->paginate(config('schooltool.pagination'));
 
-        Debugbar::info($import116->toArray());
 
         return response()->json([
             'data' => Import116Resource::collection($import116),

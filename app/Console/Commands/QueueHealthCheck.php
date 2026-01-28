@@ -124,7 +124,6 @@ class QueueHealthCheck extends Command
                 $this->info('✓ Queue Worker wurde gestartet (Linux)');
             }
 
-            Log::info('Queue health check: Queue worker restarted successfully');
 
             // Wait and verify
             sleep(2);
@@ -139,10 +138,9 @@ class QueueHealthCheck extends Command
 
                 return self::FAILURE;
             }
-
         } catch (\Exception $e) {
-            $this->error('Fehler beim Neustart: '.$e->getMessage());
-            Log::error('Queue health check: Restart error - '.$e->getMessage());
+            $this->error('Fehler beim Neustart: ' . $e->getMessage());
+            Log::error('Queue health check: Restart error - ' . $e->getMessage());
 
             return self::FAILURE;
         }

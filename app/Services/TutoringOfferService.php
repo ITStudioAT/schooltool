@@ -117,7 +117,6 @@ class TutoringOfferService
             'data' => $data,
         ];
 
-        Debugbar::info(asset('/storage/images/logos/' . $school->logo));
 
         Notification::route('mail', $offer->email_mentor)->notify(new StandardEmail($mail));
     }

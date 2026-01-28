@@ -149,8 +149,6 @@ class TeacherListService
         $teacher->token_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
         $teacher->save();
 
-        Log::info($schoolId);
-        Log::info($email);
 
         $mail = [
             'from_address' => config('schooltool.noreply_email'),

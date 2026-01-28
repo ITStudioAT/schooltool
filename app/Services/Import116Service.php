@@ -51,12 +51,11 @@ class Import116Service
             $user->sex = $import116User->sex;
             $user->import116_id = $import116User->id;
             $import116User->user_id = $user->id;
+            $import116User->save();
         } else {
             $user->import116_id = null;
-            $import116User->user_id = null;
         }
 
         $user->save();
-        $import116User->save();
     }
 }

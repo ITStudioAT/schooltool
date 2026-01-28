@@ -261,8 +261,6 @@ class AdminService
     private function sendTokenEmail(string $email, string $fromName, string $subject, int $token): void
     {
 
-        Log::info(asset('/storage/images/' . config('schooltool.logo')));
-
         $mail = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $fromName,
