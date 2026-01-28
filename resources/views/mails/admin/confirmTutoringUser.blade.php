@@ -2,7 +2,7 @@
 # {{ $data['subject'] }}
 
 
-Foldender Benutzer hat sich für Tutoring angemeldet und muss bestätigt werden:
+Foldender Benutzer hat sich angemeldet und muss bestätigt werden:
 
 BENUTZER: **{{ $data['full_name']}}**    
 

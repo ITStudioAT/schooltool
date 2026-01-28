@@ -10,6 +10,7 @@ use Illuminate\Queue\SerializesModels;
 use App\Events\Import116FinishedEvent;
 use App\Models\Import116;
 use App\Models\SchoolTool;
+use App\Models\User;
 use Carbon\Carbon;
 use Spatie\SimpleExcel\SimpleExcelReader;
 
@@ -111,6 +112,21 @@ class Import116Job implements ShouldQueue
                 $created++;
             } else {
                 $updated++;
+            }
+
+            // Link Import116 record with existing User by email and school_id
+            if ($record->email) {
+                $matchingUser = User::where('email', $record->email)
+                    ->where('school_id', $schoolId)
+                    ->first();
+
+                if ($matchingUser) {
+                    $record->user_id = $matchingUser->id;
+                    $record->save();
+
+                    $matchingUser->import116_id = $record->id;
+                    $matchingUser->save();
+                }
             }
         });
 

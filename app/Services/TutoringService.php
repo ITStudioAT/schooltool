@@ -135,7 +135,7 @@ class TutoringService
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
             'logo' => asset('/storage/images/logos/' . $school->logo),
-            'subject' => 'Tutoring-User bestätigen',
+            'subject' => 'Benutzer Nachhilfetool bestätigen',
             'markdown' => 'mails.admin.confirmTutoringUser',
             'full_name' => "{$user->last_name} {$user->first_name}",
             'email' => $user->email,
@@ -191,7 +191,7 @@ class TutoringService
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
             'logo' => asset('/storage/images/logos/' . $school->logo),
-            'subject' => 'Nachhilfe freigeschatet',
+            'subject' => 'Nachhilfetool bestätigt',
             'markdown' => 'mails.admin.informTutoringUserIsConfirmed',
             'full_name' => "{$user->last_name} {$user->first_name}",
             'email' => $user->email,
@@ -207,7 +207,6 @@ class TutoringService
 
         if (! $user->is_active) {
             $data['status'] = 'USER_INACTIVE';
-
             return $data;
         }
 

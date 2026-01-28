@@ -148,6 +148,7 @@ class User extends Authenticatable
         'sex',
         'schoolclass',
         'register_as',
+        'import116_id',
     ];
 
     // Protected fields that should NOT be mass assignable:

@@ -60,6 +60,7 @@ class Import116 extends Model
         'import_date',
         'exists_date',
         'import_user_id',
+        'user_id',
     ];
 
     protected $casts = [

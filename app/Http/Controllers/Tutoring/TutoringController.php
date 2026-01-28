@@ -15,10 +15,12 @@ use App\Http\Resources\Homepage\UserResource;
 use App\Http\Resources\Tutoring\SchoolToolResource;
 use App\Models\School;
 use App\Models\User;
+use App\Services\Import116Service;
 use App\Services\TutoringService;
 use Barryvdh\Debugbar\Facades\Debugbar;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class TutoringController extends Controller
 {
@@ -65,18 +67,51 @@ class TutoringController extends Controller
         return response()->json($data, 200);
     }
 
-    public function checkEmail(TutoringCheckEmailRequest $request, TutoringService $service)
+    public function checkEmail(TutoringCheckEmailRequest $request, TutoringService $service, Import116Service $import116Service)
     {
         $validated = $request->validated();
+
+
+        // Prüfen, ob Benutzer in User mit der E-Mail-Adresse und mit der Schule existiert
+        // $data['status] = 'NEW_USER' : User existiert nicht    
+        // $data['status] = 'USER_FOUND' : User existiert
         $data = $service->checkEmail($validated['data']);
+
+        // Wenn kein User existiert, check, ob dieser aus Import116 angelegt werden kann
+        if ($data['status'] == 'NEW_USER') {
+            $import116User = $import116Service->getImport116User($data['school_id'], $data['email']);
+            if ($import116User) {
+                // Import 116 User existiert => erzeuge einen neuen User mit den Daten aus Import116
+                $data = $import116Service->createUserFromImport116($import116User);
+                $data['status'] = 'USER_FOUND';
+            }
+        }
+
 
         // Wenn ein Benutzer existiert, dann Rolle tutoring_user zuordnen
         if ($data['status'] == 'USER_FOUND') {
 
             // Tutoring-Rolle zuordnen
             $user = $service->assignTutoringRole($data['user_id']);
+
+            // Prüfen, ob der Schüler in Import116 existiert und ggf. Daten aktualisieren
+            $import116User = $import116Service->getImport116User($data['school_id'], $data['email']);
+            $import116Service->syncUser($user, $import116User);
+
+            // Prüfen, ob User  !is_active ==> $data['status'] = 'USER_INACTIVE'
+            // Prüfen, ob User  !email_verified_at ==> sendCodeToUSer ==> $data['status'] = 'CONFIRM_EMAIL'
+            // Prüfen, ob User  !confirmed_at
+            // .. Wenn $schoolTool->tutoring_student_must_be_confirmed && $schoolTool->tutoring_confirmer_email ==> sendConfirmerNotification ==> $data['status'] = 'USER_NOT_CONFIRMED'
+            // .. sonst $user->confirmed_at = now();
             $data = $service->checkLoginRequirement($data);
         }
+
+        // $data['status']
+        // .. NEW_USER => Neuer Benutzer
+        // .. USER_FOUND => User existiert und bereits bestätigt
+        // .. USER_INACTIVE => User existiert, aber ist inaktiv
+        // .. CONFIRM_EMAIL => User existiert, aber E-Mail ist nicht bestätigt
+        // .. USER_NOT_CONFIRMED => User existiert, aber User ist nicht bestätigt
 
         return response()->json($data, 200);
     }
