@@ -53,7 +53,6 @@
 
     </div>
 
-
     {!! CookieConsent::scripts(options: [
     'cookie_lifetime' => config('laravel-cookie-consent.cookie_lifetime', 7),
     'reject_lifetime' => config('laravel-cookie-consent.reject_lifetime', 1),

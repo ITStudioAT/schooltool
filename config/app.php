@@ -130,7 +130,8 @@ return [
         // ...
         // 'Spa' => App\Facades\SpaFacade::class,
         'Pdf' => Spatie\LaravelPdf\Facades\Pdf::class,
-        'Str' => Illuminate\Support\Str::class
+        'Str' => Illuminate\Support\Str::class,
+        'CookieConsent' => Devrabiul\LaravelCookieConsent\Facades\CookieConsent::class,
     ],
 
 
