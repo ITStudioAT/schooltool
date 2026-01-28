@@ -17,11 +17,11 @@ class SchoolFactory extends Factory
     public function definition(): array
     {
         return [
-            'long_name'     => $this->faker->company() . ' Schule',
-            'short_name'    => strtoupper($this->faker->lexify('???')),
-            'email'         => $this->faker->unique()->safeEmail(),
+            'long_name'     => 'Test Schule ' . rand(100, 999),
+            'short_name'    => strtoupper(substr(md5(uniqid()), 0, 3)),
+            'email'         => 'school' . rand(1000, 9999) . '@test.local',
             'logo'          => null,
-            'is_selectable' => $this->faker->boolean(90), // 90% true
+            'is_selectable' => rand(0, 10) > 1, // 90% true
         ];
     }
 }
