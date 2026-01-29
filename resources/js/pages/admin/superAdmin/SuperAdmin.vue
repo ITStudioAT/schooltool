@@ -17,6 +17,13 @@
                 v-if="['super_admin'].some((role) => config.roles.includes(role))" />
 
             <its-menu-button
+                subtitle="Schuljahre"
+                icon="mdi-calendar-multiple"
+                :color="main_action == 'schoolyears' ? 'primary' : 'secondary'"
+                @click="main_action = 'schoolyears'"
+                v-if="['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
+
+            <its-menu-button
                 subtitle="Lizenzen"
                 icon="mdi-card-account-details"
                 :color="main_action == 'licences' ? 'primary' : 'secondary'"
