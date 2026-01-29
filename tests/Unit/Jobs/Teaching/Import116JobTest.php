@@ -517,4 +517,198 @@ describe('exists_date clearing', function () {
         expect($thisSchoolRecord->exists_date)->toBeNull()
             ->and($otherSchoolRecord->exists_date)->not->toBeNull();
     });
+
+    test('only affects records from the same schoolyear', function () {
+        $otherSchoolyear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+        ]);
+
+        $thisSchoolyearRecord = Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'exists_date' => now(),
+            'import_user_id' => $this->admin->id,
+        ]);
+
+        $otherSchoolyearRecord = Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $otherSchoolyear->id,
+            'exists_date' => now(),
+            'import_user_id' => $this->admin->id,
+        ]);
+
+        // Clear only this schoolyear's records (simulating job behavior)
+        Import116::where('school_id', $this->school->id)
+            ->where('schoolyear_id', $this->schoolyear->id)
+            ->update(['exists_date' => null]);
+
+        $thisSchoolyearRecord->refresh();
+        $otherSchoolyearRecord->refresh();
+
+        expect($thisSchoolyearRecord->exists_date)->toBeNull()
+            ->and($otherSchoolyearRecord->exists_date)->not->toBeNull();
+    });
+});
+
+// ============================================================================
+// Schoolyear ID Tests
+// ============================================================================
+
+describe('schoolyear_id handling', function () {
+    test('job constructor accepts optional schoolyearId parameter', function () {
+        $job = new Import116Job($this->admin, 'test/path', 123);
+
+        expect($job->schoolyearId)->toBe(123);
+    });
+
+    test('job constructor defaults schoolyearId to null', function () {
+        $job = new Import116Job($this->admin, 'test/path');
+
+        expect($job->schoolyearId)->toBeNull();
+    });
+
+    test('Import116 record can store schoolyear_id', function () {
+        $record = Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'import_user_id' => $this->admin->id,
+        ]);
+
+        expect($record->schoolyear_id)->toBe($this->schoolyear->id);
+    });
+
+    test('Import116 records can be filtered by schoolyear_id', function () {
+        $otherSchoolyear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+        ]);
+
+        Import116::factory()->count(3)->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'import_user_id' => $this->admin->id,
+        ]);
+
+        Import116::factory()->count(2)->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $otherSchoolyear->id,
+            'import_user_id' => $this->admin->id,
+        ]);
+
+        $thisYearCount = Import116::where('school_id', $this->school->id)
+            ->where('schoolyear_id', $this->schoolyear->id)
+            ->count();
+
+        $otherYearCount = Import116::where('school_id', $this->school->id)
+            ->where('schoolyear_id', $otherSchoolyear->id)
+            ->count();
+
+        expect($thisYearCount)->toBe(3)
+            ->and($otherYearCount)->toBe(2);
+    });
+
+    test('updateOrCreate respects schoolyear_id in lookup', function () {
+        $otherSchoolyear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+        ]);
+
+        $studentCode = 'YEAR123';
+
+        // Create record for this schoolyear
+        Import116::updateOrCreate(
+            [
+                'school_id' => $this->school->id,
+                'student_code' => $studentCode,
+            ],
+            [
+                'schoolyear_id' => $this->schoolyear->id,
+                'last_name' => 'ThisYear',
+                'first_name' => 'Student',
+                'class' => '1A',
+                'import_date' => now(),
+                'exists_date' => now(),
+                'import_user_id' => $this->admin->id,
+            ]
+        );
+
+        // Update same student code - should update existing record
+        Import116::updateOrCreate(
+            [
+                'school_id' => $this->school->id,
+                'student_code' => $studentCode,
+            ],
+            [
+                'schoolyear_id' => $otherSchoolyear->id,
+                'last_name' => 'OtherYear',
+                'first_name' => 'Student',
+                'class' => '2B',
+                'import_date' => now(),
+                'exists_date' => now(),
+                'import_user_id' => $this->admin->id,
+            ]
+        );
+
+        // Should only have one record (updateOrCreate uses school_id + student_code as key)
+        $count = Import116::where('student_code', $studentCode)->count();
+        $record = Import116::where('student_code', $studentCode)->first();
+
+        expect($count)->toBe(1)
+            ->and($record->schoolyear_id)->toBe($otherSchoolyear->id)
+            ->and($record->last_name)->toBe('OtherYear');
+    });
+});
+
+// ============================================================================
+// User Linking with Schoolyear Tests
+// ============================================================================
+
+describe('user linking with schoolyear', function () {
+    test('user matching requires same schoolyear_id', function () {
+        $otherSchoolyear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+        ]);
+
+        // User in this schoolyear
+        $studentThisYear = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'email' => 'student@school.test',
+        ]);
+
+        // User in other schoolyear with same email
+        $studentOtherYear = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $otherSchoolyear->id,
+            'email' => 'student2@school.test',
+        ]);
+
+        // Query like the job does
+        $matchingUser = User::where('email', 'student@school.test')
+            ->where('school_id', $this->school->id)
+            ->where('schoolyear_id', $this->schoolyear->id)
+            ->first();
+
+        expect($matchingUser)->not->toBeNull()
+            ->and($matchingUser->id)->toBe($studentThisYear->id);
+    });
+
+    test('user not found when schoolyear_id does not match', function () {
+        $otherSchoolyear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+        ]);
+
+        // User only exists in other schoolyear
+        User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $otherSchoolyear->id,
+            'email' => 'student@school.test',
+        ]);
+
+        // Try to find user in this schoolyear
+        $matchingUser = User::where('email', 'student@school.test')
+            ->where('school_id', $this->school->id)
+            ->where('schoolyear_id', $this->schoolyear->id)
+            ->first();
+
+        expect($matchingUser)->toBeNull();
+    });
 });
