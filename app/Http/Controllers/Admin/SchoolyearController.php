@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\SchoolyearIndexPaginateRequest;
 use App\Http\Requests\Admin\SchoolyearIndexRequest;
 use App\Http\Requests\Admin\SchoolyearStoreRequest;
 use App\Http\Requests\Admin\SchoolyearUpdateRequest;
 use App\Http\Requests\Admin\SetActiveSchoolyearRequest;
+use App\Http\Resources\Admin\PaginateResource;
 use App\Http\Resources\Admin\SchoolyearResource;
 use App\Models\Schoolyear;
 use App\Models\User;
@@ -21,6 +23,7 @@ class SchoolyearController extends Controller
      */
     public function index(SchoolyearIndexRequest $request)
     {
+
         if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
@@ -29,6 +32,31 @@ class SchoolyearController extends Controller
 
         $schoolyears = Schoolyear::where('school_id', $school_id)->orderBy('name')->get();
         return response()->json(SchoolyearResource::collection($schoolyears), 200);
+    }
+
+    public function indexPaginate(SchoolyearIndexPaginateRequest $request)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validated();
+        $search_string = $validated['search_string'] ?? null;
+
+        $query = Schoolyear::where('school_id', $auth_user->school_id);
+
+        // Search filter
+        if ($search_string) {
+            $query->where(function ($q) use ($search_string) {
+                $q->where('name', 'like', "%{$search_string}%");
+            });
+        }
+
+        $schoolyears = $query->paginate(config('schooltool.pagination'));
+        return response()->json([
+            'data' => SchoolyearResource::collection($schoolyears),
+            'meta' => new PaginateResource($schoolyears),
+        ]);
     }
 
     /**

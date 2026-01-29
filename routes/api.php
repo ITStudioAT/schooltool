@@ -224,6 +224,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         //schoolyears
         Route::apiResource('/admin/schoolyears', \App\Http\Controllers\Admin\SchoolyearController::class);
         Route::post('/admin/schoolyears/set_active',  [\App\Http\Controllers\Admin\SchoolyearController::class, 'setActiveSchoolyear']);
+        Route::get('/admin/schoolyears_paginate',  [\App\Http\Controllers\Admin\SchoolyearController::class, 'indexPaginate']);
 
         // registers
         Route::apiResource('/admin/registers', \App\Http\Controllers\Admin\RegisterController::class);

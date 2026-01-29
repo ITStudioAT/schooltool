@@ -4,6 +4,9 @@
             <div class="d-flex flex-row align-start">
                 <v-card tile flat color="transparent" class="w-100">
                     <v-card-text>
+                        <!-- SEARCHFIELD -->
+                        <SearchField20 :store="schoolyearStore" index_method="indexPaginate" selected_field="selected_schoolyear" />
+
                         <!-- Abwählen / Auswählen-->
                         <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2 mt-2" :disabled="action != ''">
                             <v-btn color="primary" slim flat tile class="text-caption" @click="selectAll">
@@ -30,6 +33,9 @@
                                 </template>
                             </v-list-item>
                         </v-list>
+
+                        <!-- PAGINATION-->
+                        <Pagination20 :meta="meta" :store="schoolyearStore" index_method="indexPaginate" selected_field="selected_schoolyear" />
                     </v-card-text>
                 </v-card>
 
@@ -107,21 +113,21 @@ import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
-// SPECIFIC
-
 import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
+import Pagination20 from '@/pages/components/Pagination20.vue'
+import SearchField20 from '@/pages/components/SearchField20.vue'
 
 export default {
     setup() {
         return useValidationRulesSetup()
     },
 
-    components: { ItsGridBox },
+    components: { ItsGridBox, Pagination20, SearchField20 },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.schoolyearStore = useSchoolyearStore()
-        await this.schoolyearStore.index()
+        await this.schoolyearStore.indexPaginate()
     },
 
     unmounted() {},
@@ -138,7 +144,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'config']),
-        ...mapWritableState(useSchoolyearStore, ['schoolyears']),
+        ...mapWritableState(useSchoolyearStore, ['schoolyears', 'meta']),
     },
 
     methods: {

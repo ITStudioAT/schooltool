@@ -4,7 +4,7 @@ return [
     'version' => '3.10.2',
     'copyright' => '(c) 2025–2026 ITStudio.at by Günther Kron',
     'logo' => 'schooltool_white.png',
-    'pagination' => 3,
+    'pagination' => 30,
     'token_expire_time' => 60,
     'noreply_email' => 'noreply@schooltool.at',
     'sa_pw' => env('SA_PW'),

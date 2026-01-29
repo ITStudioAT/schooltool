@@ -7,6 +7,8 @@ export const useSchoolyearStore = defineStore('AdminSchoolyearStore', {
     state: () => ({
         schoolyears: [],
         selected_schoolyear: null,
+        search_string: '',
+        meta: [],
     }),
 
     actions: {
@@ -17,6 +19,29 @@ export const useSchoolyearStore = defineStore('AdminSchoolyearStore', {
             try {
                 const response = await axios.get(`/api/admin/schoolyears`, {})
                 this.schoolyears = response.data
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async indexPaginate(page = null) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            const search_string = this.search_string
+            try {
+                const response = await axios.get(`/api/admin/schoolyears_paginate`, { params: { search_string, page } })
+                this.schoolyears = response.data.data
+                this.meta = response.data.meta
                 return true
             } catch (error) {
                 notification.notify({

@@ -21,12 +21,21 @@
                 :color="main_action == 'search' ? 'primary' : 'secondary'"
                 @click="main_action = 'search'"
                 v-if="config.roles.some((item) => ['super_admin', 'admin', 'teaching_admin', 'teacher'].includes(item))" />
+
+            <its-menu-button
+                :title="config.selected_schoolyear?.name"
+                subtitle="Schuljahr"
+                icon="mdi-calendar"
+                :color="main_action == 'schoolyear' ? 'primary' : 'secondary'"
+                @click="main_action = 'schoolyear'"
+                v-if="config.roles.some((item) => ['super_admin', 'admin', 'teaching_admin', 'teacher'].includes(item))" />
         </v-card>
         <v-row class="w-100" dense>
             <Overview v-if="main_action == 'overview'" />
             <Settings v-if="main_action == 'settings'" />
             <Admin v-if="main_action == 'admin'" />
             <Search v-if="main_action == 'search'" />
+            <Schoolyear v-if="main_action == 'schoolyear'" />
         </v-row>
     </v-container>
 </template>
@@ -42,9 +51,10 @@ import Overview from './overview/Overview.vue'
 import Settings from './settings/Settings.vue'
 import Admin from './admin/Admin.vue'
 import Search from './search/Search.vue'
+import Schoolyear from './schoolyear/Schoolyear.vue'
 
 export default {
-    components: { ItsMenuButton, ItsGridBox, Overview, Settings, Admin, Search },
+    components: { ItsMenuButton, ItsGridBox, Overview, Settings, Admin, Search, Schoolyear },
 
     async beforeMount() {
         this.adminStore = useAdminStore()

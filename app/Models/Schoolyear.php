@@ -52,7 +52,7 @@ class Schoolyear extends Model
         // Prüfen, ob es Registers gibt
         if (Register::where('schoolyear_id', $this->id)->exists())  return true;
 
-        // Prüfen, ob es mehr als einen Uas
+        // Prüfen, ob es mehr als einen User gibt
         if (User::where('schoolyear_id', $this->id)->exists())  return true;
         return false;
     }
