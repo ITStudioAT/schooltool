@@ -180,6 +180,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::middleware(['auth:sanctum', 'api-allowed:admin,teaching_admin,teacher'])->group(function () {
         Route::get('/admin/teaching/search116', [\App\Http\Controllers\Admin\Teaching\TeachingController::class, 'search116']);
         Route::apiResource('/admin/teaching/courses', \App\Http\Controllers\Admin\Teaching\TeachingCourseController::class);
+        Route::get('/admin/teaching/load_class_students', [\App\Http\Controllers\Admin\Teaching\StudentController::class, 'loadClassStudents']);
+        Route::get('/admin/teaching/import116/load_class_students', [\App\Http\Controllers\Admin\Teaching\Import116Controller::class, 'loadClassStudents']);
+        //load_class_students
     });
 
     /* SANCTUM - admin, register_admin, tutoring_admin, teacher */

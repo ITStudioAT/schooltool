@@ -543,6 +543,111 @@ describe('update', function () {
 });
 
 // ============================================================================
+// Destroy Tests
+// ============================================================================
+
+describe('destroy', function () {
+    test('returns 401 when user is not authenticated', function () {
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'classes' => ['1A'],
+        ]);
+
+        $response = $this->deleteJson("/api/admin/teaching/courses/{$course->id}");
+
+        $response->assertStatus(401);
+    });
+
+    test('returns 403 when user has no allowed role', function () {
+        $this->actingAs($this->regularUser, 'sanctum');
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'classes' => ['1A'],
+        ]);
+
+        $response = $this->deleteJson("/api/admin/teaching/courses/{$course->id}");
+
+        $response->assertStatus(403);
+    });
+
+    test('admin can delete course', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'title' => 'To Delete',
+            'classes' => ['1A'],
+        ]);
+
+        $response = $this->deleteJson("/api/admin/teaching/courses/{$course->id}");
+
+        $response->assertStatus(204);
+        $this->assertDatabaseMissing('teaching_courses', ['id' => $course->id]);
+    });
+
+    test('teaching_admin can delete course', function () {
+        $this->actingAs($this->teachingAdmin, 'sanctum');
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'classes' => ['1A'],
+        ]);
+
+        $response = $this->deleteJson("/api/admin/teaching/courses/{$course->id}");
+
+        $response->assertStatus(204);
+    });
+
+    test('teacher can delete course', function () {
+        $this->actingAs($this->teacher, 'sanctum');
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'classes' => ['1A'],
+        ]);
+
+        $response = $this->deleteJson("/api/admin/teaching/courses/{$course->id}");
+
+        $response->assertStatus(204);
+    });
+
+    test('returns 403 when deleting course from different school', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->otherSchool->id,
+            'schoolyear_id' => $this->otherSchoolyear->id,
+            'title' => 'Other School Course',
+            'classes' => ['1A'],
+        ]);
+
+        $response = $this->deleteJson("/api/admin/teaching/courses/{$course->id}");
+
+        $response->assertStatus(403);
+        $this->assertDatabaseHas('teaching_courses', ['id' => $course->id]);
+    });
+
+    test('returns 404 when course does not exist', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $response = $this->deleteJson('/api/admin/teaching/courses/99999');
+
+        $response->assertStatus(404);
+    });
+});
+
+// ============================================================================
 // Route Existence Tests
 // ============================================================================
 
@@ -579,6 +684,20 @@ describe('route existence', function () {
             'title' => 'Test',
             'classes' => ['1A'],
         ]);
+
+        expect($response->status())->not->toBe(404);
+    });
+
+    test('courses destroy route exists', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'classes' => ['1A'],
+        ]);
+
+        $response = $this->deleteJson("/api/admin/teaching/courses/{$course->id}");
 
         expect($response->status())->not->toBe(404);
     });

@@ -14,6 +14,11 @@ class CourseResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        return parent::toArray($request);
+        $data = parent::toArray($request);
+
+        return array_merge($data, [
+            'students' => $this->students ?? [],
+            'students_deleted' => $this->students_deleted ?? [],
+        ]);
     }
 }

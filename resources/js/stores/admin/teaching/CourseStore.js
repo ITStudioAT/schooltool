@@ -77,5 +77,25 @@ export const useCourseStore = defineStore('AdminCourseStore', {
                 adminStore.is_loading--
             }
         },
+
+        async destroy(id) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                await axios.delete(`/api/admin/teaching/courses/${id}`)
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
     },
 })

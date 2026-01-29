@@ -1,32 +1,69 @@
 <template>
-    <ItsGridBox color="primary" title="Meine Fächer" icon="mdi-invoice-list" class="w-100" text="tralala">
+    <ItsGridBox color="primary" title="Meine Fächer" icon="mdi-invoice-list" class="w-100">
         <!-- ALLE KURSE ANZEIGEN -->
 
         <v-card tile flat color="transparent" class="w-100" v-if="action == ''">
-            <div class="w-100 text-right">
-                <v-btn color="success" text="Neues Fach" prepend-icon="mdi-plus" @click="newCourse" />
-            </div>
-            <v-list v-if="courses.length > 0" class="w-100 bg-transparent">
-                <v-list-item v-for="course in courses" :key="course.id" class="px-0">
-                    <template #title>
-                        <span class="font-weight-bold">{{ course.title }}</span>
-                    </template>
-                    <template #subtitle>
+            <v-card-text class="text-body-1 d-flex flex-column ga-2">
+                <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap ga-2 align-center w-100">
+                    <v-chip-group selected-class="text-primary" column>
+                        <v-chip color="primary" v-for="course in courses" :key="course.id" @click="selectCourse(course)">
+                            {{ course.title }} ({{ course.classes.join(', ') }})
+                        </v-chip>
+                    </v-chip-group>
+                </v-card>
+
+                <!-- Anzeige ausgewählter Kurs -->
+                <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between" v-if="selected_course">
+                    <div>
+                        <div class="text-body-1 font-weight-medium">{{ selected_course.title }}</div>
                         <div class="d-flex flex-wrap ga-1 mt-1">
-                            <v-chip v-for="cls in course.classes" :key="cls" size="small" variant="tonal">
+                            <v-chip v-for="cls in selected_course.classes" :key="cls" size="small" variant="tonal">
                                 {{ cls }}
                             </v-chip>
                         </div>
-                    </template>
-                    <template #append>
-                        <v-btn icon="mdi-pencil" variant="text" size="small" @click="editCourse(course)" />
-                    </template>
-                </v-list-item>
-            </v-list>
-            <div v-else class="text-body-2 text-medium-emphasis pa-4">Keine Fächer vorhanden.</div>
+                    </div>
+                    <div class="d-flex flex-row align-center ga-2">
+                        <v-btn flat tile size="small" color="warning" icon="mdi-delete" @click="delete_level++" v-if="delete_level == 0" />
+                        <v-btn flat tile size="small" color="success" icon="mdi-delete-off" @click="delete_level = 0" v-if="delete_level == 1" />
+                        <v-btn flat tile size="small" color="error" icon="mdi-delete" @click="deleteCourse(selected_course)" v-if="delete_level == 1" />
+                        <v-btn flat tile size="small" color="primary" icon="mdi-pencil" @click="editCourse(selected_course)" v-if="delete_level == 0" />
+                    </div>
+                </v-card>
+
+                <!-- Ausgewählte Schülerinnen (Anzeige) -->
+                <v-card variant="outlined" class="mt-4" v-if="selected_course">
+                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                        <v-icon size="18">mdi-account-check</v-icon>
+                        Ausgewählte Schülerinnen
+                        <v-chip v-if="selected_course?.students_info?.length" size="x-small" color="primary" variant="tonal">
+                            {{ selected_course.students_info.length }}
+                        </v-chip>
+                    </v-card-title>
+                    <v-divider />
+                    <v-card-text class="pa-0">
+                        <v-list density="compact">
+                            <v-list-item v-for="student in sortedSelectedStudents" :key="student.id">
+                                <div class="d-flex align-center ga-2 w-100">
+                                    <v-chip v-if="student.schoolclass || student.class" size="x-small" variant="tonal" color="primary">
+                                        {{ student.schoolclass || student.class }}
+                                    </v-chip>
+                                    <div class="text-body-2">{{ student.last_name }}, {{ student.first_name }}</div>
+                                </div>
+                            </v-list-item>
+                            <v-list-item v-if="!selected_course?.students_info?.length">
+                                <v-list-item-title class="text-caption text-medium-emphasis">Keine Schülerinnen ausgewählt.</v-list-item-title>
+                            </v-list-item>
+                        </v-list>
+                    </v-card-text>
+                </v-card>
+
+                <v-card tile flat color="transparent" class="mt-4">
+                    <its-menu-button title="Fach" subtitle="anlegen" icon="mdi-plus-circle-multiple" color="primary" @click="newCourse" />
+                </v-card>
+            </v-card-text>
         </v-card>
 
-        <!-- NEUER KURS-->
+        <!-- NEUER/EDIT KURS-->
         <v-card tile flat color="transparent" class="w-100" v-if="action == 'teaching_course_new_or_edit'">
             <v-card-title v-if="!data.id">Neues Fach</v-card-title>
             <v-card-title v-if="data.id">Fach ändern</v-card-title>
@@ -41,6 +78,76 @@
                             {{ cls }}
                         </v-chip>
                     </v-chip-group>
+                    <div class="text-caption text-text mt-1" v-if="data?.classes?.length">Ausgewählt: {{ data.classes.join(', ') }}</div>
+
+                    <!-- Schülerinnen -->
+                    <v-card variant="outlined" class="mt-4">
+                        <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                            <v-icon size="18">mdi-account-check</v-icon>
+                            Ausgewählte Schülerinnen
+                            <v-chip v-if="selected_course?.students_info?.length" size="x-small" color="primary" variant="tonal">
+                                {{ selected_course.students_info.length }}
+                            </v-chip>
+                            <v-spacer />
+                            <v-btn size="x-small" color="error" variant="tonal" prepend-icon="mdi-minus" @click="removeAllStudents">Alle entfernen</v-btn>
+                            <v-btn size="x-small" color="primary" variant="tonal" prepend-icon="mdi-plus" @click="addAllStudents">Alle hinzufügen</v-btn>
+                        </v-card-title>
+                        <v-divider />
+                        <v-card-text class="pa-0">
+                            <v-list density="compact">
+                                <v-list-item v-for="student in sortedSelectedStudents" :key="student.id">
+                                    <div class="d-flex align-center ga-2 w-100">
+                                        <v-chip v-if="student.schoolclass || student.class" size="x-small" variant="tonal" color="primary">
+                                            {{ student.schoolclass || student.class }}
+                                        </v-chip>
+                                        <div class="text-body-2">{{ student.last_name }}, {{ student.first_name }}</div>
+                                        <v-spacer />
+                                        <v-btn size="x-small" color="error" variant="tonal" prepend-icon="mdi-minus" @click="removeStudent(student)">Entfernen</v-btn>
+                                    </div>
+                                </v-list-item>
+                                <v-list-item v-if="!selected_course?.students_info?.length">
+                                    <v-list-item-title class="text-caption text-medium-emphasis">Keine Schülerinnen ausgewählt.</v-list-item-title>
+                                </v-list-item>
+                            </v-list>
+                        </v-card-text>
+                    </v-card>
+
+                    <!-- Neue Schülerinnen -->
+                    <v-card variant="outlined" class="mt-4">
+                        <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                            <v-icon size="18">mdi-account-school</v-icon>
+                            Schülerinnen (Import116)
+                            <v-chip v-if="filteredImport116Students.length" size="x-small" color="primary" variant="tonal">
+                                {{ filteredImport116Students.length }}
+                            </v-chip>
+                        </v-card-title>
+                        <v-divider />
+                        <v-card-text class="pa-0">
+                            <v-list density="compact">
+                                <v-list-item v-for="student in filteredImport116Students" :key="student.id">
+                                    <div class="d-flex align-center ga-2 w-100">
+                                        <v-chip v-if="student.class" size="x-small" variant="tonal" color="primary">
+                                            {{ student.class }}
+                                        </v-chip>
+                                        <div class="text-body-2">{{ student.last_name }}, {{ student.first_name }}</div>
+                                        <v-spacer />
+                                        <v-btn
+                                            size="x-small"
+                                            color="primary"
+                                            variant="tonal"
+                                            prepend-icon="mdi-plus"
+                                            :disabled="isStudentSelected(student)"
+                                            @click="addStudent(student)">
+                                            Hinzufügen
+                                        </v-btn>
+                                    </div>
+                                </v-list-item>
+                                <v-list-item v-if="!filteredImport116Students.length">
+                                    <v-list-item-title class="text-caption text-medium-emphasis">Keine Schülerinnen geladen.</v-list-item-title>
+                                </v-list-item>
+                            </v-list>
+                        </v-card-text>
+                    </v-card>
 
                     <div class="d-flex flex-row align-center justify-space-between mt-4">
                         <v-btn color="warning" flat tile @click="abortNewCourse">Abbruch</v-btn>
@@ -55,6 +162,7 @@
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { useImport116Store } from '@/stores/admin/teaching/Import116Store'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
@@ -68,6 +176,7 @@ export default {
 
     async beforeMount() {
         this.adminStore = useAdminStore()
+        this.import116Store = useImport116Store()
         this.courseStore = useCourseStore()
         this.courseStore.index()
     },
@@ -77,30 +186,197 @@ export default {
     data() {
         return {
             adminStore: null,
+            import116Store: null,
             courseStore: null,
             is_valid: false,
             data: {
                 selected_classes: [],
             },
+            selected_course: null,
+            delete_level: 0,
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'config']),
+        ...mapWritableState(useImport116Store, ['import116_students']),
         ...mapWritableState(useCourseStore, ['courses', 'classes']),
+        filteredImport116Students() {
+            const list = this.import116_students || []
+            const selected = this.selected_course?.students_info || []
+            if (!selected.length) return list
+
+            const selectedEmails = new Set(selected.map((student) => (student.email || '').toString().trim().toLowerCase()).filter((email) => email))
+
+            if (!selectedEmails.size) return list
+
+            return list.filter((student) => {
+                const email = (student.email || '').toString().trim().toLowerCase()
+                return !email || !selectedEmails.has(email)
+            })
+        },
+        sortedSelectedStudents() {
+            const list = this.selected_course?.students_info || []
+            return [...list].sort((a, b) => {
+                const classA = (a.schoolclass || a.class || '').toString()
+                const classB = (b.schoolclass || b.class || '').toString()
+                const classCmp = classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
+                if (classCmp !== 0) return classCmp
+
+                const lastA = (a.last_name || '').toString()
+                const lastB = (b.last_name || '').toString()
+                const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
+                if (lastCmp !== 0) return lastCmp
+
+                const firstA = (a.first_name || '').toString()
+                const firstB = (b.first_name || '').toString()
+                return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
+            })
+        },
     },
 
-    watch: {},
+    watch: {
+        'data.classes': {
+            handler(newClasses) {
+                if (this.action !== 'teaching_course_new_or_edit') return
+                if (!Array.isArray(newClasses)) return
+                this.selectStudents(newClasses)
+            },
+            deep: true,
+        },
+    },
 
     methods: {
+        async selectStudents(classes) {
+            console.log('selectStudents', classes)
+            await this.import116Store.loadClassStudents(classes)
+        },
+
+        addAllStudents() {
+            if (!this.selected_course) return
+            if (!Array.isArray(this.import116_students) || !this.import116_students.length) return
+
+            this.import116_students.slice().forEach((student) => {
+                this.addStudent(student)
+            })
+        },
+
+        removeAllStudents() {
+            if (!this.selected_course) return
+            this.ensureCourseStudentCollections(this.selected_course)
+
+            if (!Array.isArray(this.selected_course.students_info) || !this.selected_course.students_info.length) return
+
+            this.selected_course.students_info.slice().forEach((student) => {
+                this.removeStudent(student)
+            })
+        },
+
+        addStudent(student) {
+            if (!this.selected_course) return
+
+            this.ensureCourseStudentCollections(this.selected_course)
+
+            if (!this.selected_course.students.includes(student.id)) {
+                this.selected_course.students.push(student.id)
+                this.selected_course.students_info.push(student)
+            }
+
+            const deletedIndex = this.selected_course.students_deleted.indexOf(student.id)
+            if (deletedIndex !== -1) {
+                this.selected_course.students_deleted.splice(deletedIndex, 1)
+                this.selected_course.students_deleted_info = this.selected_course.students_deleted_info.filter((s) => s.id !== student.id)
+            }
+
+            this.import116_students = this.import116_students.filter((s) => s.id !== student.id)
+        },
+
+        isStudentSelected(student) {
+            if (!this.selected_course) return false
+            this.ensureCourseStudentCollections(this.selected_course)
+            return this.selected_course.students.includes(student.id)
+        },
+
+        removeStudent(student) {
+            if (!this.selected_course) return
+            this.ensureCourseStudentCollections(this.selected_course)
+
+            const index = this.selected_course.students.indexOf(student.id)
+            if (index !== -1) {
+                this.selected_course.students.splice(index, 1)
+                this.selected_course.students_info = this.selected_course.students_info.filter((s) => s.id !== student.id)
+            }
+
+            if (!this.selected_course.students_deleted.includes(student.id)) {
+                this.selected_course.students_deleted.push(student.id)
+                this.selected_course.students_deleted_info.push(student)
+            }
+
+            if (!this.import116_students.some((s) => s.id === student.id)) {
+                this.import116_students.push(student)
+            }
+        },
+
+        ensureCourseStudentCollections(course) {
+            if (!course) return
+
+            if (!Array.isArray(course.students)) course.students = []
+            if (!Array.isArray(course.students_deleted)) course.students_deleted = []
+
+            if (!Array.isArray(course.students_info)) {
+                if (course.students.length && typeof course.students[0] === 'object') {
+                    course.students_info = course.students
+                    course.students = course.students_info.map((s) => s.id)
+                } else if (course.students && typeof course.students === 'object') {
+                    course.students_info = Array.isArray(course.students.data) ? course.students.data : []
+                    course.students = course.students_info.map((s) => s.id)
+                } else {
+                    course.students_info = []
+                }
+            }
+
+            if (!Array.isArray(course.students_deleted_info)) {
+                if (course.students_deleted.length && typeof course.students_deleted[0] === 'object') {
+                    course.students_deleted_info = course.students_deleted
+                    course.students_deleted = course.students_deleted_info.map((s) => s.id)
+                } else if (course.students_deleted && typeof course.students_deleted === 'object') {
+                    course.students_deleted_info = Array.isArray(course.students_deleted.data) ? course.students_deleted.data : []
+                    course.students_deleted = course.students_deleted_info.map((s) => s.id)
+                } else {
+                    course.students_deleted_info = []
+                }
+            }
+        },
+
         async save(data) {
+            const source = this.selected_course && data.id && this.selected_course.id === data.id ? this.selected_course : data
+            this.ensureCourseStudentCollections(source)
+
+            const payload = {
+                ...data,
+                students: source.students || [],
+                students_deleted: source.students_deleted || [],
+            }
+
             if (data.id) {
-                await this.courseStore.update(data)
+                await this.courseStore.update(payload)
             } else {
-                await this.courseStore.store(data)
+                await this.courseStore.store(payload)
             }
             await this.courseStore.index()
+            this.selected_course = this.courses.find((c) => c.id === data.id) || null
+            this.selected_course = null
             this.action = ''
+        },
+
+        selectCourse(course) {
+            if (this.selected_course != course) {
+                this.ensureCourseStudentCollections(course)
+                this.selected_course = course
+                this.delete_level = 0
+            } else {
+                this.selected_course = null
+            }
         },
 
         newCourse() {
@@ -109,10 +385,20 @@ export default {
         },
         editCourse(course) {
             this.data = { ...course }
+            this.selected_course = course
+            this.ensureCourseStudentCollections(this.selected_course)
             this.action = 'teaching_course_new_or_edit'
+            this.selectStudents(this.data.classes || [])
         },
         abortNewCourse() {
+            this.selected_course = null
             this.action = ''
+        },
+        async deleteCourse(course) {
+            await this.courseStore.destroy(course.id)
+            await this.courseStore.index()
+            this.selected_course = null
+            this.delete_level = 0
         },
     },
 }

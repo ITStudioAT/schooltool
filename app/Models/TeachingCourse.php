@@ -16,10 +16,14 @@ class TeachingCourse extends Model
         'user_id',
         'title',
         'classes',
+        'students',
+        'students_deleted',
     ];
 
     protected $casts = [
         'classes' => 'array',
+        'students' => 'array',
+        'students_deleted' => 'array',
     ];
 
     public function school(): BelongsTo
