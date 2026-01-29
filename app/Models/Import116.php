@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 /**
  * @property int $id
  * @property int $school_id
+ * @property int|null $schoolyear_id
  * @property string $class
  * @property string $student_code
  * @property string $last_name
@@ -40,6 +41,7 @@ class Import116 extends Model
 
     protected $fillable = [
         'school_id',
+        'schoolyear_id',
         'class',
         'student_code',
         'last_name',

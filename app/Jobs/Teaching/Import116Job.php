@@ -18,7 +18,7 @@ class Import116Job implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public function __construct(public $user, public string $path)
+    public function __construct(public $user, public string $path, public ?int $schoolyearId = null)
     {
         // placeholder for future payload
     }
@@ -52,12 +52,13 @@ class Import116Job implements ShouldQueue
         }
 
         $schoolId = $this->user->school_id;
+        $schoolyearId = $this->schoolyearId ?? $this->user->schoolyear_id;
         $now = now();
         $seenCodes = [];
         $created = 0;
         $updated = 0;
 
-        $reader->getRows()->each(function (array $row) use ($headerMapping, $schoolId, $now, &$seenCodes, &$created, &$updated) {
+        $reader->getRows()->each(function (array $row) use ($headerMapping, $schoolId, $schoolyearId, $now, &$seenCodes, &$created, &$updated) {
             $mapped = [];
             foreach ($headerMapping as $originalHeader => $field) {
                 $mapped[$field] = isset($row[$originalHeader]) ? $this->normalizeCell($row[$originalHeader]) : null;
@@ -72,6 +73,7 @@ class Import116Job implements ShouldQueue
 
             $data = [
                 'school_id' => $schoolId,
+                'schoolyear_id' => $schoolyearId,
                 'class' => $mapped['class'] ?? '',
                 'student_code' => $studentCode,
                 'last_name' => $mapped['last_name'] ?? '',
@@ -114,10 +116,11 @@ class Import116Job implements ShouldQueue
                 $updated++;
             }
 
-            // Link Import116 record with existing User by email and school_id
-            if ($record->email) {
+            // Link Import116 record with existing User by email, school_id and schoolyear_id
+            if ($record->email && $schoolyearId) {
                 $matchingUser = User::where('email', $record->email)
                     ->where('school_id', $schoolId)
+                    ->where('schoolyear_id', $schoolyearId)
                     ->first();
 
                 if ($matchingUser) {
@@ -132,10 +135,13 @@ class Import116Job implements ShouldQueue
 
         if (! empty($seenCodes)) {
             Import116::where('school_id', $schoolId)
+                ->where('schoolyear_id', $schoolyearId)
                 ->whereNotIn('student_code', $seenCodes)
                 ->update(['exists_date' => null]);
         } else {
-            Import116::where('school_id', $schoolId)->update(['exists_date' => null]);
+            Import116::where('school_id', $schoolId)
+                ->where('schoolyear_id', $schoolyearId)
+                ->update(['exists_date' => null]);
         }
 
         $schoolTool = SchoolTool::firstOrCreate(['school_id' => $schoolId]);

@@ -898,6 +898,125 @@ describe('Model Relationships Integration', function () {
     });
 });
 
+describe('TeachingCourse Model', function () {
+    it('can be created via factory', function () {
+        $course = \App\Models\TeachingCourse::factory()->create();
+
+        expect($course)->toBeInstanceOf(\App\Models\TeachingCourse::class)
+            ->and($course->id)->toBeGreaterThan(0);
+    });
+
+    it('has correct fillable attributes', function () {
+        $fillable = (new \App\Models\TeachingCourse())->getFillable();
+
+        expect($fillable)->toContain('school_id', 'schoolyear_id', 'user_id', 'title', 'classes');
+    });
+
+    it('casts classes to array', function () {
+        $course = \App\Models\TeachingCourse::factory()->create([
+            'classes' => ['1A', '2B', '3C'],
+        ]);
+
+        expect($course->classes)->toBeArray()
+            ->and($course->classes)->toContain('1A', '2B', '3C');
+    });
+
+    it('belongs to school', function () {
+        $school = School::factory()->create();
+        $course = \App\Models\TeachingCourse::factory()->create(['school_id' => $school->id]);
+
+        expect($course->school())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+            ->and($course->school->id)->toBe($school->id);
+    });
+
+    it('belongs to schoolyear', function () {
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+        $course = \App\Models\TeachingCourse::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+        ]);
+
+        expect($course->schoolyear())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+            ->and($course->schoolyear->id)->toBe($schoolyear->id);
+    });
+
+    it('belongs to user (teacher)', function () {
+        $school = School::factory()->create();
+        $teacher = User::factory()->create(['school_id' => $school->id]);
+        $course = \App\Models\TeachingCourse::factory()->create([
+            'school_id' => $school->id,
+            'user_id' => $teacher->id,
+        ]);
+
+        expect($course->user())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+            ->and($course->user->id)->toBe($teacher->id);
+    });
+
+    it('can be created without teacher (user_id null)', function () {
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+        $course = \App\Models\TeachingCourse::factory()->withoutTeacher()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+        ]);
+
+        expect($course->user_id)->toBeNull()
+            ->and($course->user)->toBeNull();
+    });
+
+    it('can store empty classes array', function () {
+        $course = \App\Models\TeachingCourse::factory()->create([
+            'classes' => [],
+        ]);
+
+        expect($course->classes)->toBeArray()
+            ->and($course->classes)->toBeEmpty();
+    });
+
+    it('can store null classes', function () {
+        $course = \App\Models\TeachingCourse::factory()->create([
+            'classes' => null,
+        ]);
+
+        expect($course->classes)->toBeNull();
+    });
+
+    it('factory forSchool method works correctly', function () {
+        $school = School::factory()->create();
+        $course = \App\Models\TeachingCourse::factory()->forSchool($school)->create();
+
+        expect($course->school_id)->toBe($school->id);
+    });
+
+    it('factory forSchoolyear method works correctly', function () {
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+        $course = \App\Models\TeachingCourse::factory()->forSchoolyear($schoolyear)->create([
+            'school_id' => $school->id,
+        ]);
+
+        expect($course->schoolyear_id)->toBe($schoolyear->id);
+    });
+
+    it('factory forTeacher method works correctly', function () {
+        $school = School::factory()->create();
+        $teacher = User::factory()->create(['school_id' => $school->id]);
+        $course = \App\Models\TeachingCourse::factory()->forTeacher($teacher)->create([
+            'school_id' => $school->id,
+        ]);
+
+        expect($course->user_id)->toBe($teacher->id);
+    });
+
+    it('factory withClasses method works correctly', function () {
+        $classes = ['5A', '5B', '6A'];
+        $course = \App\Models\TeachingCourse::factory()->withClasses($classes)->create();
+
+        expect($course->classes)->toBe($classes);
+    });
+});
+
 describe('Model Cascading and Dependencies', function () {
     it('user can check for booking dependencies', function () {
         $user = User::factory()->create();

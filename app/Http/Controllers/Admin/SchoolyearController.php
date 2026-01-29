@@ -52,7 +52,7 @@ class SchoolyearController extends Controller
             });
         }
 
-        $schoolyears = $query->paginate(config('schooltool.pagination'));
+        $schoolyears = $query->orderBy('name')->paginate(config('schooltool.pagination'));
         return response()->json([
             'data' => SchoolyearResource::collection($schoolyears),
             'meta' => new PaginateResource($schoolyears),
