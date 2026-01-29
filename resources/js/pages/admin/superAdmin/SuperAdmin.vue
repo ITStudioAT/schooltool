@@ -46,6 +46,7 @@
         <v-row class="w-100" dense>
             <ActiveSchool v-if="main_action == '' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
             <Schools v-if="main_action == 'schools' && ['super_admin'].some((role) => config.roles.includes(role))" />
+            <Schoolyears v-if="main_action == 'schoolyears' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
             <Licences v-if="main_action == 'licences' && ['super_admin'].some((role) => config.roles.includes(role))" />
             <Users v-if="main_action == 'users' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
             <Teachers v-if="main_action == 'teachers' && (config.roles.includes('super_admin') || config.roles.includes('admin'))" />
@@ -61,6 +62,7 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import Schools from './components/Schools.vue'
+import Schoolyears from './components/Schoolyears.vue'
 import Licences from './components/Licences.vue'
 import Users from './components/Users.vue'
 import Teachers from './components/Teachers.vue'
@@ -71,7 +73,7 @@ import ActiveSchool from './components/ActiveSchool.vue'
 import Log from './components/Log.vue'
 
 export default {
-    components: { ItsMenuButton, ItsGridBox, Schools, ActiveSchool, Licences, Users, Log, Teachers, TeachersList },
+    components: { ItsMenuButton, ItsGridBox, Schools, Schoolyears, ActiveSchool, Licences, Users, Log, Teachers, TeachersList },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
