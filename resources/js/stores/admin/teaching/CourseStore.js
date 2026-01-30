@@ -7,6 +7,9 @@ export const useCourseStore = defineStore('AdminCourseStore', {
         return {
             courses: [],
             classes: [],
+            selected_course: null,
+            show_my_courses: true,
+            show_students: true,
         }
     },
 
@@ -17,9 +20,13 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             adminStore.is_loading++
             const search_string = this.search_string
             try {
+                const selectedId = this.selected_course?.id
                 const response = await axios.get(`/api/admin/teaching/courses`, {})
                 this.courses = response.data.data
                 this.classes = response.data.classes
+                if (selectedId) {
+                    this.selected_course = this.courses.find((c) => c.id === selectedId) || null
+                }
                 return true
             } catch (error) {
                 notification.notify({

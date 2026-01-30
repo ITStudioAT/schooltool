@@ -1,123 +1,45 @@
 <template>
-    <ItsGridBox color="primary" title="Meine Fächer" icon="mdi-invoice-list" class="w-100" v-if="action == ''">
-        <!-- KURS ANLEGEN -->
-        <v-card tile flat color="transparent" class="mt-4">
-            <its-menu-button title="Fach" subtitle="anlegen" icon="mdi-plus-circle-multiple" color="primary" @click="newCourse" />
-        </v-card>
-
-        <!-- ALLE KURSE ANZEIGEN -->
+    <ItsGridBox color="primary" title="Schüler:innen" icon="mdi-invoice-list" class="w-100" v-if="selected_course">
         <v-card tile flat color="transparent" class="w-100" v-if="action == ''">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
-                <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap ga-2 align-center w-100">
-                    <v-chip-group column>
-                        <v-chip v-for="course in courses" :key="course.id" :color="selected_course?.id === course.id ? 'primary' : 'secondary'" @click="selectCourse(course)">
-                            {{ course.title }} ({{ course.classes.join(', ') }})
-                        </v-chip>
-                    </v-chip-group>
-
-                    <div class="w-100 d-flex flex-row justify-end" v-if="selected_course">
-                        <div class="d-flex flex-row align-center ga-2">
-                            <v-btn flat tile size="small" color="warning" icon="mdi-delete" @click="delete_level++" v-if="delete_level == 0" />
-                            <v-btn flat tile size="small" color="success" icon="mdi-delete-off" @click="delete_level = 0" v-if="delete_level == 1" />
-                            <v-btn flat tile size="small" color="error" icon="mdi-delete" @click="deleteCourse(selected_course)" v-if="delete_level == 1" />
-                            <v-btn flat tile size="small" color="primary" icon="mdi-pencil" @click="editCourse(selected_course)" v-if="delete_level == 0" />
+                <!-- Anzeige ausgewählter Kurs -->
+                <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between" v-if="selected_course">
+                    <div>
+                        <div class="text-body-1 font-weight-medium">{{ selected_course.title }}</div>
+                        <div class="d-flex flex-wrap ga-1 mt-1">
+                            <v-chip v-for="cls in selected_course.classes" :key="cls" size="small" variant="tonal">
+                                {{ cls }}
+                            </v-chip>
                         </div>
                     </div>
                 </v-card>
-            </v-card-text>
-        </v-card>
-    </ItsGridBox>
 
-    <ItsGridBox color="primary" :title="data.id ? 'Fach ändern' : 'Neues Fach'" icon="mdi-invoice-list" class="w-100" v-if="action == 'teaching_course_new_or_edit'">
-        <!-- NEUER/EDIT KURS-->
-        <v-card tile flat color="transparent" class="w-100">
-            <v-card-text>
-                <v-form ref="form" v-model="is_valid" @submit.prevent="save(data)" class="mb-4">
-                    <div class="text-caption text-text">Bitte geben Sie die Felder ein (* = Pflichtfeld)</div>
-                    <v-text-field autofocus v-model="data.title" label="Bezeichnung *" :rules="[required(), maxLength(255)]" />
-
-                    <div class="text-caption text-text mt-4">Klassen auswählen</div>
-                    <v-chip-group v-model="data.classes" multiple column>
-                        <v-chip v-for="cls in classes" :key="cls" :value="cls" filter variant="outlined">
-                            {{ cls }}
+                <!-- Ausgewählte Schülerinnen (Anzeige) -->
+                <v-card variant="outlined" class="mt-4" v-if="selected_course">
+                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                        <v-icon size="18">mdi-account-check</v-icon>
+                        Schüler:innen
+                        <v-chip v-if="selected_course?.students_info?.length" size="x-small" color="primary" variant="tonal">
+                            {{ selected_course.students_info.length }}
                         </v-chip>
-                    </v-chip-group>
-                    <div class="text-caption text-text mt-1" v-if="data?.classes?.length">Ausgewählt: {{ data.classes.join(', ') }}</div>
-
-                    <!-- Schülerinnen -->
-                    <v-card variant="outlined" class="mt-4">
-                        <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
-                            <v-icon size="18">mdi-account-check</v-icon>
-                            Ausgewählte Schülerinnen
-                            <v-chip v-if="selected_course?.students_info?.length" size="x-small" color="primary" variant="tonal">
-                                {{ selected_course.students_info.length }}
-                            </v-chip>
-                            <v-spacer />
-                            <v-btn size="x-small" color="error" variant="tonal" prepend-icon="mdi-minus" @click="removeAllStudents">Alle entfernen</v-btn>
-                            <v-btn size="x-small" color="primary" variant="tonal" prepend-icon="mdi-plus" @click="addAllStudents">Alle hinzufügen</v-btn>
-                        </v-card-title>
-                        <v-divider />
-                        <v-card-text class="pa-0">
-                            <v-list density="compact">
-                                <v-list-item v-for="student in sortedSelectedStudents" :key="student.id">
-                                    <div class="d-flex align-center ga-2 w-100">
-                                        <v-chip v-if="student.schoolclass || student.class" size="x-small" variant="tonal" color="primary">
-                                            {{ student.schoolclass || student.class }}
-                                        </v-chip>
-                                        <div class="text-body-2">{{ student.last_name }}, {{ student.first_name }}</div>
-                                        <v-spacer />
-                                        <v-btn size="x-small" color="error" variant="tonal" prepend-icon="mdi-minus" @click="removeStudent(student)">Entfernen</v-btn>
-                                    </div>
-                                </v-list-item>
-                                <v-list-item v-if="!selected_course?.students_info?.length">
-                                    <v-list-item-title class="text-caption text-medium-emphasis">Keine Schülerinnen ausgewählt.</v-list-item-title>
-                                </v-list-item>
-                            </v-list>
-                        </v-card-text>
-                    </v-card>
-
-                    <!-- Neue Schülerinnen -->
-                    <v-card variant="outlined" class="mt-4">
-                        <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
-                            <v-icon size="18">mdi-account-school</v-icon>
-                            Schülerinnen (Import116)
-                            <v-chip v-if="filteredImport116Students.length" size="x-small" color="primary" variant="tonal">
-                                {{ filteredImport116Students.length }}
-                            </v-chip>
-                        </v-card-title>
-                        <v-divider />
-                        <v-card-text class="pa-0">
-                            <v-list density="compact">
-                                <v-list-item v-for="student in filteredImport116Students" :key="student.id">
-                                    <div class="d-flex align-center ga-2 w-100">
-                                        <v-chip v-if="student.class" size="x-small" variant="tonal" color="primary">
-                                            {{ student.class }}
-                                        </v-chip>
-                                        <div class="text-body-2">{{ student.last_name }}, {{ student.first_name }}</div>
-                                        <v-spacer />
-                                        <v-btn
-                                            size="x-small"
-                                            color="primary"
-                                            variant="tonal"
-                                            prepend-icon="mdi-plus"
-                                            :disabled="isStudentSelected(student)"
-                                            @click="addStudent(student)">
-                                            Hinzufügen
-                                        </v-btn>
-                                    </div>
-                                </v-list-item>
-                                <v-list-item v-if="!filteredImport116Students.length">
-                                    <v-list-item-title class="text-caption text-medium-emphasis">Keine Schülerinnen geladen.</v-list-item-title>
-                                </v-list-item>
-                            </v-list>
-                        </v-card-text>
-                    </v-card>
-
-                    <div class="d-flex flex-row align-center justify-space-between mt-4">
-                        <v-btn color="warning" flat tile @click="abortNewCourse">Abbruch</v-btn>
-                        <v-btn color="success" flat tile type="submit" v-if="data.title && data?.classes?.length > 0">Speichern</v-btn>
-                    </div>
-                </v-form>
+                    </v-card-title>
+                    <v-divider />
+                    <v-card-text class="pa-0">
+                        <v-list density="compact">
+                            <v-list-item v-for="student in sortedSelectedStudents" :key="student.id">
+                                <div class="d-flex align-center ga-2 w-100">
+                                    <v-chip v-if="student.schoolclass || student.class" size="x-small" variant="tonal" color="primary">
+                                        {{ student.schoolclass || student.class }}
+                                    </v-chip>
+                                    <div class="text-body-2">{{ student.last_name }}, {{ student.first_name }}</div>
+                                </div>
+                            </v-list-item>
+                            <v-list-item v-if="!selected_course?.students_info?.length">
+                                <v-list-item-title class="text-caption text-medium-emphasis">Keine Schülerinnen ausgewählt.</v-list-item-title>
+                            </v-list-item>
+                        </v-list>
+                    </v-card-text>
+                </v-card>
             </v-card-text>
         </v-card>
     </ItsGridBox>

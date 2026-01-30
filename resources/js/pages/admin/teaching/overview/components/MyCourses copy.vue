@@ -1,5 +1,5 @@
 <template>
-    <ItsGridBox color="primary" title="Meine Fächer" icon="mdi-invoice-list" class="w-100" v-if="action == ''">
+    <ItsGridBox color="primary" title="Meine Fächer" icon="mdi-invoice-list" class="w-100">
         <!-- KURS ANLEGEN -->
         <v-card tile flat color="transparent" class="mt-4">
             <its-menu-button title="Fach" subtitle="anlegen" icon="mdi-plus-circle-multiple" color="primary" @click="newCourse" />
@@ -28,9 +28,54 @@
         </v-card>
     </ItsGridBox>
 
-    <ItsGridBox color="primary" :title="data.id ? 'Fach ändern' : 'Neues Fach'" icon="mdi-invoice-list" class="w-100" v-if="action == 'teaching_course_new_or_edit'">
+    <ItsGridBox color="primary" title="Schüler:innen" icon="mdi-invoice-list" class="w-100" v-if="selected_course">
+        <v-card tile flat color="transparent" class="w-100" v-if="action == ''">
+            <v-card-text class="text-body-1 d-flex flex-column ga-2">
+                <!-- Anzeige ausgewählter Kurs -->
+                <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between" v-if="selected_course">
+                    <div>
+                        <div class="text-body-1 font-weight-medium">{{ selected_course.title }}</div>
+                        <div class="d-flex flex-wrap ga-1 mt-1">
+                            <v-chip v-for="cls in selected_course.classes" :key="cls" size="small" variant="tonal">
+                                {{ cls }}
+                            </v-chip>
+                        </div>
+                    </div>
+                </v-card>
+
+                <!-- Ausgewählte Schülerinnen (Anzeige) -->
+                <v-card variant="outlined" class="mt-4" v-if="selected_course">
+                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                        <v-icon size="18">mdi-account-check</v-icon>
+                        Schüler:innen
+                        <v-chip v-if="selected_course?.students_info?.length" size="x-small" color="primary" variant="tonal">
+                            {{ selected_course.students_info.length }}
+                        </v-chip>
+                    </v-card-title>
+                    <v-divider />
+                    <v-card-text class="pa-0">
+                        <v-list density="compact">
+                            <v-list-item v-for="student in sortedSelectedStudents" :key="student.id">
+                                <div class="d-flex align-center ga-2 w-100">
+                                    <v-chip v-if="student.schoolclass || student.class" size="x-small" variant="tonal" color="primary">
+                                        {{ student.schoolclass || student.class }}
+                                    </v-chip>
+                                    <div class="text-body-2">{{ student.last_name }}, {{ student.first_name }}</div>
+                                </div>
+                            </v-list-item>
+                            <v-list-item v-if="!selected_course?.students_info?.length">
+                                <v-list-item-title class="text-caption text-medium-emphasis">Keine Schülerinnen ausgewählt.</v-list-item-title>
+                            </v-list-item>
+                        </v-list>
+                    </v-card-text>
+                </v-card>
+            </v-card-text>
+        </v-card>
+
         <!-- NEUER/EDIT KURS-->
-        <v-card tile flat color="transparent" class="w-100">
+        <v-card tile flat color="transparent" class="w-100" v-if="action == 'teaching_course_new_or_edit'">
+            <v-card-title v-if="!data.id">Neues Fach</v-card-title>
+            <v-card-title v-if="data.id">Fach ändern</v-card-title>
             <v-card-text>
                 <v-form ref="form" v-model="is_valid" @submit.prevent="save(data)" class="mb-4">
                     <div class="text-caption text-text">Bitte geben Sie die Felder ein (* = Pflichtfeld)</div>

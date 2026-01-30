@@ -20,7 +20,8 @@
       "Bash(composer install:*)",
       "Bash(git commit:*)",
       "Bash(git merge:*)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(powershell:*)"
     ],
     "deny": [],
     "ask": []
