@@ -1,5 +1,5 @@
 <template>
-    <ItsGridBox color="primary" title="Meine Fächer" icon="mdi-invoice-list" class="w-100" v-if="action == ''">
+    <ItsGridBox color="primary" title="Meine Fächer" icon="mdi-invoice-list" class="w-100" :disabled="action_2 != ''">
         <!-- KURS ANLEGEN -->
         <v-card tile flat color="transparent" class="mt-4">
             <its-menu-button title="Fach" subtitle="anlegen" icon="mdi-plus-circle-multiple" color="primary" @click="newCourse" />
@@ -162,7 +162,7 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, ['action', 'config']),
+        ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useImport116Store, ['import116_students']),
         ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course']),
         filteredImport116Students() {

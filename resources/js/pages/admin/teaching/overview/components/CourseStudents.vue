@@ -1,5 +1,5 @@
 <template>
-    <ItsGridBox color="primary" title="Schüler:innen" icon="mdi-invoice-list" class="w-100" v-if="selected_course">
+    <ItsGridBox color="primary" title="Schüler:innen" icon="mdi-invoice-list" class="w-100" v-if="selected_course" :disabled="action_2 != ''">
         <v-card tile flat color="transparent" class="w-100" v-if="action == ''">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
                 <!-- Anzeige ausgewählter Kurs -->
@@ -84,7 +84,7 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, ['action', 'config']),
+        ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useImport116Store, ['import116_students']),
         ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course']),
         filteredImport116Students() {

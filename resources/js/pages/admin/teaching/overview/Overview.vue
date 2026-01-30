@@ -1,6 +1,6 @@
 <template>
     <!-- MENÜ FÜR OVERVIEW -->
-    <v-card tile flat color="transparent" class="d-flex flex-row ga-2 w-100 my-2 ml-1" :disabled="action != ''">
+    <v-card tile flat color="transparent" class="d-flex flex-row ga-2 w-100 my-2 ml-1" :disabled="action != '' || action_2 != ''">
         <its-menu-button
             subtitle="Meine Fächer"
             :icon="show_my_courses ? 'mdi-eye' : 'mdi-eye-off'"
@@ -31,11 +31,7 @@
 
     <!-- KURS-INFOS -->
     <v-col cols="12" md="6" xl="4" :style="selected_course ? 'display: block;' : 'display: none;'">
-        <ItsGridBox color="primary" :title="selected_course?.title + ' (' + selected_course?.classes?.join(', ') + ')'" icon="mdi-home" class="w-100">
-            <div class="d-flex flex-row align-start">
-                <v-card tile flat color="transparent" class="w-100"></v-card>
-            </div>
-        </ItsGridBox>
+        <CourseInfos />
     </v-col>
 
     <!-- STATISTIK -->
@@ -56,9 +52,10 @@ import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import MyCourses from './components/MyCourses.vue'
 import CourseStudents from './components/CourseStudents.vue'
+import CourseInfos from './components/CourseInfos.vue'
 
 export default {
-    components: { ItsGridBox, MyCourses, ItsMenuButton, CourseStudents },
+    components: { ItsGridBox, MyCourses, ItsMenuButton, CourseStudents, CourseInfos },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
