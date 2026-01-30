@@ -13,6 +13,13 @@
             :color="show_students ? 'success' : 'secondary'"
             @click="show_students = !show_students"
             v-if="selected_course" />
+
+        <its-menu-button
+            subtitle="Infos"
+            :icon="show_infos ? 'mdi-eye' : 'mdi-eye-off'"
+            :color="show_infos ? 'success' : 'secondary'"
+            @click="show_infos = !show_infos"
+            v-if="selected_course" />
     </v-card>
 
     <!-- OVERVIEW-->
@@ -30,17 +37,18 @@
     </v-col>
 
     <!-- KURS-INFOS -->
-    <v-col cols="12" md="6" xl="4" :style="selected_course ? 'display: block;' : 'display: none;'">
-        <CourseInfos />
-    </v-col>
+    <v-col cols="12" md="6" xl="4" :style="selected_course && show_infos ? 'display: block;' : 'display: none;'">
+        <v-row :style="selected_course && show_infos ? 'display: block;' : 'display: none;'">
+            <v-col>
+                <CourseInfos />
+            </v-col>
+        </v-row>
 
-    <!-- STATISTIK -->
-    <v-col cols="12" md="6" xl="4" :style="!selected_course ? 'display: block;' : 'display: none;'">
-        <ItsGridBox color="primary" title="Statistiken" icon="mdi-chart-bell-curve-cumulative" class="w-100">
-            <div class="d-flex flex-row align-start">
-                <v-card tile flat color="transparent" class="w-100"></v-card>
-            </div>
-        </ItsGridBox>
+        <v-row :style="selected_course ? 'display: block;' : 'display: none;'">
+            <v-col>
+                <CourseDates />
+            </v-col>
+        </v-row>
     </v-col>
 </template>
 
@@ -53,9 +61,10 @@ import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import MyCourses from './components/MyCourses.vue'
 import CourseStudents from './components/CourseStudents.vue'
 import CourseInfos from './components/CourseInfos.vue'
+import CourseDates from './components/CourseDates.vue'
 
 export default {
-    components: { ItsGridBox, MyCourses, ItsMenuButton, CourseStudents, CourseInfos },
+    components: { ItsGridBox, MyCourses, ItsMenuButton, CourseStudents, CourseInfos, CourseDates },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -75,7 +84,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', , 'action_2', 'config']),
-        ...mapWritableState(useCourseStore, ['selected_course', 'show_my_courses', 'show_students']),
+        ...mapWritableState(useCourseStore, ['selected_course', 'show_my_courses', 'show_students', 'show_infos']),
     },
 
     watch: {},

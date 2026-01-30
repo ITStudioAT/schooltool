@@ -2,37 +2,31 @@ import { defineStore } from 'pinia'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 
-export const useCourseStore = defineStore('AdminCourseStore', {
+export const useCourseDateStore = defineStore('AdminCourseDateStore', {
     state: () => {
         return {
-            courses: [],
-            classes: [],
-            selected_course: null,
-            show_my_courses: true,
-            show_students: true,
-            show_infos: true,
+            courseDates: [],
+            selected_courseDate: null,
         }
     },
 
     actions: {
-        async index() {
+        async index(courseId) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
-            const search_string = this.search_string
             try {
-                const selectedId = this.selected_course?.id
-                const response = await axios.get(`/api/admin/teaching/courses`, {})
-                this.courses = response.data.data
-                this.classes = response.data.classes
+                const selectedId = this.selected_courseDate?.id
+                const response = await axios.get(`/api/admin/teaching/course_dates`)
+                this.courseDates = response.data.data
                 if (selectedId) {
-                    this.selected_course = this.courses.find((c) => c.id === selectedId) || null
+                    this.selected_courseDate = this.courseDates.find((d) => d.id === selectedId) || null
                 }
                 return true
             } catch (error) {
                 notification.notify({
-                    status: error.response.status,
-                    message: error.response.data.message || 'Fehler passiert.',
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
                     type: 'error',
                     timeout: 3000,
                 })
@@ -42,60 +36,17 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             }
         },
 
-        async update(data) {
+        async store(courseId, data) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
-                const response = await axios.put(`/api/admin/teaching/courses/${data.id}`, data)
-                return true
+                const response = await axios.post(`/api/admin/teaching/courses/${courseId}/dates`, data)
+                return response.data
             } catch (error) {
                 notification.notify({
-                    status: error.response.status,
-                    message: error.response.data.message || 'Fehler passiert.',
-                    type: 'error',
-                    timeout: this.timeout,
-                })
-                this.error = error
-                return false
-            } finally {
-                adminStore.is_loading--
-            }
-        },
-
-        async store(data) {
-            const notification = useNotificationStore()
-            const adminStore = useAdminStore()
-            adminStore.is_loading++
-            try {
-                const response = await axios.post(`/api/admin/teaching/courses`, data)
-                this.saved_offer = response.data
-                return true
-            } catch (error) {
-                notification.notify({
-                    status: error.response.status,
-                    message: error.response.data.message || 'Fehler passiert.',
-                    type: 'error',
-                    timeout: this.timeout,
-                })
-                this.error = error
-                return false
-            } finally {
-                adminStore.is_loading--
-            }
-        },
-
-        async destroy(id) {
-            const notification = useNotificationStore()
-            const adminStore = useAdminStore()
-            adminStore.is_loading++
-            try {
-                await axios.delete(`/api/admin/teaching/courses/${id}`)
-                return true
-            } catch (error) {
-                notification.notify({
-                    status: error.response.status,
-                    message: error.response.data.message || 'Fehler passiert.',
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
                     type: 'error',
                     timeout: 3000,
                 })
@@ -103,6 +54,51 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             } finally {
                 adminStore.is_loading--
             }
+        },
+
+        async update(courseId, data) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.put(`/api/admin/teaching/courses/${courseId}/dates/${data.id}`, data)
+                return response.data
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async destroy(courseId, dateId) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                await axios.delete(`/api/admin/teaching/courses/${courseId}/dates/${dateId}`)
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        clearDates() {
+            this.courseDates = []
+            this.selected_courseDate = null
         },
     },
 })
