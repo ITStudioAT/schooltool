@@ -1,7 +1,11 @@
 <template>
     <ItsGridBox color="primary" title="Meine Fächer" icon="mdi-invoice-list" class="w-100">
-        <!-- ALLE KURSE ANZEIGEN -->
+        <!-- KURS ANLEGEN -->
+        <v-card tile flat color="transparent" class="mt-4">
+            <its-menu-button title="Fach" subtitle="anlegen" icon="mdi-plus-circle-multiple" color="primary" @click="newCourse" />
+        </v-card>
 
+        <!-- ALLE KURSE ANZEIGEN -->
         <v-card tile flat color="transparent" class="w-100" v-if="action == ''">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
                 <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap ga-2 align-center w-100">
@@ -34,7 +38,7 @@
                 <v-card variant="outlined" class="mt-4" v-if="selected_course">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-account-check</v-icon>
-                        Ausgewählte Schülerinnen
+                        Schüler:innen
                         <v-chip v-if="selected_course?.students_info?.length" size="x-small" color="primary" variant="tonal">
                             {{ selected_course.students_info.length }}
                         </v-chip>
@@ -55,10 +59,6 @@
                             </v-list-item>
                         </v-list>
                     </v-card-text>
-                </v-card>
-
-                <v-card tile flat color="transparent" class="mt-4">
-                    <its-menu-button title="Fach" subtitle="anlegen" icon="mdi-plus-circle-multiple" color="primary" @click="newCourse" />
                 </v-card>
             </v-card-text>
         </v-card>
@@ -277,15 +277,30 @@ export default {
 
             this.ensureCourseStudentCollections(this.selected_course)
 
+            const email = (student.email || '').toString().trim().toLowerCase()
+
             if (!this.selected_course.students.includes(student.id)) {
                 this.selected_course.students.push(student.id)
                 this.selected_course.students_info.push(student)
             }
 
-            const deletedIndex = this.selected_course.students_deleted.indexOf(student.id)
-            if (deletedIndex !== -1) {
-                this.selected_course.students_deleted.splice(deletedIndex, 1)
-                this.selected_course.students_deleted_info = this.selected_course.students_deleted_info.filter((s) => s.id !== student.id)
+            if (this.selected_course.students_deleted.length) {
+                if (email) {
+                    const remaining = []
+                    this.selected_course.students_deleted_info = this.selected_course.students_deleted_info.filter((s) => {
+                        const deletedEmail = (s.email || '').toString().trim().toLowerCase()
+                        const keep = !deletedEmail || deletedEmail !== email
+                        if (keep && s.id) remaining.push(s.id)
+                        return keep
+                    })
+                    this.selected_course.students_deleted = remaining.length ? remaining : this.selected_course.students_deleted.filter((id) => id !== student.id)
+                } else {
+                    const deletedIndex = this.selected_course.students_deleted.indexOf(student.id)
+                    if (deletedIndex !== -1) {
+                        this.selected_course.students_deleted.splice(deletedIndex, 1)
+                        this.selected_course.students_deleted_info = this.selected_course.students_deleted_info.filter((s) => s.id !== student.id)
+                    }
+                }
             }
 
             this.import116_students = this.import116_students.filter((s) => s.id !== student.id)
@@ -312,7 +327,15 @@ export default {
                 this.selected_course.students_deleted_info.push(student)
             }
 
-            if (!this.import116_students.some((s) => s.id === student.id)) {
+            const email = (student.email || '').toString().trim().toLowerCase()
+            const exists = this.import116_students.some((s) => {
+                if (email) {
+                    return (s.email || '').toString().trim().toLowerCase() === email
+                }
+                return s.id === student.id
+            })
+
+            if (!exists) {
                 this.import116_students.push(student)
             }
         },
@@ -395,7 +418,10 @@ export default {
             this.action = ''
         },
         async deleteCourse(course) {
-            await this.courseStore.destroy(course.id)
+            if (!(await this.courseStore.destroy(course.id))) {
+                this.delete_level = 0
+                return
+            }
             await this.courseStore.index()
             this.selected_course = null
             this.delete_level = 0

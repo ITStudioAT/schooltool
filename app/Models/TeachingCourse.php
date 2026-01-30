@@ -26,6 +26,11 @@ class TeachingCourse extends Model
         'students_deleted' => 'array',
     ];
 
+    public function hasDependencies(): bool
+    {
+        return ! empty($this->students) || ! empty($this->students_deleted);
+    }
+
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);

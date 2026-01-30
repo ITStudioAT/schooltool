@@ -171,6 +171,10 @@ class TeachingCourseController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
+        if ($course->hasDependencies()) {
+            abort(409, 'Der Kurs hat noch Abhängigkeiten und kann nicht gelöscht werden');
+        }
+
         $course->delete();
 
         return response()->json(null, 204);
