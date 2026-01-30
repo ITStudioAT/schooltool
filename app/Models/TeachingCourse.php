@@ -15,15 +15,18 @@ class TeachingCourse extends Model
         'schoolyear_id',
         'user_id',
         'title',
+        'description',
         'classes',
         'students',
         'students_deleted',
+        'reminder'
     ];
 
     protected $casts = [
         'classes' => 'array',
         'students' => 'array',
         'students_deleted' => 'array',
+        'reminder' => 'array',
     ];
 
     public function hasDependencies(): bool

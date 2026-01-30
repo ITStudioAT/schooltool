@@ -6,11 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\Teaching\CourseResource;
 use App\Http\Resources\Admin\Teaching\StudentResource;
 use App\Models\Import116;
-use App\Models\User;
 use App\Models\TeachingCourse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
+use App\Models\User;
 use App\Services\TeachingCourseService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 
 class TeachingCourseController extends Controller
 {
@@ -130,6 +131,8 @@ class TeachingCourseController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
+        Log::info($request->all());
+
 
         $classes = Import116::where('school_id', $auth_user->school_id)
             ->where('schoolyear_id', $auth_user->schoolyear_id)
@@ -139,6 +142,7 @@ class TeachingCourseController extends Controller
 
         $validated = $request->validate([
             'title' => 'required|string|max:255',
+            'description' => 'nullable|string|max:4096',
             'classes' => 'required|array|min:1',
             'classes.*' => ['required', 'string', Rule::in($classes)],
             'students' => 'nullable|array',
@@ -150,6 +154,7 @@ class TeachingCourseController extends Controller
 
         $course->update([
             'title' => $validated['title'],
+            'description' => $validated['description'],
             'classes' => $sortedClasses,
             'students' => $service->resolveStudentIds($validated['students'] ?? [], $auth_user->school_id),
             'students_deleted' => $service->resolveStudentIds($validated['students_deleted'] ?? [], $auth_user->school_id),

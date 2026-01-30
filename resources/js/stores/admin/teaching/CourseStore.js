@@ -47,7 +47,6 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             adminStore.is_loading++
             try {
                 const response = await axios.put(`/api/admin/teaching/courses/${data.id}`, data)
-                this.saved_offer = response.data
                 return true
             } catch (error) {
                 notification.notify({
