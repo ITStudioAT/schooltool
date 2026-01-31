@@ -50,4 +50,47 @@ class TeachingController extends Controller
             'meta' => new PaginateResource($import116),
         ]);
     }
+
+    public function loadSettings(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $settings = [
+            'teaching_works' => $auth_user->teaching_works ?? []
+        ];
+
+        return response()->json([
+            'settings' => $settings,
+        ]);
+    }
+
+    public function saveSettings(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'teaching_works' => 'nullable|array',
+            'teaching_works.*.short_name' => 'required|string|max:10',
+            'teaching_works.*.name' => 'required|string|max:255',
+            'teaching_works.*.grades' => 'nullable|array',
+            'teaching_works.*.grades.*.grade' => 'required|string|max:10',
+            'teaching_works.*.grades.*.name' => 'nullable|string|max:50',
+            'teaching_works.*.grades.*.value' => 'nullable|string|max:10',
+        ]);
+
+        $auth_user->teaching_works = $validated['teaching_works'] ?? [];
+        $auth_user->save();
+
+        $settings = [
+            'teaching_works' => $auth_user->teaching_works ?? []
+        ];
+
+        return response()->json([
+            'settings' => $settings,
+        ]);
+    }
 }

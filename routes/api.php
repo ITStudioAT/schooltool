@@ -179,6 +179,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     /* SANCTUM - admin, teaching_admin, teacher */
     Route::middleware(['auth:sanctum', 'api-allowed:admin,teaching_admin,teacher'])->group(function () {
         Route::get('/admin/teaching/search116', [\App\Http\Controllers\Admin\Teaching\TeachingController::class, 'search116']);
+        Route::get('/admin/teaching/load_settings', [\App\Http\Controllers\Admin\Teaching\TeachingController::class, 'loadSettings']);
+        Route::post('/admin/teaching/save_settings', [\App\Http\Controllers\Admin\Teaching\TeachingController::class, 'saveSettings']);
         Route::apiResource('/admin/teaching/courses', \App\Http\Controllers\Admin\Teaching\TeachingCourseController::class);
         Route::apiResource('/admin/teaching/course_dates', \App\Http\Controllers\Admin\Teaching\CourseDateController::class);
         Route::patch('/admin/teaching/course_dates/{course_date}/status', [\App\Http\Controllers\Admin\Teaching\CourseDateController::class, 'updateStatus']);

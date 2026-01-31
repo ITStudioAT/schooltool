@@ -150,6 +150,7 @@ class User extends Authenticatable
         'schoolclass',
         'register_as',
         'import116_id',
+        'teaching_works',
     ];
 
     // Protected fields that should NOT be mass assignable:
@@ -178,6 +179,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'token_2fa_expires_at' => 'datetime',
             'tutoring_filter' => 'array',
+            'teaching_works' => 'array',
         ];
     }
 
