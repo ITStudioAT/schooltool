@@ -54,4 +54,14 @@ class TeachingCourse extends Model
     {
         return $this->hasMany(TeachingCourseDate::class);
     }
+
+    public function teachingCourseWorks(): HasMany
+    {
+        return $this->hasMany(TeachingCourseWork::class);
+    }
+
+    public function teachingCourseStudentEntries(): HasMany
+    {
+        return $this->hasMany(TeachingCourseStudentEntry::class);
+    }
 }

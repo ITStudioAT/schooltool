@@ -1,5 +1,11 @@
 <template>
-    <ItsGridBox color="primary" title="Termine" icon="mdi-calendar" class="w-100" v-if="selected_course" :disabled="action != '' && action != 'new_course_dates'">
+    <ItsGridBox
+        color="primary"
+        title="Termine"
+        icon="mdi-calendar"
+        class="w-100"
+        v-if="selected_course"
+        :disabled="action != '' && action != 'new_course_dates' && action != 'edit_course_date_content'">
         <v-card tile flat color="transparent" class="w-100" :disabled="action != ''">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
                 <!-- Anzeige ausgewählter Kurs -->
@@ -12,7 +18,7 @@
                             </v-chip>
                         </div>
                     </div>
-                    <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newDates" />
+                    <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newDates" :disabled="isEditingContent" />
                 </v-card>
             </v-card-text>
         </v-card>
@@ -31,6 +37,7 @@
                     size="x-small"
                     variant="tonal"
                     color="primary"
+                    :disabled="isEditingContent"
                     @click="toggleContents"
                     :title="show_contents ? 'Inhalte ausblenden' : 'Inhalte anzeigen'" />
             </v-card-title>
@@ -40,6 +47,7 @@
                     <v-list-item
                         v-for="courseDate in selected_course.course_dates"
                         :key="courseDate.id"
+                        :disabled="isEditingContent && editing_content_id !== courseDate.id"
                         :class="{
                             'bg-primary-lighten-4': highlightedDateId === courseDate.id && !hasStatus(courseDate, 'free'),
                             'bg-success-lighten-2': hasStatus(courseDate, 'free'),
@@ -64,6 +72,7 @@
                                         size="x-small"
                                         :color="hasStatus(courseDate, 'free') ? 'success' : 'default'"
                                         :variant="hasStatus(courseDate, 'free') ? 'flat' : 'outlined'"
+                                        :disabled="isEditingContent"
                                         @click="toggleStatus(courseDate, 'free')">
                                         E
                                     </v-btn>
@@ -71,14 +80,23 @@
                                         size="x-small"
                                         :color="hasStatus(courseDate, 'pruefung') ? 'warning' : 'default'"
                                         :variant="hasStatus(courseDate, 'pruefung') ? 'flat' : 'outlined'"
+                                        :disabled="isEditingContent"
                                         @click="toggleStatus(courseDate, 'pruefung')">
                                         P
                                     </v-btn>
+                                    <v-btn
+                                        :icon="isContentVisible(courseDate.id) ? 'mdi-eye' : 'mdi-eye-off'"
+                                        size="x-small"
+                                        color="primary"
+                                        variant="tonal"
+                                        :disabled="isEditingContent"
+                                        @click="toggleContentLine(courseDate.id)" />
                                     <v-btn
                                         icon="mdi-pencil"
                                         size="x-small"
                                         color="primary"
                                         variant="tonal"
+                                        :disabled="isEditingContent"
                                         @click="startEditContent(courseDate)" />
                                     <v-btn
                                         v-if="delete_date_id !== courseDate.id"
@@ -86,6 +104,7 @@
                                         size="x-small"
                                         color="warning"
                                         variant="tonal"
+                                        :disabled="isEditingContent"
                                         @click="delete_date_id = courseDate.id" />
                                     <v-btn
                                         v-if="delete_date_id === courseDate.id"
@@ -93,11 +112,19 @@
                                         size="x-small"
                                         color="success"
                                         variant="tonal"
+                                        :disabled="isEditingContent"
                                         @click="delete_date_id = null" />
-                                    <v-btn v-if="delete_date_id === courseDate.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteDate(courseDate)" />
+                                    <v-btn
+                                        v-if="delete_date_id === courseDate.id"
+                                        icon="mdi-delete"
+                                        size="x-small"
+                                        color="error"
+                                        variant="tonal"
+                                        :disabled="isEditingContent"
+                                        @click="deleteDate(courseDate)" />
                                 </div>
                             </div>
-                            <div v-if="show_contents" class="pl-6 pr-2 pb-2">
+                            <div v-if="isContentVisible(courseDate.id)" class="pl-6 pr-2 pb-2">
                                 <div v-if="editing_content_id !== courseDate.id">
                                     <div v-if="courseDate.content" class="text-caption content-readonly" v-html="contentHtml(courseDate.content)"></div>
                                 </div>
@@ -236,6 +263,8 @@ export default {
             is_valid: false,
             delete_date_id: null,
             show_contents: true,
+            collapsed_content_ids: [],
+            expanded_content_ids: [],
             editing_content_id: null,
             content_drafts: {},
             data: {
@@ -292,6 +321,9 @@ export default {
             })
 
             return upcomingDate?.id || null
+        },
+        isEditingContent() {
+            return this.action === 'edit_course_date_content'
         },
     },
 
@@ -392,8 +424,37 @@ export default {
             if (!this.show_contents) {
                 this.editing_content_id = null
             }
+            if (this.show_contents) {
+                this.expanded_content_ids = []
+            } else {
+                this.collapsed_content_ids = []
+            }
+        },
+        toggleContentLine(courseDateId) {
+            if (this.show_contents) {
+                if (this.collapsed_content_ids.includes(courseDateId)) {
+                    this.collapsed_content_ids = this.collapsed_content_ids.filter((id) => id !== courseDateId)
+                } else {
+                    this.collapsed_content_ids = [...this.collapsed_content_ids, courseDateId]
+                }
+                return
+            }
+            if (this.expanded_content_ids.includes(courseDateId)) {
+                this.expanded_content_ids = this.expanded_content_ids.filter((id) => id !== courseDateId)
+            } else {
+                this.expanded_content_ids = [...this.expanded_content_ids, courseDateId]
+            }
+        },
+        isContentVisible(courseDateId) {
+            if (this.editing_content_id === courseDateId) return true
+            if (this.show_contents) {
+                return !this.collapsed_content_ids.includes(courseDateId)
+            }
+            return this.expanded_content_ids.includes(courseDateId)
         },
         startEditContent(courseDate) {
+            if (this.action && this.action !== 'edit_course_date_content') return
+            this.action = 'edit_course_date_content'
             this.editing_content_id = courseDate.id
             this.content_drafts = {
                 ...this.content_drafts,
@@ -409,6 +470,7 @@ export default {
                 ...this.content_drafts,
                 [courseDate.id]: courseDate.content || '',
             }
+            this.action = ''
         },
         async saveContent(courseDate) {
             const content = this.content_drafts[courseDate.id] ?? ''
@@ -421,6 +483,12 @@ export default {
             if (result) {
                 await this.courseStore.index()
                 this.editing_content_id = null
+                if (this.show_contents) {
+                    this.collapsed_content_ids = this.collapsed_content_ids.filter((id) => id !== courseDate.id)
+                } else if (!this.expanded_content_ids.includes(courseDate.id)) {
+                    this.expanded_content_ids = [...this.expanded_content_ids, courseDate.id]
+                }
+                this.action = ''
             }
         },
         focusContentField(courseDateId) {

@@ -80,6 +80,7 @@ export default {
         this.adminStore = useAdminStore()
         this.courseStore = useCourseStore()
         this.selected_course = null
+        this.selected_course_id = null
         await this.courseStore.index()
     },
 
@@ -95,7 +96,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', , 'action_2', 'config']),
-        ...mapWritableState(useCourseStore, ['selected_course', 'show_my_courses', 'show_students', 'show_infos', 'show_dates']),
+        ...mapWritableState(useCourseStore, ['selected_course', 'selected_course_id', 'show_my_courses', 'show_students', 'show_infos', 'show_dates']),
     },
 
     watch: {},

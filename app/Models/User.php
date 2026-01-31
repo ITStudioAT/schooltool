@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 
+use App\Models\Import116;
 use App\Models\Register;
 use App\Models\RegisterDateBooking;
 use App\Models\School;
@@ -222,6 +223,11 @@ class User extends Authenticatable
     public function registerDateBookings(): HasMany
     {
         return $this->hasMany(RegisterDateBooking::class);
+    }
+
+    public function import116(): BelongsTo
+    {
+        return $this->belongsTo(Import116::class);
     }
 
     public function shouldDelete(): bool
