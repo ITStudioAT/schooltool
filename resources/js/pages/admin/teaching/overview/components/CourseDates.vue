@@ -25,6 +25,14 @@
                 <v-chip v-if="selected_course?.course_dates?.length" size="x-small" color="primary" variant="tonal">
                     {{ selected_course.course_dates.length }}
                 </v-chip>
+                <v-spacer />
+                <v-btn
+                    :icon="show_contents ? 'mdi-eye' : 'mdi-eye-off'"
+                    size="x-small"
+                    variant="tonal"
+                    color="primary"
+                    @click="toggleContents"
+                    :title="show_contents ? 'Inhalte ausblenden' : 'Inhalte anzeigen'" />
             </v-card-title>
             <v-divider />
             <v-card-text class="pa-0">
@@ -36,50 +44,72 @@
                             'bg-primary-lighten-4': highlightedDateId === courseDate.id && !hasStatus(courseDate, 'free'),
                             'bg-success-lighten-2': hasStatus(courseDate, 'free'),
                         }">
-                        <div class="d-flex align-center ga-2 w-100">
-                            <v-icon v-if="highlightedDateId === courseDate.id" size="x-small" color="success">mdi-arrow-right-bold</v-icon>
-                            <v-chip size="x-small" variant="tonal" :color="highlightedDateId === courseDate.id ? 'success' : 'primary'">
-                                {{ getWeekday(courseDate.date) }}
-                            </v-chip>
-                            <v-chip
-                                size="x-small"
-                                :variant="highlightedDateId === courseDate.id ? 'flat' : 'outlined'"
-                                :color="highlightedDateId === courseDate.id ? 'success' : undefined">
-                                {{ formatDate(courseDate.date) }}
-                            </v-chip>
-                            <div class="text-body-2 flex-grow-1">
-                                <v-chip v-for="h in courseDate.hours" :key="h" size="x-small" variant="tonal" class="mr-1">{{ h }}. Std</v-chip>
+                        <div class="d-flex flex-column ga-2 w-100">
+                            <div class="d-flex align-center ga-2 w-100">
+                                <v-icon v-if="highlightedDateId === courseDate.id" size="x-small" color="success">mdi-arrow-right-bold</v-icon>
+                                <v-chip size="x-small" variant="tonal" :color="highlightedDateId === courseDate.id ? 'success' : 'primary'">
+                                    {{ getWeekday(courseDate.date) }}
+                                </v-chip>
+                                <v-chip
+                                    size="x-small"
+                                    :variant="highlightedDateId === courseDate.id ? 'flat' : 'outlined'"
+                                    :color="highlightedDateId === courseDate.id ? 'success' : undefined">
+                                    {{ formatDate(courseDate.date) }}
+                                </v-chip>
+                                <div class="text-body-2 flex-grow-1">
+                                    <v-chip v-for="h in courseDate.hours" :key="h" size="x-small" variant="tonal" class="mr-1">{{ h }}. Std</v-chip>
+                                </div>
+                                <div class="d-flex align-center ga-1">
+                                    <v-btn
+                                        size="x-small"
+                                        :color="hasStatus(courseDate, 'free') ? 'success' : 'default'"
+                                        :variant="hasStatus(courseDate, 'free') ? 'flat' : 'outlined'"
+                                        @click="toggleStatus(courseDate, 'free')">
+                                        E
+                                    </v-btn>
+                                    <v-btn
+                                        size="x-small"
+                                        :color="hasStatus(courseDate, 'pruefung') ? 'warning' : 'default'"
+                                        :variant="hasStatus(courseDate, 'pruefung') ? 'flat' : 'outlined'"
+                                        @click="toggleStatus(courseDate, 'pruefung')">
+                                        P
+                                    </v-btn>
+                                    <v-btn
+                                        icon="mdi-pencil"
+                                        size="x-small"
+                                        color="primary"
+                                        variant="tonal"
+                                        @click="startEditContent(courseDate)" />
+                                    <v-btn
+                                        v-if="delete_date_id !== courseDate.id"
+                                        icon="mdi-delete"
+                                        size="x-small"
+                                        color="warning"
+                                        variant="tonal"
+                                        @click="delete_date_id = courseDate.id" />
+                                    <v-btn
+                                        v-if="delete_date_id === courseDate.id"
+                                        icon="mdi-delete-off"
+                                        size="x-small"
+                                        color="success"
+                                        variant="tonal"
+                                        @click="delete_date_id = null" />
+                                    <v-btn v-if="delete_date_id === courseDate.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteDate(courseDate)" />
+                                </div>
                             </div>
-                            <div class="d-flex align-center ga-1">
-                                <v-btn
-                                    size="x-small"
-                                    :color="hasStatus(courseDate, 'free') ? 'success' : 'default'"
-                                    :variant="hasStatus(courseDate, 'free') ? 'flat' : 'outlined'"
-                                    @click="toggleStatus(courseDate, 'free')">
-                                    E
-                                </v-btn>
-                                <v-btn
-                                    size="x-small"
-                                    :color="hasStatus(courseDate, 'pruefung') ? 'warning' : 'default'"
-                                    :variant="hasStatus(courseDate, 'pruefung') ? 'flat' : 'outlined'"
-                                    @click="toggleStatus(courseDate, 'pruefung')">
-                                    P
-                                </v-btn>
-                                <v-btn
-                                    v-if="delete_date_id !== courseDate.id"
-                                    icon="mdi-delete"
-                                    size="x-small"
-                                    color="warning"
-                                    variant="tonal"
-                                    @click="delete_date_id = courseDate.id" />
-                                <v-btn
-                                    v-if="delete_date_id === courseDate.id"
-                                    icon="mdi-delete-off"
-                                    size="x-small"
-                                    color="success"
-                                    variant="tonal"
-                                    @click="delete_date_id = null" />
-                                <v-btn v-if="delete_date_id === courseDate.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteDate(courseDate)" />
+                            <div v-if="show_contents" class="pl-6 pr-2 pb-2">
+                                <div v-if="editing_content_id !== courseDate.id">
+                                    <div v-if="courseDate.content" class="text-caption content-readonly" v-html="contentHtml(courseDate.content)"></div>
+                                </div>
+                                <div v-else class="d-flex flex-column ga-2">
+                                    <ItsRichTextEditor
+                                        v-model="content_drafts[courseDate.id]"
+                                        :ref="`contentField-${courseDate.id}`" />
+                                    <div class="d-flex align-center ga-2">
+                                        <v-btn size="x-small" color="success" variant="tonal" @click="saveContent(courseDate)" icon="mdi-content-save" />
+                                        <v-btn size="x-small" color="warning" variant="tonal" @click="cancelEditContent(courseDate)" icon="mdi-close" />
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </v-list-item>
@@ -179,13 +209,14 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
+import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 
 export default {
     setup() {
         return useValidationRulesSetup()
     },
 
-    components: { ItsGridBox },
+    components: { ItsGridBox, ItsRichTextEditor },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -204,6 +235,9 @@ export default {
             courseDateStore: null,
             is_valid: false,
             delete_date_id: null,
+            show_contents: true,
+            editing_content_id: null,
+            content_drafts: {},
             data: {
                 from: '',
                 until: '',
@@ -287,6 +321,14 @@ export default {
             if (isNaN(d.getTime())) return ''
             return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
         },
+        contentHtml(text) {
+            if (!text) return ''
+            if (text.includes('<p>') || text.includes('<br')) return text
+            return text
+                .split('\n')
+                .map((line) => `<p>${line || '<br>'}</p>`)
+                .join('')
+        },
         toDateString(date) {
             const d = date instanceof Date ? date : new Date(date)
             const year = d.getFullYear()
@@ -345,6 +387,66 @@ export default {
             await this.courseDateStore.updateStatus(courseDate.id, currentStatus)
             await this.courseStore.index()
         },
+        toggleContents() {
+            this.show_contents = !this.show_contents
+            if (!this.show_contents) {
+                this.editing_content_id = null
+            }
+        },
+        startEditContent(courseDate) {
+            this.editing_content_id = courseDate.id
+            this.content_drafts = {
+                ...this.content_drafts,
+                [courseDate.id]: courseDate.content || '',
+            }
+            this.$nextTick(() => {
+                this.focusContentField(courseDate.id)
+            })
+        },
+        cancelEditContent(courseDate) {
+            this.editing_content_id = null
+            this.content_drafts = {
+                ...this.content_drafts,
+                [courseDate.id]: courseDate.content || '',
+            }
+        },
+        async saveContent(courseDate) {
+            const content = this.content_drafts[courseDate.id] ?? ''
+            const payload = {
+                id: courseDate.id,
+                date: courseDate.date,
+                content,
+            }
+            const result = await this.courseDateStore.update(payload)
+            if (result) {
+                await this.courseStore.index()
+                this.editing_content_id = null
+            }
+        },
+        focusContentField(courseDateId) {
+            const ref = this.$refs[`contentField-${courseDateId}`]
+            const field = Array.isArray(ref) ? ref[0] : ref
+            if (field?.focus) {
+                field.focus()
+                return
+            }
+            const el = field?.$el || field
+            const prose = el?.querySelector?.('.ProseMirror')
+            if (prose) {
+                prose.focus()
+                return
+            }
+            const textarea = el?.querySelector?.('textarea')
+            if (textarea) textarea.focus()
+        },
     },
 }
 </script>
+
+<style scoped>
+.content-readonly :deep(textarea),
+.content-readonly :deep(.v-field__input) {
+    pointer-events: none;
+    cursor: default;
+}
+</style>

@@ -59,9 +59,18 @@ export const useCourseDateStore = defineStore('AdminCourseDateStore', {
         async update(data) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
+            if (!data?.id) {
+                notification.notify({
+                    status: 422,
+                    message: 'Termin-ID fehlt. Bitte Seite neu laden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            }
             adminStore.is_loading++
             try {
-                const response = await axios.put(`/api/admin/teaching/course_dates`, data)
+                const response = await axios.put(`/api/admin/teaching/course_dates/${data.id}`, data)
                 return response.data
             } catch (error) {
                 notification.notify({

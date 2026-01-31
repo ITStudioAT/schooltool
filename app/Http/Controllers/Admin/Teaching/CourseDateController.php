@@ -94,18 +94,16 @@ class CourseDateController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, TeachingCourse $course, TeachingCourseDate $date)
+    public function update(Request $request, TeachingCourseDate $course_date)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        if ($course->school_id !== $auth_user->school_id) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
+        $course = $course_date->teachingCourse;
 
-        if ($date->teaching_course_id !== $course->id) {
-            abort(404);
+        if (! $course || $course->school_id !== $auth_user->school_id) {
+            abort(403, 'Sie haben keine Berechtigung');
         }
 
         $validated = $request->validate([
@@ -115,9 +113,9 @@ class CourseDateController extends Controller
             'status' => 'nullable|array',
         ]);
 
-        $date->update($validated);
+        $course_date->update($validated);
 
-        return response()->json(new CourseDateResource($date));
+        return response()->json(new CourseDateResource($course_date));
     }
 
     /**
