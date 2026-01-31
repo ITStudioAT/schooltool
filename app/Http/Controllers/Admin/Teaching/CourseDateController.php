@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Admin\Teaching;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\Admin\Teaching\CourseDateResource;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseDate;
+use App\Services\TeachingCourseDateService;
 use Illuminate\Http\Request;
 
 class CourseDateController extends Controller
@@ -26,32 +28,47 @@ class CourseDateController extends Controller
             ->orderBy('date')
             ->get();
 
-        return response()->json(['data' => $dates]);
+        return response()->json(['data' => CourseDateResource::collection($dates)]);
     }
 
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request, TeachingCourse $course)
+    public function store(Request $request, TeachingCourseDateService $service)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        if ($course->school_id !== $auth_user->school_id) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
-
         $validated = $request->validate([
-            'date' => 'required|date',
-            'hours' => 'nullable|array',
-            'content' => 'nullable|string|max:4096',
+            'course_id' => 'required|integer|exists:teaching_courses,id',
+            'from' => 'required|date',
+            'until' => 'nullable|date',
+            'hours' => 'required|array',
+            'hours.*' => 'integer|min:1|max:20',
+            'interval' => 'required|integer|in:1,2,3,4',
             'status' => 'nullable|array',
         ]);
 
-        $courseDate = $course->teachingCourseDates()->create($validated);
+        $course = TeachingCourse::findOrFail($validated['course_id']);
 
-        return response()->json($courseDate, 201);
+        if ($auth_user->school_id != $course->school_id) {
+            abort(409, 'Kein Zugriff auf diese Schule');
+        }
+
+        if ($auth_user->schoolyear_id != $course->schoolyear_id) {
+            abort(409, 'Kein Zugriff auf dieses Schuljahr');
+        }
+
+        $createdDates = $service->createDates(
+            $course->id,
+            $validated['from'],
+            $validated['until'] ?? null,
+            $validated['hours'],
+            $validated['interval']
+        );
+
+        return response()->json(['data' => CourseDateResource::collection($createdDates), 'count' => count($createdDates)], 201);
     }
 
     /**
@@ -71,7 +88,7 @@ class CourseDateController extends Controller
             abort(404);
         }
 
-        return response()->json($date);
+        return response()->json(new CourseDateResource($date));
     }
 
     /**
@@ -100,28 +117,51 @@ class CourseDateController extends Controller
 
         $date->update($validated);
 
-        return response()->json($date);
+        return response()->json(new CourseDateResource($date));
     }
 
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(TeachingCourse $course, TeachingCourseDate $date)
+    public function destroy(TeachingCourseDate $course_date)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        if ($course->school_id !== $auth_user->school_id) {
+        $course = $course_date->teachingCourse;
+
+        if (! $course || $course->school_id !== $auth_user->school_id) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        if ($date->teaching_course_id !== $course->id) {
-            abort(404);
-        }
-
-        $date->delete();
+        $course_date->delete();
 
         return response()->json(null, 204);
+    }
+
+    /**
+     * Update the status of a course date.
+     */
+    public function updateStatus(Request $request, TeachingCourseDate $course_date)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $course = $course_date->teachingCourse;
+
+        if (! $course || $course->school_id !== $auth_user->school_id) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'status' => 'nullable|array',
+            'status.*' => 'string|in:free,pruefung',
+        ]);
+
+        $course_date->update(['status' => $validated['status'] ?? []]);
+
+        return response()->json(new CourseDateResource($course_date));
     }
 }

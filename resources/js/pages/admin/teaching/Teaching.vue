@@ -1,7 +1,7 @@
 <template>
     <v-container fluid class="ma-0 w-100 pa-2">
         <!-- Menüleiste oben -->
-        <v-card tile flat color="transparent" class="d-flex flex-row ga-2 w-100 mb-2" :disabled="action != '' || action_2 != ''">
+        <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap ga-2 w-100 mb-2" :disabled="action != '' || action_2 != ''">
             <its-menu-button subtitle="Übersicht" icon="mdi-home" :color="main_action == 'overview' ? 'primary' : 'secondary'" @click="main_action = 'overview'" />
             <its-menu-button
                 subtitle="Admin"

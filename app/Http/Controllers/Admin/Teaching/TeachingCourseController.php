@@ -24,7 +24,8 @@ class TeachingCourseController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $courses = TeachingCourse::where('school_id', $auth_user->school_id)
+        $courses = TeachingCourse::with(['teachingCourseDates' => fn ($q) => $q->orderBy('date')->orderByRaw('JSON_EXTRACT(hours, "$[0]")')])
+            ->where('school_id', $auth_user->school_id)
             ->where('schoolyear_id', $auth_user->schoolyear_id)
             ->orderBy('title')
             ->get();

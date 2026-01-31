@@ -36,12 +36,12 @@ export const useCourseDateStore = defineStore('AdminCourseDateStore', {
             }
         },
 
-        async store(courseId, data) {
+        async store(data) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
-                const response = await axios.post(`/api/admin/teaching/courses/${courseId}/dates`, data)
+                const response = await axios.post(`/api/admin/teaching/course_dates`, data)
                 return response.data
             } catch (error) {
                 notification.notify({
@@ -56,12 +56,12 @@ export const useCourseDateStore = defineStore('AdminCourseDateStore', {
             }
         },
 
-        async update(courseId, data) {
+        async update(data) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
-                const response = await axios.put(`/api/admin/teaching/courses/${courseId}/dates/${data.id}`, data)
+                const response = await axios.put(`/api/admin/teaching/course_dates`, data)
                 return response.data
             } catch (error) {
                 notification.notify({
@@ -76,13 +76,33 @@ export const useCourseDateStore = defineStore('AdminCourseDateStore', {
             }
         },
 
-        async destroy(courseId, dateId) {
+        async destroy(dateId) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
-                await axios.delete(`/api/admin/teaching/courses/${courseId}/dates/${dateId}`)
+                await axios.delete(`/api/admin/teaching/course_dates/${dateId}`)
                 return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async updateStatus(dateId, status) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.patch(`/api/admin/teaching/course_dates/${dateId}/status`, { status })
+                return response.data
             } catch (error) {
                 notification.notify({
                     status: error.response?.status,

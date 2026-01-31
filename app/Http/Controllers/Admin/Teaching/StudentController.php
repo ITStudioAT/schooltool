@@ -25,7 +25,6 @@ class StudentController extends Controller
         $schoolclass = $validated['schoolclass'] ?? null;
         $schoolclasses = $validated['schoolclasses'] ?? null;
 
-        Debugbar::info('Loading students for classes', $schoolclasses, $auth_user->school_id, $auth_user->schoolyear_id);
 
         $studentsQuery = Student::query()
             ->where('school_id', $auth_user->school_id)
@@ -42,7 +41,6 @@ class StudentController extends Controller
             ->orderBy('first_name')
             ->get();
 
-        Debugbar::info('Loading students for students', $students->all());
 
         $classes = Student::query()
             ->where('school_id', $auth_user->school_id)

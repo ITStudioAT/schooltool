@@ -8,13 +8,46 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             courses: [],
             classes: [],
             selected_course: null,
+            selected_course_id: null,
             show_my_courses: true,
             show_students: true,
             show_infos: true,
+            show_dates: true,
         }
     },
 
     actions: {
+        ensureCourseStudentCollections(course) {
+            if (!course) return
+
+            if (!Array.isArray(course.students)) course.students = []
+            if (!Array.isArray(course.students_deleted)) course.students_deleted = []
+
+            if (!Array.isArray(course.students_info)) {
+                if (course.students.length && typeof course.students[0] === 'object') {
+                    course.students_info = course.students
+                    course.students = course.students_info.map((s) => s.id)
+                } else if (course.students && typeof course.students === 'object') {
+                    course.students_info = Array.isArray(course.students.data) ? course.students.data : []
+                    course.students = course.students_info.map((s) => s.id)
+                } else {
+                    course.students_info = []
+                }
+            }
+
+            if (!Array.isArray(course.students_deleted_info)) {
+                if (course.students_deleted.length && typeof course.students_deleted[0] === 'object') {
+                    course.students_deleted_info = course.students_deleted
+                    course.students_deleted = course.students_deleted_info.map((s) => s.id)
+                } else if (course.students_deleted && typeof course.students_deleted === 'object') {
+                    course.students_deleted_info = Array.isArray(course.students_deleted.data) ? course.students_deleted.data : []
+                    course.students_deleted = course.students_deleted_info.map((s) => s.id)
+                } else {
+                    course.students_deleted_info = []
+                }
+            }
+        },
+
         async index() {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
@@ -27,6 +60,7 @@ export const useCourseStore = defineStore('AdminCourseStore', {
                 this.classes = response.data.classes
                 if (selectedId) {
                     this.selected_course = this.courses.find((c) => c.id === selectedId) || null
+                    this.ensureCourseStudentCollections(this.selected_course)
                 }
                 return true
             } catch (error) {

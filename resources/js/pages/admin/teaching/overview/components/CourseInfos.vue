@@ -1,14 +1,20 @@
 <template>
-    <ItsGridBox color="primary" :title="selected_course.title + ' (' + selectedCourseClasses + ')'" icon="mdi-information-box" class="w-100" v-if="selected_course">
+    <ItsGridBox
+        color="primary"
+        :title="selected_course.title + ' (' + selectedCourseClasses + ')'"
+        icon="mdi-information-box"
+        class="w-100"
+        v-if="selected_course"
+        :disabled="action != '' && action != 'edit_description'">
         <v-card tile flat color="transparent" class="w-100">
-            <v-card-text class="text-body-1 d-flex flex-column ga-2" v-if="action_2 == ''">
+            <v-card-text class="text-body-1 d-flex flex-column ga-2" v-if="action != 'edit_description'">
                 <div class="text-body-2 course-description" v-if="selected_course.description" v-html="descriptionHtml"></div>
                 <div class="text-body-2" v-else>Keine Fachinfos vorhanden.</div>
                 <div class="w-100 text-right">
                     <v-btn flat tile size="small" color="primary" icon="mdi-pencil" @click="editDescription" />
                 </div>
             </v-card-text>
-            <v-card-text v-if="action_2 == 'edit_description'">
+            <v-card-text v-if="action == 'edit_description'">
                 <v-form ref="form" @submit.prevent="saveDescription">
                     <div class="mb-4">
                         <label class="text-caption text-medium-emphasis">Fachinfos</label>
@@ -91,10 +97,10 @@ export default {
     methods: {
         editDescription() {
             this.edit_description = this.selected_course.description || ''
-            this.action_2 = 'edit_description'
+            this.action = 'edit_description'
         },
         abortEditDescription() {
-            this.action_2 = ''
+            this.action = ''
             this.edit_description = ''
         },
         async saveDescription() {
@@ -104,7 +110,7 @@ export default {
             }
             if (await this.courseStore.update(data)) {
                 this.selected_course.description = this.edit_description
-                this.action_2 = ''
+                this.action = ''
                 this.edit_description = ''
             }
         },

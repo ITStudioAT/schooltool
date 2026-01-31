@@ -1,6 +1,6 @@
 <template>
     <!-- MENÜ FÜR OVERVIEW -->
-    <v-card tile flat color="transparent" class="d-flex flex-row ga-2 w-100 my-2 ml-1" :disabled="action != '' || action_2 != ''">
+    <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap ga-2 w-100 my-2 ml-1" :disabled="action != '' || action_2 != ''">
         <its-menu-button
             subtitle="Meine Fächer"
             :icon="show_my_courses ? 'mdi-eye' : 'mdi-eye-off'"
@@ -20,31 +20,41 @@
             :color="show_infos ? 'success' : 'secondary'"
             @click="show_infos = !show_infos"
             v-if="selected_course" />
+
+        <its-menu-button
+            subtitle="Termine"
+            :icon="show_dates ? 'mdi-eye' : 'mdi-eye-off'"
+            :color="show_dates ? 'success' : 'secondary'"
+            @click="show_dates = !show_dates"
+            v-if="selected_course" />
     </v-card>
 
     <!-- OVERVIEW-->
-    <v-col cols="12" md="6" xl="4" :style="show_my_courses || (action == '' && show_students && selected_course) ? 'display: block;' : 'display: none;'">
-        <v-row :style="show_my_courses ? 'display: block;' : 'display: none;'">
+    <v-col cols="12" md="6" xl="4" v-if="show_my_courses || show_students">
+        <!-- MY_COURSES-->
+        <v-row v-if="show_my_courses">
             <v-col>
                 <MyCourses />
             </v-col>
         </v-row>
-        <v-row :style="action == '' && show_students && selected_course ? 'display: block;' : 'display: none;'">
+
+        <!-- STUDENTS -->
+        <v-row v-if="action != 'teaching_course_new_or_edit' && show_students">
             <v-col>
                 <CourseStudents />
             </v-col>
         </v-row>
     </v-col>
 
-    <!-- KURS-INFOS -->
-    <v-col cols="12" md="6" xl="4" :style="selected_course && show_infos ? 'display: block;' : 'display: none;'">
-        <v-row :style="selected_course && show_infos ? 'display: block;' : 'display: none;'">
+    <!-- KURS-INFOS  -->
+    <v-col cols="12" md="6" xl="4" v-if="show_infos || show_dates">
+        <v-row v-if="show_infos">
             <v-col>
                 <CourseInfos />
             </v-col>
         </v-row>
 
-        <v-row :style="selected_course ? 'display: block;' : 'display: none;'">
+        <v-row v-if="show_dates">
             <v-col>
                 <CourseDates />
             </v-col>
@@ -70,6 +80,7 @@ export default {
         this.adminStore = useAdminStore()
         this.courseStore = useCourseStore()
         this.selected_course = null
+        await this.courseStore.index()
     },
 
     unmounted() {},
@@ -84,7 +95,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', , 'action_2', 'config']),
-        ...mapWritableState(useCourseStore, ['selected_course', 'show_my_courses', 'show_students', 'show_infos']),
+        ...mapWritableState(useCourseStore, ['selected_course', 'show_my_courses', 'show_students', 'show_infos', 'show_dates']),
     },
 
     watch: {},

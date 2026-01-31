@@ -1,16 +1,16 @@
 <template>
-    <ItsGridBox color="primary" title="Meine Fächer" icon="mdi-invoice-list" class="w-100" :disabled="action_2 != ''">
+    <ItsGridBox color="primary" title="Meine Fächer" icon="mdi-invoice-list" class="w-100" :disabled="action != ''">
         <!-- KURS ANLEGEN -->
         <v-card tile flat color="transparent" class="mt-4">
             <its-menu-button title="Fach" subtitle="anlegen" icon="mdi-plus-circle-multiple" color="primary" @click="newCourse" />
         </v-card>
 
         <!-- ALLE KURSE ANZEIGEN -->
-        <v-card tile flat color="transparent" class="w-100" v-if="action == ''">
+        <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
                 <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap ga-2 align-center w-100">
-                    <v-chip-group column>
-                        <v-chip v-for="course in courses" :key="course.id" :color="selected_course?.id === course.id ? 'primary' : 'secondary'" @click="selectCourse(course)">
+                    <v-chip-group v-model="selected_course_id" column>
+                        <v-chip v-for="course in courses" :key="course.id" :value="course.id" :color="selected_course?.id === course.id ? 'primary' : 'secondary'">
                             {{ course.title }} ({{ course.classes.join(', ') }})
                         </v-chip>
                     </v-chip-group>
@@ -142,7 +142,7 @@ export default {
         this.adminStore = useAdminStore()
         this.import116Store = useImport116Store()
         this.courseStore = useCourseStore()
-        this.courseStore.index()
+        // await this.courseStore.index()
     },
 
     unmounted() {},
@@ -164,7 +164,7 @@ export default {
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useImport116Store, ['import116_students']),
-        ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course']),
+        ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'selected_course_id']),
         filteredImport116Students() {
             const list = this.import116_students || []
             const selected = this.selected_course?.students_info || []
@@ -200,6 +200,10 @@ export default {
     },
 
     watch: {
+        selected_course_id(newId) {
+            const course = this.courses.find((c) => c.id === newId) || null
+            this.selectCourse(course)
+        },
         'data.classes': {
             handler(newClasses) {
                 if (this.action !== 'teaching_course_new_or_edit') return
@@ -212,7 +216,10 @@ export default {
 
     methods: {
         async selectStudents(classes) {
-            console.log('selectStudents', classes)
+            if (!Array.isArray(classes) || !classes.length) {
+                this.import116_students = []
+                return
+            }
             await this.import116Store.loadClassStudents(classes)
         },
 
@@ -227,7 +234,7 @@ export default {
 
         removeAllStudents() {
             if (!this.selected_course) return
-            this.ensureCourseStudentCollections(this.selected_course)
+            this.courseStore.ensureCourseStudentCollections(this.selected_course)
 
             if (!Array.isArray(this.selected_course.students_info) || !this.selected_course.students_info.length) return
 
@@ -239,7 +246,7 @@ export default {
         addStudent(student) {
             if (!this.selected_course) return
 
-            this.ensureCourseStudentCollections(this.selected_course)
+            this.courseStore.ensureCourseStudentCollections(this.selected_course)
 
             const email = (student.email || '').toString().trim().toLowerCase()
 
@@ -272,13 +279,13 @@ export default {
 
         isStudentSelected(student) {
             if (!this.selected_course) return false
-            this.ensureCourseStudentCollections(this.selected_course)
+            this.courseStore.ensureCourseStudentCollections(this.selected_course)
             return this.selected_course.students.includes(student.id)
         },
 
         removeStudent(student) {
             if (!this.selected_course) return
-            this.ensureCourseStudentCollections(this.selected_course)
+            this.courseStore.ensureCourseStudentCollections(this.selected_course)
 
             const index = this.selected_course.students.indexOf(student.id)
             if (index !== -1) {
@@ -304,40 +311,9 @@ export default {
             }
         },
 
-        ensureCourseStudentCollections(course) {
-            if (!course) return
-
-            if (!Array.isArray(course.students)) course.students = []
-            if (!Array.isArray(course.students_deleted)) course.students_deleted = []
-
-            if (!Array.isArray(course.students_info)) {
-                if (course.students.length && typeof course.students[0] === 'object') {
-                    course.students_info = course.students
-                    course.students = course.students_info.map((s) => s.id)
-                } else if (course.students && typeof course.students === 'object') {
-                    course.students_info = Array.isArray(course.students.data) ? course.students.data : []
-                    course.students = course.students_info.map((s) => s.id)
-                } else {
-                    course.students_info = []
-                }
-            }
-
-            if (!Array.isArray(course.students_deleted_info)) {
-                if (course.students_deleted.length && typeof course.students_deleted[0] === 'object') {
-                    course.students_deleted_info = course.students_deleted
-                    course.students_deleted = course.students_deleted_info.map((s) => s.id)
-                } else if (course.students_deleted && typeof course.students_deleted === 'object') {
-                    course.students_deleted_info = Array.isArray(course.students_deleted.data) ? course.students_deleted.data : []
-                    course.students_deleted = course.students_deleted_info.map((s) => s.id)
-                } else {
-                    course.students_deleted_info = []
-                }
-            }
-        },
-
         async save(data) {
             const source = this.selected_course && data.id && this.selected_course.id === data.id ? this.selected_course : data
-            this.ensureCourseStudentCollections(source)
+            this.courseStore.ensureCourseStudentCollections(source)
 
             const payload = {
                 ...data,
@@ -352,13 +328,12 @@ export default {
             }
             await this.courseStore.index()
             this.selected_course = this.courses.find((c) => c.id === data.id) || null
-            this.selected_course = null
             this.action = ''
         },
 
         selectCourse(course) {
-            if (this.selected_course != course) {
-                this.ensureCourseStudentCollections(course)
+            if (course && this.selected_course?.id !== course.id) {
+                this.courseStore.ensureCourseStudentCollections(course)
                 this.selected_course = course
                 this.delete_level = 0
             } else {
@@ -373,12 +348,11 @@ export default {
         editCourse(course) {
             this.data = { ...course }
             this.selected_course = course
-            this.ensureCourseStudentCollections(this.selected_course)
+            this.courseStore.ensureCourseStudentCollections(this.selected_course)
             this.action = 'teaching_course_new_or_edit'
             this.selectStudents(this.data.classes || [])
         },
         abortNewCourse() {
-            this.selected_course = null
             this.action = ''
         },
         async deleteCourse(course) {

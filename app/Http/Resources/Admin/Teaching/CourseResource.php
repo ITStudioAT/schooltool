@@ -15,10 +15,12 @@ class CourseResource extends JsonResource
     public function toArray(Request $request): array
     {
         $data = parent::toArray($request);
+        unset($data['teaching_course_dates']);
 
         return array_merge($data, [
             'students' => $this->students ?? [],
             'students_deleted' => $this->students_deleted ?? [],
+            'course_dates' => CourseDateResource::collection($this->whenLoaded('teachingCourseDates')),
         ]);
     }
 }
