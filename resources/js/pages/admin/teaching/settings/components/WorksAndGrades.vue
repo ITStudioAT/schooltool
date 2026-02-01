@@ -25,9 +25,23 @@
                             <v-btn flat tile size="x-small" color="primary" icon="mdi-pencil" @click="editWork(index)" v-if="delete_index !== index" />
                         </div>
                     </div>
+                    <!-- Calculation method display -->
+                    <div class="d-flex align-center ga-2 mt-1">
+                        <v-chip size="x-small" :color="work.calculation === 'points' ? 'primary' : 'teal'" variant="flat">
+                            <v-icon start size="x-small">{{ work.calculation === 'points' ? 'mdi-sigma' : 'mdi-calculator' }}</v-icon>
+                            {{ work.calculation === 'points' ? 'Punkte-Tabelle' : 'Durchschnitt' }}
+                        </v-chip>
+                    </div>
                     <div v-if="work.grades?.length" class="mt-1">
                         <v-chip v-for="(grade, idx) in sortedGrades(work.grades)" :key="idx" size="x-small" variant="outlined" class="mr-1 mb-1">
                             {{ grade.grade }}<span v-if="grade.name" class="ml-1">({{ grade.name }})</span><span v-if="grade.value" class="ml-1">= {{ grade.value }}</span>
+                        </v-chip>
+                    </div>
+                    <!-- Points table preview -->
+                    <div v-if="work.calculation === 'points' && work.points_table?.length" class="mt-1">
+                        <span class="text-caption text-medium-emphasis">Punkte-Tabelle: </span>
+                        <v-chip v-for="(pt, idx) in work.points_table" :key="idx" size="x-small" variant="outlined" color="primary" class="mr-1 mb-1">
+                            ≥{{ pt.min_points }} → {{ pt.grade }}
                         </v-chip>
                     </div>
                 </div>
@@ -58,6 +72,82 @@
                             {{ grade.grade }}<span v-if="grade.name" class="ml-1 text-medium-emphasis">({{ grade.name }})</span><span v-if="grade.value" class="ml-1 text-medium-emphasis">= {{ grade.value }}</span>
                         </v-chip>
                     </v-chip-group>
+
+                    <!-- Berechnungsmethode -->
+                    <v-divider class="my-4" />
+                    <div class="text-caption text-text">Berechnungsmethode</div>
+                    <v-btn-toggle v-model="data.calculation" mandatory color="primary" class="mt-2">
+                        <v-btn value="average" size="small">
+                            <v-icon start>mdi-calculator</v-icon>
+                            Durchschnitt
+                        </v-btn>
+                        <v-btn value="points" size="small">
+                            <v-icon start>mdi-sigma</v-icon>
+                            Punkte-Tabelle
+                        </v-btn>
+                    </v-btn-toggle>
+
+                    <!-- Erklärung -->
+                    <v-alert v-if="data.calculation === 'average'" color="teal" density="compact" variant="tonal" class="mt-3">
+                        <strong>Durchschnitt:</strong> Der Mittelwert aller Noten-Werte ergibt die Note.
+                        <br><span class="text-caption">z.B. Werte 3, 4, 5 → Durchschnitt 4.0 → Note 4</span>
+                    </v-alert>
+                    <v-alert v-if="data.calculation === 'points'" color="primary" density="compact" variant="tonal" class="mt-3">
+                        <strong>Punkte-Tabelle:</strong> Die Punkte werden summiert und über eine Tabelle in eine Note umgewandelt.
+                        <br><span class="text-caption">z.B. +1, +1, 0, -1 → Summe 1 → Note laut Tabelle</span>
+                    </v-alert>
+
+                    <!-- Punkte-Tabelle Konfiguration -->
+                    <div v-if="data.calculation === 'points'" class="mt-4">
+                        <div class="text-caption text-text mb-2">Punkte-Tabelle (von hoch nach niedrig)</div>
+
+                        <!-- Bestehende Einträge -->
+                        <div v-for="(pt, idx) in sortedPointsTable" :key="idx" class="d-flex align-center ga-2 mb-2">
+                            <v-text-field
+                                :model-value="pt.min_points"
+                                @update:model-value="updatePointsTableEntry(idx, 'min_points', $event)"
+                                label="Ab Punkte ≥"
+                                density="compact"
+                                hide-details
+                                type="number"
+                                style="max-width: 120px" />
+                            <v-icon>mdi-arrow-right</v-icon>
+                            <v-text-field
+                                :model-value="pt.grade"
+                                @update:model-value="updatePointsTableEntry(idx, 'grade', $event)"
+                                label="Note"
+                                density="compact"
+                                hide-details
+                                style="max-width: 80px" />
+                            <v-btn icon="mdi-delete" size="x-small" color="error" variant="text" @click="removePointsTableEntry(idx)" />
+                        </div>
+
+                        <!-- Neuer Eintrag -->
+                        <div class="d-flex align-center ga-2">
+                            <v-text-field
+                                v-model="new_points_entry.min_points"
+                                label="Ab Punkte ≥"
+                                density="compact"
+                                hide-details
+                                type="number"
+                                style="max-width: 120px" />
+                            <v-icon>mdi-arrow-right</v-icon>
+                            <v-text-field
+                                v-model="new_points_entry.grade"
+                                label="Note"
+                                density="compact"
+                                hide-details
+                                style="max-width: 80px"
+                                @keyup.enter="addPointsTableEntry" />
+                            <v-btn icon="mdi-plus" size="small" color="primary" @click="addPointsTableEntry" :disabled="new_points_entry.min_points === '' || !new_points_entry.grade" />
+                        </div>
+
+                        <!-- Standard-Tabelle vorschlagen -->
+                        <v-btn v-if="!data.points_table?.length" variant="outlined" size="small" color="primary" class="mt-3" @click="useDefaultPointsTable">
+                            <v-icon start>mdi-table-plus</v-icon>
+                            Standard-Tabelle verwenden
+                        </v-btn>
+                    </div>
 
                     <div class="d-flex flex-row align-center justify-space-between mt-4">
                         <v-btn color="warning" flat tile @click="abortNewWork">Abbruch</v-btn>
@@ -100,8 +190,11 @@ export default {
                 short_name: '',
                 name: '',
                 grades: [],
+                calculation: 'average',
+                points_table: [],
             },
             new_grade: { grade: '', name: '', value: '' },
+            new_points_entry: { min_points: '', grade: '' },
             edit_index: null,
             delete_index: null,
         }
@@ -113,6 +206,14 @@ export default {
         teaching_works() {
             const works = this.settings?.teaching_works || []
             return [...works].sort((a, b) => (a.short_name || '').localeCompare(b.short_name || '', 'de'))
+        },
+        sortedPointsTable() {
+            if (!this.data.points_table?.length) return []
+            return [...this.data.points_table].sort((a, b) => {
+                const valA = parseFloat(a.min_points) || 0
+                const valB = parseFloat(b.min_points) || 0
+                return valB - valA // Sort descending (highest first)
+            })
         },
     },
 
@@ -138,8 +239,9 @@ export default {
         },
 
         newWork() {
-            this.data = { short_name: '', name: '', grades: [] }
+            this.data = { short_name: '', name: '', grades: [], calculation: 'average', points_table: [] }
             this.new_grade = { grade: '', name: '', value: '' }
+            this.new_points_entry = { min_points: '', grade: '' }
             this.edit_index = null
             this.action = 'teaching_work_new_or_edit'
         },
@@ -149,8 +251,11 @@ export default {
             this.data = {
                 ...work,
                 grades: (work.grades || []).map((g) => ({ ...g })),
+                calculation: work.calculation || 'average',
+                points_table: (work.points_table || []).map((pt) => ({ ...pt })),
             }
             this.new_grade = { grade: '', name: '', value: '' }
+            this.new_points_entry = { min_points: '', grade: '' }
             this.edit_index = index
             this.action = 'teaching_work_new_or_edit'
         },
@@ -170,6 +275,54 @@ export default {
             const newGrades = [...this.data.grades]
             newGrades.splice(index, 1)
             this.data = { ...this.data, grades: newGrades }
+        },
+
+        addPointsTableEntry() {
+            if (this.new_points_entry.min_points === '' || !this.new_points_entry.grade) return
+            if (!this.data.points_table) this.data.points_table = []
+            this.data.points_table.push({
+                min_points: parseFloat(this.new_points_entry.min_points) || 0,
+                grade: this.new_points_entry.grade.trim(),
+            })
+            this.new_points_entry = { min_points: '', grade: '' }
+        },
+
+        removePointsTableEntry(index) {
+            // Find the actual index in the unsorted array
+            const sortedEntry = this.sortedPointsTable[index]
+            const actualIndex = this.data.points_table.findIndex(
+                (pt) => pt.min_points === sortedEntry.min_points && pt.grade === sortedEntry.grade
+            )
+            if (actualIndex >= 0) {
+                const newTable = [...this.data.points_table]
+                newTable.splice(actualIndex, 1)
+                this.data = { ...this.data, points_table: newTable }
+            }
+        },
+
+        updatePointsTableEntry(sortedIndex, field, value) {
+            const sortedEntry = this.sortedPointsTable[sortedIndex]
+            const actualIndex = this.data.points_table.findIndex(
+                (pt) => pt.min_points === sortedEntry.min_points && pt.grade === sortedEntry.grade
+            )
+            if (actualIndex >= 0) {
+                const newTable = [...this.data.points_table]
+                newTable[actualIndex] = {
+                    ...newTable[actualIndex],
+                    [field]: field === 'min_points' ? (parseFloat(value) || 0) : value,
+                }
+                this.data = { ...this.data, points_table: newTable }
+            }
+        },
+
+        useDefaultPointsTable() {
+            this.data.points_table = [
+                { min_points: 5, grade: '1' },
+                { min_points: 3, grade: '2' },
+                { min_points: 1, grade: '3' },
+                { min_points: 0, grade: '4' },
+                { min_points: -999, grade: '5' },
+            ]
         },
 
         abortNewWork() {
@@ -198,6 +351,7 @@ export default {
             await this.teachingStore.saveSettings({ teaching_works: works })
             this.action = ''
             this.edit_index = null
+            this.is_editing = false
         },
 
         async deleteWork(index) {

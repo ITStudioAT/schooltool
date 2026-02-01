@@ -179,11 +179,11 @@
                             </div>
 
                             <!-- ZUGEWIESENE ARBEITEN MIT FAKTOR -->
-                            <div v-if="category.works?.length" class="mt-4">
+                            <div v-if="getValidWorks(category.works)?.length" class="mt-4">
                                 <div class="text-caption text-medium-emphasis mb-2">Gewichtung der Arbeiten</div>
                                 <div class="d-flex flex-column ga-2">
                                     <div
-                                        v-for="workItem in category.works"
+                                        v-for="workItem in getValidWorks(category.works)"
                                         :key="workItem.short_name"
                                         class="d-flex align-center ga-2 pa-2 rounded"
                                         style="background-color: rgba(var(--v-theme-success), 0.1);">
@@ -358,6 +358,22 @@ export default {
         },
     },
 
+    watch: {
+        // When teaching_works changes (e.g., a work is deleted), clean up orphaned references
+        teaching_works: {
+            handler(newWorks) {
+                if (!this.data.categories?.length) return
+                const validShortNames = newWorks.map((w) => w.short_name)
+                this.data.categories.forEach((cat) => {
+                    if (cat.works?.length) {
+                        cat.works = cat.works.filter((w) => validShortNames.includes(w.short_name))
+                    }
+                })
+            },
+            deep: true,
+        },
+    },
+
     methods: {
         exitEditMode() {
             this.is_editing = false
@@ -368,13 +384,15 @@ export default {
 
         initData() {
             const grading = this.settings?.teaching_grading || {}
+            // Filter out orphaned works (works that no longer exist in teaching_works)
+            const validShortNames = this.teaching_works.map((w) => w.short_name)
             this.data = {
                 semester_count: grading.semester_count || 2,
                 semester_1_weight: grading.semester_1_weight ?? 50,
                 semester_2_weight: grading.semester_2_weight ?? 50,
                 categories: (grading.categories || []).map((c) => ({
                     ...c,
-                    works: this.normalizeWorks(c.works),
+                    works: this.normalizeWorks(c.works).filter((w) => validShortNames.includes(w.short_name)),
                     calculation: c.calculation || 'mean',
                 })),
             }
@@ -452,6 +470,12 @@ export default {
             return work?.name || shortName
         },
 
+        getValidWorks(works) {
+            if (!works?.length) return []
+            // Filter out works that no longer exist in teaching_works
+            return works.filter((w) => this.teaching_works.some((tw) => tw.short_name === w.short_name))
+        },
+
         toggleWork(categoryIndex, shortName) {
             const category = this.data.categories[categoryIndex]
             if (!category.works) category.works = []
@@ -472,13 +496,20 @@ export default {
         },
 
         async save() {
+            // Clean up orphaned works (works that no longer exist in teaching_works)
+            const cleanedCategories = this.data.categories.map((cat) => ({
+                ...cat,
+                works: this.getValidWorks(cat.works),
+            }))
+
             const grading = {
                 semester_count: this.data.semester_count,
                 semester_1_weight: this.data.semester_count === 1 ? 100 : this.data.semester_1_weight,
                 semester_2_weight: this.data.semester_count === 1 ? 0 : this.data.semester_2_weight,
-                categories: this.data.categories,
+                categories: cleanedCategories,
             }
             await this.teachingStore.saveSettings({ teaching_grading: grading })
+            this.exitEditMode()
         },
     },
 }
