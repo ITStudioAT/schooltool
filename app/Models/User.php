@@ -151,6 +151,7 @@ class User extends Authenticatable
         'register_as',
         'import116_id',
         'teaching_works',
+        'teaching_grading',
     ];
 
     // Protected fields that should NOT be mass assignable:
@@ -180,6 +181,7 @@ class User extends Authenticatable
             'token_2fa_expires_at' => 'datetime',
             'tutoring_filter' => 'array',
             'teaching_works' => 'array',
+            'teaching_grading' => 'array',
         ];
     }
 

@@ -58,7 +58,8 @@ class TeachingController extends Controller
         }
 
         $settings = [
-            'teaching_works' => $auth_user->teaching_works ?? []
+            'teaching_works' => $auth_user->teaching_works ?? [],
+            'teaching_grading' => $auth_user->teaching_grading ?? [],
         ];
 
         return response()->json([
@@ -80,13 +81,30 @@ class TeachingController extends Controller
             'teaching_works.*.grades.*.grade' => 'required|string|max:10',
             'teaching_works.*.grades.*.name' => 'nullable|string|max:50',
             'teaching_works.*.grades.*.value' => 'nullable|string|max:10',
+            'teaching_grading' => 'nullable|array',
+            'teaching_grading.semester_count' => 'nullable|integer|min:1|max:2',
+            'teaching_grading.semester_1_weight' => 'nullable|integer|min:0|max:100',
+            'teaching_grading.semester_2_weight' => 'nullable|integer|min:0|max:100',
+            'teaching_grading.categories' => 'nullable|array',
+            'teaching_grading.categories.*.name' => 'required|string|max:100',
+            'teaching_grading.categories.*.weight' => 'required|integer|min:0|max:100',
+            'teaching_grading.categories.*.works' => 'nullable|array',
+            'teaching_grading.categories.*.works.*.short_name' => 'required|string|max:10',
+            'teaching_grading.categories.*.works.*.factor' => 'required|integer|min:0|max:100',
+            'teaching_grading.categories.*.calculation' => 'nullable|string|in:mean,sum,best,worst',
         ]);
 
-        $auth_user->teaching_works = $validated['teaching_works'] ?? [];
+        if (isset($validated['teaching_works'])) {
+            $auth_user->teaching_works = $validated['teaching_works'];
+        }
+        if (isset($validated['teaching_grading'])) {
+            $auth_user->teaching_grading = $validated['teaching_grading'];
+        }
         $auth_user->save();
 
         $settings = [
-            'teaching_works' => $auth_user->teaching_works ?? []
+            'teaching_works' => $auth_user->teaching_works ?? [],
+            'teaching_grading' => $auth_user->teaching_grading ?? [],
         ];
 
         return response()->json([

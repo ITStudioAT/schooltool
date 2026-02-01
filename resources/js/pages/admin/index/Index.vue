@@ -12,7 +12,7 @@
                     <!-- TESTS -->
                     <v-card tile flat color="primary">
                         <v-card-text class="text-caption text-sm-body-1">
-                            <v-row no-gutters="" dense>
+                            <v-row no-gutters="" dense class="text-body-2">
                                 <v-col cols="4">
                                     Status
                                     <v-btn
@@ -36,13 +36,13 @@
                                 </v-col>
                                 <v-col cols="4" class="text-right">
                                     <div v-if="test_step == 999">
-                                        <v-icon icon="mdi-circle " color="success" v-if="all_tests_result == 1" />
-                                        <v-icon icon="mdi-circle " color="error" v-if="all_tests_result != 1" />
+                                        <v-icon icon="mdi-checkbox-marked" color="success" v-if="all_tests_result == 1" />
+                                        <v-icon icon="mdi-checkbox-marked" color="error" v-if="all_tests_result != 1" />
                                     </div>
                                 </v-col>
                             </v-row>
 
-                            <v-row no-gutters="" dense>
+                            <v-row no-gutters="" dense class="text-body-2">
                                 <v-col cols="4">Warteschlange</v-col>
                                 <v-col cols="4" class="text-right">
                                     <div v-if="queue_test_status == 'waiting'">Test wartend</div>
@@ -60,8 +60,8 @@
                                 </v-col>
                             </v-row>
 
-                            <v-row no-gutters="" dense>
-                                <v-col cols="4">Cron-Job (1-2 min.)</v-col>
+                            <v-row no-gutters="" dense class="text-body-2">
+                                <v-col cols="4">Timer (evtl. 1-2 min. warten)</v-col>
                                 <v-col cols="4" class="text-right">
                                     <div v-if="cron_test_status == 'waiting'">Test wartend</div>
                                     <div v-if="cron_test_status == 'running'">
@@ -112,20 +112,22 @@
                     <v-card tile flat color="primary" class="mt-4">
                         <v-card-title>Lizenzen</v-card-title>
                         <v-card-text>
-                            <div v-for="licence in school_licences">
+                            <div v-for="licence in school_licences" class="mb-2">
                                 <div class="d-flex flex-row flex-wrap align-center justify-space-between">
-                                    <div class="d-flex flex-row flex-wrap align-center ga-2">
-                                        <div v-if="new Date(licence.valid_until) >= new Date()"><v-icon icon="mdi-circle " color="success" /></div>
-                                        <div v-if="new Date(licence.valid_until) < new Date()"><v-icon icon="mdi-circle " color="error" /></div>
-                                        <div class="text-body-1">{{ licence.name }}</div>
+                                    <div>
+                                        <div class="d-flex flex-row flex-wrap align-center ga-2">
+                                            <div v-if="new Date(licence.valid_until) >= new Date()"><v-icon icon="mdi-circle " color="success" /></div>
+                                            <div v-if="new Date(licence.valid_until) < new Date()"><v-icon icon="mdi-circle " color="error" /></div>
+                                            <div class="text-body-1">{{ licence.name }}</div>
+                                        </div>
+                                        <div class="text-caption font-italic" v-if="licence.long_name">{{ licence.long_name }}</div>
                                     </div>
                                     <div class="text-body-2">
                                         <div v-if="new Date(licence.valid_until) >= new Date()">aktiv bis: {{ licence.valid_until }}</div>
                                         <div v-if="new Date(licence.valid_until) < new Date()">abgelaufen seit: {{ licence.valid_until }}</div>
+                                        <div class="text-body-2 text-right">{{ 'Kosten pro Jahr: EUR ' + licence.price_per_year }}</div>
                                     </div>
                                 </div>
-                                <div class="text-caption font-italic" v-if="licence.long_name">{{ licence.long_name }}</div>
-                                <div class="text-body-2 text-right">{{ 'Kosten pro Jahr: EUR ' + licence.price_per_year }}</div>
                             </div>
                         </v-card-text>
                     </v-card>
