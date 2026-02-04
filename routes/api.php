@@ -186,7 +186,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::patch('/admin/teaching/course_dates/{course_date}/status', [\App\Http\Controllers\Admin\Teaching\CourseDateController::class, 'updateStatus']);
         Route::get('/admin/teaching/load_class_students', [\App\Http\Controllers\Admin\Teaching\StudentController::class, 'loadClassStudents']);
         Route::get('/admin/teaching/import116/load_class_students', [\App\Http\Controllers\Admin\Teaching\Import116Controller::class, 'loadClassStudents']);
-        //load_class_students
+        Route::apiResource('/admin/teaching/course_works', \App\Http\Controllers\Admin\Teaching\CourseWorkController::class);
     });
 
     /* SANCTUM - admin, register_admin, tutoring_admin, teacher */

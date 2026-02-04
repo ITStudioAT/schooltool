@@ -15,6 +15,9 @@ class TeachingCourseWork extends Model
         'teaching_course_id',
         'type',
         'description',
+        'is_group_work',
+        'group_size',
+        'is_random_groups',
         'date_for_all_groups',
         'groups',
         'status',
@@ -22,6 +25,9 @@ class TeachingCourseWork extends Model
 
     protected $casts = [
         'date_for_all_groups' => 'date',
+        'is_group_work' => 'boolean',
+        'group_size' => 'integer',
+        'is_random_groups' => 'boolean',
         'groups' => 'array',
         'status' => 'array',
     ];

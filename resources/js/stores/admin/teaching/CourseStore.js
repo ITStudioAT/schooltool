@@ -12,6 +12,7 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             show_my_courses: true,
             show_students: true,
             show_infos: true,
+            show_works: true,
             show_dates: true,
         }
     },

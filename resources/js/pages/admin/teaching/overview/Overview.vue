@@ -27,6 +27,13 @@
             :color="show_dates ? 'success' : 'secondary'"
             @click="show_dates = !show_dates"
             v-if="selected_course" />
+
+        <its-menu-button
+            subtitle="Arbeiten"
+            :icon="show_works ? 'mdi-eye' : 'mdi-eye-off'"
+            :color="show_works ? 'success' : 'secondary'"
+            @click="show_works = !show_works"
+            v-if="selected_course" />
     </v-card>
 
     <!-- OVERVIEW-->
@@ -47,10 +54,16 @@
     </v-col>
 
     <!-- KURS-INFOS  -->
-    <v-col cols="12" md="6" xl="4" v-if="show_infos || show_dates">
+    <v-col cols="12" md="6" xl="4" v-if="show_infos || show_dates || show_works">
         <v-row v-if="show_infos">
             <v-col>
                 <CourseInfos />
+            </v-col>
+        </v-row>
+
+        <v-row v-if="show_works">
+            <v-col>
+                <CourseWorks />
             </v-col>
         </v-row>
 
@@ -72,9 +85,10 @@ import MyCourses from './components/MyCourses.vue'
 import CourseStudents from './components/CourseStudents.vue'
 import CourseInfos from './components/CourseInfos.vue'
 import CourseDates from './components/CourseDates.vue'
+import CourseWorks from './components/CourseWorks.vue'
 
 export default {
-    components: { ItsGridBox, MyCourses, ItsMenuButton, CourseStudents, CourseInfos, CourseDates },
+    components: { ItsGridBox, MyCourses, ItsMenuButton, CourseStudents, CourseInfos, CourseDates, CourseWorks },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -96,7 +110,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', , 'action_2', 'config']),
-        ...mapWritableState(useCourseStore, ['selected_course', 'selected_course_id', 'show_my_courses', 'show_students', 'show_infos', 'show_dates']),
+        ...mapWritableState(useCourseStore, ['selected_course', 'selected_course_id', 'show_my_courses', 'show_students', 'show_infos', 'show_works', 'show_dates']),
     },
 
     watch: {},
