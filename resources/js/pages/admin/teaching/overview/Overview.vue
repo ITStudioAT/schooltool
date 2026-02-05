@@ -46,9 +46,15 @@
         </v-row>
 
         <!-- STUDENTS -->
-        <v-row v-if="action != 'teaching_course_new_or_edit' && show_students">
+        <v-row v-if="action != 'teaching_course_new_or_edit' && show_students && action_2 != 'course_student_view'">
             <v-col>
                 <CourseStudents />
+            </v-col>
+        </v-row>
+
+        <v-row v-if="action_2 == 'course_student_view'">
+            <v-col>
+                <CourseStudent />
             </v-col>
         </v-row>
     </v-col>
@@ -83,12 +89,13 @@ import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import MyCourses from './components/MyCourses.vue'
 import CourseStudents from './components/CourseStudents.vue'
+import CourseStudent from './components/CourseStudent.vue'
 import CourseInfos from './components/CourseInfos.vue'
 import CourseDates from './components/CourseDates.vue'
 import CourseWorks from './components/CourseWorks.vue'
 
 export default {
-    components: { ItsGridBox, MyCourses, ItsMenuButton, CourseStudents, CourseInfos, CourseDates, CourseWorks },
+    components: { ItsGridBox, MyCourses, ItsMenuButton, CourseStudents, CourseStudent, CourseInfos, CourseDates, CourseWorks },
 
     async beforeMount() {
         this.adminStore = useAdminStore()

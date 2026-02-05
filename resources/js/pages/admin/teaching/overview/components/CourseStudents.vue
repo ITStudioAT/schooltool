@@ -26,7 +26,7 @@
                     <v-divider />
                     <v-card-text class="pa-0">
                         <v-list density="compact">
-                            <v-list-item v-for="student in sortedSelectedStudents" :key="student.id">
+                            <v-list-item v-for="student in sortedSelectedStudents" :key="student.id" class="cursor-pointer" @click="openStudent(student)">
                                 <div class="d-flex align-center ga-2 w-100">
                                     <v-chip v-if="student.schoolclass || student.class" size="x-small" variant="tonal" color="primary">
                                         {{ student.schoolclass || student.class }}
@@ -86,7 +86,7 @@ export default {
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useImport116Store, ['import116_students']),
-        ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course']),
+        ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'selected_course_student']),
         filteredImport116Students() {
             const list = this.import116_students || []
             const selected = this.selected_course?.students_info || []
@@ -283,6 +283,11 @@ export default {
             await this.courseStore.index()
             this.selected_course = null
             this.delete_level = 0
+        },
+        openStudent(student) {
+            if (!student) return
+            this.selected_course_student = student
+            this.action_2 = 'course_student_view'
         },
     },
 }

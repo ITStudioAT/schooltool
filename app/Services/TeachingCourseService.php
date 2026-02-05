@@ -78,6 +78,62 @@ class TeachingCourseService
         return array_values(array_unique($ids));
     }
 
+    public function normalizeStudentEntries($value): array
+    {
+        $items = $this->normalizeStudentItems($value);
+        $entries = [];
+
+        foreach ($items as $item) {
+            $data = (is_array($item) || is_object($item)) ? (array) $item : ['id' => $item];
+            $id = $data['id'] ?? null;
+            $comment = $data['comment'] ?? null;
+
+            if (is_numeric($id)) {
+                $entries[] = [
+                    'id' => (int) $id,
+                    'comment' => $comment,
+                ];
+            }
+        }
+
+        return $entries;
+    }
+
+    public function resolveStudentEntries($value, int $schoolId): array
+    {
+        $items = $this->normalizeStudentItems($value);
+        $entries = [];
+
+        foreach ($items as $item) {
+            $resolvedId = null;
+            $comment = null;
+
+            if (is_array($item) || is_object($item)) {
+                $data = (array) $item;
+                $comment = $data['comment'] ?? null;
+                $email = $data['email'] ?? null;
+                $id = $data['id'] ?? null;
+
+                if ($email) {
+                    $resolvedId = $this->findOrCreateUserIdByEmail($email, $schoolId, $data);
+                } elseif ($id) {
+                    $resolvedId = $this->resolveStudentIdFromNumeric((int) $id, $schoolId);
+                }
+            } elseif (is_numeric($item)) {
+                $resolvedId = $this->resolveStudentIdFromNumeric((int) $item, $schoolId);
+            }
+
+            if ($resolvedId) {
+                $entries[$resolvedId] = [
+                    'id' => $resolvedId,
+                    'comment' => $comment,
+                ];
+            }
+        }
+
+        return array_values($entries);
+    }
+
     public function resolveStudentIdFromNumeric(int $id, int $schoolId): ?int
     {
         $user = User::find($id);

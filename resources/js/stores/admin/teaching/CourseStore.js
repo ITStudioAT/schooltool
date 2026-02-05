@@ -9,6 +9,7 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             classes: [],
             selected_course: null,
             selected_course_id: null,
+            selected_course_student: null,
             show_my_courses: true,
             show_students: true,
             show_infos: true,
