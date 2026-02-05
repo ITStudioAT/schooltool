@@ -65,6 +65,7 @@ class CourseWorkController extends Controller
             'groups' => 'nullable|array',
             'groups.*.student_ids' => 'nullable|array',
             'groups.*.student_ids.*' => 'integer|exists:users,id',
+            'groups.*.date' => 'nullable|date',
             'groups.*.comment' => 'nullable|string|max:1024',
             'groups.*.grade' => 'nullable|string|max:50',
             'groups.*.grades' => 'nullable|array',
@@ -93,7 +94,9 @@ class CourseWorkController extends Controller
             $validated['is_group_work'] = false;
             $validated['is_random_groups'] = false;
             $validated['group_size'] = null;
-            $validated['groups'] = $this->buildIndividualGroups($course);
+            if (empty($validated['groups'])) {
+                $validated['groups'] = $this->buildIndividualGroups($course);
+            }
         }
 
         $work = TeachingCourseWork::create($validated);
@@ -150,6 +153,7 @@ class CourseWorkController extends Controller
             'groups' => 'nullable|array',
             'groups.*.student_ids' => 'nullable|array',
             'groups.*.student_ids.*' => 'integer|exists:users,id',
+            'groups.*.date' => 'nullable|date',
             'groups.*.comment' => 'nullable|string|max:1024',
             'groups.*.grade' => 'nullable|string|max:50',
             'groups.*.grades' => 'nullable|array',
@@ -168,7 +172,9 @@ class CourseWorkController extends Controller
             $validated['is_group_work'] = false;
             $validated['is_random_groups'] = false;
             $validated['group_size'] = null;
-            $validated['groups'] = $this->buildIndividualGroups($course);
+            if (empty($validated['groups'])) {
+                $validated['groups'] = $this->buildIndividualGroups($course);
+            }
         }
 
         $course_work->update($validated);

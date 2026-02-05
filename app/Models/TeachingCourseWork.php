@@ -24,7 +24,7 @@ class TeachingCourseWork extends Model
     ];
 
     protected $casts = [
-        'date_for_all_groups' => 'date',
+        'date_for_all_groups' => 'date:Y-m-d',
         'is_group_work' => 'boolean',
         'group_size' => 'integer',
         'is_random_groups' => 'boolean',

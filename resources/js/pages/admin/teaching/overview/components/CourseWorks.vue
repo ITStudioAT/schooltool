@@ -42,34 +42,16 @@
                                     {{ formatDate(work.date_for_all_groups) }}
                                 </v-chip>
                                 <v-chip v-else size="x-small" variant="outlined">ohne Datum</v-chip>
-                    <div class="text-body-2 flex-grow-1">
-                        <strong v-if="work.type">{{ workTypeLabel(work.type) }}</strong>
-                        <span v-else class="text-medium-emphasis">eine Arbeit</span>
-                        <span v-if="work.description"> – {{ work.description }}</span>
-                    </div>
+                                <div class="text-body-2 flex-grow-1">
+                                    <strong v-if="work.type">{{ workTypeLabel(work.type) }}</strong>
+                                    <span v-else class="text-medium-emphasis">eine Arbeit</span>
+                                    <span v-if="work.description">– {{ work.description }}</span>
+                                </div>
                                 <div class="d-flex align-center ga-1">
                                     <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editWork(work)" />
-                                    <v-btn
-                                        v-if="delete_work_id !== work.id"
-                                        icon="mdi-delete"
-                                        size="x-small"
-                                        color="warning"
-                                        variant="tonal"
-                                        @click="delete_work_id = work.id" />
-                                    <v-btn
-                                        v-if="delete_work_id === work.id"
-                                        icon="mdi-delete-off"
-                                        size="x-small"
-                                        color="success"
-                                        variant="tonal"
-                                        @click="delete_work_id = null" />
-                                    <v-btn
-                                        v-if="delete_work_id === work.id"
-                                        icon="mdi-delete"
-                                        size="x-small"
-                                        color="error"
-                                        variant="tonal"
-                                        @click="deleteWork(work)" />
+                                    <v-btn v-if="delete_work_id !== work.id" icon="mdi-delete" size="x-small" color="warning" variant="tonal" @click="delete_work_id = work.id" />
+                                    <v-btn v-if="delete_work_id === work.id" icon="mdi-delete-off" size="x-small" color="success" variant="tonal" @click="delete_work_id = null" />
+                                    <v-btn v-if="delete_work_id === work.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteWork(work)" />
                                 </div>
                             </div>
                         </div>
@@ -83,134 +65,279 @@
 
         <!-- NEUE/BEARBEITEN ARBEIT (TEMPLATE) -->
         <v-card tile flat color="transparent" class="w-100" v-if="action === 'new_course_work' || action === 'edit_course_work'">
-            <v-form ref="form" v-model="is_valid" @submit.prevent="saveWork" class="mb-4">
+            <v-form ref="form" v-model="is_valid" @submit.prevent class="mb-4">
                 <v-card-text>
-                    <v-select
-                        v-model="work_form.type"
-                        label="Typ"
-                        :items="workTypeItems"
-                        item-title="title"
-                        item-value="value"
-                        clearable />
+                    <v-select v-model="work_form.type" label="Typ" :items="workTypeItems" item-title="title" item-value="value" clearable />
                     <v-date-input v-model="work_form.date_for_all_groups" label="Datum (für alle Gruppen)" />
                     <div class="d-flex flex-wrap ga-1 mt-1" v-if="nextDates.length">
-                        <v-chip
-                            v-for="date in nextDates"
-                            :key="date.id"
-                            size="x-small"
-                            variant="outlined"
-                            class="cursor-pointer"
-                            @click="selectDate(date.date)">
+                        <v-chip v-for="date in nextDates" :key="date.id" size="x-small" variant="outlined" class="cursor-pointer" @click="selectDate(date.date)">
                             {{ formatDateWithWeekday(date.date) }}
                         </v-chip>
                     </div>
-                    <v-textarea v-model="work_form.description" label="Beschreibung" rows="3" />
+                    <v-textarea v-model="work_form.description" label="Beschreibung" rows="3" class="mt-4" />
 
-                    <v-switch v-model="work_form.is_group_work" label="Gruppenarbeit" inset />
-                    <div v-if="work_form.is_group_work">
-                        <div class="d-flex flex-column ga-2">
-                            <v-text-field v-model.number="work_form.group_size" type="number" min="2" label="Gruppengröße" />
-                            <v-switch v-model="work_form.is_random_groups" label="Gruppen zufällig erstellen" inset />
-                            <v-btn
-                                v-if="work_form.is_random_groups"
-                                color="primary"
-                                variant="tonal"
-                                size="small"
-                                :disabled="!work_form.group_size || work_form.group_size < 2"
-                                @click="generateRandomGroups">
-                                Gruppen zufällig erstellen
-                            </v-btn>
-                            <v-btn color="primary" variant="tonal" size="small" @click="addGroup">
-                                Gruppe hinzufügen
-                            </v-btn>
+                    <v-switch
+                        :key="group_work_switch_key"
+                        :model-value="work_form.is_group_work"
+                        :color="work_form.is_group_work ? 'success' : ''"
+                        label="Gruppenarbeit"
+                        inset
+                        @update:model-value="setGroupWork" />
+                    <div v-if="pending_group_work !== null" class="d-flex align-center ga-2 mt-2">
+                        <div class="text-body-2">
+                            {{ pending_group_work ? 'Beim Wechsel zur Gruppenarbeit gehen vorhandene Noten/Kommentare verloren.' : 'Beim Wechsel zur Einzelarbeit gehen vorhandene Gruppen und Noten/Kommentare verloren.' }}
                         </div>
+                        <v-btn color="warning" flat tile @click="cancelGroupWorkChange">Abbruch</v-btn>
+                        <v-btn color="success" flat tile @click="confirmGroupWorkChange">Wechseln</v-btn>
+                    </div>
 
-                        <v-expansion-panels variant="accordion" class="mt-3">
-                            <v-expansion-panel v-for="(group, index) in work_form.groups" :key="`group-${index}`">
-                                <v-expansion-panel-title>
-                                    <div class="d-flex align-center flex-wrap ga-2 w-100">
-                                        <div class="text-caption text-medium-emphasis">Gruppe {{ index + 1 }}</div>
-                                        <v-chip
-                                            v-for="studentId in sortedGroupStudentIds(group)"
-                                            :key="`g-${index}-s-${studentId}`"
-                                            size="x-small"
-                                            variant="tonal">
-                                            {{ studentNameById(studentId) }}
-                                        </v-chip>
+                    <div :style="pending_group_work !== null ? 'pointer-events:none; opacity:0.6' : ''">
+                        <div v-if="work_form.is_group_work">
+                            <div class="d-flex flex-column ga-2">
+                                <v-text-field v-model.number="work_form.group_size" type="number" min="2" label="Gruppengröße" />
+                                <v-switch v-model="work_form.is_random_groups" :color="work_form.is_random_groups ? 'success' : ''" label="Gruppen zufällig erstellen" inset />
+                                <v-btn
+                                    v-if="work_form.is_random_groups && !pending_random_groups"
+                                    color="primary"
+                                    variant="tonal"
+                                    size="small"
+                                    :disabled="!work_form.group_size || work_form.group_size < 2"
+                                    @click="requestRandomGroups">
+                                    Gruppen zufällig erstellen
+                                </v-btn>
+                                <div v-if="pending_random_groups" class="d-flex align-center ga-2 mt-2">
+                                    <div class="text-body-2">
+                                        Beim Neuerstellen der Gruppen gehen vorhandene Gruppen und Noten/Kommentare verloren.
                                     </div>
-                                </v-expansion-panel-title>
-                                <v-expansion-panel-text>
-                                    <div class="d-flex flex-column ga-2">
-                                        <div class="d-flex align-center justify-space-between">
-                                            <div class="text-caption text-medium-emphasis">Mitglieder</div>
-                                            <v-btn icon="mdi-delete" size="x-small" color="warning" variant="tonal" @click="removeGroup(index)" />
-                                        </div>
-                                        <v-autocomplete
-                                            v-model="group.student_ids"
-                                            :items="availableStudentItems(index)"
-                                            item-title="title"
-                                            item-value="value"
-                                            multiple
-                                            chips
-                                            label="Schüler:innen"
-                                            :model-value="sortedGroupStudentIds(group)"
-                                            @update:model-value="sortGroupStudents(group)" />
-                                        <v-switch v-model="group.use_individual_grades" label="Einzelnoten pro Schüler:in" inset />
-                                        <v-select
-                                            v-if="!group.use_individual_grades"
-                                            v-model="group.grade"
-                                            :items="gradeItemsForType"
-                                            item-title="title"
-                                            item-value="value"
-                                            label="Note (für alle)"
-                                            clearable />
-                                        <v-textarea
-                                            v-if="!group.use_individual_grades"
-                                            v-model="group.comment"
-                                            label="Kommentar (für alle)"
-                                            rows="2"
-                                            :counter="1024"
-                                            :maxlength="1024" />
-                                        <div v-else class="d-flex flex-column ga-2">
-                                            <div v-for="studentId in sortedGroupStudentIds(group)" :key="`grade-comment-${index}-${studentId}`" class="d-flex flex-column ga-2">
-                                                <div class="text-caption text-medium-emphasis">
+                                    <v-btn color="warning" flat tile @click="cancelRandomGroups">Abbruch</v-btn>
+                                    <v-btn color="success" flat tile @click="confirmRandomGroups">Neu erstellen</v-btn>
+                                </div>
+                                <v-btn v-if="hasUnassignedStudents" color="primary" variant="tonal" size="small" @click="addGroup">Gruppe hinzufügen</v-btn>
+                            </div>
+
+                            <v-expansion-panels variant="accordion" class="mt-3">
+                                <v-expansion-panel v-for="(group, index) in work_form.groups" :key="`group-${index}`">
+                                    <v-expansion-panel-title>
+                                        <div class="d-flex flex-column w-100 ga-1">
+                                            <v-alert
+                                                v-if="groupSizeHint(group)"
+                                                density="compact"
+                                                variant="tonal"
+                                                color="warning"
+                                                icon="mdi-alert"
+                                                class="text-caption py-1">
+                                                {{ groupSizeHint(group) }}
+                                            </v-alert>
+                                            <div class="d-flex align-center flex-wrap ga-2 w-100">
+                                                <div class="text-caption text-medium-emphasis">Gruppe {{ index + 1 }}</div>
+                                                <v-chip v-if="group.date" size="x-small" variant="tonal" :color="group.date !== work_form.date_for_all_groups ? 'error' : 'primary'">
+                                                    {{ formatDate(group.date) }}
+                                                </v-chip>
+                                                <v-chip v-for="studentId in sortedGroupStudentIds(group)" :key="`g-${index}-s-${studentId}`" size="x-small" variant="tonal">
                                                     {{ studentNameById(studentId) }}
-                                                </div>
-                                                <div class="d-flex align-center flex-wrap ga-2">
-                                                    <v-select
-                                                        v-model="group.grades[studentId]"
-                                                        :items="gradeItemsForType"
-                                                        item-title="title"
-                                                        item-value="value"
-                                                        label="Note"
-                                                        clearable
-                                                        style="min-width: 140px" />
-                                                    <v-textarea
-                                                        v-model="group.comments[studentId]"
-                                                        label="Kommentar"
-                                                        rows="2"
-                                                        :counter="1024"
-                                                        :maxlength="1024"
-                                                        style="min-width: 240px; flex: 1 1 240px" />
+                                                </v-chip>
+                                            </div>
+                                        </div>
+                                    </v-expansion-panel-title>
+                                    <v-expansion-panel-text>
+                                        <div class="d-flex flex-column ga-2">
+                                            <v-autocomplete
+                                                :model-value="sortedGroupStudentIds(group)"
+                                                @update:model-value="updateGroupStudents(group, $event)"
+                                                :items="availableStudentItems(index)"
+                                                item-title="title"
+                                                item-value="value"
+                                                multiple
+                                                chips
+                                                label="Schüler:innen" />
+                                            <v-date-input v-model="group.date" label="Datum" />
+                                            <v-switch v-model="group.use_individual_grades" :color="group.use_individual_grades ? 'success' : ''" label="Einzelnoten pro Schüler:in" inset />
+                                            <v-select
+                                                v-if="!group.use_individual_grades"
+                                                v-model="group.grade"
+                                                :items="gradeItemsForType"
+                                                item-title="title"
+                                                item-value="value"
+                                                label="Note (für alle)"
+                                                clearable />
+                                            <v-textarea
+                                                v-if="!group.use_individual_grades"
+                                                v-model="group.comment"
+                                                label="Kommentar (für alle)"
+                                                rows="2"
+                                                :counter="1024"
+                                                :maxlength="1024" />
+                                            <div v-else class="d-flex flex-column ga-2">
+                                                <div v-for="studentId in sortedGroupStudentIds(group)" :key="`grade-comment-${index}-${studentId}`" class="d-flex flex-column ga-2">
+                                                    <div class="text-caption text-medium-emphasis">
+                                                        {{ studentNameById(studentId) }}
+                                                    </div>
+                                                    <div class="d-flex align-center flex-wrap ga-2">
+                                                        <v-select
+                                                            v-model="group.grades[studentId]"
+                                                            :items="gradeItemsForType"
+                                                            item-title="title"
+                                                            item-value="value"
+                                                            label="Note"
+                                                            clearable
+                                                            style="min-width: 140px" />
+                                                        <v-textarea
+                                                            v-model="group.comments[studentId]"
+                                                            label="Kommentar"
+                                                            rows="2"
+                                                            :counter="1024"
+                                                            :maxlength="1024"
+                                                            style="min-width: 240px; flex: 1 1 240px" />
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
+                                    </v-expansion-panel-text>
+                                </v-expansion-panel>
+                            </v-expansion-panels>
+                        </div>
+                        <div v-else>
+                            <div class="d-flex align-center justify-space-between ga-2">
+                                <v-btn
+                                    v-if="allSinglePanelsOpen"
+                                    size="x-small"
+                                    :variant="show_bulk_action ? 'flat' : 'outlined'"
+                                    :color="show_bulk_action ? 'warning' : 'primary'"
+                                    @click="show_bulk_action = !show_bulk_action">
+                                    {{ show_bulk_action ? 'Sammelaktion schließen' : 'Sammelaktion' }}
+                                </v-btn>
+                                <v-spacer v-else />
+                                <v-btn size="x-small" variant="tonal" color="primary" @click="toggleAllSinglePanels">
+                                    {{ allSinglePanelsOpen ? 'Alle schließen' : 'Alle öffnen' }}
+                                </v-btn>
+                            </div>
+                            <!-- Bulk action panel -->
+                            <v-card v-if="show_bulk_action" variant="outlined" class="mt-3 pa-3">
+                                <div class="text-caption text-medium-emphasis mb-2">Note und/oder Kommentar für mehrere Schüler:innen setzen</div>
+                                <div class="d-flex flex-column ga-2">
+                                    <v-select
+                                        v-model="bulk_grade"
+                                        :items="gradeItemsForType"
+                                        item-title="title"
+                                        item-value="value"
+                                        label="Note"
+                                        density="compact"
+                                        hide-details
+                                        clearable />
+                                    <v-textarea
+                                        v-model="bulk_comment"
+                                        label="Kommentar"
+                                        density="compact"
+                                        hide-details
+                                        rows="2"
+                                        :maxlength="1024" />
+                                    <div class="d-flex align-center justify-space-between mt-2">
+                                        <div class="d-flex align-center ga-2">
+                                            <v-btn size="small" variant="text" @click="selectAllStudents">Alle auswählen</v-btn>
+                                            <v-btn size="small" variant="text" @click="deselectAllStudents">Keine auswählen</v-btn>
+                                        </div>
+                                        <v-btn
+                                            size="small"
+                                            color="primary"
+                                            variant="tonal"
+                                            :disabled="!bulk_grade && !bulk_comment"
+                                            @click="applyBulkAction">
+                                            {{ selected_student_ids.length ? `Auf ${selected_student_ids.length} Schüler:in(nen) anwenden` : 'Auf alle anwenden' }}
+                                        </v-btn>
                                     </div>
-                                </v-expansion-panel-text>
-                            </v-expansion-panel>
-                        </v-expansion-panels>
-                    </div>
-                    <div v-else class="text-caption text-medium-emphasis">
-                        Für Einzelarbeiten werden pro Schüler:in automatisch Gruppen mit Kommentar/Note erstellt.
-                    </div>
+                                </div>
+                            </v-card>
+                            <!-- Compact view when all open -->
+                            <div v-if="allSinglePanelsOpen" class="mt-3 d-flex flex-column ga-2">
+                                <v-card
+                                    v-for="(group, index) in work_form.groups"
+                                    :key="`compact-${index}`"
+                                    variant="outlined"
+                                    class="pa-2">
+                                    <div v-for="studentId in sortedGroupStudentIds(group)" :key="`compact-grade-${index}-${studentId}`" class="d-flex flex-column ga-1">
+                                        <div class="d-flex align-center ga-2">
+                                            <v-checkbox
+                                                v-if="show_bulk_action"
+                                                v-model="selected_student_ids"
+                                                :value="studentId"
+                                                density="compact"
+                                                hide-details
+                                                class="flex-grow-0" />
+                                            <div class="text-body-2 font-weight-medium" style="min-width: 180px">
+                                                {{ studentNameById(studentId) }}
+                                            </div>
+                                            <v-select
+                                                v-model="group.grades[studentId]"
+                                                :items="gradeItemsForType"
+                                                item-title="title"
+                                                item-value="value"
+                                                label="Note"
+                                                density="compact"
+                                                hide-details
+                                                clearable
+                                                style="width: 200px; flex: 0 0 200px" />
+                                        </div>
+                                        <v-textarea
+                                            v-model="group.comments[studentId]"
+                                            label="Kommentar"
+                                            density="compact"
+                                            hide-details
+                                            rows="1"
+                                            auto-grow
+                                            :maxlength="1024" />
+                                    </div>
+                                </v-card>
+                            </div>
+                            <!-- Expansion panels view when collapsed -->
+                            <v-expansion-panels v-else v-model="singlePanels" multiple class="mt-3">
+                                <v-expansion-panel v-for="(group, index) in work_form.groups" :key="`single-${index}`">
+                                    <v-expansion-panel-title>
+                                        <div class="d-flex align-center flex-wrap ga-2 w-100">
+                                            <div class="text-caption text-medium-emphasis">Schüler:in</div>
+                                            <v-chip
+                                                v-for="studentId in sortedGroupStudentIds(group)"
+                                                :key="`single-chip-${index}-${studentId}`"
+                                                size="x-small"
+                                                variant="tonal">
+                                                {{ studentNameById(studentId) }}
+                                            </v-chip>
+                                        </div>
+                                    </v-expansion-panel-title>
+                                    <v-expansion-panel-text>
+                                        <div v-for="studentId in sortedGroupStudentIds(group)" :key="`single-grade-${index}-${studentId}`" class="d-flex flex-column ga-2">
+                                            <div class="text-caption text-medium-emphasis">
+                                                {{ studentNameById(studentId) }}
+                                            </div>
+                                            <div class="d-flex align-center flex-wrap ga-2">
+                                                <v-select
+                                                    v-model="group.grades[studentId]"
+                                                    :items="gradeItemsForType"
+                                                    item-title="title"
+                                                    item-value="value"
+                                                    label="Note"
+                                                    clearable
+                                                    style="min-width: 140px" />
+                                                <v-textarea
+                                                    v-model="group.comments[studentId]"
+                                                    label="Kommentar"
+                                                    rows="2"
+                                                    :counter="1024"
+                                                    :maxlength="1024"
+                                                    style="min-width: 240px; flex: 1 1 240px" />
+                                            </div>
+                                        </div>
+                                    </v-expansion-panel-text>
+                                </v-expansion-panel>
+                            </v-expansion-panels>
+                        </div>
 
-                    <div class="text-caption text-medium-emphasis mt-2">
-                        Gruppen/Status folgen im nächsten Schritt.
-                    </div>
-
-                    <div class="d-flex flex-row align-center justify-space-between mt-4">
-                        <v-btn color="warning" flat tile @click="abortEdit">Abbruch</v-btn>
-                        <v-btn color="success" flat tile type="submit">Speichern</v-btn>
+                        <div class="d-flex flex-row align-center justify-space-between mt-4">
+                            <v-btn color="warning" flat tile @click="abortEdit">Abbruch</v-btn>
+                            <div class="d-flex ga-2">
+                                <v-btn color="primary" flat tile @click="saveWork(true)">Speichern</v-btn>
+                                <v-btn color="success" flat tile @click="saveWork(false)">Ende</v-btn>
+                            </div>
+                        </div>
                     </div>
                 </v-card-text>
             </v-form>
@@ -254,6 +381,14 @@ export default {
             delete_work_id: null,
             work_form: this.emptyWorkForm(),
             is_initializing_form: false,
+            singlePanels: [],
+            pending_group_work: null,
+            group_work_switch_key: 0,
+            pending_random_groups: false,
+            show_bulk_action: false,
+            bulk_grade: null,
+            bulk_comment: '',
+            selected_student_ids: [],
         }
     },
 
@@ -312,6 +447,17 @@ export default {
                 .sort((a, b) => a._dateObj - b._dateObj)
                 .slice(0, 3)
         },
+        allSinglePanelsOpen() {
+            return this.singlePanels.length === this.work_form.groups.length && this.work_form.groups.length > 0
+        },
+        hasUnassignedStudents() {
+            const allStudentIds = (this.selected_course?.students_info || []).map((s) => s.id)
+            const assignedIds = new Set()
+            ;(this.work_form.groups || []).forEach((group) => {
+                ;(group.student_ids || []).forEach((id) => assignedIds.add(id))
+            })
+            return allStudentIds.some((id) => !assignedIds.has(id))
+        },
     },
 
     watch: {
@@ -324,6 +470,15 @@ export default {
         'work_form.date_for_all_groups'(val) {
             if (val && val instanceof Date) {
                 this.work_form.date_for_all_groups = this.toDateString(val)
+                return
+            }
+            // Don't update group dates during form initialization (e.g., when loading for edit)
+            if (this.is_initializing_form) return
+            // Update all group dates when the main date changes
+            if (val && this.work_form.groups?.length) {
+                this.work_form.groups.forEach((group) => {
+                    group.date = val
+                })
             }
         },
         'work_form.is_group_work'(val, oldVal) {
@@ -335,6 +490,9 @@ export default {
                 return
             }
             if (val && !oldVal) {
+                if (!this.work_form.group_size || this.work_form.group_size < 2) {
+                    this.work_form.group_size = 2
+                }
                 if (this.work_form.is_random_groups) {
                     this.generateRandomGroups()
                 } else {
@@ -345,6 +503,73 @@ export default {
     },
 
     methods: {
+        setGroupWork(value) {
+            const nextVal = !!value
+            const current = !!this.work_form.is_group_work
+            // Switching to group work: check for individual entries
+            if (nextVal && !current && this.hasIndividualEntries()) {
+                this.pending_group_work = nextVal
+                return
+            }
+            // Switching to individual work: check for group entries
+            if (!nextVal && current && this.hasGroupEntries()) {
+                this.pending_group_work = nextVal
+                return
+            }
+            this.work_form.is_group_work = nextVal
+        },
+        confirmGroupWorkChange() {
+            if (this.pending_group_work === null) return
+            this.work_form.is_group_work = this.pending_group_work
+            this.pending_group_work = null
+            this.group_work_switch_key++
+        },
+        cancelGroupWorkChange() {
+            // Restore the opposite of pending (i.e., keep the current value)
+            this.work_form.is_group_work = !this.pending_group_work
+            this.pending_group_work = null
+            this.group_work_switch_key++
+        },
+        requestRandomGroups() {
+            if (this.hasGroupEntries()) {
+                this.pending_random_groups = true
+                return
+            }
+            this.generateRandomGroups()
+        },
+        confirmRandomGroups() {
+            this.pending_random_groups = false
+            this.generateRandomGroups()
+        },
+        cancelRandomGroups() {
+            this.pending_random_groups = false
+        },
+        hasGroupEntries() {
+            const groups = this.work_form.groups || []
+            if (!groups.length) return false
+            return groups.some((group) => {
+                const hasStudents = Array.isArray(group?.student_ids) && group.student_ids.length > 0
+                const gradeVals = group?.grades ? Object.values(group.grades) : []
+                const commentVals = group?.comments ? Object.values(group.comments) : []
+                const hasGrade = gradeVals.some((v) => (v ?? '').toString().trim() !== '')
+                const hasComment = commentVals.some((v) => (v ?? '').toString().trim() !== '')
+                const groupGrade = (group?.grade ?? '').toString().trim() !== ''
+                const groupComment = (group?.comment ?? '').toString().trim() !== ''
+                return hasStudents || hasGrade || hasComment || groupGrade || groupComment
+            })
+        },
+        hasIndividualEntries() {
+            const groups = this.work_form.groups || []
+            return groups.some((group) => {
+                const gradeVals = group?.grades ? Object.values(group.grades) : []
+                const commentVals = group?.comments ? Object.values(group.comments) : []
+                const hasGrade = gradeVals.some((v) => (v ?? '').toString().trim() !== '')
+                const hasComment = commentVals.some((v) => (v ?? '').toString().trim() !== '')
+                const groupGrade = (group?.grade ?? '').toString().trim() !== ''
+                const groupComment = (group?.comment ?? '').toString().trim() !== ''
+                return hasGrade || hasComment || groupGrade || groupComment
+            })
+        },
         emptyWorkForm() {
             return {
                 id: null,
@@ -371,6 +596,12 @@ export default {
             this.work_form = this.emptyWorkForm()
             this.work_form.teaching_course_id = this.selected_course?.id || null
             this.work_form.groups = this.buildIndividualGroups()
+            this.singlePanels = []
+            this.pending_random_groups = false
+            this.show_bulk_action = false
+            this.bulk_grade = null
+            this.bulk_comment = ''
+            this.selected_student_ids = []
             this.action = 'new_course_work'
             this.$nextTick(() => {
                 this.is_initializing_form = false
@@ -382,6 +613,8 @@ export default {
                 ...this.emptyWorkForm(),
                 ...work,
             }
+            // Normalize the main date (server may return ISO format)
+            this.work_form.date_for_all_groups = this.normalizeDateString(this.work_form.date_for_all_groups)
             this.work_form.groups = (this.work_form.groups || []).map((group) => {
                 const gradesArray = Array.isArray(group.grades) ? group.grades : []
                 const grades = gradesArray.reduce((acc, item) => {
@@ -395,14 +628,25 @@ export default {
                 }, {})
                 return {
                     ...group,
+                    // Normalize group date (server may return ISO format)
+                    date: this.normalizeDateString(group.date),
                     grades,
                     comments,
                     use_individual_grades: Object.keys(grades).length > 0,
                 }
             })
             if (!this.work_form.is_group_work) {
-                this.work_form.groups = this.buildIndividualGroups()
+                this.work_form.groups = this.work_form.groups.map((group) => ({
+                    ...group,
+                    use_individual_grades: true,
+                }))
             }
+            this.singlePanels = []
+            this.pending_random_groups = false
+            this.show_bulk_action = false
+            this.bulk_grade = null
+            this.bulk_comment = ''
+            this.selected_student_ids = []
             this.action = 'edit_course_work'
             this.$nextTick(() => {
                 this.is_initializing_form = false
@@ -411,17 +655,26 @@ export default {
         abortEdit() {
             this.action = ''
             this.work_form = this.emptyWorkForm()
+            this.pending_random_groups = false
+            this.show_bulk_action = false
+            this.bulk_grade = null
+            this.bulk_comment = ''
+            this.selected_student_ids = []
         },
-        async saveWork() {
+        async saveWork(stayOnPage = false) {
             if (!this.work_form.is_group_work) {
-                this.work_form.groups = this.buildIndividualGroups()
+                if (!this.work_form.groups?.length) {
+                    this.work_form.groups = this.buildIndividualGroups()
+                }
             } else if (this.work_form.is_random_groups && !this.work_form.groups?.length) {
                 this.generateRandomGroups()
             }
 
             this.work_form.groups = (this.work_form.groups || []).map((group) => {
+                // Convert date to YYYY-MM-DD string format
+                const date = this.normalizeDateString(group.date)
                 if (!group.use_individual_grades) {
-                    return { ...group, grades: [], comments: [] }
+                    return { ...group, date, grades: [], comments: [] }
                 }
                 const grades = (group.student_ids || []).map((id) => ({
                     student_id: id,
@@ -431,24 +684,39 @@ export default {
                     student_id: id,
                     comment: group.comments?.[id] ?? '',
                 }))
-                return { ...group, grade: '', comment: '', grades, comments }
+                return { ...group, date, grade: '', comment: '', grades, comments }
             })
+
+            // Convert date_for_all_groups to YYYY-MM-DD string format
+            const dateForAllGroups = this.normalizeDateString(this.work_form.date_for_all_groups)
 
             const payload = {
                 ...this.work_form,
+                date_for_all_groups: dateForAllGroups,
                 teaching_course_id: this.selected_course?.id || this.work_form.teaching_course_id,
             }
 
             let ok = false
+            let result = null
             if (this.action === 'edit_course_work') {
                 ok = await this.courseWorkStore.update(payload)
             } else {
-                ok = await this.courseWorkStore.store(payload)
+                result = await this.courseWorkStore.store(payload)
+                ok = !!result
             }
 
             if (ok) {
                 await this.refreshWorks()
-                this.abortEdit()
+                if (stayOnPage) {
+                    // Find the saved work and reload it for editing
+                    const savedWorkId = this.work_form.id || result?.id
+                    const savedWork = this.courseWorks.find((w) => w.id === savedWorkId)
+                    if (savedWork) {
+                        this.editWork(savedWork)
+                    }
+                } else {
+                    this.abortEdit()
+                }
             }
         },
         async deleteWork(work) {
@@ -462,17 +730,19 @@ export default {
             const students = this.selected_course?.students_info || []
             return students.map((student) => ({
                 student_ids: [student.id],
+                date: this.work_form.date_for_all_groups || '',
                 comment: '',
                 grade: '',
-                grades: {},
-                comments: {},
-                use_individual_grades: false,
+                grades: { [student.id]: '' },
+                comments: { [student.id]: '' },
+                use_individual_grades: true,
             }))
         },
         addGroup() {
             if (!Array.isArray(this.work_form.groups)) this.work_form.groups = []
             this.work_form.groups.push({
                 student_ids: [],
+                date: this.work_form.date_for_all_groups || '',
                 comment: '',
                 grade: '',
                 grades: {},
@@ -505,8 +775,8 @@ export default {
             }
 
             if (groups.length > 1 && groups[groups.length - 1].length === 1) {
-                const [single] = groups.pop()
-                groups.forEach((group, idx) => {
+                const single = groups.pop()
+                groups.forEach((group) => {
                     if (single.length === 0) return
                     if (group.length < size + 1) {
                         group.push(single.shift())
@@ -519,12 +789,14 @@ export default {
 
             this.work_form.groups = groups.map((ids) => ({
                 student_ids: ids,
+                date: this.work_form.date_for_all_groups || '',
                 comment: '',
                 grade: '',
                 grades: {},
                 comments: {},
                 use_individual_grades: false,
             }))
+            this.work_form.is_random_groups = false
         },
         studentLabel(student) {
             const cls = student.schoolclass ? `${student.schoolclass} ` : ''
@@ -543,14 +815,32 @@ export default {
 
             return this.studentItems.filter((item) => !taken.has(item.value) || currentIds.has(item.value))
         },
-        sortGroupStudents(group) {
-            if (!group || !Array.isArray(group.student_ids)) return
+        updateGroupStudents(group, ids) {
+            if (!group) return
+            group.student_ids = Array.isArray(ids) ? ids : []
             group.student_ids = this.sortedGroupStudentIds(group)
+        },
+        toggleAllSinglePanels() {
+            if (this.allSinglePanelsOpen) {
+                this.singlePanels = []
+                this.show_bulk_action = false
+                this.selected_student_ids = []
+                return
+            }
+            this.singlePanels = this.work_form.groups.map((_, idx) => idx)
         },
         studentNameById(studentId) {
             const student = (this.selected_course?.students_info || []).find((s) => s.id === studentId)
             if (!student) return String(studentId || '')
             return this.studentLabel(student)
+        },
+        groupSizeHint(group) {
+            if (!this.work_form.is_group_work) return ''
+            const size = parseInt(this.work_form.group_size, 10)
+            if (!size || size < 2) return ''
+            const count = Array.isArray(group?.student_ids) ? group.student_ids.length : 0
+            if (count <= size) return ''
+            return `Hinweis: Diese Gruppe hat ${count} Mitglieder (geplant: ${size}). Bitte prüfen.`
         },
         sortedGroupStudentIds(group) {
             const ids = Array.isArray(group?.student_ids) ? [...group.student_ids] : []
@@ -599,6 +889,47 @@ export default {
             const month = String(d.getMonth() + 1).padStart(2, '0')
             const day = String(d.getDate()).padStart(2, '0')
             return `${year}-${month}-${day}`
+        },
+        normalizeDateString(date) {
+            if (!date) return ''
+            // If it's a Date object, convert to string
+            if (date instanceof Date) {
+                return this.toDateString(date)
+            }
+            // If it's a string with ISO format (contains 'T'), extract just the date part
+            if (typeof date === 'string' && date.includes('T')) {
+                return date.split('T')[0]
+            }
+            // Otherwise return as-is (should be YYYY-MM-DD format already)
+            return date
+        },
+        selectAllStudents() {
+            const allIds = []
+            ;(this.work_form.groups || []).forEach((group) => {
+                ;(group.student_ids || []).forEach((id) => allIds.push(id))
+            })
+            this.selected_student_ids = allIds
+        },
+        deselectAllStudents() {
+            this.selected_student_ids = []
+        },
+        applyBulkAction() {
+            const targetIds = this.selected_student_ids.length > 0 ? new Set(this.selected_student_ids) : null
+            ;(this.work_form.groups || []).forEach((group) => {
+                ;(group.student_ids || []).forEach((studentId) => {
+                    if (targetIds && !targetIds.has(studentId)) return
+                    if (this.bulk_grade) {
+                        group.grades[studentId] = this.bulk_grade
+                    }
+                    if (this.bulk_comment) {
+                        group.comments[studentId] = this.bulk_comment
+                    }
+                })
+            })
+            // Reset bulk fields after applying
+            this.bulk_grade = null
+            this.bulk_comment = ''
+            this.selected_student_ids = []
         },
     },
 }
