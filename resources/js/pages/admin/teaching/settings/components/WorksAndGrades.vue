@@ -342,10 +342,14 @@ export default {
         async save() {
             const works = [...this.teaching_works]
 
+            // Sort grades by value before saving
+            const sortedGrades = this.sortedGrades(this.data.grades || [])
+            const workData = { ...this.data, grades: sortedGrades }
+
             if (this.edit_index !== null) {
-                works[this.edit_index] = { ...this.data }
+                works[this.edit_index] = workData
             } else {
-                works.push({ ...this.data })
+                works.push(workData)
             }
 
             await this.teachingStore.saveSettings({ teaching_works: works })

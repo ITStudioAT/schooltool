@@ -18,7 +18,7 @@
                             </v-chip>
                         </div>
                     </div>
-                    <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newWork" :disabled="action === 'edit_course_work'" />
+                    <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newWork" :disabled="action === 'edit_course_work' || !hasStudents" />
                 </v-card>
             </v-card-text>
         </v-card>
@@ -56,8 +56,11 @@
                             </div>
                         </div>
                     </v-list-item>
-                    <v-list-item v-if="!courseWorks?.length">
+                    <v-list-item v-if="!courseWorks?.length && hasStudents">
                         <v-list-item-title class="text-caption text-medium-emphasis">Keine Arbeiten vorhanden.</v-list-item-title>
+                    </v-list-item>
+                    <v-list-item v-if="!hasStudents">
+                        <v-list-item-title class="text-caption text-warning">Keine Schüler:innen im Kurs. Bitte zuerst Schüler:innen hinzufügen.</v-list-item-title>
                     </v-list-item>
                 </v-list>
             </v-card-text>
@@ -136,6 +139,14 @@
                                                 <v-chip v-for="studentId in sortedGroupStudentIds(group)" :key="`g-${index}-s-${studentId}`" size="x-small" variant="tonal">
                                                     {{ studentNameById(studentId) }}
                                                 </v-chip>
+                                                <v-spacer />
+                                                <v-btn
+                                                    v-if="isGroupEmpty(group)"
+                                                    icon="mdi-delete"
+                                                    size="x-small"
+                                                    color="error"
+                                                    variant="tonal"
+                                                    @click.stop="removeGroup(index)" />
                                             </div>
                                         </div>
                                     </v-expansion-panel-title>
@@ -332,10 +343,10 @@
                         </div>
 
                         <div class="d-flex flex-row align-center justify-space-between mt-4">
-                            <v-btn color="warning" flat tile @click="abortEdit">Abbruch</v-btn>
+                            <v-btn color="warning" flat tile @click="abortEdit" :disabled="is_saving">Abbruch</v-btn>
                             <div class="d-flex ga-2">
-                                <v-btn color="primary" flat tile @click="saveWork(true)">Speichern</v-btn>
-                                <v-btn color="success" flat tile @click="saveWork(false)">Ende</v-btn>
+                                <v-btn color="primary" flat tile @click="saveWork(true)" :disabled="is_saving" :loading="is_saving">Speichern</v-btn>
+                                <v-btn color="success" flat tile @click="saveWork(false)" :disabled="is_saving" prepend-icon="mdi-content-save">Ende</v-btn>
                             </div>
                         </div>
                     </div>
@@ -389,6 +400,7 @@ export default {
             bulk_grade: null,
             bulk_comment: '',
             selected_student_ids: [],
+            is_saving: false,
         }
     },
 
@@ -399,6 +411,9 @@ export default {
         ...mapWritableState(useTeachingStore, ['settings']),
         teachingWorks() {
             return this.settings?.teaching_works || []
+        },
+        hasStudents() {
+            return (this.selected_course?.students_info || []).length > 0
         },
         workTypeItems() {
             return this.teachingWorks.map((work) => ({
@@ -422,10 +437,13 @@ export default {
                 .map((student) => ({
                     title: this.studentLabel(student),
                     value: student.id,
+                    _class: (student.schoolclass || student.class || '').toString(),
                     _last: (student.last_name || '').toString(),
                     _first: (student.first_name || '').toString(),
                 }))
                 .sort((a, b) => {
+                    const classCmp = a._class.localeCompare(b._class, 'de', { numeric: true, sensitivity: 'base' })
+                    if (classCmp !== 0) return classCmp
                     const lastCmp = a._last.localeCompare(b._last, 'de', { sensitivity: 'base' })
                     if (lastCmp !== 0) return lastCmp
                     return a._first.localeCompare(b._first, 'de', { sensitivity: 'base' })
@@ -640,6 +658,8 @@ export default {
                     ...group,
                     use_individual_grades: true,
                 }))
+                // Sort groups by student class, then last_name for non-group works
+                this.work_form.groups = this.sortGroupsByStudent(this.work_form.groups)
             }
             this.singlePanels = []
             this.pending_random_groups = false
@@ -662,61 +682,78 @@ export default {
             this.selected_student_ids = []
         },
         async saveWork(stayOnPage = false) {
-            if (!this.work_form.is_group_work) {
-                if (!this.work_form.groups?.length) {
-                    this.work_form.groups = this.buildIndividualGroups()
-                }
-            } else if (this.work_form.is_random_groups && !this.work_form.groups?.length) {
-                this.generateRandomGroups()
-            }
+            // Prevent multiple saves while one is in progress
+            if (this.is_saving) return
+            this.is_saving = true
 
-            this.work_form.groups = (this.work_form.groups || []).map((group) => {
-                // Convert date to YYYY-MM-DD string format
-                const date = this.normalizeDateString(group.date)
-                if (!group.use_individual_grades) {
-                    return { ...group, date, grades: [], comments: [] }
-                }
-                const grades = (group.student_ids || []).map((id) => ({
-                    student_id: id,
-                    grade: group.grades?.[id] ?? '',
-                }))
-                const comments = (group.student_ids || []).map((id) => ({
-                    student_id: id,
-                    comment: group.comments?.[id] ?? '',
-                }))
-                return { ...group, date, grade: '', comment: '', grades, comments }
-            })
-
-            // Convert date_for_all_groups to YYYY-MM-DD string format
-            const dateForAllGroups = this.normalizeDateString(this.work_form.date_for_all_groups)
-
-            const payload = {
-                ...this.work_form,
-                date_for_all_groups: dateForAllGroups,
-                teaching_course_id: this.selected_course?.id || this.work_form.teaching_course_id,
-            }
-
-            let ok = false
-            let result = null
-            if (this.action === 'edit_course_work') {
-                ok = await this.courseWorkStore.update(payload)
-            } else {
-                result = await this.courseWorkStore.store(payload)
-                ok = !!result
-            }
-
-            if (ok) {
-                await this.refreshWorks()
-                if (stayOnPage) {
-                    // Find the saved work and reload it for editing
-                    const savedWorkId = this.work_form.id || result?.id
-                    const savedWork = this.courseWorks.find((w) => w.id === savedWorkId)
-                    if (savedWork) {
-                        this.editWork(savedWork)
+            try {
+                if (!this.work_form.is_group_work) {
+                    if (!this.work_form.groups?.length) {
+                        this.work_form.groups = this.buildIndividualGroups()
                     }
-                } else {
-                    this.abortEdit()
+                } else if (this.work_form.is_random_groups && !this.work_form.groups?.length) {
+                    this.generateRandomGroups()
                 }
+
+                this.work_form.groups = (this.work_form.groups || []).map((group) => {
+                    // Convert date to YYYY-MM-DD string format
+                    const date = this.normalizeDateString(group.date)
+                    if (!group.use_individual_grades) {
+                        return { ...group, date, grades: [], comments: [] }
+                    }
+                    const grades = (group.student_ids || []).map((id) => ({
+                        student_id: id,
+                        grade: group.grades?.[id] ?? '',
+                    }))
+                    const comments = (group.student_ids || []).map((id) => ({
+                        student_id: id,
+                        comment: group.comments?.[id] ?? '',
+                    }))
+                    return { ...group, date, grade: '', comment: '', grades, comments }
+                })
+
+                // Convert date_for_all_groups to YYYY-MM-DD string format
+                const dateForAllGroups = this.normalizeDateString(this.work_form.date_for_all_groups)
+
+                const payload = {
+                    ...this.work_form,
+                    date_for_all_groups: dateForAllGroups,
+                    teaching_course_id: this.selected_course?.id || this.work_form.teaching_course_id,
+                }
+
+                let ok = false
+                let savedWorkId = this.work_form.id
+                if (this.work_form.id) {
+                    // Update existing work
+                    ok = await this.courseWorkStore.update(payload)
+                } else {
+                    // Create new work
+                    const result = await this.courseWorkStore.store(payload)
+                    ok = !!result
+                    if (ok && result?.data?.id) {
+                        // Capture the new ID from the response
+                        savedWorkId = result.data.id
+                        // Update form ID so subsequent saves use update instead of store
+                        this.work_form.id = savedWorkId
+                        // Switch to edit mode since the work now exists
+                        this.action = 'edit_course_work'
+                    }
+                }
+
+                if (ok) {
+                    await this.refreshWorks()
+                    if (stayOnPage) {
+                        // Find the saved work and reload it for editing
+                        const savedWork = this.courseWorks.find((w) => w.id === savedWorkId)
+                        if (savedWork) {
+                            this.editWork(savedWork)
+                        }
+                    } else {
+                        this.abortEdit()
+                    }
+                }
+            } finally {
+                this.is_saving = false
             }
         },
         async deleteWork(work) {
@@ -753,6 +790,9 @@ export default {
         removeGroup(index) {
             if (!Array.isArray(this.work_form.groups)) return
             this.work_form.groups.splice(index, 1)
+        },
+        isGroupEmpty(group) {
+            return !Array.isArray(group?.student_ids) || group.student_ids.length === 0
         },
         generateRandomGroups() {
             const students = (this.selected_course?.students_info || []).map((s) => s.id)
@@ -850,6 +890,34 @@ export default {
             return ids.sort((a, b) => {
                 const sa = byId.get(a) || {}
                 const sb = byId.get(b) || {}
+                const classA = (sa.schoolclass || sa.class || '').toString()
+                const classB = (sb.schoolclass || sb.class || '').toString()
+                const classCmp = classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
+                if (classCmp !== 0) return classCmp
+                const lastA = (sa.last_name || '').toString()
+                const lastB = (sb.last_name || '').toString()
+                const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
+                if (lastCmp !== 0) return lastCmp
+                const firstA = (sa.first_name || '').toString()
+                const firstB = (sb.first_name || '').toString()
+                return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
+            })
+        },
+        sortGroupsByStudent(groups) {
+            if (!Array.isArray(groups)) return []
+            const students = this.selected_course?.students_info || []
+            const byId = new Map(students.map((s) => [s.id, s]))
+
+            return [...groups].sort((a, b) => {
+                // For non-group works, each group has one student
+                const studentIdA = a.student_ids?.[0]
+                const studentIdB = b.student_ids?.[0]
+                const sa = byId.get(studentIdA) || {}
+                const sb = byId.get(studentIdB) || {}
+                const classA = (sa.schoolclass || sa.class || '').toString()
+                const classB = (sb.schoolclass || sb.class || '').toString()
+                const classCmp = classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
+                if (classCmp !== 0) return classCmp
                 const lastA = (sa.last_name || '').toString()
                 const lastB = (sb.last_name || '').toString()
                 const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })

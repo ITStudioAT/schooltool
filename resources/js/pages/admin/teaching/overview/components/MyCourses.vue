@@ -343,6 +343,17 @@ export default {
 
         newCourse() {
             this.data = {}
+            // Create a fresh empty course object for the new course
+            this.selected_course = {
+                id: null,
+                title: '',
+                classes: [],
+                students: [],
+                students_info: [],
+                students_deleted: [],
+                students_deleted_info: [],
+            }
+            this.selected_course_id = null
             this.action = 'teaching_course_new_or_edit'
         },
         editCourse(course) {
