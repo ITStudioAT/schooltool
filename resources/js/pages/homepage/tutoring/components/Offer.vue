@@ -499,6 +499,7 @@
 
 <script>
 import { useValidationRulesSetup } from '@/helpers/rules'
+import { parseLocalDate } from '@/helpers/date'
 import { mapWritableState } from 'pinia'
 import { useTutoringStore } from '@/stores/tutoring/TutoringStore'
 import { useUserStore } from '@/stores/tutoring/UserStore'
@@ -589,7 +590,7 @@ export default {
 
         formattedActiveUntil() {
             if (!this.data.active_until) return ''
-            const date = new Date(this.data.active_until)
+            const date = parseLocalDate(this.data.active_until)
             const weekdays = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag']
             const weekday = weekdays[date.getDay()]
             const day = String(date.getDate()).padStart(2, '0')
@@ -665,7 +666,7 @@ export default {
                             this.message[this.step] = 'Bitte wähle ein Datum aus, bis zu dem das Angebot gültig ist.'
                             return
                         }
-                        const selectedDate = new Date(this.data.active_until)
+                        const selectedDate = parseLocalDate(this.data.active_until)
                         const today = new Date()
                         today.setHours(0, 0, 0, 0)
                         selectedDate.setHours(0, 0, 0, 0)

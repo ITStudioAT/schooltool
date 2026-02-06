@@ -4,9 +4,7 @@
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
                 <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between">
                     <div>
-                        <div class="text-body-1 font-weight-medium">
-                            {{ selected_course_student.last_name }}, {{ selected_course_student.first_name }}
-                        </div>
+                        <div class="text-body-1 font-weight-medium">{{ selected_course_student.last_name }}, {{ selected_course_student.first_name }}</div>
                         <div class="text-caption text-medium-emphasis">
                             {{ selected_course_student.schoolclass || selected_course_student.class || '–' }}
                         </div>
@@ -14,7 +12,7 @@
                     <v-btn color="warning" flat tile @click="closeStudent">Zurück</v-btn>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4">
+                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form">
                     <v-card-text v-if="!is_editing">
                         <div class="text-body-2 course-comment" v-if="selected_comment" v-html="commentHtml"></div>
                         <div class="text-body-2" v-else>Kein Kommentar vorhanden.</div>
@@ -37,20 +35,12 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4">
+                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-clipboard-text</v-icon>
                         Einträge
                         <v-chip v-if="entries?.length" size="x-small" color="primary" variant="tonal">
                             {{ entries.length }}
-                        </v-chip>
-                        <v-chip
-                            v-for="summary in pointsTotals"
-                            :key="`points-${summary.type}`"
-                            size="x-small"
-                            color="primary"
-                            variant="tonal">
-                            Σ {{ summary.type }}: {{ summary.total }}
                         </v-chip>
                         <v-spacer />
                         <v-btn size="small" variant="tonal" color="primary" @click="toggleSortByType">
@@ -69,17 +59,87 @@
                                     <v-chip v-if="entry.type" size="x-small" variant="outlined">
                                         {{ workTypeLabel(entry.type) }}
                                     </v-chip>
-                                    <v-chip v-if="entry.grade" size="x-small" variant="tonal" color="success">
+                                    <v-chip v-if="entry.grade" size="small" variant="tonal" color="success">
                                         {{ entry.grade }}
                                     </v-chip>
-                                    <div class="text-body-2 flex-grow-1">
+                                    <div class="text-caption flex-grow-1">
                                         {{ entry.description || '' }}
                                     </div>
                                     <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editEntry(entry)" />
+                                    <v-btn
+                                        v-if="delete_entry_id !== entry.id"
+                                        icon="mdi-delete"
+                                        size="x-small"
+                                        color="warning"
+                                        variant="tonal"
+                                        @click="delete_entry_id = entry.id" />
+                                    <v-btn
+                                        v-if="delete_entry_id === entry.id"
+                                        icon="mdi-delete-off"
+                                        size="x-small"
+                                        color="success"
+                                        variant="tonal"
+                                        @click="delete_entry_id = null" />
+                                    <v-btn v-if="delete_entry_id === entry.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteEntry(entry)" />
                                 </div>
                             </v-list-item>
                             <v-list-item v-if="!entries?.length">
                                 <v-list-item-title class="text-caption text-medium-emphasis">Keine Einträge vorhanden.</v-list-item-title>
+                            </v-list-item>
+                        </v-list>
+                    </v-card-text>
+                    <v-divider v-if="categoryGroups.length" />
+                    <v-card-text v-if="categoryGroups.length" class="py-2">
+                        <div class="d-flex align-center justify-space-between mb-2">
+                            <div class="text-subtitle-2">Auswertung</div>
+                            <v-btn
+                                :icon="show_auswertung ? 'mdi-eye' : 'mdi-eye-off'"
+                                size="x-small"
+                                variant="tonal"
+                                color="primary"
+                                @click="show_auswertung = !show_auswertung" />
+                        </div>
+                        <v-list v-if="show_auswertung" density="compact">
+                            <template v-for="cat in categoryGroups" :key="`cat-${cat.name}`">
+                                <v-list-item>
+                                <div class="d-flex align-center ga-2 w-100">
+                                    <v-list-item-title class="text-subtitle-2" :class="!cat.rows.length ? 'text-warning' : ''">
+                                        {{ cat.name }}
+                                    </v-list-item-title>
+                                    <v-chip size="x-small" variant="outlined">{{ cat.weight }}%</v-chip>
+                                    <v-spacer />
+                                    <div v-if="cat.value != null || cat.grade" class="text-caption text-medium-emphasis">
+                                        Bewertung: {{ cat.value != null ? formatTwoDecimals(cat.value) : formatTwoDecimals(cat.grade) }}
+                                    </div>
+                                    </div>
+                                </v-list-item>
+                                <v-list-item v-for="row in cat.rows" :key="`cat-${cat.name}-${row.key}`">
+                                    <div class="d-flex align-center ga-2 w-100">
+                                        <v-chip v-if="row.type" size="x-small" variant="outlined">
+                                            {{ workTypeLabel(row.type) }}
+                                        </v-chip>
+                                        <v-spacer />
+                                        <v-chip v-if="row.sum != null" size="x-small" variant="tonal" color="primary">Σ {{ row.sum }}</v-chip>
+                                        <v-chip v-if="row.grade" size="x-small" variant="tonal" color="primary">{{ row.grade }}</v-chip>
+                                        <v-chip v-if="row.date" size="x-small" variant="tonal" color="primary">
+                                            {{ formatDate(row.date) }}
+                                        </v-chip>
+                                        <v-chip v-if="row.value != null" size="x-small" variant="tonal" color="primary">
+                                            {{ row.value }}
+                                        </v-chip>
+                                    </div>
+                                </v-list-item>
+                            </template>
+                            <v-list-item v-if="totalGrade">
+                                <div class="d-flex align-center ga-2 w-100">
+                                    <v-list-item-title class="text-subtitle-2">Gesamtnote</v-list-item-title>
+                                    <v-spacer />
+                                    <div
+                                        class="text-subtitle-2"
+                                        :class="hasMissingCategory ? 'text-warning' : 'text-medium-emphasis'">
+                                        Bewertung: {{ formatTwoDecimals(totalGrade.value) }}
+                                    </div>
+                                </div>
                             </v-list-item>
                         </v-list>
                     </v-card-text>
@@ -88,20 +148,9 @@
                 <v-card variant="outlined" class="mt-4" v-if="show_entry_form">
                     <v-card-text>
                         <v-form ref="entryForm" @submit.prevent="saveEntry">
-                            <v-select
-                                v-model="entry_form.type"
-                                label="Typ"
-                                :items="workTypeItems"
-                                item-title="title"
-                                item-value="value"
-                                clearable />
-                            <v-select
-                                v-model="entry_form.grade"
-                                label="Note"
-                                :items="gradeItemsForType"
-                                item-title="title"
-                                item-value="value"
-                                clearable />
+                            <div class="text-subtitle-1 mb-2">Neuer Eintrag</div>
+                            <v-select v-model="entry_form.type" label="Typ" :items="workTypeItems" item-title="title" item-value="value" clearable />
+                            <v-select v-model="entry_form.grade" label="Note" :items="gradeItemsForType" item-title="title" item-value="value" clearable />
                             <v-date-input v-model="entry_form.date" label="Datum" />
                             <v-textarea v-model="entry_form.description" label="Beschreibung" rows="3" :counter="1024" :maxlength="1024" />
 
@@ -119,6 +168,7 @@
 
 <script>
 import { mapWritableState } from 'pinia'
+import { parseLocalDate } from '@/helpers/date'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
@@ -151,6 +201,8 @@ export default {
             show_entry_form: false,
             entry_form: this.emptyEntryForm(),
             sort_by_type: false,
+            delete_entry_id: null,
+            show_auswertung: false,
         }
     },
 
@@ -190,22 +242,167 @@ export default {
                 value: grade.grade,
             }))
         },
-        pointsTotals() {
-            const totals = {}
-            const list = this.entries || []
+        categoryGroups() {
+            const grading = this.settings?.teaching_grading || {}
+            const categories = grading.categories || []
+            const worksByType = new Map(this.teachingWorks.map((w) => [w.short_name, w]))
+            const entries = this.entries || []
+            const usedTypes = new Set()
 
-            list.forEach((entry) => {
-                const work = this.teachingWorks.find((w) => w.short_name === entry.type)
-                if (!work || work.calculation !== 'points') return
-                const value = this.gradeValueForWork(work, entry.grade)
-                if (value === null) return
-                totals[entry.type] = (totals[entry.type] || 0) + value
+            const grouped = categories
+                .map((cat) => {
+                    const works = (cat.works || []).map((w) => (typeof w === 'string' ? { short_name: w, factor: 100 } : w))
+                    const rows = []
+                    const workAverages = []
+                    let categoryPointsGrade = null
+
+                    works.forEach((workItem) => {
+                        const type = workItem.short_name
+                        const work = worksByType.get(type)
+                        if (!work) return
+                        usedTypes.add(type)
+
+                        const weight = (parseFloat(workItem.factor) || 0) / 100
+
+                        if (work.calculation === 'points') {
+                            const values = entries
+                                .filter((entry) => entry.type === type)
+                                .map((entry) => this.gradeValueForWork(work, entry.grade))
+                                .filter((val) => val !== null)
+                            const sum = values.reduce((s, v) => s + v, 0)
+                            const rounded = Number.isInteger(sum) ? sum : Number(sum.toFixed(2))
+                            const grade = this.pointsGradeForWork(work, rounded)
+                            rows.push({
+                                key: `sum-${type}`,
+                                type,
+                                sum: rounded,
+                                grade,
+                            })
+                            if (categoryPointsGrade == null && grade != null && grade !== '') {
+                                categoryPointsGrade = grade
+                            }
+                            let numericGrade = this.gradeValueForWork(work, grade)
+                            if (numericGrade === null && grade != null && grade !== '') {
+                                const parsed = parseFloat(String(grade).replace(',', '.'))
+                                numericGrade = Number.isNaN(parsed) ? null : parsed
+                            }
+                            if (numericGrade !== null) {
+                                workAverages.push({ value: numericGrade, weight })
+                            }
+                            return
+                        }
+
+                        const values = entries
+                            .filter((entry) => entry.type === type)
+                            .map((entry) => this.gradeValueForWork(work, entry.grade))
+                            .filter((val) => val !== null)
+                        if (values.length) {
+                            const avg = values.reduce((s, v) => s + v, 0) / values.length
+                            workAverages.push({ value: avg, weight })
+                        }
+
+                        entries
+                            .filter((entry) => entry.type === type)
+                            .forEach((entry) => {
+                                const value = this.gradeValueForWork(work, entry.grade)
+                                rows.push({
+                                    key: `entry-${entry.id}`,
+                                    type,
+                                    value: value !== null ? value : entry.grade,
+                                    date: entry.date || null,
+                                })
+                            })
+                    })
+
+                    let categoryValue = null
+                    let categoryGrade = null
+                    if (workAverages.length) {
+                        const totalWeight = workAverages.reduce((s, w) => s + w.weight, 0) || 1
+                        const weighted = workAverages.reduce((s, w) => s + w.value * w.weight, 0) / totalWeight
+                        categoryValue = Number(weighted.toFixed(2))
+                        categoryGrade = categoryPointsGrade || null
+                    } else if (categoryPointsGrade) {
+                        categoryGrade = categoryPointsGrade
+                    }
+
+                    return {
+                        name: cat.name || 'Kategorie',
+                        weight: cat.weight ?? 0,
+                        rows,
+                        value: categoryValue,
+                        grade: categoryGrade,
+                    }
+                })
+                .map((cat) => {
+                    if (!cat.rows.length) {
+                        return { ...cat, rows: [] }
+                    }
+                    return cat
+                })
+
+            const undefinedRows = []
+            entries.forEach((entry) => {
+                if (!entry.type || usedTypes.has(entry.type)) return
+                const work = worksByType.get(entry.type)
+                if (work && work.calculation === 'points') {
+                    const values = entries
+                        .filter((e) => e.type === entry.type)
+                        .map((e) => this.gradeValueForWork(work, e.grade))
+                        .filter((val) => val !== null)
+                    const sum = values.length ? values.reduce((s, v) => s + v, 0) : 0
+                    const rounded = Number.isInteger(sum) ? sum : Number(sum.toFixed(2))
+                    if (!undefinedRows.some((r) => r.key === `sum-${entry.type}`)) {
+                        undefinedRows.push({
+                            key: `sum-${entry.type}`,
+                            type: entry.type,
+                            sum: rounded,
+                            grade: this.pointsGradeForWork(work, rounded),
+                        })
+                    }
+                    return
+                }
+
+                const value = work ? this.gradeValueForWork(work, entry.grade) : entry.grade
+                undefinedRows.push({
+                    key: `entry-${entry.id}`,
+                    type: entry.type,
+                    value: value !== null ? value : entry.grade,
+                    date: entry.date || null,
+                })
             })
 
-            return Object.entries(totals).map(([type, total]) => ({
-                type,
-                total: Number.isInteger(total) ? total : Number(total.toFixed(2)),
-            }))
+            if (undefinedRows.length) {
+                grouped.push({
+                    name: 'Undefiniert',
+                    rows: undefinedRows,
+                })
+            }
+
+            return grouped
+        },
+        totalGrade() {
+            if (!this.categoryGroups.length) return null
+            const weightedCats = this.categoryGroups
+                .map((cat) => {
+                    const value = cat.value != null ? cat.value : cat.grade != null ? parseFloat(String(cat.grade).replace(',', '.')) : null
+                    return {
+                        value: value,
+                        weight: (parseFloat(cat.weight) || 0) / 100,
+                    }
+                })
+                .filter((cat) => cat.value != null && !Number.isNaN(cat.value) && cat.weight > 0)
+
+            if (!weightedCats.length) return null
+            const totalWeight = weightedCats.reduce((s, c) => s + c.weight, 0) || 1
+            const weighted = weightedCats.reduce((s, c) => s + c.value * c.weight, 0) / totalWeight
+            const value = Number(weighted.toFixed(2))
+
+            return {
+                value,
+            }
+        },
+        hasMissingCategory() {
+            return this.categoryGroups.some((cat) => !cat.rows || !cat.rows.length)
         },
         sortedEntries() {
             const list = this.entries || []
@@ -215,8 +412,8 @@ export default {
                 const typeB = (b.type || '').toString()
                 const typeCmp = typeA.localeCompare(typeB, 'de', { sensitivity: 'base' })
                 if (typeCmp !== 0) return typeCmp
-                const dateA = a.date ? new Date(a.date).getTime() : 0
-                const dateB = b.date ? new Date(b.date).getTime() : 0
+                const dateA = a.date ? parseLocalDate(a.date).getTime() : 0
+                const dateB = b.date ? parseLocalDate(b.date).getTime() : 0
                 return dateB - dateA
             })
         },
@@ -227,6 +424,7 @@ export default {
             handler() {
                 this.show_entry_form = false
                 this.entry_form = this.emptyEntryForm()
+                this.show_auswertung = false
                 this.loadEntries()
             },
         },
@@ -325,12 +523,19 @@ export default {
                 this.abortEntry()
             }
         },
+        async deleteEntry(entry) {
+            const ok = await this.entryStore.destroy(entry.id)
+            if (ok) {
+                await this.loadEntries()
+            }
+            this.delete_entry_id = null
+        },
         toggleSortByType() {
             this.sort_by_type = !this.sort_by_type
         },
         formatDate(date) {
             if (!date) return ''
-            const d = date instanceof Date ? date : new Date(date)
+            const d = parseLocalDate(date)
             if (isNaN(d.getTime())) return ''
             return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
         },
@@ -347,8 +552,26 @@ export default {
             const num = parseFloat(String(grade.value).replace(',', '.'))
             return Number.isNaN(num) ? null : num
         },
+        pointsGradeForWork(work, points) {
+            if (!work || work.calculation !== 'points') return null
+            const table = work.points_table || []
+            if (!table.length) return null
+            const sorted = [...table].sort((a, b) => (b.min_points ?? 0) - (a.min_points ?? 0))
+            const found = sorted.find((row) => points >= (row.min_points ?? 0))
+            return found?.grade || null
+        },
+        formatTwoDecimals(value) {
+            if (value == null || value === '') return ''
+            const num = typeof value === 'number' ? value : parseFloat(String(value).replace(',', '.'))
+            if (Number.isNaN(num)) return ''
+            return num.toFixed(2)
+        },
+        pointsGradeForAnyWork(points) {
+            const pointsWork = this.teachingWorks.find((w) => w.calculation === 'points' && (w.points_table || []).length)
+            return pointsWork ? this.pointsGradeForWork(pointsWork, points) : null
+        },
         toDateString(date) {
-            const d = date instanceof Date ? date : new Date(date)
+            const d = parseLocalDate(date)
             const year = d.getFullYear()
             const month = String(d.getMonth() + 1).padStart(2, '0')
             const day = String(d.getDate()).padStart(2, '0')

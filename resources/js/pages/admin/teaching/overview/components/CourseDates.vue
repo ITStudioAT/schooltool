@@ -231,6 +231,7 @@
 
 <script>
 import { useValidationRulesSetup } from '@/helpers/rules'
+import { parseLocalDate } from '@/helpers/date'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
@@ -262,7 +263,7 @@ export default {
             courseDateStore: null,
             is_valid: false,
             delete_date_id: null,
-            show_contents: true,
+            show_contents: false,
             collapsed_content_ids: [],
             expanded_content_ids: [],
             editing_content_id: null,
@@ -283,10 +284,10 @@ export default {
         generatedDates() {
             if (!this.data.from) return []
 
-            const fromDate = this.data.from instanceof Date ? this.data.from : new Date(this.data.from)
+            const fromDate = parseLocalDate(this.data.from)
             if (isNaN(fromDate.getTime())) return []
 
-            const untilDate = this.data.until ? (this.data.until instanceof Date ? this.data.until : new Date(this.data.until)) : fromDate
+            const untilDate = this.data.until ? parseLocalDate(this.data.until) : fromDate
 
             if (isNaN(untilDate.getTime())) return [fromDate]
 
@@ -315,7 +316,7 @@ export default {
 
             // Find next upcoming date (first date >= today)
             const upcomingDate = dates.find((d) => {
-                const dateObj = new Date(d.date)
+                const dateObj = parseLocalDate(d.date)
                 dateObj.setHours(0, 0, 0, 0)
                 return dateObj >= today
             })
@@ -343,13 +344,13 @@ export default {
     methods: {
         getWeekday(date) {
             if (!date) return ''
-            const d = date instanceof Date ? date : new Date(date)
+            const d = parseLocalDate(date)
             if (isNaN(d.getTime())) return ''
             return d.toLocaleDateString('de-DE', { weekday: 'long' })
         },
         formatDate(date) {
             if (!date) return ''
-            const d = date instanceof Date ? date : new Date(date)
+            const d = parseLocalDate(date)
             if (isNaN(d.getTime())) return ''
             return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
         },
@@ -362,7 +363,7 @@ export default {
                 .join('')
         },
         toDateString(date) {
-            const d = date instanceof Date ? date : new Date(date)
+            const d = parseLocalDate(date)
             const year = d.getFullYear()
             const month = String(d.getMonth() + 1).padStart(2, '0')
             const day = String(d.getDate()).padStart(2, '0')
@@ -378,7 +379,7 @@ export default {
         },
         getSem1End() {
             if (!this.config?.selected_schoolyear?.sem_2_start) return null
-            const sem2Start = new Date(this.config.selected_schoolyear.sem_2_start)
+            const sem2Start = parseLocalDate(this.config.selected_schoolyear.sem_2_start)
             sem2Start.setDate(sem2Start.getDate() - 8)
             return sem2Start
         },

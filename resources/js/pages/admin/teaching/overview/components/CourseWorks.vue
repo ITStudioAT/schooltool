@@ -42,7 +42,7 @@
                                     {{ formatDate(work.date_for_all_groups) }}
                                 </v-chip>
                                 <v-chip v-else size="x-small" variant="outlined">ohne Datum</v-chip>
-                                <div class="text-body-2 flex-grow-1">
+                                <div class="text-body-2 flex-grow-1" :class="workHasAllGrades(work) ? 'text-success' : ''">
                                     <strong v-if="work.type">{{ workTypeLabel(work.type) }}</strong>
                                     <span v-else class="text-medium-emphasis">eine Arbeit</span>
                                     <span v-if="work.description">– {{ work.description }}</span>
@@ -358,6 +358,7 @@
 
 <script>
 import { mapWritableState } from 'pinia'
+import { parseLocalDate } from '@/helpers/date'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
@@ -459,7 +460,7 @@ export default {
             return dates
                 .map((d) => ({
                     ...d,
-                    _dateObj: new Date(d.date),
+                    _dateObj: parseLocalDate(d.date),
                 }))
                 .filter((d) => !isNaN(d._dateObj.getTime()) && d._dateObj >= today)
                 .sort((a, b) => a._dateObj - b._dateObj)
@@ -874,6 +875,37 @@ export default {
             if (!student) return String(studentId || '')
             return this.studentLabel(student)
         },
+        workHasAllGrades(work) {
+            const students = (this.selected_course?.students_info || []).map((s) => s.id)
+            if (!students.length) return false
+
+            const groups = Array.isArray(work?.groups) ? work.groups : []
+            if (!groups.length) return false
+
+            const gradesByStudent = new Map()
+            groups.forEach((group) => {
+                const ids = Array.isArray(group?.student_ids) ? group.student_ids : []
+                const groupGrade = (group?.grade ?? '').toString().trim()
+                const gradesArray = Array.isArray(group?.grades) ? group.grades : []
+
+                if (gradesArray.length) {
+                    gradesArray.forEach((item) => {
+                        if (!item?.student_id) return
+                        const val = (item.grade ?? '').toString().trim()
+                        if (val !== '') {
+                            gradesByStudent.set(item.student_id, val)
+                        }
+                    })
+                    return
+                }
+
+                if (groupGrade !== '' && ids.length) {
+                    ids.forEach((id) => gradesByStudent.set(id, groupGrade))
+                }
+            })
+
+            return students.every((id) => gradesByStudent.has(id))
+        },
         groupSizeHint(group) {
             if (!this.work_form.is_group_work) return ''
             const size = parseInt(this.work_form.group_size, 10)
@@ -933,13 +965,13 @@ export default {
         },
         formatDate(date) {
             if (!date) return ''
-            const d = date instanceof Date ? date : new Date(date)
+            const d = parseLocalDate(date)
             if (isNaN(d.getTime())) return ''
             return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
         },
         formatDateWithWeekday(date) {
             if (!date) return ''
-            const d = date instanceof Date ? date : new Date(date)
+            const d = parseLocalDate(date)
             if (isNaN(d.getTime())) return ''
             const weekday = d.toLocaleDateString('de-DE', { weekday: 'short' })
             const formatted = this.formatDate(d)
@@ -952,7 +984,7 @@ export default {
             return `${found.short_name} - ${found.name}`
         },
         toDateString(date) {
-            const d = date instanceof Date ? date : new Date(date)
+            const d = parseLocalDate(date)
             const year = d.getFullYear()
             const month = String(d.getMonth() + 1).padStart(2, '0')
             const day = String(d.getDate()).padStart(2, '0')

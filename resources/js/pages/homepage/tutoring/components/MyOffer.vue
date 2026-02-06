@@ -141,6 +141,7 @@
 
 <script>
 import { mapWritableState } from 'pinia'
+import { parseLocalDate } from '@/helpers/date'
 import { useOfferStore } from '@/stores/tutoring/OfferStore'
 import { useTutoringStore } from '@/stores/tutoring/TutoringStore'
 import Offer from './Offer.vue'
@@ -184,7 +185,7 @@ export default {
 
         formattedActiveUntil() {
             if (!this.offer.active_until) return ''
-            const date = new Date(this.offer.active_until)
+            const date = parseLocalDate(this.offer.active_until)
             const weekdays = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag']
             const weekday = weekdays[date.getDay()]
             const day = String(date.getDate()).padStart(2, '0')

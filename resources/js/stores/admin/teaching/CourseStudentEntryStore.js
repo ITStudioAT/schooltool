@@ -82,6 +82,26 @@ export const useCourseStudentEntryStore = defineStore('AdminCourseStudentEntrySt
             }
         },
 
+        async destroy(entryId) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                await axios.delete(`/api/admin/teaching/course_student_entries/${entryId}`)
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
         clear() {
             this.entries = []
         },

@@ -39,7 +39,7 @@
     <!-- OVERVIEW-->
     <v-col cols="12" md="6" xl="4" v-if="show_my_courses || show_students">
         <!-- MY_COURSES-->
-        <v-row v-if="show_my_courses">
+        <v-row v-if="show_my_courses" :style="action_2 == 'course_student_view' ? 'pointer-events:none; opacity:0.6' : ''">
             <v-col>
                 <MyCourses />
             </v-col>
@@ -60,7 +60,7 @@
     </v-col>
 
     <!-- KURS-INFOS  -->
-    <v-col cols="12" md="6" xl="4" v-if="show_infos || show_dates || show_works">
+    <v-col cols="12" md="6" xl="4" v-if="show_infos || show_dates || show_works" :style="action_2 == 'course_student_view' ? 'pointer-events:none; opacity:0.6' : ''">
         <v-row v-if="show_infos">
             <v-col>
                 <CourseInfos />

@@ -21,7 +21,8 @@
       "Bash(git commit:*)",
       "Bash(git merge:*)",
       "Bash(git stash:*)",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(npx vite build:*)"
     ],
     "deny": [],
     "ask": []

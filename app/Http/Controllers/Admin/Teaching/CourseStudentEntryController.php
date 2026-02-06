@@ -114,4 +114,25 @@ class CourseStudentEntryController extends Controller
 
         return response()->json(['data' => $course_student_entry]);
     }
+
+    public function destroy(TeachingCourseStudentEntry $course_student_entry)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $course = $course_student_entry->teachingCourse;
+        if (! $course || $course->school_id !== $auth_user->school_id) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $student = $course_student_entry->user;
+        if (! $student || $student->school_id !== $auth_user->school_id) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $course_student_entry->delete();
+
+        return response()->json(null, 204);
+    }
 }

@@ -108,6 +108,7 @@
 </template>
 <script>
 import { useValidationRulesSetup } from '@/helpers/rules'
+import { parseLocalDate } from '@/helpers/date'
 import { mapWritableState } from 'pinia'
 import { useOfferStore } from '@/stores/tutoring/OfferStore'
 
@@ -151,7 +152,7 @@ export default {
         formattedActiveUntil() {
             if (!this.offer.active_until) return ''
 
-            const date = new Date(this.offer.active_until)
+            const date = parseLocalDate(this.offer.active_until)
             const weekdays = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag']
             const weekday = weekdays[date.getDay()]
 

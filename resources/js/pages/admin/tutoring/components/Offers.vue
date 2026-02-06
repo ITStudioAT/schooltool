@@ -278,6 +278,7 @@
 
 <script>
 import { useValidationRulesSetup } from '@/helpers/rules'
+import { parseLocalDate } from '@/helpers/date'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
@@ -346,7 +347,7 @@ export default {
         formattedActiveUntil() {
             if (!this.selectedOffer.active_until) return ''
 
-            const date = new Date(this.selectedOffer.active_until)
+            const date = parseLocalDate(this.selectedOffer.active_until)
             const weekdays = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag']
             const weekday = weekdays[date.getDay()]
 
