@@ -37,6 +37,44 @@
 
                 <v-card variant="outlined" class="mt-4" v-if="!show_entry_form">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                        <v-icon size="18">mdi-school</v-icon>
+                        Semesternoten
+                        <v-spacer />
+                        <v-btn v-if="!is_editing_grades" icon="mdi-pencil" size="x-small" color="primary" variant="flat" @click="editGrades" />
+                        <v-btn v-if="is_editing_grades" icon="mdi-check" size="x-small" color="success" variant="flat" @click="saveGrades" />
+                        <v-btn v-if="is_editing_grades" icon="mdi-close" size="x-small" color="warning" variant="flat" @click="is_editing_grades = false" />
+                    </v-card-title>
+                    <v-divider />
+                    <v-card-text>
+                        <template v-if="!is_editing_grades">
+                            <div class="d-flex flex-wrap ga-2" v-if="semesterCount === 2">
+                                <v-chip size="small" variant="tonal" :color="selected_course_student.sem_1_grade ? 'success' : 'default'">
+                                    1. Sem: {{ selected_course_student.sem_1_grade || '–' }}
+                                </v-chip>
+                                <v-chip size="small" variant="tonal" :color="selected_course_student.sem_2_grade ? 'success' : 'default'">
+                                    2. Sem: {{ selected_course_student.sem_2_grade || '–' }}
+                                </v-chip>
+                            </div>
+                            <div class="d-flex flex-wrap ga-2" v-else>
+                                <v-chip size="small" variant="tonal" :color="selected_course_student.sem_grade ? 'success' : 'default'">
+                                    Note: {{ selected_course_student.sem_grade || '–' }}
+                                </v-chip>
+                            </div>
+                        </template>
+                        <template v-else>
+                            <div class="d-flex flex-wrap ga-2" v-if="semesterCount === 2">
+                                <v-text-field v-model="grade_form.sem_1_grade" label="1. Semester" density="compact" hide-details class="flex-grow-1" />
+                                <v-text-field v-model="grade_form.sem_2_grade" label="2. Semester" density="compact" hide-details class="flex-grow-1" />
+                            </div>
+                            <div v-else>
+                                <v-text-field v-model="grade_form.sem_grade" label="Semesternote" density="compact" hide-details />
+                            </div>
+                        </template>
+                    </v-card-text>
+                </v-card>
+
+                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form">
+                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-clipboard-text</v-icon>
                         Einträge
                         <v-chip v-if="entries?.length" size="x-small" color="primary" variant="tonal">
@@ -198,6 +236,8 @@ export default {
             teachingStore: null,
             is_editing: false,
             edit_comment: '',
+            is_editing_grades: false,
+            grade_form: { sem_1_grade: '', sem_2_grade: '', sem_grade: '' },
             show_entry_form: false,
             entry_form: this.emptyEntryForm(),
             sort_by_type: false,
@@ -222,6 +262,11 @@ export default {
                 .split('\n')
                 .map((line) => `<p>${line || '<br>'}</p>`)
                 .join('')
+        },
+        semesterCount() {
+            const schemaId = this.selected_course?.teaching_schema_id
+            const grading = schemaId ? this.teachingStore.gradingForSchema(schemaId) : {}
+            return grading.semester_count || 1
         },
         teachingWorks() {
             const schemaId = this.selected_course?.teaching_schema_id
@@ -427,6 +472,7 @@ export default {
             handler() {
                 this.show_entry_form = false
                 this.entry_form = this.emptyEntryForm()
+                this.is_editing_grades = false
                 this.show_auswertung = false
                 this.loadEntries()
             },
@@ -459,6 +505,41 @@ export default {
             this.selected_course_student = null
             this.action_2 = ''
             this.entryStore?.clear()
+        },
+        editGrades() {
+            this.grade_form = {
+                sem_1_grade: this.selected_course_student?.sem_1_grade || '',
+                sem_2_grade: this.selected_course_student?.sem_2_grade || '',
+                sem_grade: this.selected_course_student?.sem_grade || '',
+            }
+            this.is_editing_grades = true
+        },
+        async saveGrades() {
+            if (!this.selected_course) return
+            const gradeFields =
+                this.semesterCount === 2
+                    ? { sem_1_grade: this.grade_form.sem_1_grade || null, sem_2_grade: this.grade_form.sem_2_grade || null }
+                    : { sem_grade: this.grade_form.sem_grade || null }
+
+            const studentsInfo = (this.selected_course.students_info || []).map((student) => {
+                if (student.id === this.selected_course_student.id) {
+                    return { ...student, ...gradeFields }
+                }
+                return student
+            })
+
+            const payload = {
+                ...this.selected_course,
+                students: studentsInfo,
+                students_deleted: this.selected_course.students_deleted || [],
+            }
+
+            const ok = await this.courseStore.update(payload)
+            if (ok) {
+                this.selected_course.students_info = studentsInfo
+                this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
+                this.is_editing_grades = false
+            }
         },
         editComment() {
             this.edit_comment = this.selected_comment || ''

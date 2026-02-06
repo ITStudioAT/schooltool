@@ -92,6 +92,9 @@ class TeachingCourseService
                 $entries[] = [
                     'id' => (int) $id,
                     'comment' => $comment,
+                    'sem_1_grade' => $data['sem_1_grade'] ?? null,
+                    'sem_2_grade' => $data['sem_2_grade'] ?? null,
+                    'sem_grade' => $data['sem_grade'] ?? null,
                 ];
             }
         }
@@ -127,6 +130,9 @@ class TeachingCourseService
                 $entries[$resolvedId] = [
                     'id' => $resolvedId,
                     'comment' => $comment,
+                    'sem_1_grade' => $data['sem_1_grade'] ?? null,
+                    'sem_2_grade' => $data['sem_2_grade'] ?? null,
+                    'sem_grade' => $data['sem_grade'] ?? null,
                 ];
             }
         }

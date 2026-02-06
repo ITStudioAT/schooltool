@@ -150,9 +150,9 @@ class User extends Authenticatable
         'schoolclass',
         'register_as',
         'import116_id',
-        'teaching_works',
-        'teaching_grading',
         'teaching_schemas',
+        'teaching_active_semester',
+        'teaching_count_for_semester_2_date',
     ];
 
     // Protected fields that should NOT be mass assignable:
@@ -181,8 +181,6 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'token_2fa_expires_at' => 'datetime',
             'tutoring_filter' => 'array',
-            'teaching_works' => 'array',
-            'teaching_grading' => 'array',
             'teaching_schemas' => 'array',
         ];
     }

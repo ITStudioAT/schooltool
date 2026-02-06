@@ -56,6 +56,9 @@ class TeachingCourseController extends Controller
                 }
                 $data = (new StudentResource($student))->toArray($request);
                 $data['comment'] = $entry['comment'] ?? null;
+                $data['sem_1_grade'] = $entry['sem_1_grade'] ?? null;
+                $data['sem_2_grade'] = $entry['sem_2_grade'] ?? null;
+                $data['sem_grade'] = $entry['sem_grade'] ?? null;
                 $students[] = $data;
             }
 

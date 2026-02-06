@@ -77,6 +77,14 @@
                                         {{ student.schoolclass || student.class }}
                                     </v-chip>
                                     <div class="text-body-2">{{ student.last_name }}, {{ student.first_name }}</div>
+                                    <v-spacer />
+                                    <template v-if="semesterCount === 2">
+                                        <v-chip v-if="student.sem_1_grade" size="x-small" variant="tonal" color="success">{{ student.sem_1_grade }}</v-chip>
+                                        <v-chip v-if="student.sem_2_grade" size="x-small" variant="tonal" color="success">{{ student.sem_2_grade }}</v-chip>
+                                    </template>
+                                    <template v-else>
+                                        <v-chip v-if="student.sem_grade" size="x-small" variant="tonal" color="success">{{ student.sem_grade }}</v-chip>
+                                    </template>
                                 </div>
                             </v-list-item>
                             <v-list-item v-if="!selected_course?.students_info?.length">
@@ -145,6 +153,11 @@ export default {
         ...mapWritableState(useImport116Store, ['import116_students']),
         ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'selected_course_student']),
         ...mapWritableState(useTeachingStore, ['settings']),
+        semesterCount() {
+            const schemaId = this.selected_course?.teaching_schema_id
+            const grading = schemaId ? this.teachingStore.gradingForSchema(schemaId) : {}
+            return grading.semester_count || 1
+        },
         teachingWorks() {
             const schemaId = this.selected_course?.teaching_schema_id
             if (!schemaId) return []
