@@ -28,7 +28,15 @@
         </v-card>
     </ItsGridBox>
 
-    <ItsGridBox color="primary" :title="data.id ? 'Fach ändern' : 'Neues Fach'" icon="mdi-invoice-list" class="w-100" v-if="action == 'teaching_course_new_or_edit'">
+    <ItsGridBox color="primary" icon="mdi-invoice-list" class="w-100" v-if="action == 'teaching_course_new_or_edit'">
+        <template #title>
+            <div class="d-flex align-center ga-2 flex-grow-1">
+                <div>{{ data.id ? 'Fach ändern' : 'Neues Fach' }}</div>
+                <v-spacer />
+                <v-btn icon="mdi-close" size="x-small" color="warning" variant="flat" @click="abortNewCourse" />
+                <v-btn icon="mdi-content-save" size="x-small" color="success" variant="flat" @click="$refs.form.validate().then(v => { if (v.valid) save(data) })" v-if="data.title && data?.classes?.length > 0" />
+            </div>
+        </template>
         <!-- NEUER/EDIT KURS-->
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text>

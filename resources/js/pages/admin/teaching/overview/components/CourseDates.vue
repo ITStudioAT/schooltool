@@ -133,8 +133,8 @@
                                         v-model="content_drafts[courseDate.id]"
                                         :ref="`contentField-${courseDate.id}`" />
                                     <div class="d-flex align-center ga-2">
-                                        <v-btn size="x-small" color="success" variant="tonal" @click="saveContent(courseDate)" icon="mdi-content-save" />
-                                        <v-btn size="x-small" color="warning" variant="tonal" @click="cancelEditContent(courseDate)" icon="mdi-close" />
+                                        <v-btn size="x-small" color="warning" variant="flat" @click="cancelEditContent(courseDate)" icon="mdi-close" />
+                                        <v-btn size="x-small" color="success" variant="flat" @click="saveContent(courseDate)" icon="mdi-content-save" />
                                     </div>
                                 </div>
                             </div>

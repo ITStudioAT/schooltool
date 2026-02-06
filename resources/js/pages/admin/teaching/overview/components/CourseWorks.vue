@@ -1,11 +1,18 @@
 <template>
     <ItsGridBox
         color="primary"
-        title="Arbeiten"
         icon="mdi-clipboard-text"
         class="w-100"
         v-if="selected_course"
         :disabled="action != '' && action != 'new_course_work' && action != 'edit_course_work'">
+        <template #title>
+            <div class="d-flex align-center ga-2 flex-grow-1">
+                <div>Arbeiten</div>
+                <v-spacer />
+                <v-btn v-if="action === 'new_course_work' || action === 'edit_course_work'" icon="mdi-close" size="x-small" color="warning" variant="flat" @click="abortEdit" :disabled="is_saving" />
+                <v-btn v-if="action === 'new_course_work' || action === 'edit_course_work'" icon="mdi-content-save" size="x-small" color="success" variant="flat" @click="saveWork(false)" :disabled="is_saving" />
+            </div>
+        </template>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
                 <!-- Anzeige ausgewählter Kurs -->
@@ -35,7 +42,7 @@
             <v-divider />
             <v-card-text class="pa-0">
                 <v-list density="compact">
-                    <v-list-item v-for="work in courseWorks" :key="work.id">
+                    <v-list-item v-for="work in courseWorks" :key="work.id" class="cursor-pointer" @click="editWork(work)">
                         <div class="d-flex flex-column ga-2 w-100">
                             <div class="d-flex align-center ga-2 w-100">
                                 <v-chip v-if="work.date_for_all_groups" size="x-small" variant="tonal" color="primary">
@@ -48,10 +55,9 @@
                                     <span v-if="work.description">– {{ work.description }}</span>
                                 </div>
                                 <div class="d-flex align-center ga-1">
-                                    <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editWork(work)" />
-                                    <v-btn v-if="delete_work_id !== work.id" icon="mdi-delete" size="x-small" color="warning" variant="tonal" @click="delete_work_id = work.id" />
-                                    <v-btn v-if="delete_work_id === work.id" icon="mdi-delete-off" size="x-small" color="success" variant="tonal" @click="delete_work_id = null" />
-                                    <v-btn v-if="delete_work_id === work.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteWork(work)" />
+                                    <v-btn v-if="delete_work_id !== work.id" icon="mdi-delete" size="x-small" color="warning" variant="tonal" @click.stop="delete_work_id = work.id" />
+                                    <v-btn v-if="delete_work_id === work.id" icon="mdi-delete-off" size="x-small" color="success" variant="tonal" @click.stop="delete_work_id = null" />
+                                    <v-btn v-if="delete_work_id === work.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click.stop="deleteWork(work)" />
                                 </div>
                             </div>
                         </div>

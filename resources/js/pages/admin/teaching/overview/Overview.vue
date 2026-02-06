@@ -102,6 +102,8 @@ export default {
         this.courseStore = useCourseStore()
         this.selected_course = null
         this.selected_course_id = null
+        this.selected_course_student = null
+        this.action_2 = ''
         await this.courseStore.index()
     },
 
@@ -117,7 +119,16 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', , 'action_2', 'config']),
-        ...mapWritableState(useCourseStore, ['selected_course', 'selected_course_id', 'show_my_courses', 'show_students', 'show_infos', 'show_works', 'show_dates']),
+        ...mapWritableState(useCourseStore, [
+            'selected_course',
+            'selected_course_id',
+            'show_my_courses',
+            'show_students',
+            'show_infos',
+            'show_works',
+            'show_dates',
+            'selected_course_student',
+        ]),
     },
 
     watch: {},
