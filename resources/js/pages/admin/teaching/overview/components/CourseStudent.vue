@@ -224,7 +224,9 @@ export default {
                 .join('')
         },
         teachingWorks() {
-            return this.settings?.teaching_works || []
+            const schemaId = this.selected_course?.teaching_schema_id
+            if (!schemaId) return []
+            return this.teachingStore.worksForSchema(schemaId)
         },
         workTypeItems() {
             return this.teachingWorks.map((work) => ({
@@ -243,7 +245,8 @@ export default {
             }))
         },
         categoryGroups() {
-            const grading = this.settings?.teaching_grading || {}
+            const schemaId = this.selected_course?.teaching_schema_id
+            const grading = schemaId ? this.teachingStore.gradingForSchema(schemaId) : {}
             const categories = grading.categories || []
             const worksByType = new Map(this.teachingWorks.map((w) => [w.short_name, w]))
             const entries = this.entries || []

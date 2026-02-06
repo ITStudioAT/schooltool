@@ -8,6 +8,7 @@
         :disabled="action != '' && action != 'edit_description'">
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2" v-if="action != 'edit_description'">
+                <div class="text-caption text-medium-emphasis">{{ schemaName }}</div>
                 <div class="text-body-2 course-description" v-if="selected_course.description" v-html="descriptionHtml"></div>
                 <div class="text-body-2" v-else>Keine Fachinfos vorhanden.</div>
                 <div class="w-100 text-right">
@@ -35,6 +36,7 @@ import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
+import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
@@ -49,6 +51,7 @@ export default {
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.courseStore = useCourseStore()
+        this.teachingStore = useTeachingStore()
     },
 
     unmounted() {},
@@ -57,6 +60,7 @@ export default {
         return {
             adminStore: null,
             courseStore: null,
+            teachingStore: null,
             is_valid: false,
             data: {
                 selected_classes: [],
@@ -70,6 +74,12 @@ export default {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course']),
 
+        schemaName() {
+            const schemaId = this.selected_course?.teaching_schema_id
+            if (!schemaId) return 'Kein Schema zugewiesen'
+            const schema = this.teachingStore?.schemaById(schemaId)
+            return schema ? `Schema: ${schema.name}` : 'Kein Schema zugewiesen'
+        },
         selectedCourseClasses() {
             if (!this.selected_course?.classes?.length) return ''
             // If it's already a string with commas

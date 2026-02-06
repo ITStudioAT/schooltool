@@ -417,7 +417,9 @@ export default {
         ...mapWritableState(useCourseWorkStore, ['courseWorks', 'selected_courseWork']),
         ...mapWritableState(useTeachingStore, ['settings']),
         teachingWorks() {
-            return this.settings?.teaching_works || []
+            const schemaId = this.selected_course?.teaching_schema_id
+            if (!schemaId) return []
+            return this.teachingStore.worksForSchema(schemaId)
         },
         hasStudents() {
             return (this.selected_course?.students_info || []).length > 0

@@ -1,10 +1,10 @@
 <template>
     <!-- WORKS AND GRADES OVERVIEW -->
-    <ItsGridBox color="primary" title="Arbeiten und Bewertungen" icon="mdi-test-tube" class="w-100" :disabled="action != ''">
+    <ItsGridBox v-if="action !== 'teaching_work_new_or_edit'" color="primary" title="Arbeiten und Bewertungen" icon="mdi-test-tube" class="w-100" :disabled="action != ''">
         <!-- HEADER ACTIONS -->
         <div class="d-flex flex-row align-center justify-end mt-2 ga-2">
-            <v-btn v-if="!is_editing" flat tile size="small" color="primary" prepend-icon="mdi-pencil" @click="is_editing = true">Bearbeiten</v-btn>
-            <v-btn v-if="is_editing" flat tile size="small" color="success" prepend-icon="mdi-check" @click="exitEditMode">Fertig</v-btn>
+            <v-btn v-if="!is_editing" icon="mdi-pencil" size="x-small" color="primary" variant="flat" @click="is_editing = true" />
+            <v-btn v-if="is_editing" icon="mdi-check" size="x-small" color="success" variant="flat" @click="exitEditMode" />
         </div>
 
         <!-- NEUE ARBEIT ANLEGEN -->
@@ -52,6 +52,10 @@
 
     <!-- EDIT/NEW WORK FORM -->
     <ItsGridBox color="primary" :title="edit_index !== null ? 'Arbeit ändern' : 'Neue Arbeit'" icon="mdi-test-tube" class="w-100 mt-4" v-if="action == 'teaching_work_new_or_edit'">
+        <div class="d-flex flex-row align-center justify-end mt-2 ga-2">
+            <v-btn icon="mdi-check" size="x-small" color="success" variant="flat" :disabled="!is_valid" @click="save" />
+            <v-btn icon="mdi-close" size="x-small" color="warning" variant="flat" @click="abortNewWork" />
+        </div>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text>
                 <v-form ref="form" v-model="is_valid" @submit.prevent="save" class="mb-4">
@@ -149,10 +153,6 @@
                         </v-btn>
                     </div>
 
-                    <div class="d-flex flex-row align-center justify-space-between mt-4">
-                        <v-btn color="warning" flat tile @click="abortNewWork">Abbruch</v-btn>
-                        <v-btn color="success" flat tile type="submit" :disabled="!is_valid">Speichern</v-btn>
-                    </div>
                 </v-form>
             </v-card-text>
         </v-card>
@@ -173,6 +173,13 @@ export default {
     },
 
     components: { ItsGridBox, ItsMenuButton },
+
+    props: {
+        schemaId: {
+            type: String,
+            required: true,
+        },
+    },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -204,7 +211,8 @@ export default {
         ...mapWritableState(useAdminStore, ['action', 'config']),
         ...mapWritableState(useTeachingStore, ['settings']),
         teaching_works() {
-            const works = this.settings?.teaching_works || []
+            const schema = (this.settings?.teaching_schemas || []).find((s) => s.id === this.schemaId)
+            const works = schema?.works || []
             return [...works].sort((a, b) => (a.short_name || '').localeCompare(b.short_name || '', 'de'))
         },
         sortedPointsTable() {
@@ -340,9 +348,11 @@ export default {
         },
 
         async save() {
-            const works = [...this.teaching_works]
+            const schemas = [...(this.settings?.teaching_schemas || [])]
+            const schemaIndex = schemas.findIndex((s) => s.id === this.schemaId)
+            if (schemaIndex === -1) return
 
-            // Sort grades by value before saving
+            const works = [...this.teaching_works]
             const sortedGrades = this.sortedGrades(this.data.grades || [])
             const workData = { ...this.data, grades: sortedGrades }
 
@@ -352,17 +362,23 @@ export default {
                 works.push(workData)
             }
 
-            await this.teachingStore.saveSettings({ teaching_works: works })
+            schemas[schemaIndex] = { ...schemas[schemaIndex], works }
+            await this.teachingStore.saveSettings({ teaching_schemas: schemas })
             this.action = ''
             this.edit_index = null
             this.is_editing = false
         },
 
         async deleteWork(index) {
+            const schemas = [...(this.settings?.teaching_schemas || [])]
+            const schemaIndex = schemas.findIndex((s) => s.id === this.schemaId)
+            if (schemaIndex === -1) return
+
             const works = [...this.teaching_works]
             works.splice(index, 1)
 
-            await this.teachingStore.saveSettings({ teaching_works: works })
+            schemas[schemaIndex] = { ...schemas[schemaIndex], works }
+            await this.teachingStore.saveSettings({ teaching_schemas: schemas })
             this.delete_index = null
         },
     },

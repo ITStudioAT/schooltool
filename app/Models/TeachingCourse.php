@@ -20,7 +20,8 @@ class TeachingCourse extends Model
         'classes',
         'students',
         'students_deleted',
-        'reminder'
+        'reminder',
+        'teaching_schema_id',
     ];
 
     protected $casts = [

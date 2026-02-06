@@ -2,8 +2,9 @@
     <ItsGridBox color="primary" title="Benotung" icon="mdi-numeric" class="w-100" :disabled="action != ''">
         <!-- HEADER ACTIONS -->
         <div class="d-flex flex-row align-center justify-end mt-2 ga-2">
-            <v-btn v-if="!is_editing" flat tile size="small" color="primary" prepend-icon="mdi-pencil" @click="is_editing = true">Bearbeiten</v-btn>
-            <v-btn v-if="is_editing" flat tile size="small" color="success" prepend-icon="mdi-check" @click="exitEditMode">Fertig</v-btn>
+            <v-btn v-if="!is_editing" icon="mdi-pencil" size="x-small" color="primary" variant="flat" @click="is_editing = true" />
+            <v-btn v-if="is_editing" icon="mdi-check" size="x-small" color="success" variant="flat" :disabled="!isValid" @click="save" />
+            <v-btn v-if="is_editing" icon="mdi-close" size="x-small" color="warning" variant="flat" @click="exitEditMode" />
         </div>
 
         <v-card tile flat color="transparent" class="mt-4">
@@ -147,8 +148,8 @@
                                 <v-btn
                                     icon="mdi-close"
                                     size="x-small"
-                                    color="error"
-                                    variant="text"
+                                    color="warning"
+                                    variant="flat"
                                     @click="cancelEditCategory" />
                             </template>
                         </div>
@@ -286,18 +287,6 @@
                     </div>
                 </v-card>
 
-                <!-- SPEICHERN -->
-                <div v-if="is_editing" class="d-flex justify-end mt-4">
-                    <v-btn
-                        color="success"
-                        flat
-                        tile
-                        @click="save"
-                        :disabled="!isValid">
-                        <v-icon start>mdi-content-save</v-icon>
-                        Speichern
-                    </v-btn>
-                </div>
             </v-card-text>
         </v-card>
     </ItsGridBox>
@@ -311,6 +300,13 @@ import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
 export default {
     components: { ItsGridBox },
+
+    props: {
+        schemaId: {
+            type: String,
+            required: true,
+        },
+    },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -354,11 +350,16 @@ export default {
             return true
         },
         teaching_works() {
-            return this.settings?.teaching_works || []
+            const schema = (this.settings?.teaching_schemas || []).find((s) => s.id === this.schemaId)
+            return schema?.works || []
         },
     },
 
     watch: {
+        schemaId() {
+            this.initData()
+            this.exitEditMode()
+        },
         // When teaching_works changes (e.g., a work is deleted), clean up orphaned references
         teaching_works: {
             handler(newWorks) {
@@ -383,8 +384,8 @@ export default {
         },
 
         initData() {
-            const grading = this.settings?.teaching_grading || {}
-            // Filter out orphaned works (works that no longer exist in teaching_works)
+            const schema = (this.settings?.teaching_schemas || []).find((s) => s.id === this.schemaId)
+            const grading = schema?.grading || {}
             const validShortNames = this.teaching_works.map((w) => w.short_name)
             this.data = {
                 semester_count: grading.semester_count || 2,
@@ -496,7 +497,6 @@ export default {
         },
 
         async save() {
-            // Clean up orphaned works (works that no longer exist in teaching_works)
             const cleanedCategories = this.data.categories.map((cat) => ({
                 ...cat,
                 works: this.getValidWorks(cat.works),
@@ -508,7 +508,13 @@ export default {
                 semester_2_weight: this.data.semester_count === 1 ? 0 : this.data.semester_2_weight,
                 categories: cleanedCategories,
             }
-            await this.teachingStore.saveSettings({ teaching_grading: grading })
+
+            const schemas = [...(this.settings?.teaching_schemas || [])]
+            const schemaIndex = schemas.findIndex((s) => s.id === this.schemaId)
+            if (schemaIndex === -1) return
+
+            schemas[schemaIndex] = { ...schemas[schemaIndex], grading }
+            await this.teachingStore.saveSettings({ teaching_schemas: schemas })
             this.exitEditMode()
         },
     },

@@ -146,7 +146,9 @@ export default {
         ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'selected_course_student']),
         ...mapWritableState(useTeachingStore, ['settings']),
         teachingWorks() {
-            return this.settings?.teaching_works || []
+            const schemaId = this.selected_course?.teaching_schema_id
+            if (!schemaId) return []
+            return this.teachingStore.worksForSchema(schemaId)
         },
         workTypeItems() {
             return this.teachingWorks.map((work) => ({

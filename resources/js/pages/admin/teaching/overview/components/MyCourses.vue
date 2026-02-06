@@ -43,6 +43,14 @@
                 <v-form ref="form" v-model="is_valid" @submit.prevent="save(data)" class="mb-4">
                     <div class="text-caption text-text">Bitte geben Sie die Felder ein (* = Pflichtfeld)</div>
                     <v-text-field autofocus v-model="data.title" label="Bezeichnung *" :rules="[required(), maxLength(255)]" />
+                    <v-select
+                        v-model="data.teaching_schema_id"
+                        :items="schemaItems"
+                        label="Benotungsschema"
+                        clearable
+                        density="compact"
+                        hide-details
+                        class="mt-2" />
 
                     <div class="text-caption text-text mt-4">Klassen auswählen</div>
                     <v-chip-group v-model="data.classes" multiple column>
@@ -136,6 +144,7 @@ import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useImport116Store } from '@/stores/admin/teaching/Import116Store'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
+import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 
@@ -150,7 +159,8 @@ export default {
         this.adminStore = useAdminStore()
         this.import116Store = useImport116Store()
         this.courseStore = useCourseStore()
-        // await this.courseStore.index()
+        this.teachingStore = useTeachingStore()
+        await this.teachingStore.loadSettings()
     },
 
     unmounted() {},
@@ -160,6 +170,7 @@ export default {
             adminStore: null,
             import116Store: null,
             courseStore: null,
+            teachingStore: null,
             is_valid: false,
             data: {
                 selected_classes: [],
@@ -173,6 +184,11 @@ export default {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useImport116Store, ['import116_students']),
         ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'selected_course_id']),
+        schemaItems() {
+            return (this.teachingStore?.schemas || [])
+                .map((s) => ({ title: s.name, value: s.id }))
+                .sort((a, b) => a.title.localeCompare(b.title))
+        },
         filteredImport116Students() {
             const list = this.import116_students || []
             const selected = this.selected_course?.students_info || []

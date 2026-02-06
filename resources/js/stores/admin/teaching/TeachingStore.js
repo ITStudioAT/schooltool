@@ -12,6 +12,21 @@ export const useTeachingStore = defineStore('AdminTeachingStore', {
         }
     },
 
+    getters: {
+        schemas: (state) => state.settings?.teaching_schemas || [],
+        schemaById: (state) => (id) => {
+            return (state.settings?.teaching_schemas || []).find((s) => s.id === id) || null
+        },
+        worksForSchema: (state) => (schemaId) => {
+            const schema = (state.settings?.teaching_schemas || []).find((s) => s.id === schemaId)
+            return schema?.works || []
+        },
+        gradingForSchema: (state) => (schemaId) => {
+            const schema = (state.settings?.teaching_schemas || []).find((s) => s.id === schemaId)
+            return schema?.grading || {}
+        },
+    },
+
     actions: {
         async search116(page = null) {
             const notification = useNotificationStore()

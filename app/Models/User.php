@@ -152,6 +152,7 @@ class User extends Authenticatable
         'import116_id',
         'teaching_works',
         'teaching_grading',
+        'teaching_schemas',
     ];
 
     // Protected fields that should NOT be mass assignable:
@@ -182,6 +183,7 @@ class User extends Authenticatable
             'tutoring_filter' => 'array',
             'teaching_works' => 'array',
             'teaching_grading' => 'array',
+            'teaching_schemas' => 'array',
         ];
     }
 

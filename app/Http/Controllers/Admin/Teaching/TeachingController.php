@@ -7,6 +7,7 @@ use App\Http\Resources\Admin\PaginateResource;
 
 use App\Http\Resources\Admin\Teaching\Import116Resource;
 use App\Models\Import116;
+use App\Services\TeachingService;
 use Barryvdh\Debugbar\Facades\Debugbar;
 use Illuminate\Http\Request;
 
@@ -57,9 +58,10 @@ class TeachingController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
+        (new TeachingService)->ensureDefaultSchema($auth_user);
+
         $settings = [
-            'teaching_works' => $auth_user->teaching_works ?? [],
-            'teaching_grading' => $auth_user->teaching_grading ?? [],
+            'teaching_schemas' => $auth_user->teaching_schemas ?? [],
         ];
 
         return response()->json([
@@ -74,41 +76,51 @@ class TeachingController extends Controller
         }
 
         $validated = $request->validate([
-            'teaching_works' => 'nullable|array',
-            'teaching_works.*.short_name' => 'required|string|max:10',
-            'teaching_works.*.name' => 'required|string|max:255',
-            'teaching_works.*.grades' => 'nullable|array',
-            'teaching_works.*.grades.*.grade' => 'required|string|max:10',
-            'teaching_works.*.grades.*.name' => 'nullable|string|max:50',
-            'teaching_works.*.grades.*.value' => 'nullable|string|max:10',
-            'teaching_works.*.calculation' => 'nullable|string|in:average,points',
-            'teaching_works.*.points_table' => 'nullable|array',
-            'teaching_works.*.points_table.*.min_points' => 'required|numeric',
-            'teaching_works.*.points_table.*.grade' => 'required|string|max:10',
-            'teaching_grading' => 'nullable|array',
-            'teaching_grading.semester_count' => 'nullable|integer|min:1|max:2',
-            'teaching_grading.semester_1_weight' => 'nullable|integer|min:0|max:100',
-            'teaching_grading.semester_2_weight' => 'nullable|integer|min:0|max:100',
-            'teaching_grading.categories' => 'nullable|array',
-            'teaching_grading.categories.*.name' => 'required|string|max:100',
-            'teaching_grading.categories.*.weight' => 'required|integer|min:0|max:100',
-            'teaching_grading.categories.*.works' => 'nullable|array',
-            'teaching_grading.categories.*.works.*.short_name' => 'required|string|max:10',
-            'teaching_grading.categories.*.works.*.factor' => 'required|integer|min:0|max:100',
-            'teaching_grading.categories.*.calculation' => 'nullable|string|in:mean,sum,best,worst',
+            'teaching_schemas' => 'nullable|array',
+            'teaching_schemas.*.id' => 'required|string|max:36',
+            'teaching_schemas.*.name' => 'required|string|max:255',
+            'teaching_schemas.*.works' => 'nullable|array',
+            'teaching_schemas.*.works.*.short_name' => 'required|string|max:10',
+            'teaching_schemas.*.works.*.name' => 'required|string|max:255',
+            'teaching_schemas.*.works.*.grades' => 'nullable|array',
+            'teaching_schemas.*.works.*.grades.*.grade' => 'required|string|max:10',
+            'teaching_schemas.*.works.*.grades.*.name' => 'nullable|string|max:50',
+            'teaching_schemas.*.works.*.grades.*.value' => 'nullable|string|max:10',
+            'teaching_schemas.*.works.*.calculation' => 'nullable|string|in:average,points',
+            'teaching_schemas.*.works.*.points_table' => 'nullable|array',
+            'teaching_schemas.*.works.*.points_table.*.min_points' => 'required|numeric',
+            'teaching_schemas.*.works.*.points_table.*.grade' => 'required|string|max:10',
+            'teaching_schemas.*.grading' => 'nullable|array',
+            'teaching_schemas.*.grading.semester_count' => 'nullable|integer|min:1|max:2',
+            'teaching_schemas.*.grading.semester_1_weight' => 'nullable|integer|min:0|max:100',
+            'teaching_schemas.*.grading.semester_2_weight' => 'nullable|integer|min:0|max:100',
+            'teaching_schemas.*.grading.categories' => 'nullable|array',
+            'teaching_schemas.*.grading.categories.*.name' => 'required|string|max:100',
+            'teaching_schemas.*.grading.categories.*.weight' => 'required|integer|min:0|max:100',
+            'teaching_schemas.*.grading.categories.*.works' => 'nullable|array',
+            'teaching_schemas.*.grading.categories.*.works.*.short_name' => 'required|string|max:10',
+            'teaching_schemas.*.grading.categories.*.works.*.factor' => 'required|integer|min:0|max:100',
+            'teaching_schemas.*.grading.categories.*.calculation' => 'nullable|string|in:mean,sum,best,worst',
         ]);
 
-        if (isset($validated['teaching_works'])) {
-            $auth_user->teaching_works = $validated['teaching_works'];
-        }
-        if (isset($validated['teaching_grading'])) {
-            $auth_user->teaching_grading = $validated['teaching_grading'];
+        if (isset($validated['teaching_schemas'])) {
+            $teachingService = new TeachingService;
+            $usedNames = $teachingService->hasDependencies($auth_user, $validated['teaching_schemas']);
+
+            if ($usedNames->isNotEmpty()) {
+                abort(409, "Schema wird in Fächern verwendet und kann nicht gelöscht werden: {$usedNames->implode(', ')}");
+            }
+
+            if ($teachingService->standardSchemaRenamed($auth_user, $validated['teaching_schemas'])) {
+                abort(409, 'Das Standard-Schema kann nicht umbenannt werden.');
+            }
+
+            $auth_user->teaching_schemas = $validated['teaching_schemas'];
         }
         $auth_user->save();
 
         $settings = [
-            'teaching_works' => $auth_user->teaching_works ?? [],
-            'teaching_grading' => $auth_user->teaching_grading ?? [],
+            'teaching_schemas' => $auth_user->teaching_schemas ?? [],
         ];
 
         return response()->json([

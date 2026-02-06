@@ -47,7 +47,9 @@ class CourseStudentEntryController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $allowedTypes = collect($auth_user->teaching_works ?? [])
+        $course = TeachingCourse::findOrFail($request->input('teaching_course_id'));
+        $schema = collect($auth_user->teaching_schemas ?? [])->firstWhere('id', $course->teaching_schema_id);
+        $allowedTypes = collect($schema['works'] ?? [])
             ->pluck('short_name')
             ->filter()
             ->values()
@@ -85,7 +87,13 @@ class CourseStudentEntryController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $allowedTypes = collect($auth_user->teaching_works ?? [])
+        $course = $course_student_entry->teachingCourse;
+        if (! $course || $course->school_id !== $auth_user->school_id) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $schema = collect($auth_user->teaching_schemas ?? [])->firstWhere('id', $course->teaching_schema_id);
+        $allowedTypes = collect($schema['works'] ?? [])
             ->pluck('short_name')
             ->filter()
             ->values()
@@ -99,11 +107,6 @@ class CourseStudentEntryController extends Controller
             'teaching_course_work_id' => 'nullable|integer|exists:teaching_course_works,id',
             'status' => 'nullable|array',
         ]);
-
-        $course = $course_student_entry->teachingCourse;
-        if (! $course || $course->school_id !== $auth_user->school_id) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
 
         $student = $course_student_entry->user;
         if (! $student || $student->school_id !== $auth_user->school_id) {

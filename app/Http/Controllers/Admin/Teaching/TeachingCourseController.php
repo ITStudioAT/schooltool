@@ -101,6 +101,7 @@ class TeachingCourseController extends Controller
             'classes.*' => ['required', 'string', Rule::in($classes)],
             'students' => 'nullable|array',
             'students_deleted' => 'nullable|array',
+            'teaching_schema_id' => 'nullable|string|max:36',
         ]);
 
         $sortedClasses = $validated['classes'];
@@ -114,6 +115,7 @@ class TeachingCourseController extends Controller
             'classes' => $sortedClasses,
             'students' => $service->resolveStudentEntries($validated['students'] ?? [], $auth_user->school_id),
             'students_deleted' => $service->resolveStudentIds($validated['students_deleted'] ?? [], $auth_user->school_id),
+            'teaching_schema_id' => $validated['teaching_schema_id'] ?? null,
         ]);
 
         return response()->json(new CourseResource($course), 201);
@@ -156,6 +158,7 @@ class TeachingCourseController extends Controller
             'classes.*' => ['required', 'string', Rule::in($classes)],
             'students' => 'nullable|array',
             'students_deleted' => 'nullable|array',
+            'teaching_schema_id' => 'nullable|string|max:36',
         ]);
 
         $sortedClasses = $validated['classes'];
@@ -167,6 +170,7 @@ class TeachingCourseController extends Controller
             'classes' => $sortedClasses,
             'students' => $service->resolveStudentEntries($validated['students'] ?? [], $auth_user->school_id),
             'students_deleted' => $service->resolveStudentIds($validated['students_deleted'] ?? [], $auth_user->school_id),
+            'teaching_schema_id' => $validated['teaching_schema_id'] ?? $course->teaching_schema_id,
         ]);
 
         return response()->json(new CourseResource($course));

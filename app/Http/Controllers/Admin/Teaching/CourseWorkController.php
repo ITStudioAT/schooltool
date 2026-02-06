@@ -48,7 +48,9 @@ class CourseWorkController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $allowedTypes = collect($auth_user->teaching_works ?? [])
+        $course = TeachingCourse::findOrFail($request->input('teaching_course_id'));
+        $schema = collect($auth_user->teaching_schemas ?? [])->firstWhere('id', $course->teaching_schema_id);
+        $allowedTypes = collect($schema['works'] ?? [])
             ->pluck('short_name')
             ->filter()
             ->values()
@@ -77,8 +79,6 @@ class CourseWorkController extends Controller
             'groups.*.name' => 'nullable|string|max:255',
             'status' => 'nullable|array',
         ]);
-
-        $course = TeachingCourse::findOrFail($validated['teaching_course_id']);
 
         if ($auth_user->school_id != $course->school_id) {
             abort(409, 'Kein Zugriff auf diese Schule');
@@ -137,7 +137,8 @@ class CourseWorkController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $allowedTypes = collect($auth_user->teaching_works ?? [])
+        $schema = collect($auth_user->teaching_schemas ?? [])->firstWhere('id', $course->teaching_schema_id);
+        $allowedTypes = collect($schema['works'] ?? [])
             ->pluck('short_name')
             ->filter()
             ->values()
