@@ -1,6 +1,6 @@
 <template>
     <!-- Schema CRUD -->
-    <v-col cols="12">
+    <v-col cols="12" md="6" xl="4">
         <ItsGridBox color="primary" title="Benotungsschemas" icon="mdi-book-cog" class="w-100">
             <div class="d-flex flex-wrap ga-2 mt-2">
                 <v-chip
@@ -18,52 +18,51 @@
             <!-- Schema bearbeiten -->
             <div v-if="selected_schema_id" class="d-flex flex-row align-center mt-2 ga-2">
                 <v-btn v-if="!is_renaming && !selectedSchemaIsStandard" flat tile size="small" color="primary" prepend-icon="mdi-pencil" @click="startRename">Umbenennen</v-btn>
-                <v-btn v-if="!is_renaming && !is_deleting && !selectedSchemaIsStandard && !selectedSchemaInUse" flat tile size="small" color="warning" prepend-icon="mdi-delete" @click="is_deleting = true">Löschen</v-btn>
+                <v-btn
+                    v-if="!is_renaming && !is_deleting && !selectedSchemaIsStandard && !selectedSchemaInUse"
+                    flat
+                    tile
+                    size="small"
+                    color="warning"
+                    prepend-icon="mdi-delete"
+                    @click="is_deleting = true">
+                    Löschen
+                </v-btn>
                 <v-btn v-if="is_deleting" flat tile size="small" color="success" prepend-icon="mdi-delete-off" @click="is_deleting = false">Abbruch</v-btn>
                 <v-btn v-if="is_deleting" flat tile size="small" color="error" prepend-icon="mdi-delete" @click="deleteSchema">Endgültig löschen</v-btn>
                 <v-spacer />
                 <v-btn v-if="is_renaming" icon="mdi-check" size="x-small" color="success" variant="flat" @click="saveRename" />
                 <v-btn v-if="is_renaming" icon="mdi-close" size="x-small" color="warning" variant="flat" @click="is_renaming = false" />
             </div>
-            <v-text-field
-                v-if="is_renaming"
-                v-model="rename_value"
-                label="Name"
-                density="compact"
-                hide-details
-                autofocus
-                class="mt-2"
-                @keyup.enter="saveRename" />
+            <v-text-field v-if="is_renaming" v-model="rename_value" label="Name" density="compact" hide-details autofocus class="mt-2" @keyup.enter="saveRename" />
+
+            <!-- Schema-Inhalte -->
+            <template v-if="selected_schema_id">
+                <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap ga-2 w-100 my-2 ml-1">
+                    <ItsMenuButton
+                        subtitle="Arbeiten & Noten"
+                        :icon="show_works ? 'mdi-eye' : 'mdi-eye-off'"
+                        :color="show_works ? 'success' : 'secondary'"
+                        @click="show_works = !show_works" />
+                    <ItsMenuButton
+                        subtitle="Benotung"
+                        :icon="show_grading ? 'mdi-eye' : 'mdi-eye-off'"
+                        :color="show_grading ? 'success' : 'secondary'"
+                        @click="show_grading = !show_grading" />
+                </v-card>
+
+                <v-col cols="12" v-if="show_works">
+                    <WorksAndGrades :schema-id="selected_schema_id" />
+                </v-col>
+                <v-col cols="12" v-if="show_grading">
+                    <Grading :schema-id="selected_schema_id" />
+                </v-col>
+            </template>
+
+            <v-col v-else-if="!schemas.length" cols="12">
+                <v-alert type="info" variant="tonal">Noch kein Benotungsschema vorhanden. Erstellen Sie ein neues Schema, um Arbeiten und Benotung zu konfigurieren.</v-alert>
+            </v-col>
         </ItsGridBox>
-    </v-col>
-
-    <!-- Schema-Inhalte -->
-    <template v-if="selected_schema_id">
-        <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap ga-2 w-100 my-2 ml-1">
-            <ItsMenuButton
-                subtitle="Arbeiten & Noten"
-                :icon="show_works ? 'mdi-eye' : 'mdi-eye-off'"
-                :color="show_works ? 'success' : 'secondary'"
-                @click="show_works = !show_works" />
-            <ItsMenuButton
-                subtitle="Benotung"
-                :icon="show_grading ? 'mdi-eye' : 'mdi-eye-off'"
-                :color="show_grading ? 'success' : 'secondary'"
-                @click="show_grading = !show_grading" />
-        </v-card>
-
-        <v-col cols="12" md="6" xl="4" v-if="show_works">
-            <WorksAndGrades :schema-id="selected_schema_id" />
-        </v-col>
-        <v-col cols="12" md="6" xl="4" v-if="show_grading">
-            <Grading :schema-id="selected_schema_id" />
-        </v-col>
-    </template>
-
-    <v-col v-else-if="!schemas.length" cols="12">
-        <v-alert type="info" variant="tonal">
-            Noch kein Benotungsschema vorhanden. Erstellen Sie ein neues Schema, um Arbeiten und Benotung zu konfigurieren.
-        </v-alert>
     </v-col>
 </template>
 
