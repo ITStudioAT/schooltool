@@ -45,44 +45,6 @@
 
                 <v-card variant="outlined" class="mt-4" v-if="!show_entry_form">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
-                        <v-icon size="18">mdi-school</v-icon>
-                        Semesternoten
-                        <v-spacer />
-                        <v-btn v-if="!is_editing_grades" icon="mdi-pencil" size="x-small" color="primary" variant="flat" @click="editGrades" />
-                        <v-btn v-if="is_editing_grades" icon="mdi-check" size="x-small" color="success" variant="flat" @click="saveGrades" />
-                        <v-btn v-if="is_editing_grades" icon="mdi-close" size="x-small" color="warning" variant="flat" @click="is_editing_grades = false" />
-                    </v-card-title>
-                    <v-divider />
-                    <v-card-text>
-                        <template v-if="!is_editing_grades">
-                            <div class="d-flex flex-wrap ga-2" v-if="semesterCount === 2">
-                                <v-chip size="small" variant="tonal" :color="selected_course_student.sem_1_grade ? 'success' : 'default'">
-                                    1. Sem: {{ selected_course_student.sem_1_grade || '–' }}
-                                </v-chip>
-                                <v-chip size="small" variant="tonal" :color="selected_course_student.sem_2_grade ? 'success' : 'default'">
-                                    2. Sem: {{ selected_course_student.sem_2_grade || '–' }}
-                                </v-chip>
-                            </div>
-                            <div class="d-flex flex-wrap ga-2" v-else>
-                                <v-chip size="small" variant="tonal" :color="selected_course_student.sem_grade ? 'success' : 'default'">
-                                    Note: {{ selected_course_student.sem_grade || '–' }}
-                                </v-chip>
-                            </div>
-                        </template>
-                        <template v-else>
-                            <div class="d-flex flex-wrap ga-2" v-if="semesterCount === 2">
-                                <v-text-field v-model="grade_form.sem_1_grade" label="1. Semester" density="compact" hide-details class="flex-grow-1" />
-                                <v-text-field v-model="grade_form.sem_2_grade" label="2. Semester" density="compact" hide-details class="flex-grow-1" />
-                            </div>
-                            <div v-else>
-                                <v-text-field v-model="grade_form.sem_grade" label="Semesternote" density="compact" hide-details />
-                            </div>
-                        </template>
-                    </v-card-text>
-                </v-card>
-
-                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form">
-                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-clipboard-text</v-icon>
                         Einträge
                         <v-chip v-if="filteredEntries?.length" size="x-small" color="primary" variant="tonal">
@@ -101,6 +63,9 @@
                                 <div class="d-flex align-center ga-2 w-100">
                                     <v-chip v-if="entry.date" size="x-small" variant="tonal" color="primary">
                                         {{ formatDate(entry.date) }}
+                                    </v-chip>
+                                    <v-chip v-if="entryIsDisplaySem1ButCountsSem2(entry)" size="x-small" variant="tonal" color="warning">
+                                        Zählt zu Sem 2
                                     </v-chip>
                                     <v-chip v-if="entry.type" size="x-small" variant="outlined">
                                         {{ workTypeLabel(entry.type) }}
@@ -134,8 +99,8 @@
                             </v-list-item>
                         </v-list>
                     </v-card-text>
-                    <v-divider v-if="categoryGroups.length" />
-                    <v-card-text v-if="categoryGroups.length" class="py-2">
+                    <v-divider v-if="hasAuswertungContent" />
+                    <v-card-text v-if="hasAuswertungContent" class="py-2">
                         <div class="d-flex align-center justify-space-between mb-2">
                             <div class="text-subtitle-2">Auswertung</div>
                             <v-btn
@@ -146,48 +111,205 @@
                                 @click="show_auswertung = !show_auswertung" />
                         </div>
                         <v-list v-if="show_auswertung" density="compact">
-                            <template v-for="cat in categoryGroups" :key="`cat-${cat.name}`">
+                            <template v-if="showSemester1Auswertung">
                                 <v-list-item>
-                                <div class="d-flex align-center ga-2 w-100">
-                                    <v-list-item-title class="text-subtitle-2" :class="!cat.rows.length ? 'text-warning' : ''">
-                                        {{ cat.name }}
-                                    </v-list-item-title>
-                                    <v-chip size="x-small" variant="outlined">{{ cat.weight }}%</v-chip>
-                                    <v-spacer />
-                                    <div v-if="cat.value != null || cat.grade" class="text-caption text-medium-emphasis">
-                                        Bewertung: {{ cat.value != null ? formatTwoDecimals(cat.value) : formatTwoDecimals(cat.grade) }}
-                                    </div>
+                                    <div class="d-flex align-center ga-2 w-100">
+                                        <div class="auswertung-section-header">
+                                            <v-icon size="16">{{ semesterCount === 2 ? 'mdi-numeric-1-circle' : 'mdi-chart-box' }}</v-icon>
+                                            <span>{{ semesterCount === 2 ? 'Semester 1' : 'Auswertung' }}</span>
+                                        </div>
+                                        <v-spacer />
+                                        <v-chip size="small" variant="tonal" color="success">
+                                            Note: {{ semesterCount === 2 ? (selected_course_student?.sem_1_grade || '–') : (selected_course_student?.sem_grade || '–') }}
+                                        </v-chip>
                                     </div>
                                 </v-list-item>
-                                <v-list-item v-for="row in cat.rows" :key="`cat-${cat.name}-${row.key}`">
+                                <template v-for="cat in semester1Groups" :key="`sem1-cat-${cat.name}`">
+                                    <v-list-item>
                                     <div class="d-flex align-center ga-2 w-100">
-                                        <v-chip v-if="row.type" size="x-small" variant="outlined">
-                                            {{ workTypeLabel(row.type) }}
-                                        </v-chip>
+                                        <v-list-item-title class="text-subtitle-2" :class="!cat.rows.length ? 'text-warning' : ''">
+                                            {{ cat.name }}
+                                        </v-list-item-title>
+                                        <v-chip size="x-small" variant="outlined">{{ cat.weight }}%</v-chip>
                                         <v-spacer />
-                                        <v-chip v-if="row.sum != null" size="x-small" variant="tonal" color="primary">Σ {{ row.sum }}</v-chip>
-                                        <v-chip v-if="row.grade" size="x-small" variant="tonal" color="primary">{{ row.grade }}</v-chip>
-                                        <v-chip v-if="row.date" size="x-small" variant="tonal" color="primary">
-                                            {{ formatDate(row.date) }}
-                                        </v-chip>
-                                        <v-chip v-if="row.value != null" size="x-small" variant="tonal" color="primary">
-                                            {{ row.value }}
-                                        </v-chip>
+                                        <div v-if="cat.value != null || cat.grade" class="text-caption text-medium-emphasis">
+                                            Bewertung: {{ cat.value != null ? formatTwoDecimals(cat.value) : formatTwoDecimals(cat.grade) }}
+                                        </div>
+                                    </div>
+                                    </v-list-item>
+                                    <v-list-item v-if="categoryCalculationLine(cat)">
+                                        <div class="text-caption text-medium-emphasis w-100">
+                                            {{ categoryCalculationLine(cat) }}
+                                        </div>
+                                    </v-list-item>
+                                    <v-list-item v-if="categoryMissingLine(cat)">
+                                        <div class="text-caption text-warning w-100">
+                                            {{ categoryMissingLine(cat) }}
+                                        </div>
+                                    </v-list-item>
+                                    <v-list-item v-for="row in cat.rows" :key="`sem1-cat-${cat.name}-${row.key}`">
+                                        <div class="d-flex align-center ga-2 w-100">
+                                            <v-chip v-if="row.type" size="x-small" variant="outlined">
+                                                {{ workTypeLabel(row.type) }}
+                                            </v-chip>
+                                            <v-spacer />
+                                            <v-chip v-if="row.sum != null" size="x-small" variant="tonal" color="primary">Σ {{ row.sum }}</v-chip>
+                                            <v-chip v-if="row.grade" size="x-small" variant="tonal" color="primary">{{ row.grade }}</v-chip>
+                                            <v-chip v-if="row.date" size="x-small" variant="tonal" color="primary">
+                                                {{ formatDate(row.date) }}
+                                            </v-chip>
+                                            <v-chip v-if="row.value != null" size="x-small" variant="tonal" color="primary">
+                                                {{ row.value }}
+                                            </v-chip>
+                                        </div>
+                                    </v-list-item>
+                                </template>
+                                <v-list-item v-if="semester1Total != null">
+                                    <div class="d-flex align-center ga-2 w-100">
+                                        <v-list-item-title class="text-subtitle-2">{{ semesterCount === 2 ? 'Gesamtbewertung Sem 1' : 'Gesamtbewertung' }}</v-list-item-title>
+                                        <v-spacer />
+                                        <div class="text-subtitle-2" :class="semester1HasMissingCategory ? 'text-warning' : 'text-medium-emphasis'">
+                                            Bewertung: {{ formatTwoDecimals(semester1Total) }}
+                                        </div>
                                     </div>
                                 </v-list-item>
                             </template>
-                            <v-list-item v-if="totalGrade">
-                                <div class="d-flex align-center ga-2 w-100">
-                                    <v-list-item-title class="text-subtitle-2">Gesamtnote</v-list-item-title>
-                                    <v-spacer />
-                                    <div
-                                        class="text-subtitle-2"
-                                        :class="hasMissingCategory ? 'text-warning' : 'text-medium-emphasis'">
-                                        Bewertung: {{ formatTwoDecimals(totalGrade.value) }}
+
+                            <template v-if="showSemester2Auswertung">
+                                <v-list-item>
+                                    <div class="d-flex align-center ga-2 w-100">
+                                        <div class="auswertung-section-header">
+                                            <v-icon size="16">mdi-numeric-2-circle</v-icon>
+                                            <span>Semester 2</span>
+                                        </div>
+                                        <v-spacer />
+                                        <v-chip size="small" variant="tonal" color="success">
+                                            Note: {{ selected_course_student?.sem_2_grade || '–' }}
+                                        </v-chip>
                                     </div>
-                                </div>
+                                </v-list-item>
+                                <template v-for="cat in semester2Groups" :key="`sem2-cat-${cat.name}`">
+                                    <v-list-item>
+                                    <div class="d-flex align-center ga-2 w-100">
+                                        <v-list-item-title class="text-subtitle-2" :class="!cat.rows.length ? 'text-warning' : ''">
+                                            {{ cat.name }}
+                                        </v-list-item-title>
+                                        <v-chip size="x-small" variant="outlined">{{ cat.weight }}%</v-chip>
+                                        <v-spacer />
+                                        <div v-if="cat.value != null || cat.grade" class="text-caption text-medium-emphasis">
+                                            Bewertung: {{ cat.value != null ? formatTwoDecimals(cat.value) : formatTwoDecimals(cat.grade) }}
+                                        </div>
+                                        </div>
+                                    </v-list-item>
+                                    <v-list-item v-if="categoryCalculationLine(cat)">
+                                        <div class="text-caption text-medium-emphasis w-100">
+                                            {{ categoryCalculationLine(cat) }}
+                                        </div>
+                                    </v-list-item>
+                                    <v-list-item v-if="categoryMissingLine(cat)">
+                                        <div class="text-caption text-warning w-100">
+                                            {{ categoryMissingLine(cat) }}
+                                        </div>
+                                    </v-list-item>
+                                    <v-list-item v-for="row in cat.rows" :key="`sem2-cat-${cat.name}-${row.key}`">
+                                        <div class="d-flex align-center ga-2 w-100">
+                                            <v-chip v-if="row.type" size="x-small" variant="outlined">
+                                                {{ workTypeLabel(row.type) }}
+                                            </v-chip>
+                                            <v-spacer />
+                                            <v-chip v-if="row.sum != null" size="x-small" variant="tonal" color="primary">Σ {{ row.sum }}</v-chip>
+                                            <v-chip v-if="row.grade" size="x-small" variant="tonal" color="primary">{{ row.grade }}</v-chip>
+                                            <v-chip v-if="row.date" size="x-small" variant="tonal" color="primary">
+                                                {{ formatDate(row.date) }}
+                                            </v-chip>
+                                            <v-chip v-if="row.value != null" size="x-small" variant="tonal" color="primary">
+                                                {{ row.value }}
+                                            </v-chip>
+                                        </div>
+                                    </v-list-item>
+                                </template>
+                                <v-list-item v-if="semester2Total != null">
+                                    <div class="d-flex align-center ga-2 w-100">
+                                        <v-list-item-title class="text-subtitle-2">Gesamtbewertung Sem 2</v-list-item-title>
+                                        <v-spacer />
+                                        <div class="text-subtitle-2" :class="semester2HasMissingCategory ? 'text-warning' : 'text-medium-emphasis'">
+                                            Bewertung: {{ formatTwoDecimals(semester2Total) }}
+                                        </div>
+                                    </div>
+                                </v-list-item>
+                            </template>
+
+                            <v-list-item v-if="semesterWeightedGrade">
+                                <div class="w-100">
+                                    <div class="d-flex align-center ga-2 w-100">
+                                        <div class="auswertung-section-header auswertung-section-header--sum">
+                                            <v-icon size="16">mdi-calculator-variant</v-icon>
+                                            <span>Summe Semester 1+2</span>
+                                        </div>
+                                        <v-spacer />
+                                        <v-chip size="small" color="secondary" variant="flat">
+                                            Gesamtbewertung: {{ formatTwoDecimals(semesterWeightedGrade.value) }}
+                                        </v-chip>
+                                    </div>
+                                    <div class="sum-formula mt-2">
+                                        <div class="sum-formula-line">
+                                            <v-chip size="small" variant="tonal" color="primary">Sem 1 {{ semesterWeightedGrade.sem1Weight }}%</v-chip>
+                                            <span>{{ formatTwoDecimals(semesterWeightedGrade.sem1Value) }}</span>
+                                        </div>
+                                        <div class="sum-formula-line">
+                                            <v-chip size="small" variant="tonal" color="primary">Sem 2 {{ semesterWeightedGrade.sem2Weight }}%</v-chip>
+                                            <span>{{ formatTwoDecimals(semesterWeightedGrade.sem2Value) }}</span>
+                                        </div>
+                                        <div class="sum-formula-line text-medium-emphasis">
+                                            <span>
+                                                {{ formatTwoDecimals(semesterWeightedGrade.sem1Value) }} * {{ formatTwoDecimals(semesterWeightedGrade.sem1Weight / 100) }} +
+                                                {{ formatTwoDecimals(semesterWeightedGrade.sem2Value) }} * {{ formatTwoDecimals(semesterWeightedGrade.sem2Weight / 100) }}
+                                            </span>
+                                            <span>=</span>
+                                            <strong>{{ formatTwoDecimals(semesterWeightedGrade.value) }}</strong>
+                                        </div>
+                                    </div>
+                                </div>                                
                             </v-list-item>
                         </v-list>
+                    </v-card-text>
+                </v-card>
+
+                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form">
+                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                        <v-icon size="18">mdi-school</v-icon>
+                        Semesternoten
+                        <v-spacer />
+                        <v-btn v-if="!is_editing_grades" icon="mdi-pencil" size="x-small" color="primary" variant="flat" @click="editGrades" />
+                        <v-btn v-if="is_editing_grades" icon="mdi-check" size="x-small" color="success" variant="flat" @click="saveGrades" />
+                        <v-btn v-if="is_editing_grades" icon="mdi-close" size="x-small" color="warning" variant="flat" @click="is_editing_grades = false" />
+                    </v-card-title>
+                    <v-divider />
+                    <v-card-text>
+                        <template v-if="!is_editing_grades">
+                            <div class="d-flex flex-wrap ga-2" v-if="semesterCount === 2">
+                                <v-chip size="small" variant="tonal" :color="selected_course_student.sem_1_grade ? 'success' : 'default'">
+                                    1. Sem: {{ selected_course_student.sem_1_grade || '–' }}
+                                </v-chip>
+                                <v-chip size="small" variant="tonal" :color="selected_course_student.sem_2_grade ? 'success' : 'default'">
+                                    2. Sem: {{ selected_course_student.sem_2_grade || '–' }}
+                                </v-chip>
+                            </div>
+                            <div class="d-flex flex-wrap ga-2" v-else>
+                                <v-chip size="small" variant="tonal" :color="selected_course_student.sem_grade ? 'success' : 'default'">
+                                    Note: {{ selected_course_student.sem_grade || '–' }}
+                                </v-chip>
+                            </div>
+                        </template>
+                        <template v-else>
+                            <div class="d-flex flex-wrap ga-2" v-if="semesterCount === 2">
+                                <v-text-field v-model="grade_form.sem_1_grade" label="1. Semester" density="compact" hide-details class="flex-grow-1" />
+                                <v-text-field v-model="grade_form.sem_2_grade" label="2. Semester" density="compact" hide-details class="flex-grow-1" />
+                            </div>
+                            <div v-else>
+                                <v-text-field v-model="grade_form.sem_grade" label="Semesternote" density="compact" hide-details />
+                            </div>
+                        </template>
                     </v-card-text>
                 </v-card>
 
@@ -273,30 +395,42 @@ export default {
                 .map((line) => `<p>${line || '<br>'}</p>`)
                 .join('')
         },
-        semesterCount() {
+        teachingSchemas() {
+            return this.config?.user?.teaching_schemas || this.settings?.teaching_schemas || []
+        },
+        selectedSchema() {
             const schemaId = this.selected_course?.teaching_schema_id
-            const grading = schemaId ? this.teachingStore.gradingForSchema(schemaId) : {}
+            if (!schemaId) return null
+            return this.teachingSchemas.find((schema) => schema.id === schemaId) || null
+        },
+        semesterCount() {
+            const grading = this.selectedSchema?.grading || {}
             return grading.semester_count || 1
         },
-        sem2StartDate() {
-            return this.config?.user?.teaching_count_for_semester_2_date || this.config?.selected_schoolyear?.sem_2_start || null
+        schoolSem2StartDate() {
+            return this.config?.selected_schoolyear?.sem_2_start || null
+        },
+        countSem2StartDate() {
+            return this.config?.user?.teaching_count_for_semester_2_date || this.schoolSem2StartDate || null
+        },
+        hasDifferentSem2CountDate() {
+            return !!this.config?.user?.teaching_count_for_semester_2_date && this.config?.user?.teaching_count_for_semester_2_date !== this.schoolSem2StartDate
         },
         filteredEntries() {
             if (this.semesterCount === 1) return this.entries || []
             const semester = this.activeSemester
             if (!semester || semester === 3) return this.entries || []
-            if (!this.sem2StartDate) return this.entries || []
+            const boundary = this.schoolSem2StartDate || this.countSem2StartDate
+            if (!boundary) return this.entries || []
             return (this.entries || []).filter((entry) => {
                 if (!entry.date) return true
-                if (semester === 1) return entry.date < this.sem2StartDate
-                if (semester === 2) return entry.date >= this.sem2StartDate
+                if (semester === 1) return entry.date < boundary
+                if (semester === 2) return entry.date >= boundary
                 return true
             })
         },
         teachingWorks() {
-            const schemaId = this.selected_course?.teaching_schema_id
-            if (!schemaId) return []
-            return this.teachingStore.worksForSchema(schemaId)
+            return this.selectedSchema?.works || []
         },
         workTypeItems() {
             return this.teachingWorks.map((work) => ({
@@ -315,167 +449,69 @@ export default {
             }))
         },
         categoryGroups() {
-            const schemaId = this.selected_course?.teaching_schema_id
-            const grading = schemaId ? this.teachingStore.gradingForSchema(schemaId) : {}
-            const categories = grading.categories || []
-            const worksByType = new Map(this.teachingWorks.map((w) => [w.short_name, w]))
-            const entries = this.filteredEntries
-            const usedTypes = new Set()
-
-            const grouped = categories
-                .map((cat) => {
-                    const works = (cat.works || []).map((w) => (typeof w === 'string' ? { short_name: w, factor: 100 } : w))
-                    const rows = []
-                    const workAverages = []
-                    let categoryPointsGrade = null
-
-                    works.forEach((workItem) => {
-                        const type = workItem.short_name
-                        const work = worksByType.get(type)
-                        if (!work) return
-                        usedTypes.add(type)
-
-                        const weight = (parseFloat(workItem.factor) || 0) / 100
-
-                        if (work.calculation === 'points') {
-                            const values = entries
-                                .filter((entry) => entry.type === type)
-                                .map((entry) => this.gradeValueForWork(work, entry.grade))
-                                .filter((val) => val !== null)
-                            const sum = values.reduce((s, v) => s + v, 0)
-                            const rounded = Number.isInteger(sum) ? sum : Number(sum.toFixed(2))
-                            const grade = this.pointsGradeForWork(work, rounded)
-                            rows.push({
-                                key: `sum-${type}`,
-                                type,
-                                sum: rounded,
-                                grade,
-                            })
-                            if (categoryPointsGrade == null && grade != null && grade !== '') {
-                                categoryPointsGrade = grade
-                            }
-                            let numericGrade = this.gradeValueForWork(work, grade)
-                            if (numericGrade === null && grade != null && grade !== '') {
-                                const parsed = parseFloat(String(grade).replace(',', '.'))
-                                numericGrade = Number.isNaN(parsed) ? null : parsed
-                            }
-                            if (numericGrade !== null) {
-                                workAverages.push({ value: numericGrade, weight })
-                            }
-                            return
-                        }
-
-                        const values = entries
-                            .filter((entry) => entry.type === type)
-                            .map((entry) => this.gradeValueForWork(work, entry.grade))
-                            .filter((val) => val !== null)
-                        if (values.length) {
-                            const avg = values.reduce((s, v) => s + v, 0) / values.length
-                            workAverages.push({ value: avg, weight })
-                        }
-
-                        entries
-                            .filter((entry) => entry.type === type)
-                            .forEach((entry) => {
-                                const value = this.gradeValueForWork(work, entry.grade)
-                                rows.push({
-                                    key: `entry-${entry.id}`,
-                                    type,
-                                    value: value !== null ? value : entry.grade,
-                                    date: entry.date || null,
-                                })
-                            })
-                    })
-
-                    let categoryValue = null
-                    let categoryGrade = null
-                    if (workAverages.length) {
-                        const totalWeight = workAverages.reduce((s, w) => s + w.weight, 0) || 1
-                        const weighted = workAverages.reduce((s, w) => s + w.value * w.weight, 0) / totalWeight
-                        categoryValue = Number(weighted.toFixed(2))
-                        categoryGrade = categoryPointsGrade || null
-                    } else if (categoryPointsGrade) {
-                        categoryGrade = categoryPointsGrade
-                    }
-
-                    return {
-                        name: cat.name || 'Kategorie',
-                        weight: cat.weight ?? 0,
-                        rows,
-                        value: categoryValue,
-                        grade: categoryGrade,
-                    }
-                })
-                .map((cat) => {
-                    if (!cat.rows.length) {
-                        return { ...cat, rows: [] }
-                    }
-                    return cat
-                })
-
-            const undefinedRows = []
-            entries.forEach((entry) => {
-                if (!entry.type || usedTypes.has(entry.type)) return
-                const work = worksByType.get(entry.type)
-                if (work && work.calculation === 'points') {
-                    const values = entries
-                        .filter((e) => e.type === entry.type)
-                        .map((e) => this.gradeValueForWork(work, e.grade))
-                        .filter((val) => val !== null)
-                    const sum = values.length ? values.reduce((s, v) => s + v, 0) : 0
-                    const rounded = Number.isInteger(sum) ? sum : Number(sum.toFixed(2))
-                    if (!undefinedRows.some((r) => r.key === `sum-${entry.type}`)) {
-                        undefinedRows.push({
-                            key: `sum-${entry.type}`,
-                            type: entry.type,
-                            sum: rounded,
-                            grade: this.pointsGradeForWork(work, rounded),
-                        })
-                    }
-                    return
-                }
-
-                const value = work ? this.gradeValueForWork(work, entry.grade) : entry.grade
-                undefinedRows.push({
-                    key: `entry-${entry.id}`,
-                    type: entry.type,
-                    value: value !== null ? value : entry.grade,
-                    date: entry.date || null,
-                })
-            })
-
-            if (undefinedRows.length) {
-                grouped.push({
-                    name: 'Undefiniert',
-                    rows: undefinedRows,
-                })
-            }
-
-            return grouped
+            return this.buildCategoryGroups(this.filteredEntries || [])
         },
-        totalGrade() {
-            if (!this.categoryGroups.length) return null
-            const weightedCats = this.categoryGroups
-                .map((cat) => {
-                    const value = cat.value != null ? cat.value : cat.grade != null ? parseFloat(String(cat.grade).replace(',', '.')) : null
-                    return {
-                        value: value,
-                        weight: (parseFloat(cat.weight) || 0) / 100,
-                    }
-                })
-                .filter((cat) => cat.value != null && !Number.isNaN(cat.value) && cat.weight > 0)
+        semester1Groups() {
+            if (this.semesterCount !== 2) return this.categoryGroups
+            return this.buildCategoryGroups(this.entriesForSemester(this.entries || [], 1))
+        },
+        semester2Groups() {
+            if (this.semesterCount !== 2) return []
+            return this.buildCategoryGroups(this.entriesForSemester(this.entries || [], 2))
+        },
+        semester1Total() {
+            return this.totalFromCategoryGroups(this.semester1Groups)
+        },
+        semester2Total() {
+            return this.totalFromCategoryGroups(this.semester2Groups)
+        },
+        semester1HasMissingCategory() {
+            return this.semester1Groups.some((cat) => !cat.rows || !cat.rows.length)
+        },
+        semester2HasMissingCategory() {
+            return this.semester2Groups.some((cat) => !cat.rows || !cat.rows.length)
+        },
+        showSemester1Auswertung() {
+            if (this.semesterCount !== 2) return true
+            return this.activeSemester === 1 || this.activeSemester === 3
+        },
+        showSemester2Auswertung() {
+            return this.semesterCount === 2 && (this.activeSemester === 2 || this.activeSemester === 3)
+        },
+        hasAuswertungContent() {
+            if (this.semesterCount !== 2) return this.categoryGroups.length > 0
+            if (this.activeSemester === 1) return this.semester1Groups.length > 0
+            if (this.activeSemester === 2) return this.semester2Groups.length > 0 || !!this.semesterWeightedGrade
+            if (this.activeSemester === 3) return this.semester1Groups.length > 0 || this.semester2Groups.length > 0 || !!this.semesterWeightedGrade
+            return false
+        },
+        semesterWeightedGrade() {
+            if (this.semesterCount !== 2) return null
+            if (this.activeSemester !== 2 && this.activeSemester !== 3) return null
 
-            if (!weightedCats.length) return null
-            const totalWeight = weightedCats.reduce((s, c) => s + c.weight, 0) || 1
-            const weighted = weightedCats.reduce((s, c) => s + c.value * c.weight, 0) / totalWeight
-            const value = Number(weighted.toFixed(2))
+            const grading = this.selectedSchema?.grading || {}
+            const sem1Weight = parseFloat(grading.semester_1_weight)
+            const sem2Weight = parseFloat(grading.semester_2_weight)
+            const w1 = Number.isNaN(sem1Weight) ? 50 : sem1Weight
+            const w2 = Number.isNaN(sem2Weight) ? 50 : sem2Weight
+            const totalWeight = w1 + w2
+            if (totalWeight <= 0) return null
 
+            const sem1Entries = this.entriesForSemester(this.entries || [], 1)
+            const sem2Entries = this.entriesForSemester(this.entries || [], 2)
+            const sem1Value = this.totalFromCategoryGroups(this.buildCategoryGroups(sem1Entries))
+            const sem2Value = this.totalFromCategoryGroups(this.buildCategoryGroups(sem2Entries))
+
+            if (sem1Value == null || sem2Value == null) return null
+
+            const value = Number((((sem1Value * w1) + (sem2Value * w2)) / totalWeight).toFixed(2))
             return {
+                sem1Value,
+                sem2Value,
+                sem1Weight: w1,
+                sem2Weight: w2,
                 value,
             }
-        },
-        hasMissingCategory() {
-            return this.categoryGroups.some((cat) => !cat.rows || !cat.rows.length)
         },
         sortedEntries() {
             const list = this.filteredEntries
@@ -687,6 +723,206 @@ export default {
             const pointsWork = this.teachingWorks.find((w) => w.calculation === 'points' && (w.points_table || []).length)
             return pointsWork ? this.pointsGradeForWork(pointsWork, points) : null
         },
+        entriesForSemester(entries, semester) {
+            if (this.semesterCount !== 2) return entries
+            if (!this.countSem2StartDate) return entries
+            return (entries || []).filter((entry) => {
+                if (!entry.date) return true
+                if (semester === 1) return entry.date < this.countSem2StartDate
+                if (semester === 2) return entry.date >= this.countSem2StartDate
+                return true
+            })
+        },
+        entryIsDisplaySem1ButCountsSem2(entry) {
+            if (this.semesterCount !== 2) return false
+            if (!entry?.date) return false
+            if (!this.hasDifferentSem2CountDate) return false
+            if (!this.schoolSem2StartDate || !this.countSem2StartDate) return false
+            const isDisplaySem1 = entry.date < this.schoolSem2StartDate
+            const isCountedSem2 = entry.date >= this.countSem2StartDate
+            return isDisplaySem1 && isCountedSem2
+        },
+        buildCategoryGroups(entries) {
+            const grading = this.selectedSchema?.grading || {}
+            const categories = grading.categories || []
+            const worksByType = new Map(this.teachingWorks.map((w) => [w.short_name, w]))
+            const usedTypes = new Set()
+
+            const grouped = categories.map((cat) => {
+                const works = (cat.works || []).map((w) => (typeof w === 'string' ? { short_name: w, factor: 100 } : w))
+                const rows = []
+                const workAverages = []
+                const calculationParts = []
+                let categoryPointsGrade = null
+
+                works.forEach((workItem) => {
+                    const type = workItem.short_name
+                    const work = worksByType.get(type)
+                    if (!work) return
+                    usedTypes.add(type)
+
+                    const factorPercentRaw = parseFloat(workItem.factor)
+                    const factorPercent = Number.isNaN(factorPercentRaw) ? 0 : factorPercentRaw
+                    const weight = factorPercent / 100
+
+                    if (work.calculation === 'points') {
+                        const values = (entries || [])
+                            .filter((entry) => entry.type === type)
+                            .map((entry) => this.gradeValueForWork(work, entry.grade))
+                            .filter((val) => val !== null)
+                        const sum = values.reduce((s, v) => s + v, 0)
+                        const rounded = Number.isInteger(sum) ? sum : Number(sum.toFixed(2))
+                        const grade = this.pointsGradeForWork(work, rounded)
+                        rows.push({
+                            key: `sum-${type}`,
+                            type,
+                            sum: rounded,
+                            grade,
+                        })
+                        if (categoryPointsGrade == null && grade != null && grade !== '') {
+                            categoryPointsGrade = grade
+                        }
+                        let numericGrade = this.gradeValueForWork(work, grade)
+                        if (numericGrade === null && grade != null && grade !== '') {
+                            const parsed = parseFloat(String(grade).replace(',', '.'))
+                            numericGrade = Number.isNaN(parsed) ? null : parsed
+                        }
+                        if (numericGrade !== null) {
+                            workAverages.push({ value: numericGrade, weight })
+                        }
+                        calculationParts.push({
+                            type,
+                            factorPercent,
+                            value: numericGrade,
+                        })
+                        return
+                    }
+
+                    const values = (entries || [])
+                        .filter((entry) => entry.type === type)
+                        .map((entry) => this.gradeValueForWork(work, entry.grade))
+                        .filter((val) => val !== null)
+                    let avg = null
+                    if (values.length) {
+                        avg = values.reduce((s, v) => s + v, 0) / values.length
+                        workAverages.push({ value: avg, weight })
+                    }
+                    calculationParts.push({
+                        type,
+                        factorPercent,
+                        value: avg !== null ? Number(avg.toFixed(2)) : null,
+                    })
+
+                    ;(entries || [])
+                        .filter((entry) => entry.type === type)
+                        .forEach((entry) => {
+                            const value = this.gradeValueForWork(work, entry.grade)
+                            rows.push({
+                                key: `entry-${entry.id}`,
+                                type,
+                                value: value !== null ? value : entry.grade,
+                                date: entry.date || null,
+                            })
+                        })
+                })
+
+                let categoryValue = null
+                let categoryGrade = null
+                if (workAverages.length) {
+                    const totalWeight = workAverages.reduce((s, w) => s + w.weight, 0) || 1
+                    const weighted = workAverages.reduce((s, w) => s + w.value * w.weight, 0) / totalWeight
+                    categoryValue = Number(weighted.toFixed(2))
+                    categoryGrade = categoryPointsGrade || null
+                } else if (categoryPointsGrade) {
+                    categoryGrade = categoryPointsGrade
+                }
+
+                return {
+                    name: cat.name || 'Kategorie',
+                    weight: cat.weight ?? 0,
+                    rows,
+                    value: categoryValue,
+                    grade: categoryGrade,
+                    calculationParts,
+                }
+            })
+
+            const undefinedRows = []
+            ;(entries || []).forEach((entry) => {
+                if (!entry.type || usedTypes.has(entry.type)) return
+                const work = worksByType.get(entry.type)
+                if (work && work.calculation === 'points') {
+                    const values = (entries || [])
+                        .filter((e) => e.type === entry.type)
+                        .map((e) => this.gradeValueForWork(work, e.grade))
+                        .filter((val) => val !== null)
+                    const sum = values.length ? values.reduce((s, v) => s + v, 0) : 0
+                    const rounded = Number.isInteger(sum) ? sum : Number(sum.toFixed(2))
+                    if (!undefinedRows.some((r) => r.key === `sum-${entry.type}`)) {
+                        undefinedRows.push({
+                            key: `sum-${entry.type}`,
+                            type: entry.type,
+                            sum: rounded,
+                            grade: this.pointsGradeForWork(work, rounded),
+                        })
+                    }
+                    return
+                }
+
+                const value = work ? this.gradeValueForWork(work, entry.grade) : entry.grade
+                undefinedRows.push({
+                    key: `entry-${entry.id}`,
+                    type: entry.type,
+                    value: value !== null ? value : entry.grade,
+                    date: entry.date || null,
+                })
+            })
+
+            if (undefinedRows.length) {
+                grouped.push({
+                    name: 'Undefiniert',
+                    rows: undefinedRows,
+                })
+            }
+
+            return grouped
+        },
+        totalFromCategoryGroups(groups) {
+            if (!groups?.length) return null
+            const weightedCats = groups
+                .map((cat) => {
+                    const value = cat.value != null ? cat.value : cat.grade != null ? parseFloat(String(cat.grade).replace(',', '.')) : null
+                    return {
+                        value,
+                        weight: (parseFloat(cat.weight) || 0) / 100,
+                    }
+                })
+                .filter((cat) => cat.value != null && !Number.isNaN(cat.value) && cat.weight > 0)
+
+            if (!weightedCats.length) return null
+            const totalWeight = weightedCats.reduce((s, c) => s + c.weight, 0) || 1
+            const weighted = weightedCats.reduce((s, c) => s + c.value * c.weight, 0) / totalWeight
+            return Number(weighted.toFixed(2))
+        },
+        categoryCalculationLine(category) {
+            const parts = (category?.calculationParts || []).filter((part) => part.value != null && part.factorPercent > 0)
+            if (!parts.length) return ''
+
+            const terms = parts.map((part) => {
+                return `${part.type}(${this.formatTwoDecimals(part.value)}) x ${this.formatTwoDecimals(part.factorPercent / 100)}`
+            })
+            const denominator = parts.reduce((sum, part) => sum + part.factorPercent / 100, 0)
+            const result = category?.value != null ? this.formatTwoDecimals(category.value) : ''
+            if (!result) return ''
+
+            return `Berechnung: (${terms.join(' + ')}) / ${this.formatTwoDecimals(denominator)} = ${result}`
+        },
+        categoryMissingLine(category) {
+            const missing = (category?.calculationParts || []).filter((part) => (part.value == null || Number.isNaN(part.value)) && part.factorPercent > 0)
+            if (!missing.length) return ''
+            const list = missing.map((part) => `${part.type} (${this.formatTwoDecimals(part.factorPercent)}%)`).join(', ')
+            return `Ohne Wert: ${list}`
+        },
         toDateString(date) {
             const d = parseLocalDate(date)
             const year = d.getFullYear()
@@ -702,5 +938,40 @@ export default {
 .course-comment :deep(p) {
     margin: 0;
     min-height: 1.2em;
+}
+
+.auswertung-section-header {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    line-height: 1;
+    color: rgb(var(--v-theme-on-primary));
+    background: linear-gradient(135deg, rgb(var(--v-theme-primary)) 0%, rgba(var(--v-theme-primary), 0.78) 100%);
+    box-shadow: 0 4px 14px rgba(var(--v-theme-primary), 0.28);
+}
+
+.auswertung-section-header--sum {
+    color: rgb(var(--v-theme-on-secondary));
+    background: linear-gradient(135deg, rgb(var(--v-theme-secondary)) 0%, rgba(var(--v-theme-secondary), 0.82) 100%);
+    box-shadow: 0 4px 14px rgba(var(--v-theme-secondary), 0.24);
+}
+
+.sum-formula {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.sum-formula-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 0.95rem;
+    font-weight: 600;
 }
 </style>
