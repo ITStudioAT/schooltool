@@ -27,6 +27,14 @@
                     </div>
                     <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newWork" :disabled="action === 'edit_course_work' || !hasStudents" />
                 </v-card>
+
+                <div v-if="semesterCount === 2" class="d-flex flex-wrap align-center ga-2 mt-2">
+                    <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">
+                        <v-btn :value="1" size="small">1. Sem</v-btn>
+                        <v-btn :value="2" size="small">2. Sem</v-btn>
+                        <v-btn :value="3" size="small">1+2</v-btn>
+                    </v-btn-toggle>
+                </div>
             </v-card-text>
         </v-card>
 
@@ -35,14 +43,14 @@
             <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                 <v-icon size="18">mdi-clipboard-text</v-icon>
                 Arbeiten
-                <v-chip v-if="courseWorks?.length" size="x-small" color="primary" variant="tonal">
-                    {{ courseWorks.length }}
+                <v-chip v-if="filteredCourseWorks?.length" size="x-small" color="primary" variant="tonal">
+                    {{ filteredCourseWorks.length }}
                 </v-chip>
             </v-card-title>
             <v-divider />
             <v-card-text class="pa-0">
                 <v-list density="compact">
-                    <v-list-item v-for="work in courseWorks" :key="work.id" class="cursor-pointer" @click="editWork(work)">
+                    <v-list-item v-for="work in filteredCourseWorks" :key="work.id" class="cursor-pointer" @click="editWork(work)">
                         <div class="d-flex flex-column ga-2 w-100">
                             <div class="d-flex align-center ga-2 w-100">
                                 <v-chip v-if="work.date_for_all_groups" size="x-small" variant="tonal" color="primary">
@@ -62,7 +70,7 @@
                             </div>
                         </div>
                     </v-list-item>
-                    <v-list-item v-if="!courseWorks?.length && hasStudents">
+                    <v-list-item v-if="!filteredCourseWorks?.length && hasStudents">
                         <v-list-item-title class="text-caption text-medium-emphasis">Keine Arbeiten vorhanden.</v-list-item-title>
                     </v-list-item>
                     <v-list-item v-if="!hasStudents">
@@ -382,6 +390,7 @@ export default {
         if (!this.teachingStore.settings) {
             await this.teachingStore.loadSettings()
         }
+        this.activeSemester = this.config?.user?.teaching_active_semester || 1
         await this.refreshWorks()
     },
 
@@ -395,6 +404,7 @@ export default {
             courseStore: null,
             courseWorkStore: null,
             teachingStore: null,
+            activeSemester: null,
             is_valid: false,
             delete_work_id: null,
             work_form: this.emptyWorkForm(),
@@ -423,6 +433,26 @@ export default {
         },
         hasStudents() {
             return (this.selected_course?.students_info || []).length > 0
+        },
+        semesterCount() {
+            const schemaId = this.selected_course?.teaching_schema_id
+            const grading = schemaId ? this.teachingStore?.gradingForSchema(schemaId) : {}
+            return grading?.semester_count || 1
+        },
+        sem2StartDate() {
+            return this.config?.user?.teaching_count_for_semester_2_date || this.config?.selected_schoolyear?.sem_2_start || null
+        },
+        filteredCourseWorks() {
+            if (this.semesterCount === 1) return this.courseWorks || []
+            const semester = this.activeSemester
+            if (!semester || semester === 3) return this.courseWorks || []
+            if (!this.sem2StartDate) return this.courseWorks || []
+            return (this.courseWorks || []).filter((work) => {
+                if (!work.date_for_all_groups) return true
+                if (semester === 1) return work.date_for_all_groups < this.sem2StartDate
+                if (semester === 2) return work.date_for_all_groups >= this.sem2StartDate
+                return true
+            })
         },
         workTypeItems() {
             return this.teachingWorks.map((work) => ({
@@ -488,6 +518,14 @@ export default {
     },
 
     watch: {
+        activeSemester(val) {
+            if (val !== this.config?.user?.teaching_active_semester) {
+                this.teachingStore.saveActiveSemester(val)
+            }
+        },
+        'config.user.teaching_active_semester'(val) {
+            if (val) this.activeSemester = val
+        },
         selected_course: {
             handler() {
                 this.refreshWorks()

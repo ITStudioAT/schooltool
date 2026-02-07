@@ -12,6 +12,14 @@
                     <v-btn color="warning" flat tile @click="closeStudent">Zurück</v-btn>
                 </v-card>
 
+                <div v-if="semesterCount === 2" class="d-flex flex-wrap align-center ga-2 mt-2">
+                    <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">
+                        <v-btn :value="1" size="small">1. Sem</v-btn>
+                        <v-btn :value="2" size="small">2. Sem</v-btn>
+                        <v-btn :value="3" size="small">1+2</v-btn>
+                    </v-btn-toggle>
+                </div>
+
                 <v-card variant="outlined" class="mt-4" v-if="!show_entry_form">
                     <v-card-text v-if="!is_editing">
                         <div class="text-body-2 course-comment" v-if="selected_comment" v-html="commentHtml"></div>
@@ -77,8 +85,8 @@
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-clipboard-text</v-icon>
                         Einträge
-                        <v-chip v-if="entries?.length" size="x-small" color="primary" variant="tonal">
-                            {{ entries.length }}
+                        <v-chip v-if="filteredEntries?.length" size="x-small" color="primary" variant="tonal">
+                            {{ filteredEntries.length }}
                         </v-chip>
                         <v-spacer />
                         <v-btn size="small" variant="tonal" color="primary" @click="toggleSortByType">
@@ -121,7 +129,7 @@
                                     <v-btn v-if="delete_entry_id === entry.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteEntry(entry)" />
                                 </div>
                             </v-list-item>
-                            <v-list-item v-if="!entries?.length">
+                            <v-list-item v-if="!filteredEntries?.length">
                                 <v-list-item-title class="text-caption text-medium-emphasis">Keine Einträge vorhanden.</v-list-item-title>
                             </v-list-item>
                         </v-list>
@@ -225,6 +233,7 @@ export default {
         if (!this.teachingStore.settings) {
             await this.teachingStore.loadSettings()
         }
+        this.activeSemester = this.config?.user?.teaching_active_semester || 1
         await this.loadEntries()
     },
 
@@ -243,11 +252,12 @@ export default {
             sort_by_type: false,
             delete_entry_id: null,
             show_auswertung: false,
+            activeSemester: null,
         }
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, ['action', 'action_2']),
+        ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useCourseStore, ['selected_course', 'selected_course_student']),
         ...mapWritableState(useCourseStudentEntryStore, ['entries']),
         ...mapWritableState(useTeachingStore, ['settings']),
@@ -267,6 +277,21 @@ export default {
             const schemaId = this.selected_course?.teaching_schema_id
             const grading = schemaId ? this.teachingStore.gradingForSchema(schemaId) : {}
             return grading.semester_count || 1
+        },
+        sem2StartDate() {
+            return this.config?.user?.teaching_count_for_semester_2_date || this.config?.selected_schoolyear?.sem_2_start || null
+        },
+        filteredEntries() {
+            if (this.semesterCount === 1) return this.entries || []
+            const semester = this.activeSemester
+            if (!semester || semester === 3) return this.entries || []
+            if (!this.sem2StartDate) return this.entries || []
+            return (this.entries || []).filter((entry) => {
+                if (!entry.date) return true
+                if (semester === 1) return entry.date < this.sem2StartDate
+                if (semester === 2) return entry.date >= this.sem2StartDate
+                return true
+            })
         },
         teachingWorks() {
             const schemaId = this.selected_course?.teaching_schema_id
@@ -294,7 +319,7 @@ export default {
             const grading = schemaId ? this.teachingStore.gradingForSchema(schemaId) : {}
             const categories = grading.categories || []
             const worksByType = new Map(this.teachingWorks.map((w) => [w.short_name, w]))
-            const entries = this.entries || []
+            const entries = this.filteredEntries
             const usedTypes = new Set()
 
             const grouped = categories
@@ -453,7 +478,7 @@ export default {
             return this.categoryGroups.some((cat) => !cat.rows || !cat.rows.length)
         },
         sortedEntries() {
-            const list = this.entries || []
+            const list = this.filteredEntries
             if (!this.sort_by_type) return list
             return [...list].sort((a, b) => {
                 const typeA = (a.type || '').toString()
@@ -468,6 +493,14 @@ export default {
     },
 
     watch: {
+        activeSemester(val) {
+            if (val !== this.config?.user?.teaching_active_semester) {
+                this.teachingStore.saveActiveSemester(val)
+            }
+        },
+        'config.user.teaching_active_semester'(val) {
+            if (val) this.activeSemester = val
+        },
         selected_course_student: {
             handler() {
                 this.show_entry_form = false

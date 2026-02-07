@@ -69,6 +69,24 @@ class TeachingController extends Controller
         ]);
     }
 
+    public function saveActiveSemester(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'teaching_active_semester' => 'required|integer|in:1,2,3',
+        ]);
+
+        $auth_user->teaching_active_semester = $validated['teaching_active_semester'];
+        $auth_user->save();
+
+        return response()->json([
+            'teaching_active_semester' => $auth_user->teaching_active_semester,
+        ]);
+    }
+
     public function saveSettings(Request $request)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {

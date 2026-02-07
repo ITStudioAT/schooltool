@@ -91,7 +91,7 @@ export default {
     methods: {
         setActiveSemester(semester) {
             this.activeSemester = semester
-            if (this.config?.user) this.config.user.teaching_active_semester = semester
+            useTeachingStore().saveActiveSemester(semester)
         },
         syncSemester2DateInput() {
             if (!this.config?.user) return

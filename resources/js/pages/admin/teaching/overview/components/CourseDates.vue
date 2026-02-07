@@ -20,6 +20,14 @@
                     </div>
                     <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newDates" :disabled="isEditingContent" />
                 </v-card>
+
+                <div v-if="semesterCount === 2" class="d-flex flex-wrap align-center ga-2 mt-2">
+                    <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">
+                        <v-btn :value="1" size="small">1. Sem</v-btn>
+                        <v-btn :value="2" size="small">2. Sem</v-btn>
+                        <v-btn :value="3" size="small">1+2</v-btn>
+                    </v-btn-toggle>
+                </div>
             </v-card-text>
         </v-card>
 
@@ -28,8 +36,8 @@
             <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                 <v-icon size="18">mdi-calendar-check</v-icon>
                 Termine
-                <v-chip v-if="selected_course?.course_dates?.length" size="x-small" color="primary" variant="tonal">
-                    {{ selected_course.course_dates.length }}
+                <v-chip v-if="filteredCourseDates?.length" size="x-small" color="primary" variant="tonal">
+                    {{ filteredCourseDates.length }}
                 </v-chip>
                 <v-spacer />
                 <v-btn
@@ -45,7 +53,7 @@
             <v-card-text class="pa-0">
                 <v-list density="compact">
                     <v-list-item
-                        v-for="courseDate in selected_course.course_dates"
+                        v-for="courseDate in filteredCourseDates"
                         :key="courseDate.id"
                         :disabled="isEditingContent && editing_content_id !== courseDate.id"
                         :class="{
@@ -140,7 +148,7 @@
                             </div>
                         </div>
                     </v-list-item>
-                    <v-list-item v-if="!selected_course?.course_dates?.length">
+                    <v-list-item v-if="!filteredCourseDates?.length">
                         <v-list-item-title class="text-caption text-medium-emphasis">Keine Termine vorhanden.</v-list-item-title>
                     </v-list-item>
                 </v-list>
@@ -236,6 +244,7 @@ import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
+import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 
@@ -250,6 +259,11 @@ export default {
         this.adminStore = useAdminStore()
         this.courseStore = useCourseStore()
         this.courseDateStore = useCourseDateStore()
+        this.teachingStore = useTeachingStore()
+        if (!this.teachingStore.settings) {
+            await this.teachingStore.loadSettings()
+        }
+        this.activeSemester = this.config?.user?.teaching_active_semester || 1
     },
 
     unmounted() {
@@ -261,6 +275,8 @@ export default {
             adminStore: null,
             courseStore: null,
             courseDateStore: null,
+            teachingStore: null,
+            activeSemester: null,
             is_valid: false,
             delete_date_id: null,
             show_contents: false,
@@ -281,6 +297,27 @@ export default {
         ...mapWritableState(useAdminStore, ['action', 'action', 'config']),
         ...mapWritableState(useCourseStore, ['selected_course']),
         ...mapWritableState(useCourseDateStore, ['courseDates', 'selected_courseDate']),
+        semesterCount() {
+            const schemaId = this.selected_course?.teaching_schema_id
+            const grading = schemaId ? this.teachingStore?.gradingForSchema(schemaId) : {}
+            return grading?.semester_count || 1
+        },
+        sem2StartDate() {
+            return this.config?.user?.teaching_count_for_semester_2_date || this.config?.selected_schoolyear?.sem_2_start || null
+        },
+        filteredCourseDates() {
+            const dates = this.selected_course?.course_dates || []
+            if (this.semesterCount === 1) return dates
+            const semester = this.activeSemester
+            if (!semester || semester === 3) return dates
+            if (!this.sem2StartDate) return dates
+            return dates.filter((d) => {
+                if (!d.date) return true
+                if (semester === 1) return d.date < this.sem2StartDate
+                if (semester === 2) return d.date >= this.sem2StartDate
+                return true
+            })
+        },
         generatedDates() {
             if (!this.data.from) return []
 
@@ -329,6 +366,14 @@ export default {
     },
 
     watch: {
+        activeSemester(val) {
+            if (val !== this.config?.user?.teaching_active_semester) {
+                this.teachingStore.saveActiveSemester(val)
+            }
+        },
+        'config.user.teaching_active_semester'(val) {
+            if (val) this.activeSemester = val
+        },
         'data.from'(val) {
             if (val && val instanceof Date) {
                 this.data.from = this.toDateString(val)

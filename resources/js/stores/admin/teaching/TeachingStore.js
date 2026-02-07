@@ -76,6 +76,21 @@ export const useTeachingStore = defineStore('AdminTeachingStore', {
             }
         },
 
+        async saveActiveSemester(semester) {
+            const adminStore = useAdminStore()
+            try {
+                await axios.post(`/api/admin/teaching/save_active_semester`, { teaching_active_semester: semester })
+                if (adminStore.config?.user) adminStore.config.user.teaching_active_semester = semester
+            } catch (error) {
+                useNotificationStore().notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+            }
+        },
+
         async saveSettings(settings) {
             const notification = useNotificationStore()
             const homepageStore = useAdminStore()
