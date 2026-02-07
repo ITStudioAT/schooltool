@@ -1,11 +1,7 @@
 <template>
     <!-- MENÜ FÜR OVERVIEW -->
     <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap ga-2 w-100 my-2 ml-1" :disabled="action != '' || action_2 != ''">
-        <its-menu-button
-            subtitle="Meine Fächer"
-            :icon="show_my_courses ? 'mdi-eye' : 'mdi-eye-off'"
-            :color="show_my_courses ? 'success' : 'secondary'"
-            @click="toggleMyCourses" />
+        <its-menu-button subtitle="Meine Fächer" :icon="show_my_courses ? 'mdi-eye' : 'mdi-eye-off'" :color="show_my_courses ? 'success' : 'secondary'" @click="toggleMyCourses" />
 
         <its-menu-button
             subtitle="Schüler:innen"
@@ -104,6 +100,7 @@ export default {
         this.selected_course_id = null
         this.selected_course_student = null
         this.action_2 = ''
+        this.show_my_courses = true
         await this.courseStore.index()
     },
 

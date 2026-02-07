@@ -1,6 +1,27 @@
 <template>
+    <!-- MENÜ FÜR SETTINGS -->
+    <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap ga-2 w-100 my-2 ml-1">
+        <its-menu-button
+            subtitle="Grundeinstellungen"
+            :icon="show_basic_settings ? 'mdi-eye' : 'mdi-eye-off'"
+            :color="show_basic_settings ? 'success' : 'secondary'"
+            @click="show_basic_settings = !show_basic_settings" />
+        <its-menu-button
+            subtitle="Benotungsschemas"
+            :icon="show_schemas ? 'mdi-eye' : 'mdi-eye-off'"
+            :color="show_schemas ? 'success' : 'secondary'"
+            @click="show_schemas = !show_schemas" />
+    </v-card>
+
+    <!-- Grundeinstellungen -->
+    <v-col cols="12" md="6" xl="4" v-if="show_basic_settings">
+        <ItsGridBox color="primary" title="Grundeinstellungen" icon="mdi-cog" class="w-100">
+            <BasicSettings />
+        </ItsGridBox>
+    </v-col>
+
     <!-- Schema CRUD -->
-    <v-col cols="12" md="6" xl="4">
+    <v-col cols="12" md="6" xl="4" v-if="show_schemas">
         <ItsGridBox color="primary" title="Benotungsschemas" icon="mdi-book-cog" class="w-100">
             <div class="d-flex flex-wrap ga-2 mt-2">
                 <v-chip
@@ -72,11 +93,12 @@ import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import WorksAndGrades from './components/WorksAndGrades.vue'
 import Grading from './components/Grading.vue'
+import BasicSettings from './components/BasicSettings.vue'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
 export default {
-    components: { WorksAndGrades, Grading, ItsMenuButton, ItsGridBox },
+    components: { WorksAndGrades, Grading, BasicSettings, ItsMenuButton, ItsGridBox },
 
     async beforeMount() {
         this.teachingStore = useTeachingStore()
@@ -92,6 +114,8 @@ export default {
             teachingStore: null,
             courseStore: null,
             selected_schema_id: null,
+            show_basic_settings: true,
+            show_schemas: true,
             show_works: true,
             show_grading: true,
             is_renaming: false,

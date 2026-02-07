@@ -87,6 +87,24 @@ class TeachingController extends Controller
         ]);
     }
 
+    public function saveSemester2Date(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'teaching_count_for_semester_2_date' => 'nullable|date',
+        ]);
+
+        $auth_user->teaching_count_for_semester_2_date = $validated['teaching_count_for_semester_2_date'];
+        $auth_user->save();
+
+        return response()->json([
+            'teaching_count_for_semester_2_date' => $auth_user->teaching_count_for_semester_2_date,
+        ]);
+    }
+
     public function saveSettings(Request $request)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {

@@ -91,6 +91,26 @@ export const useTeachingStore = defineStore('AdminTeachingStore', {
             }
         },
 
+        async saveSemester2Date(date) {
+            const adminStore = useAdminStore()
+            try {
+                const response = await axios.post(`/api/admin/teaching/save_semester_2_date`, { teaching_count_for_semester_2_date: date })
+                if (adminStore.config?.user) adminStore.config.user.teaching_count_for_semester_2_date = response.data.teaching_count_for_semester_2_date
+                useNotificationStore().notify({
+                    message: 'Datum gespeichert.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+            } catch (error) {
+                useNotificationStore().notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+            }
+        },
+
         async saveSettings(settings) {
             const notification = useNotificationStore()
             const homepageStore = useAdminStore()
