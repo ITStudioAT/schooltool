@@ -25,6 +25,10 @@ export const useTeachingStore = defineStore('AdminTeachingStore', {
             const schema = (state.settings?.teaching_schemas || []).find((s) => s.id === schemaId)
             return schema?.grading || {}
         },
+        hasTwoSemesters: (state) => {
+            const schemas = state.settings?.teaching_schemas || []
+            return schemas.some((s) => s.grading?.semester_count === 2)
+        },
     },
 
     actions: {
