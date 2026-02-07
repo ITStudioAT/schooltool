@@ -360,6 +360,12 @@ export default {
             this.initData()
             this.exitEditMode()
         },
+        'data.semester_count'(val, oldVal) {
+            if (val === 2 && oldVal === 1) {
+                this.data.semester_1_weight = 40
+                this.data.semester_2_weight = 60
+            }
+        },
         // When teaching_works changes (e.g., a work is deleted), clean up orphaned references
         teaching_works: {
             handler(newWorks) {

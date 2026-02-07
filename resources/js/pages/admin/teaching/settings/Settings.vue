@@ -18,7 +18,7 @@
             <!-- Schema bearbeiten -->
             <div v-if="selected_schema_id" class="d-flex flex-row align-center mt-2 ga-2">
                 <v-btn v-if="!is_renaming && !selectedSchemaIsStandard" flat tile size="small" color="primary" prepend-icon="mdi-pencil" @click="startRename">Umbenennen</v-btn>
-                <v-btn v-if="!is_renaming && !is_deleting && !selectedSchemaIsStandard" flat tile size="small" color="warning" prepend-icon="mdi-delete" :disabled="selectedSchemaInUse" @click="is_deleting = true">Löschen</v-btn>
+                <v-btn v-if="!is_renaming && !is_deleting && !selectedSchemaIsStandard && !selectedSchemaInUse" flat tile size="small" color="warning" prepend-icon="mdi-delete" @click="is_deleting = true">Löschen</v-btn>
                 <v-btn v-if="is_deleting" flat tile size="small" color="success" prepend-icon="mdi-delete-off" @click="is_deleting = false">Abbruch</v-btn>
                 <v-btn v-if="is_deleting" flat tile size="small" color="error" prepend-icon="mdi-delete" @click="deleteSchema">Endgültig löschen</v-btn>
                 <v-spacer />

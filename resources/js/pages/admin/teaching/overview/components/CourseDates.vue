@@ -56,10 +56,7 @@
                         v-for="courseDate in filteredCourseDates"
                         :key="courseDate.id"
                         :disabled="isEditingContent && editing_content_id !== courseDate.id"
-                        :class="{
-                            'bg-primary-lighten-4': highlightedDateId === courseDate.id && !hasStatus(courseDate, 'free'),
-                            'bg-success-lighten-2': hasStatus(courseDate, 'free'),
-                        }">
+                        :class="courseDateRowClass(courseDate)">
                         <div class="d-flex flex-column ga-2 w-100">
                             <div class="d-flex align-center ga-2 w-100">
                                 <v-icon v-if="highlightedDateId === courseDate.id" size="x-small" color="success">mdi-arrow-right-bold</v-icon>
@@ -451,6 +448,12 @@ export default {
         },
         hasStatus(courseDate, status) {
             return Array.isArray(courseDate.status) && courseDate.status.includes(status)
+        },
+        courseDateRowClass(courseDate) {
+            if (this.hasStatus(courseDate, 'pruefung')) return 'bg-warning-lighten-4'
+            if (this.hasStatus(courseDate, 'free')) return 'bg-success-lighten-2'
+            if (this.highlightedDateId === courseDate.id) return 'bg-primary-lighten-4'
+            return ''
         },
         async toggleStatus(courseDate, status) {
             const currentStatus = Array.isArray(courseDate.status) ? [...courseDate.status] : []

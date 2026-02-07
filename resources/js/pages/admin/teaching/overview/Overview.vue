@@ -5,7 +5,7 @@
             subtitle="Meine Fächer"
             :icon="show_my_courses ? 'mdi-eye' : 'mdi-eye-off'"
             :color="show_my_courses ? 'success' : 'secondary'"
-            @click="show_my_courses = !show_my_courses" />
+            @click="toggleMyCourses" />
 
         <its-menu-button
             subtitle="Schüler:innen"
@@ -39,7 +39,7 @@
     <!-- OVERVIEW-->
     <v-col cols="12" md="6" xl="4" v-if="show_my_courses || show_students">
         <!-- MY_COURSES-->
-        <v-row v-if="show_my_courses" :style="action_2 == 'course_student_view' ? 'pointer-events:none; opacity:0.6' : ''">
+        <v-row v-if="show_my_courses && !selected_course" :style="action_2 == 'course_student_view' ? 'pointer-events:none; opacity:0.6' : ''">
             <v-col>
                 <MyCourses />
             </v-col>
@@ -131,9 +131,26 @@ export default {
         ]),
     },
 
-    watch: {},
+    watch: {
+        selected_course(val) {
+            if (val) {
+                this.show_my_courses = false
+                this.show_infos = false
+            }
+        },
+    },
 
     methods: {
+        toggleMyCourses() {
+            const next = !this.show_my_courses
+            this.show_my_courses = next
+            if (next) {
+                this.selected_course = null
+                this.selected_course_id = null
+                this.selected_course_student = null
+                this.show_infos = false
+            }
+        },
         toggleShowMyCourses() {
             if (this.show_my_courses) {
                 this.selected_course_old = { ...this.selected_course }
