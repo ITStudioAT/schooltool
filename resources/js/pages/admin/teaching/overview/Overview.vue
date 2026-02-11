@@ -35,7 +35,7 @@
     <!-- OVERVIEW-->
     <v-col cols="12" md="6" xl="4" v-if="show_my_courses || show_students">
         <!-- MY_COURSES-->
-        <v-row v-if="show_my_courses && (!selected_course || action == 'teaching_course_new_or_edit')" :style="action_2 == 'course_student_view' ? 'pointer-events:none; opacity:0.6' : ''">
+        <v-row v-if="show_my_courses" :style="action_2 == 'course_student_view' ? 'pointer-events:none; opacity:0.6' : ''">
             <v-col>
                 <MyCourses />
             </v-col>
@@ -128,14 +128,7 @@ export default {
         ]),
     },
 
-    watch: {
-        selected_course(val) {
-            if (val && this.action !== 'teaching_course_new_or_edit') {
-                this.show_my_courses = false
-                this.show_infos = false
-            }
-        },
-    },
+    watch: {},
 
     methods: {
         toggleMyCourses() {
