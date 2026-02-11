@@ -45,6 +45,70 @@
 
                 <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                        <v-icon size="18">mdi-bell</v-icon>
+                        Verständigungs-Einträge
+                        <v-chip v-if="filteredNotificationEntries?.length" size="x-small" color="secondary" variant="flat">
+                            {{ filteredNotificationEntries.length }}
+                        </v-chip>
+                        <v-spacer />
+                        <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newNotificationEntry" />
+                    </v-card-title>
+                    <v-divider />
+                    <v-card-text class="pa-0">
+                        <v-list density="compact">
+                            <template v-for="item in filteredNotificationEntriesGrouped" :key="item.key">
+                                <v-list-item v-if="item.kind === 'header'">
+                                    <div class="d-flex align-center ga-2 w-100">
+                                        <v-divider />
+                                        <span class="text-caption text-medium-emphasis text-no-wrap font-weight-bold">{{ item.label }}</span>
+                                        <v-divider />
+                                    </div>
+                                </v-list-item>
+                                <v-list-item v-else>
+                                    <div class="d-flex align-center ga-2 w-100">
+                                        <v-chip v-if="item.entry.date" size="x-small" variant="tonal" color="primary">
+                                            {{ formatDate(item.entry.date) }}
+                                        </v-chip>
+                                        <v-chip v-if="item.entry.type" size="x-small" variant="outlined" color="secondary">
+                                            {{ notificationTypeLabel(item.entry.type) }}
+                                        </v-chip>
+                                        <v-chip v-if="item.entry.due_date && !item.entry.done_date" size="x-small" variant="tonal" :color="dueDateColor(item.entry.due_date)">
+                                            Fällig bis {{ formatDate(item.entry.due_date) }}
+                                        </v-chip>
+                                        <v-chip v-if="item.entry.done_date" size="x-small" variant="tonal" color="success">
+                                            Erledigt {{ formatDate(item.entry.done_date) }}
+                                        </v-chip>
+                                        <div class="text-caption flex-grow-1">
+                                            {{ item.entry.description || '' }}
+                                        </div>
+                                        <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editNotificationEntry(item.entry)" />
+                                        <v-btn
+                                            v-if="delete_notification_id !== item.entry.id"
+                                            icon="mdi-delete"
+                                            size="x-small"
+                                            color="warning"
+                                            variant="tonal"
+                                            @click="delete_notification_id = item.entry.id" />
+                                        <v-btn
+                                            v-if="delete_notification_id === item.entry.id"
+                                            icon="mdi-delete-off"
+                                            size="x-small"
+                                            color="success"
+                                            variant="tonal"
+                                            @click="delete_notification_id = null" />
+                                        <v-btn v-if="delete_notification_id === item.entry.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteNotificationEntry(item.entry)" />
+                                    </div>
+                                </v-list-item>
+                            </template>
+                            <v-list-item v-if="!filteredNotificationEntries?.length">
+                                <v-list-item-title class="text-caption text-medium-emphasis">Keine Verständigungs-Einträge vorhanden.</v-list-item-title>
+                            </v-list-item>
+                        </v-list>
+                    </v-card-text>
+                </v-card>
+
+                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form">
+                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-clipboard-text</v-icon>
                         Einträge
                         <v-chip v-if="filteredEntries?.length" size="x-small" color="primary" variant="tonal">
@@ -310,6 +374,12 @@
                                         <v-chip v-if="item.entry.date" size="x-small" variant="tonal" color="primary">
                                             {{ formatDate(item.entry.date) }}
                                         </v-chip>
+                                        <v-chip v-if="item.entry.due_date" size="x-small" variant="tonal" color="error">
+                                            Fällig bis {{ formatDate(item.entry.due_date) }}
+                                        </v-chip>
+                                        <v-chip v-if="item.entry.done_date" size="x-small" variant="tonal" color="success">
+                                            Erledigt {{ formatDate(item.entry.done_date) }}
+                                        </v-chip>
                                         <v-chip v-if="item.entry.type" size="x-small" variant="outlined" color="warning">
                                             {{ behaviourTypeLabel(item.entry.type) }}
                                         </v-chip>
@@ -421,14 +491,36 @@
                 <v-card variant="outlined" class="mt-4" v-if="show_behaviour_form">
                     <v-card-text>
                         <v-form ref="behaviourForm" @submit.prevent="saveBehaviourEntry">
-                            <div class="text-subtitle-1 mb-2">{{ behaviour_form.id ? 'Verhaltens-Eintrag ändern' : 'Neuer Verhaltens-Eintrag' }}</div>
-                            <v-select v-model="behaviour_form.type" label="Typ" :items="behaviourTypeItems" item-title="title" item-value="value" clearable />
+                            <div class="text-subtitle-1 mb-2">{{ behaviour_form.id ? entryFormTitleEdit : entryFormTitleNew }}</div>
+                            <v-select v-model="behaviour_form.type" label="Typ" :items="entryTypeItems" item-title="title" item-value="value" clearable />
                             <v-date-input v-model="behaviour_form.date" label="Datum" />
                             <v-textarea v-model="behaviour_form.description" label="Beschreibung" rows="3" :counter="1024" :maxlength="1024" />
+                            <div class="d-flex flex-column ga-2">
+                                <v-switch v-model="behaviour_form.is_due" label="Fällig" color="warning" hide-details />
+                                <template v-if="behaviour_form.is_due">
+                                    <v-date-input v-model="behaviour_form.due_date" label="Fällig bis" />
+                                    <div class="d-flex flex-wrap ga-1 mt-1">
+                                        <v-chip size="x-small" variant="outlined" class="cursor-pointer" @click="setDueInAWeek">In einer Woche</v-chip>
+                                        <v-chip
+                                            size="x-small"
+                                            variant="outlined"
+                                            class="cursor-pointer"
+                                            :disabled="!nextCourseLessonDate"
+                                            @click="setDueNextLesson">
+                                            Nächste Unterrichtseinheit<span v-if="nextCourseLessonDate">: {{ formatDate(nextCourseLessonDate) }}</span>
+                                        </v-chip>
+                                    </div>
+                                    <v-checkbox v-model="behaviour_form.is_done" label="Erledigt" color="success" hide-details density="compact" class="mt-1" />
+                                    <v-date-input v-if="behaviour_form.is_done" v-model="behaviour_form.done_date" label="Erledigt am" />
+                                </template>
+                            </div>
+                            <v-alert v-if="behaviourFormFrontendError" type="warning" class="mt-2">
+                                {{ behaviourFormFrontendError }}
+                            </v-alert>
 
                             <div class="d-flex flex-row align-center justify-space-between mt-4">
                                 <v-btn color="warning" flat tile @click="abortBehaviourEntry">Abbruch</v-btn>
-                                <v-btn color="success" flat tile type="submit">{{ behaviour_form.id ? 'Aktualisieren' : 'Speichern' }}</v-btn>
+                                <v-btn color="success" flat tile type="submit" :disabled="!canSaveBehaviourForm">{{ behaviour_form.id ? 'Aktualisieren' : 'Speichern' }}</v-btn>
                             </div>
                         </v-form>
                     </v-card-text>
@@ -502,6 +594,7 @@ export default {
             show_behaviour_form: false,
             behaviour_form: this.emptyBehaviourForm(),
             delete_behaviour_id: null,
+            delete_notification_id: null,
             is_editing_behaviour_grades: false,
             behaviour_grade_form: { behaviour_1_grade: '', behaviour_2_grade: '', behaviour_grade: '' },
         }
@@ -513,7 +606,10 @@ export default {
         ...mapWritableState(useCourseStudentEntryStore, ['entries']),
         ...mapWritableState(useTeachingStore, ['settings']),
         behaviourEntries() {
-            return this.behaviourEntryStore?.entries || []
+            return (this.behaviourEntryStore?.entries || []).filter((entry) => (entry.kind || 'behaviour') === 'behaviour')
+        },
+        notificationEntries() {
+            return (this.behaviourEntryStore?.entries || []).filter((entry) => entry.kind === 'notification')
         },
         filteredBehaviourEntries() {
             if (this.semesterCount === 1) return this.behaviourEntries
@@ -556,14 +652,82 @@ export default {
             sem1.forEach((e) => result.push({ kind: 'entry', key: `entry-${e.id}`, entry: e }))
             return result
         },
+        filteredNotificationEntries() {
+            if (this.semesterCount === 1) return this.notificationEntries
+            const semester = this.activeSemester
+            if (!semester || semester === 3) return this.notificationEntries
+            const boundary = this.displaySem2Boundary()
+            if (!boundary) return this.notificationEntries
+            return this.notificationEntries.filter((entry) => {
+                if (!entry.date) return true
+                const d = this.normalizeDateKey(entry.date)
+                if (!d) return true
+                if (semester === 1) return d < boundary
+                if (semester === 2) return d >= boundary
+                return true
+            })
+        },
+        filteredNotificationEntriesGrouped() {
+            const entries = this.filteredNotificationEntries
+            if (this.semesterCount !== 2 || this.activeSemester !== 3) {
+                return entries.map((e) => ({ kind: 'entry', key: `notification-${e.id}`, entry: e }))
+            }
+            const boundary = this.displaySem2Boundary()
+            if (!boundary) {
+                return entries.map((e) => ({ kind: 'entry', key: `notification-${e.id}`, entry: e }))
+            }
+            const sem1 = entries.filter((e) => {
+                if (!e.date) return true
+                const d = this.normalizeDateKey(e.date)
+                return !d || d < boundary
+            })
+            const sem2 = entries.filter((e) => {
+                if (!e.date) return false
+                const d = this.normalizeDateKey(e.date)
+                return !!d && d >= boundary
+            })
+            const result = []
+            result.push({ kind: 'header', key: 'notification-header-sem2', label: '2. Semester' })
+            sem2.forEach((e) => result.push({ kind: 'entry', key: `notification-${e.id}`, entry: e }))
+            result.push({ kind: 'header', key: 'notification-header-sem1', label: '1. Semester' })
+            sem1.forEach((e) => result.push({ kind: 'entry', key: `notification-${e.id}`, entry: e }))
+            return result
+        },
         teachingBehaviour() {
             return this.settings?.teaching_behaviour || []
+        },
+        teachingNotifications() {
+            return this.settings?.teaching_notifications || []
         },
         behaviourTypeItems() {
             return this.teachingBehaviour.map((b) => ({
                 title: `${b.short_name} - ${b.name}`,
                 value: b.short_name,
             }))
+        },
+        notificationTypeItems() {
+            return this.teachingNotifications.map((n) => ({
+                title: `${n.short_name} - ${n.name}`,
+                value: n.short_name,
+            }))
+        },
+        entryTypeItems() {
+            return this.behaviour_form.kind === 'notification' ? this.notificationTypeItems : this.behaviourTypeItems
+        },
+        entryFormTitleNew() {
+            return this.behaviour_form.kind === 'notification' ? 'Neuer Verständigungs-Eintrag' : 'Neuer Verhaltens-Eintrag'
+        },
+        entryFormTitleEdit() {
+            return this.behaviour_form.kind === 'notification' ? 'Verständigungs-Eintrag ändern' : 'Verhaltens-Eintrag ändern'
+        },
+        behaviourFormFrontendError() {
+            if (!this.behaviour_form?.type) return 'Bitte einen Typ auswählen.'
+            if (this.behaviour_form?.is_due && !this.behaviour_form?.due_date) return 'Bitte "Fällig bis" eingeben.'
+            if (this.behaviour_form?.is_due && this.behaviour_form?.is_done && !this.behaviour_form?.done_date) return 'Bitte "Erledigt am" eingeben.'
+            return ''
+        },
+        canSaveBehaviourForm() {
+            return !this.behaviourFormFrontendError
         },
         selected_comment() {
             return this.selected_course_student?.comment || ''
@@ -594,6 +758,16 @@ export default {
         },
         countSem2StartDate() {
             return this.config?.user?.teaching_count_for_semester_2_date || this.schoolSem2StartDate || null
+        },
+        nextCourseLessonDate() {
+            const dates = this.selected_course?.course_dates || []
+            if (!dates.length) return null
+            const todayKey = this.toDateString(new Date())
+            const upcoming = dates
+                .map((d) => this.normalizeDateKey(d?.date))
+                .filter((d) => !!d && d >= todayKey)
+                .sort((a, b) => a.localeCompare(b))[0]
+            return upcoming || null
         },
         hasDifferentSem2CountDate() {
             const countBoundary = this.countSem2Boundary()
@@ -755,6 +929,8 @@ export default {
                 this.entry_form = this.emptyEntryForm()
                 this.show_behaviour_form = false
                 this.behaviour_form = this.emptyBehaviourForm()
+                this.delete_behaviour_id = null
+                this.delete_notification_id = null
                 this.is_editing_grades = false
                 this.is_editing_behaviour_grades = false
                 this.show_auswertung = false
@@ -771,6 +947,31 @@ export default {
             if (val && val instanceof Date) {
                 this.behaviour_form.date = this.toDateString(val)
             }
+        },
+        'behaviour_form.due_date'(val) {
+            if (val && val instanceof Date) {
+                this.behaviour_form.due_date = this.toDateString(val)
+            }
+        },
+        'behaviour_form.done_date'(val) {
+            if (val && val instanceof Date) {
+                this.behaviour_form.done_date = this.toDateString(val)
+            }
+        },
+        'behaviour_form.is_due'(val) {
+            if (val) return
+            this.behaviour_form.is_done = false
+            this.behaviour_form.done_date = ''
+            this.behaviour_form.due_date = ''
+        },
+        'behaviour_form.is_done'(val) {
+            if (val) {
+                if (!this.behaviour_form.done_date) {
+                    this.behaviour_form.done_date = this.toDateString(new Date())
+                }
+                return
+            }
+            this.behaviour_form.done_date = ''
         },
     },
 
@@ -811,6 +1012,8 @@ export default {
             this.action_2 = ''
             this.entryStore?.clear()
             this.behaviourEntryStore?.clear()
+            this.delete_behaviour_id = null
+            this.delete_notification_id = null
         },
         editGrades() {
             this.grade_form = {
@@ -923,8 +1126,13 @@ export default {
         emptyBehaviourForm() {
             return {
                 id: null,
+                kind: 'behaviour',
                 type: '',
                 date: this.toDateString?.(new Date()) || '',
+                is_due: false,
+                due_date: '',
+                is_done: false,
+                done_date: '',
                 description: '',
             }
         },
@@ -941,6 +1149,34 @@ export default {
             if (!found) return type
             return `${found.short_name} - ${found.name}`
         },
+        notificationTypeLabel(type) {
+            if (!type) return ''
+            const found = this.teachingNotifications.find((n) => n.short_name === type)
+            if (!found) return type
+            return `${found.short_name} - ${found.name}`
+        },
+        newNotificationEntry() {
+            this.behaviour_form = {
+                ...this.emptyBehaviourForm(),
+                kind: 'notification',
+            }
+            this.show_behaviour_form = true
+        },
+        editNotificationEntry(entry) {
+            if (!entry) return
+            this.behaviour_form = {
+                id: entry.id,
+                kind: 'notification',
+                type: entry.type || '',
+                date: entry.date || '',
+                is_due: !!entry.due_date,
+                due_date: entry.due_date || '',
+                is_done: !!entry.done_date,
+                done_date: entry.done_date || '',
+                description: entry.description || '',
+            }
+            this.show_behaviour_form = true
+        },
         newBehaviourEntry() {
             this.behaviour_form = this.emptyBehaviourForm()
             this.show_behaviour_form = true
@@ -949,8 +1185,13 @@ export default {
             if (!entry) return
             this.behaviour_form = {
                 id: entry.id,
+                kind: entry.kind || 'behaviour',
                 type: entry.type || '',
                 date: entry.date || '',
+                is_due: !!entry.due_date,
+                due_date: entry.due_date || '',
+                is_done: !!entry.done_date,
+                done_date: entry.done_date || '',
                 description: entry.description || '',
             }
             this.show_behaviour_form = true
@@ -961,12 +1202,28 @@ export default {
         },
         async saveBehaviourEntry() {
             if (!this.selected_course || !this.selected_course_student) return
+            if (this.behaviourFormFrontendError) return
             const payload = {
                 id: this.behaviour_form.id,
                 teaching_course_id: this.selected_course.id,
                 user_id: this.selected_course_student.id,
+                kind: this.behaviour_form.kind || 'behaviour',
                 type: this.behaviour_form.type,
                 date: this.behaviour_form.date instanceof Date ? this.toDateString(this.behaviour_form.date) : this.behaviour_form.date,
+                is_due: !!this.behaviour_form.is_due,
+                due_date:
+                    this.behaviour_form.is_due
+                        ? this.behaviour_form.due_date instanceof Date
+                            ? this.toDateString(this.behaviour_form.due_date)
+                            : this.behaviour_form.due_date || null
+                        : null,
+                is_done: !!this.behaviour_form.is_due && !!this.behaviour_form.is_done,
+                done_date:
+                    this.behaviour_form.is_due && this.behaviour_form.is_done
+                        ? this.behaviour_form.done_date instanceof Date
+                            ? this.toDateString(this.behaviour_form.done_date)
+                            : this.behaviour_form.done_date || null
+                        : null,
                 description: this.behaviour_form.description,
             }
             const ok = this.behaviour_form.id ? await this.behaviourEntryStore.update(payload) : await this.behaviourEntryStore.store(payload)
@@ -1017,6 +1274,13 @@ export default {
             }
             this.delete_behaviour_id = null
         },
+        async deleteNotificationEntry(entry) {
+            const ok = await this.behaviourEntryStore.destroy(entry.id)
+            if (ok) {
+                await this.loadBehaviourEntries()
+            }
+            this.delete_notification_id = null
+        },
         toggleSortByType() {
             this.sort_by_type = !this.sort_by_type
         },
@@ -1025,6 +1289,14 @@ export default {
             const d = parseLocalDate(date)
             if (isNaN(d.getTime())) return ''
             return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        },
+        dueDateColor(date) {
+            const due = parseLocalDate(date)
+            if (isNaN(due.getTime())) return 'warning'
+            due.setHours(0, 0, 0, 0)
+            const today = new Date()
+            today.setHours(0, 0, 0, 0)
+            return due < today ? 'error' : 'warning'
         },
         workTypeLabel(type) {
             if (!type) return ''
@@ -1263,6 +1535,15 @@ export default {
             if (!missing.length) return ''
             const list = missing.map((part) => `${part.type} (${this.formatTwoDecimals(part.factorPercent)}%)`).join(', ')
             return `Ohne Wert: ${list}`
+        },
+        setDueInAWeek() {
+            const d = new Date()
+            d.setDate(d.getDate() + 7)
+            this.behaviour_form.due_date = this.toDateString(d)
+        },
+        setDueNextLesson() {
+            if (!this.nextCourseLessonDate) return
+            this.behaviour_form.due_date = this.nextCourseLessonDate
         },
         toDateString(date) {
             const d = parseLocalDate(date)

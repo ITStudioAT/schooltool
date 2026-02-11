@@ -50,7 +50,12 @@ class CourseBehaviourEntryController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $allowedTypes = collect($auth_user->teaching_behaviour ?? [])
+        $allowedBehaviourTypes = collect($auth_user->teaching_behaviour ?? [])
+            ->pluck('short_name')
+            ->filter()
+            ->values()
+            ->all();
+        $allowedNotificationTypes = collect($auth_user->teaching_notifications ?? [])
             ->pluck('short_name')
             ->filter()
             ->values()
@@ -59,10 +64,27 @@ class CourseBehaviourEntryController extends Controller
         $validated = $request->validate([
             'teaching_course_id' => 'required|integer|exists:teaching_courses,id',
             'user_id' => 'required|integer|exists:users,id',
-            'type' => ['required', 'string', 'max:255', Rule::in($allowedTypes)],
+            'kind' => ['nullable', 'string', Rule::in(['behaviour', 'notification'])],
+            'type' => ['required', 'string', 'max:255'],
             'date' => 'nullable|date',
+            'is_due' => 'nullable|boolean',
+            'due_date' => 'nullable|date',
+            'is_done' => 'nullable|boolean',
+            'done_date' => 'nullable|date',
             'description' => 'nullable|string|max:1024',
         ]);
+
+        $kind = $validated['kind'] ?? 'behaviour';
+        $allowedTypes = $kind === 'notification' ? $allowedNotificationTypes : $allowedBehaviourTypes;
+        if (! in_array($validated['type'], $allowedTypes, true)) {
+            abort(422, 'Ungültiger Typ für die gewählte Eintragsart.');
+        }
+        if (($validated['is_due'] ?? false) && empty($validated['due_date'])) {
+            abort(422, 'Bitte ein Fälligkeitsdatum angeben.');
+        }
+        if (($validated['is_due'] ?? false) && ($validated['is_done'] ?? false) && empty($validated['done_date'])) {
+            abort(422, 'Bitte ein Erledigt-Datum angeben.');
+        }
 
         $course = TeachingCourse::findOrFail($validated['teaching_course_id']);
         if ($course->school_id !== $auth_user->school_id) {
@@ -74,7 +96,18 @@ class CourseBehaviourEntryController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $entry = TeachingCourseBehaviourEntry::create($validated);
+        $payload = [
+            'teaching_course_id' => $validated['teaching_course_id'],
+            'user_id' => $validated['user_id'],
+            'type' => $validated['type'],
+            'date' => $validated['date'] ?? null,
+            'description' => $validated['description'] ?? null,
+            'kind' => $kind,
+            'due_date' => ($validated['is_due'] ?? false) ? ($validated['due_date'] ?? null) : null,
+            'done_date' => ($validated['is_due'] ?? false) && ($validated['is_done'] ?? false) ? ($validated['done_date'] ?? null) : null,
+        ];
+
+        $entry = TeachingCourseBehaviourEntry::create($payload);
 
         return response()->json(['data' => $entry], 201);
     }
@@ -90,24 +123,55 @@ class CourseBehaviourEntryController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $allowedTypes = collect($auth_user->teaching_behaviour ?? [])
+        $allowedBehaviourTypes = collect($auth_user->teaching_behaviour ?? [])
+            ->pluck('short_name')
+            ->filter()
+            ->values()
+            ->all();
+        $allowedNotificationTypes = collect($auth_user->teaching_notifications ?? [])
             ->pluck('short_name')
             ->filter()
             ->values()
             ->all();
 
         $validated = $request->validate([
-            'type' => ['required', 'string', 'max:255', Rule::in($allowedTypes)],
+            'kind' => ['nullable', 'string', Rule::in(['behaviour', 'notification'])],
+            'type' => ['required', 'string', 'max:255'],
             'date' => 'nullable|date',
+            'is_due' => 'nullable|boolean',
+            'due_date' => 'nullable|date',
+            'is_done' => 'nullable|boolean',
+            'done_date' => 'nullable|date',
             'description' => 'nullable|string|max:1024',
         ]);
+
+        $kind = $validated['kind'] ?? ($course_behaviour_entry->kind ?: 'behaviour');
+        $allowedTypes = $kind === 'notification' ? $allowedNotificationTypes : $allowedBehaviourTypes;
+        if (! in_array($validated['type'], $allowedTypes, true)) {
+            abort(422, 'Ungültiger Typ für die gewählte Eintragsart.');
+        }
+        if (($validated['is_due'] ?? false) && empty($validated['due_date'])) {
+            abort(422, 'Bitte ein Fälligkeitsdatum angeben.');
+        }
+        if (($validated['is_due'] ?? false) && ($validated['is_done'] ?? false) && empty($validated['done_date'])) {
+            abort(422, 'Bitte ein Erledigt-Datum angeben.');
+        }
 
         $student = $course_behaviour_entry->user;
         if (! $student || $student->school_id !== $auth_user->school_id) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $course_behaviour_entry->update($validated);
+        $payload = [
+            'kind' => $kind,
+            'type' => $validated['type'],
+            'date' => $validated['date'] ?? null,
+            'description' => $validated['description'] ?? null,
+            'due_date' => ($validated['is_due'] ?? false) ? ($validated['due_date'] ?? null) : null,
+            'done_date' => ($validated['is_due'] ?? false) && ($validated['is_done'] ?? false) ? ($validated['done_date'] ?? null) : null,
+        ];
+
+        $course_behaviour_entry->update($payload);
 
         return response()->json(['data' => $course_behaviour_entry]);
     }

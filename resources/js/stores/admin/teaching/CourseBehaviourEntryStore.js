@@ -40,6 +40,11 @@ export const useCourseBehaviourEntryStore = defineStore('AdminCourseBehaviourEnt
             adminStore.is_loading++
             try {
                 const response = await axios.post(`/api/admin/teaching/course_behaviour_entries`, data)
+                const entry = response?.data?.data
+                if (entry) {
+                    this.entries = [entry, ...(this.entries || []).filter((e) => e.id !== entry.id)]
+                    this.courseEntries = [entry, ...(this.courseEntries || []).filter((e) => e.id !== entry.id)]
+                }
                 return response.data
             } catch (error) {
                 notification.notify({
@@ -69,6 +74,11 @@ export const useCourseBehaviourEntryStore = defineStore('AdminCourseBehaviourEnt
             adminStore.is_loading++
             try {
                 const response = await axios.put(`/api/admin/teaching/course_behaviour_entries/${data.id}`, data)
+                const entry = response?.data?.data
+                if (entry) {
+                    this.entries = (this.entries || []).map((e) => (e.id === entry.id ? entry : e))
+                    this.courseEntries = (this.courseEntries || []).map((e) => (e.id === entry.id ? entry : e))
+                }
                 return response.data
             } catch (error) {
                 notification.notify({
@@ -89,6 +99,8 @@ export const useCourseBehaviourEntryStore = defineStore('AdminCourseBehaviourEnt
             adminStore.is_loading++
             try {
                 await axios.delete(`/api/admin/teaching/course_behaviour_entries/${entryId}`)
+                this.entries = (this.entries || []).filter((e) => e.id !== entryId)
+                this.courseEntries = (this.courseEntries || []).filter((e) => e.id !== entryId)
                 return true
             } catch (error) {
                 notification.notify({

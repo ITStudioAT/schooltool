@@ -14,12 +14,17 @@ class TeachingCourseBehaviourEntry extends Model
         'teaching_course_id',
         'user_id',
         'date',
+        'due_date',
+        'done_date',
         'description',
         'type',
+        'kind',
     ];
 
     protected $casts = [
         'date' => 'date',
+        'due_date' => 'date',
+        'done_date' => 'date',
     ];
 
     public function teachingCourse(): BelongsTo

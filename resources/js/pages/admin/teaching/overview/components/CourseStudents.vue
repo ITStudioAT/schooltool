@@ -81,6 +81,14 @@
                                     <template v-for="(count, type) in (studentBehaviourCounts[student.id] || {})" :key="`beh-${student.id}-${type}`">
                                         <v-chip size="x-small" variant="tonal" color="warning">{{ type }}{{ count > 1 ? ` ×${count}` : '' }}</v-chip>
                                     </template>
+                                    <v-chip
+                                        v-if="studentOpenNotificationCounts[student.id]"
+                                        size="x-small"
+                                        variant="flat"
+                                        :color="dueDateColor(studentOpenNotificationDueDates[student.id])">
+                                        <v-icon start size="14">mdi-bell-alert</v-icon>
+                                        {{ studentOpenNotificationCounts[student.id] }}
+                                    </v-chip>
                                     <template v-if="semesterCount === 2">
                                         <v-chip v-if="student.sem_1_grade" size="x-small" variant="tonal" color="success">{{ student.sem_1_grade }}</v-chip>
                                         <v-chip v-if="student.sem_2_grade && activeSemester !== 1" size="x-small" variant="tonal" color="success">{{ student.sem_2_grade }}</v-chip>
@@ -242,7 +250,7 @@ export default {
             return this.config?.user?.teaching_count_for_semester_2_date || this.schoolSem2StartDate || null
         },
         studentBehaviourCounts() {
-            let entries = this.behaviourEntryStore?.courseEntries || []
+            let entries = (this.behaviourEntryStore?.courseEntries || []).filter((entry) => (entry.kind || 'behaviour') === 'behaviour')
             if (this.semesterCount === 2 && this.activeSemester !== 3) {
                 const boundary = this.normalizeDateKey(this.schoolSem2StartDate || this.countSem2StartDate)
                 if (boundary) {
@@ -261,6 +269,53 @@ export default {
                 if (!result[entry.user_id]) result[entry.user_id] = {}
                 const type = entry.type || '?'
                 result[entry.user_id][type] = (result[entry.user_id][type] || 0) + 1
+            })
+            return result
+        },
+        studentOpenNotificationCounts() {
+            let entries = (this.behaviourEntryStore?.courseEntries || []).filter((entry) => entry.kind === 'notification' && !!entry.due_date && !entry.done_date)
+            if (this.semesterCount === 2 && this.activeSemester !== 3) {
+                const boundary = this.normalizeDateKey(this.schoolSem2StartDate || this.countSem2StartDate)
+                if (boundary) {
+                    entries = entries.filter((e) => {
+                        if (!e.date) return true
+                        const d = this.normalizeDateKey(e.date)
+                        if (!d) return true
+                        if (this.activeSemester === 1) return d < boundary
+                        if (this.activeSemester === 2) return d >= boundary
+                        return true
+                    })
+                }
+            }
+            const result = {}
+            entries.forEach((entry) => {
+                result[entry.user_id] = (result[entry.user_id] || 0) + 1
+            })
+            return result
+        },
+        studentOpenNotificationDueDates() {
+            let entries = (this.behaviourEntryStore?.courseEntries || []).filter((entry) => entry.kind === 'notification' && !!entry.due_date && !entry.done_date)
+            if (this.semesterCount === 2 && this.activeSemester !== 3) {
+                const boundary = this.normalizeDateKey(this.schoolSem2StartDate || this.countSem2StartDate)
+                if (boundary) {
+                    entries = entries.filter((e) => {
+                        if (!e.date) return true
+                        const d = this.normalizeDateKey(e.date)
+                        if (!d) return true
+                        if (this.activeSemester === 1) return d < boundary
+                        if (this.activeSemester === 2) return d >= boundary
+                        return true
+                    })
+                }
+            }
+
+            const result = {}
+            entries.forEach((entry) => {
+                const due = this.normalizeDateKey(entry.due_date)
+                if (!due) return
+                if (!result[entry.user_id] || due < result[entry.user_id]) {
+                    result[entry.user_id] = due
+                }
             })
             return result
         },
@@ -380,6 +435,20 @@ export default {
             const month = String(d.getMonth() + 1).padStart(2, '0')
             const day = String(d.getDate()).padStart(2, '0')
             return `${year}-${month}-${day}`
+        },
+        formatDate(date) {
+            if (!date) return ''
+            const d = parseLocalDate(date)
+            if (isNaN(d.getTime())) return ''
+            return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        },
+        dueDateColor(date) {
+            const due = parseLocalDate(date)
+            if (isNaN(due.getTime())) return 'warning'
+            due.setHours(0, 0, 0, 0)
+            const today = new Date()
+            today.setHours(0, 0, 0, 0)
+            return due < today ? 'error' : 'warning'
         },
         async selectStudents(classes) {
             if (!Array.isArray(classes) || !classes.length) {
