@@ -30,6 +30,7 @@ export const useTeachingStore = defineStore('AdminTeachingStore', {
             return schemas.some((s) => Number(s.grading?.semester_count) === 2)
         },
         behaviour: (state) => state.settings?.teaching_behaviour || [],
+        notifications: (state) => state.settings?.teaching_notifications || [],
     },
 
     actions: {

@@ -154,6 +154,7 @@ class User extends Authenticatable
         'teaching_active_semester',
         'teaching_count_for_semester_2_date',
         'teaching_behaviour',
+        'teaching_notifications',
     ];
 
     // Protected fields that should NOT be mass assignable:
@@ -184,6 +185,7 @@ class User extends Authenticatable
             'tutoring_filter' => 'array',
             'teaching_schemas' => 'array',
             'teaching_behaviour' => 'array',
+            'teaching_notifications' => 'array',
         ];
     }
 

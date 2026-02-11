@@ -16,15 +16,23 @@
             :icon="show_behaviour ? 'mdi-eye' : 'mdi-eye-off'"
             :color="show_behaviour ? 'success' : 'secondary'"
             @click="show_behaviour = !show_behaviour" />
+        <its-menu-button
+            subtitle="Verständigungen"
+            :icon="show_notifications ? 'mdi-eye' : 'mdi-eye-off'"
+            :color="show_notifications ? 'success' : 'secondary'"
+            @click="show_notifications = !show_notifications" />
     </v-card>
 
-    <!-- Grundeinstellungen + Verhalten -->
-    <v-col cols="12" md="6" xl="4" v-if="show_basic_settings || show_behaviour">
+    <!-- Grundeinstellungen + Verhalten + Verständigungen -->
+    <v-col cols="12" md="6" xl="4" v-if="show_basic_settings || show_behaviour || show_notifications">
         <ItsGridBox v-if="show_basic_settings" color="primary" title="Grundeinstellungen" icon="mdi-cog" class="w-100">
             <BasicSettings />
         </ItsGridBox>
         <div v-if="show_behaviour" :class="{ 'mt-4': show_basic_settings }">
             <Behaviour />
+        </div>
+        <div v-if="show_notifications" :class="{ 'mt-4': show_basic_settings || show_behaviour }">
+            <Notifications />
         </div>
     </v-col>
 
@@ -104,11 +112,12 @@ import WorksAndGrades from './components/WorksAndGrades.vue'
 import Grading from './components/Grading.vue'
 import BasicSettings from './components/BasicSettings.vue'
 import Behaviour from './components/Behaviour.vue'
+import Notifications from './components/Notifications.vue'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
 export default {
-    components: { WorksAndGrades, Grading, BasicSettings, Behaviour, ItsMenuButton, ItsGridBox },
+    components: { WorksAndGrades, Grading, BasicSettings, Behaviour, Notifications, ItsMenuButton, ItsGridBox },
 
     async beforeMount() {
         this.teachingStore = useTeachingStore()
@@ -127,6 +136,7 @@ export default {
             show_basic_settings: true,
             show_schemas: true,
             show_behaviour: true,
+            show_notifications: true,
             show_works: true,
             show_grading: true,
             is_renaming: false,

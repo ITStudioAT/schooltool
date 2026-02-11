@@ -63,6 +63,7 @@ class TeachingController extends Controller
         $settings = [
             'teaching_schemas' => $auth_user->teaching_schemas ?? [],
             'teaching_behaviour' => $auth_user->teaching_behaviour ?? [],
+            'teaching_notifications' => $auth_user->teaching_notifications ?? [],
         ];
 
         return response()->json([
@@ -141,6 +142,9 @@ class TeachingController extends Controller
             'teaching_behaviour' => 'nullable|array',
             'teaching_behaviour.*.short_name' => 'required|string|max:10',
             'teaching_behaviour.*.name' => 'required|string|max:255',
+            'teaching_notifications' => 'nullable|array',
+            'teaching_notifications.*.short_name' => 'required|string|max:10',
+            'teaching_notifications.*.name' => 'required|string|max:255',
         ]);
 
         if (isset($validated['teaching_schemas'])) {
@@ -160,11 +164,15 @@ class TeachingController extends Controller
         if (isset($validated['teaching_behaviour'])) {
             $auth_user->teaching_behaviour = $validated['teaching_behaviour'];
         }
+        if (isset($validated['teaching_notifications'])) {
+            $auth_user->teaching_notifications = $validated['teaching_notifications'];
+        }
         $auth_user->save();
 
         $settings = [
             'teaching_schemas' => $auth_user->teaching_schemas ?? [],
             'teaching_behaviour' => $auth_user->teaching_behaviour ?? [],
+            'teaching_notifications' => $auth_user->teaching_notifications ?? [],
         ];
 
         return response()->json([
