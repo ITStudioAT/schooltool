@@ -54,7 +54,6 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
-            const search_string = this.search_string
             try {
                 const selectedId = this.selected_course?.id
                 const response = await axios.get(`/api/admin/teaching/courses`, {})
