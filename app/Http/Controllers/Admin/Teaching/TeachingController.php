@@ -62,6 +62,7 @@ class TeachingController extends Controller
 
         $settings = [
             'teaching_schemas' => $auth_user->teaching_schemas ?? [],
+            'teaching_behaviour' => $auth_user->teaching_behaviour ?? [],
         ];
 
         return response()->json([
@@ -137,6 +138,9 @@ class TeachingController extends Controller
             'teaching_schemas.*.grading.categories.*.works.*.short_name' => 'required|string|max:10',
             'teaching_schemas.*.grading.categories.*.works.*.factor' => 'required|integer|min:0|max:100',
             'teaching_schemas.*.grading.categories.*.calculation' => 'nullable|string|in:mean,sum,best,worst',
+            'teaching_behaviour' => 'nullable|array',
+            'teaching_behaviour.*.short_name' => 'required|string|max:10',
+            'teaching_behaviour.*.name' => 'required|string|max:255',
         ]);
 
         if (isset($validated['teaching_schemas'])) {
@@ -153,10 +157,14 @@ class TeachingController extends Controller
 
             $auth_user->teaching_schemas = $validated['teaching_schemas'];
         }
+        if (isset($validated['teaching_behaviour'])) {
+            $auth_user->teaching_behaviour = $validated['teaching_behaviour'];
+        }
         $auth_user->save();
 
         $settings = [
             'teaching_schemas' => $auth_user->teaching_schemas ?? [],
+            'teaching_behaviour' => $auth_user->teaching_behaviour ?? [],
         ];
 
         return response()->json([

@@ -95,6 +95,9 @@ class TeachingCourseService
                     'sem_1_grade' => $data['sem_1_grade'] ?? null,
                     'sem_2_grade' => $data['sem_2_grade'] ?? null,
                     'sem_grade' => $data['sem_grade'] ?? null,
+                    'behaviour_1_grade' => $data['behaviour_1_grade'] ?? null,
+                    'behaviour_2_grade' => $data['behaviour_2_grade'] ?? null,
+                    'behaviour_grade' => $data['behaviour_grade'] ?? null,
                 ];
             }
         }
@@ -133,6 +136,9 @@ class TeachingCourseService
                     'sem_1_grade' => $data['sem_1_grade'] ?? null,
                     'sem_2_grade' => $data['sem_2_grade'] ?? null,
                     'sem_grade' => $data['sem_grade'] ?? null,
+                    'behaviour_1_grade' => $data['behaviour_1_grade'] ?? null,
+                    'behaviour_2_grade' => $data['behaviour_2_grade'] ?? null,
+                    'behaviour_grade' => $data['behaviour_grade'] ?? null,
                 ];
             }
         }

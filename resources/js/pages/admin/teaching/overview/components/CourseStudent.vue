@@ -20,7 +20,7 @@
                     </v-btn-toggle>
                 </div>
 
-                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form">
+                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form">
                     <v-card-text v-if="!is_editing">
                         <div class="text-body-2 course-comment" v-if="selected_comment" v-html="commentHtml"></div>
                         <div class="text-body-2" v-else>Kein Kommentar vorhanden.</div>
@@ -43,7 +43,7 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form">
+                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-clipboard-text</v-icon>
                         Einträge
@@ -59,41 +59,50 @@
                     <v-divider />
                     <v-card-text class="pa-0">
                         <v-list density="compact">
-                            <v-list-item v-for="entry in sortedEntries" :key="entry.id">
-                                <div class="d-flex align-center ga-2 w-100">
-                                    <v-chip v-if="entry.date" size="x-small" variant="tonal" color="primary">
-                                        {{ formatDate(entry.date) }}
-                                    </v-chip>
-                                    <v-chip v-if="entryIsDisplaySem1ButCountsSem2(entry)" size="x-small" variant="tonal" color="warning">
-                                        Zählt zu Sem 2
-                                    </v-chip>
-                                    <v-chip v-if="entry.type" size="x-small" variant="outlined">
-                                        {{ workTypeLabel(entry.type) }}
-                                    </v-chip>
-                                    <v-chip v-if="entry.grade" size="small" variant="tonal" color="success">
-                                        {{ entry.grade }}
-                                    </v-chip>
-                                    <div class="text-caption flex-grow-1">
-                                        {{ entry.description || '' }}
+                            <template v-for="item in sortedEntriesGrouped" :key="item.key">
+                                <v-list-item v-if="item.kind === 'header'">
+                                    <div class="d-flex align-center ga-2 w-100">
+                                        <v-divider />
+                                        <span class="text-caption text-medium-emphasis text-no-wrap font-weight-bold">{{ item.label }}</span>
+                                        <v-divider />
                                     </div>
-                                    <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editEntry(entry)" />
-                                    <v-btn
-                                        v-if="delete_entry_id !== entry.id"
-                                        icon="mdi-delete"
-                                        size="x-small"
-                                        color="warning"
-                                        variant="tonal"
-                                        @click="delete_entry_id = entry.id" />
-                                    <v-btn
-                                        v-if="delete_entry_id === entry.id"
-                                        icon="mdi-delete-off"
-                                        size="x-small"
-                                        color="success"
-                                        variant="tonal"
-                                        @click="delete_entry_id = null" />
-                                    <v-btn v-if="delete_entry_id === entry.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteEntry(entry)" />
-                                </div>
-                            </v-list-item>
+                                </v-list-item>
+                                <v-list-item v-else>
+                                    <div class="d-flex align-center ga-2 w-100">
+                                        <v-chip v-if="item.entry.date" size="x-small" variant="tonal" color="primary">
+                                            {{ formatDate(item.entry.date) }}
+                                        </v-chip>
+                                        <v-chip v-if="entryIsDisplaySem1ButCountsSem2(item.entry)" size="x-small" variant="tonal" color="warning">
+                                            Zählt zu Sem 2
+                                        </v-chip>
+                                        <v-chip v-if="item.entry.type" size="x-small" variant="outlined">
+                                            {{ workTypeLabel(item.entry.type) }}
+                                        </v-chip>
+                                        <v-chip v-if="item.entry.grade" size="small" variant="tonal" color="success">
+                                            {{ item.entry.grade }}
+                                        </v-chip>
+                                        <div class="text-caption flex-grow-1">
+                                            {{ item.entry.description || '' }}
+                                        </div>
+                                        <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editEntry(item.entry)" />
+                                        <v-btn
+                                            v-if="delete_entry_id !== item.entry.id"
+                                            icon="mdi-delete"
+                                            size="x-small"
+                                            color="warning"
+                                            variant="tonal"
+                                            @click="delete_entry_id = item.entry.id" />
+                                        <v-btn
+                                            v-if="delete_entry_id === item.entry.id"
+                                            icon="mdi-delete-off"
+                                            size="x-small"
+                                            color="success"
+                                            variant="tonal"
+                                            @click="delete_entry_id = null" />
+                                        <v-btn v-if="delete_entry_id === item.entry.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteEntry(item.entry)" />
+                                    </div>
+                                </v-list-item>
+                            </template>
                             <v-list-item v-if="!filteredEntries?.length">
                                 <v-list-item-title class="text-caption text-medium-emphasis">Keine Einträge vorhanden.</v-list-item-title>
                             </v-list-item>
@@ -275,7 +284,65 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form">
+                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form">
+                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                        <v-icon size="18">mdi-account-alert</v-icon>
+                        Verhaltens-Einträge
+                        <v-chip v-if="filteredBehaviourEntries?.length" size="x-small" color="warning" variant="flat">
+                            {{ filteredBehaviourEntries.length }}
+                        </v-chip>
+                        <v-spacer />
+                        <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newBehaviourEntry" />
+                    </v-card-title>
+                    <v-divider />
+                    <v-card-text class="pa-0">
+                        <v-list density="compact">
+                            <template v-for="item in filteredBehaviourEntriesGrouped" :key="item.key">
+                                <v-list-item v-if="item.kind === 'header'">
+                                    <div class="d-flex align-center ga-2 w-100">
+                                        <v-divider />
+                                        <span class="text-caption text-medium-emphasis text-no-wrap font-weight-bold">{{ item.label }}</span>
+                                        <v-divider />
+                                    </div>
+                                </v-list-item>
+                                <v-list-item v-else>
+                                    <div class="d-flex align-center ga-2 w-100">
+                                        <v-chip v-if="item.entry.date" size="x-small" variant="tonal" color="primary">
+                                            {{ formatDate(item.entry.date) }}
+                                        </v-chip>
+                                        <v-chip v-if="item.entry.type" size="x-small" variant="outlined" color="warning">
+                                            {{ behaviourTypeLabel(item.entry.type) }}
+                                        </v-chip>
+                                        <div class="text-caption flex-grow-1">
+                                            {{ item.entry.description || '' }}
+                                        </div>
+                                        <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editBehaviourEntry(item.entry)" />
+                                        <v-btn
+                                            v-if="delete_behaviour_id !== item.entry.id"
+                                            icon="mdi-delete"
+                                            size="x-small"
+                                            color="warning"
+                                            variant="tonal"
+                                            @click="delete_behaviour_id = item.entry.id" />
+                                        <v-btn
+                                            v-if="delete_behaviour_id === item.entry.id"
+                                            icon="mdi-delete-off"
+                                            size="x-small"
+                                            color="success"
+                                            variant="tonal"
+                                            @click="delete_behaviour_id = null" />
+                                        <v-btn v-if="delete_behaviour_id === item.entry.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteBehaviourEntry(item.entry)" />
+                                    </div>
+                                </v-list-item>
+                            </template>
+                            <v-list-item v-if="!filteredBehaviourEntries?.length">
+                                <v-list-item-title class="text-caption text-medium-emphasis">Keine Verhaltens-Einträge vorhanden.</v-list-item-title>
+                            </v-list-item>
+                        </v-list>
+                    </v-card-text>
+                </v-card>
+
+                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-school</v-icon>
                         Semesternoten
@@ -288,15 +355,15 @@
                     <v-card-text>
                         <template v-if="!is_editing_grades">
                             <div class="d-flex flex-wrap ga-2" v-if="semesterCount === 2">
-                                <v-chip size="small" variant="tonal" :color="selected_course_student.sem_1_grade ? 'success' : 'default'">
+                                <v-chip variant="flat" :color="selected_course_student.sem_1_grade ? 'success' : 'default'">
                                     1. Sem: {{ selected_course_student.sem_1_grade || '–' }}
                                 </v-chip>
-                                <v-chip size="small" variant="tonal" :color="selected_course_student.sem_2_grade ? 'success' : 'default'">
+                                <v-chip variant="flat" :color="selected_course_student.sem_2_grade ? 'success' : 'default'">
                                     2. Sem: {{ selected_course_student.sem_2_grade || '–' }}
                                 </v-chip>
                             </div>
                             <div class="d-flex flex-wrap ga-2" v-else>
-                                <v-chip size="small" variant="tonal" :color="selected_course_student.sem_grade ? 'success' : 'default'">
+                                <v-chip variant="flat" :color="selected_course_student.sem_grade ? 'success' : 'default'">
                                     Note: {{ selected_course_student.sem_grade || '–' }}
                                 </v-chip>
                             </div>
@@ -310,6 +377,60 @@
                                 <v-text-field v-model="grade_form.sem_grade" label="Semesternote" density="compact" hide-details />
                             </div>
                         </template>
+                    </v-card-text>
+                </v-card>
+
+                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form">
+                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                        <v-icon size="18">mdi-account-alert</v-icon>
+                        Verhaltensnoten
+                        <v-spacer />
+                        <v-btn v-if="!is_editing_behaviour_grades" icon="mdi-pencil" size="x-small" color="primary" variant="flat" @click="editBehaviourGrades" />
+                        <v-btn v-if="is_editing_behaviour_grades" icon="mdi-check" size="x-small" color="success" variant="flat" @click="saveBehaviourGrades" />
+                        <v-btn v-if="is_editing_behaviour_grades" icon="mdi-close" size="x-small" color="warning" variant="flat" @click="is_editing_behaviour_grades = false" />
+                    </v-card-title>
+                    <v-divider />
+                    <v-card-text>
+                        <template v-if="!is_editing_behaviour_grades">
+                            <div class="d-flex flex-wrap ga-2" v-if="semesterCount === 2">
+                                <v-chip variant="flat" :color="selected_course_student.behaviour_1_grade ? 'success' : 'default'">
+                                    1. Sem: {{ selected_course_student.behaviour_1_grade || '–' }}
+                                </v-chip>
+                                <v-chip variant="flat" :color="selected_course_student.behaviour_2_grade ? 'success' : 'default'">
+                                    2. Sem: {{ selected_course_student.behaviour_2_grade || '–' }}
+                                </v-chip>
+                            </div>
+                            <div class="d-flex flex-wrap ga-2" v-else>
+                                <v-chip variant="flat" :color="selected_course_student.behaviour_grade ? 'success' : 'default'">
+                                    Note: {{ selected_course_student.behaviour_grade || '–' }}
+                                </v-chip>
+                            </div>
+                        </template>
+                        <template v-else>
+                            <div class="d-flex flex-wrap ga-2" v-if="semesterCount === 2">
+                                <v-text-field v-model="behaviour_grade_form.behaviour_1_grade" label="1. Semester" density="compact" hide-details class="flex-grow-1" />
+                                <v-text-field v-model="behaviour_grade_form.behaviour_2_grade" label="2. Semester" density="compact" hide-details class="flex-grow-1" />
+                            </div>
+                            <div v-else>
+                                <v-text-field v-model="behaviour_grade_form.behaviour_grade" label="Verhaltensnote" density="compact" hide-details />
+                            </div>
+                        </template>
+                    </v-card-text>
+                </v-card>
+
+                <v-card variant="outlined" class="mt-4" v-if="show_behaviour_form">
+                    <v-card-text>
+                        <v-form ref="behaviourForm" @submit.prevent="saveBehaviourEntry">
+                            <div class="text-subtitle-1 mb-2">{{ behaviour_form.id ? 'Verhaltens-Eintrag ändern' : 'Neuer Verhaltens-Eintrag' }}</div>
+                            <v-select v-model="behaviour_form.type" label="Typ" :items="behaviourTypeItems" item-title="title" item-value="value" clearable />
+                            <v-date-input v-model="behaviour_form.date" label="Datum" />
+                            <v-textarea v-model="behaviour_form.description" label="Beschreibung" rows="3" :counter="1024" :maxlength="1024" />
+
+                            <div class="d-flex flex-row align-center justify-space-between mt-4">
+                                <v-btn color="warning" flat tile @click="abortBehaviourEntry">Abbruch</v-btn>
+                                <v-btn color="success" flat tile type="submit">{{ behaviour_form.id ? 'Aktualisieren' : 'Speichern' }}</v-btn>
+                            </div>
+                        </v-form>
                     </v-card-text>
                 </v-card>
 
@@ -340,6 +461,7 @@ import { parseLocalDate } from '@/helpers/date'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
+import { useCourseBehaviourEntryStore } from '@/stores/admin/teaching/CourseBehaviourEntryStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
@@ -351,12 +473,13 @@ export default {
         this.adminStore = useAdminStore()
         this.courseStore = useCourseStore()
         this.entryStore = useCourseStudentEntryStore()
+        this.behaviourEntryStore = useCourseBehaviourEntryStore()
         this.teachingStore = useTeachingStore()
         if (!this.teachingStore.settings) {
             await this.teachingStore.loadSettings()
         }
-        this.activeSemester = this.config?.user?.teaching_active_semester || 1
-        await this.loadEntries()
+        this.activeSemester = Number(this.config?.user?.teaching_active_semester) || 1
+        await Promise.all([this.loadEntries(), this.loadBehaviourEntries()])
     },
 
     data() {
@@ -364,6 +487,7 @@ export default {
             adminStore: null,
             courseStore: null,
             entryStore: null,
+            behaviourEntryStore: null,
             teachingStore: null,
             is_editing: false,
             edit_comment: '',
@@ -375,6 +499,11 @@ export default {
             delete_entry_id: null,
             show_auswertung: false,
             activeSemester: null,
+            show_behaviour_form: false,
+            behaviour_form: this.emptyBehaviourForm(),
+            delete_behaviour_id: null,
+            is_editing_behaviour_grades: false,
+            behaviour_grade_form: { behaviour_1_grade: '', behaviour_2_grade: '', behaviour_grade: '' },
         }
     },
 
@@ -383,6 +512,59 @@ export default {
         ...mapWritableState(useCourseStore, ['selected_course', 'selected_course_student']),
         ...mapWritableState(useCourseStudentEntryStore, ['entries']),
         ...mapWritableState(useTeachingStore, ['settings']),
+        behaviourEntries() {
+            return this.behaviourEntryStore?.entries || []
+        },
+        filteredBehaviourEntries() {
+            if (this.semesterCount === 1) return this.behaviourEntries
+            const semester = this.activeSemester
+            if (!semester || semester === 3) return this.behaviourEntries
+            const boundary = this.displaySem2Boundary()
+            if (!boundary) return this.behaviourEntries
+            return this.behaviourEntries.filter((entry) => {
+                if (!entry.date) return true
+                const d = this.normalizeDateKey(entry.date)
+                if (!d) return true
+                if (semester === 1) return d < boundary
+                if (semester === 2) return d >= boundary
+                return true
+            })
+        },
+        filteredBehaviourEntriesGrouped() {
+            const entries = this.filteredBehaviourEntries
+            if (this.semesterCount !== 2 || this.activeSemester !== 3) {
+                return entries.map((e) => ({ kind: 'entry', key: `entry-${e.id}`, entry: e }))
+            }
+            const boundary = this.displaySem2Boundary()
+            if (!boundary) {
+                return entries.map((e) => ({ kind: 'entry', key: `entry-${e.id}`, entry: e }))
+            }
+            const sem1 = entries.filter((e) => {
+                if (!e.date) return true
+                const d = this.normalizeDateKey(e.date)
+                return !d || d < boundary
+            })
+            const sem2 = entries.filter((e) => {
+                if (!e.date) return false
+                const d = this.normalizeDateKey(e.date)
+                return !!d && d >= boundary
+            })
+            const result = []
+            result.push({ kind: 'header', key: 'header-sem2', label: '2. Semester' })
+            sem2.forEach((e) => result.push({ kind: 'entry', key: `entry-${e.id}`, entry: e }))
+            result.push({ kind: 'header', key: 'header-sem1', label: '1. Semester' })
+            sem1.forEach((e) => result.push({ kind: 'entry', key: `entry-${e.id}`, entry: e }))
+            return result
+        },
+        teachingBehaviour() {
+            return this.settings?.teaching_behaviour || []
+        },
+        behaviourTypeItems() {
+            return this.teachingBehaviour.map((b) => ({
+                title: `${b.short_name} - ${b.name}`,
+                value: b.short_name,
+            }))
+        },
         selected_comment() {
             return this.selected_course_student?.comment || ''
         },
@@ -405,7 +587,7 @@ export default {
         },
         semesterCount() {
             const grading = this.selectedSchema?.grading || {}
-            return grading.semester_count || 1
+            return Number(grading.semester_count) || 1
         },
         schoolSem2StartDate() {
             return this.config?.selected_schoolyear?.sem_2_start || null
@@ -414,18 +596,22 @@ export default {
             return this.config?.user?.teaching_count_for_semester_2_date || this.schoolSem2StartDate || null
         },
         hasDifferentSem2CountDate() {
-            return !!this.config?.user?.teaching_count_for_semester_2_date && this.config?.user?.teaching_count_for_semester_2_date !== this.schoolSem2StartDate
+            const countBoundary = this.countSem2Boundary()
+            const displayBoundary = this.displaySem2Boundary()
+            return !!countBoundary && !!displayBoundary && countBoundary !== displayBoundary
         },
         filteredEntries() {
             if (this.semesterCount === 1) return this.entries || []
             const semester = this.activeSemester
             if (!semester || semester === 3) return this.entries || []
-            const boundary = this.schoolSem2StartDate || this.countSem2StartDate
+            const boundary = this.displaySem2Boundary()
             if (!boundary) return this.entries || []
             return (this.entries || []).filter((entry) => {
                 if (!entry.date) return true
-                if (semester === 1) return entry.date < boundary
-                if (semester === 2) return entry.date >= boundary
+                const d = this.normalizeDateKey(entry.date)
+                if (!d) return true
+                if (semester === 1) return d < boundary
+                if (semester === 2) return d >= boundary
                 return true
             })
         },
@@ -526,6 +712,32 @@ export default {
                 return dateB - dateA
             })
         },
+        sortedEntriesGrouped() {
+            const entries = this.sortedEntries
+            if (this.semesterCount !== 2 || this.activeSemester !== 3) {
+                return entries.map((e) => ({ kind: 'entry', key: `entry-${e.id}`, entry: e }))
+            }
+            const boundary = this.displaySem2Boundary()
+            if (!boundary) {
+                return entries.map((e) => ({ kind: 'entry', key: `entry-${e.id}`, entry: e }))
+            }
+            const sem1 = entries.filter((e) => {
+                if (!e.date) return true
+                const d = this.normalizeDateKey(e.date)
+                return !d || d < boundary
+            })
+            const sem2 = entries.filter((e) => {
+                if (!e.date) return false
+                const d = this.normalizeDateKey(e.date)
+                return !!d && d >= boundary
+            })
+            const result = []
+            result.push({ kind: 'header', key: 'header-sem2', label: '2. Semester' })
+            sem2.forEach((e) => result.push({ kind: 'entry', key: `entry-${e.id}`, entry: e }))
+            result.push({ kind: 'header', key: 'header-sem1', label: '1. Semester' })
+            sem1.forEach((e) => result.push({ kind: 'entry', key: `entry-${e.id}`, entry: e }))
+            return result
+        },
     },
 
     watch: {
@@ -535,15 +747,19 @@ export default {
             }
         },
         'config.user.teaching_active_semester'(val) {
-            if (val) this.activeSemester = val
+            if (val) this.activeSemester = Number(val) || 1
         },
         selected_course_student: {
             handler() {
                 this.show_entry_form = false
                 this.entry_form = this.emptyEntryForm()
+                this.show_behaviour_form = false
+                this.behaviour_form = this.emptyBehaviourForm()
                 this.is_editing_grades = false
+                this.is_editing_behaviour_grades = false
                 this.show_auswertung = false
                 this.loadEntries()
+                this.loadBehaviourEntries()
             },
         },
         'entry_form.date'(val) {
@@ -551,9 +767,29 @@ export default {
                 this.entry_form.date = this.toDateString(val)
             }
         },
+        'behaviour_form.date'(val) {
+            if (val && val instanceof Date) {
+                this.behaviour_form.date = this.toDateString(val)
+            }
+        },
     },
 
     methods: {
+        normalizeDateKey(date) {
+            if (!date) return ''
+            if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date)) {
+                return date.slice(0, 10)
+            }
+            const parsed = parseLocalDate(date)
+            if (Number.isNaN(parsed.getTime())) return ''
+            return this.toDateString(parsed)
+        },
+        displaySem2Boundary() {
+            return this.normalizeDateKey(this.schoolSem2StartDate || this.countSem2StartDate)
+        },
+        countSem2Boundary() {
+            return this.normalizeDateKey(this.countSem2StartDate || this.schoolSem2StartDate)
+        },
         emptyEntryForm() {
             return {
                 id: null,
@@ -574,6 +810,7 @@ export default {
             this.selected_course_student = null
             this.action_2 = ''
             this.entryStore?.clear()
+            this.behaviourEntryStore?.clear()
         },
         editGrades() {
             this.grade_form = {
@@ -683,6 +920,103 @@ export default {
             }
             this.delete_entry_id = null
         },
+        emptyBehaviourForm() {
+            return {
+                id: null,
+                type: '',
+                date: this.toDateString?.(new Date()) || '',
+                description: '',
+            }
+        },
+        async loadBehaviourEntries() {
+            if (!this.selected_course?.id || !this.selected_course_student?.id) {
+                this.behaviourEntryStore?.clear()
+                return
+            }
+            await this.behaviourEntryStore.index(this.selected_course.id, this.selected_course_student.id)
+        },
+        behaviourTypeLabel(type) {
+            if (!type) return ''
+            const found = this.teachingBehaviour.find((b) => b.short_name === type)
+            if (!found) return type
+            return `${found.short_name} - ${found.name}`
+        },
+        newBehaviourEntry() {
+            this.behaviour_form = this.emptyBehaviourForm()
+            this.show_behaviour_form = true
+        },
+        editBehaviourEntry(entry) {
+            if (!entry) return
+            this.behaviour_form = {
+                id: entry.id,
+                type: entry.type || '',
+                date: entry.date || '',
+                description: entry.description || '',
+            }
+            this.show_behaviour_form = true
+        },
+        abortBehaviourEntry() {
+            this.show_behaviour_form = false
+            this.behaviour_form = this.emptyBehaviourForm()
+        },
+        async saveBehaviourEntry() {
+            if (!this.selected_course || !this.selected_course_student) return
+            const payload = {
+                id: this.behaviour_form.id,
+                teaching_course_id: this.selected_course.id,
+                user_id: this.selected_course_student.id,
+                type: this.behaviour_form.type,
+                date: this.behaviour_form.date instanceof Date ? this.toDateString(this.behaviour_form.date) : this.behaviour_form.date,
+                description: this.behaviour_form.description,
+            }
+            const ok = this.behaviour_form.id ? await this.behaviourEntryStore.update(payload) : await this.behaviourEntryStore.store(payload)
+            if (ok) {
+                await this.loadBehaviourEntries()
+                this.abortBehaviourEntry()
+            }
+        },
+        editBehaviourGrades() {
+            this.behaviour_grade_form = {
+                behaviour_1_grade: this.selected_course_student?.behaviour_1_grade || '',
+                behaviour_2_grade: this.selected_course_student?.behaviour_2_grade || '',
+                behaviour_grade: this.selected_course_student?.behaviour_grade || '',
+            }
+            this.is_editing_behaviour_grades = true
+        },
+        async saveBehaviourGrades() {
+            if (!this.selected_course) return
+            const gradeFields =
+                this.semesterCount === 2
+                    ? { behaviour_1_grade: this.behaviour_grade_form.behaviour_1_grade || null, behaviour_2_grade: this.behaviour_grade_form.behaviour_2_grade || null }
+                    : { behaviour_grade: this.behaviour_grade_form.behaviour_grade || null }
+
+            const studentsInfo = (this.selected_course.students_info || []).map((student) => {
+                if (student.id === this.selected_course_student.id) {
+                    return { ...student, ...gradeFields }
+                }
+                return student
+            })
+
+            const payload = {
+                ...this.selected_course,
+                students: studentsInfo,
+                students_deleted: this.selected_course.students_deleted || [],
+            }
+
+            const ok = await this.courseStore.update(payload)
+            if (ok) {
+                this.selected_course.students_info = studentsInfo
+                this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
+                this.is_editing_behaviour_grades = false
+            }
+        },
+        async deleteBehaviourEntry(entry) {
+            const ok = await this.behaviourEntryStore.destroy(entry.id)
+            if (ok) {
+                await this.loadBehaviourEntries()
+            }
+            this.delete_behaviour_id = null
+        },
         toggleSortByType() {
             this.sort_by_type = !this.sort_by_type
         },
@@ -725,11 +1059,14 @@ export default {
         },
         entriesForSemester(entries, semester) {
             if (this.semesterCount !== 2) return entries
-            if (!this.countSem2StartDate) return entries
+            const boundary = this.countSem2Boundary()
+            if (!boundary) return entries
             return (entries || []).filter((entry) => {
                 if (!entry.date) return true
-                if (semester === 1) return entry.date < this.countSem2StartDate
-                if (semester === 2) return entry.date >= this.countSem2StartDate
+                const d = this.normalizeDateKey(entry.date)
+                if (!d) return true
+                if (semester === 1) return d < boundary
+                if (semester === 2) return d >= boundary
                 return true
             })
         },
@@ -738,8 +1075,12 @@ export default {
             if (!entry?.date) return false
             if (!this.hasDifferentSem2CountDate) return false
             if (!this.schoolSem2StartDate || !this.countSem2StartDate) return false
-            const isDisplaySem1 = entry.date < this.schoolSem2StartDate
-            const isCountedSem2 = entry.date >= this.countSem2StartDate
+            const d = this.normalizeDateKey(entry.date)
+            const displayBoundary = this.displaySem2Boundary()
+            const countBoundary = this.countSem2Boundary()
+            if (!d || !displayBoundary || !countBoundary) return false
+            const isDisplaySem1 = d < displayBoundary
+            const isCountedSem2 = d >= countBoundary
             return isDisplaySem1 && isCountedSem2
         },
         buildCategoryGroups(entries) {

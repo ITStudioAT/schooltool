@@ -15,20 +15,21 @@ export const useTeachingStore = defineStore('AdminTeachingStore', {
     getters: {
         schemas: (state) => state.settings?.teaching_schemas || [],
         schemaById: (state) => (id) => {
-            return (state.settings?.teaching_schemas || []).find((s) => s.id === id) || null
+            return (state.settings?.teaching_schemas || []).find((s) => String(s.id) === String(id)) || null
         },
         worksForSchema: (state) => (schemaId) => {
-            const schema = (state.settings?.teaching_schemas || []).find((s) => s.id === schemaId)
+            const schema = (state.settings?.teaching_schemas || []).find((s) => String(s.id) === String(schemaId))
             return schema?.works || []
         },
         gradingForSchema: (state) => (schemaId) => {
-            const schema = (state.settings?.teaching_schemas || []).find((s) => s.id === schemaId)
+            const schema = (state.settings?.teaching_schemas || []).find((s) => String(s.id) === String(schemaId))
             return schema?.grading || {}
         },
         hasTwoSemesters: (state) => {
             const schemas = state.settings?.teaching_schemas || []
-            return schemas.some((s) => s.grading?.semester_count === 2)
+            return schemas.some((s) => Number(s.grading?.semester_count) === 2)
         },
+        behaviour: (state) => state.settings?.teaching_behaviour || [],
     },
 
     actions: {

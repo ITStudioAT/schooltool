@@ -153,6 +153,7 @@ class User extends Authenticatable
         'teaching_schemas',
         'teaching_active_semester',
         'teaching_count_for_semester_2_date',
+        'teaching_behaviour',
     ];
 
     // Protected fields that should NOT be mass assignable:
@@ -182,6 +183,7 @@ class User extends Authenticatable
             'token_2fa_expires_at' => 'datetime',
             'tutoring_filter' => 'array',
             'teaching_schemas' => 'array',
+            'teaching_behaviour' => 'array',
         ];
     }
 

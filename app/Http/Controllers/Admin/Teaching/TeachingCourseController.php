@@ -59,6 +59,9 @@ class TeachingCourseController extends Controller
                 $data['sem_1_grade'] = $entry['sem_1_grade'] ?? null;
                 $data['sem_2_grade'] = $entry['sem_2_grade'] ?? null;
                 $data['sem_grade'] = $entry['sem_grade'] ?? null;
+                $data['behaviour_1_grade'] = $entry['behaviour_1_grade'] ?? null;
+                $data['behaviour_2_grade'] = $entry['behaviour_2_grade'] ?? null;
+                $data['behaviour_grade'] = $entry['behaviour_grade'] ?? null;
                 $students[] = $data;
             }
 

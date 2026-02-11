@@ -78,9 +78,12 @@
                                     </v-chip>
                                     <div class="text-body-2">{{ student.last_name }}, {{ student.first_name }}</div>
                                     <v-spacer />
+                                    <template v-for="(count, type) in (studentBehaviourCounts[student.id] || {})" :key="`beh-${student.id}-${type}`">
+                                        <v-chip size="x-small" variant="tonal" color="warning">{{ type }}{{ count > 1 ? ` ×${count}` : '' }}</v-chip>
+                                    </template>
                                     <template v-if="semesterCount === 2">
                                         <v-chip v-if="student.sem_1_grade" size="x-small" variant="tonal" color="success">{{ student.sem_1_grade }}</v-chip>
-                                        <v-chip v-if="student.sem_2_grade" size="x-small" variant="tonal" color="success">{{ student.sem_2_grade }}</v-chip>
+                                        <v-chip v-if="student.sem_2_grade && activeSemester !== 1" size="x-small" variant="tonal" color="success">{{ student.sem_2_grade }}</v-chip>
                                     </template>
                                     <template v-else>
                                         <v-chip v-if="student.sem_grade" size="x-small" variant="tonal" color="success">{{ student.sem_grade }}</v-chip>
@@ -105,6 +108,7 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useImport116Store } from '@/stores/admin/teaching/Import116Store'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
+import { useCourseBehaviourEntryStore } from '@/stores/admin/teaching/CourseBehaviourEntryStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
@@ -121,6 +125,7 @@ export default {
         this.import116Store = useImport116Store()
         this.courseStore = useCourseStore()
         this.entryStore = useCourseStudentEntryStore()
+        this.behaviourEntryStore = useCourseBehaviourEntryStore()
         this.teachingStore = useTeachingStore()
         this.courseStore.index()
         if (!this.teachingStore.settings) {
@@ -136,6 +141,7 @@ export default {
             import116Store: null,
             courseStore: null,
             entryStore: null,
+            behaviourEntryStore: null,
             teachingStore: null,
             is_valid: false,
             data: {
@@ -156,7 +162,7 @@ export default {
         semesterCount() {
             const schemaId = this.selected_course?.teaching_schema_id
             const grading = schemaId ? this.teachingStore.gradingForSchema(schemaId) : {}
-            return grading.semester_count || 1
+            return Number(grading.semester_count) || 1
         },
         teachingWorks() {
             const schemaId = this.selected_course?.teaching_schema_id
@@ -226,6 +232,38 @@ export default {
                 return !email || !selectedEmails.has(email)
             })
         },
+        activeSemester() {
+            return Number(this.config?.user?.teaching_active_semester) || 1
+        },
+        schoolSem2StartDate() {
+            return this.config?.selected_schoolyear?.sem_2_start || null
+        },
+        countSem2StartDate() {
+            return this.config?.user?.teaching_count_for_semester_2_date || this.schoolSem2StartDate || null
+        },
+        studentBehaviourCounts() {
+            let entries = this.behaviourEntryStore?.courseEntries || []
+            if (this.semesterCount === 2 && this.activeSemester !== 3) {
+                const boundary = this.normalizeDateKey(this.schoolSem2StartDate || this.countSem2StartDate)
+                if (boundary) {
+                    entries = entries.filter((e) => {
+                        if (!e.date) return true
+                        const d = this.normalizeDateKey(e.date)
+                        if (!d) return true
+                        if (this.activeSemester === 1) return d < boundary
+                        if (this.activeSemester === 2) return d >= boundary
+                        return true
+                    })
+                }
+            }
+            const result = {}
+            entries.forEach((entry) => {
+                if (!result[entry.user_id]) result[entry.user_id] = {}
+                const type = entry.type || '?'
+                result[entry.user_id][type] = (result[entry.user_id][type] || 0) + 1
+            })
+            return result
+        },
         sortedSelectedStudents() {
             const list = this.selected_course?.students_info || []
             return [...list].sort((a, b) => {
@@ -247,6 +285,15 @@ export default {
     },
 
     watch: {
+        selected_course: {
+            handler(course) {
+                if (course?.id) {
+                    this.behaviourEntryStore.indexByCourse(course.id)
+                } else {
+                    this.behaviourEntryStore.courseEntries = []
+                }
+            },
+        },
         'data.classes': {
             handler(newClasses) {
                 if (this.action !== 'teaching_course_new_or_edit') return
@@ -263,6 +310,15 @@ export default {
     },
 
     methods: {
+        normalizeDateKey(date) {
+            if (!date) return ''
+            if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date)) {
+                return date.slice(0, 10)
+            }
+            const parsed = parseLocalDate(date)
+            if (Number.isNaN(parsed.getTime())) return ''
+            return this.toDateString(parsed)
+        },
         emptyBulkEntryForm() {
             return {
                 student_ids: [],
