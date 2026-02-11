@@ -10,7 +10,6 @@ use App\Models\TeachingCourse;
 use App\Models\User;
 use App\Services\TeachingCourseService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 
 class TeachingCourseController extends Controller
@@ -148,9 +147,6 @@ class TeachingCourseController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        Log::info($request->all());
-
-
         $classes = Import116::where('school_id', $auth_user->school_id)
             ->where('schoolyear_id', $auth_user->schoolyear_id)
             ->distinct()
@@ -172,7 +168,7 @@ class TeachingCourseController extends Controller
 
         $course->update([
             'title' => $validated['title'],
-            'description' => $validated['description'],
+            'description' => $validated['description'] ?? null,
             'classes' => $sortedClasses,
             'students' => $service->resolveStudentEntries($validated['students'] ?? [], $auth_user->school_id),
             'students_deleted' => $service->resolveStudentIds($validated['students_deleted'] ?? [], $auth_user->school_id),

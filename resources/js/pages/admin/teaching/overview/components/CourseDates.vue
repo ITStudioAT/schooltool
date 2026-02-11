@@ -291,7 +291,7 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, ['action', 'action', 'config']),
+        ...mapWritableState(useAdminStore, ['action', 'config']),
         ...mapWritableState(useCourseStore, ['selected_course']),
         ...mapWritableState(useCourseDateStore, ['courseDates', 'selected_courseDate']),
         semesterCount() {

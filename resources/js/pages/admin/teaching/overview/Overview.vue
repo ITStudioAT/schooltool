@@ -35,7 +35,7 @@
     <!-- OVERVIEW-->
     <v-col cols="12" md="6" xl="4" v-if="show_my_courses || show_students">
         <!-- MY_COURSES-->
-        <v-row v-if="show_my_courses && !selected_course" :style="action_2 == 'course_student_view' ? 'pointer-events:none; opacity:0.6' : ''">
+        <v-row v-if="show_my_courses && (!selected_course || action == 'teaching_course_new_or_edit')" :style="action_2 == 'course_student_view' ? 'pointer-events:none; opacity:0.6' : ''">
             <v-col>
                 <MyCourses />
             </v-col>
@@ -48,7 +48,7 @@
             </v-col>
         </v-row>
 
-        <v-row v-if="action_2 == 'course_student_view'">
+        <v-row v-if="action_2 == 'course_student_view' && action != 'teaching_course_new_or_edit'">
             <v-col>
                 <CourseStudent />
             </v-col>
@@ -56,7 +56,7 @@
     </v-col>
 
     <!-- KURS-INFOS  -->
-    <v-col cols="12" md="6" xl="4" v-if="show_infos || show_dates || show_works" :style="action_2 == 'course_student_view' ? 'pointer-events:none; opacity:0.6' : ''">
+    <v-col cols="12" md="6" xl="4" v-if="(show_infos || show_dates || show_works) && action != 'teaching_course_new_or_edit'" :style="action_2 == 'course_student_view' ? 'pointer-events:none; opacity:0.6' : ''">
         <v-row v-if="show_infos">
             <v-col>
                 <CourseInfos />
@@ -115,7 +115,7 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, ['action', , 'action_2', 'config']),
+        ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useCourseStore, [
             'selected_course',
             'selected_course_id',
@@ -130,7 +130,7 @@ export default {
 
     watch: {
         selected_course(val) {
-            if (val) {
+            if (val && this.action !== 'teaching_course_new_or_edit') {
                 this.show_my_courses = false
                 this.show_infos = false
             }
@@ -142,6 +142,7 @@ export default {
             const next = !this.show_my_courses
             this.show_my_courses = next
             if (next) {
+                this.action_2 = ''
                 this.selected_course = null
                 this.selected_course_id = null
                 this.selected_course_student = null

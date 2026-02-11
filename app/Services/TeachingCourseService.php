@@ -112,6 +112,7 @@ class TeachingCourseService
 
         foreach ($items as $item) {
             $resolvedId = null;
+            $data = [];
             $comment = null;
 
             if (is_array($item) || is_object($item)) {

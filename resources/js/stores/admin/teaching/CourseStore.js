@@ -106,7 +106,7 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             try {
                 const response = await axios.post(`/api/admin/teaching/courses`, data)
                 this.saved_offer = response.data
-                return true
+                return response.data
             } catch (error) {
                 notification.notify({
                     status: error.response.status,

@@ -183,7 +183,7 @@ export default {
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useImport116Store, ['import116_students']),
-        ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'selected_course_id']),
+        ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'selected_course_id', 'selected_course_student']),
         schemaItems() {
             return (this.teachingStore?.schemas || [])
                 .map((s) => ({ title: s.name, value: s.id }))
@@ -336,7 +336,7 @@ export default {
         },
 
         async save(data) {
-            const source = this.selected_course && data.id && this.selected_course.id === data.id ? this.selected_course : data
+            const source = this.selected_course || data
             this.courseStore.ensureCourseStudentCollections(source)
 
             const payload = {
@@ -345,13 +345,18 @@ export default {
                 students_deleted: source.students_deleted || [],
             }
 
+            let result = null
             if (data.id) {
-                await this.courseStore.update(payload)
+                result = await this.courseStore.update(payload)
             } else {
-                await this.courseStore.store(payload)
+                result = await this.courseStore.store(payload)
             }
             await this.courseStore.index()
-            this.selected_course = this.courses.find((c) => c.id === data.id) || null
+            const savedId = result?.data?.id || result?.id || data.id || null
+            this.selected_course = savedId ? this.courses.find((c) => c.id === savedId) || null : null
+            this.selected_course_id = this.selected_course?.id || null
+            this.selected_course_student = null
+            this.action_2 = ''
             this.action = ''
         },
 
@@ -367,6 +372,8 @@ export default {
 
         newCourse() {
             this.data = {}
+            this.selected_course_student = null
+            this.action_2 = ''
             // Create a fresh empty course object for the new course
             this.selected_course = {
                 id: null,
@@ -382,12 +389,16 @@ export default {
         },
         editCourse(course) {
             this.data = { ...course }
+            this.selected_course_student = null
+            this.action_2 = ''
             this.selected_course = course
             this.courseStore.ensureCourseStudentCollections(this.selected_course)
             this.action = 'teaching_course_new_or_edit'
             this.selectStudents(this.data.classes || [])
         },
         abortNewCourse() {
+            this.selected_course_student = null
+            this.action_2 = ''
             this.action = ''
         },
         async deleteCourse(course) {
