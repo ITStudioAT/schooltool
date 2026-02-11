@@ -44,6 +44,7 @@ class Schoolyear extends Model
         'from',
         'until',
         'sem_2_start',
+        'is_active',
     ];
 
 
@@ -53,7 +54,7 @@ class Schoolyear extends Model
         if (Register::where('schoolyear_id', $this->id)->exists())  return true;
 
         // Prüfen, ob es mehr als einen User gibt
-        if (User::where('schoolyear_id', $this->id)->exists())  return true;
+        if (User::where('schoolyear_id', $this->id)->count() > 1)  return true;
         return false;
     }
 

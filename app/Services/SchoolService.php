@@ -12,6 +12,7 @@ use App\Models\Schoolyear;
 
 use App\Models\Teacher;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -34,11 +35,8 @@ class SchoolService
         // Schule anlegen
         $school  = School::create($data);
 
-        // Standard-Schuljahr anlegen
-        $schoolyear = Schoolyear::create([
-            'school_id' => $school->id,
-            'name' => 'Schuljahr'
-        ]);
+        // Schuljahre aus Config anlegen (ab aktuellem Schuljahr)
+        $schoolyear = $this->createSchoolyearsFromConfig($school);
 
         // Super-Admin anlegen
         $user = User::create([
@@ -87,6 +85,58 @@ class SchoolService
         return $school;
     }
 
+    private function createSchoolyearsFromConfig(School $school): Schoolyear
+    {
+        $schoolyears = collect(config('schooltool.schoolyears', []))
+            ->filter(fn($entry) => !empty($entry['name']) && !empty($entry['from']) && !empty($entry['to']))
+            ->values();
+
+        if ($schoolyears->isEmpty()) {
+            return Schoolyear::create([
+                'school_id' => $school->id,
+                'name' => 'Schuljahr',
+                'is_active' => true,
+            ]);
+        }
+
+        $today = Carbon::today();
+
+        $startIndex = $schoolyears->search(function ($entry) use ($today) {
+            $from = Carbon::parse($entry['from'])->startOfDay();
+            $to = Carbon::parse($entry['to'])->endOfDay();
+            return $today->betweenIncluded($from, $to);
+        });
+
+        if ($startIndex === false) {
+            $startIndex = $schoolyears->search(function ($entry) use ($today) {
+                $from = Carbon::parse($entry['from'])->startOfDay();
+                return $from->greaterThanOrEqualTo($today);
+            });
+        }
+
+        if ($startIndex === false) {
+            $startIndex = $schoolyears->count() - 1;
+        }
+
+        $activeSchoolyear = null;
+        foreach ($schoolyears->slice($startIndex)->values() as $index => $entry) {
+            $created = Schoolyear::create([
+                'school_id' => $school->id,
+                'name' => $entry['name'],
+                'from' => $entry['from'],
+                'until' => $entry['to'],
+                'sem_2_start' => $entry['sem_2_start'] ?? null,
+                'is_active' => $index === 0,
+            ]);
+
+            if ($index === 0) {
+                $activeSchoolyear = $created;
+            }
+        }
+
+        return $activeSchoolyear;
+    }
+
     public function update($school, $data)
     {
 
@@ -123,6 +173,12 @@ class SchoolService
 
         // Die Schule hat mehr User als nur den Super-Admin und kann daher nicht gelöscht werden
         if (School::where('id', $id)->has('users', '>', 1)->exists())  return false;
+
+        // Eine Schule darf nicht gelöscht werden, wenn eines ihrer Schuljahre noch Abhängigkeiten hat
+        $hasSchoolyearDependencies = Schoolyear::where('school_id', $id)
+            ->get()
+            ->contains(fn(Schoolyear $schoolyear) => $schoolyear->hasDependencies());
+        if ($hasSchoolyearDependencies) return false;
 
         $school = School::findOrFail($id);
 

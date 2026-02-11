@@ -9,6 +9,7 @@ use App\Models\Teacher;
 use App\Models\User;
 use App\Services\SchoolService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Hash;
@@ -39,6 +40,12 @@ beforeEach(function () {
     // Fake storage
     Storage::fake('public');
     Storage::fake('private');
+
+    Carbon::setTestNow('2026-02-20');
+});
+
+afterEach(function () {
+    Carbon::setTestNow();
 });
 
 describe('create', function () {
@@ -58,7 +65,15 @@ describe('create', function () {
             ->and($school->exists)->toBeTrue();
     });
 
-    it('creates default schoolyear when creating school', function () {
+    it('creates schoolyears from config starting with current schoolyear', function () {
+        config([
+            'schooltool.schoolyears' => [
+                ['name' => 'Schuljahr 2025/26', 'from' => '2025-09-08', 'sem_2_start' => '2026-02-16', 'to' => '2026-07-10'],
+                ['name' => 'Schuljahr 2026/27', 'from' => '2026-09-14', 'sem_2_start' => '2027-02-15', 'to' => '2027-07-09'],
+                ['name' => 'Schuljahr 2027/28', 'from' => '2027-09-13', 'sem_2_start' => '2028-02-21', 'to' => '2028-07-07'],
+            ],
+        ]);
+
         $data = [
             'long_name' => 'Test School',
             'short_name' => 'TS',
@@ -66,13 +81,27 @@ describe('create', function () {
 
         $school = $this->service->create($data);
 
-        expect(Schoolyear::where('school_id', $school->id)->count())->toBe(1);
+        $schoolyears = Schoolyear::where('school_id', $school->id)
+            ->orderBy('from')
+            ->get();
 
-        $schoolyear = Schoolyear::where('school_id', $school->id)->first();
-        expect($schoolyear->name)->toBe('Schuljahr');
+        expect($schoolyears)->toHaveCount(3)
+            ->and($schoolyears[0]->name)->toBe('Schuljahr 2025/26')
+            ->and($schoolyears[0]->is_active)->toBe(1)
+            ->and($schoolyears[1]->name)->toBe('Schuljahr 2026/27')
+            ->and($schoolyears[1]->is_active)->toBe(0)
+            ->and($schoolyears[2]->name)->toBe('Schuljahr 2027/28')
+            ->and($schoolyears[2]->is_active)->toBe(0);
     });
 
     it('creates super admin user when creating school', function () {
+        config([
+            'schooltool.schoolyears' => [
+                ['name' => 'Schuljahr 2025/26', 'from' => '2025-09-08', 'sem_2_start' => '2026-02-16', 'to' => '2026-07-10'],
+                ['name' => 'Schuljahr 2026/27', 'from' => '2026-09-14', 'sem_2_start' => '2027-02-15', 'to' => '2027-07-09'],
+            ],
+        ]);
+
         $data = [
             'long_name' => 'Test School',
             'short_name' => 'TS',
@@ -81,11 +110,13 @@ describe('create', function () {
         $school = $this->service->create($data);
 
         $user = User::where('school_id', $school->id)->first();
+        $activeSchoolyear = Schoolyear::where('school_id', $school->id)->where('is_active', true)->first();
 
         expect($user)->not->toBeNull()
             ->and($user->email)->toBe(env('SA_EMAIL'))
             ->and($user->last_name)->toBe(env('SA_LAST_NAME'))
             ->and($user->first_name)->toBe(env('SA_FIRST_NAME'))
+            ->and($user->schoolyear_id)->toBe($activeSchoolyear?->id)
             ->and($user->email_verified_at)->not->toBeNull()
             ->and($user->confirmed_at)->not->toBeNull()
             ->and($user->hasRole('super_admin'))->toBeTrue();
@@ -208,9 +239,9 @@ describe('deleteSchools', function () {
         Schoolyear::factory()->create(['school_id' => $school2->id]);
         Schoolyear::factory()->create(['school_id' => $school3->id]);
 
-        User::factory()->create(['school_id' => $school1->id]);
-        User::factory()->create(['school_id' => $school2->id]);
-        User::factory()->create(['school_id' => $school3->id]);
+        User::factory()->create(['school_id' => $school1->id, 'schoolyear_id' => null]);
+        User::factory()->create(['school_id' => $school2->id, 'schoolyear_id' => null]);
+        User::factory()->create(['school_id' => $school3->id, 'schoolyear_id' => null]);
 
         SchoolTool::create(['school_id' => $school1->id]);
         SchoolTool::create(['school_id' => $school2->id]);
@@ -257,7 +288,7 @@ describe('deleteSchool', function () {
     it('deletes school with single user successfully', function () {
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
-        $user = User::factory()->create(['school_id' => $school->id]);
+        $user = User::factory()->create(['school_id' => $school->id, 'schoolyear_id' => null]);
         SchoolTool::create(['school_id' => $school->id]);
 
         $this->service->deleteSchools([$school->id]);
@@ -268,10 +299,21 @@ describe('deleteSchool', function () {
             ->and(SchoolTool::where('school_id', $school->id)->count())->toBe(0);
     });
 
+    it('cannot delete school when schoolyear has dependencies', function () {
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+        User::factory()->create(['school_id' => $school->id, 'schoolyear_id' => $schoolyear->id]);
+        SchoolTool::create(['school_id' => $school->id]);
+
+        $this->service->deleteSchools([$school->id]);
+
+        expect(School::find($school->id))->not->toBeNull();
+    });
+
     it('detaches licences when deleting school', function () {
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
-        $user = User::factory()->create(['school_id' => $school->id]);
+        $user = User::factory()->create(['school_id' => $school->id, 'schoolyear_id' => null]);
         SchoolTool::create(['school_id' => $school->id]);
 
         $licence = Licence::create(['name' => 'Test Licence', 'long_name' => 'Test Licence Long']);
@@ -287,7 +329,7 @@ describe('deleteSchool', function () {
     it('removes user roles when deleting school', function () {
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
-        $user = User::factory()->create(['school_id' => $school->id]);
+        $user = User::factory()->create(['school_id' => $school->id, 'schoolyear_id' => null]);
         $user->assignRole('admin');
         SchoolTool::create(['school_id' => $school->id]);
 
@@ -301,7 +343,7 @@ describe('deleteSchool', function () {
     it('deletes storage directories when deleting school', function () {
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
-        $user = User::factory()->create(['school_id' => $school->id]);
+        $user = User::factory()->create(['school_id' => $school->id, 'schoolyear_id' => null]);
         SchoolTool::create(['school_id' => $school->id]);
 
         // Create directories
