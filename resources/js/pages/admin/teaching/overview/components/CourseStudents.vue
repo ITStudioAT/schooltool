@@ -13,6 +13,13 @@
                         </div>
                     </div>
                 </v-card>
+                <div v-if="semesterCount === 2" class="d-flex flex-wrap align-center ga-2 mt-2">
+                    <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">
+                        <v-btn :value="1" size="small">1. Sem</v-btn>
+                        <v-btn :value="2" size="small">2. Sem</v-btn>
+                        <v-btn :value="3" size="small">1+2</v-btn>
+                    </v-btn-toggle>
+                </div>
 
                 <!-- Ausgewählte Schülerinnen (Anzeige) -->
                 <v-card variant="outlined" class="mt-4" v-if="selected_course">
@@ -139,6 +146,7 @@ export default {
         if (!this.teachingStore.settings) {
             await this.teachingStore.loadSettings()
         }
+        this.activeSemester = Number(this.config?.user?.teaching_active_semester) || 1
     },
 
     unmounted() {},
@@ -159,6 +167,7 @@ export default {
             delete_level: 0,
             show_bulk_entry: false,
             bulk_entry_form: this.emptyBulkEntryForm(),
+            activeSemester: null,
         }
     },
 
@@ -239,9 +248,6 @@ export default {
                 const email = (student.email || '').toString().trim().toLowerCase()
                 return !email || !selectedEmails.has(email)
             })
-        },
-        activeSemester() {
-            return Number(this.config?.user?.teaching_active_semester) || 1
         },
         schoolSem2StartDate() {
             return this.config?.selected_schoolyear?.sem_2_start || null
@@ -340,6 +346,14 @@ export default {
     },
 
     watch: {
+        activeSemester(val) {
+            if (val !== this.config?.user?.teaching_active_semester) {
+                this.teachingStore.saveActiveSemester(val)
+            }
+        },
+        'config.user.teaching_active_semester'(val) {
+            if (val) this.activeSemester = Number(val) || 1
+        },
         selected_course: {
             handler(course) {
                 if (course?.id) {
