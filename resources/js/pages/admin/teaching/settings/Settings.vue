@@ -7,11 +7,6 @@
             :color="show_basic_settings ? 'success' : 'secondary'"
             @click="show_basic_settings = !show_basic_settings" />
         <its-menu-button
-            subtitle="Benotungsschemas"
-            :icon="show_schemas ? 'mdi-eye' : 'mdi-eye-off'"
-            :color="show_schemas ? 'success' : 'secondary'"
-            @click="show_schemas = !show_schemas" />
-        <its-menu-button
             subtitle="Verhalten"
             :icon="show_behaviour ? 'mdi-eye' : 'mdi-eye-off'"
             :color="show_behaviour ? 'success' : 'secondary'"
@@ -21,6 +16,11 @@
             :icon="show_notifications ? 'mdi-eye' : 'mdi-eye-off'"
             :color="show_notifications ? 'success' : 'secondary'"
             @click="show_notifications = !show_notifications" />
+        <its-menu-button
+            subtitle="Benotungsschemas"
+            :icon="show_schemas ? 'mdi-eye' : 'mdi-eye-off'"
+            :color="show_schemas ? 'success' : 'secondary'"
+            @click="show_schemas = !show_schemas" />
     </v-card>
 
     <!-- Grundeinstellungen + Verhalten + Verständigungen -->
