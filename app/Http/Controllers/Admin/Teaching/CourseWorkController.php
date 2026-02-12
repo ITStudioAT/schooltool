@@ -55,10 +55,14 @@ class CourseWorkController extends Controller
             ->filter()
             ->values()
             ->all();
+        $typeRules = ['nullable', 'string', 'max:255'];
+        if (!empty($allowedTypes)) {
+            $typeRules[] = Rule::in($allowedTypes);
+        }
 
         $validated = $request->validate([
             'teaching_course_id' => 'required|integer|exists:teaching_courses,id',
-            'type' => ['nullable', 'string', 'max:255', Rule::in($allowedTypes)],
+            'type' => $typeRules,
             'description' => 'nullable|string|max:1024',
             'is_group_work' => 'sometimes|boolean',
             'group_size' => 'nullable|integer|min:2|max:50',
@@ -66,15 +70,15 @@ class CourseWorkController extends Controller
             'date_for_all_groups' => 'nullable|date',
             'groups' => 'nullable|array',
             'groups.*.student_ids' => 'nullable|array',
-            'groups.*.student_ids.*' => 'integer|exists:users,id',
+            'groups.*.student_ids.*' => 'integer',
             'groups.*.date' => 'nullable|date',
             'groups.*.comment' => 'nullable|string|max:1024',
             'groups.*.grade' => 'nullable|string|max:50',
             'groups.*.grades' => 'nullable|array',
-            'groups.*.grades.*.student_id' => 'required|integer|exists:users,id',
+            'groups.*.grades.*.student_id' => 'required|integer',
             'groups.*.grades.*.grade' => 'nullable|string|max:50',
             'groups.*.comments' => 'nullable|array',
-            'groups.*.comments.*.student_id' => 'required|integer|exists:users,id',
+            'groups.*.comments.*.student_id' => 'required|integer',
             'groups.*.comments.*.comment' => 'nullable|string|max:1024',
             'groups.*.name' => 'nullable|string|max:255',
             'status' => 'nullable|array',
@@ -98,6 +102,11 @@ class CourseWorkController extends Controller
                 $validated['groups'] = $this->buildIndividualGroups($course);
             }
         }
+
+        $validated['groups'] = $this->normalizeWorkGroupsStudentIds(
+            $validated['groups'] ?? [],
+            (int) $auth_user->school_id
+        );
 
         $work = TeachingCourseWork::create($validated);
 
@@ -143,9 +152,13 @@ class CourseWorkController extends Controller
             ->filter()
             ->values()
             ->all();
+        $typeRules = ['nullable', 'string', 'max:255'];
+        if (!empty($allowedTypes)) {
+            $typeRules[] = Rule::in($allowedTypes);
+        }
 
         $validated = $request->validate([
-            'type' => ['nullable', 'string', 'max:255', Rule::in($allowedTypes)],
+            'type' => $typeRules,
             'description' => 'nullable|string|max:1024',
             'is_group_work' => 'sometimes|boolean',
             'group_size' => 'nullable|integer|min:2|max:50',
@@ -153,15 +166,15 @@ class CourseWorkController extends Controller
             'date_for_all_groups' => 'nullable|date',
             'groups' => 'nullable|array',
             'groups.*.student_ids' => 'nullable|array',
-            'groups.*.student_ids.*' => 'integer|exists:users,id',
+            'groups.*.student_ids.*' => 'integer',
             'groups.*.date' => 'nullable|date',
             'groups.*.comment' => 'nullable|string|max:1024',
             'groups.*.grade' => 'nullable|string|max:50',
             'groups.*.grades' => 'nullable|array',
-            'groups.*.grades.*.student_id' => 'required|integer|exists:users,id',
+            'groups.*.grades.*.student_id' => 'required|integer',
             'groups.*.grades.*.grade' => 'nullable|string|max:50',
             'groups.*.comments' => 'nullable|array',
-            'groups.*.comments.*.student_id' => 'required|integer|exists:users,id',
+            'groups.*.comments.*.student_id' => 'required|integer',
             'groups.*.comments.*.comment' => 'nullable|string|max:1024',
             'groups.*.name' => 'nullable|string|max:255',
             'status' => 'nullable|array',
@@ -178,6 +191,11 @@ class CourseWorkController extends Controller
             }
         }
 
+        $validated['groups'] = $this->normalizeWorkGroupsStudentIds(
+            $validated['groups'] ?? [],
+            (int) $auth_user->school_id
+        );
+
         $course_work->update($validated);
 
         return response()->json(['data' => $course_work]);
@@ -186,7 +204,15 @@ class CourseWorkController extends Controller
     private function buildIndividualGroups(TeachingCourse $course): array
     {
         $service = app(TeachingCourseService::class);
-        $studentIds = $service->normalizeStudentIds($course->students);
+        $entries = $service->normalizeStudentEntries($course->students);
+        $studentIds = [];
+        foreach ($entries as $entry) {
+            $resolvedId = $service->resolveStudentIdFromNumeric((int) ($entry['id'] ?? 0), (int) $course->school_id);
+            if ($resolvedId) {
+                $studentIds[] = $resolvedId;
+            }
+        }
+        $studentIds = array_values(array_unique($studentIds));
 
         return array_values(array_map(function ($id) {
             return [
@@ -195,6 +221,65 @@ class CourseWorkController extends Controller
                 'grade' => null,
             ];
         }, $studentIds));
+    }
+
+    private function normalizeWorkGroupsStudentIds(array $groups, int $schoolId): array
+    {
+        $service = app(TeachingCourseService::class);
+        $normalized = [];
+
+        foreach ($groups as $group) {
+            if (!is_array($group)) {
+                continue;
+            }
+
+            $studentIds = [];
+            foreach (($group['student_ids'] ?? []) as $studentId) {
+                $resolvedId = $service->resolveStudentIdFromNumeric((int) $studentId, $schoolId);
+                if ($resolvedId) {
+                    $studentIds[] = $resolvedId;
+                }
+            }
+            $studentIds = array_values(array_unique($studentIds));
+
+            $grades = [];
+            foreach (($group['grades'] ?? []) as $gradeItem) {
+                if (!is_array($gradeItem)) {
+                    continue;
+                }
+                $resolvedId = $service->resolveStudentIdFromNumeric((int) ($gradeItem['student_id'] ?? 0), $schoolId);
+                if (! $resolvedId) {
+                    continue;
+                }
+                $grades[] = [
+                    'student_id' => $resolvedId,
+                    'grade' => $gradeItem['grade'] ?? '',
+                ];
+            }
+
+            $comments = [];
+            foreach (($group['comments'] ?? []) as $commentItem) {
+                if (!is_array($commentItem)) {
+                    continue;
+                }
+                $resolvedId = $service->resolveStudentIdFromNumeric((int) ($commentItem['student_id'] ?? 0), $schoolId);
+                if (! $resolvedId) {
+                    continue;
+                }
+                $comments[] = [
+                    'student_id' => $resolvedId,
+                    'comment' => $commentItem['comment'] ?? '',
+                ];
+            }
+
+            $normalized[] = array_merge($group, [
+                'student_ids' => $studentIds,
+                'grades' => $grades,
+                'comments' => $comments,
+            ]);
+        }
+
+        return $normalized;
     }
 
     /**

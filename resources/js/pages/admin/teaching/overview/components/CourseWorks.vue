@@ -46,6 +46,9 @@
                 <v-chip v-if="filteredCourseWorks?.length" size="x-small" color="primary" variant="tonal">
                     {{ filteredCourseWorks.length }}
                 </v-chip>
+                <v-chip v-if="courseWorks?.length && courseWorks.length !== (filteredCourseWorks?.length || 0)" size="x-small" color="secondary" variant="outlined">
+                    Gesamt {{ courseWorks.length }}
+                </v-chip>
             </v-card-title>
             <v-divider />
             <v-card-text class="pa-0">
@@ -70,8 +73,13 @@
                             </div>
                         </div>
                     </v-list-item>
-                    <v-list-item v-if="!filteredCourseWorks?.length && hasStudents">
+                    <v-list-item v-if="!filteredCourseWorks?.length && hasStudents && !courseWorks?.length">
                         <v-list-item-title class="text-caption text-medium-emphasis">Keine Arbeiten vorhanden.</v-list-item-title>
+                    </v-list-item>
+                    <v-list-item v-if="!filteredCourseWorks?.length && hasStudents && courseWorks?.length">
+                        <v-list-item-title class="text-caption text-warning">
+                            Es gibt {{ courseWorks.length }} Arbeit(en), sie sind aktuell durch den Semester-Filter ausgeblendet.
+                        </v-list-item-title>
                     </v-list-item>
                     <v-list-item v-if="!hasStudents">
                         <v-list-item-title class="text-caption text-warning">Keine Schüler:innen im Kurs. Bitte zuerst Schüler:innen hinzufügen.</v-list-item-title>
@@ -440,7 +448,8 @@ export default {
             return grading?.semester_count || 1
         },
         sem2StartDate() {
-            return this.config?.user?.teaching_count_for_semester_2_date || this.config?.selected_schoolyear?.sem_2_start || null
+            const raw = this.config?.user?.teaching_count_for_semester_2_date || this.config?.selected_schoolyear?.sem_2_start || null
+            return this.normalizeDateString(raw) || null
         },
         filteredCourseWorks() {
             if (this.semesterCount === 1) return this.courseWorks || []
@@ -746,7 +755,7 @@ export default {
                     // Convert date to YYYY-MM-DD string format
                     const date = this.normalizeDateString(group.date)
                     if (!group.use_individual_grades) {
-                        return { ...group, date, grades: [], comments: [] }
+                        return { ...group, date: date || null, grades: [], comments: [] }
                     }
                     const grades = (group.student_ids || []).map((id) => ({
                         student_id: id,
@@ -756,7 +765,7 @@ export default {
                         student_id: id,
                         comment: group.comments?.[id] ?? '',
                     }))
-                    return { ...group, date, grade: '', comment: '', grades, comments }
+                    return { ...group, date: date || null, grade: '', comment: '', grades, comments }
                 })
 
                 // Convert date_for_all_groups to YYYY-MM-DD string format
@@ -764,7 +773,8 @@ export default {
 
                 const payload = {
                     ...this.work_form,
-                    date_for_all_groups: dateForAllGroups,
+                    type: this.work_form.type || null,
+                    date_for_all_groups: dateForAllGroups || null,
                     teaching_course_id: this.selected_course?.id || this.work_form.teaching_course_id,
                 }
 
@@ -789,6 +799,10 @@ export default {
 
                 if (ok) {
                     await this.refreshWorks()
+                    // If the saved work is hidden by semester filter, switch to 1+2 so it is immediately visible.
+                    if (savedWorkId && this.semesterCount === 2 && !this.filteredCourseWorks.find((w) => w.id === savedWorkId)) {
+                        this.activeSemester = 3
+                    }
                     if (stayOnPage) {
                         // Find the saved work and reload it for editing
                         const savedWork = this.courseWorks.find((w) => w.id === savedWorkId)

@@ -367,11 +367,21 @@ export default {
             if (this.action === 'teaching_course_new_or_edit') {
                 return
             }
-            if (course && this.selected_course?.id !== course.id) {
-                this.courseStore.ensureCourseStudentCollections(course)
-                this.selected_course = course
+            if (!course) {
+                this.selected_course = null
+                this.selected_course_id = null
+                this.selected_course_student = null
+                this.action_2 = ''
                 this.delete_level = 0
+                return
             }
+
+            this.courseStore.ensureCourseStudentCollections(course)
+            this.selected_course = course
+            this.selected_course_id = course.id
+            this.selected_course_student = null
+            this.action_2 = ''
+            this.delete_level = 0
         },
 
         newCourse() {
@@ -424,6 +434,9 @@ export default {
             }
             await this.courseStore.index()
             this.selected_course = null
+            this.selected_course_id = null
+            this.selected_course_student = null
+            this.action_2 = ''
             this.delete_level = 0
         },
     },

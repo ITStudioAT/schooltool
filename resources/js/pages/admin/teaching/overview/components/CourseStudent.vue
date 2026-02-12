@@ -526,7 +526,7 @@
                             <v-select v-model="behaviour_form.type" label="Typ" :items="entryTypeItems" item-title="title" item-value="value" clearable />
                             <v-date-input v-model="behaviour_form.date" label="Datum" />
                             <v-textarea v-model="behaviour_form.description" label="Beschreibung" rows="3" :counter="1024" :maxlength="1024" />
-                            <div class="d-flex flex-column ga-2">
+                            <div v-if="showDueFields" class="d-flex flex-column ga-2">
                                 <v-switch v-model="behaviour_form.is_due" label="Fällig" color="warning" hide-details />
                                 <template v-if="behaviour_form.is_due">
                                     <v-date-input v-model="behaviour_form.due_date" label="Fällig bis" />
@@ -769,8 +769,12 @@ export default {
         entryFormTitleEdit() {
             return this.behaviour_form.kind === 'notification' ? 'Verständigungs-Eintrag ändern' : 'Verhaltens-Eintrag ändern'
         },
+        showDueFields() {
+            return this.behaviour_form.kind === 'notification'
+        },
         behaviourFormFrontendError() {
             if (!this.behaviour_form?.type) return 'Bitte einen Typ auswählen.'
+            if (!this.showDueFields) return ''
             if (this.behaviour_form?.is_due && !this.behaviour_form?.due_date) return 'Bitte "Fällig bis" eingeben.'
             if (this.behaviour_form?.is_due && this.behaviour_form?.is_done && !this.behaviour_form?.done_date) return 'Bitte "Erledigt am" eingeben.'
             return ''
@@ -1376,10 +1380,10 @@ export default {
                 kind: entry.kind || 'behaviour',
                 type: entry.type || '',
                 date: entry.date || '',
-                is_due: !!entry.due_date,
-                due_date: entry.due_date || '',
-                is_done: !!entry.done_date,
-                done_date: entry.done_date || '',
+                is_due: false,
+                due_date: '',
+                is_done: false,
+                done_date: '',
                 description: entry.description || '',
             }
             this.show_behaviour_form = true
@@ -1391,6 +1395,7 @@ export default {
         async saveBehaviourEntry() {
             if (!this.selected_course || !this.selected_course_student) return
             if (this.behaviourFormFrontendError) return
+            const allowsDue = this.behaviour_form.kind === 'notification'
             const payload = {
                 id: this.behaviour_form.id,
                 teaching_course_id: this.selected_course.id,
@@ -1398,16 +1403,16 @@ export default {
                 kind: this.behaviour_form.kind || 'behaviour',
                 type: this.behaviour_form.type,
                 date: this.behaviour_form.date instanceof Date ? this.toDateString(this.behaviour_form.date) : this.behaviour_form.date,
-                is_due: !!this.behaviour_form.is_due,
+                is_due: allowsDue && !!this.behaviour_form.is_due,
                 due_date:
-                    this.behaviour_form.is_due
+                    allowsDue && this.behaviour_form.is_due
                         ? this.behaviour_form.due_date instanceof Date
                             ? this.toDateString(this.behaviour_form.due_date)
                             : this.behaviour_form.due_date || null
                         : null,
-                is_done: !!this.behaviour_form.is_due && !!this.behaviour_form.is_done,
+                is_done: allowsDue && !!this.behaviour_form.is_due && !!this.behaviour_form.is_done,
                 done_date:
-                    this.behaviour_form.is_due && this.behaviour_form.is_done
+                    allowsDue && this.behaviour_form.is_due && this.behaviour_form.is_done
                         ? this.behaviour_form.done_date instanceof Date
                             ? this.toDateString(this.behaviour_form.done_date)
                             : this.behaviour_form.done_date || null
