@@ -13,8 +13,7 @@
                         <v-list density="compact">
                             <v-list-item v-for="entry in openNotifications" :key="entry.id">
                                 <div class="notification-row d-flex flex-wrap align-start ga-2 w-100">
-                                    <v-chip v-if="entry.student_class" size="x-small" variant="outlined" color="primary">{{ entry.student_class }}</v-chip>
-                                    <v-chip v-if="entry.course_title" size="x-small" variant="tonal" color="primary" class="chip-truncate">{{ entry.course_title }}</v-chip>
+                                    <v-chip v-if="classCourseLabel(entry)" size="x-small" variant="tonal" color="primary" class="chip-truncate">{{ classCourseLabel(entry) }}</v-chip>
                                     <v-chip v-if="entry.student_label" size="x-small" variant="outlined" class="chip-truncate">{{ entry.student_label }}</v-chip>
                                     <v-chip v-if="entry.date" size="x-small" variant="tonal" color="primary">{{ formatDate(entry.date) }}</v-chip>
                                     <v-chip v-if="entry.due_date" size="x-small" variant="tonal" :color="dueDateColor(entry.due_date)">Fällig bis {{ formatDate(entry.due_date) }}</v-chip>
@@ -303,6 +302,12 @@ export default {
             if (!type) return ''
             const name = this.notificationTypesByShort.get(type)
             return name ? `${type} - ${name}` : type
+        },
+        classCourseLabel(entry) {
+            const cls = (entry?.student_class || '').toString().trim()
+            const course = (entry?.course_title || '').toString().trim()
+            if (cls && course) return `${cls} - ${course}`
+            return cls || course || ''
         },
         studentLabel(course, userId) {
             const student = this.findStudent(course, userId)

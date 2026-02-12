@@ -60,14 +60,20 @@
                         <div class="d-flex flex-column ga-2 w-100">
                             <div class="course-date-row d-flex align-center ga-2 w-100">
                                 <v-icon v-if="highlightedDateId === courseDate.id" size="x-small" color="success" class="course-date-icon">mdi-arrow-right-bold</v-icon>
-                                <v-chip size="x-small" variant="tonal" :color="highlightedDateId === courseDate.id ? 'success' : 'primary'" class="course-date-chip">
+                                <v-chip
+                                    size="x-small"
+                                    variant="tonal"
+                                    :color="selected_courseDate?.id === courseDate.id ? 'secondary' : (highlightedDateId === courseDate.id ? 'success' : 'primary')"
+                                    class="course-date-chip cursor-pointer"
+                                    @click.stop="selectCourseDate(courseDate)">
                                     {{ getWeekday(courseDate.date) }}
                                 </v-chip>
                                 <v-chip
                                     size="x-small"
-                                    :variant="highlightedDateId === courseDate.id ? 'flat' : 'outlined'"
-                                    :color="highlightedDateId === courseDate.id ? 'success' : undefined"
-                                    class="course-date-chip">
+                                    :variant="selected_courseDate?.id === courseDate.id ? 'flat' : (highlightedDateId === courseDate.id ? 'flat' : 'outlined')"
+                                    :color="selected_courseDate?.id === courseDate.id ? 'secondary' : (highlightedDateId === courseDate.id ? 'success' : undefined)"
+                                    class="course-date-chip cursor-pointer"
+                                    @click.stop="selectCourseDate(courseDate)">
                                     {{ formatDate(courseDate.date) }}
                                 </v-chip>
                                 <div class="course-date-hours text-body-2 flex-grow-1">
@@ -445,16 +451,24 @@ export default {
         async deleteDate(courseDate) {
             await this.courseDateStore.destroy(courseDate.id)
             await this.courseStore.index()
+            if (this.selected_courseDate?.id === courseDate.id) {
+                this.selected_courseDate = null
+            }
             this.delete_date_id = null
         },
         hasStatus(courseDate, status) {
             return Array.isArray(courseDate.status) && courseDate.status.includes(status)
         },
         courseDateRowClass(courseDate) {
+            if (this.selected_courseDate?.id === courseDate.id) return 'bg-secondary-lighten-5'
             if (this.hasStatus(courseDate, 'pruefung')) return 'bg-warning-lighten-4'
             if (this.hasStatus(courseDate, 'free')) return 'bg-success-lighten-2'
             if (this.highlightedDateId === courseDate.id) return 'bg-primary-lighten-4'
             return ''
+        },
+        selectCourseDate(courseDate) {
+            if (!courseDate) return
+            this.selected_courseDate = courseDate
         },
         async toggleStatus(courseDate, status) {
             const currentStatus = Array.isArray(courseDate.status) ? [...courseDate.status] : []

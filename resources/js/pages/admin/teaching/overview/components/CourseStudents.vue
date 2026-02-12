@@ -12,6 +12,25 @@
                             </v-chip>
                         </div>
                     </div>
+                    <div v-if="selectedCourseDateForCourse" class="d-flex align-center ga-2 text-right">
+                        <v-btn
+                            icon="mdi-chevron-left"
+                            size="small"
+                            color="primary"
+                            variant="tonal"
+                            :disabled="!hasPrevCourseDate"
+                            @click="selectPrevCourseDate" />
+                        <v-chip size="x-large" color="primary" variant="outlined" class="selected-course-date-chip">
+                            {{ selectedCourseDateLabel }}
+                        </v-chip>
+                        <v-btn
+                            icon="mdi-chevron-right"
+                            size="small"
+                            color="primary"
+                            variant="tonal"
+                            :disabled="!hasNextCourseDate"
+                            @click="selectNextCourseDate" />
+                    </div>
                 </v-card>
                 <div v-if="semesterCount === 2" class="d-flex flex-wrap align-center ga-2 mt-2">
                     <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">
@@ -130,6 +149,7 @@ import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useImport116Store } from '@/stores/admin/teaching/Import116Store'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
+import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
 import { useCourseBehaviourEntryStore } from '@/stores/admin/teaching/CourseBehaviourEntryStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
@@ -147,6 +167,7 @@ export default {
         this.adminStore = useAdminStore()
         this.import116Store = useImport116Store()
         this.courseStore = useCourseStore()
+        this.courseDateStore = useCourseDateStore()
         this.entryStore = useCourseStudentEntryStore()
         this.behaviourEntryStore = useCourseBehaviourEntryStore()
         this.teachingStore = useTeachingStore()
@@ -164,6 +185,7 @@ export default {
             adminStore: null,
             import116Store: null,
             courseStore: null,
+            courseDateStore: null,
             entryStore: null,
             behaviourEntryStore: null,
             teachingStore: null,
@@ -183,6 +205,7 @@ export default {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useImport116Store, ['import116_students']),
         ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'selected_course_student']),
+        ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapWritableState(useTeachingStore, ['settings']),
         semesterCount() {
             const schemaId = this.selected_course?.teaching_schema_id
@@ -351,6 +374,52 @@ export default {
                 return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
             })
         },
+        selectedCourseDateForCourse() {
+            const selectedDate = this.selected_courseDate
+            const selectedCourse = this.selected_course
+            if (!selectedDate?.id || !selectedCourse?.id) return null
+            return (selectedCourse.course_dates || []).find((d) => d?.id === selectedDate.id) || null
+        },
+        sortedCourseDates() {
+            const dates = Array.isArray(this.selected_course?.course_dates) ? [...this.selected_course.course_dates] : []
+            return dates
+                .filter((d) => !!this.normalizeDateKey(d?.date))
+                .sort((a, b) => {
+                    const da = this.normalizeDateKey(a?.date)
+                    const db = this.normalizeDateKey(b?.date)
+                    if (da !== db) return da.localeCompare(db)
+                    const ha = Array.isArray(a?.hours) ? Math.min(...a.hours.map((h) => Number(h)).filter((h) => Number.isFinite(h))) : 999
+                    const hb = Array.isArray(b?.hours) ? Math.min(...b.hours.map((h) => Number(h)).filter((h) => Number.isFinite(h))) : 999
+                    return ha - hb
+                })
+        },
+        selectedCourseDateIndex() {
+            if (!this.selectedCourseDateForCourse?.id) return -1
+            return this.sortedCourseDates.findIndex((d) => d?.id === this.selectedCourseDateForCourse.id)
+        },
+        hasPrevCourseDate() {
+            return this.selectedCourseDateIndex > 0
+        },
+        hasNextCourseDate() {
+            return this.selectedCourseDateIndex >= 0 && this.selectedCourseDateIndex < this.sortedCourseDates.length - 1
+        },
+        selectedCourseDateLabel() {
+            const courseDate = this.selectedCourseDateForCourse
+            if (!courseDate) return ''
+            const weekday = this.getWeekday(courseDate.date)
+            const date = this.formatDate(courseDate.date)
+            const hours = Array.isArray(courseDate.hours)
+                ? [...courseDate.hours]
+                    .map((h) => Number(h))
+                    .filter((h) => Number.isFinite(h))
+                    .sort((a, b) => a - b)
+                    .map((h) => `${h}. Std`)
+                    .join(', ')
+                : ''
+            if (weekday && date && hours) return `${weekday}, ${date} - ${hours}`
+            if (date && hours) return `${date} - ${hours}`
+            return date || hours || ''
+        },
     },
 
     watch: {
@@ -366,8 +435,13 @@ export default {
             handler(course) {
                 if (course?.id) {
                     this.behaviourEntryStore.indexByCourse(course.id)
+                    if (this.selected_courseDate?.id) {
+                        const exists = (course.course_dates || []).some((d) => d?.id === this.selected_courseDate.id)
+                        if (!exists) this.selected_courseDate = null
+                    }
                 } else {
                     this.behaviourEntryStore.courseEntries = []
+                    this.selected_courseDate = null
                 }
             },
         },
@@ -463,6 +537,12 @@ export default {
             const d = parseLocalDate(date)
             if (isNaN(d.getTime())) return ''
             return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        },
+        getWeekday(date) {
+            if (!date) return ''
+            const d = parseLocalDate(date)
+            if (isNaN(d.getTime())) return ''
+            return d.toLocaleDateString('de-DE', { weekday: 'long' })
         },
         dueDateColor(date) {
             const due = parseLocalDate(date)
@@ -629,6 +709,14 @@ export default {
             this.selected_course_student = student
             this.action_2 = 'course_student_view'
         },
+        selectPrevCourseDate() {
+            if (!this.hasPrevCourseDate) return
+            this.selected_courseDate = this.sortedCourseDates[this.selectedCourseDateIndex - 1] || null
+        },
+        selectNextCourseDate() {
+            if (!this.hasNextCourseDate) return
+            this.selected_courseDate = this.sortedCourseDates[this.selectedCourseDateIndex + 1] || null
+        },
     },
 }
 </script>
@@ -636,6 +724,24 @@ export default {
 <style scoped>
 .student-row {
     min-width: 0;
+}
+
+.selected-course-date-chip {
+    min-width: 320px;
+    max-width: 60%;
+    min-height: 44px;
+    margin-left: 12px;
+    font-weight: 800;
+    background-color: #ffffff !important;
+    color: #0d1b2a !important;
+    border-color: #2f4ea1 !important;
+}
+
+.selected-course-date-chip :deep(.v-chip__content) {
+    font-size: 1rem;
+    line-height: 1.4;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .student-name {
@@ -671,6 +777,10 @@ export default {
 }
 
 @media (max-width: 900px) {
+    .selected-course-date-chip {
+        max-width: 100%;
+    }
+
     .student-name {
         max-width: 100%;
     }

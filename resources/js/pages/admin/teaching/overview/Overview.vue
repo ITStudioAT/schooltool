@@ -18,17 +18,17 @@
             v-if="selected_course" />
 
         <its-menu-button
-            subtitle="Termine"
-            :icon="show_dates ? 'mdi-eye' : 'mdi-eye-off'"
-            :color="show_dates ? 'success' : 'secondary'"
-            @click="show_dates = !show_dates"
-            v-if="selected_course" />
-
-        <its-menu-button
             subtitle="Arbeiten"
             :icon="show_works ? 'mdi-eye' : 'mdi-eye-off'"
             :color="show_works ? 'success' : 'secondary'"
             @click="show_works = !show_works"
+            v-if="selected_course" />
+
+        <its-menu-button
+            subtitle="Termine"
+            :icon="show_dates ? 'mdi-eye' : 'mdi-eye-off'"
+            :color="show_dates ? 'success' : 'secondary'"
+            @click="show_dates = !show_dates"
             v-if="selected_course" />
     </v-card>
 
@@ -38,6 +38,11 @@
         <v-row v-if="show_my_courses" :style="action_2 == 'course_student_view' ? 'pointer-events:none; opacity:0.6' : ''">
             <v-col>
                 <MyCourses />
+            </v-col>
+        </v-row>
+        <v-row v-if="show_my_courses && !selected_course && action != 'teaching_course_new_or_edit'" :style="action_2 == 'course_student_view' ? 'pointer-events:none; opacity:0.6' : ''">
+            <v-col>
+                <MyTimetable />
             </v-col>
         </v-row>
 
@@ -98,9 +103,10 @@ import CourseInfos from './components/CourseInfos.vue'
 import CourseDates from './components/CourseDates.vue'
 import CourseWorks from './components/CourseWorks.vue'
 import MyInfos from './components/MyInfos.vue'
+import MyTimetable from './components/MyTimetable.vue'
 
 export default {
-    components: { ItsGridBox, MyCourses, ItsMenuButton, CourseStudents, CourseStudent, CourseInfos, CourseDates, CourseWorks, MyInfos },
+    components: { ItsGridBox, MyCourses, ItsMenuButton, CourseStudents, CourseStudent, CourseInfos, CourseDates, CourseWorks, MyInfos, MyTimetable },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
