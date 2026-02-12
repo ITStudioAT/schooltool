@@ -9,7 +9,6 @@ use App\Models\TeachingCourseDate;
 use App\Services\TeachingCourseDateService;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 class CourseDateController extends Controller
@@ -227,11 +226,6 @@ class CourseDateController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        Log::info('attendance.updateStatus.start', [
-            'course_date_id' => $course_date->id,
-            'incoming' => $request->all(),
-        ]);
-
         $validated = $request->validate([
             'status' => 'nullable|array',
             'status.*' => 'string',
@@ -243,10 +237,6 @@ class CourseDateController extends Controller
         ]);
         $updateData = [];
         $supportsAttendanceColumns = $this->supportsAttendanceColumns();
-        Log::info('attendance.updateStatus.schema', [
-            'course_date_id' => $course_date->id,
-            'supports_attendance_columns' => $supportsAttendanceColumns,
-        ]);
         $statusProvided = array_key_exists('status', $validated);
         $attendanceProvided = array_key_exists('attendance', $validated);
         $attendanceCheckedProvided = array_key_exists('attendance_checked', $validated);
@@ -305,17 +295,8 @@ class CourseDateController extends Controller
         if (! empty($updateData)) {
             try {
                 $course_date->update($updateData);
-                Log::info('attendance.updateStatus.saved', [
-                    'course_date_id' => $course_date->id,
-                    'path' => $supportsAttendanceColumns ? 'columns' : 'status_fallback',
-                    'update_data' => $updateData,
-                ]);
             } catch (QueryException $e) {
                 if (! $this->isMissingAttendanceColumnException($e)) {
-                    Log::error('attendance.updateStatus.query_exception', [
-                        'course_date_id' => $course_date->id,
-                        'message' => $e->getMessage(),
-                    ]);
                     throw $e;
                 }
                 $currentStatus = is_array($course_date->status) ? $course_date->status : [];
@@ -331,20 +312,10 @@ class CourseDateController extends Controller
                 $course_date->update([
                     'status' => $this->buildStatusWithAttendanceMeta($publicStatus, $attendance, $attendanceChecked),
                 ]);
-                Log::warning('attendance.updateStatus.saved_after_exception_fallback', [
-                    'course_date_id' => $course_date->id,
-                    'exception' => $e->getMessage(),
-                ]);
             }
         }
 
         $course_date->refresh();
-        Log::info('attendance.updateStatus.result', [
-            'course_date_id' => $course_date->id,
-            'status' => $course_date->status,
-            'attendance' => $course_date->attendance,
-            'attendance_checked' => $course_date->attendance_checked,
-        ]);
 
         return response()->json(new CourseDateResource($course_date));
     }

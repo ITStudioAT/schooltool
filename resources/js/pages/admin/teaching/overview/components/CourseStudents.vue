@@ -56,10 +56,12 @@
                             size="small"
                             class="students-attendance-check-btn"
                             :variant="'flat'"
-                            :color="attendanceCheckedForSelectedDate ? 'success' : 'warning'"
-                            :class="attendanceCheckedForSelectedDate ? '' : 'students-attendance-check-btn--open'"
+                            :color="attendanceCheckedForSelectedDate && !hasUnsavedAttendanceChanges ? 'success' : 'warning'"
+                            :class="attendanceCheckedForSelectedDate && !hasUnsavedAttendanceChanges ? '' : 'students-attendance-check-btn--open'"
+                            :loading="savingAttendance"
                             @click="toggleAttendanceChecked">
-                            {{ attendanceCheckedForSelectedDate ? 'Anwesenheit geprüft' : 'Anwesenheit offen' }}
+                            <v-icon start>{{ attendanceCheckedForSelectedDate && !hasUnsavedAttendanceChanges ? 'mdi-check-circle' : 'mdi-content-save' }}</v-icon>
+                            {{ attendanceCheckedForSelectedDate && !hasUnsavedAttendanceChanges ? 'Anwesenheit geprüft' : 'Anwesenheit speichern & prüfen' }}
                         </v-btn>
                         <v-btn
                             size="small"
@@ -98,16 +100,6 @@
                     </v-card-text>
                     <v-divider />
                     <v-card-text class="pa-0">
-                        <div v-if="selectedCourseDateForCourse" class="pa-3 pb-1">
-                            <v-textarea
-                                :model-value="attendanceFieldRawJson"
-                                label="Attendance (raw)"
-                                readonly
-                                auto-grow
-                                rows="2"
-                                variant="outlined"
-                                class="attendance-raw-field" />
-                        </div>
                         <v-list density="compact">
                             <v-list-item
                                 v-for="student in sortedSelectedStudents"
@@ -127,8 +119,6 @@
                                             :key="`presence-${student.id}-${isStudentPresentForSelectedDate(student.id) ? '1' : '0'}`"
                                             size="x-small"
                                             :color="isStudentPresentForSelectedDate(student.id) ? 'success' : 'error'"
-                                            :loading="!!attendance_toggle_pending[`${selectedCourseDateForCourse.id}:${student.id}`]"
-                                            :disabled="!!attendance_toggle_pending[`${selectedCourseDateForCourse.id}:${student.id}`]"
                                             variant="tonal"
                                             @click.stop="toggleStudentPresence(student)">
                                             <v-icon size="16">
@@ -142,18 +132,11 @@
                                     <div class="student-name text-body-2" :class="show_bulk_entry ? '' : 'cursor-pointer'" @click="show_bulk_entry ? null : openStudent(student)">
                                         {{ student.last_name }}, {{ student.first_name }}
                                     </div>
-                                    <v-chip
-                                        v-if="selectedCourseDateForCourse"
-                                        size="x-small"
-                                        :color="isStudentPresentForSelectedDate(student.id) ? 'success' : 'error'"
-                                        variant="tonal">
-                                        {{ isStudentPresentForSelectedDate(student.id) ? 'Anwesend' : 'Abwesend' }}
-                                    </v-chip>
                                     <v-chip v-if="(student.stars || []).length" size="x-small" variant="tonal" color="amber-darken-2">
                                         <v-icon start size="14">mdi-star</v-icon>
                                         {{ (student.stars || []).length }}
                                     </v-chip>
-                                    <div class="student-metrics d-flex flex-wrap align-center ga-2">
+                                    <div class="student-metrics d-flex flex-wrap align-center ga-2 ml-auto">
                                         <template v-for="(count, type) in (studentBehaviourCounts[student.id] || {})" :key="`beh-${student.id}-${type}`">
                                             <v-chip size="x-small" variant="tonal" color="warning">{{ type }}{{ count > 1 ? ` ×${count}` : '' }}</v-chip>
                                         </template>
@@ -242,7 +225,8 @@ export default {
             activeSemester: null,
             presence_date_id: null,
             presence_by_student: {},
-            attendance_toggle_pending: {},
+            savingAttendance: false,
+            hasUnsavedAttendanceChanges: false,
         }
     },
 
@@ -473,15 +457,6 @@ export default {
             if (date && hours) return `${date} - ${hours}`
             return date || hours || ''
         },
-        attendanceFieldRawJson() {
-            const courseDate = this.selectedCourseDateForCourse
-            const raw = courseDate?.attendance && typeof courseDate.attendance === 'object' ? courseDate.attendance : {}
-            try {
-                return JSON.stringify(raw, null, 2)
-            } catch {
-                return '{}'
-            }
-        },
     },
 
     watch: {
@@ -519,9 +494,13 @@ export default {
             },
         },
         selected_courseDate: {
-            handler(val) {
+            handler(val, oldVal) {
                 if (!val?.id) return
                 this.syncPresenceMapFromDate(val)
+                // Clear unsaved flag only when switching to a different date
+                if (String(val.id) !== String(oldVal?.id)) {
+                    this.hasUnsavedAttendanceChanges = false
+                }
             },
             deep: false,
         },
@@ -828,51 +807,45 @@ export default {
             }
             return false
         },
-        async toggleStudentPresence(student) {
+        toggleStudentPresence(student) {
             if (!student?.id || !this.selectedCourseDateForCourse) return
             const date = this.selectedCourseDateForCourse
-            const currentCourseId = this.selected_course?.id
-            const currentDateId = date.id
-            const pendingKey = `${date.id}:${student.id}`
-            this.attendance_toggle_pending = {
-                ...this.attendance_toggle_pending,
-                [pendingKey]: true,
+            const attendance = this.getAttendanceMap(date)
+            const key = String(student.id)
+            const isPresent = this.isAttendancePresentValue(attendance[key])
+
+            // Toggle locally only - no API call
+            if (isPresent) {
+                attendance[key] = false
+            } else {
+                delete attendance[key]
             }
-            const response = await this.courseDateStore.updateStatus(date.id, {
-                toggle_student_id: student.id,
-                attendance_checked: this.attendanceCheckedForSelectedDate,
-                client_toggle_version: 'v10',
-            })
-            const updatedDate = this.normalizeCourseDatePayload(response)
-            if (!updatedDate?.id) {
-                this.attendance_toggle_pending = {
-                    ...this.attendance_toggle_pending,
-                    [pendingKey]: false,
-                }
-                return
+
+            // Update only selected_courseDate (minimal state change, no watchers triggered)
+            this.selected_courseDate = {
+                ...date,
+                attendance: attendance,
             }
-            const normalizedStatus = Array.isArray(updatedDate.status)
-                ? updatedDate.status.filter((item) => typeof item === 'string' && ['free', 'pruefung'].includes(item))
-                : []
-            this.applyUpdatedCourseDate({
-                ...updatedDate,
-                status: normalizedStatus,
-                attendance: this.getAttendanceMap(updatedDate),
-                attendance_checked: typeof updatedDate.attendance_checked === 'boolean'
-                    ? updatedDate.attendance_checked
-                    : !!(Array.isArray(updatedDate.status) && updatedDate.status.includes('att_checked:1')),
-            })
-            this.attendance_toggle_pending = {
-                ...this.attendance_toggle_pending,
-                [pendingKey]: false,
-            }
+
+            // Mark as unsaved
+            this.hasUnsavedAttendanceChanges = true
         },
         async toggleAttendanceChecked() {
-            if (!this.selectedCourseDateForCourse) return
+            if (!this.selectedCourseDateForCourse || this.savingAttendance) return
             const date = this.selectedCourseDateForCourse
             const attendance = { ...this.getAttendanceMap(date) }
-            const nextChecked = !this.attendanceCheckedForSelectedDate
-            await this.persistAttendance(attendance, nextChecked)
+
+            // If there are unsaved changes, always save and mark as checked
+            // If no unsaved changes, toggle the checked state
+            const nextChecked = this.hasUnsavedAttendanceChanges ? true : !this.attendanceCheckedForSelectedDate
+
+            this.savingAttendance = true
+            try {
+                await this.persistAttendance(attendance, nextChecked)
+                this.hasUnsavedAttendanceChanges = false
+            } finally {
+                this.savingAttendance = false
+            }
         },
         dueDateColor(date) {
             const due = parseLocalDate(date)
