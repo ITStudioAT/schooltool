@@ -105,13 +105,14 @@ export const useCourseDateStore = defineStore('AdminCourseDateStore', {
             }
         },
 
-        async updateStatus(dateId, status) {
+        async updateStatus(dateId, statusOrPayload) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
-                const response = await axios.patch(`/api/admin/teaching/course_dates/${dateId}/status`, { status })
-                return response.data
+                const payload = Array.isArray(statusOrPayload) ? { status: statusOrPayload } : statusOrPayload || {}
+                const response = await axios.patch(`/api/admin/teaching/course_dates/${dateId}/status`, payload)
+                return response?.data?.data || response?.data || null
             } catch (error) {
                 notification.notify({
                     status: error.response?.status,

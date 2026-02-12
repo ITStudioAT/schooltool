@@ -22,7 +22,9 @@
       "Bash(git merge:*)",
       "Bash(git stash:*)",
       "Bash(powershell:*)",
-      "Bash(npx vite build:*)"
+      "Bash(npx vite build:*)",
+      "Bash(Get-Content appHttpControllersAdminTeachingCourseDateController.php)",
+      "Bash(Select-Object -Skip 217 -First 200)"
     ],
     "deny": [],
     "ask": []

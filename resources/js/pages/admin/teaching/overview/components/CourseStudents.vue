@@ -52,6 +52,16 @@
                         </div>
                         <v-spacer class="students-header-spacer" />
                         <v-btn
+                            v-if="selectedCourseDateForCourse"
+                            size="small"
+                            class="students-attendance-check-btn"
+                            :variant="'flat'"
+                            :color="attendanceCheckedForSelectedDate ? 'success' : 'warning'"
+                            :class="attendanceCheckedForSelectedDate ? '' : 'students-attendance-check-btn--open'"
+                            @click="toggleAttendanceChecked">
+                            {{ attendanceCheckedForSelectedDate ? 'Anwesenheit geprüft' : 'Anwesenheit offen' }}
+                        </v-btn>
+                        <v-btn
                             size="small"
                             class="students-bulk-btn"
                             :variant="show_bulk_entry ? 'flat' : 'outlined'"
@@ -88,12 +98,21 @@
                     </v-card-text>
                     <v-divider />
                     <v-card-text class="pa-0">
+                        <div v-if="selectedCourseDateForCourse" class="pa-3 pb-1">
+                            <v-textarea
+                                :model-value="attendanceFieldRawJson"
+                                label="Attendance (raw)"
+                                readonly
+                                auto-grow
+                                rows="2"
+                                variant="outlined"
+                                class="attendance-raw-field" />
+                        </div>
                         <v-list density="compact">
                             <v-list-item
                                 v-for="student in sortedSelectedStudents"
                                 :key="student.id"
-                                :class="show_bulk_entry ? '' : 'cursor-pointer'"
-                                @click="show_bulk_entry ? null : openStudent(student)">
+                                :class="show_bulk_entry ? '' : ''">
                                 <div class="student-row d-flex flex-wrap align-center ga-2 w-100">
                                     <v-checkbox
                                         v-if="show_bulk_entry"
@@ -102,10 +121,34 @@
                                         density="compact"
                                         hide-details
                                         class="flex-grow-0" />
+                                    <div class="student-presence student-presence--left">
+                                        <v-btn
+                                            v-if="selectedCourseDateForCourse"
+                                            :key="`presence-${student.id}-${isStudentPresentForSelectedDate(student.id) ? '1' : '0'}`"
+                                            size="x-small"
+                                            :color="isStudentPresentForSelectedDate(student.id) ? 'success' : 'error'"
+                                            :loading="!!attendance_toggle_pending[`${selectedCourseDateForCourse.id}:${student.id}`]"
+                                            :disabled="!!attendance_toggle_pending[`${selectedCourseDateForCourse.id}:${student.id}`]"
+                                            variant="tonal"
+                                            @click.stop="toggleStudentPresence(student)">
+                                            <v-icon size="16">
+                                                {{ isStudentPresentForSelectedDate(student.id) ? 'mdi-check' : 'mdi-close' }}
+                                            </v-icon>
+                                        </v-btn>
+                                    </div>
                                     <v-chip v-if="student.schoolclass || student.class" size="x-small" variant="tonal" color="primary">
                                         {{ student.schoolclass || student.class }}
                                     </v-chip>
-                                    <div class="student-name text-body-2">{{ student.last_name }}, {{ student.first_name }}</div>
+                                    <div class="student-name text-body-2" :class="show_bulk_entry ? '' : 'cursor-pointer'" @click="show_bulk_entry ? null : openStudent(student)">
+                                        {{ student.last_name }}, {{ student.first_name }}
+                                    </div>
+                                    <v-chip
+                                        v-if="selectedCourseDateForCourse"
+                                        size="x-small"
+                                        :color="isStudentPresentForSelectedDate(student.id) ? 'success' : 'error'"
+                                        variant="tonal">
+                                        {{ isStudentPresentForSelectedDate(student.id) ? 'Anwesend' : 'Abwesend' }}
+                                    </v-chip>
                                     <v-chip v-if="(student.stars || []).length" size="x-small" variant="tonal" color="amber-darken-2">
                                         <v-icon start size="14">mdi-star</v-icon>
                                         {{ (student.stars || []).length }}
@@ -171,7 +214,6 @@ export default {
         this.entryStore = useCourseStudentEntryStore()
         this.behaviourEntryStore = useCourseBehaviourEntryStore()
         this.teachingStore = useTeachingStore()
-        this.courseStore.index()
         if (!this.teachingStore.settings) {
             await this.teachingStore.loadSettings()
         }
@@ -198,13 +240,16 @@ export default {
             show_bulk_entry: false,
             bulk_entry_form: this.emptyBulkEntryForm(),
             activeSemester: null,
+            presence_date_id: null,
+            presence_by_student: {},
+            attendance_toggle_pending: {},
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useImport116Store, ['import116_students']),
-        ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'selected_course_student']),
+        ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'selected_course_id', 'selected_course_student']),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapWritableState(useTeachingStore, ['settings']),
         semesterCount() {
@@ -378,7 +423,8 @@ export default {
             const selectedDate = this.selected_courseDate
             const selectedCourse = this.selected_course
             if (!selectedDate?.id || !selectedCourse?.id) return null
-            return (selectedCourse.course_dates || []).find((d) => d?.id === selectedDate.id) || null
+            const exists = (selectedCourse.course_dates || []).some((d) => String(d?.id) === String(selectedDate.id))
+            return exists ? selectedDate : null
         },
         sortedCourseDates() {
             const dates = Array.isArray(this.selected_course?.course_dates) ? [...this.selected_course.course_dates] : []
@@ -395,13 +441,20 @@ export default {
         },
         selectedCourseDateIndex() {
             if (!this.selectedCourseDateForCourse?.id) return -1
-            return this.sortedCourseDates.findIndex((d) => d?.id === this.selectedCourseDateForCourse.id)
+            return this.sortedCourseDates.findIndex((d) => String(d?.id) === String(this.selectedCourseDateForCourse.id))
         },
         hasPrevCourseDate() {
             return this.selectedCourseDateIndex > 0
         },
         hasNextCourseDate() {
             return this.selectedCourseDateIndex >= 0 && this.selectedCourseDateIndex < this.sortedCourseDates.length - 1
+        },
+        attendanceCheckedForSelectedDate() {
+            const courseDate = this.selectedCourseDateForCourse
+            if (!courseDate) return false
+            if (typeof courseDate.attendance_checked === 'boolean') return courseDate.attendance_checked
+            const status = Array.isArray(courseDate.status) ? courseDate.status : []
+            return status.includes('att_checked:1')
         },
         selectedCourseDateLabel() {
             const courseDate = this.selectedCourseDateForCourse
@@ -420,6 +473,15 @@ export default {
             if (date && hours) return `${date} - ${hours}`
             return date || hours || ''
         },
+        attendanceFieldRawJson() {
+            const courseDate = this.selectedCourseDateForCourse
+            const raw = courseDate?.attendance && typeof courseDate.attendance === 'object' ? courseDate.attendance : {}
+            try {
+                return JSON.stringify(raw, null, 2)
+            } catch {
+                return '{}'
+            }
+        },
     },
 
     watch: {
@@ -436,14 +498,32 @@ export default {
                 if (course?.id) {
                     this.behaviourEntryStore.indexByCourse(course.id)
                     if (this.selected_courseDate?.id) {
-                        const exists = (course.course_dates || []).some((d) => d?.id === this.selected_courseDate.id)
-                        if (!exists) this.selected_courseDate = null
+                        const dates = Array.isArray(course.course_dates) ? [...course.course_dates] : []
+                        const idx = dates.findIndex((d) => String(d?.id) === String(this.selected_courseDate.id))
+                        if (idx === -1) {
+                            this.selected_courseDate = null
+                        } else {
+                            const fresh = dates[idx] || null
+                            this.selected_courseDate = fresh
+                            if (fresh) {
+                                this.syncPresenceMapFromDate(fresh)
+                            }
+                        }
                     }
                 } else {
                     this.behaviourEntryStore.courseEntries = []
                     this.selected_courseDate = null
+                    this.presence_date_id = null
+                    this.presence_by_student = {}
                 }
             },
+        },
+        selected_courseDate: {
+            handler(val) {
+                if (!val?.id) return
+                this.syncPresenceMapFromDate(val)
+            },
+            deep: false,
         },
         'data.classes': {
             handler(newClasses) {
@@ -543,6 +623,256 @@ export default {
             const d = parseLocalDate(date)
             if (isNaN(d.getTime())) return ''
             return d.toLocaleDateString('de-DE', { weekday: 'long' })
+        },
+        normalizeCourseDatePayload(response) {
+            if (!response) return null
+            return response?.data || response
+        },
+        applyUpdatedCourseDate(updatedDate) {
+            if (!updatedDate?.id) return
+            this.selected_courseDate = updatedDate
+            this.syncPresenceMapFromDate(updatedDate)
+            if (this.selected_course?.id) {
+                const dates = Array.isArray(this.selected_course.course_dates) ? [...this.selected_course.course_dates] : []
+                const idx = dates.findIndex((d) => String(d?.id) === String(updatedDate.id))
+                if (idx >= 0) {
+                    dates.splice(idx, 1, { ...dates[idx], ...updatedDate })
+                } else {
+                    dates.push(updatedDate)
+                }
+                this.selected_course.course_dates = dates
+
+                const courseIdx = (this.courses || []).findIndex((course) => String(course?.id) === String(this.selected_course.id))
+                if (courseIdx >= 0) {
+                    const course = { ...this.courses[courseIdx] }
+                    const courseDates = Array.isArray(course.course_dates) ? [...course.course_dates] : []
+                    const dateIdx = courseDates.findIndex((d) => String(d?.id) === String(updatedDate.id))
+                    if (dateIdx >= 0) {
+                        courseDates.splice(dateIdx, 1, { ...courseDates[dateIdx], ...updatedDate })
+                    } else {
+                        courseDates.push(updatedDate)
+                    }
+                    course.course_dates = courseDates
+                    this.courses.splice(courseIdx, 1, course)
+                    if (String(this.selected_course_id) === String(course.id)) {
+                        this.selected_course = course
+                    }
+                }
+            }
+        },
+        isStudentPresentForSelectedDate(studentId) {
+            const date = this.selectedCourseDateForCourse
+            if (!date) return true
+            const key = String(studentId)
+            if (Object.prototype.hasOwnProperty.call(this.presence_by_student, key)) {
+                return !!this.presence_by_student[key]
+            }
+            const attendance = this.getAttendanceMap(date)
+            return this.isAttendancePresentValue(attendance[key])
+        },
+        syncPresenceMapFromDate(courseDate) {
+            if (!courseDate?.id) return
+            const dateId = String(courseDate.id)
+            const attendance = this.getAttendanceMap(courseDate)
+            const map = { ...this.presence_by_student }
+            // default known keys to present, then apply absences from backend attendance map
+            Object.keys(map).forEach((id) => {
+                map[id] = true
+            })
+            Object.entries(attendance).forEach(([id, value]) => {
+                const key = String(id || '').trim()
+                if (!key) return
+                map[key] = this.isAttendancePresentValue(value)
+            })
+            this.presence_date_id = dateId
+            this.presence_by_student = map
+        },
+        getAttendanceMap(courseDate) {
+            if (!courseDate) return {}
+            if (courseDate.attendance && typeof courseDate.attendance === 'object') {
+                const normalized = this.normalizeIndexedAttendance(courseDate.attendance)
+                const unprefixed = {}
+                // Strip 's_' prefix from keys
+                Object.entries(normalized).forEach(([key, value]) => {
+                    const cleanKey = key.startsWith('s_') ? key.substring(2) : key
+                    unprefixed[cleanKey] = value
+                })
+                return this.sanitizeAttendanceMap(unprefixed)
+            }
+            const status = Array.isArray(courseDate.status) ? courseDate.status : []
+            const attendance = {}
+            status.forEach((item) => {
+                if (typeof item !== 'string' || !item.startsWith('att:')) return
+                const parts = item.split(':')
+                if (parts.length < 3) return
+                const studentId = (parts[1] || '').toString().trim()
+                const present = (parts[2] || '').toString().trim()
+                if (!studentId) return
+                attendance[studentId] = ['1', 'true'].includes(present)
+            })
+            return this.sanitizeAttendanceMap(attendance)
+        },
+        normalizeIndexedAttendance(attendanceLike) {
+            const input = attendanceLike && typeof attendanceLike === 'object' ? attendanceLike : {}
+            const entries = Object.entries(input)
+            if (!entries.length) return {}
+
+            // If attendance arrives as indexed keys (0,1,2,...) remap to real student ids by course student order.
+            const hasOnlySmallIndexes = entries.every(([k]) => /^\d+$/.test(String(k)) && Number(k) >= 0 && Number(k) <= 200)
+            if (!hasOnlySmallIndexes) return input
+
+            const studentIds = Array.isArray(this.selected_course?.students)
+                ? this.selected_course.students.map((id) => String(id)).filter((id) => id && id !== 'undefined' && id !== 'null')
+                : []
+            if (!studentIds.length) return input
+
+            const remapped = {}
+            entries.forEach(([idxRaw, value]) => {
+                const idx = Number(idxRaw)
+                const studentId = studentIds[idx]
+                if (!studentId) return
+                remapped[String(studentId)] = value
+            })
+            return remapped
+        },
+        sanitizeAttendanceMap(attendanceLike) {
+            const input = attendanceLike && typeof attendanceLike === 'object' ? attendanceLike : {}
+            const validIds = new Set(
+                (this.selected_course?.students_info || [])
+                    .flatMap((s) => [s?.id, s?.user_id, s?.import116_id])
+                    .map((id) => String(id))
+                    .filter((id) => id && id !== 'undefined' && id !== 'null')
+            )
+            const hasKnownStudents = validIds.size > 0
+            const sanitized = {}
+            Object.entries(input).forEach(([studentId, value]) => {
+                const key = String(studentId || '').trim()
+                if (!key) return
+                const isNumeric = /^\d+$/.test(key)
+                const numericKey = isNumeric ? Number(key) : null
+                if (hasKnownStudents) {
+                    if (!validIds.has(key)) {
+                        // Keep large numeric IDs and non-numeric IDs to avoid dropping valid students from partial course payloads.
+                        if (isNumeric && Number.isFinite(numericKey) && numericKey >= 1000) {
+                            // keep
+                        } else if (!isNumeric) {
+                            // keep
+                        } else {
+                            return
+                        }
+                    }
+                } else {
+                    // Ignore obvious positional array indexes from legacy payloads.
+                    if (isNumeric && Number.isFinite(numericKey) && numericKey >= 0 && numericKey <= 60) return
+                }
+                if (!this.isAttendancePresentValue(value)) {
+                    sanitized[key] = false
+                }
+            })
+            return sanitized
+        },
+        buildStatusWithAttendanceMeta(baseStatus, attendance, attendanceChecked) {
+            const publicStatus = Array.isArray(baseStatus)
+                ? [...baseStatus].filter((item) => ['free', 'pruefung'].includes(item))
+                : []
+            const merged = [...publicStatus]
+            Object.entries(attendance || {}).forEach(([studentId, present]) => {
+                if (this.isAttendancePresentValue(present)) return
+                const key = String(studentId || '').trim()
+                if (!key) return
+                merged.push(`att:${key}:0`)
+            })
+            if (attendanceChecked) merged.push('att_checked:1')
+            return [...new Set(merged)]
+        },
+        isAttendancePresentValue(value) {
+            if (value === false) return false
+            if (value === 0) return false
+            if (value === '0') return false
+            if (value === 'false') return false
+            return true
+        },
+        async persistAttendance(attendance, attendanceChecked) {
+            const date = this.selectedCourseDateForCourse
+            if (!date?.id) return false
+            const cleanAttendance = this.sanitizeAttendanceMap(attendance)
+            const payload = {
+                attendance: cleanAttendance,
+                attendance_checked: !!attendanceChecked,
+            }
+            let response = await this.courseDateStore.updateStatus(date.id, payload)
+            let updatedDate = this.normalizeCourseDatePayload(response)
+            if (!updatedDate?.id) {
+                // Backend compatibility fallback: persist attendance via status field on update endpoint.
+                const mergedStatus = this.buildStatusWithAttendanceMeta(date.status, cleanAttendance, attendanceChecked)
+                response = await this.courseDateStore.update({
+                    id: date.id,
+                    date: date.date,
+                    status: mergedStatus,
+                })
+                updatedDate = this.normalizeCourseDatePayload(response)
+            }
+            if (updatedDate?.id) {
+                const normalizedStatus = Array.isArray(updatedDate.status)
+                    ? updatedDate.status.filter((item) => typeof item === 'string' && ['free', 'pruefung'].includes(item))
+                    : []
+                this.applyUpdatedCourseDate({
+                    ...updatedDate,
+                    status: normalizedStatus,
+                    attendance: this.getAttendanceMap(updatedDate),
+                    attendance_checked: typeof updatedDate.attendance_checked === 'boolean'
+                        ? updatedDate.attendance_checked
+                        : !!(Array.isArray(updatedDate.status) && updatedDate.status.includes('att_checked:1')),
+                })
+                return updatedDate
+            }
+            return false
+        },
+        async toggleStudentPresence(student) {
+            if (!student?.id || !this.selectedCourseDateForCourse) return
+            const date = this.selectedCourseDateForCourse
+            const currentCourseId = this.selected_course?.id
+            const currentDateId = date.id
+            const pendingKey = `${date.id}:${student.id}`
+            this.attendance_toggle_pending = {
+                ...this.attendance_toggle_pending,
+                [pendingKey]: true,
+            }
+            const response = await this.courseDateStore.updateStatus(date.id, {
+                toggle_student_id: student.id,
+                attendance_checked: this.attendanceCheckedForSelectedDate,
+                client_toggle_version: 'v10',
+            })
+            const updatedDate = this.normalizeCourseDatePayload(response)
+            if (!updatedDate?.id) {
+                this.attendance_toggle_pending = {
+                    ...this.attendance_toggle_pending,
+                    [pendingKey]: false,
+                }
+                return
+            }
+            const normalizedStatus = Array.isArray(updatedDate.status)
+                ? updatedDate.status.filter((item) => typeof item === 'string' && ['free', 'pruefung'].includes(item))
+                : []
+            this.applyUpdatedCourseDate({
+                ...updatedDate,
+                status: normalizedStatus,
+                attendance: this.getAttendanceMap(updatedDate),
+                attendance_checked: typeof updatedDate.attendance_checked === 'boolean'
+                    ? updatedDate.attendance_checked
+                    : !!(Array.isArray(updatedDate.status) && updatedDate.status.includes('att_checked:1')),
+            })
+            this.attendance_toggle_pending = {
+                ...this.attendance_toggle_pending,
+                [pendingKey]: false,
+            }
+        },
+        async toggleAttendanceChecked() {
+            if (!this.selectedCourseDateForCourse) return
+            const date = this.selectedCourseDateForCourse
+            const attendance = { ...this.getAttendanceMap(date) }
+            const nextChecked = !this.attendanceCheckedForSelectedDate
+            await this.persistAttendance(attendance, nextChecked)
         },
         dueDateColor(date) {
             const due = parseLocalDate(date)
@@ -753,10 +1083,18 @@ export default {
 
 .student-metrics {
     min-width: 0;
-    margin-left: auto;
+    margin-left: 0;
     justify-content: flex-end;
     flex: 0 1 auto;
     max-width: 55%;
+}
+
+.student-presence {
+    flex: 0 0 auto;
+}
+
+.student-presence--left {
+    margin-left: 0;
 }
 
 @media (max-width: 600px) {
@@ -768,6 +1106,16 @@ export default {
         width: 100%;
         margin-top: 6px;
     }
+
+    .students-attendance-check-btn {
+        width: 100%;
+        margin-top: 6px;
+    }
+}
+
+.students-attendance-check-btn--open {
+    color: #1f1300 !important;
+    font-weight: 700;
 }
 
 @media (min-width: 601px) {

@@ -16,12 +16,16 @@ class TeachingCourseDate extends Model
         'hours',
         'content',
         'status',
+        'attendance',
+        'attendance_checked',
     ];
 
     protected $casts = [
         'date' => 'date',
         'hours' => 'array',
         'status' => 'array',
+        'attendance' => 'array',
+        'attendance_checked' => 'boolean',
     ];
 
     public function teachingCourse(): BelongsTo
