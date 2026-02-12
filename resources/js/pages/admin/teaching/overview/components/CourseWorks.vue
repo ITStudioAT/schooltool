@@ -936,14 +936,49 @@ export default {
             return this.studentLabel(student)
         },
         workHasAllGrades(work) {
+            const groups = Array.isArray(work?.groups) ? work.groups : []
+            if (!groups.length) return false
+            const nonEmptyGroups = groups.filter((group) => Array.isArray(group?.student_ids) && group.student_ids.length > 0)
+            if (!nonEmptyGroups.length) return false
+
+            const hasGrade = (value) => (value ?? '').toString().trim() !== ''
+
+            // For group-work: complete when every group has either
+            // 1) one shared grade, or
+            // 2) individual grades for all students in that group.
+            if (work?.is_group_work) {
+                return nonEmptyGroups.every((group) => {
+                    const ids = Array.isArray(group?.student_ids) ? group.student_ids : []
+                    if (!ids.length) return false
+
+                    const groupGrade = group?.grade
+                    if (hasGrade(groupGrade)) return true
+
+                    const gradesArray = Array.isArray(group?.grades) ? group.grades : []
+                    if (gradesArray.length) {
+                        const gradesByStudent = new Map()
+                        gradesArray.forEach((item) => {
+                            if (!item?.student_id) return
+                            if (hasGrade(item.grade)) gradesByStudent.set(String(item.student_id), true)
+                        })
+                        return ids.every((id) => gradesByStudent.has(String(id)))
+                    }
+
+                    const gradesObj = group?.grades && typeof group.grades === 'object' && !Array.isArray(group.grades) ? group.grades : null
+                    if (gradesObj) {
+                        return ids.every((id) => hasGrade(gradesObj[id]) || hasGrade(gradesObj[String(id)]))
+                    }
+
+                    return false
+                })
+            }
+
+            // For non-group work: all students in the selected course need a grade.
             const students = (this.selected_course?.students_info || []).map((s) => s.id)
             if (!students.length) return false
 
-            const groups = Array.isArray(work?.groups) ? work.groups : []
-            if (!groups.length) return false
-
             const gradesByStudent = new Map()
-            groups.forEach((group) => {
+            nonEmptyGroups.forEach((group) => {
                 const ids = Array.isArray(group?.student_ids) ? group.student_ids : []
                 const groupGrade = (group?.grade ?? '').toString().trim()
                 const gradesArray = Array.isArray(group?.grades) ? group.grades : []
@@ -953,18 +988,18 @@ export default {
                         if (!item?.student_id) return
                         const val = (item.grade ?? '').toString().trim()
                         if (val !== '') {
-                            gradesByStudent.set(item.student_id, val)
+                            gradesByStudent.set(String(item.student_id), val)
                         }
                     })
                     return
                 }
 
                 if (groupGrade !== '' && ids.length) {
-                    ids.forEach((id) => gradesByStudent.set(id, groupGrade))
+                    ids.forEach((id) => gradesByStudent.set(String(id), groupGrade))
                 }
             })
 
-            return students.every((id) => gradesByStudent.has(id))
+            return students.every((id) => gradesByStudent.has(String(id)))
         },
         groupSizeHint(group) {
             if (!this.work_form.is_group_work) return ''
