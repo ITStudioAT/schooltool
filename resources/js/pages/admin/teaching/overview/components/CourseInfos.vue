@@ -8,10 +8,6 @@
         :disabled="action != '' && action != 'edit_description'">
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2" v-if="action != 'edit_description'">
-                <div class="text-caption text-medium-emphasis">{{ schemaName }}</div>
-                <div class="text-body-2 course-description" v-if="selected_course.description" v-html="descriptionHtml"></div>
-                <div class="text-body-2" v-else>Keine Fachinfos vorhanden.</div>
-
                 <v-card variant="outlined" class="mt-2">
                     <v-card-title class="text-subtitle-2 d-flex align-center ga-2">
                         <v-icon size="18">mdi-bell-alert</v-icon>
@@ -42,6 +38,9 @@
                         </v-list>
                     </v-card-text>
                 </v-card>
+                <div class="text-caption text-medium-emphasis">{{ schemaName }}</div>
+                <div class="text-body-2 course-description" v-if="selected_course.description" v-html="descriptionHtml"></div>
+                <div class="text-body-2" v-else>Keine Fachinfos vorhanden.</div>
 
                 <div class="w-100 text-right">
                     <v-btn flat tile size="small" color="primary" icon="mdi-pencil" @click="editDescription" />
