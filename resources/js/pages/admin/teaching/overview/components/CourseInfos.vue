@@ -9,7 +9,7 @@
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2" v-if="action != 'edit_description'">
                 <v-card variant="outlined" class="mt-2">
-                    <v-card-title class="text-subtitle-2 d-flex align-center ga-2">
+                    <v-card-title class="text-subtitle-2 d-flex align-center ga-2 flex-wrap">
                         <v-icon size="18">mdi-bell-alert</v-icon>
                         Offene Verständigungen
                         <v-chip size="x-small" color="warning" variant="flat">{{ openNotifications.length }}</v-chip>
@@ -18,17 +18,18 @@
                     <v-card-text class="pa-0">
                         <v-list density="compact">
                             <v-list-item v-for="entry in openNotifications" :key="entry.id">
-                                <div class="d-flex align-center ga-2 w-100">
+                                <div class="notification-row d-flex flex-wrap align-start ga-2 w-100">
                                     <v-chip v-if="entry.date" size="x-small" variant="tonal" color="primary">{{ formatDate(entry.date) }}</v-chip>
                                     <v-chip v-if="entry.due_date" size="x-small" variant="tonal" :color="dueDateColor(entry.due_date)">Fällig bis {{ formatDate(entry.due_date) }}</v-chip>
-                                    <v-chip v-if="entry.type" size="x-small" variant="outlined" color="secondary">{{ notificationTypeLabel(entry.type) }}</v-chip>
-                                    <v-chip size="x-small" variant="outlined">{{ studentLabel(entry.user_id) }}</v-chip>
-                                    <div class="text-caption flex-grow-1">{{ entry.description || '' }}</div>
+                                    <v-chip v-if="entry.type" size="x-small" variant="outlined" color="secondary" class="chip-truncate">{{ notificationTypeLabel(entry.type) }}</v-chip>
+                                    <v-chip size="x-small" variant="outlined" class="chip-truncate">{{ studentLabel(entry.user_id) }}</v-chip>
+                                    <div class="notification-description text-caption w-100">{{ entry.description || '' }}</div>
                                     <v-btn
                                         icon="mdi-check"
                                         size="x-small"
                                         color="success"
                                         variant="tonal"
+                                        class="notification-action"
                                         @click.stop="completeNotification(entry)" />
                                 </div>
                             </v-list-item>
@@ -247,5 +248,27 @@ export default {
 .course-description :deep(p) {
     margin: 0;
     min-height: 1.2em;
+}
+
+.notification-row {
+    min-width: 0;
+}
+
+.chip-truncate {
+    max-width: 100%;
+}
+
+.chip-truncate :deep(.v-chip__content) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.notification-description {
+    word-break: break-word;
+}
+
+.notification-action {
+    margin-left: auto;
 }
 </style>

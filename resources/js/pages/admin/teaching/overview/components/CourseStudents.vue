@@ -23,15 +23,18 @@
 
                 <!-- Ausgewählte Schülerinnen (Anzeige) -->
                 <v-card variant="outlined" class="mt-4" v-if="selected_course">
-                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
-                        <v-icon size="18">mdi-account-check</v-icon>
-                        Schüler:innen
-                        <v-chip v-if="selected_course?.students_info?.length" size="x-small" color="primary" variant="tonal">
-                            {{ selected_course.students_info.length }}
-                        </v-chip>
-                        <v-spacer />
+                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2 flex-wrap">
+                        <div class="d-flex align-center ga-2 flex-wrap">
+                            <v-icon size="18">mdi-account-check</v-icon>
+                            Schüler:innen
+                            <v-chip v-if="selected_course?.students_info?.length" size="x-small" color="primary" variant="tonal">
+                                {{ selected_course.students_info.length }}
+                            </v-chip>
+                        </div>
+                        <v-spacer class="students-header-spacer" />
                         <v-btn
                             size="small"
+                            class="students-bulk-btn"
                             :variant="show_bulk_entry ? 'flat' : 'outlined'"
                             :color="show_bulk_entry ? 'warning' : 'primary'"
                             @click="toggleBulkEntry">
@@ -72,7 +75,7 @@
                                 :key="student.id"
                                 :class="show_bulk_entry ? '' : 'cursor-pointer'"
                                 @click="show_bulk_entry ? null : openStudent(student)">
-                                <div class="d-flex align-center ga-2 w-100">
+                                <div class="student-row d-flex flex-wrap align-center ga-2 w-100">
                                     <v-checkbox
                                         v-if="show_bulk_entry"
                                         v-model="bulk_entry_form.student_ids"
@@ -83,30 +86,31 @@
                                     <v-chip v-if="student.schoolclass || student.class" size="x-small" variant="tonal" color="primary">
                                         {{ student.schoolclass || student.class }}
                                     </v-chip>
-                                    <div class="text-body-2">{{ student.last_name }}, {{ student.first_name }}</div>
-                                    <v-chip v-if="(student.stars || []).length" size="x-small" variant="tonal" color="amber-darken-2">
-                                        <v-icon start size="14">mdi-star</v-icon>
-                                        {{ (student.stars || []).length }}
-                                    </v-chip>
-                                    <v-spacer />
-                                    <template v-for="(count, type) in (studentBehaviourCounts[student.id] || {})" :key="`beh-${student.id}-${type}`">
-                                        <v-chip size="x-small" variant="tonal" color="warning">{{ type }}{{ count > 1 ? ` ×${count}` : '' }}</v-chip>
-                                    </template>
-                                    <v-chip
-                                        v-if="studentOpenNotificationCounts[student.id]"
-                                        size="x-small"
-                                        variant="flat"
-                                        :color="dueDateColor(studentOpenNotificationDueDates[student.id])">
-                                        <v-icon start size="14">mdi-bell-alert</v-icon>
-                                        {{ studentOpenNotificationCounts[student.id] }}
-                                    </v-chip>
-                                    <template v-if="semesterCount === 2">
-                                        <v-chip v-if="student.sem_1_grade" size="x-small" variant="tonal" color="success">{{ student.sem_1_grade }}</v-chip>
-                                        <v-chip v-if="student.sem_2_grade && activeSemester !== 1" size="x-small" variant="tonal" color="success">{{ student.sem_2_grade }}</v-chip>
-                                    </template>
-                                    <template v-else>
-                                        <v-chip v-if="student.sem_grade" size="x-small" variant="tonal" color="success">{{ student.sem_grade }}</v-chip>
-                                    </template>
+                                    <div class="student-name text-body-2">{{ student.last_name }}, {{ student.first_name }}</div>
+                                    <div class="student-metrics d-flex flex-wrap align-center ga-2">
+                                        <v-chip v-if="(student.stars || []).length" size="x-small" variant="tonal" color="amber-darken-2">
+                                            <v-icon start size="14">mdi-star</v-icon>
+                                            {{ (student.stars || []).length }}
+                                        </v-chip>
+                                        <template v-for="(count, type) in (studentBehaviourCounts[student.id] || {})" :key="`beh-${student.id}-${type}`">
+                                            <v-chip size="x-small" variant="tonal" color="warning">{{ type }}{{ count > 1 ? ` ×${count}` : '' }}</v-chip>
+                                        </template>
+                                        <v-chip
+                                            v-if="studentOpenNotificationCounts[student.id]"
+                                            size="x-small"
+                                            variant="flat"
+                                            :color="dueDateColor(studentOpenNotificationDueDates[student.id])">
+                                            <v-icon start size="14">mdi-bell-alert</v-icon>
+                                            {{ studentOpenNotificationCounts[student.id] }}
+                                        </v-chip>
+                                        <template v-if="semesterCount === 2">
+                                            <v-chip v-if="student.sem_1_grade" size="x-small" variant="tonal" color="success">{{ student.sem_1_grade }}</v-chip>
+                                            <v-chip v-if="student.sem_2_grade && activeSemester !== 1" size="x-small" variant="tonal" color="success">{{ student.sem_2_grade }}</v-chip>
+                                        </template>
+                                        <template v-else>
+                                            <v-chip v-if="student.sem_grade" size="x-small" variant="tonal" color="success">{{ student.sem_grade }}</v-chip>
+                                        </template>
+                                    </div>
                                 </div>
                             </v-list-item>
                             <v-list-item v-if="!selected_course?.students_info?.length">
@@ -628,3 +632,46 @@ export default {
     },
 }
 </script>
+
+<style scoped>
+.student-row {
+    min-width: 0;
+}
+
+.student-name {
+    min-width: 0;
+    flex: 1 1 220px;
+    word-break: break-word;
+}
+
+.student-metrics {
+    min-width: 0;
+    margin-left: auto;
+    justify-content: flex-end;
+    flex: 0 1 auto;
+    max-width: 55%;
+}
+
+@media (max-width: 600px) {
+    .students-header-spacer {
+        display: none;
+    }
+
+    .students-bulk-btn {
+        width: 100%;
+        margin-top: 6px;
+    }
+}
+
+@media (min-width: 601px) {
+    .student-metrics {
+        width: auto;
+    }
+}
+
+@media (max-width: 900px) {
+    .student-metrics {
+        max-width: 100%;
+    }
+}
+</style>

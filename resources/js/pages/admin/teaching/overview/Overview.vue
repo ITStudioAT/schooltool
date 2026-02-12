@@ -55,6 +55,14 @@
         </v-row>
     </v-col>
 
+    <v-col cols="12" md="6" xl="4" v-if="show_my_courses && !selected_course && action != 'teaching_course_new_or_edit'">
+        <v-row>
+            <v-col>
+                <MyInfos />
+            </v-col>
+        </v-row>
+    </v-col>
+
     <!-- KURS-INFOS  -->
     <v-col cols="12" md="6" xl="4" v-if="(show_infos || show_dates || show_works) && action != 'teaching_course_new_or_edit'" :style="action_2 == 'course_student_view' ? 'pointer-events:none; opacity:0.6' : ''">
         <v-row v-if="show_infos">
@@ -89,9 +97,10 @@ import CourseStudent from './components/CourseStudent.vue'
 import CourseInfos from './components/CourseInfos.vue'
 import CourseDates from './components/CourseDates.vue'
 import CourseWorks from './components/CourseWorks.vue'
+import MyInfos from './components/MyInfos.vue'
 
 export default {
-    components: { ItsGridBox, MyCourses, ItsMenuButton, CourseStudents, CourseStudent, CourseInfos, CourseDates, CourseWorks },
+    components: { ItsGridBox, MyCourses, ItsMenuButton, CourseStudents, CourseStudent, CourseInfos, CourseDates, CourseWorks, MyInfos },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
