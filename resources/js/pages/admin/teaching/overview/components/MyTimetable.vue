@@ -2,21 +2,22 @@
     <ItsGridBox color="primary" title="Stundenplan" icon="mdi-calendar-clock" class="w-100" :disabled="action != ''">
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
-                <v-btn-toggle v-model="range" mandatory density="compact" color="primary" class="w-100" @update:model-value="resetWeekOffset">
+                <v-btn-toggle v-model="range" mandatory density="compact" color="primary" class="w-100" @update:model-value="resetOffset">
                     <v-btn :value="RANGE_TODAY" size="small">Heute</v-btn>
                     <v-btn :value="RANGE_WEEK" size="small">Diese Woche</v-btn>
                     <v-btn :value="RANGE_TWO_WEEKS" size="small">Zwei Wochen</v-btn>
                     <v-btn :value="RANGE_MONTH" size="small">Dieser Monat</v-btn>
+                    <v-btn :value="RANGE_CURRENT_SEMESTER" size="small">{{ currentSemesterButtonLabel }}</v-btn>
                 </v-btn-toggle>
 
-                <!-- Week Navigation -->
+                <!-- Navigation -->
                 <div class="d-flex align-center ga-2">
                     <v-btn
                         icon="mdi-chevron-left"
                         size="small"
                         variant="tonal"
                         :disabled="!canNavigatePrevious"
-                        @click="navigatePreviousWeek"
+                        @click="navigatePrevious"
                     />
                     <div class="flex-grow-1 text-center text-caption">
                         <span v-if="dateRangeLabel">{{ dateRangeLabel }}</span>
@@ -26,7 +27,7 @@
                         size="small"
                         variant="tonal"
                         :disabled="!canNavigateNext"
-                        @click="navigateNextWeek"
+                        @click="navigateNext"
                     />
                 </div>
 
@@ -39,13 +40,13 @@
                     <v-divider />
                     <v-card-text class="pa-0">
                         <v-list density="compact">
-                            <v-list-item v-for="item in filteredItems" :key="item.key" class="cursor-pointer" @click="openCourse(item)">
-                                <div class="d-flex flex-column ga-2 w-100">
+                            <v-list-item v-for="item in filteredItems" :key="item.key" class="cursor-pointer pa-0" @click="openCourse(item)">
+                                <div :class="['d-flex flex-column ga-2 w-100 pa-3', getStatusClass(item)]">
                                     <div class="d-flex flex-wrap align-center ga-2 w-100">
-                                        <v-chip size="x-small" variant="tonal" color="primary">{{ formatDate(item.date) }}</v-chip>
+                                        <v-chip size="x-small" variant="tonal" color="primary">{{ formatWeekdayDate(item.date) }}</v-chip>
                                         <v-chip size="x-small" variant="outlined" color="primary">{{ item.hoursLabel }}</v-chip>
                                         <v-chip size="x-small" variant="outlined">{{ item.classLabel }}</v-chip>
-                                        <v-chip size="x-small" variant="tonal" color="secondary" class="chip-truncate">{{ item.courseTitle }}</v-chip>
+                                        <v-chip size="x-small" variant="tonal" color="primary" class="chip-truncate">{{ item.courseTitle }}</v-chip>
                                     </div>
                                     <div v-if="item.content" class="text-caption timetable-content" v-html="contentHtml(item.content)"></div>
                                 </div>
@@ -73,6 +74,7 @@ const RANGE_TODAY = 'today'
 const RANGE_WEEK = 'week'
 const RANGE_TWO_WEEKS = 'two_weeks'
 const RANGE_MONTH = 'month'
+const RANGE_CURRENT_SEMESTER = 'current_semester'
 
 export default {
     components: { ItsGridBox },
@@ -83,8 +85,9 @@ export default {
             RANGE_WEEK,
             RANGE_TWO_WEEKS,
             RANGE_MONTH,
-            range: RANGE_TODAY,
-            weekOffset: 0,
+            RANGE_CURRENT_SEMESTER,
+            range: RANGE_WEEK,
+            offset: 0,
         }
     },
 
@@ -115,6 +118,8 @@ export default {
                             .sort((a, b) => a - b)
                         const hoursLabel = hours.length ? hours.map((h) => `${h}. Std`).join(', ') : '-'
 
+                        const status = Array.isArray(courseDate?.status) ? courseDate.status : []
+
                         return {
                             key: `${course?.id || 'x'}-${courseDate?.id || date}-${hoursLabel}`,
                             courseId: course?.id || null,
@@ -126,6 +131,7 @@ export default {
                             classLabel: classLabel || '-',
                             courseTitle: courseTitle || '-',
                             content: (courseDate?.content || '').toString().trim(),
+                            status,
                         }
                     })
                 })
@@ -144,6 +150,37 @@ export default {
             if (!from || !until) return this.timetableItems
             return this.timetableItems.filter((item) => item.dateObj >= from && item.dateObj <= until)
         },
+        semesterMeta() {
+            const schoolyear = this.config?.selected_schoolyear || {}
+            const normalizeConfiguredDate = (value) => {
+                if (!value) return null
+                const parsed = this.normalizeDay(parseLocalDate(value))
+                if (isNaN(parsed.getTime())) return null
+                return parsed
+            }
+
+            const today = this.normalizeDay(new Date())
+            const schoolFrom = normalizeConfiguredDate(schoolyear?.from)
+            const schoolUntil = normalizeConfiguredDate(schoolyear?.until)
+            const sem2Start = normalizeConfiguredDate(
+                this.config?.user?.teaching_count_for_semester_2_date || schoolyear?.sem_2_start
+            )
+            const baseSemester = sem2Start && today >= sem2Start ? 2 : 1
+
+            return { today, schoolFrom, schoolUntil, sem2Start, baseSemester }
+        },
+        selectedSemesterNumber() {
+            const base = this.semesterMeta.baseSemester
+            const sem2Exists = !!this.semesterMeta.sem2Start
+            if (!sem2Exists) return 1
+
+            const delta = this.range === RANGE_CURRENT_SEMESTER ? this.offset : 0
+            const target = base + delta
+            return Math.min(2, Math.max(1, target))
+        },
+        currentSemesterButtonLabel() {
+            return `${this.selectedSemesterNumber}. Semester`
+        },
         dateRangeLabel() {
             const [from, until] = this.currentRangeBounds()
             if (!from || !until) return ''
@@ -154,6 +191,10 @@ export default {
             return `${formatDate(from)} - ${formatDate(until)}`
         },
         canNavigatePrevious() {
+            if (this.range === RANGE_CURRENT_SEMESTER) {
+                if (!this.semesterMeta.sem2Start) return false
+                return this.selectedSemesterNumber > 1
+            }
             if (!this.timetableItems.length) return false
             const [from] = this.currentRangeBounds()
             if (!from) return false
@@ -162,6 +203,10 @@ export default {
             return earliestDate < from
         },
         canNavigateNext() {
+            if (this.range === RANGE_CURRENT_SEMESTER) {
+                if (!this.semesterMeta.sem2Start) return false
+                return this.selectedSemesterNumber < 2
+            }
             if (!this.timetableItems.length) return false
             const [, until] = this.currentRangeBounds()
             if (!until) return false
@@ -192,34 +237,65 @@ export default {
         },
         currentRangeBounds() {
             const today = this.normalizeDay(new Date())
-            const offsetDays = this.weekOffset * 7
-            const referenceDate = new Date(today)
-            referenceDate.setDate(today.getDate() + offsetDays)
+            let referenceDate = new Date(today)
 
             if (this.range === RANGE_TODAY) {
+                // Shift by days
+                referenceDate.setDate(today.getDate() + this.offset)
                 return [referenceDate, referenceDate]
             }
             if (this.range === RANGE_WEEK) {
+                // Shift by weeks (7 days)
+                referenceDate.setDate(today.getDate() + (this.offset * 7))
                 return [this.startOfWeek(referenceDate), this.endOfWeek(referenceDate)]
             }
             if (this.range === RANGE_TWO_WEEKS) {
+                // Shift by 2-week periods (14 days)
+                referenceDate.setDate(today.getDate() + (this.offset * 14))
                 const start = this.startOfWeek(referenceDate)
                 const end = new Date(start)
                 end.setDate(start.getDate() + 13)
                 return [start, end]
             }
             if (this.range === RANGE_MONTH) {
+                // Shift by months
+                referenceDate.setMonth(today.getMonth() + this.offset)
                 const start = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), 1)
                 const end = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0)
                 end.setHours(0, 0, 0, 0)
                 return [start, end]
             }
+            if (this.range === RANGE_CURRENT_SEMESTER) {
+                return this.currentSemesterBounds(this.selectedSemesterNumber)
+            }
+            return [null, null]
+        },
+        currentSemesterBounds(semesterNumber) {
+            const { schoolFrom, schoolUntil, sem2Start } = this.semesterMeta
+            if (sem2Start) {
+                if (semesterNumber === 1) {
+                    const start = schoolFrom || new Date(sem2Start.getFullYear(), 0, 1)
+                    const end = new Date(sem2Start)
+                    end.setDate(end.getDate() - 1)
+                    return [start, end]
+                }
+                const start = new Date(sem2Start)
+                const end = schoolUntil || new Date(sem2Start.getFullYear(), 11, 31)
+                return [start, end]
+            }
+
+            if (schoolFrom && schoolUntil) return [schoolFrom, schoolUntil]
             return [null, null]
         },
         formatDate(date) {
             const d = parseLocalDate(date)
             if (isNaN(d.getTime())) return ''
             return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        },
+        formatWeekdayDate(date) {
+            const d = parseLocalDate(date)
+            if (isNaN(d.getTime())) return ''
+            return d.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })
         },
         contentHtml(text) {
             if (!text) return ''
@@ -252,14 +328,26 @@ export default {
             const date = (course?.course_dates || []).find((d) => d?.id === dateId) || null
             this.selected_courseDate = date
         },
-        navigatePreviousWeek() {
-            this.weekOffset--
+        navigatePrevious() {
+            if (this.range === RANGE_CURRENT_SEMESTER && !this.canNavigatePrevious) return
+            this.offset--
         },
-        navigateNextWeek() {
-            this.weekOffset++
+        navigateNext() {
+            if (this.range === RANGE_CURRENT_SEMESTER && !this.canNavigateNext) return
+            this.offset++
         },
-        resetWeekOffset() {
-            this.weekOffset = 0
+        resetOffset() {
+            this.offset = 0
+        },
+        getStatusClass(item) {
+            const status = item?.status || []
+            if (status.includes('pruefung')) {
+                return 'bg-warning-lighten-4'
+            }
+            if (status.includes('free')) {
+                return 'bg-success-lighten-2'
+            }
+            return ''
         },
     },
 }

@@ -398,6 +398,16 @@ export default {
                 return
             }
 
+            // Check if there's already a selected date that belongs to this course
+            const currentSelectedDate = courseDateStore.selected_courseDate
+            if (currentSelectedDate?.id) {
+                const dateExistsInCourse = dates.some((d) => d?.id === currentSelectedDate.id)
+                if (dateExistsInCourse) {
+                    // Keep the currently selected date since it belongs to this course
+                    return
+                }
+            }
+
             const today = new Date()
             today.setHours(0, 0, 0, 0)
 

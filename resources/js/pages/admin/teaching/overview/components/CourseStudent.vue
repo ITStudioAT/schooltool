@@ -632,6 +632,7 @@ import { mapWritableState } from 'pinia'
 import { parseLocalDate } from '@/helpers/date'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
+import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
 import { useCourseBehaviourEntryStore } from '@/stores/admin/teaching/CourseBehaviourEntryStore'
@@ -693,6 +694,7 @@ export default {
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useCourseStore, ['selected_course', 'selected_course_id', 'selected_course_student', 'show_works', 'show_infos', 'show_dates']),
+        ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapWritableState(useCourseStudentEntryStore, ['entries']),
         ...mapWritableState(useTeachingStore, ['settings']),
         behaviourEntries() {
@@ -1115,11 +1117,14 @@ export default {
             return this.normalizeDateKey(this.countSem2StartDate || this.schoolSem2StartDate)
         },
         emptyEntryForm() {
+            const defaultDate = this.selected_courseDate?.date
+                ? this.toDateString(parseLocalDate(this.selected_courseDate.date))
+                : this.toDateString(new Date())
             return {
                 id: null,
                 type: '',
                 grade: '',
-                date: this.toDateString(new Date()),
+                date: defaultDate,
                 description: '',
             }
         },
@@ -1258,10 +1263,13 @@ export default {
             this.delete_entry_id = null
         },
         emptyStarForm() {
+            const defaultDate = this.selected_courseDate?.date
+                ? this.toDateString?.(parseLocalDate(this.selected_courseDate.date)) || this.toDateString?.(new Date()) || ''
+                : this.toDateString?.(new Date()) || ''
             return {
                 id: null,
                 value: 1,
-                date: this.toDateString?.(new Date()) || '',
+                date: defaultDate,
                 comment: '',
             }
         },
@@ -1371,11 +1379,14 @@ export default {
             this.delete_star_id = null
         },
         emptyBehaviourForm() {
+            const defaultDate = this.selected_courseDate?.date
+                ? this.toDateString?.(parseLocalDate(this.selected_courseDate.date)) || this.toDateString?.(new Date()) || ''
+                : this.toDateString?.(new Date()) || ''
             return {
                 id: null,
                 kind: 'behaviour',
                 type: '',
-                date: this.toDateString?.(new Date()) || '',
+                date: defaultDate,
                 is_due: false,
                 due_date: '',
                 is_done: false,
