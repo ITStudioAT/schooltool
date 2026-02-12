@@ -13,17 +13,73 @@
                         <v-list density="compact">
                             <v-list-item v-for="entry in openNotifications" :key="entry.id">
                                 <div class="notification-row d-flex flex-wrap align-start ga-2 w-100">
+                                    <v-chip v-if="entry.student_class" size="x-small" variant="outlined" color="primary">{{ entry.student_class }}</v-chip>
                                     <v-chip v-if="entry.course_title" size="x-small" variant="tonal" color="primary" class="chip-truncate">{{ entry.course_title }}</v-chip>
+                                    <v-chip v-if="entry.student_label" size="x-small" variant="outlined" class="chip-truncate">{{ entry.student_label }}</v-chip>
                                     <v-chip v-if="entry.date" size="x-small" variant="tonal" color="primary">{{ formatDate(entry.date) }}</v-chip>
                                     <v-chip v-if="entry.due_date" size="x-small" variant="tonal" :color="dueDateColor(entry.due_date)">Fällig bis {{ formatDate(entry.due_date) }}</v-chip>
                                     <v-chip v-if="entry.type" size="x-small" variant="outlined" color="secondary" class="chip-truncate">{{ notificationTypeLabel(entry.type) }}</v-chip>
-                                    <v-chip v-if="entry.student_class" size="x-small" variant="outlined" color="primary">{{ entry.student_class }}</v-chip>
-                                    <v-chip v-if="entry.student_label" size="x-small" variant="outlined" class="chip-truncate">{{ entry.student_label }}</v-chip>
                                     <div class="notification-description text-caption w-100">{{ entry.description || '' }}</div>
                                 </div>
                             </v-list-item>
                             <v-list-item v-if="!openNotifications.length">
                                 <v-list-item-title class="text-caption text-medium-emphasis">Keine offenen Verständigungen.</v-list-item-title>
+                            </v-list-item>
+                        </v-list>
+                    </v-card-text>
+                </v-card>
+
+                <v-card variant="outlined" class="mt-2">
+                    <v-card-title class="text-subtitle-2 d-flex align-center ga-2 flex-wrap">
+                        <v-icon size="18">mdi-chart-box-outline</v-icon>
+                        Allgemeine Infos
+                    </v-card-title>
+                    <v-divider />
+                    <v-card-text class="pa-0">
+                        <v-list density="compact">
+                            <v-list-item>
+                                <div class="d-flex align-center justify-space-between ga-2 w-100">
+                                    <div class="text-caption text-medium-emphasis">Heute</div>
+                                    <div class="text-body-2 font-weight-medium">{{ nowLabel }}</div>
+                                </div>
+                            </v-list-item>
+                            <v-list-item>
+                                <div class="d-flex align-center justify-space-between ga-2 w-100">
+                                    <div class="text-caption text-medium-emphasis">Meine Kurse</div>
+                                    <v-chip size="x-small" variant="tonal" color="primary">{{ myCourses.length }}</v-chip>
+                                </div>
+                            </v-list-item>
+                            <v-list-item>
+                                <div class="d-flex align-center justify-space-between ga-2 w-100">
+                                    <div class="text-caption text-medium-emphasis">Meine Schüler:innen</div>
+                                    <v-chip size="x-small" variant="tonal" color="primary">{{ myStudentCount }}</v-chip>
+                                </div>
+                            </v-list-item>
+                            <v-list-item>
+                                <div class="d-flex align-center justify-space-between ga-2 w-100">
+                                    <div class="text-caption text-medium-emphasis">Tage seit Schuljahresbeginn</div>
+                                    <v-chip size="x-small" variant="tonal" color="primary">{{ daysSinceSchoolyearStart }}</v-chip>
+                                </div>
+                            </v-list-item>
+                            <v-list-item>
+                                <div class="d-flex align-center justify-space-between ga-2 w-100">
+                                    <div class="text-caption text-medium-emphasis">Tage bis Schuljahresende</div>
+                                    <v-chip size="x-small" variant="tonal" color="primary">{{ daysUntilSchoolyearEnd }}</v-chip>
+                                </div>
+                            </v-list-item>
+                            <v-list-item>
+                                <div class="d-flex flex-column ga-2 w-100">
+                                    <div class="d-flex align-center justify-space-between ga-2 w-100">
+                                        <div class="text-caption text-medium-emphasis">Schuljahr-Fortschritt</div>
+                                        <div class="text-caption text-medium-emphasis">{{ schoolyearProgressSince }}%</div>
+                                    </div>
+                                    <v-progress-linear
+                                        :model-value="schoolyearProgressSince"
+                                        height="10"
+                                        rounded
+                                        color="success"
+                                        bg-color="warning" />
+                                </div>
                             </v-list-item>
                         </v-list>
                     </v-card-text>
@@ -51,11 +107,21 @@ export default {
         }
         await this.loadOpenNotifications()
     },
+    mounted() {
+        this.nowTimer = setInterval(() => {
+            this.nowTs = Date.now()
+        }, 1000)
+    },
+    unmounted() {
+        if (this.nowTimer) clearInterval(this.nowTimer)
+    },
 
     data() {
         return {
             teachingStore: null,
             openNotifications: [],
+            nowTs: Date.now(),
+            nowTimer: null,
         }
     },
 
@@ -70,6 +136,89 @@ export default {
         },
         myCourseIds() {
             return (this.myCourses || []).map((course) => course?.id).filter((id) => !!id)
+        },
+        nowLabel() {
+            const d = new Date(this.nowTs)
+            return d.toLocaleString('de-DE', {
+                weekday: 'long',
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+            })
+        },
+        myStudentCount() {
+            const ids = new Set()
+            ;(this.myCourses || []).forEach((course) => {
+                const studentsInfo = Array.isArray(course?.students_info) ? course.students_info : []
+                if (studentsInfo.length) {
+                    studentsInfo.forEach((student) => {
+                        if (student?.id != null) ids.add(String(student.id))
+                    })
+                    return
+                }
+
+                const studentsRaw = Array.isArray(course?.students) ? course.students : []
+                studentsRaw.forEach((student) => {
+                    if (student == null) return
+                    if (typeof student === 'object') {
+                        if (student.id != null) ids.add(String(student.id))
+                        return
+                    }
+                    ids.add(String(student))
+                })
+            })
+            return ids.size
+        },
+        schoolyearFrom() {
+            return this.config?.selected_schoolyear?.from || null
+        },
+        schoolyearUntil() {
+            return this.config?.selected_schoolyear?.until || null
+        },
+        daysSinceSchoolyearStart() {
+            if (!this.schoolyearFrom) return '–'
+            return this.daysDiffFromToday(this.schoolyearFrom, 'since')
+        },
+        daysUntilSchoolyearEnd() {
+            if (!this.schoolyearUntil) return '–'
+            return this.daysDiffFromToday(this.schoolyearUntil, 'until')
+        },
+        schoolyearDurationDays() {
+            if (!this.schoolyearFrom || !this.schoolyearUntil) return 0
+            const start = parseLocalDate(this.schoolyearFrom)
+            const end = parseLocalDate(this.schoolyearUntil)
+            if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0
+            start.setHours(0, 0, 0, 0)
+            end.setHours(0, 0, 0, 0)
+            const diff = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
+            return Math.max(0, diff)
+        },
+        schoolyearElapsedDays() {
+            if (!this.schoolyearFrom || !this.schoolyearDurationDays) return 0
+            const start = parseLocalDate(this.schoolyearFrom)
+            if (isNaN(start.getTime())) return 0
+            start.setHours(0, 0, 0, 0)
+            const today = new Date(this.nowTs)
+            today.setHours(0, 0, 0, 0)
+            const elapsed = Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
+            return Math.min(this.schoolyearDurationDays, Math.max(0, elapsed))
+        },
+        schoolyearRemainingDays() {
+            if (!this.schoolyearUntil || !this.schoolyearDurationDays) return 0
+            const end = parseLocalDate(this.schoolyearUntil)
+            if (isNaN(end.getTime())) return 0
+            end.setHours(0, 0, 0, 0)
+            const today = new Date(this.nowTs)
+            today.setHours(0, 0, 0, 0)
+            const remaining = Math.floor((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+            return Math.min(this.schoolyearDurationDays, Math.max(0, remaining))
+        },
+        schoolyearProgressSince() {
+            if (!this.schoolyearDurationDays) return 0
+            return Math.round((this.schoolyearElapsedDays / this.schoolyearDurationDays) * 100)
         },
         notificationTypesByShort() {
             const map = new Map()
@@ -178,6 +327,18 @@ export default {
             const today = new Date()
             today.setHours(0, 0, 0, 0)
             return due < today ? 'error' : 'warning'
+        },
+        daysDiffFromToday(dateStr, mode) {
+            const target = parseLocalDate(dateStr)
+            if (isNaN(target.getTime())) return '–'
+            target.setHours(0, 0, 0, 0)
+
+            const today = new Date(this.nowTs)
+            today.setHours(0, 0, 0, 0)
+
+            const diffDays = Math.floor((today.getTime() - target.getTime()) / (1000 * 60 * 60 * 24))
+            if (mode === 'since') return Math.max(0, diffDays)
+            return Math.max(0, -diffDays)
         },
     },
 }
