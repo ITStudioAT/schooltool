@@ -41,8 +41,12 @@ class TeachingCourseController extends Controller
         $studentsById = $studentIds->isEmpty()
             ? collect()
             : User::whereIn('id', $studentIds)->get()->keyBy('id');
+        $missingStudentIds = $studentIds->diff($studentsById->keys())->values();
+        $importsById = $missingStudentIds->isEmpty()
+            ? collect()
+            : Import116::where('school_id', $auth_user->school_id)->whereIn('id', $missingStudentIds)->get()->keyBy('id');
 
-        $courses->each(function ($course) use ($studentsById, $service, $request) {
+        $courses->each(function ($course) use ($studentsById, $importsById, $service, $request) {
             $studentEntries = $service->normalizeStudentEntries($course->students);
             $studentIds = array_map(fn ($entry) => $entry['id'], $studentEntries);
             $deletedIds = $service->normalizeStudentIds($course->students_deleted);
@@ -50,10 +54,22 @@ class TeachingCourseController extends Controller
             $students = [];
             foreach ($studentEntries as $entry) {
                 $student = $studentsById->get($entry['id']);
-                if (! $student) {
-                    continue;
+                if ($student) {
+                    $data = (new StudentResource($student))->toArray($request);
+                } else {
+                    $import = $importsById->get($entry['id']);
+                    if (! $import) {
+                        continue;
+                    }
+                    $data = [
+                        'id' => $import->id,
+                        'first_name' => $import->first_name,
+                        'last_name' => $import->last_name,
+                        'email' => $import->email,
+                        'schoolclass' => $import->class,
+                        'class' => $import->class,
+                    ];
                 }
-                $data = (new StudentResource($student))->toArray($request);
                 $data['comment'] = $entry['comment'] ?? null;
                 $data['sem_1_grade'] = $entry['sem_1_grade'] ?? null;
                 $data['sem_2_grade'] = $entry['sem_2_grade'] ?? null;
@@ -61,15 +77,32 @@ class TeachingCourseController extends Controller
                 $data['behaviour_1_grade'] = $entry['behaviour_1_grade'] ?? null;
                 $data['behaviour_2_grade'] = $entry['behaviour_2_grade'] ?? null;
                 $data['behaviour_grade'] = $entry['behaviour_grade'] ?? null;
+                $data['stars'] = $entry['stars'] ?? [];
                 $students[] = $data;
             }
 
             $course->setAttribute('students', $students);
 
-            $course->setAttribute(
-                'students_deleted',
-                StudentResource::collection($studentsById->only($deletedIds)->values())
-            );
+            $deletedStudents = [];
+            foreach ($deletedIds as $deletedId) {
+                $student = $studentsById->get($deletedId);
+                if ($student) {
+                    $deletedStudents[] = (new StudentResource($student))->toArray($request);
+                    continue;
+                }
+                $import = $importsById->get($deletedId);
+                if ($import) {
+                    $deletedStudents[] = [
+                        'id' => $import->id,
+                        'first_name' => $import->first_name,
+                        'last_name' => $import->last_name,
+                        'email' => $import->email,
+                        'schoolclass' => $import->class,
+                        'class' => $import->class,
+                    ];
+                }
+            }
+            $course->setAttribute('students_deleted', $deletedStudents);
         });
 
         $classes = Import116::where('school_id', $auth_user->school_id)
@@ -105,6 +138,11 @@ class TeachingCourseController extends Controller
             'classes' => 'required|array|min:1',
             'classes.*' => ['required', 'string', Rule::in($classes)],
             'students' => 'nullable|array',
+            'students.*.stars' => 'nullable|array',
+            'students.*.stars.*.id' => 'nullable|string|max:64',
+            'students.*.stars.*.value' => 'nullable|integer|in:1',
+            'students.*.stars.*.comment' => 'nullable|string|max:1024',
+            'students.*.stars.*.date' => 'nullable|date',
             'students_deleted' => 'nullable|array',
             'teaching_schema_id' => 'nullable|string|max:36',
         ]);
@@ -112,14 +150,30 @@ class TeachingCourseController extends Controller
         $sortedClasses = $validated['classes'];
         sort($sortedClasses);
 
+        $studentsPayload = $validated['students'] ?? [];
+        if (empty($studentsPayload)) {
+            $studentsInfoPayload = $request->input('students_info', []);
+            if (is_array($studentsInfoPayload) && !empty($studentsInfoPayload)) {
+                $studentsPayload = $studentsInfoPayload;
+            }
+        }
+
+        $studentsDeletedPayload = $validated['students_deleted'] ?? [];
+        if (empty($studentsDeletedPayload)) {
+            $studentsDeletedInfoPayload = $request->input('students_deleted_info', []);
+            if (is_array($studentsDeletedInfoPayload) && !empty($studentsDeletedInfoPayload)) {
+                $studentsDeletedPayload = $studentsDeletedInfoPayload;
+            }
+        }
+
         $course = TeachingCourse::create([
             'school_id' => $auth_user->school_id,
             'schoolyear_id' => $auth_user->schoolyear_id,
             'user_id' => $auth_user->id,
             'title' => $validated['title'],
             'classes' => $sortedClasses,
-            'students' => $service->resolveStudentEntries($validated['students'] ?? [], $auth_user->school_id),
-            'students_deleted' => $service->resolveStudentIds($validated['students_deleted'] ?? [], $auth_user->school_id),
+            'students' => $service->resolveStudentEntries($studentsPayload, $auth_user->school_id),
+            'students_deleted' => $service->resolveStudentIds($studentsDeletedPayload, $auth_user->school_id),
             'teaching_schema_id' => $validated['teaching_schema_id'] ?? null,
         ]);
 
@@ -159,6 +213,11 @@ class TeachingCourseController extends Controller
             'classes' => 'required|array|min:1',
             'classes.*' => ['required', 'string', Rule::in($classes)],
             'students' => 'nullable|array',
+            'students.*.stars' => 'nullable|array',
+            'students.*.stars.*.id' => 'nullable|string|max:64',
+            'students.*.stars.*.value' => 'nullable|integer|in:1',
+            'students.*.stars.*.comment' => 'nullable|string|max:1024',
+            'students.*.stars.*.date' => 'nullable|date',
             'students_deleted' => 'nullable|array',
             'teaching_schema_id' => 'nullable|string|max:36',
         ]);
@@ -166,12 +225,28 @@ class TeachingCourseController extends Controller
         $sortedClasses = $validated['classes'];
         sort($sortedClasses);
 
+        $studentsPayload = $validated['students'] ?? [];
+        if (empty($studentsPayload)) {
+            $studentsInfoPayload = $request->input('students_info', []);
+            if (is_array($studentsInfoPayload) && !empty($studentsInfoPayload)) {
+                $studentsPayload = $studentsInfoPayload;
+            }
+        }
+
+        $studentsDeletedPayload = $validated['students_deleted'] ?? [];
+        if (empty($studentsDeletedPayload)) {
+            $studentsDeletedInfoPayload = $request->input('students_deleted_info', []);
+            if (is_array($studentsDeletedInfoPayload) && !empty($studentsDeletedInfoPayload)) {
+                $studentsDeletedPayload = $studentsDeletedInfoPayload;
+            }
+        }
+
         $course->update([
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
             'classes' => $sortedClasses,
-            'students' => $service->resolveStudentEntries($validated['students'] ?? [], $auth_user->school_id),
-            'students_deleted' => $service->resolveStudentIds($validated['students_deleted'] ?? [], $auth_user->school_id),
+            'students' => $service->resolveStudentEntries($studentsPayload, $auth_user->school_id),
+            'students_deleted' => $service->resolveStudentIds($studentsDeletedPayload, $auth_user->school_id),
             'teaching_schema_id' => $validated['teaching_schema_id'] ?? $course->teaching_schema_id,
         ]);
 

@@ -21,31 +21,43 @@ export const useCourseStore = defineStore('AdminCourseStore', {
     actions: {
         ensureCourseStudentCollections(course) {
             if (!course) return
+            const normalizeIds = (items) =>
+                (Array.isArray(items) ? items : [])
+                    .map((item) => {
+                        if (item == null) return null
+                        if (typeof item === 'object') return item.id ?? null
+                        return item
+                    })
+                    .filter((id) => id !== null && id !== undefined)
 
-            if (!Array.isArray(course.students)) course.students = []
-            if (!Array.isArray(course.students_deleted)) course.students_deleted = []
-
-            if (!Array.isArray(course.students_info)) {
-                if (course.students.length && typeof course.students[0] === 'object') {
-                    course.students_info = course.students
-                    course.students = course.students_info.map((s) => s.id)
-                } else if (course.students && typeof course.students === 'object') {
-                    course.students_info = Array.isArray(course.students.data) ? course.students.data : []
-                    course.students = course.students_info.map((s) => s.id)
-                } else {
-                    course.students_info = []
+            // students -> students_info
+            if (Array.isArray(course.students) && course.students.length && typeof course.students[0] === 'object') {
+                course.students_info = course.students
+                course.students = normalizeIds(course.students_info)
+            } else if (course.students && typeof course.students === 'object' && !Array.isArray(course.students)) {
+                course.students_info = Array.isArray(course.students.data) ? course.students.data : []
+                course.students = normalizeIds(course.students_info)
+            } else {
+                if (!Array.isArray(course.students)) course.students = []
+                if (!Array.isArray(course.students_info)) course.students_info = []
+                // critical: backfill ids from info to avoid accidental empty payloads on save
+                if (course.students.length === 0 && course.students_info.length > 0) {
+                    course.students = normalizeIds(course.students_info)
                 }
             }
 
-            if (!Array.isArray(course.students_deleted_info)) {
-                if (course.students_deleted.length && typeof course.students_deleted[0] === 'object') {
-                    course.students_deleted_info = course.students_deleted
-                    course.students_deleted = course.students_deleted_info.map((s) => s.id)
-                } else if (course.students_deleted && typeof course.students_deleted === 'object') {
-                    course.students_deleted_info = Array.isArray(course.students_deleted.data) ? course.students_deleted.data : []
-                    course.students_deleted = course.students_deleted_info.map((s) => s.id)
-                } else {
-                    course.students_deleted_info = []
+            // students_deleted -> students_deleted_info
+            if (Array.isArray(course.students_deleted) && course.students_deleted.length && typeof course.students_deleted[0] === 'object') {
+                course.students_deleted_info = course.students_deleted
+                course.students_deleted = normalizeIds(course.students_deleted_info)
+            } else if (course.students_deleted && typeof course.students_deleted === 'object' && !Array.isArray(course.students_deleted)) {
+                course.students_deleted_info = Array.isArray(course.students_deleted.data) ? course.students_deleted.data : []
+                course.students_deleted = normalizeIds(course.students_deleted_info)
+            } else {
+                if (!Array.isArray(course.students_deleted)) course.students_deleted = []
+                if (!Array.isArray(course.students_deleted_info)) course.students_deleted_info = []
+                if (course.students_deleted.length === 0 && course.students_deleted_info.length > 0) {
+                    course.students_deleted = normalizeIds(course.students_deleted_info)
                 }
             }
         },
@@ -82,8 +94,9 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
+                this.ensureCourseStudentCollections(data)
                 const response = await axios.put(`/api/admin/teaching/courses/${data.id}`, data)
-                return true
+                return response.data
             } catch (error) {
                 notification.notify({
                     status: error.response.status,
@@ -103,6 +116,7 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
+                this.ensureCourseStudentCollections(data)
                 const response = await axios.post(`/api/admin/teaching/courses`, data)
                 this.saved_offer = response.data
                 return response.data

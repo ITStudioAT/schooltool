@@ -20,7 +20,7 @@
                     </v-btn-toggle>
                 </div>
 
-                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form">
+                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form && !show_star_form">
                     <v-card-text v-if="!is_editing">
                         <div class="text-body-2 course-comment" v-if="selected_comment" v-html="commentHtml"></div>
                         <div class="text-body-2" v-else>Kein Kommentar vorhanden.</div>
@@ -43,7 +43,38 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form">
+                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form && !show_star_form">
+                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                        <v-icon size="18">mdi-star</v-icon>
+                        Sterne
+                        <v-chip v-if="studentStars.length" size="x-small" color="amber-darken-2" variant="flat">{{ studentStars.length }}</v-chip>
+                        <v-spacer />
+                        <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newStarEntry" />
+                    </v-card-title>
+                    <v-divider />
+                    <v-card-text class="pa-0">
+                        <v-list density="compact">
+                            <v-list-item v-for="star in studentStars" :key="star.id">
+                                <div class="d-flex align-center ga-2 w-100">
+                                    <v-chip size="x-small" color="amber-darken-2" variant="tonal">
+                                        <v-icon start size="14">mdi-star</v-icon>1
+                                    </v-chip>
+                                    <v-chip v-if="star.date" size="x-small" variant="tonal" color="primary">{{ formatDate(star.date) }}</v-chip>
+                                    <div class="text-caption flex-grow-1">{{ star.comment }}</div>
+                                    <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editStarEntry(star)" />
+                                    <v-btn v-if="delete_star_id !== star.id" icon="mdi-delete" size="x-small" color="warning" variant="tonal" @click="delete_star_id = star.id" />
+                                    <v-btn v-if="delete_star_id === star.id" icon="mdi-delete-off" size="x-small" color="success" variant="tonal" @click="delete_star_id = null" />
+                                    <v-btn v-if="delete_star_id === star.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteStarEntry(star.id)" />
+                                </div>
+                            </v-list-item>
+                            <v-list-item v-if="!studentStars.length">
+                                <v-list-item-title class="text-caption text-medium-emphasis">Noch keine Sterne vorhanden.</v-list-item-title>
+                            </v-list-item>
+                        </v-list>
+                    </v-card-text>
+                </v-card>
+
+                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form && !show_star_form">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-bell</v-icon>
                         Verständigungs-Einträge
@@ -107,7 +138,7 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form">
+                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form && !show_star_form">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-clipboard-text</v-icon>
                         Einträge
@@ -348,7 +379,7 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form">
+                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form && !show_star_form">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-account-alert</v-icon>
                         Verhaltens-Einträge
@@ -412,7 +443,7 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form">
+                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form && !show_star_form">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-school</v-icon>
                         Semesternoten
@@ -450,7 +481,7 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form">
+                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form && !show_star_form">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-account-alert</v-icon>
                         Verhaltensnoten
@@ -542,6 +573,21 @@
                         </v-form>
                     </v-card-text>
                 </v-card>
+
+                <v-card variant="outlined" class="mt-4" v-if="show_star_form">
+                    <v-card-text>
+                        <v-form ref="starForm" @submit.prevent="saveStarEntry">
+                            <div class="text-subtitle-1 mb-2">{{ star_form.id ? 'Stern bearbeiten' : 'Stern vergeben' }}</div>
+                            <v-date-input v-model="star_form.date" label="Datum" />
+                            <v-textarea v-model="star_form.comment" label="Kommentar" rows="3" :counter="1024" :maxlength="1024" />
+                            <v-alert v-if="starFormFrontendError" type="warning" class="mt-2">{{ starFormFrontendError }}</v-alert>
+                            <div class="d-flex flex-row align-center justify-space-between mt-4">
+                                <v-btn color="warning" flat tile @click="abortStarEntry">Abbruch</v-btn>
+                                <v-btn color="success" flat tile type="submit" :disabled="!!starFormFrontendError">{{ star_form.id ? 'Aktualisieren' : 'Speichern' }}</v-btn>
+                            </div>
+                        </v-form>
+                    </v-card-text>
+                </v-card>
             </v-card-text>
         </v-card>
     </ItsGridBox>
@@ -593,6 +639,9 @@ export default {
             activeSemester: null,
             show_behaviour_form: false,
             behaviour_form: this.emptyBehaviourForm(),
+            show_star_form: false,
+            star_form: this.emptyStarForm(),
+            delete_star_id: null,
             delete_behaviour_id: null,
             delete_notification_id: null,
             is_editing_behaviour_grades: false,
@@ -728,6 +777,13 @@ export default {
         },
         canSaveBehaviourForm() {
             return !this.behaviourFormFrontendError
+        },
+        studentStars() {
+            return this.selected_course_student?.stars || []
+        },
+        starFormFrontendError() {
+            if (!this.star_form?.comment?.trim()) return 'Bitte einen Kommentar eingeben.'
+            return ''
         },
         selected_comment() {
             return this.selected_course_student?.comment || ''
@@ -929,6 +985,9 @@ export default {
                 this.entry_form = this.emptyEntryForm()
                 this.show_behaviour_form = false
                 this.behaviour_form = this.emptyBehaviourForm()
+                this.show_star_form = false
+                this.star_form = this.emptyStarForm()
+                this.delete_star_id = null
                 this.delete_behaviour_id = null
                 this.delete_notification_id = null
                 this.is_editing_grades = false
@@ -973,6 +1032,11 @@ export default {
             }
             this.behaviour_form.done_date = ''
         },
+        'star_form.date'(val) {
+            if (val && val instanceof Date) {
+                this.star_form.date = this.toDateString(val)
+            }
+        },
     },
 
     methods: {
@@ -1012,6 +1076,9 @@ export default {
             this.action_2 = ''
             this.entryStore?.clear()
             this.behaviourEntryStore?.clear()
+            this.show_star_form = false
+            this.star_form = this.emptyStarForm()
+            this.delete_star_id = null
             this.delete_behaviour_id = null
             this.delete_notification_id = null
         },
@@ -1025,6 +1092,7 @@ export default {
         },
         async saveGrades() {
             if (!this.selected_course) return
+            this.courseStore.ensureCourseStudentCollections(this.selected_course)
             const gradeFields =
                 this.semesterCount === 2
                     ? { sem_1_grade: this.grade_form.sem_1_grade || null, sem_2_grade: this.grade_form.sem_2_grade || null }
@@ -1036,17 +1104,20 @@ export default {
                 }
                 return student
             })
+            const studentsPayload = studentsInfo.length ? studentsInfo : (Array.isArray(this.selected_course.students) ? this.selected_course.students : [])
 
             const payload = {
                 ...this.selected_course,
-                students: studentsInfo,
+                students: studentsPayload,
                 students_deleted: this.selected_course.students_deleted || [],
             }
 
             const ok = await this.courseStore.update(payload)
             if (ok) {
-                this.selected_course.students_info = studentsInfo
-                this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
+                if (studentsInfo.length) {
+                    this.selected_course.students_info = studentsInfo
+                    this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
+                }
                 this.is_editing_grades = false
             }
         },
@@ -1060,23 +1131,27 @@ export default {
         },
         async saveComment() {
             if (!this.selected_course) return
+            this.courseStore.ensureCourseStudentCollections(this.selected_course)
             const studentsInfo = (this.selected_course.students_info || []).map((student) => {
                 if (student.id === this.selected_course_student.id) {
                     return { ...student, comment: this.edit_comment }
                 }
                 return student
             })
+            const studentsPayload = studentsInfo.length ? studentsInfo : (Array.isArray(this.selected_course.students) ? this.selected_course.students : [])
 
             const payload = {
                 ...this.selected_course,
-                students: studentsInfo,
+                students: studentsPayload,
                 students_deleted: this.selected_course.students_deleted || [],
             }
 
             const ok = await this.courseStore.update(payload)
             if (ok) {
-                this.selected_course.students_info = studentsInfo
-                this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
+                if (studentsInfo.length) {
+                    this.selected_course.students_info = studentsInfo
+                    this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
+                }
                 this.abortEdit()
             }
         },
@@ -1122,6 +1197,119 @@ export default {
                 await this.loadEntries()
             }
             this.delete_entry_id = null
+        },
+        emptyStarForm() {
+            return {
+                id: null,
+                value: 1,
+                date: this.toDateString?.(new Date()) || '',
+                comment: '',
+            }
+        },
+        newStarEntry() {
+            this.star_form = this.emptyStarForm()
+            this.show_star_form = true
+        },
+        editStarEntry(star) {
+            if (!star) return
+            this.star_form = {
+                id: star.id || null,
+                value: 1,
+                date: star.date || this.toDateString(new Date()),
+                comment: star.comment || '',
+            }
+            this.show_star_form = true
+        },
+        abortStarEntry() {
+            this.show_star_form = false
+            this.star_form = this.emptyStarForm()
+        },
+        async saveStarEntry() {
+            if (!this.selected_course || !this.selected_course_student) return
+            if (this.starFormFrontendError) return
+            this.courseStore.ensureCourseStudentCollections(this.selected_course)
+
+            const newStar = {
+                id: this.star_form.id || (crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
+                value: 1,
+                date: this.star_form.date instanceof Date ? this.toDateString(this.star_form.date) : this.star_form.date || this.toDateString(new Date()),
+                comment: this.star_form.comment.trim(),
+            }
+
+            let studentsInfoBase = Array.isArray(this.selected_course.students_info) ? this.selected_course.students_info : []
+            if (!studentsInfoBase.length) {
+                // Recovery path: keep payload non-empty even if local students_info got desynced.
+                const courseFromStore = (this.courseStore?.courses || []).find((course) => course.id === this.selected_course.id)
+                if (courseFromStore) {
+                    this.courseStore.ensureCourseStudentCollections(courseFromStore)
+                    studentsInfoBase = Array.isArray(courseFromStore.students_info) ? courseFromStore.students_info : []
+                }
+            }
+
+            const studentsInfo = studentsInfoBase.map((student) => {
+                if (student.id !== this.selected_course_student.id) return student
+                const stars = Array.isArray(student.stars) ? [...student.stars] : []
+                const existingIndex = stars.findIndex((star) => star.id === newStar.id)
+                if (existingIndex >= 0) {
+                    stars.splice(existingIndex, 1, newStar)
+                } else {
+                    stars.push(newStar)
+                }
+                return { ...student, stars }
+            })
+
+            const studentsPayload = studentsInfo.length ? studentsInfo : (Array.isArray(this.selected_course.students) ? this.selected_course.students : [])
+
+            const payload = {
+                ...this.selected_course,
+                students: studentsPayload,
+                students_deleted: this.selected_course.students_deleted || [],
+            }
+
+            const ok = await this.courseStore.update(payload)
+            if (ok) {
+                if (studentsInfo.length) {
+                    this.selected_course.students_info = studentsInfo
+                    this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
+                }
+                this.abortStarEntry()
+            }
+        },
+        async deleteStarEntry(starId) {
+            if (!this.selected_course || !this.selected_course_student || !starId) return
+            this.courseStore.ensureCourseStudentCollections(this.selected_course)
+
+            let studentsInfoBase = Array.isArray(this.selected_course.students_info) ? this.selected_course.students_info : []
+            if (!studentsInfoBase.length) {
+                const courseFromStore = (this.courseStore?.courses || []).find((course) => course.id === this.selected_course.id)
+                if (courseFromStore) {
+                    this.courseStore.ensureCourseStudentCollections(courseFromStore)
+                    studentsInfoBase = Array.isArray(courseFromStore.students_info) ? courseFromStore.students_info : []
+                }
+            }
+
+            const studentsInfo = studentsInfoBase.map((student) => {
+                if (student.id !== this.selected_course_student.id) return student
+                const stars = (student.stars || []).filter((star) => star.id !== starId)
+                return { ...student, stars }
+            })
+
+            const studentsPayload = studentsInfo.length ? studentsInfo : (Array.isArray(this.selected_course.students) ? this.selected_course.students : [])
+
+            const payload = {
+                ...this.selected_course,
+                students: studentsPayload,
+                students_deleted: this.selected_course.students_deleted || [],
+            }
+
+            const ok = await this.courseStore.update(payload)
+            if (ok) {
+                if (studentsInfo.length) {
+                    this.selected_course.students_info = studentsInfo
+                    this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
+                }
+            }
+            this.delete_star_id = null
         },
         emptyBehaviourForm() {
             return {
@@ -1242,6 +1430,7 @@ export default {
         },
         async saveBehaviourGrades() {
             if (!this.selected_course) return
+            this.courseStore.ensureCourseStudentCollections(this.selected_course)
             const gradeFields =
                 this.semesterCount === 2
                     ? { behaviour_1_grade: this.behaviour_grade_form.behaviour_1_grade || null, behaviour_2_grade: this.behaviour_grade_form.behaviour_2_grade || null }
@@ -1253,17 +1442,20 @@ export default {
                 }
                 return student
             })
+            const studentsPayload = studentsInfo.length ? studentsInfo : (Array.isArray(this.selected_course.students) ? this.selected_course.students : [])
 
             const payload = {
                 ...this.selected_course,
-                students: studentsInfo,
+                students: studentsPayload,
                 students_deleted: this.selected_course.students_deleted || [],
             }
 
             const ok = await this.courseStore.update(payload)
             if (ok) {
-                this.selected_course.students_info = studentsInfo
-                this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
+                if (studentsInfo.length) {
+                    this.selected_course.students_info = studentsInfo
+                    this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
+                }
                 this.is_editing_behaviour_grades = false
             }
         },

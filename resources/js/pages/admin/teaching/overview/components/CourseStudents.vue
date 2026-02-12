@@ -84,6 +84,10 @@
                                         {{ student.schoolclass || student.class }}
                                     </v-chip>
                                     <div class="text-body-2">{{ student.last_name }}, {{ student.first_name }}</div>
+                                    <v-chip v-if="(student.stars || []).length" size="x-small" variant="tonal" color="amber-darken-2">
+                                        <v-icon start size="14">mdi-star</v-icon>
+                                        {{ (student.stars || []).length }}
+                                    </v-chip>
                                     <v-spacer />
                                     <template v-for="(count, type) in (studentBehaviourCounts[student.id] || {})" :key="`beh-${student.id}-${type}`">
                                         <v-chip size="x-small" variant="tonal" color="warning">{{ type }}{{ count > 1 ? ` ×${count}` : '' }}</v-chip>
@@ -582,12 +586,13 @@ export default {
         },
 
         selectCourse(course) {
+            if (this.action === 'teaching_course_new_or_edit') {
+                return
+            }
             if (this.selected_course != course) {
                 this.courseStore.ensureCourseStudentCollections(course)
                 this.selected_course = course
                 this.delete_level = 0
-            } else {
-                this.selected_course = null
             }
         },
 

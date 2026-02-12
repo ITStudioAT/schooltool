@@ -55,23 +55,32 @@ class TeachingCourseService
 
         foreach ($items as $item) {
             $resolvedId = null;
+            $fallbackImportId = null;
 
             if (is_array($item) || is_object($item)) {
                 $data = (array) $item;
                 $email = $data['email'] ?? null;
                 $id = $data['id'] ?? null;
 
-                if ($email) {
-                    $resolvedId = $this->findOrCreateUserIdByEmail($email, $schoolId, $data);
-                } elseif ($id) {
+                if ($id) {
                     $resolvedId = $this->resolveStudentIdFromNumeric((int) $id, $schoolId);
+                    if (! $resolvedId) {
+                        $fallbackImportId = $this->findImportIdInSchool((int) $id, $schoolId);
+                    }
+                } elseif ($email) {
+                    $resolvedId = $this->findOrCreateUserIdByEmail($email, $schoolId, $data);
                 }
             } elseif (is_numeric($item)) {
                 $resolvedId = $this->resolveStudentIdFromNumeric((int) $item, $schoolId);
+                if (! $resolvedId) {
+                    $fallbackImportId = $this->findImportIdInSchool((int) $item, $schoolId);
+                }
             }
 
             if ($resolvedId) {
                 $ids[] = $resolvedId;
+            } elseif ($fallbackImportId) {
+                $ids[] = $fallbackImportId;
             }
         }
 
@@ -98,6 +107,7 @@ class TeachingCourseService
                     'behaviour_1_grade' => $data['behaviour_1_grade'] ?? null,
                     'behaviour_2_grade' => $data['behaviour_2_grade'] ?? null,
                     'behaviour_grade' => $data['behaviour_grade'] ?? null,
+                    'stars' => $this->normalizeStars($data['stars'] ?? []),
                 ];
             }
         }
@@ -112,6 +122,7 @@ class TeachingCourseService
 
         foreach ($items as $item) {
             $resolvedId = null;
+            $fallbackImportId = null;
             $data = [];
             $comment = null;
 
@@ -121,18 +132,25 @@ class TeachingCourseService
                 $email = $data['email'] ?? null;
                 $id = $data['id'] ?? null;
 
-                if ($email) {
-                    $resolvedId = $this->findOrCreateUserIdByEmail($email, $schoolId, $data);
-                } elseif ($id) {
+                if ($id) {
                     $resolvedId = $this->resolveStudentIdFromNumeric((int) $id, $schoolId);
+                    if (! $resolvedId) {
+                        $fallbackImportId = $this->findImportIdInSchool((int) $id, $schoolId);
+                    }
+                } elseif ($email) {
+                    $resolvedId = $this->findOrCreateUserIdByEmail($email, $schoolId, $data);
                 }
             } elseif (is_numeric($item)) {
                 $resolvedId = $this->resolveStudentIdFromNumeric((int) $item, $schoolId);
+                if (! $resolvedId) {
+                    $fallbackImportId = $this->findImportIdInSchool((int) $item, $schoolId);
+                }
             }
 
-            if ($resolvedId) {
-                $entries[$resolvedId] = [
-                    'id' => $resolvedId,
+            $entryId = $resolvedId ?: $fallbackImportId;
+            if ($entryId) {
+                $entries[$entryId] = [
+                    'id' => $entryId,
                     'comment' => $comment,
                     'sem_1_grade' => $data['sem_1_grade'] ?? null,
                     'sem_2_grade' => $data['sem_2_grade'] ?? null,
@@ -140,11 +158,54 @@ class TeachingCourseService
                     'behaviour_1_grade' => $data['behaviour_1_grade'] ?? null,
                     'behaviour_2_grade' => $data['behaviour_2_grade'] ?? null,
                     'behaviour_grade' => $data['behaviour_grade'] ?? null,
+                    'stars' => $this->normalizeStars($data['stars'] ?? []),
                 ];
             }
         }
 
         return array_values($entries);
+    }
+
+    public function findImportIdInSchool(int $id, int $schoolId): ?int
+    {
+        $import = Import116::find($id);
+        if (! $import || (int) $import->school_id !== $schoolId) {
+            return null;
+        }
+
+        return $import->id;
+    }
+
+    public function normalizeStars($value): array
+    {
+        $items = $this->normalizeStudentItems($value);
+        $stars = [];
+
+        foreach ($items as $item) {
+            if (!is_array($item) && !is_object($item)) {
+                continue;
+            }
+
+            $data = (array) $item;
+            $comment = isset($data['comment']) ? trim((string) $data['comment']) : '';
+            if ($comment === '') {
+                continue;
+            }
+
+            $date = isset($data['date']) ? (string) $data['date'] : null;
+            if ($date !== null && $date !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+                $date = null;
+            }
+
+            $stars[] = [
+                'id' => isset($data['id']) && $data['id'] !== '' ? (string) $data['id'] : (string) \Illuminate\Support\Str::uuid(),
+                'value' => 1,
+                'comment' => $comment,
+                'date' => $date ?: now()->toDateString(),
+            ];
+        }
+
+        return $stars;
     }
 
     public function resolveStudentIdFromNumeric(int $id, int $schoolId): ?int
