@@ -305,7 +305,7 @@ class TeachingCourseService
         ]);
 
         $user->email_verified_at = now();
-        // $user->confirmed_at = now();
+        $user->confirmed_at = now();
         $user->is_active = 1;
         $user->save();
 

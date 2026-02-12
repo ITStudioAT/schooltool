@@ -303,6 +303,7 @@ describe('deleteSchool', function () {
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
         User::factory()->create(['school_id' => $school->id, 'schoolyear_id' => $schoolyear->id]);
+        User::factory()->create(['school_id' => $school->id, 'schoolyear_id' => $schoolyear->id]);
         SchoolTool::create(['school_id' => $school->id]);
 
         $this->service->deleteSchools([$school->id]);

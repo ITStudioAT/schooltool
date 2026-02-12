@@ -68,6 +68,22 @@
                             </div>
                         </div>
 
+                        <!-- Unterricht Card -->
+                        <div class="tool-card card-lernportal" @click="openUnterricht">
+                            <div class="card-glow"></div>
+                            <div class="card-content">
+                                <div class="card-icon">
+                                    <v-icon size="40">mdi-rocket-launch-outline</v-icon>
+                                </div>
+                                <h3 class="card-title">Unterricht</h3>
+                                <p class="card-description">Dein neuer Lernbereich mit modernem Look. Einstieg in den Login-Bereich fuer Schueler.</p>
+                                <div class="card-action">
+                                    <span class="action-text">Starten</span>
+                                    <v-icon size="20">mdi-arrow-right</v-icon>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Mittagsmenüs Card -->
                         <a href="https://cdgym.info/lunch" target="_blank" class="tool-card card-lunch">
                             <div class="card-glow"></div>
@@ -224,6 +240,9 @@ export default {
     methods: {
         doAlert() {
             alert('1')
+        },
+        openUnterricht() {
+            this.$router.push('/homepage/student')
         },
         moveTo(licence, school) {
             console.log('moveTo')
@@ -497,6 +516,18 @@ export default {
     background: linear-gradient(90deg, #f39200, #ffb74d);
 }
 
+.card-lernportal .card-glow {
+    background: linear-gradient(90deg, #3aaa35, #4bc044);
+}
+
+.card-lernportal {
+    border: 1px solid rgba(58, 170, 53, 0.35);
+}
+
+.card-lernportal:hover {
+    border-color: rgba(58, 170, 53, 0.6);
+}
+
 .card-lunch .card-glow {
     background: linear-gradient(90deg, #3aaa35, #4bc044);
 }
@@ -534,6 +565,11 @@ export default {
     color: #f39200;
 }
 
+.card-lernportal .card-icon {
+    background: linear-gradient(135deg, rgba(253, 128, 46, 0.2), rgba(35, 61, 76, 0.14));
+    color: #233d4c;
+}
+
 .card-lunch .card-icon {
     background: linear-gradient(135deg, rgba(58, 170, 53, 0.15), rgba(58, 170, 53, 0.05));
     color: #3aaa35;
@@ -569,6 +605,10 @@ export default {
 
 .card-tutoring .card-action {
     color: #f39200;
+}
+
+.card-lernportal .card-action {
+    color: #3aaa35;
 }
 
 .card-lunch .card-action {

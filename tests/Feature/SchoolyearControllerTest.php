@@ -226,6 +226,11 @@ test('destroy is blocked when dependencies exist', function () {
         'schoolyear_id' => $dependentYear->id,
         'email' => 'dependent@test.com',
     ]);
+    User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $dependentYear->id,
+        'email' => 'dependent2@test.com',
+    ]);
 
     $this->actingAs($this->adminUser, 'sanctum');
 

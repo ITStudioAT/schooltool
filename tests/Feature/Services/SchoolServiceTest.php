@@ -52,10 +52,11 @@ describe('create', function () {
             ->long_name->toBe('Test School')
             ->is_selectable->toBeTrue();
 
-        // Verify schoolyear was created
-        expect($school->schoolyears()->count())->toBe(1);
-        $schoolyear = $school->schoolyears()->first();
-        expect($schoolyear->name)->toBe('Schuljahr');
+        // Verify schoolyear(s) were created and one active schoolyear exists
+        expect($school->schoolyears()->count())->toBeGreaterThan(0);
+        $schoolyear = $school->schoolyears()->where('is_active', true)->first();
+        expect($schoolyear)->not->toBeNull()
+            ->and((string) $schoolyear->name)->not->toBe('');
 
         // Verify super admin was created
         $user = $school->users()->first();

@@ -267,6 +267,7 @@ class TeachingCourseDateService
     {
         $input = is_array($attendance) ? $attendance : [];
         $studentIds = $this->courseStudentIds($course);
+        $studentIdSet = array_fill_keys(array_map(fn ($id) => (string) $id, $studentIds), true);
         $normalized = [];
         foreach ($input as $key => $value) {
             $k = trim((string) $key);
@@ -277,7 +278,9 @@ class TeachingCourseDateService
             $targetId = $cleanKey;
             if (ctype_digit($cleanKey)) {
                 $n = (int) $cleanKey;
-                if (array_key_exists($n, $studentIds)) {
+                if (isset($studentIdSet[$cleanKey])) {
+                    $targetId = $cleanKey;
+                } elseif (array_key_exists($n, $studentIds)) {
                     $targetId = (string) $studentIds[$n];
                 } elseif ($n >= 0 && $n <= 200) {
                     continue;

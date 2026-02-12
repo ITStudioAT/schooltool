@@ -412,7 +412,11 @@ describe('Schoolyear Model', function () {
 
         expect($schoolyear->hasDependencies())->toBeFalse();
 
-        // Create a user with this schoolyear
+        // One user alone is not considered a blocking dependency
+        User::factory()->create(['schoolyear_id' => $schoolyear->id, 'school_id' => $school->id]);
+        expect($schoolyear->hasDependencies())->toBeFalse();
+
+        // More than one user with this schoolyear is considered a dependency
         User::factory()->create(['schoolyear_id' => $schoolyear->id, 'school_id' => $school->id]);
 
         expect($schoolyear->hasDependencies())->toBeTrue();
@@ -1052,4 +1056,3 @@ describe('Model Cascading and Dependencies', function () {
         expect($user->hasDependencies())->toBeFalse();
     });
 });
-

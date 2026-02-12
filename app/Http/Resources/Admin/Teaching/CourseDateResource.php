@@ -54,6 +54,7 @@ class CourseDateResource extends JsonResource
             : $this->teachingCourse()->first(['id', 'students']);
 
         $studentIds = $service->courseStudentIds($course ?? new \App\Models\TeachingCourse);
+        $studentIdSet = array_fill_keys(array_map(fn ($id) => (string) $id, $studentIds), true);
 
         $normalized = [];
         foreach ($input as $key => $value) {
@@ -68,7 +69,9 @@ class CourseDateResource extends JsonResource
             $targetId = $cleanKey;
             if (ctype_digit($cleanKey)) {
                 $idx = (int) $cleanKey;
-                if (array_key_exists($idx, $studentIds)) {
+                if (isset($studentIdSet[$cleanKey])) {
+                    $targetId = $cleanKey;
+                } elseif (array_key_exists($idx, $studentIds)) {
                     $targetId = (string) $studentIds[$idx];
                 } elseif ($idx >= 0 && $idx <= 200) {
                     continue;

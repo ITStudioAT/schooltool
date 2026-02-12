@@ -7,6 +7,7 @@ import Application_Error from '@/pages/homepage/error/Error.vue'
 import TutoringOverview from '@/pages/homepage/tutoring/TutoringOverview.vue'
 import Tutoring from '@/pages/homepage/tutoring/Tutoring.vue'
 import TutoringResponse from '@/pages/homepage/tutoring/responses/TutoringResponse.vue'
+import Student from '@/pages/homepage/student/Student.vue'
 
 const routes = [
     { path: '/', component: Index },
@@ -17,6 +18,7 @@ const routes = [
     { path: '/homepage/tutoring_overview', component: TutoringOverview },
     { path: '/homepage/tutoring', component: Tutoring },
     { path: '/homepage/tutoring_response', component: TutoringResponse },
+    { path: '/homepage/student', component: Student },
 ]
 
 const router = createRouter({
