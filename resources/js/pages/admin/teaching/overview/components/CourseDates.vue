@@ -58,21 +58,22 @@
                         :disabled="isEditingContent && editing_content_id !== courseDate.id"
                         :class="courseDateRowClass(courseDate)">
                         <div class="d-flex flex-column ga-2 w-100">
-                            <div class="d-flex align-center ga-2 w-100">
-                                <v-icon v-if="highlightedDateId === courseDate.id" size="x-small" color="success">mdi-arrow-right-bold</v-icon>
-                                <v-chip size="x-small" variant="tonal" :color="highlightedDateId === courseDate.id ? 'success' : 'primary'">
+                            <div class="course-date-row d-flex align-center ga-2 w-100">
+                                <v-icon v-if="highlightedDateId === courseDate.id" size="x-small" color="success" class="course-date-icon">mdi-arrow-right-bold</v-icon>
+                                <v-chip size="x-small" variant="tonal" :color="highlightedDateId === courseDate.id ? 'success' : 'primary'" class="course-date-chip">
                                     {{ getWeekday(courseDate.date) }}
                                 </v-chip>
                                 <v-chip
                                     size="x-small"
                                     :variant="highlightedDateId === courseDate.id ? 'flat' : 'outlined'"
-                                    :color="highlightedDateId === courseDate.id ? 'success' : undefined">
+                                    :color="highlightedDateId === courseDate.id ? 'success' : undefined"
+                                    class="course-date-chip">
                                     {{ formatDate(courseDate.date) }}
                                 </v-chip>
-                                <div class="text-body-2 flex-grow-1">
+                                <div class="course-date-hours text-body-2 flex-grow-1">
                                     <v-chip v-for="h in courseDate.hours" :key="h" size="x-small" variant="tonal" class="mr-1">{{ h }}. Std</v-chip>
                                 </div>
-                                <div class="d-flex align-center ga-1">
+                                <div class="course-date-actions d-flex align-center ga-1">
                                     <v-btn
                                         size="x-small"
                                         :color="hasStatus(courseDate, 'free') ? 'success' : 'default'"
@@ -565,5 +566,41 @@ export default {
 .content-readonly :deep(.v-field__input) {
     pointer-events: none;
     cursor: default;
+}
+
+.course-date-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
+.course-date-icon {
+    flex: 0 0 auto;
+}
+
+.course-date-chip {
+    flex: 0 0 auto;
+}
+
+.course-date-hours {
+    min-width: 120px;
+}
+
+.course-date-actions {
+    margin-left: auto;
+    flex: 0 0 auto;
+}
+
+@media (max-width: 700px) {
+    .course-date-hours {
+        flex-basis: 100%;
+        min-width: 100%;
+        margin-top: 2px;
+        order: 2;
+    }
+
+    .course-date-actions {
+        order: 1;
+    }
 }
 </style>

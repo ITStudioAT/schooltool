@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseWork;
 use App\Services\TeachingCourseService;
+use App\Services\TeachingCourseWorkEntrySyncService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -42,7 +43,7 @@ class CourseWorkController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
+    public function store(Request $request, TeachingCourseWorkEntrySyncService $entrySyncService)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -109,6 +110,7 @@ class CourseWorkController extends Controller
         );
 
         $work = TeachingCourseWork::create($validated);
+        $entrySyncService->syncWork($work);
 
         return response()->json(['data' => $work], 201);
     }
@@ -134,7 +136,7 @@ class CourseWorkController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, TeachingCourseWork $course_work)
+    public function update(Request $request, TeachingCourseWork $course_work, TeachingCourseWorkEntrySyncService $entrySyncService)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -197,6 +199,7 @@ class CourseWorkController extends Controller
         );
 
         $course_work->update($validated);
+        $entrySyncService->syncWork($course_work->fresh());
 
         return response()->json(['data' => $course_work]);
     }
@@ -285,7 +288,7 @@ class CourseWorkController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(TeachingCourseWork $course_work)
+    public function destroy(TeachingCourseWork $course_work, TeachingCourseWorkEntrySyncService $entrySyncService)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -297,6 +300,7 @@ class CourseWorkController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
+        $entrySyncService->deleteForWork($course_work);
         $course_work->delete();
 
         return response()->json(null, 204);

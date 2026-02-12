@@ -19,6 +19,7 @@ class TeachingCourseStudentEntry extends Model
         'type',
         'grade',
         'status',
+        'source',
     ];
 
     protected $casts = [

@@ -54,22 +54,20 @@
             <v-card-text class="pa-0">
                 <v-list density="compact">
                     <v-list-item v-for="work in filteredCourseWorks" :key="work.id" class="cursor-pointer" @click="editWork(work)">
-                        <div class="d-flex flex-column ga-2 w-100">
-                            <div class="d-flex align-center ga-2 w-100">
-                                <v-chip v-if="work.date_for_all_groups" size="x-small" variant="tonal" color="primary">
-                                    {{ formatDate(work.date_for_all_groups) }}
-                                </v-chip>
-                                <v-chip v-else size="x-small" variant="outlined">ohne Datum</v-chip>
-                                <div class="text-body-2 flex-grow-1" :class="workHasAllGrades(work) ? 'text-success' : ''">
-                                    <strong v-if="work.type">{{ workTypeLabel(work.type) }}</strong>
-                                    <span v-else class="text-medium-emphasis">eine Arbeit</span>
-                                    <span v-if="work.description">– {{ work.description }}</span>
-                                </div>
-                                <div class="d-flex align-center ga-1">
-                                    <v-btn v-if="delete_work_id !== work.id" icon="mdi-delete" size="x-small" color="warning" variant="tonal" @click.stop="delete_work_id = work.id" />
-                                    <v-btn v-if="delete_work_id === work.id" icon="mdi-delete-off" size="x-small" color="success" variant="tonal" @click.stop="delete_work_id = null" />
-                                    <v-btn v-if="delete_work_id === work.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click.stop="deleteWork(work)" />
-                                </div>
+                        <div class="work-row d-flex align-center ga-2 w-100">
+                            <v-chip v-if="workListDate(work)" size="x-small" variant="tonal" :color="workListDateColor(work)" class="work-date-chip">
+                                {{ formatDate(workListDate(work)) }}
+                            </v-chip>
+                            <v-chip v-else size="x-small" variant="outlined" class="work-date-chip">ohne Datum</v-chip>
+                            <div class="work-title text-body-2 flex-grow-1" :class="workHasAllGrades(work) ? 'text-success' : ''">
+                                <strong v-if="work.type">{{ workTypeLabel(work.type) }}</strong>
+                                <span v-else class="text-medium-emphasis">eine Arbeit</span>
+                                <span v-if="work.description">– {{ work.description }}</span>
+                            </div>
+                            <div class="work-actions d-flex align-center ga-1">
+                                <v-btn v-if="delete_work_id !== work.id" icon="mdi-delete" size="x-small" color="warning" variant="tonal" @click.stop="delete_work_id = work.id" />
+                                <v-btn v-if="delete_work_id === work.id" icon="mdi-delete-off" size="x-small" color="success" variant="tonal" @click.stop="delete_work_id = null" />
+                                <v-btn v-if="delete_work_id === work.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click.stop="deleteWork(work)" />
                             </div>
                         </div>
                     </v-list-item>
@@ -155,7 +153,7 @@
                                             </v-alert>
                                             <div class="d-flex align-center flex-wrap ga-2 w-100">
                                                 <div class="text-caption text-medium-emphasis">Gruppe {{ index + 1 }}</div>
-                                                <v-chip v-if="group.date" size="x-small" variant="tonal" :color="group.date !== work_form.date_for_all_groups ? 'error' : 'primary'">
+                                                <v-chip v-if="group.date" size="x-small" variant="tonal" :color="workDateColor(group.date)">
                                                     {{ formatDate(group.date) }}
                                                 </v-chip>
                                                 <v-chip v-for="studentId in sortedGroupStudentIds(group)" :key="`g-${index}-s-${studentId}`" size="x-small" variant="tonal">
@@ -231,15 +229,16 @@
                         </div>
                         <div v-else>
                             <div class="d-flex align-center justify-space-between ga-2">
-                                <v-btn
-                                    v-if="allSinglePanelsOpen"
-                                    size="x-small"
-                                    :variant="show_bulk_action ? 'flat' : 'outlined'"
-                                    :color="show_bulk_action ? 'warning' : 'primary'"
-                                    @click="show_bulk_action = !show_bulk_action">
-                                    {{ show_bulk_action ? 'Sammelaktion schließen' : 'Sammelaktion' }}
-                                </v-btn>
-                                <v-spacer v-else />
+                                <div class="d-flex align-center ga-2">
+                                    <v-btn
+                                        size="x-small"
+                                        :variant="show_bulk_action ? 'flat' : 'outlined'"
+                                        :color="show_bulk_action ? 'warning' : 'primary'"
+                                        :disabled="!(work_form.groups || []).length"
+                                        @click="toggleBulkAction">
+                                        {{ show_bulk_action ? 'Sammelaktion schließen' : 'Sammelaktion' }}
+                                    </v-btn>
+                                </div>
                                 <v-btn size="x-small" variant="tonal" color="primary" @click="toggleAllSinglePanels">
                                     {{ allSinglePanelsOpen ? 'Alle schließen' : 'Alle öffnen' }}
                                 </v-btn>
@@ -540,6 +539,14 @@ export default {
                 this.refreshWorks()
             },
             deep: true,
+        },
+        selected_courseWork: {
+            handler(work) {
+                if (!work?.id) return
+                if (this.selected_course?.id && work.teaching_course_id !== this.selected_course.id) return
+                this.editWork(work)
+            },
+            deep: false,
         },
         'work_form.date_for_all_groups'(val) {
             if (val && val instanceof Date) {
@@ -930,6 +937,17 @@ export default {
             }
             this.singlePanels = this.work_form.groups.map((_, idx) => idx)
         },
+        toggleBulkAction() {
+            if (this.show_bulk_action) {
+                this.show_bulk_action = false
+                this.selected_student_ids = []
+                return
+            }
+            if (!this.allSinglePanelsOpen) {
+                this.singlePanels = this.work_form.groups.map((_, idx) => idx)
+            }
+            this.show_bulk_action = true
+        },
         studentNameById(studentId) {
             const student = (this.selected_course?.students_info || []).find((s) => s.id === studentId)
             if (!student) return String(studentId || '')
@@ -973,8 +991,8 @@ export default {
                 })
             }
 
-            // For non-group work: all students in the selected course need a grade.
-            const students = (this.selected_course?.students_info || []).map((s) => s.id)
+            // For non-group work: all students that are part of this work need a grade.
+            const students = [...new Set(nonEmptyGroups.flatMap((group) => (Array.isArray(group?.student_ids) ? group.student_ids : [])))]
             if (!students.length) return false
 
             const gradesByStudent = new Map()
@@ -1072,6 +1090,33 @@ export default {
             const formatted = this.formatDate(d)
             return `${weekday} ${formatted}`
         },
+        workDateColor(date) {
+            const d = parseLocalDate(date)
+            if (isNaN(d.getTime())) return 'primary'
+            d.setHours(0, 0, 0, 0)
+            const today = new Date()
+            today.setHours(0, 0, 0, 0)
+            return d <= today ? 'error' : 'primary'
+        },
+        workListDate(work) {
+            const groups = Array.isArray(work?.groups) ? work.groups : []
+            const groupDates = groups
+                .map((group) => this.normalizeDateString(group?.date))
+                .filter((date) => !!date)
+                .filter((date) => {
+                    const parsed = parseLocalDate(date)
+                    return !isNaN(parsed.getTime())
+                })
+                .sort((a, b) => a.localeCompare(b))
+            if (groupDates.length) return groupDates[0]
+            return this.normalizeDateString(work?.date_for_all_groups)
+        },
+        workListDateColor(work) {
+            const date = this.workListDate(work)
+            if (!date) return 'primary'
+            if (this.workHasAllGrades(work)) return 'primary'
+            return this.workDateColor(date)
+        },
         workTypeLabel(type) {
             if (!type) return ''
             const found = this.teachingWorks.find((w) => w.short_name === type)
@@ -1129,3 +1174,37 @@ export default {
     },
 }
 </script>
+
+<style scoped>
+.work-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
+.work-date-chip {
+    flex: 0 0 auto;
+}
+
+.work-title {
+    min-width: 140px;
+}
+
+.work-actions {
+    margin-left: auto;
+    flex: 0 0 auto;
+}
+
+@media (max-width: 700px) {
+    .work-title {
+        flex-basis: 100%;
+        min-width: 100%;
+        margin-top: 2px;
+        order: 2;
+    }
+
+    .work-actions {
+        order: 1;
+    }
+}
+</style>

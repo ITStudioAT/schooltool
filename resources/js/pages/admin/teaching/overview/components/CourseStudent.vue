@@ -55,16 +55,18 @@
                     <v-card-text class="pa-0">
                         <v-list density="compact">
                             <v-list-item v-for="star in studentStars" :key="star.id">
-                                <div class="d-flex align-center ga-2 w-100">
+                                <div class="star-row d-flex align-center ga-2 w-100">
                                     <v-chip size="x-small" color="amber-darken-2" variant="tonal">
                                         <v-icon start size="14">mdi-star</v-icon>1
                                     </v-chip>
                                     <v-chip v-if="star.date" size="x-small" variant="tonal" color="primary">{{ formatDate(star.date) }}</v-chip>
-                                    <div class="text-caption flex-grow-1">{{ star.comment }}</div>
-                                    <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editStarEntry(star)" />
-                                    <v-btn v-if="delete_star_id !== star.id" icon="mdi-delete" size="x-small" color="warning" variant="tonal" @click="delete_star_id = star.id" />
-                                    <v-btn v-if="delete_star_id === star.id" icon="mdi-delete-off" size="x-small" color="success" variant="tonal" @click="delete_star_id = null" />
-                                    <v-btn v-if="delete_star_id === star.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteStarEntry(star.id)" />
+                                    <div class="star-description text-caption flex-grow-1">{{ star.comment }}</div>
+                                    <div class="star-actions d-flex align-center ga-1">
+                                        <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editStarEntry(star)" />
+                                        <v-btn v-if="delete_star_id !== star.id" icon="mdi-delete" size="x-small" color="warning" variant="tonal" @click="delete_star_id = star.id" />
+                                        <v-btn v-if="delete_star_id === star.id" icon="mdi-delete-off" size="x-small" color="success" variant="tonal" @click="delete_star_id = null" />
+                                        <v-btn v-if="delete_star_id === star.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteStarEntry(star.id)" />
+                                    </div>
                                 </div>
                             </v-list-item>
                             <v-list-item v-if="!studentStars.length">
@@ -77,7 +79,7 @@
                 <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form && !show_star_form">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-bell</v-icon>
-                        Verständigungs-Einträge
+                        Verständigungen
                         <v-chip v-if="filteredNotificationEntries?.length" size="x-small" color="secondary" variant="flat">
                             {{ filteredNotificationEntries.length }}
                         </v-chip>
@@ -89,14 +91,14 @@
                         <v-list density="compact">
                             <template v-for="item in filteredNotificationEntriesGrouped" :key="item.key">
                                 <v-list-item v-if="item.kind === 'header'">
-                                    <div class="d-flex align-center ga-2 w-100">
+                                    <div class="entry-row d-flex align-center ga-2 w-100">
                                         <v-divider />
                                         <span class="text-caption text-medium-emphasis text-no-wrap font-weight-bold">{{ item.label }}</span>
                                         <v-divider />
                                     </div>
                                 </v-list-item>
                                 <v-list-item v-else>
-                                    <div class="d-flex align-center ga-2 w-100">
+                                    <div class="entry-row d-flex align-center ga-2 w-100">
                                         <v-chip v-if="item.entry.date" size="x-small" variant="tonal" color="primary">
                                             {{ formatDate(item.entry.date) }}
                                         </v-chip>
@@ -139,7 +141,7 @@
                                 </v-list-item>
                             </template>
                             <v-list-item v-if="!filteredNotificationEntries?.length">
-                                <v-list-item-title class="text-caption text-medium-emphasis">Keine Verständigungs-Einträge vorhanden.</v-list-item-title>
+                                <v-list-item-title class="text-caption text-medium-emphasis">Keine Verständigungen vorhanden.</v-list-item-title>
                             </v-list-item>
                         </v-list>
                     </v-card-text>
@@ -154,7 +156,7 @@
                         </v-chip>
                         <v-spacer />
                         <v-btn size="small" variant="tonal" color="primary" @click="toggleSortByType">
-                            {{ sort_by_type ? 'Sortierung: Typ' : 'Sortierung: Datum' }}
+                            {{ sort_by_type ? 'Sort: Typ' : 'Sort: Datum' }}
                         </v-btn>
                         <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newEntry" />
                     </v-card-title>
@@ -170,7 +172,9 @@
                                     </div>
                                 </v-list-item>
                                 <v-list-item v-else>
-                                    <div class="d-flex align-center ga-2 w-100">
+                                    <div
+                                        class="entry-row d-flex align-center ga-2 w-100"
+                                        :class="item.stripe % 2 === 1 ? 'entry-list-row--alt' : 'entry-list-row--base'">
                                         <v-chip v-if="item.entry.date" size="x-small" variant="tonal" color="primary">
                                             {{ formatDate(item.entry.date) }}
                                         </v-chip>
@@ -180,28 +184,49 @@
                                         <v-chip v-if="item.entry.type" size="x-small" variant="outlined">
                                             {{ workTypeLabel(item.entry.type) }}
                                         </v-chip>
+                                        <v-chip
+                                            v-if="entryWorkTitle(item.entry)"
+                                            size="x-small"
+                                            variant="outlined"
+                                            color="primary"
+                                            class="entry-work-title">
+                                            {{ entryWorkTitle(item.entry) }}
+                                        </v-chip>
+                                        <v-chip v-if="entryIsDerivedFromWork(item.entry)" size="x-small" variant="tonal" color="info">
+                                            <v-icon start size="12">mdi-lock</v-icon>
+                                            Aus Arbeit
+                                        </v-chip>
                                         <v-chip v-if="item.entry.grade" size="small" variant="tonal" color="success">
                                             {{ item.entry.grade }}
                                         </v-chip>
-                                        <div class="text-caption flex-grow-1">
+                                        <div class="entry-description text-caption flex-grow-1">
                                             {{ item.entry.description || '' }}
                                         </div>
-                                        <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editEntry(item.entry)" />
-                                        <v-btn
-                                            v-if="delete_entry_id !== item.entry.id"
-                                            icon="mdi-delete"
-                                            size="x-small"
-                                            color="warning"
-                                            variant="tonal"
-                                            @click="delete_entry_id = item.entry.id" />
-                                        <v-btn
-                                            v-if="delete_entry_id === item.entry.id"
-                                            icon="mdi-delete-off"
-                                            size="x-small"
-                                            color="success"
-                                            variant="tonal"
-                                            @click="delete_entry_id = null" />
-                                        <v-btn v-if="delete_entry_id === item.entry.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteEntry(item.entry)" />
+                                        <div class="entry-actions d-flex align-center ga-1">
+                                            <v-btn
+                                                v-if="entryIsDerivedFromWork(item.entry) && item.entry.teaching_course_work_id"
+                                                icon="mdi-open-in-new"
+                                                size="x-small"
+                                                color="info"
+                                                variant="tonal"
+                                                @click="jumpToWork(item.entry)" />
+                                            <v-btn v-if="!entryIsDerivedFromWork(item.entry)" icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editEntry(item.entry)" />
+                                            <v-btn
+                                                v-if="!entryIsDerivedFromWork(item.entry) && delete_entry_id !== item.entry.id"
+                                                icon="mdi-delete"
+                                                size="x-small"
+                                                color="warning"
+                                                variant="tonal"
+                                                @click="delete_entry_id = item.entry.id" />
+                                            <v-btn
+                                                v-if="!entryIsDerivedFromWork(item.entry) && delete_entry_id === item.entry.id"
+                                                icon="mdi-delete-off"
+                                                size="x-small"
+                                                color="success"
+                                                variant="tonal"
+                                                @click="delete_entry_id = null" />
+                                            <v-btn v-if="!entryIsDerivedFromWork(item.entry) && delete_entry_id === item.entry.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteEntry(item.entry)" />
+                                        </div>
                                     </div>
                                 </v-list-item>
                             </template>
@@ -408,7 +433,7 @@
                                     </div>
                                 </v-list-item>
                                 <v-list-item v-else>
-                                    <div class="d-flex align-center ga-2 w-100">
+                                    <div class="behaviour-row d-flex align-center ga-2 w-100">
                                         <v-chip v-if="item.entry.date" size="x-small" variant="tonal" color="primary">
                                             {{ formatDate(item.entry.date) }}
                                         </v-chip>
@@ -421,25 +446,27 @@
                                         <v-chip v-if="item.entry.type" size="x-small" variant="outlined" color="warning">
                                             {{ behaviourTypeLabel(item.entry.type) }}
                                         </v-chip>
-                                        <div class="text-caption flex-grow-1">
+                                        <div class="behaviour-description text-caption flex-grow-1">
                                             {{ item.entry.description || '' }}
                                         </div>
-                                        <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editBehaviourEntry(item.entry)" />
-                                        <v-btn
-                                            v-if="delete_behaviour_id !== item.entry.id"
-                                            icon="mdi-delete"
-                                            size="x-small"
-                                            color="warning"
-                                            variant="tonal"
-                                            @click="delete_behaviour_id = item.entry.id" />
-                                        <v-btn
-                                            v-if="delete_behaviour_id === item.entry.id"
-                                            icon="mdi-delete-off"
-                                            size="x-small"
-                                            color="success"
-                                            variant="tonal"
-                                            @click="delete_behaviour_id = null" />
-                                        <v-btn v-if="delete_behaviour_id === item.entry.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteBehaviourEntry(item.entry)" />
+                                        <div class="behaviour-actions d-flex align-center ga-1">
+                                            <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editBehaviourEntry(item.entry)" />
+                                            <v-btn
+                                                v-if="delete_behaviour_id !== item.entry.id"
+                                                icon="mdi-delete"
+                                                size="x-small"
+                                                color="warning"
+                                                variant="tonal"
+                                                @click="delete_behaviour_id = item.entry.id" />
+                                            <v-btn
+                                                v-if="delete_behaviour_id === item.entry.id"
+                                                icon="mdi-delete-off"
+                                                size="x-small"
+                                                color="success"
+                                                variant="tonal"
+                                                @click="delete_behaviour_id = null" />
+                                            <v-btn v-if="delete_behaviour_id === item.entry.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteBehaviourEntry(item.entry)" />
+                                        </div>
                                     </div>
                                 </v-list-item>
                             </template>
@@ -605,6 +632,7 @@ import { mapWritableState } from 'pinia'
 import { parseLocalDate } from '@/helpers/date'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
+import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
 import { useCourseBehaviourEntryStore } from '@/stores/admin/teaching/CourseBehaviourEntryStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
@@ -617,6 +645,7 @@ export default {
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.courseStore = useCourseStore()
+        this.courseWorkStore = useCourseWorkStore()
         this.entryStore = useCourseStudentEntryStore()
         this.behaviourEntryStore = useCourseBehaviourEntryStore()
         this.teachingStore = useTeachingStore()
@@ -624,13 +653,18 @@ export default {
             await this.teachingStore.loadSettings()
         }
         this.activeSemester = Number(this.config?.user?.teaching_active_semester) || 1
-        await Promise.all([this.loadEntries(), this.loadBehaviourEntries()])
+        await Promise.all([
+            this.loadEntries(),
+            this.loadBehaviourEntries(),
+            this.selected_course?.id ? this.courseWorkStore.index(this.selected_course.id) : Promise.resolve(true),
+        ])
     },
 
     data() {
         return {
             adminStore: null,
             courseStore: null,
+            courseWorkStore: null,
             entryStore: null,
             behaviourEntryStore: null,
             teachingStore: null,
@@ -658,7 +692,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
-        ...mapWritableState(useCourseStore, ['selected_course', 'selected_course_student']),
+        ...mapWritableState(useCourseStore, ['selected_course', 'selected_course_id', 'selected_course_student', 'show_works', 'show_infos', 'show_dates']),
         ...mapWritableState(useCourseStudentEntryStore, ['entries']),
         ...mapWritableState(useTeachingStore, ['settings']),
         behaviourEntries() {
@@ -956,11 +990,11 @@ export default {
         sortedEntriesGrouped() {
             const entries = this.sortedEntries
             if (this.semesterCount !== 2 || this.activeSemester !== 3) {
-                return entries.map((e) => ({ kind: 'entry', key: `entry-${e.id}`, entry: e }))
+                return entries.map((e, index) => ({ kind: 'entry', key: `entry-${e.id}`, entry: e, stripe: index }))
             }
             const boundary = this.displaySem2Boundary()
             if (!boundary) {
-                return entries.map((e) => ({ kind: 'entry', key: `entry-${e.id}`, entry: e }))
+                return entries.map((e, index) => ({ kind: 'entry', key: `entry-${e.id}`, entry: e, stripe: index }))
             }
             const sem1 = entries.filter((e) => {
                 if (!e.date) return true
@@ -973,10 +1007,17 @@ export default {
                 return !!d && d >= boundary
             })
             const result = []
+            let stripeIndex = 0
             result.push({ kind: 'header', key: 'header-sem2', label: '2. Semester' })
-            sem2.forEach((e) => result.push({ kind: 'entry', key: `entry-${e.id}`, entry: e }))
+            sem2.forEach((e) => {
+                result.push({ kind: 'entry', key: `entry-${e.id}`, entry: e, stripe: stripeIndex })
+                stripeIndex += 1
+            })
             result.push({ kind: 'header', key: 'header-sem1', label: '1. Semester' })
-            sem1.forEach((e) => result.push({ kind: 'entry', key: `entry-${e.id}`, entry: e }))
+            sem1.forEach((e) => {
+                result.push({ kind: 'entry', key: `entry-${e.id}`, entry: e, stripe: stripeIndex })
+                stripeIndex += 1
+            })
             return result
         },
     },
@@ -989,6 +1030,13 @@ export default {
         },
         'config.user.teaching_active_semester'(val) {
             if (val) this.activeSemester = Number(val) || 1
+        },
+        selected_course: {
+            async handler(course) {
+                if (!course?.id) return
+                await this.courseWorkStore?.index(course.id)
+            },
+            deep: false,
         },
         selected_course_student: {
             handler() {
@@ -1518,7 +1566,7 @@ export default {
             due.setHours(0, 0, 0, 0)
             const today = new Date()
             today.setHours(0, 0, 0, 0)
-            return due < today ? 'error' : 'warning'
+            return due <= today ? 'error' : 'warning'
         },
         workTypeLabel(type) {
             if (!type) return ''
@@ -1550,6 +1598,31 @@ export default {
         pointsGradeForAnyWork(points) {
             const pointsWork = this.teachingWorks.find((w) => w.calculation === 'points' && (w.points_table || []).length)
             return pointsWork ? this.pointsGradeForWork(pointsWork, points) : null
+        },
+        entryIsDerivedFromWork(entry) {
+            return (entry?.source || '') === 'course_work'
+        },
+        entryWorkTitle(entry) {
+            const workId = entry?.teaching_course_work_id
+            if (!workId) return ''
+            const work = (this.courseWorkStore?.courseWorks || []).find((w) => w.id === workId)
+            if (!work) return ''
+            const desc = (work.description || '').toString().trim()
+            return desc || ''
+        },
+        async jumpToWork(entry) {
+            if (!entry?.teaching_course_work_id || !this.selected_course?.id) return
+            await this.courseWorkStore?.index(this.selected_course.id)
+            const work = (this.courseWorkStore?.courseWorks || []).find((w) => w.id === entry.teaching_course_work_id)
+            if (!work) return
+
+            this.action_2 = ''
+            this.selected_course_student = null
+            this.show_works = true
+            this.show_infos = false
+            this.show_dates = false
+            this.selected_course_id = this.selected_course.id
+            this.courseWorkStore.selected_courseWork = work
         },
         entriesForSemester(entries, semester) {
             if (this.semesterCount !== 2) return entries
@@ -1817,5 +1890,136 @@ export default {
     gap: 10px;
     font-size: 0.95rem;
     font-weight: 600;
+}
+
+.entry-work-title {
+    max-width: min(460px, 60vw);
+}
+
+.entry-work-title :deep(.v-chip__content) {
+    overflow: hidden;
+    display: block;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.entry-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
+.entry-list-row--base {
+    background-color: #ffffff !important;
+    border-radius: 8px;
+}
+
+.entry-list-row--alt {
+    background-color: #e9edf5 !important;
+    border-radius: 8px;
+}
+
+.entry-row.entry-list-row--base,
+.entry-row.entry-list-row--alt {
+    padding: 6px 8px;
+}
+
+.entry-row > .v-chip {
+    flex: 0 0 auto;
+}
+
+.star-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
+.star-row > .v-chip {
+    flex: 0 0 auto;
+}
+
+.star-description {
+    min-width: 120px;
+}
+
+.star-actions {
+    margin-left: auto;
+    flex: 0 0 auto;
+}
+
+.behaviour-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
+.behaviour-row > .v-chip {
+    flex: 0 0 auto;
+}
+
+.behaviour-description {
+    min-width: 120px;
+}
+
+.behaviour-actions {
+    margin-left: auto;
+    flex: 0 0 auto;
+}
+
+.entry-description {
+    min-width: 120px;
+}
+
+.entry-actions {
+    margin-left: auto;
+    flex: 0 0 auto;
+}
+
+.entry-work-title {
+    flex: 0 1 auto;
+    min-width: 0;
+    width: fit-content;
+}
+
+@media (max-width: 700px) {
+    .star-description {
+        flex-basis: 100%;
+        min-width: 100%;
+        margin-top: 2px;
+        order: 2;
+    }
+
+    .star-actions {
+        order: 1;
+    }
+
+    .behaviour-description {
+        flex-basis: 100%;
+        min-width: 100%;
+        margin-top: 2px;
+        order: 2;
+    }
+
+    .behaviour-actions {
+        order: 1;
+    }
+
+    .entry-description {
+        flex-basis: 100%;
+        min-width: 100%;
+        margin-top: 2px;
+    }
+
+    .entry-actions {
+        margin-left: 0;
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    .entry-work-title {
+        flex-basis: 100%;
+        min-width: 0;
+        max-width: 100%;
+    }
 }
 </style>

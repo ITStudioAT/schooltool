@@ -87,6 +87,10 @@ class CourseStudentEntryController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
+        if (($course_student_entry->source ?? 'manual') === 'course_work') {
+            abort(409, 'Dieser Eintrag wird aus einer Arbeit abgeleitet und kann hier nicht direkt geändert werden.');
+        }
+
         $course = $course_student_entry->teachingCourse;
         if (! $course || $course->school_id !== $auth_user->school_id) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -122,6 +126,10 @@ class CourseStudentEntryController extends Controller
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        if (($course_student_entry->source ?? 'manual') === 'course_work') {
+            abort(409, 'Dieser Eintrag wird aus einer Arbeit abgeleitet und kann hier nicht direkt gelöscht werden.');
         }
 
         $course = $course_student_entry->teachingCourse;

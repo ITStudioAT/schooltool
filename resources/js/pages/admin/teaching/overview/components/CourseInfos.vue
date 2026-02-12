@@ -216,7 +216,7 @@ export default {
             due.setHours(0, 0, 0, 0)
             const today = new Date()
             today.setHours(0, 0, 0, 0)
-            return due < today ? 'error' : 'warning'
+            return due <= today ? 'error' : 'warning'
         },
         toDateString(date) {
             const d = parseLocalDate(date)
