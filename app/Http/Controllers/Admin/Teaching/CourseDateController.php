@@ -7,15 +7,10 @@ use App\Http\Resources\Admin\Teaching\CourseDateResource;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseDate;
 use App\Services\TeachingCourseDateService;
-use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Schema;
 
 class CourseDateController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
     public function index(TeachingCourse $course)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
@@ -33,9 +28,6 @@ class CourseDateController extends Controller
         return response()->json(['data' => CourseDateResource::collection($dates)]);
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(Request $request, TeachingCourseDateService $service)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
@@ -73,9 +65,6 @@ class CourseDateController extends Controller
         return response()->json(['data' => CourseDateResource::collection($createdDates), 'count' => count($createdDates)], 201);
     }
 
-    /**
-     * Display the specified resource.
-     */
     public function show(TeachingCourse $course, TeachingCourseDate $date)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
@@ -93,10 +82,7 @@ class CourseDateController extends Controller
         return response()->json(new CourseDateResource($date));
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, TeachingCourseDate $course_date)
+    public function update(Request $request, TeachingCourseDate $course_date, TeachingCourseDateService $service)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -118,82 +104,11 @@ class CourseDateController extends Controller
             'attendance_checked' => 'nullable|boolean',
         ]);
 
-        $supportsAttendanceColumns = $this->supportsAttendanceColumns();
-        $updateData = [];
-        if (array_key_exists('date', $validated)) {
-            $updateData['date'] = $validated['date'];
-        }
-        if (array_key_exists('hours', $validated)) {
-            $updateData['hours'] = $validated['hours'];
-        }
-        if (array_key_exists('content', $validated)) {
-            $updateData['content'] = $validated['content'];
-        }
-
-        $statusProvided = array_key_exists('status', $validated);
-        $attendanceProvided = array_key_exists('attendance', $validated);
-        $attendanceCheckedProvided = array_key_exists('attendance_checked', $validated);
-
-        if ($supportsAttendanceColumns) {
-            if ($statusProvided) {
-                $updateData['status'] = $this->normalizePublicStatus($validated['status'] ?? []);
-            } elseif ($attendanceProvided || $attendanceCheckedProvided) {
-                $currentStatus = is_array($course_date->status) ? $course_date->status : [];
-                $cleanStatus = $this->stripAttendanceMetaFromStatus($currentStatus);
-                if ($cleanStatus !== $currentStatus) {
-                    $updateData['status'] = $cleanStatus;
-                }
-            }
-            if ($attendanceProvided) {
-                $updateData['attendance'] = $this->normalizeAttendanceForCourse($validated['attendance'] ?? [], $course);
-            }
-            if ($attendanceCheckedProvided) {
-                $updateData['attendance_checked'] = (bool) ($validated['attendance_checked'] ?? false);
-            }
-        } else {
-            $currentStatus = is_array($course_date->status) ? $course_date->status : [];
-            $publicStatus = $statusProvided
-                ? $this->normalizePublicStatus($validated['status'] ?? [])
-                : $this->stripAttendanceMetaFromStatus($currentStatus);
-            $attendance = $attendanceProvided
-                ? $this->normalizeAttendanceForCourse($validated['attendance'] ?? [], $course)
-                : $this->attendanceFromStatus($currentStatus);
-            $attendanceChecked = $attendanceCheckedProvided
-                ? (bool) ($validated['attendance_checked'] ?? false)
-                : $this->attendanceCheckedFromStatus($currentStatus);
-
-            $updateData['status'] = $this->buildStatusWithAttendanceMeta($publicStatus, $attendance, $attendanceChecked);
-        }
-
-        if (! empty($updateData)) {
-            try {
-                $course_date->update($updateData);
-            } catch (QueryException $e) {
-                if (! $this->isMissingAttendanceColumnException($e)) {
-                    throw $e;
-                }
-                $currentStatus = is_array($course_date->status) ? $course_date->status : [];
-                $publicStatus = $statusProvided
-                    ? $this->normalizePublicStatus($validated['status'] ?? [])
-                    : $this->stripAttendanceMetaFromStatus($currentStatus);
-                $attendance = $attendanceProvided
-                    ? ($validated['attendance'] ?? [])
-                    : $this->attendanceFromStatus($currentStatus);
-                $attendanceChecked = $attendanceCheckedProvided
-                    ? (bool) ($validated['attendance_checked'] ?? false)
-                    : $this->attendanceCheckedFromStatus($currentStatus);
-                $course_date->update([
-                    'status' => $this->buildStatusWithAttendanceMeta($publicStatus, $attendance, $attendanceChecked),
-                ]);
-            }
-        }
+        $service->updateCourseDate($course_date, $validated, $course);
 
         return response()->json(new CourseDateResource($course_date));
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
     public function destroy(TeachingCourseDate $course_date)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
@@ -211,10 +126,7 @@ class CourseDateController extends Controller
         return response()->json(null, 204);
     }
 
-    /**
-     * Update the status of a course date.
-     */
-    public function updateStatus(Request $request, TeachingCourseDate $course_date)
+    public function updateStatus(Request $request, TeachingCourseDate $course_date, TeachingCourseDateService $service)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -235,257 +147,11 @@ class CourseDateController extends Controller
             'toggle_student_id' => 'nullable|integer',
             'client_toggle_version' => 'nullable|string|max:32',
         ]);
-        $updateData = [];
-        $supportsAttendanceColumns = $this->supportsAttendanceColumns();
-        $statusProvided = array_key_exists('status', $validated);
-        $attendanceProvided = array_key_exists('attendance', $validated);
-        $attendanceCheckedProvided = array_key_exists('attendance_checked', $validated);
-        $toggleStudentProvided = array_key_exists('toggle_student_id', $validated) && $validated['toggle_student_id'] !== null;
 
-        if ($toggleStudentProvided) {
-            $currentAttendance = $supportsAttendanceColumns
-                ? (is_array($course_date->attendance) ? $course_date->attendance : [])
-                : $this->attendanceFromStatus(is_array($course_date->status) ? $course_date->status : []);
-            $currentAttendance = $this->normalizeAttendanceMapForToggle($currentAttendance, $course);
-            $studentKey = 's_' . ((string) $validated['toggle_student_id']);
-            $isCurrentlyPresent = $this->isPresentValue($currentAttendance[$studentKey] ?? null);
-            if ($isCurrentlyPresent) {
-                $currentAttendance[$studentKey] = false;
-            } else {
-                unset($currentAttendance[$studentKey]);
-            }
-            $validated['attendance'] = $currentAttendance;
-            $attendanceProvided = true;
-        }
-
-        if ($supportsAttendanceColumns) {
-            if ($statusProvided) {
-                $updateData['status'] = $this->normalizePublicStatus($validated['status'] ?? []);
-            } elseif ($attendanceProvided || $attendanceCheckedProvided || $toggleStudentProvided) {
-                $currentStatus = is_array($course_date->status) ? $course_date->status : [];
-                $cleanStatus = $this->stripAttendanceMetaFromStatus($currentStatus);
-                if ($cleanStatus !== $currentStatus) {
-                    $updateData['status'] = $cleanStatus;
-                }
-            }
-            if ($attendanceProvided) {
-                $updateData['attendance'] = $toggleStudentProvided
-                    ? ($validated['attendance'] ?? [])
-                    : $this->normalizeAttendanceForCourse($validated['attendance'] ?? [], $course);
-            }
-            if ($attendanceCheckedProvided) {
-                $updateData['attendance_checked'] = (bool) ($validated['attendance_checked'] ?? false);
-            }
-        } else {
-            $currentStatus = is_array($course_date->status) ? $course_date->status : [];
-            $publicStatus = $statusProvided
-                ? $this->normalizePublicStatus($validated['status'] ?? [])
-                : $this->stripAttendanceMetaFromStatus($currentStatus);
-            $attendance = $attendanceProvided
-                ? ($toggleStudentProvided
-                    ? ($validated['attendance'] ?? [])
-                    : $this->normalizeAttendanceForCourse($validated['attendance'] ?? [], $course))
-                : $this->attendanceFromStatus($currentStatus);
-            $attendanceChecked = $attendanceCheckedProvided
-                ? (bool) ($validated['attendance_checked'] ?? false)
-                : $this->attendanceCheckedFromStatus($currentStatus);
-
-            $updateData['status'] = $this->buildStatusWithAttendanceMeta($publicStatus, $attendance, $attendanceChecked);
-        }
-        if (! empty($updateData)) {
-            try {
-                $course_date->update($updateData);
-            } catch (QueryException $e) {
-                if (! $this->isMissingAttendanceColumnException($e)) {
-                    throw $e;
-                }
-                $currentStatus = is_array($course_date->status) ? $course_date->status : [];
-                $publicStatus = $statusProvided
-                    ? $this->normalizePublicStatus($validated['status'] ?? [])
-                    : $this->stripAttendanceMetaFromStatus($currentStatus);
-                $attendance = $attendanceProvided
-                    ? ($validated['attendance'] ?? [])
-                    : $this->attendanceFromStatus($currentStatus);
-                $attendanceChecked = $attendanceCheckedProvided
-                    ? (bool) ($validated['attendance_checked'] ?? false)
-                    : $this->attendanceCheckedFromStatus($currentStatus);
-                $course_date->update([
-                    'status' => $this->buildStatusWithAttendanceMeta($publicStatus, $attendance, $attendanceChecked),
-                ]);
-            }
-        }
+        $service->updateCourseDateStatus($course_date, $validated, $course);
 
         $course_date->refresh();
 
         return response()->json(new CourseDateResource($course_date));
-    }
-
-    private function supportsAttendanceColumns(): bool
-    {
-        return Schema::hasColumn('teaching_course_dates', 'attendance')
-            && Schema::hasColumn('teaching_course_dates', 'attendance_checked');
-    }
-
-    private function normalizePublicStatus($status): array
-    {
-        $items = is_array($status) ? $status : [];
-        return array_values(array_unique(array_filter($items, fn ($item) => in_array($item, ['free', 'pruefung'], true))));
-    }
-
-    private function stripAttendanceMetaFromStatus($status): array
-    {
-        $items = is_array($status) ? $status : [];
-        return array_values(array_filter($items, function ($item) {
-            if (! is_string($item)) {
-                return false;
-            }
-            return ! str_starts_with($item, 'att:') && $item !== 'att_checked:1';
-        }));
-    }
-
-    private function attendanceFromStatus($status): array
-    {
-        $items = is_array($status) ? $status : [];
-        $attendance = [];
-        foreach ($items as $item) {
-            if (! is_string($item) || ! str_starts_with($item, 'att:')) {
-                continue;
-            }
-            $parts = explode(':', $item);
-            if (count($parts) < 3) {
-                continue;
-            }
-            $studentId = trim((string) ($parts[1] ?? ''));
-            $presentValue = trim((string) ($parts[2] ?? '0'));
-            if ($studentId === '') {
-                continue;
-            }
-            $attendance[$studentId] = in_array($presentValue, ['1', 'true'], true);
-        }
-        return $attendance;
-    }
-
-    private function attendanceCheckedFromStatus($status): bool
-    {
-        $items = is_array($status) ? $status : [];
-        return in_array('att_checked:1', $items, true);
-    }
-
-    private function buildStatusWithAttendanceMeta(array $publicStatus, array $attendance, bool $attendanceChecked): array
-    {
-        $status = $this->normalizePublicStatus($publicStatus);
-        foreach ($attendance as $studentId => $present) {
-            if ($this->isPresentValue($present)) {
-                continue;
-            }
-            $id = trim((string) $studentId);
-            if ($id === '') {
-                continue;
-            }
-            $status[] = "att:{$id}:0";
-        }
-        if ($attendanceChecked) {
-            $status[] = 'att_checked:1';
-        }
-        return array_values(array_unique($status));
-    }
-
-    private function isPresentValue($value): bool
-    {
-        return ! ($value === false || $value === 0 || $value === '0' || $value === 'false');
-    }
-
-    private function isMissingAttendanceColumnException(QueryException $e): bool
-    {
-        $message = (string) $e->getMessage();
-        return str_contains($message, "Unknown column 'attendance'")
-            || str_contains($message, "Unknown column 'attendance_checked'");
-    }
-
-    private function normalizeAttendanceForCourse($attendance, TeachingCourse $course): array
-    {
-        $input = is_array($attendance) ? $attendance : [];
-        $studentIds = $this->courseStudentIds($course);
-        $studentIdSet = array_fill_keys(array_map(fn ($id) => (string) $id, $studentIds), true);
-
-        $normalized = [];
-        foreach ($input as $key => $value) {
-            $keyStr = trim((string) $key);
-            if ($keyStr === '') {
-                continue;
-            }
-
-            // Strip 's_' prefix if present
-            $cleanKey = str_starts_with($keyStr, 's_') ? substr($keyStr, 2) : $keyStr;
-
-            $targetId = null;
-            if (isset($studentIdSet[$cleanKey])) {
-                $targetId = $cleanKey;
-            } elseif (ctype_digit($cleanKey)) {
-                $idx = (int) $cleanKey;
-                if (array_key_exists($idx, $studentIds)) {
-                    $targetId = (string) $studentIds[$idx];
-                }
-            }
-
-            if (! $targetId) {
-                continue;
-            }
-
-            if (! $this->isPresentValue($value)) {
-                // Prefix with 's_' to force JSON object format
-                $normalized['s_' . $targetId] = false;
-            }
-        }
-
-        return $normalized;
-    }
-
-    private function courseStudentIds(TeachingCourse $course): array
-    {
-        $raw = is_array($course->students) ? $course->students : [];
-        $ids = [];
-        foreach ($raw as $item) {
-            if (is_array($item) && array_key_exists('id', $item)) {
-                $id = $item['id'];
-            } else {
-                $id = $item;
-            }
-            if ($id === null || $id === '') {
-                continue;
-            }
-            $ids[] = (int) $id;
-        }
-        return $ids;
-    }
-
-    private function normalizeAttendanceMapForToggle($attendance, TeachingCourse $course): array
-    {
-        $input = is_array($attendance) ? $attendance : [];
-        $studentIds = $this->courseStudentIds($course);
-        $normalized = [];
-        foreach ($input as $key => $value) {
-            $k = trim((string) $key);
-            if ($k === '') {
-                continue;
-            }
-            // Strip 's_' prefix if present
-            $cleanKey = str_starts_with($k, 's_') ? substr($k, 2) : $k;
-            $targetId = $cleanKey;
-            if (ctype_digit($cleanKey)) {
-                $n = (int) $cleanKey;
-                if (array_key_exists($n, $studentIds)) {
-                    $targetId = (string) $studentIds[$n];
-                } elseif ($n >= 0 && $n <= 200) {
-                    // Drop unknown positional index artifacts that cannot be mapped safely.
-                    continue;
-                }
-            }
-            if (! $this->isPresentValue($value)) {
-                // Prefix with 's_' to force JSON object format
-                $normalized['s_' . $targetId] = false;
-            }
-        }
-        return $normalized;
     }
 }

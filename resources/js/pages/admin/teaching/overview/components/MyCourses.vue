@@ -140,9 +140,11 @@
 </template>
 <script>
 import { useValidationRulesSetup } from '@/helpers/rules'
+import { parseLocalDate } from '@/helpers/date'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
+import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
@@ -382,6 +384,65 @@ export default {
             this.selected_course_student = null
             this.action_2 = ''
             this.delete_level = 0
+
+            // Auto-select course date
+            this.autoSelectCourseDate(course)
+        },
+
+        autoSelectCourseDate(course) {
+            const courseDateStore = useCourseDateStore()
+            const dates = Array.isArray(course?.course_dates) ? course.course_dates : []
+
+            if (!dates.length) {
+                courseDateStore.selected_courseDate = null
+                return
+            }
+
+            const today = new Date()
+            today.setHours(0, 0, 0, 0)
+
+            // Parse and sort dates
+            const parsedDates = dates
+                .map((d) => ({
+                    original: d,
+                    date: parseLocalDate(d.date),
+                    dateStr: d.date,
+                }))
+                .filter((d) => !isNaN(d.date.getTime()))
+                .sort((a, b) => a.date - b.date)
+
+            if (!parsedDates.length) {
+                courseDateStore.selected_courseDate = null
+                return
+            }
+
+            // 1. Try today's date
+            const todayDate = parsedDates.find((d) => {
+                const dDate = new Date(d.date)
+                dDate.setHours(0, 0, 0, 0)
+                return dDate.getTime() === today.getTime()
+            })
+            if (todayDate) {
+                courseDateStore.selected_courseDate = todayDate.original
+                return
+            }
+
+            // 2. Try last (most recent past) date
+            const pastDates = parsedDates.filter((d) => d.date < today)
+            if (pastDates.length) {
+                courseDateStore.selected_courseDate = pastDates[pastDates.length - 1].original
+                return
+            }
+
+            // 3. Try next (upcoming future) date
+            const futureDates = parsedDates.filter((d) => d.date > today)
+            if (futureDates.length) {
+                courseDateStore.selected_courseDate = futureDates[0].original
+                return
+            }
+
+            // 4. No suitable date found
+            courseDateStore.selected_courseDate = null
         },
 
         newCourse() {

@@ -2,12 +2,33 @@
     <ItsGridBox color="primary" title="Stundenplan" icon="mdi-calendar-clock" class="w-100" :disabled="action != ''">
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
-                <v-btn-toggle v-model="range" mandatory density="compact" color="primary" class="w-100">
+                <v-btn-toggle v-model="range" mandatory density="compact" color="primary" class="w-100" @update:model-value="resetWeekOffset">
                     <v-btn :value="RANGE_TODAY" size="small">Heute</v-btn>
                     <v-btn :value="RANGE_WEEK" size="small">Diese Woche</v-btn>
                     <v-btn :value="RANGE_TWO_WEEKS" size="small">Zwei Wochen</v-btn>
                     <v-btn :value="RANGE_MONTH" size="small">Dieser Monat</v-btn>
                 </v-btn-toggle>
+
+                <!-- Week Navigation -->
+                <div class="d-flex align-center ga-2">
+                    <v-btn
+                        icon="mdi-chevron-left"
+                        size="small"
+                        variant="tonal"
+                        :disabled="!canNavigatePrevious"
+                        @click="navigatePreviousWeek"
+                    />
+                    <div class="flex-grow-1 text-center text-caption">
+                        <span v-if="dateRangeLabel">{{ dateRangeLabel }}</span>
+                    </div>
+                    <v-btn
+                        icon="mdi-chevron-right"
+                        size="small"
+                        variant="tonal"
+                        :disabled="!canNavigateNext"
+                        @click="navigateNextWeek"
+                    />
+                </div>
 
                 <v-card variant="outlined" class="mt-2">
                     <v-card-title class="text-subtitle-2 d-flex align-center ga-2">
@@ -63,6 +84,7 @@ export default {
             RANGE_TWO_WEEKS,
             RANGE_MONTH,
             range: RANGE_TODAY,
+            weekOffset: 0,
         }
     },
 
@@ -122,6 +144,31 @@ export default {
             if (!from || !until) return this.timetableItems
             return this.timetableItems.filter((item) => item.dateObj >= from && item.dateObj <= until)
         },
+        dateRangeLabel() {
+            const [from, until] = this.currentRangeBounds()
+            if (!from || !until) return ''
+            const formatDate = (d) => d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+            if (from.getTime() === until.getTime()) {
+                return formatDate(from)
+            }
+            return `${formatDate(from)} - ${formatDate(until)}`
+        },
+        canNavigatePrevious() {
+            if (!this.timetableItems.length) return false
+            const [from] = this.currentRangeBounds()
+            if (!from) return false
+            const earliestDate = this.timetableItems[0]?.dateObj
+            if (!earliestDate) return false
+            return earliestDate < from
+        },
+        canNavigateNext() {
+            if (!this.timetableItems.length) return false
+            const [, until] = this.currentRangeBounds()
+            if (!until) return false
+            const latestDate = this.timetableItems[this.timetableItems.length - 1]?.dateObj
+            if (!latestDate) return false
+            return latestDate > until
+        },
     },
 
     methods: {
@@ -145,21 +192,25 @@ export default {
         },
         currentRangeBounds() {
             const today = this.normalizeDay(new Date())
+            const offsetDays = this.weekOffset * 7
+            const referenceDate = new Date(today)
+            referenceDate.setDate(today.getDate() + offsetDays)
+
             if (this.range === RANGE_TODAY) {
-                return [today, today]
+                return [referenceDate, referenceDate]
             }
             if (this.range === RANGE_WEEK) {
-                return [this.startOfWeek(today), this.endOfWeek(today)]
+                return [this.startOfWeek(referenceDate), this.endOfWeek(referenceDate)]
             }
             if (this.range === RANGE_TWO_WEEKS) {
-                const start = this.startOfWeek(today)
+                const start = this.startOfWeek(referenceDate)
                 const end = new Date(start)
                 end.setDate(start.getDate() + 13)
                 return [start, end]
             }
             if (this.range === RANGE_MONTH) {
-                const start = new Date(today.getFullYear(), today.getMonth(), 1)
-                const end = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+                const start = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), 1)
+                const end = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0)
                 end.setHours(0, 0, 0, 0)
                 return [start, end]
             }
@@ -200,6 +251,15 @@ export default {
             }
             const date = (course?.course_dates || []).find((d) => d?.id === dateId) || null
             this.selected_courseDate = date
+        },
+        navigatePreviousWeek() {
+            this.weekOffset--
+        },
+        navigateNextWeek() {
+            this.weekOffset++
+        },
+        resetWeekOffset() {
+            this.weekOffset = 0
         },
     },
 }

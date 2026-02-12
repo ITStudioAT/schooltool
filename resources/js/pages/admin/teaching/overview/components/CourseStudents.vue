@@ -31,6 +31,9 @@
                             :disabled="!hasNextCourseDate"
                             @click="selectNextCourseDate" />
                     </div>
+                    <div v-else class="text-caption text-medium-emphasis">
+                        Kein Datum verfügbar
+                    </div>
                 </v-card>
                 <div v-if="semesterCount === 2" class="d-flex flex-wrap align-center ga-2 mt-2">
                     <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">

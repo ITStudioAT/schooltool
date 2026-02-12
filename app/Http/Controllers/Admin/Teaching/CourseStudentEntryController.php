@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\User;
+use App\Services\TeachingCourseStudentEntryService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -41,19 +42,14 @@ class CourseStudentEntryController extends Controller
         return response()->json(['data' => $entries]);
     }
 
-    public function store(Request $request)
+    public function store(Request $request, TeachingCourseStudentEntryService $entryService)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
         $course = TeachingCourse::findOrFail($request->input('teaching_course_id'));
-        $schema = collect($auth_user->teaching_schemas ?? [])->firstWhere('id', $course->teaching_schema_id);
-        $allowedTypes = collect($schema['works'] ?? [])
-            ->pluck('short_name')
-            ->filter()
-            ->values()
-            ->all();
+        $allowedTypes = $entryService->allowedTypesForSchema($auth_user, $course->teaching_schema_id);
 
         $validated = $request->validate([
             'teaching_course_id' => 'required|integer|exists:teaching_courses,id',
@@ -81,7 +77,7 @@ class CourseStudentEntryController extends Controller
         return response()->json(['data' => $entry], 201);
     }
 
-    public function update(Request $request, TeachingCourseStudentEntry $course_student_entry)
+    public function update(Request $request, TeachingCourseStudentEntry $course_student_entry, TeachingCourseStudentEntryService $entryService)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -96,12 +92,7 @@ class CourseStudentEntryController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $schema = collect($auth_user->teaching_schemas ?? [])->firstWhere('id', $course->teaching_schema_id);
-        $allowedTypes = collect($schema['works'] ?? [])
-            ->pluck('short_name')
-            ->filter()
-            ->values()
-            ->all();
+        $allowedTypes = $entryService->allowedTypesForSchema($auth_user, $course->teaching_schema_id);
 
         $validated = $request->validate([
             'type' => ['required', 'string', 'max:255', Rule::in($allowedTypes)],
