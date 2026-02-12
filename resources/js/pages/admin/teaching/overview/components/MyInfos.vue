@@ -19,6 +19,12 @@
                                     <v-chip v-if="entry.date" size="x-small" variant="tonal" color="primary">{{ formatDate(entry.date) }}</v-chip>
                                     <v-chip v-if="entry.due_date" size="x-small" variant="tonal" :color="dueDateColor(entry.due_date)">Fällig bis {{ formatDate(entry.due_date) }}</v-chip>
                                     <v-chip v-if="entry.type" size="x-small" variant="outlined" color="secondary" class="chip-truncate">{{ notificationTypeLabel(entry.type) }}</v-chip>
+                                    <v-btn
+                                        icon="mdi-open-in-new"
+                                        size="x-small"
+                                        color="primary"
+                                        variant="tonal"
+                                        @click="jumpToCourseStudent(entry)" />
                                     <div class="notification-description text-caption w-100">{{ entry.description || '' }}</div>
                                 </div>
                             </v-list-item>
@@ -101,6 +107,7 @@ export default {
     components: { ItsGridBox },
 
     async beforeMount() {
+        this.courseStore = useCourseStore()
         this.teachingStore = useTeachingStore()
         if (!this.teachingStore.settings) {
             await this.teachingStore.loadSettings()
@@ -118,6 +125,7 @@ export default {
 
     data() {
         return {
+            courseStore: null,
             teachingStore: null,
             openNotifications: [],
             nowTs: Date.now(),
@@ -126,8 +134,8 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, ['config']),
-        ...mapWritableState(useCourseStore, ['courses']),
+        ...mapWritableState(useAdminStore, ['config', 'action_2']),
+        ...mapWritableState(useCourseStore, ['courses', 'selected_course', 'selected_course_id', 'selected_course_student']),
         myCourses() {
             const userId = this.config?.user?.id
             const list = Array.isArray(this.courses) ? this.courses : []
@@ -327,6 +335,25 @@ export default {
             const today = new Date()
             today.setHours(0, 0, 0, 0)
             return due < today ? 'error' : 'warning'
+        },
+        jumpToCourseStudent(entry) {
+            if (!entry?.course_id) return
+            const course = (this.courses || []).find((item) => item?.id === entry.course_id)
+            if (!course) return
+
+            if (!this.courseStore) this.courseStore = useCourseStore()
+            this.courseStore.ensureCourseStudentCollections(course)
+
+            this.selected_course = course
+            this.selected_course_id = course.id
+            this.action_2 = ''
+
+            this.$nextTick(() => {
+                this.courseStore.ensureCourseStudentCollections(this.selected_course)
+                const student = this.findStudent(this.selected_course, entry.user_id)
+                this.selected_course_student = student || null
+                this.action_2 = student ? 'course_student_view' : ''
+            })
         },
         daysDiffFromToday(dateStr, mode) {
             const target = parseLocalDate(dateStr)

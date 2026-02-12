@@ -23,7 +23,6 @@
                                     <v-chip v-if="entry.due_date" size="x-small" variant="tonal" :color="dueDateColor(entry.due_date)">Fällig bis {{ formatDate(entry.due_date) }}</v-chip>
                                     <v-chip v-if="entry.type" size="x-small" variant="outlined" color="secondary" class="chip-truncate">{{ notificationTypeLabel(entry.type) }}</v-chip>
                                     <v-chip size="x-small" variant="outlined" class="chip-truncate">{{ studentLabel(entry.user_id) }}</v-chip>
-                                    <div class="notification-description text-caption w-100">{{ entry.description || '' }}</div>
                                     <v-btn
                                         icon="mdi-check"
                                         size="x-small"
@@ -31,6 +30,7 @@
                                         variant="tonal"
                                         class="notification-action"
                                         @click.stop="completeNotification(entry)" />
+                                    <div v-if="entry.description" class="notification-description text-caption w-100">{{ entry.description }}</div>
                                 </div>
                             </v-list-item>
                             <v-list-item v-if="!openNotifications.length">

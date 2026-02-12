@@ -112,6 +112,13 @@
                                         <div class="text-caption flex-grow-1">
                                             {{ item.entry.description || '' }}
                                         </div>
+                                        <v-btn
+                                            v-if="!item.entry.done_date"
+                                            icon="mdi-check"
+                                            size="x-small"
+                                            color="success"
+                                            variant="tonal"
+                                            @click="completeNotificationToday(item.entry)" />
                                         <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editNotificationEntry(item.entry)" />
                                         <v-btn
                                             v-if="delete_notification_id !== item.entry.id"
@@ -1477,6 +1484,24 @@ export default {
                 await this.loadBehaviourEntries()
             }
             this.delete_notification_id = null
+        },
+        async completeNotificationToday(entry) {
+            if (!entry?.id || !entry?.type || !entry?.due_date) return
+            const payload = {
+                id: entry.id,
+                kind: 'notification',
+                type: entry.type,
+                date: entry.date || null,
+                description: entry.description || null,
+                is_due: true,
+                due_date: entry.due_date,
+                is_done: true,
+                done_date: this.toDateString(new Date()),
+            }
+            const ok = await this.behaviourEntryStore.update(payload)
+            if (ok) {
+                await this.loadBehaviourEntries()
+            }
         },
         toggleSortByType() {
             this.sort_by_type = !this.sort_by_type

@@ -87,11 +87,11 @@
                                         {{ student.schoolclass || student.class }}
                                     </v-chip>
                                     <div class="student-name text-body-2">{{ student.last_name }}, {{ student.first_name }}</div>
+                                    <v-chip v-if="(student.stars || []).length" size="x-small" variant="tonal" color="amber-darken-2">
+                                        <v-icon start size="14">mdi-star</v-icon>
+                                        {{ (student.stars || []).length }}
+                                    </v-chip>
                                     <div class="student-metrics d-flex flex-wrap align-center ga-2">
-                                        <v-chip v-if="(student.stars || []).length" size="x-small" variant="tonal" color="amber-darken-2">
-                                            <v-icon start size="14">mdi-star</v-icon>
-                                            {{ (student.stars || []).length }}
-                                        </v-chip>
                                         <template v-for="(count, type) in (studentBehaviourCounts[student.id] || {})" :key="`beh-${student.id}-${type}`">
                                             <v-chip size="x-small" variant="tonal" color="warning">{{ type }}{{ count > 1 ? ` ×${count}` : '' }}</v-chip>
                                         </template>
@@ -640,7 +640,8 @@ export default {
 
 .student-name {
     min-width: 0;
-    flex: 1 1 220px;
+    flex: 0 1 auto;
+    max-width: 60%;
     word-break: break-word;
 }
 
@@ -670,6 +671,10 @@ export default {
 }
 
 @media (max-width: 900px) {
+    .student-name {
+        max-width: 100%;
+    }
+
     .student-metrics {
         max-width: 100%;
     }
