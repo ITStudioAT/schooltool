@@ -9,6 +9,7 @@ return [
     'noreply_email' => 'noreply@schooltool.at',
     'sa_pw' => env('SA_PW'),
     'tutoring_active' => (bool) env('TUTORING_ACTIVE', false),
+    'teaching_max_schools_shown' => (int) env('TEACHING_MAX_SCHOOLS_SHOWN', 20),
 
     'schoolyears' => [
         ['name' => '2025/26', 'from' => '2025-09-08', 'sem_2_start' => '2026-02-16', 'to' => '2026-07-10'],

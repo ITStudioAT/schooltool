@@ -76,7 +76,7 @@
                                     <v-icon size="40">mdi-rocket-launch-outline</v-icon>
                                 </div>
                                 <h3 class="card-title">Unterricht</h3>
-                                <p class="card-description">Dein neuer Lernbereich mit modernem Look. Einstieg in den Login-Bereich fuer Schueler.</p>
+                                <p class="card-description">Dein neuer Lernbereich mit modernem Look. Einstieg in den Login-Bereich für Schüler.</p>
                                 <div class="card-action">
                                     <span class="action-text">Starten</span>
                                     <v-icon size="20">mdi-arrow-right</v-icon>

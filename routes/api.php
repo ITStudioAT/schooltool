@@ -81,6 +81,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/homepage/tutoring/set_user_search_criteria', [\App\Http\Controllers\Tutoring\OfferController::class, 'setUserSearchCriteria']);
     // setUserSearchCriteria
 
+    /* homepage/student */
+    Route::get('/homepage/student/config', [\App\Http\Controllers\Student\StudentController::class, 'config']);
+
     /* SANCTUM */
     Route::middleware(['auth:sanctum'])->group(function () {
         // navigation, menus

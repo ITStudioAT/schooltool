@@ -14,36 +14,217 @@
                 <p class="hero-subtitle">Überblick bewahren. Inhalte kennen. Noten erfahren.</p>
 
                 <div class="hero-badges">
-                    <span class="hero-badge">Pumpkin #FD802E</span>
-                    <span class="hero-badge dark">Charcoal #233D4C</span>
+                    <span class="hero-badge">{{ weekdayLabel }}</span>
+                    <span class="hero-badge dark">{{ dateLabel }}</span>
+                    <span v-if="school" class="hero-badge">{{ school.long_name }}</span>
                 </div>
             </div>
         </section>
 
-        <section class="login-cover">
+        <section v-if="!school" class="schools-cover">
+            <div class="schools-card">
+                <div class="schools-head">
+                    <v-icon size="24">mdi-school-outline</v-icon>
+                    <h2>Verfügbare Schulen</h2>
+                    <v-chip class="schools-count" size="small">{{ schools?.length || 0 }}</v-chip>
+                </div>
+
+                <p class="schools-copy">Diese Schulen sind aktuell für den Unterrichtsbereich verfügbar.</p>
+
+                <div v-if="showSchoolsGrid" class="schools-grid">
+                    <div
+                        v-for="schoolItem in schools"
+                        :key="schoolItem.id"
+                        class="school-item"
+                        :class="{ 'is-active': Number(selected_school_id) === Number(schoolItem.id) }"
+                        @click="selected_school_id = schoolItem.id">
+                        <div class="school-main">
+                            <span class="school-long">{{ schoolItem.long_name }}</span>
+                            <span class="school-short">{{ schoolItem.short_name }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <template v-else-if="hasManySchools">
+                    <v-form ref="schoolSearchForm" v-model="is_school_search_valid">
+                        <v-text-field
+                            v-model="school_search"
+                            label="Schule suchen (Name oder Kürzel)"
+                            variant="outlined"
+                            prepend-inner-icon="mdi-magnify"
+                            class="school-search-field"
+                            clearable
+                            :rules="[maxLength(255)]"
+                            hide-details="auto"
+                            @update:modelValue="validateSchoolSearchForm" />
+                    </v-form>
+
+                    <div v-if="!school_search?.trim()" class="schools-hint">
+                        <v-icon size="22">mdi-information-outline</v-icon>
+                        <span>Bitte Suchtext eingeben. Es wird in Name und Kürzel gesucht.</span>
+                    </div>
+
+                    <div v-else-if="filteredSchoolsForSearch.length" class="schools-grid">
+                        <div
+                            v-for="schoolItem in filteredSchoolsForSearch"
+                            :key="schoolItem.id"
+                            class="school-item"
+                            :class="{ 'is-active': Number(selected_school_id) === Number(schoolItem.id) }"
+                            @click="selected_school_id = schoolItem.id">
+                            <div class="school-main">
+                                <span class="school-long">{{ schoolItem.long_name }}</span>
+                                <span class="school-short">{{ schoolItem.short_name }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-else class="schools-empty">
+                        <v-icon size="22">mdi-alert-circle-outline</v-icon>
+                        <span>Keine passende Schule gefunden.</span>
+                    </div>
+                </template>
+
+                <div v-else-if="schools?.length" class="schools-hint">
+                    <v-icon size="22">mdi-information-outline</v-icon>
+                    <span>Bitte eine Schule auswählen.</span>
+                </div>
+
+                <div v-else class="schools-empty">
+                    <v-icon size="22">mdi-alert-circle-outline</v-icon>
+                    <span>Keine verfügbaren Schulen gefunden.</span>
+                </div>
+            </div>
+        </section>
+
+        <section v-if="school" class="login-cover">
             <div class="login-card">
                 <div class="login-head">
                     <v-icon size="26">mdi-account-school</v-icon>
                     <h2>Login-Bereich</h2>
                 </div>
-                <p class="login-copy">Hier startet spaeter der Login fuer den Unterrichtsbereich. Aktuell ist nur das Cover aktiv.</p>
+                <p class="login-copy">Die Schule ist ausgewählt. Du kannst jetzt deine E-Mail eingeben.</p>
 
-                <div class="login-fields">
-                    <v-text-field label="E-Mail" variant="outlined" density="comfortable" prepend-inner-icon="mdi-email-outline" disabled />
-                    <v-text-field label="Passwort" variant="outlined" density="comfortable" prepend-inner-icon="mdi-lock-outline" type="password" disabled />
-                </div>
-
-                <div class="login-actions">
-                    <v-btn color="warning" variant="flat" rounded="pill" prepend-icon="mdi-rocket-launch" disabled>Anmelden (bald)</v-btn>
-                    <span class="login-hint">Kein Login implementiert, nur Cover-Ansicht.</span>
-                </div>
+                <v-form ref="loginForm" v-model="is_login_email_valid">
+                    <div class="login-fields">
+                        <v-text-field
+                            v-model="login_email"
+                            label="E-Mail"
+                            variant="outlined"
+                            density="comfortable"
+                            prepend-inner-icon="mdi-email-outline"
+                            :rules="[required(), mail(), maxLength(255)]"
+                            hide-details="auto" />
+                    </div>
+                    <div class="login-actions">
+                        <v-btn color="warning" variant="flat" rounded="pill" :disabled="!canContinueWithEmail" @click="continueWithPassword">Weiter mit Kennwort</v-btn>
+                        <v-btn color="primary" variant="outlined" rounded="pill" :disabled="!canContinueWithEmail" @click="continueWithoutPassword">Weiter ohne Kennwort</v-btn>
+                    </div>
+                </v-form>
             </div>
         </section>
     </div>
 </template>
 
 <script>
-export default {}
+import { useValidationRulesSetup } from '@/helpers/rules'
+import { mapWritableState } from 'pinia'
+import { useStudentStore } from '@/stores/student/StudentStore'
+
+export default {
+    setup() {
+        return useValidationRulesSetup()
+    },
+
+    async beforeMount() {
+        this.studentStore = useStudentStore()
+        await this.studentStore.loadConfig()
+        if (this.selected_school_id) {
+            this.school = this.schools?.find((item) => Number(item.id) === Number(this.selected_school_id)) || null
+        } else if (this.schools?.length === 1) {
+            this.selected_school_id = this.schools[0].id
+        }
+    },
+
+    data() {
+        return {
+            studentStore: null,
+            school_search: '',
+            login_email: '',
+            is_school_search_valid: true,
+            is_login_email_valid: false,
+        }
+    },
+
+    computed: {
+        ...mapWritableState(useStudentStore, ['config', 'schools', 'selected_school_id', 'school']),
+        maxSchoolsShown() {
+            const raw = this.config?.config?.schooltool?.teaching_max_schools_shown
+            const parsed = Number(raw)
+            return Number.isFinite(parsed) && parsed > 0 ? parsed : 20
+        },
+        showSchoolsGrid() {
+            return Array.isArray(this.schools) && this.schools.length > 0 && this.schools.length <= this.maxSchoolsShown
+        },
+        hasManySchools() {
+            return Array.isArray(this.schools) && this.schools.length > this.maxSchoolsShown
+        },
+        filteredSchoolsForSearch() {
+            if (!this.hasManySchools) return []
+
+            const query = (this.school_search || '').trim().toLocaleLowerCase('de')
+            if (!query) return []
+
+            return this.schools.filter((item) => {
+                const longName = String(item.long_name || '').toLocaleLowerCase('de')
+                const shortName = String(item.short_name || '').toLocaleLowerCase('de')
+                return longName.includes(query) || shortName.includes(query)
+            })
+        },
+        canContinueWithEmail() {
+            const value = String(this.login_email || '').trim()
+            if (!value) return false
+            return this.required()(value) === true && this.mail()(value) === true && this.maxLength(255)(value) === true
+        },
+        weekdayLabel() {
+            return new Intl.DateTimeFormat('de-AT', { weekday: 'long' }).format(new Date())
+        },
+        dateLabel() {
+            return new Intl.DateTimeFormat('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date())
+        },
+    },
+
+    watch: {
+        selected_school_id(newId) {
+            this.school = this.schools?.find((item) => Number(item.id) === Number(newId)) || null
+        },
+    },
+
+    methods: {
+        async validateSchoolSearchForm() {
+            if (!this.$refs.schoolSearchForm) return
+            this.is_school_search_valid = false
+            await this.$refs.schoolSearchForm.validate()
+        },
+
+        async validateLoginForm() {
+            this.is_login_email_valid = false
+            await this.$refs.loginForm.validate()
+            return this.is_login_email_valid
+        },
+
+        async continueWithPassword() {
+            const isValid = await this.validateLoginForm()
+            if (!isValid) return
+            // Login flow is intentionally not implemented yet.
+        },
+
+        async continueWithoutPassword() {
+            const isValid = await this.validateLoginForm()
+            if (!isValid) return
+            // Login flow is intentionally not implemented yet.
+        },
+    },
+}
 </script>
 
 <style scoped>
@@ -84,6 +265,7 @@ export default {}
 }
 
 .hero,
+.schools-cover,
 .login-cover {
     max-width: 960px;
     margin: 0 auto;
@@ -163,6 +345,113 @@ export default {}
     margin-top: 26px;
 }
 
+.schools-cover {
+    margin-top: 26px;
+}
+
+.schools-card {
+    background: rgba(248, 239, 231, 0.96);
+    border: 1px solid rgba(253, 128, 46, 0.35);
+    border-radius: 24px;
+    padding: 24px;
+    box-shadow: 0 14px 38px rgba(0, 0, 0, 0.2);
+}
+
+.schools-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--charcoal);
+    flex-wrap: wrap;
+}
+
+.schools-head h2 {
+    margin: 0;
+    font-size: 1.2rem;
+    font-weight: 800;
+}
+
+.schools-count {
+    margin-left: auto;
+    background: rgba(35, 61, 76, 0.1);
+    color: #233d4c;
+    font-weight: 700;
+}
+
+.schools-copy {
+    margin: 10px 0 16px;
+    color: #314d5d;
+    font-weight: 500;
+}
+
+.school-search-field {
+    margin-bottom: 12px;
+}
+
+.schools-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.school-item {
+    background: rgba(35, 61, 76, 0.06);
+    border: 1px solid rgba(35, 61, 76, 0.18);
+    border-radius: 14px;
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+}
+
+.school-item.is-active {
+    border-color: rgba(58, 170, 53, 0.65);
+    background: rgba(58, 170, 53, 0.12);
+}
+
+.school-main {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.school-long {
+    color: #1d3645;
+    font-weight: 700;
+    font-size: 0.95rem;
+    line-height: 1.2;
+}
+
+.school-short {
+    color: #48606f;
+    font-weight: 600;
+    font-size: 0.82rem;
+}
+
+.schools-empty {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #6e5a47;
+    font-weight: 600;
+    background: rgba(253, 128, 46, 0.12);
+    border-radius: 12px;
+    padding: 10px 12px;
+}
+
+.schools-hint {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #1d3645;
+    font-weight: 600;
+    background: rgba(35, 61, 76, 0.1);
+    border-radius: 12px;
+    padding: 10px 12px;
+}
+
 .login-card {
     background: rgba(248, 239, 231, 0.96);
     border: 1px solid rgba(253, 128, 46, 0.35);
@@ -192,22 +481,15 @@ export default {}
 
 .login-fields {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
     gap: 12px;
 }
 
 .login-actions {
-    margin-top: 14px;
+    margin-top: 12px;
     display: flex;
-    align-items: center;
-    gap: 14px;
+    gap: 10px;
     flex-wrap: wrap;
-}
-
-.login-hint {
-    color: #38596b;
-    font-weight: 600;
-    font-size: 0.9rem;
 }
 
 @media (max-width: 740px) {
@@ -216,13 +498,15 @@ export default {}
     }
 
     .hero-card,
+    .schools-card,
     .login-card {
         padding: 20px;
         border-radius: 18px;
     }
 
-    .login-fields {
+    .schools-grid {
         grid-template-columns: 1fr;
     }
+
 }
 </style>

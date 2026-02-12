@@ -22,6 +22,12 @@ class HomepageController extends Controller
 
         $validated = $request->validated();
 
+        // SPA entry on hard refresh (e.g. /homepage/student) without route params.
+        // Avoid redirect loops by directly returning the homepage shell.
+        if (empty($validated['school']) && empty($validated['licence'])) {
+            return view('homepage');
+        }
+
         $answer = $service->checkRoute($validated['school'] ?? null, $validated['licence'] ?? null);
 
         if ($answer['status'] == 'error') return redirect('/homepage/error?msg=' . $answer['msg']);
@@ -37,14 +43,15 @@ class HomepageController extends Controller
         switch ($licence) {
             case 'Anmeldetool':
                 return redirect('/homepage/register?school=' . $school);
-                break;
+            case 'Nachhilfetool':
+                return redirect('/homepage/tutoring_overview?school=' . $school);
+            case 'Lehrertool':
+                return redirect('/homepage/student?school=' . $school);
 
             default:
-                // fallback if none match
-                break;
+                // Fallback to SPA shell to avoid redirect loops on unknown/empty targets.
+                return view('homepage');
         }
-
-        return redirect($answer['redirect']);
     }
 
     public function loadSchoolsForTool(HomepageLoadSchoolsForToolRequest $request)
