@@ -34,6 +34,7 @@ class SchoolTool extends Model
 
     protected $fillable = [
         'school_id',
+        'active_schoolyear_id',
         'tutoring_student_must_be_confirmed',
         'tutoring_confirmer_email',
         'tutoring_max_offers_per_student',

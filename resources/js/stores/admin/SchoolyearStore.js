@@ -152,5 +152,30 @@ export const useSchoolyearStore = defineStore('AdminSchoolyearStore', {
                 adminStore.is_loading--
             }
         },
+
+        async setActiveSchoolyearInSchoolTool(schoolyear_id) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.post(`/api/admin/school_tools/set_active_schoolyear`, { schoolyear_id })
+                notification.notify({
+                    message: 'Das aktive Schuljahr wurde erfolgreich gesetzt.',
+                    type: 'success',
+                    timeout: 3000,
+                })
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
     },
 })

@@ -129,6 +129,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
         Route::post('/admin/teachers_list_upload', [\App\Http\Controllers\Admin\TeachersListController::class, 'upload']);
         Route::patch('/admin/teachers_list_upload', [\App\Http\Controllers\Admin\TeachersListController::class, 'uploadNext']);
+
+        // SchoolTool - Active Schoolyear
+        Route::post('/admin/school_tools/set_active_schoolyear', [\App\Http\Controllers\Admin\SchoolToolController::class, 'setActiveSchoolyear']);
     });
 
     /* SANCTUM - admin, teaching_admin */

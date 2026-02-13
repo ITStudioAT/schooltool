@@ -34,6 +34,27 @@ class SchoolToolController extends Controller
         return response()->json(new SchoolToolResource($schoolTool), 200);
     }
 
+    public function setActiveSchoolyear(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'schoolyear_id' => 'required|integer|exists:schoolyears,id',
+        ]);
+
+        $schoolTool = SchoolTool::where('school_id', $auth_user->school_id)->first();
+
+        if (!$schoolTool) {
+            abort(404, 'SchoolTool nicht gefunden');
+        }
+
+        $schoolTool->update(['active_schoolyear_id' => $validated['schoolyear_id']]);
+
+        return response()->json(new SchoolToolResource($schoolTool), 200);
+    }
+
     /**
      * Display a listing of the resource.
      */

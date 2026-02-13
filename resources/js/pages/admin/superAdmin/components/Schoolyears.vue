@@ -28,7 +28,7 @@
                                                 {{ formatRange(item) }}
                                             </div>
                                         </div>
-                                        <v-icon v-if="item.is_active" size="small" color="success" icon="mdi-check-circle" />
+                                        <v-icon v-if="isActiveSchoolyear(item.id)" size="small" color="success" icon="mdi-check-circle" />
                                     </div>
                                 </template>
                             </v-list-item>
@@ -48,6 +48,10 @@
                     <!-- GENAU 1 ELEMENT AUSGEWÄHLT -->
                     <div class="d-flex flex-column ga-2" v-if="selected_schoolyears.length == 1">
                         <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-pencil" @click="editSchoolyear(selected_schoolyears[0])">Ändern</v-btn>
+                    </div>
+                    <!-- GENAU 1 ELEMENT AUSGEWÄHLT - AKTIV SETZEN -->
+                    <div class="d-flex flex-column ga-2" v-if="selected_schoolyears.length == 1">
+                        <v-btn block tile flat color="success" class="text-caption" prepend-icon="mdi-check-circle" @click="setActiveSchoolyear">Aktiv</v-btn>
                     </div>
                     <!-- MINDEST 1 ELEMENT AUSGEWÄHLT -->
                     <div class="d-flex flex-column ga-2" v-if="selected_schoolyears.length >= 1">
@@ -114,6 +118,7 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
 import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
+import { useSchoolToolStore } from '@/stores/admin/SchoolToolStore'
 import Pagination20 from '@/pages/components/Pagination20.vue'
 import SearchField20 from '@/pages/components/SearchField20.vue'
 
@@ -127,7 +132,9 @@ export default {
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.schoolyearStore = useSchoolyearStore()
+        this.schoolToolStore = useSchoolToolStore()
         await this.schoolyearStore.indexPaginate()
+        await this.schoolToolStore.loadConfig()
     },
 
     unmounted() {},
@@ -136,6 +143,7 @@ export default {
         return {
             adminStore: null,
             schoolyearStore: null,
+            schoolToolStore: null,
             is_valid: false,
             selected_schoolyears: [],
             data: {},
@@ -209,6 +217,19 @@ export default {
         },
         unselectAll() {
             this.selected_schoolyears = []
+        },
+
+        isActiveSchoolyear(schoolyear_id) {
+            return this.schoolToolStore?.data?.active_schoolyear_id === schoolyear_id
+        },
+
+        async setActiveSchoolyear() {
+            if (this.selected_schoolyears.length !== 1) return
+
+            const schoolyear_id = this.selected_schoolyears[0]
+            if (await this.schoolyearStore.setActiveSchoolyearInSchoolTool(schoolyear_id)) {
+                await this.schoolToolStore.loadConfig()
+            }
         },
     },
 }
