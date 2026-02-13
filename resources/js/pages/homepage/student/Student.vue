@@ -96,7 +96,8 @@
             </div>
         </section>
 
-        <section v-if="school" class="login-cover">
+        <!-- Email Eingabe -->
+        <section v-if="school && login_step === 'email'" class="login-cover">
             <div class="login-card">
                 <div class="login-head">
                     <v-icon size="26">mdi-account-school</v-icon>
@@ -118,6 +119,67 @@
                     <div class="login-actions">
                         <v-btn color="warning" variant="flat" rounded="pill" :disabled="!canContinueWithEmail" @click="continueWithPassword">Weiter mit Kennwort</v-btn>
                         <v-btn color="primary" variant="outlined" rounded="pill" :disabled="!canContinueWithEmail" @click="continueWithoutPassword">Weiter ohne Kennwort</v-btn>
+                    </div>
+                </v-form>
+            </div>
+        </section>
+
+        <!-- Code Eingabe (6-stellig) -->
+        <section v-if="school && login_step === 'code_sent'" class="login-cover">
+            <div class="login-card">
+                <div class="login-head">
+                    <v-icon size="26">mdi-key-variant</v-icon>
+                    <h2>Code eingeben</h2>
+                </div>
+                <p class="login-copy">
+                    Ein 6-stelliger Code wurde an
+                    <strong>{{ login_email }}</strong>
+                    gesendet. Bitte gib den Code ein.
+                </p>
+
+                <v-form ref="codeForm" v-model="is_code_valid">
+                    <div class="login-fields">
+                        <v-otp-input v-model="data.login_code" :length="6" variant="outlined" />
+                    </div>
+                    <div class="login-actions">
+                        <v-btn color="warning" variant="text" rounded="pill" @click="backToEmail">Zurück</v-btn>
+                        <v-btn color="success" variant="flat" rounded="pill" :disabled="!canSubmitCode" @click="submitCode">Code bestätigen</v-btn>
+                    </div>
+                </v-form>
+            </div>
+        </section>
+
+        <!-- Passwort Eingabe -->
+        <section v-if="school && login_step === 'enter_password'" class="login-cover">
+            <div class="login-card">
+                <div class="login-head">
+                    <v-icon size="26">mdi-lock</v-icon>
+                    <h2>Passwort eingeben</h2>
+                </div>
+                <p class="login-copy">
+                    Bitte gib dein Passwort für
+                    <strong>{{ login_email }}</strong>
+                    ein, um dich anzumelden.
+                </p>
+
+                <v-form ref="passwordForm" v-model="is_password_valid">
+                    <div class="login-fields">
+                        <v-text-field
+                            v-model="data.password"
+                            label="Passwort"
+                            variant="outlined"
+                            density="comfortable"
+                            :type="show_password ? 'text' : 'password'"
+                            prepend-inner-icon="mdi-lock-outline"
+                            :append-inner-icon="show_password ? 'mdi-eye-off' : 'mdi-eye'"
+                            :rules="[required(), minLength(8), maxLength(255)]"
+                            hide-details="auto"
+                            @click:append-inner="show_password = !show_password"
+                            @keyup.enter="submitPassword" />
+                    </div>
+                    <div class="login-actions">
+                        <v-btn color="warning" variant="text" rounded="pill" @click="backToEmail">Zurück</v-btn>
+                        <v-btn color="success" variant="flat" rounded="pill" :disabled="!canSubmitPassword" @click="submitPassword">Anmelden</v-btn>
                     </div>
                 </v-form>
             </div>
@@ -150,13 +212,20 @@ export default {
             studentStore: null,
             school_search: '',
             login_email: '',
+            login_code: '',
+            login_password: '',
+            login_step: 'email', // 'email', 'code_sent', 'enter_password'
+            show_password: false,
             is_school_search_valid: true,
             is_login_email_valid: false,
+            is_code_valid: false,
+            is_password_valid: false,
         }
     },
 
     computed: {
-        ...mapWritableState(useStudentStore, ['config', 'schools', 'selected_school_id', 'school']),
+        ...mapWritableState(useStudentStore, ['config', 'schools', 'selected_school_id', 'school', 'data']),
+
         maxSchoolsShown() {
             const raw = this.config?.config?.schooltool?.teaching_max_schools_shown
             const parsed = Number(raw)
@@ -184,6 +253,15 @@ export default {
             const value = String(this.login_email || '').trim()
             if (!value) return false
             return this.required()(value) === true && this.mail()(value) === true && this.maxLength(255)(value) === true
+        },
+        canSubmitCode() {
+            const value = String(this.data.login_code || '').trim()
+            return value.length === 6
+        },
+        canSubmitPassword() {
+            const value = String(this.data.password || '').trim()
+            if (!value) return false
+            return this.required()(value) === true && this.minLength(8)(value) === true && this.maxLength(255)(value) === true
         },
         weekdayLabel() {
             return new Intl.DateTimeFormat('de-AT', { weekday: 'long' }).format(new Date())
@@ -215,24 +293,81 @@ export default {
         async continueWithPassword() {
             const isValid = await this.validateLoginForm()
             if (!isValid) return
-            // Login flow is intentionally not implemented yet.
+
             const data = {
                 type: 'login_with_password',
                 school_id: this.selected_school_id,
                 email: this.login_email.trim(),
             }
-            await this.studentStore.loginStepEmail(data)
+
+            if (await this.studentStore.loginStepEmail(data)) {
+                const status = this.studentStore.data?.status
+                if (status === 'code_sent') {
+                    this.login_step = 'code_sent'
+                    this.login_code = ''
+                } else if (status === 'enter_password') {
+                    this.login_step = 'enter_password'
+                    this.login_password = ''
+                    this.show_password = false
+                }
+            }
         },
 
         async continueWithoutPassword() {
             const isValid = await this.validateLoginForm()
             if (!isValid) return
+
             const data = {
                 type: 'login_without_password',
                 school_id: this.selected_school_id,
                 email: this.login_email.trim(),
             }
-            await this.studentStore.loginStepEmail(data)
+
+            if (await this.studentStore.loginStepEmail(data)) {
+                const status = this.studentStore.data?.status
+                if (status === 'code_sent') {
+                    this.login_step = 'code_sent'
+                    this.login_code = ''
+                } else if (status === 'enter_password') {
+                    this.login_step = 'enter_password'
+                    this.login_password = ''
+                    this.show_password = false
+                }
+            }
+        },
+
+        async validatePasswordForm() {
+            this.is_password_valid = false
+            await this.$refs.passwordForm.validate()
+            return this.is_password_valid
+        },
+
+        async submitCode() {
+            if (!this.canSubmitCode) return
+
+            this.data.login_code.trim()
+
+            if (await this.studentStore.loginStepCode(this.data)) {
+                // TODO: data.status auswerten, ob Code korrekt war. status == code_not_valid -> Fehlermeldung anzeigen, dann Weiter-Click, danach Login neu beginnen
+                // status == login_ok -> Weiter zum Unterrichtsbereich (TODO)
+            }
+        },
+
+        async submitPassword() {
+            const isValid = await this.validatePasswordForm()
+            if (!isValid) return
+
+            if (await this.studentStore.loginStepPassword(this.data)) {
+                // TODO: data.status auswerten, ob Code korrekt war. status == password_not_valid -> Fehlermeldung anzeigen, dann Weiter-Click, danach Login neu beginnen
+                // status == login_ok -> Weiter zum Unterrichtsbereich (TODO)
+            }
+        },
+
+        backToEmail() {
+            this.login_step = 'email'
+            this.login_code = ''
+            this.login_password = ''
+            this.show_password = false
         },
     },
 }

@@ -299,7 +299,7 @@ class UserService
         return $data;
     }
 
-    private function sendCode($user, string $subject, string $email): void
+    public function sendCode($user, string $subject, string $email): void
     {
         $token2fa = random_int(100000, 999999);
         $user->token_2fa = $token2fa;

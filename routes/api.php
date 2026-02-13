@@ -84,6 +84,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     /* homepage/student */
     Route::get('/homepage/student/config', [\App\Http\Controllers\Student\StudentController::class, 'config']);
     Route::post('/homepage/student/login_step_email', [\App\Http\Controllers\Student\StudentController::class, 'loginStepEmail']);
+    Route::post('/homepage/student/login_step_code', [\App\Http\Controllers\Student\StudentController::class, 'loginStepCode']);
+    Route::post('/homepage/student/login_step_password', [\App\Http\Controllers\Student\StudentController::class, 'loginStepPassword']);
 
     /* SANCTUM */
     Route::middleware(['auth:sanctum'])->group(function () {

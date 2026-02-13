@@ -9,7 +9,7 @@ export const useStudentStore = defineStore('StudentStudentStore', {
             schools: [],
             selected_school_id: null,
             school: null,
-            data: null,
+            data: {},
         }
     },
 
@@ -42,6 +42,48 @@ export const useStudentStore = defineStore('StudentStudentStore', {
             homepageStore.is_loading++
             try {
                 this.response = await axios.post('/api/homepage/student/login_step_email', data)
+                this.data = this.response.data
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
+        async loginStepCode(data) {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+            try {
+                this.response = await axios.post('/api/homepage/student/login_step_code', data)
+                this.data = this.response.data
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                homepageStore.is_loading--
+            }
+        },
+
+        async loginStepPassword(data) {
+            const notification = useNotificationStore()
+            const homepageStore = useHomepageStore()
+            homepageStore.is_loading++
+            try {
+                this.response = await axios.post('/api/homepage/student/login_step_password', data)
                 this.data = this.response.data
                 return true
             } catch (error) {
