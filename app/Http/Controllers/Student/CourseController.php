@@ -25,7 +25,7 @@ class CourseController extends Controller
         // This is more reliable than whereJsonContains for different JSON formats
         $courses = TeachingCourse::where('school_id', $auth_user->school_id)
             ->where('schoolyear_id', $active_schoolyear_id)
-            ->with('user:id,first_name,last_name,short')
+            ->with('user:id,first_name,last_name,short,email')
             ->get()
             ->filter(function ($course) use ($auth_user) {
                 // Students is an array of objects with 'id' property
@@ -39,7 +39,9 @@ class CourseController extends Controller
                     'id' => $course->id,
                     'title' => $course->title,
                     'description' => $course->description,
+                    'teaching_schema_id' => $course->teaching_schema_id,
                     'teacher' => $course->user ? ($course->user->short ?: ($course->user->first_name . ' ' . $course->user->last_name)) : '—',
+                    'teacher_email' => $course->user?->email ?? null,
                     'classes' => $course->classes,
                     'students_count' => count($course->students ?? []),
                 ];
