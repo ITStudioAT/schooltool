@@ -10,6 +10,7 @@ export const useStudentStore = defineStore('StudentStudentStore', {
             selected_school_id: null,
             school: null,
             data: {},
+            user: null,
         }
     },
 
@@ -64,6 +65,7 @@ export const useStudentStore = defineStore('StudentStudentStore', {
             try {
                 this.response = await axios.post('/api/homepage/student/login_step_code', data)
                 this.data = this.response.data
+                this.user = this.response.data?.user ?? null
                 return true
             } catch (error) {
                 notification.notify({
@@ -85,6 +87,7 @@ export const useStudentStore = defineStore('StudentStudentStore', {
             try {
                 this.response = await axios.post('/api/homepage/student/login_step_password', data)
                 this.data = this.response.data
+                this.user = this.response.data?.user ?? null
                 return true
             } catch (error) {
                 notification.notify({

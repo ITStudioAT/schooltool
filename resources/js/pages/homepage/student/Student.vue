@@ -184,6 +184,23 @@
                 </v-form>
             </div>
         </section>
+
+        <!-- Error Dialog -->
+        <v-dialog v-model="show_error_dialog" max-width="500">
+            <v-card>
+                <v-card-title class="d-flex align-center ga-2">
+                    <v-icon color="error" icon="mdi-alert-circle" />
+                    <span>Anmeldefehler</span>
+                </v-card-title>
+                <v-card-text class="pt-4">
+                    {{ login_error }}
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn color="primary" variant="flat" @click="closeErrorDialog">OK</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </div>
 </template>
 
@@ -216,6 +233,8 @@ export default {
             login_password: '',
             login_step: 'email', // 'email', 'code_sent', 'enter_password'
             show_password: false,
+            show_error_dialog: false,
+            login_error: '',
             is_school_search_valid: true,
             is_login_email_valid: false,
             is_code_valid: false,
@@ -224,7 +243,7 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useStudentStore, ['config', 'schools', 'selected_school_id', 'school', 'data']),
+        ...mapWritableState(useStudentStore, ['config', 'schools', 'selected_school_id', 'school', 'data', 'user']),
 
         maxSchoolsShown() {
             const raw = this.config?.config?.schooltool?.teaching_max_schools_shown
@@ -348,8 +367,15 @@ export default {
             this.data.login_code.trim()
 
             if (await this.studentStore.loginStepCode(this.data)) {
-                // TODO: data.status auswerten, ob Code korrekt war. status == code_not_valid -> Fehlermeldung anzeigen, dann Weiter-Click, danach Login neu beginnen
-                // status == login_ok -> Weiter zum Unterrichtsbereich (TODO)
+                const status = this.studentStore.data?.status
+
+                if (status === 'code_not_valid') {
+                    this.login_error = 'Der eingegebene Code ist ungültig. Bitte versuche es erneut.'
+                    this.show_error_dialog = true
+                } else if (status === 'login_ok') {
+                    // Erfolgreicher Login - Weiterleitung zum Unterrichtsbereich
+                    // this.$router.push('/student/dashboard')
+                }
             }
         },
 
@@ -358,9 +384,22 @@ export default {
             if (!isValid) return
 
             if (await this.studentStore.loginStepPassword(this.data)) {
-                // TODO: data.status auswerten, ob Code korrekt war. status == password_not_valid -> Fehlermeldung anzeigen, dann Weiter-Click, danach Login neu beginnen
-                // status == login_ok -> Weiter zum Unterrichtsbereich (TODO)
+                const status = this.studentStore.data?.status
+
+                if (status === 'password_not_valid') {
+                    this.login_error = 'Das eingegebene Passwort ist ungültig. Bitte versuche es erneut.'
+                    this.show_error_dialog = true
+                } else if (status === 'login_ok') {
+                    // Erfolgreicher Login - Weiterleitung zum Unterrichtsbereich
+                    // this.$router.push('/student/dashboard')
+                }
             }
+        },
+
+        closeErrorDialog() {
+            this.show_error_dialog = false
+            this.login_error = ''
+            this.backToEmail()
         },
 
         backToEmail() {

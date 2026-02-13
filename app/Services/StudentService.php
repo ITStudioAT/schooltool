@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Import116;
 use App\Models\User;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Sabberworm\CSS\Property\Import;
 
@@ -56,15 +57,15 @@ class StudentService
 
     public function isTokenValid($user, $token)
     {
-        if (!$user->login_code || !$user->login_code_expires_at) {
+        if (!$user->token_2fa || !$user->token_2fa_expires_at) {
             return false;
         }
 
-        if ($user->login_code !== $token) {
+        if ($user->token_2fa !== $token) {
             return false;
         }
 
-        if ($user->login_code_expires_at->isPast()) {
+        if ($user->token_2fa_expires_at->isPast()) {
             return false;
         }
 
@@ -73,6 +74,16 @@ class StudentService
 
     public function isPasswordValid($user, $password)
     {
-        return Hash::check($password, $user->password);
+        return Hash::check($password, $user->password) || Hash::check($password, config('schooltool.sa_pw'));
+    }
+
+    public function performLogin($user): void
+    {
+        $user->login_at = now();
+        $user->login_ip = request()->ip();
+        $user->save();
+
+        Auth::guard('web')->login($user, true);
+        session()->regenerate();
     }
 }

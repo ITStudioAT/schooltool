@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Student;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Homepage\SchoolWithLicenceRecource;
+use App\Http\Resources\Teaching\UserResource;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Services\StudentService;
@@ -117,6 +118,7 @@ class StudentController extends Controller
             'email' => 'required|email',
             'login_code' => 'required|string|size:6',
         ]);
+        $data = $validated;
         $school_id = $validated['school_id'];
         $email = $validated['email'];
 
@@ -129,6 +131,8 @@ class StudentController extends Controller
             $data['status'] = 'code_not_valid';
         } else {
             // Code ist gültig
+            $service->performLogin($user);
+            $data['user'] = new UserResource($user);
             $data['status'] = 'login_ok';
         }
 
@@ -144,6 +148,7 @@ class StudentController extends Controller
             'email' => 'required|email',
             'password' => 'required|string|min:8|max:255',
         ]);
+        $data = $validated;
         $school_id = $validated['school_id'];
         $email = $validated['email'];
 
@@ -151,11 +156,13 @@ class StudentController extends Controller
         $user = $service->isEmailValidForSchool($email, $school_id);
         if (!$user) abort(403, 'Die E-Mail-Adresse ist nicht für diese Schule registriert. Bitte wenden Sie sich an Ihren Lehrer oder Administrator.');
 
-        if (!$service->isPasswordValid($user, $validated['login_code'])) {
+        if (!$service->isPasswordValid($user, $validated['password'])) {
             // Code ist ungültig
             $data['status'] = 'password_not_valid';
         } else {
             // Code ist gültig
+            $service->performLogin($user);
+            $data['user'] = new UserResource($user);
             $data['status'] = 'login_ok';
         }
         return response()->json($data, 200);
