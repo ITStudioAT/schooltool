@@ -4,45 +4,7 @@
         <div class="bg-shape bg-shape-2"></div>
 
         <!-- Navigation Drawer -->
-        <v-navigation-drawer v-model="showDrawer" temporary location="right" width="320">
-            <div class="drawer-header">
-                <div class="drawer-user-info">
-                    <v-avatar color="#fd802e" size="56">
-                        <span class="text-h6">{{ userInitials }}</span>
-                    </v-avatar>
-                    <div class="drawer-user-details">
-                        <h3>{{ user?.first_name }} {{ user?.last_name }}</h3>
-                        <p>{{ user?.email }}</p>
-                    </div>
-                </div>
-            </div>
-
-            <v-divider />
-
-            <v-list>
-                <v-list-item prepend-icon="mdi-lock-reset" @click="handlePasswordChange">
-                    <v-list-item-title>Passwort ändern</v-list-item-title>
-                    <v-list-item-subtitle>Ändere dein Passwort für mehr Sicherheit</v-list-item-subtitle>
-                </v-list-item>
-
-                <v-list-item prepend-icon="mdi-account-edit" @click="handleProfileEdit">
-                    <v-list-item-title>Profil bearbeiten</v-list-item-title>
-                    <v-list-item-subtitle>Bearbeite deine persönlichen Informationen</v-list-item-subtitle>
-                </v-list-item>
-
-                <v-list-item prepend-icon="mdi-cog" @click="handleSettings">
-                    <v-list-item-title>Einstellungen</v-list-item-title>
-                    <v-list-item-subtitle>Verwalte deine Benachrichtigungen und Präferenzen</v-list-item-subtitle>
-                </v-list-item>
-
-                <v-divider class="my-2" />
-
-                <v-list-item prepend-icon="mdi-logout" @click="handleLogout">
-                    <v-list-item-title>Abmelden</v-list-item-title>
-                    <v-list-item-subtitle>Vom Unterrichtsbereich abmelden</v-list-item-subtitle>
-                </v-list-item>
-            </v-list>
-        </v-navigation-drawer>
+        <StudentNavigationDrawer v-model="showDrawer" current-route="overview" />
 
         <section class="hero">
             <div class="hero-card">
@@ -103,30 +65,19 @@
                 </div>
             </div>
         </section>
-
-        <!-- Coming Soon Dialog -->
-        <v-dialog v-model="showComingSoonDialog" max-width="400">
-            <v-card>
-                <v-card-title class="d-flex align-center ga-2">
-                    <v-icon color="primary" icon="mdi-information" />
-                    <span>Demnächst verfügbar</span>
-                </v-card-title>
-                <v-card-text class="pt-4">Diese Funktion ist noch in Entwicklung und wird bald verfügbar sein.</v-card-text>
-                <v-card-actions>
-                    <v-spacer />
-                    <v-btn color="primary" variant="flat" @click="showComingSoonDialog = false">OK</v-btn>
-                </v-card-actions>
-            </v-card>
-        </v-dialog>
     </div>
 </template>
 
 <script>
 import { mapWritableState } from 'pinia'
 import { useStudentStore } from '@/stores/student/StudentStore'
+import StudentNavigationDrawer from '../components/StudentNavigationDrawer.vue'
 import '../../../../../css/student.css'
 
 export default {
+    components: {
+        StudentNavigationDrawer,
+    },
     async beforeMount() {
         this.studentStore = useStudentStore()
 
@@ -142,7 +93,6 @@ export default {
     data() {
         return {
             studentStore: null,
-            showComingSoonDialog: false,
             showDrawer: false,
             courses: [
                 {
@@ -194,40 +144,10 @@ export default {
         dateLabel() {
             return new Intl.DateTimeFormat('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date())
         },
-        userInitials() {
-            if (!this.user) return '?'
-            const first = this.user.first_name?.[0] || ''
-            const last = this.user.last_name?.[0] || ''
-            return (first + last).toUpperCase()
-        },
     },
 
     methods: {
-        async handleLogout() {
-            this.showDrawer = false
-            await this.studentStore.logout()
-            this.$router.push('/student')
-        },
-
-        handlePasswordChange() {
-            this.showDrawer = false
-            this.$router.push('/student/password')
-        },
-
-        handleProfileEdit() {
-            this.showDrawer = false
-            this.showComingSoonDialog = true
-            // TODO: Implement profile edit functionality
-        },
-
-        handleSettings() {
-            this.showDrawer = false
-            this.showComingSoonDialog = true
-            // TODO: Implement settings functionality
-        },
-
         handleCourseClick(course) {
-            this.showComingSoonDialog = true
             // TODO: Implement course detail view
             // this.$router.push(`/student/course/${course.id}`)
         },

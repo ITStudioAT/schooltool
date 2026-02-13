@@ -79,11 +79,86 @@ class StudentService
 
     public function performLogin($user): void
     {
+        // Synchronize user data from Import116 before login
+        $this->syncUserDataFromImport116($user);
+
         $user->login_at = now();
         $user->login_ip = request()->ip();
         $user->save();
 
         Auth::guard('web')->login($user, true);
         session()->regenerate();
+    }
+
+    /**
+     * Synchronize user data from Import116 to User
+     * Updates user information if corresponding Import116 record exists
+     *
+     * @param User $user
+     * @return User
+     */
+    public function syncUserDataFromImport116(User $user): User
+    {
+        // Find Import116 record by email and school_id
+        $import116 = Import116::where('email', $user->email)
+            ->where('school_id', $user->school_id)
+            ->first();
+
+        // If no Import116 record found, return user unchanged
+        if (!$import116) {
+            return $user;
+        }
+
+        // Track if any changes were made
+        $hasChanges = false;
+
+        // Synchronize basic fields
+        if ($import116->first_name && $user->first_name !== $import116->first_name) {
+            $user->first_name = $import116->first_name;
+            $hasChanges = true;
+        }
+
+        if ($import116->last_name && $user->last_name !== $import116->last_name) {
+            $user->last_name = $import116->last_name;
+            $hasChanges = true;
+        }
+
+        // Synchronize phone (prefer phone_1, fallback to phone_2)
+        $import116Phone = $import116->phone_1 ?? $import116->phone_2;
+        if ($import116Phone && $user->phone !== $import116Phone) {
+            $user->phone = $import116Phone;
+            $hasChanges = true;
+        }
+
+        // Synchronize sex
+        if ($import116->sex && $user->sex !== $import116->sex) {
+            $user->sex = $import116->sex;
+            $hasChanges = true;
+        }
+
+        // Synchronize class
+        if ($import116->class && $user->schoolclass !== $import116->class) {
+            $user->schoolclass = $import116->class;
+            $hasChanges = true;
+        }
+
+        // Synchronize schoolyear_id
+        if ($import116->schoolyear_id && $user->schoolyear_id !== $import116->schoolyear_id) {
+            $user->schoolyear_id = $import116->schoolyear_id;
+            $hasChanges = true;
+        }
+
+        // Update import116_id if not set
+        if ($user->import116_id !== $import116->id) {
+            $user->import116_id = $import116->id;
+            $hasChanges = true;
+        }
+
+        // Save only if changes were made
+        if ($hasChanges) {
+            $user->save();
+        }
+
+        return $user;
     }
 }
