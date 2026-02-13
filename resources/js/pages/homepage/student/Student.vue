@@ -216,12 +216,23 @@ export default {
             const isValid = await this.validateLoginForm()
             if (!isValid) return
             // Login flow is intentionally not implemented yet.
+            const data = {
+                type: 'login_with_password',
+                school_id: this.selected_school_id,
+                email: this.login_email.trim(),
+            }
+            await this.studentStore.loginStepEmail(data)
         },
 
         async continueWithoutPassword() {
             const isValid = await this.validateLoginForm()
             if (!isValid) return
-            // Login flow is intentionally not implemented yet.
+            const data = {
+                type: 'login_without_password',
+                school_id: this.selected_school_id,
+                email: this.login_email.trim(),
+            }
+            await this.studentStore.loginStepEmail(data)
         },
     },
 }
@@ -507,6 +518,5 @@ export default {
     .schools-grid {
         grid-template-columns: 1fr;
     }
-
 }
 </style>

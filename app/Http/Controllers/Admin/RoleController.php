@@ -12,7 +12,7 @@ class RoleController extends Controller
     public function loadRoles()
     {
 
-        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+        if (! $auth_user = $this->userHasRole(['super_admin', 'admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 

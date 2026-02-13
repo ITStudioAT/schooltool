@@ -40,7 +40,7 @@ class UserController extends Controller
 
     public function loadUsers(UserIndexRequest $request)
     {
-        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+        if (! $auth_user = $this->userHasRole(['super_admin', 'admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -73,7 +73,7 @@ class UserController extends Controller
 
     public function updateUser(UserUpdateUserRequest $request, UserService $service)
     {
-        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+        if (! $auth_user = $this->userHasRole(['super_admin', 'admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
         $validated = $request->validated();
@@ -85,7 +85,7 @@ class UserController extends Controller
 
     public function storeUser(UserStoreUserRequest $request, UserService $service)
     {
-        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+        if (! $auth_user = $this->userHasRole(['super_admin', 'admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
         $validated = $request->validated();
@@ -96,7 +96,7 @@ class UserController extends Controller
 
     public function deleteUsers(UserDeleteUsersRequest $request, UserService $service)
     {
-        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+        if (! $auth_user = $this->userHasRole(['super_admin', 'admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -279,7 +279,7 @@ class UserController extends Controller
 
 
         if (! $auth_user = $this->userHasAtLeastOneRole()) {
-            abort(403, 'Sie haben keine Berechtigungx');
+            abort(403, 'Sie haben keine Berechtigung');
         }
         $validated = $request->validated();
         unset($validated['id']);
