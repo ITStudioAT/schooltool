@@ -8,6 +8,8 @@ import TutoringOverview from '@/pages/homepage/tutoring/TutoringOverview.vue'
 import Tutoring from '@/pages/homepage/tutoring/Tutoring.vue'
 import TutoringResponse from '@/pages/homepage/tutoring/responses/TutoringResponse.vue'
 import Student from '@/pages/homepage/student/Student.vue'
+import StudentOverview from '@/pages/homepage/student/overview/Overview.vue'
+import StudentPassword from '@/pages/homepage/student/password/Password.vue'
 
 const routes = [
     { path: '/', component: Index },
@@ -19,6 +21,9 @@ const routes = [
     { path: '/homepage/tutoring', component: Tutoring },
     { path: '/homepage/tutoring_response', component: TutoringResponse },
     { path: '/homepage/student', component: Student },
+    { path: '/student', component: Student },
+    { path: '/student/overview', component: StudentOverview },
+    { path: '/student/password', component: StudentPassword },
 ]
 
 const router = createRouter({

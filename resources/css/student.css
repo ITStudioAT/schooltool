@@ -1,0 +1,539 @@
+/* Student Portal Styles */
+
+.lernportal-page {
+    --pumpkin: #fd802e;
+    --charcoal: #233d4c;
+    --cream: #f8efe7;
+    min-height: 100vh;
+    padding: 28px 20px 56px;
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(150deg, #182a35 0%, var(--charcoal) 46%, #182a35 100%);
+    font-family: 'Poppins', 'Nunito', sans-serif;
+}
+
+.bg-shape {
+    position: absolute;
+    border-radius: 999px;
+    filter: blur(90px);
+    opacity: 0.35;
+    pointer-events: none;
+}
+
+.bg-shape-1 {
+    width: 340px;
+    height: 340px;
+    top: -80px;
+    right: -120px;
+    background: var(--pumpkin);
+}
+
+.bg-shape-2 {
+    width: 340px;
+    height: 340px;
+    bottom: -120px;
+    left: -130px;
+    background: #ff9f5e;
+}
+
+.hero,
+.schools-cover,
+.login-cover,
+.content-cover {
+    max-width: 960px;
+    margin: 0 auto;
+    position: relative;
+    z-index: 1;
+}
+
+.hero-card {
+    background: linear-gradient(155deg, var(--pumpkin) 0%, #ff8f42 100%);
+    border-radius: 24px;
+    padding: 26px;
+    box-shadow: 0 20px 50px rgba(8, 16, 20, 0.35);
+    color: var(--charcoal);
+}
+
+.hero-topline {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.back-btn {
+    color: var(--charcoal);
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    border-radius: 999px;
+}
+
+.menu-btn {
+    color: var(--charcoal);
+}
+
+.chip-brand {
+    padding: 7px 13px;
+    border-radius: 999px;
+    background: rgba(35, 61, 76, 0.15);
+    font-size: 0.8rem;
+    font-weight: 700;
+    border: 1px solid rgba(35, 61, 76, 0.28);
+}
+
+.hero-title {
+    margin: 20px 0 10px;
+    font-size: clamp(1.8rem, 4vw, 3rem);
+    line-height: 1.05;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+}
+
+.hero-subtitle {
+    margin: 0;
+    font-size: 1.06rem;
+    max-width: 640px;
+    font-weight: 600;
+}
+
+.hero-badges {
+    margin-top: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.hero-badge {
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 0.82rem;
+    border: 1px solid rgba(35, 61, 76, 0.25);
+    background: rgba(248, 239, 231, 0.65);
+}
+
+.hero-badge.dark {
+    color: var(--pumpkin);
+    background: var(--charcoal);
+    border-color: rgba(253, 128, 46, 0.55);
+}
+
+.login-cover {
+    margin-top: 26px;
+}
+
+.schools-cover {
+    margin-top: 26px;
+}
+
+.schools-card {
+    background: rgba(248, 239, 231, 0.96);
+    border: 1px solid rgba(253, 128, 46, 0.35);
+    border-radius: 24px;
+    padding: 24px;
+    box-shadow: 0 14px 38px rgba(0, 0, 0, 0.2);
+}
+
+.schools-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--charcoal);
+    flex-wrap: wrap;
+}
+
+.schools-head h2 {
+    margin: 0;
+    font-size: 1.2rem;
+    font-weight: 800;
+}
+
+.schools-count {
+    margin-left: auto;
+    background: rgba(35, 61, 76, 0.1);
+    color: #233d4c;
+    font-weight: 700;
+}
+
+.schools-copy {
+    margin: 10px 0 16px;
+    color: #314d5d;
+    font-weight: 500;
+}
+
+.school-search-field {
+    margin-bottom: 12px;
+}
+
+.schools-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.school-item {
+    background: rgba(35, 61, 76, 0.06);
+    border: 1px solid rgba(35, 61, 76, 0.18);
+    border-radius: 14px;
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+}
+
+.school-item.is-active {
+    border-color: rgba(58, 170, 53, 0.65);
+    background: rgba(58, 170, 53, 0.12);
+}
+
+.school-main {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.school-long {
+    color: #1d3645;
+    font-weight: 700;
+    font-size: 0.95rem;
+    line-height: 1.2;
+}
+
+.school-short {
+    color: #48606f;
+    font-weight: 600;
+    font-size: 0.82rem;
+}
+
+.schools-empty {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #6e5a47;
+    font-weight: 600;
+    background: rgba(253, 128, 46, 0.12);
+    border-radius: 12px;
+    padding: 10px 12px;
+}
+
+.schools-hint {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #1d3645;
+    font-weight: 600;
+    background: rgba(35, 61, 76, 0.1);
+    border-radius: 12px;
+    padding: 10px 12px;
+}
+
+.login-card {
+    background: rgba(248, 239, 231, 0.96);
+    border: 1px solid rgba(253, 128, 46, 0.35);
+    border-radius: 24px;
+    padding: 26px;
+    box-shadow: 0 14px 38px rgba(0, 0, 0, 0.2);
+}
+
+.login-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--charcoal);
+}
+
+.login-head h2 {
+    margin: 0;
+    font-size: 1.3rem;
+    font-weight: 800;
+}
+
+.login-copy {
+    margin: 10px 0 18px;
+    color: #314d5d;
+    font-weight: 500;
+}
+
+.login-fields {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+}
+
+.login-actions {
+    margin-top: 12px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+/* Drawer Styles */
+.drawer-header {
+    padding: 24px 16px;
+    background: linear-gradient(155deg, #fd802e 0%, #ff8f42 100%);
+}
+
+.drawer-user-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.drawer-user-details h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #233d4c;
+}
+
+.drawer-user-details p {
+    margin: 4px 0 0;
+    font-size: 0.85rem;
+    color: #314d5d;
+    font-weight: 500;
+}
+
+/* Content Styles */
+.content-cover {
+    margin-top: 26px;
+    display: grid;
+    gap: 26px;
+}
+
+.content-card {
+    background: rgba(248, 239, 231, 0.96);
+    border: 1px solid rgba(253, 128, 46, 0.35);
+    border-radius: 24px;
+    padding: 26px;
+    box-shadow: 0 14px 38px rgba(0, 0, 0, 0.2);
+}
+
+.content-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--charcoal);
+}
+
+.content-head .ml-auto {
+    margin-left: auto;
+}
+
+.content-head h2 {
+    margin: 0;
+    font-size: 1.3rem;
+    font-weight: 800;
+}
+
+.content-copy {
+    margin: 10px 0 18px;
+    color: #314d5d;
+    font-weight: 500;
+}
+
+/* Courses Section */
+.courses-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    margin-top: 20px;
+}
+
+.course-card {
+    background: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(253, 128, 46, 0.2);
+    border-radius: 16px;
+    padding: 20px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.course-card:hover {
+    background: rgba(255, 255, 255, 0.95);
+    border-color: rgba(253, 128, 46, 0.4);
+    transform: translateY(-4px);
+    box-shadow: 0 8px 20px rgba(253, 128, 46, 0.2);
+}
+
+.course-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.course-title {
+    margin: 0 0 6px;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #233d4c;
+}
+
+.course-teacher {
+    margin: 0 0 12px;
+    font-size: 0.9rem;
+    color: #48606f;
+    font-weight: 600;
+}
+
+.course-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(253, 128, 46, 0.15);
+}
+
+.course-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+    color: #48606f;
+    font-weight: 500;
+}
+
+.courses-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: #48606f;
+}
+
+.courses-empty h3 {
+    margin: 16px 0 8px;
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #233d4c;
+}
+
+.courses-empty p {
+    margin: 0;
+    font-size: 0.95rem;
+}
+
+/* Password Change Section */
+.password-fields {
+    display: grid;
+    gap: 16px;
+    margin-top: 20px;
+}
+
+.password-strength {
+    margin-top: 20px;
+    padding: 16px;
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid rgba(253, 128, 46, 0.2);
+    border-radius: 12px;
+}
+
+.strength-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #314d5d;
+}
+
+.strength-text {
+    font-weight: 700;
+}
+
+.strength-text.strength-weak {
+    color: #f44336;
+}
+
+.strength-text.strength-medium {
+    color: #ff9800;
+}
+
+.strength-text.strength-good {
+    color: #ffa726;
+}
+
+.strength-text.strength-strong {
+    color: #4caf50;
+}
+
+.password-requirements {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.requirement {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+    color: #48606f;
+    font-weight: 500;
+}
+
+.requirement.met {
+    color: #4caf50;
+    font-weight: 600;
+}
+
+.requirement.met .v-icon {
+    color: #4caf50;
+}
+
+.password-actions {
+    margin-top: 24px;
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 740px) {
+    .lernportal-page {
+        padding: 18px 14px 38px;
+    }
+
+    .hero-card,
+    .schools-card,
+    .login-card {
+        padding: 20px;
+        border-radius: 18px;
+    }
+
+    .schools-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .content-cover {
+        gap: 20px;
+    }
+
+    .content-card {
+        padding: 20px;
+        border-radius: 18px;
+    }
+
+    .courses-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .course-card {
+        padding: 16px;
+    }
+
+    .password-requirements {
+        grid-template-columns: 1fr;
+    }
+
+    .password-actions {
+        justify-content: stretch;
+    }
+
+    .password-actions .v-btn {
+        flex: 1;
+    }
+}

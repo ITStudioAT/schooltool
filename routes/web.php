@@ -78,5 +78,9 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         return view('homepage');
     });
 
+    Route::get('/student/{any?}', function () {
+        return view('homepage');
+    })->where('any', '.*');
+
     Route::get('/homepage/{any?}',  [\App\Http\Controllers\Homepage\HomepageController::class, 'routing']);
 });

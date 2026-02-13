@@ -30,6 +30,13 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::get('/homepage/load_schools_for_tool',  [HomepageController::class, 'loadSchoolsForTool']);
     Route::post('/homepage/logout',  [\App\Http\Controllers\Homepage\HomepageController::class, 'logout']);
 
+    /***** STUDENT ROUTES *****/
+    Route::get('/homepage/student/config', [\App\Http\Controllers\Student\StudentController::class, 'config']);
+    Route::post('/homepage/student/login_step_email', [\App\Http\Controllers\Student\StudentController::class, 'loginStepEmail']);
+    Route::post('/homepage/student/login_step_code', [\App\Http\Controllers\Student\StudentController::class, 'loginStepCode']);
+    Route::post('/homepage/student/login_step_password', [\App\Http\Controllers\Student\StudentController::class, 'loginStepPassword']);
+    Route::get('/homepage/student/user', [\App\Http\Controllers\Student\StudentController::class, 'user']);
+    Route::post('/homepage/student/change_password', [\App\Http\Controllers\Student\StudentController::class, 'changePassword']);
 
     /***** ADMIN ROUTES *****/
     Route::get('/admin/config',  [AdminController::class, 'config']);

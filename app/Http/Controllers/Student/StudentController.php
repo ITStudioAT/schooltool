@@ -11,6 +11,8 @@ use App\Services\StudentService;
 use App\Services\UserService;
 use Fruitcake\LaravelDebugbar\Facades\Debugbar;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 
 class StudentController extends Controller
 {
@@ -166,5 +168,44 @@ class StudentController extends Controller
             $data['status'] = 'login_ok';
         }
         return response()->json($data, 200);
+    }
+
+    public function user(Request $request)
+    {
+        if (Auth::check()) {
+            $user = Auth::user();
+
+            // Make sure the user is a student
+            if ($user->hasRole('student')) {
+                return response()->json([
+                    'user' => new UserResource($user),
+                ], 200);
+            }
+        }
+
+        return response()->json([
+            'user' => null,
+        ], 200);
+    }
+
+    public function changePassword(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['student'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'new_password' => 'required|string|min:8|max:255',
+            'confirm_password' => 'required|string|min:8|max:255|same:new_password',
+        ]);
+
+        // Update password
+        $auth_user->password = Hash::make($validated['new_password']);
+        $auth_user->save();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Passwort erfolgreich geändert',
+        ], 200);
     }
 }
