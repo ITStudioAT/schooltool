@@ -7,6 +7,7 @@
                 </v-avatar>
                 <div class="drawer-user-details">
                     <h3>{{ user?.first_name }} {{ user?.last_name }}</h3>
+                    <p v-if="user?.schoolclass" style="font-weight: 600; margin-bottom: 2px;">{{ user.schoolclass }}</p>
                     <p>{{ user?.email }}</p>
                 </div>
             </div>

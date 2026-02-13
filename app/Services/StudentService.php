@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Import116;
+use App\Models\SchoolTool;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -81,6 +82,12 @@ class StudentService
     {
         // Synchronize user data from Import116 before login
         $this->syncUserDataFromImport116($user);
+
+        // Synchronize schoolyear_id with active schoolyear from SchoolTool
+        $schoolTool = SchoolTool::where('school_id', $user->school_id)->first();
+        if ($schoolTool && $schoolTool->active_schoolyear_id && $user->schoolyear_id !== $schoolTool->active_schoolyear_id) {
+            $user->schoolyear_id = $schoolTool->active_schoolyear_id;
+        }
 
         $user->login_at = now();
         $user->login_ip = request()->ip();

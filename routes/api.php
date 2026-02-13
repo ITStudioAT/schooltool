@@ -37,6 +37,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/homepage/student/login_step_password', [\App\Http\Controllers\Student\StudentController::class, 'loginStepPassword']);
     Route::get('/homepage/student/user', [\App\Http\Controllers\Student\StudentController::class, 'user']);
     Route::post('/homepage/student/change_password', [\App\Http\Controllers\Student\StudentController::class, 'changePassword']);
+    Route::get('/homepage/student/courses', [\App\Http\Controllers\Student\CourseController::class, 'index']);
 
     /***** ADMIN ROUTES *****/
     Route::get('/admin/config',  [AdminController::class, 'config']);

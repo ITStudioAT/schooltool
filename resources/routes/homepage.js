@@ -11,6 +11,7 @@ import Student from '@/pages/homepage/student/Student.vue'
 import StudentOverview from '@/pages/homepage/student/overview/Overview.vue'
 import StudentPassword from '@/pages/homepage/student/password/Password.vue'
 import StudentProfile from '@/pages/homepage/student/profile/Profile.vue'
+import StudentCourse from '@/pages/homepage/student/overview/myCourse/MyCourse.vue'
 
 const routes = [
     { path: '/', component: Index },
@@ -26,6 +27,7 @@ const routes = [
     { path: '/student/overview', component: StudentOverview },
     { path: '/student/password', component: StudentPassword },
     { path: '/student/profile', component: StudentProfile },
+    { path: '/student/course/:id', component: StudentCourse },
 ]
 
 const router = createRouter({
