@@ -104,7 +104,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/navigation/user_menu',  [NavigationController::class, 'userMenu']);
 
         // users
-        Route::apiResource('/admin/users', UserController::class);
+        Route::apiResource('/admin/users', UserController::class)->names('admin.users');
 
         Route::get('/admin/test-queue', [App\Http\Controllers\Admin\HealthController::class, 'testQueue']);
         Route::get('/admin/test-queue/check', [App\Http\Controllers\Admin\HealthController::class, 'checkQueueStatus']);
@@ -154,16 +154,16 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /* SANCTUM - tutoring_user */
     Route::middleware(['auth:sanctum', 'api-allowed:tutoring_user'])->group(function () {
-        Route::apiResource('/homepage/tutoring/users', \App\Http\Controllers\Tutoring\UserController::class);
+        Route::apiResource('/homepage/tutoring/users', \App\Http\Controllers\Tutoring\UserController::class)->names('tutoring.users');
         Route::post('/homepage/tutoring/update_password', [\App\Http\Controllers\Tutoring\UserController::class, 'updatePassword']);
         Route::post('/homepage/tutoring/logout', [\App\Http\Controllers\Tutoring\UserController::class, 'logout']);
         Route::get('/homepage/tutoring/load_auth', [\App\Http\Controllers\Tutoring\TutoringController::class, 'loadAuth']);
         Route::get('/homepage/tutoring/load_my_offers', [\App\Http\Controllers\Tutoring\OfferController::class, 'loadMyOffers']);
-        Route::apiResource('/homepage/tutoring/subjects', \App\Http\Controllers\Tutoring\SubjectController::class);
-        Route::apiResource('/homepage/tutoring/offers', \App\Http\Controllers\Tutoring\OfferController::class);
+        Route::apiResource('/homepage/tutoring/subjects', \App\Http\Controllers\Tutoring\SubjectController::class)->names('tutoring.subjects');
+        Route::apiResource('/homepage/tutoring/offers', \App\Http\Controllers\Tutoring\OfferController::class)->names('tutoring.offers');
         Route::post('/homepage/tutoring/toggle_offer',  [\App\Http\Controllers\Tutoring\OfferController::class, 'toggleOffer']);
         Route::post('/homepage/tutoring/send_request',  [\App\Http\Controllers\Tutoring\OfferController::class, 'sendRequest']);
-        Route::apiResource('/homepage/tutoring/offer_requests', \App\Http\Controllers\Tutoring\OfferRequestController::class);
+        Route::apiResource('/homepage/tutoring/offer_requests', \App\Http\Controllers\Tutoring\OfferRequestController::class)->names('tutoring.offer_requests');
         Route::get('/homepage/tutoring/received_offer_requests', [\App\Http\Controllers\Tutoring\OfferRequestController::class, 'receivedRequests']);
         Route::post('/homepage/tutoring/request_mail_clicked', [\App\Http\Controllers\Tutoring\OfferRequestController::class, 'requestMailClicked']);
         Route::post('/homepage/tutoring/to_archive', [\App\Http\Controllers\Tutoring\OfferRequestController::class, 'toArchive']);
@@ -187,8 +187,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     /* SANCTUM - admin, tutoring_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:admin,tutoring_admin'])->group(function () {
         Route::post('/admin/school_tools/save_tutoring_settings', [\App\Http\Controllers\Admin\SchoolToolController::class, 'saveTutoringSettings']);
-        Route::apiResource('/admin/tutoring/subjects', \App\Http\Controllers\Admin\Tutoring\SubjectController::class);
-        Route::apiResource('/admin/tutoring/users', \App\Http\Controllers\Admin\Tutoring\UserController::class);
+        Route::apiResource('/admin/tutoring/subjects', \App\Http\Controllers\Admin\Tutoring\SubjectController::class)->names('admin.tutoring.subjects');
+        Route::apiResource('/admin/tutoring/users', \App\Http\Controllers\Admin\Tutoring\UserController::class)->names('admin.tutoring.users');
         Route::post('/admin/tutoring/create_subjects', [\App\Http\Controllers\Admin\Tutoring\SubjectController::class, 'createSubjects']);
         Route::post('/admin/tutoring/delete_users', [\App\Http\Controllers\Admin\Tutoring\UserController::class, 'deleteUsers']);
         Route::post('/admin/tutoring/clean_users', [\App\Http\Controllers\Admin\Tutoring\UserController::class, 'cleanUsers']);
@@ -220,7 +220,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::middleware(['auth:sanctum', 'api-allowed:admin,register_admin,tutoring_admin,teacher'])->group(function () {
 
         // Tutoring, Offers
-        Route::apiResource('/admin/tutoring/offers', \App\Http\Controllers\Admin\Tutoring\OfferController::class);
+        Route::apiResource('/admin/tutoring/offers', \App\Http\Controllers\Admin\Tutoring\OfferController::class)->names('admin.tutoring.offers');
         Route::post('/admin/tutoring/toggle_active_offer', [\App\Http\Controllers\Admin\Tutoring\OfferController::class, 'toggleActiveOffer']);
         Route::post('/admin/tutoring/toggle_accepted_offer', [\App\Http\Controllers\Admin\Tutoring\OfferController::class, 'toggleAcceptedOffer']);
         Route::get('/admin/tutoring/get_stats', [\App\Http\Controllers\Admin\Tutoring\OfferController::class, 'getStats']);
