@@ -60,6 +60,32 @@
                     <v-alert v-if="is_editing && totalSemesterWeight !== 100" type="warning" density="compact" class="mt-4">
                         Die Summe der Semester-Gewichtungen muss 100% ergeben (aktuell: {{ totalSemesterWeight }}%)
                     </v-alert>
+
+                    <!-- BERECHNUNG DES 1. SEMESTERS FÜR JAHRESNOTE -->
+                    <div class="mt-4">
+                        <div class="text-caption text-medium-emphasis mb-2">Berechnung des 1. Semesters für die Jahresnote</div>
+                        <v-radio-group v-if="is_editing" v-model="data.use_semester_grade_only" hide-details class="mt-2">
+                            <v-radio :value="false" color="primary">
+                                <template v-slot:label>
+                                    <div class="text-body-2">
+                                        <strong>Alle Werte aus dem 1. Semester</strong>
+                                        <div class="text-caption text-medium-emphasis">Alle Kategorien und Arbeiten werden neu berechnet</div>
+                                    </div>
+                                </template>
+                            </v-radio>
+                            <v-radio :value="true" color="primary" class="mt-2">
+                                <template v-slot:label>
+                                    <div class="text-body-2">
+                                        <strong>Nur die Semesternote</strong>
+                                        <div class="text-caption text-medium-emphasis">Die bereits berechnete Note des 1. Semesters wird verwendet</div>
+                                    </div>
+                                </template>
+                            </v-radio>
+                        </v-radio-group>
+                        <div v-else class="text-body-1">
+                            {{ data.use_semester_grade_only ? 'Nur die Semesternote' : 'Alle Werte aus dem 1. Semester' }}
+                        </div>
+                    </div>
                 </div>
 
                 <v-divider class="my-6" />
@@ -324,6 +350,7 @@ export default {
                 semester_count: 2,
                 semester_1_weight: 50,
                 semester_2_weight: 50,
+                use_semester_grade_only: false,
                 categories: [],
             },
             new_category: { name: '', weight: '' },
@@ -397,6 +424,7 @@ export default {
                 semester_count: grading.semester_count || 2,
                 semester_1_weight: grading.semester_1_weight ?? 50,
                 semester_2_weight: grading.semester_2_weight ?? 50,
+                use_semester_grade_only: grading.use_semester_grade_only ?? false,
                 categories: (grading.categories || []).map((c) => ({
                     ...c,
                     works: this.normalizeWorks(c.works).filter((w) => validShortNames.includes(w.short_name)),
@@ -512,6 +540,7 @@ export default {
                 semester_count: this.data.semester_count,
                 semester_1_weight: this.data.semester_count === 1 ? 100 : this.data.semester_1_weight,
                 semester_2_weight: this.data.semester_count === 1 ? 0 : this.data.semester_2_weight,
+                use_semester_grade_only: this.data.semester_count === 2 ? this.data.use_semester_grade_only : false,
                 categories: cleanedCategories,
             }
 
