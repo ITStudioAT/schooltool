@@ -7,6 +7,7 @@ use App\Models\SchoolTool;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseBehaviourEntry;
 use App\Models\User;
+use App\Services\TeachingHolidaySyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -144,16 +145,28 @@ class CourseController extends Controller
             });
 
         // Get course dates (TeachingCourseDate)
+        $holidaySync = app(TeachingHolidaySyncService::class);
         $courseDates = $course->teachingCourseDates()
             ->orderBy('date', 'asc')
             ->get()
-            ->map(function ($courseDate) {
+            ->map(function ($courseDate) use ($course, $holidaySync) {
+                $date = $courseDate->date?->format('Y-m-d');
+                $status = is_array($courseDate->status) ? $courseDate->status : [];
+                $freeReason = in_array('free', $status, true)
+                    ? $holidaySync->resolveFreeReason(
+                        (int) $course->school_id,
+                        (int) $course->schoolyear_id,
+                        (int) $course->user_id,
+                        $date
+                    )
+                    : null;
                 return [
                     'id' => $courseDate->id,
-                    'date' => $courseDate->date?->format('Y-m-d'),
+                    'date' => $date,
                     'hours' => $courseDate->hours,
                     'content' => $courseDate->content,
-                    'status' => $courseDate->status,
+                    'status' => $status,
+                    'free_reason' => $freeReason,
                 ];
             });
 

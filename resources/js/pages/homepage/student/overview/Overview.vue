@@ -10,7 +10,6 @@
             <div class="hero-card">
                 <div class="hero-topline">
                     <v-btn class="back-btn" variant="text" prepend-icon="mdi-arrow-left" @click="$router.push('/')">Zur Startseite</v-btn>
-                    <div class="chip-brand">Unterricht</div>
                     <v-btn class="menu-btn" variant="text" icon="mdi-menu" @click="showDrawer = true" />
                 </div>
 

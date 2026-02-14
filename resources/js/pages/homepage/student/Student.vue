@@ -7,7 +7,6 @@
             <div class="hero-card">
                 <div class="hero-topline">
                     <v-btn class="back-btn" variant="text" prepend-icon="mdi-arrow-left" @click="$router.push('/')">Zur Startseite</v-btn>
-                    <div class="chip-brand">Unterricht</div>
                 </div>
 
                 <h1 class="hero-title">Unterricht</h1>
@@ -217,6 +216,11 @@ export default {
 
     async beforeMount() {
         this.studentStore = useStudentStore()
+        const isAuthenticated = await this.studentStore.getCurrentUser()
+        if (isAuthenticated && this.user) {
+            this.$router.replace('/student/overview')
+            return
+        }
         await this.studentStore.loadConfig()
         if (this.selected_school_id) {
             this.school = this.schools?.find((item) => Number(item.id) === Number(this.selected_school_id)) || null

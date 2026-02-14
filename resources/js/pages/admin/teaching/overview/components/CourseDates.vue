@@ -78,16 +78,18 @@
                                 </v-chip>
                                 <div class="course-date-hours text-body-2 flex-grow-1">
                                     <v-chip v-for="h in courseDate.hours" :key="h" size="x-small" variant="tonal" class="mr-1">{{ h }}. Std</v-chip>
+                                    <v-chip v-if="hasStatus(courseDate, 'free') && courseDate.free_reason" size="x-small" color="success" variant="outlined">
+                                        {{ courseDate.free_reason }}
+                                    </v-chip>
                                 </div>
                                 <div class="course-date-actions d-flex align-center ga-1">
-                                    <v-btn
+                                    <v-chip
                                         size="x-small"
                                         :color="hasStatus(courseDate, 'free') ? 'success' : 'default'"
                                         :variant="hasStatus(courseDate, 'free') ? 'flat' : 'outlined'"
-                                        :disabled="isEditingContent"
-                                        @click="toggleStatus(courseDate, 'free')">
+                                        title="Systemverwaltet (Ferien/Freier Tag)">
                                         E
-                                    </v-btn>
+                                    </v-chip>
                                     <v-btn
                                         size="x-small"
                                         :color="hasStatus(courseDate, 'pruefung') ? 'warning' : 'default'"
@@ -471,16 +473,18 @@ export default {
             this.selected_courseDate = courseDate
         },
         async toggleStatus(courseDate, status) {
+            if (status !== 'pruefung') return
             const currentStatus = Array.isArray(courseDate.status) ? [...courseDate.status] : []
-            const index = currentStatus.indexOf(status)
+            const currentPruefungOnly = currentStatus.filter((item) => item === 'pruefung')
+            const index = currentPruefungOnly.indexOf(status)
 
             if (index === -1) {
-                currentStatus.push(status)
+                currentPruefungOnly.push(status)
             } else {
-                currentStatus.splice(index, 1)
+                currentPruefungOnly.splice(index, 1)
             }
 
-            await this.courseDateStore.updateStatus(courseDate.id, currentStatus)
+            await this.courseDateStore.updateStatus(courseDate.id, currentPruefungOnly)
             await this.courseStore.index()
         },
         toggleContents() {

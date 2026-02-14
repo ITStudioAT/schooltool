@@ -13,7 +13,7 @@
                 subtitle="Einstellungen"
                 icon="mdi-cog"
                 :color="main_action == 'settings' ? 'primary' : 'secondary'"
-                @click="main_action = 'settings'"
+                @click="openSettings"
                 v-if="config.roles.some((item) => ['super_admin', 'admin', 'teaching_admin', 'teacher'].includes(item))" />
             <its-menu-button
                 subtitle="Suche"
@@ -32,7 +32,7 @@
         </v-card>
         <v-row class="w-100" dense>
             <Overview v-if="main_action == 'overview'" />
-            <Settings v-if="main_action == 'settings'" />
+            <Settings v-if="main_action == 'settings'" :key="`settings-${settings_view_key}`" />
             <Admin v-if="main_action == 'admin'" />
             <Search v-if="main_action == 'search'" />
             <Schoolyear v-if="main_action == 'schoolyear'" />
@@ -71,6 +71,7 @@ export default {
         return {
             adminStore: null,
             main_action: 'overview',
+            settings_view_key: 0,
         }
     },
 
@@ -78,6 +79,11 @@ export default {
         ...mapWritableState(useAdminStore, ['config', 'action', 'action_2']),
     },
 
-    methods: {},
+    methods: {
+        openSettings() {
+            this.settings_view_key++
+            this.main_action = 'settings'
+        },
+    },
 }
 </script>

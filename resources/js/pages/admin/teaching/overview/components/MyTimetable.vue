@@ -47,6 +47,14 @@
                                         <v-chip size="x-small" variant="outlined" color="primary">{{ item.hoursLabel }}</v-chip>
                                         <v-chip size="x-small" variant="outlined">{{ item.classLabel }}</v-chip>
                                         <v-chip size="x-small" variant="tonal" color="primary" class="chip-truncate">{{ item.courseTitle }}</v-chip>
+                                        <v-chip
+                                            v-if="hasFreeStatus(item) && item.freeReason"
+                                            size="x-small"
+                                            variant="outlined"
+                                            color="success"
+                                        >
+                                            {{ item.freeReason }}
+                                        </v-chip>
                                     </div>
                                     <div v-if="item.content" class="text-caption timetable-content" v-html="contentHtml(item.content)"></div>
                                 </div>
@@ -131,6 +139,7 @@ export default {
                             classLabel: classLabel || '-',
                             courseTitle: courseTitle || '-',
                             content: (courseDate?.content || '').toString().trim(),
+                            freeReason: (courseDate?.free_reason || '').toString().trim(),
                             status,
                         }
                     })
@@ -345,10 +354,15 @@ export default {
             if (statusStr.includes('pruefung') || statusStr.includes('prüfung')) {
                 return 'timetable-item--exam'
             }
-            if (statusStr.includes('frei') || statusStr.includes('free')) {
+            if (this.hasFreeStatus(item)) {
                 return 'timetable-item--free'
             }
             return ''
+        },
+        hasFreeStatus(item) {
+            const status = Array.isArray(item?.status) ? item.status : []
+            const statusStr = status.join(' ').toLowerCase()
+            return statusStr.includes('frei') || statusStr.includes('free')
         },
     },
 }

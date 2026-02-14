@@ -10,7 +10,6 @@
             <div class="hero-card">
                 <div class="hero-topline">
                     <v-btn class="back-btn" variant="text" prepend-icon="mdi-arrow-left" @click="$router.push('/student/overview')">Zurück zur Übersicht</v-btn>
-                    <div class="chip-brand">Fach</div>
                     <v-btn class="menu-btn" variant="text" icon="mdi-menu" @click="showDrawer = true" />
                 </div>
 
@@ -267,9 +266,9 @@
                                                 <v-list-item v-else>
                                                     <div class="entry-row" :class="[
                                                         item.stripe % 2 === 1 ? 'entry-row--alt' : 'entry-row--base',
-                                                        !item.entry.grade || item.entry.grade.trim() === '' ? 'entry-row--open' : ''
+                                                        isEntryOpen(item.entry) ? 'entry-row--open' : ''
                                                     ]">
-                                                        <v-icon size="22" :color="getEntryColor(item.entry.type)">{{ getEntryIcon(item.entry.type) }}</v-icon>
+                                                        <v-icon size="22" :color="getEntryStatusColor(item.entry)">{{ getEntryIcon(item.entry.type) }}</v-icon>
                                                         <v-chip v-if="item.entry.date" size="small" variant="tonal" color="primary">
                                                             {{ formatDate(item.entry.date) }}
                                                         </v-chip>
@@ -400,9 +399,11 @@
                                                     <v-chip v-if="dateEntry.hours && dateEntry.hours.length" size="small" variant="outlined">
                                                         {{ dateEntry.hours.join(', ') }}. Std
                                                     </v-chip>
+                                                    <v-chip v-if="hasFreeStatus(dateEntry.status) && dateEntry.free_reason" size="small" color="success" variant="tonal">
+                                                        {{ dateEntry.free_reason }}
+                                                    </v-chip>
                                                     <div class="date-main text-caption">
                                                         <div v-if="dateEntry.content" class="date-content" v-html="dateEntry.content"></div>
-                                                        <div v-else class="date-content-empty">—</div>
                                                     </div>
                                                 </div>
                                             </v-list-item>
@@ -859,19 +860,13 @@ export default {
             return comment
         },
 
-        getEntryColor(type) {
-            const colors = {
-                homework: 'primary',
-                TW: 'primary',
-                exam: 'warning',
-                PÜ: 'warning',
-                A: 'info',
-                MA: 'success',
-                activity: 'purple',
-                note: 'grey',
-                info: 'grey',
-            }
-            return colors[type] || 'grey'
+        isEntryOpen(entry) {
+            const grade = String(entry?.grade || '').trim()
+            return grade === ''
+        },
+
+        getEntryStatusColor(entry) {
+            return this.isEntryOpen(entry) ? 'error' : 'success'
         },
 
         formatDate(dateString) {
@@ -919,6 +914,12 @@ export default {
                 return '#4caf50'
             }
             return '#2196f3'
+        },
+
+        hasFreeStatus(status) {
+            if (!status || !Array.isArray(status)) return false
+            const statusStr = status.join(' ').toLowerCase()
+            return statusStr.includes('frei') || statusStr.includes('free')
         },
 
         toggleEntryExpansion(entryId) {
@@ -1157,12 +1158,6 @@ export default {
     font-weight: 400;
     line-height: 1.5;
     white-space: pre-wrap;
-}
-
-.date-content-empty {
-    font-size: 1rem;
-    color: #999;
-    font-style: italic;
 }
 
 .hero-badge.grade {

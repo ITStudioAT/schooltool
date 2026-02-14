@@ -12,6 +12,11 @@ class TeachingCourseDateService
 {
     public function createDates(int $course_id, string $from, ?string $until, array $hours, int $interval): array
     {
+        $course = TeachingCourse::select(['id', 'school_id', 'schoolyear_id', 'user_id'])->find($course_id);
+        if (! $course) {
+            return [];
+        }
+
         $startDate = Carbon::parse($from);
         $endDate = $until ? Carbon::parse($until) : $startDate->copy();
         $intervalDays = $interval * 7;
@@ -31,7 +36,7 @@ class TeachingCourseDateService
 
             if (! $exists) {
                 $courseDate = TeachingCourseDate::create([
-                    'teaching_course_id' => $course_id,
+                    'teaching_course_id' => $course->id,
                     'date' => $dateString,
                     'hours' => $hours,
                 ]);
@@ -39,6 +44,13 @@ class TeachingCourseDateService
             }
 
             $currentDate->addDays($intervalDays);
+        }
+
+        if (! empty($createdDates)) {
+            app(TeachingHolidaySyncService::class)->syncForSchoolyear(
+                $course->school_id,
+                $course->schoolyear_id
+            );
         }
 
         return $createdDates;
@@ -52,6 +64,7 @@ class TeachingCourseDateService
      */
     public function updateCourseDate(TeachingCourseDate $courseDate, array $validated, TeachingCourse $course): void
     {
+        $oldDate = $courseDate->date?->format('Y-m-d');
         $updateData = $this->buildBasicUpdateData($validated);
 
         $statusProvided = array_key_exists('status', $validated);
@@ -70,6 +83,20 @@ class TeachingCourseDateService
 
         if (! empty($updateData)) {
             $this->persistWithFallback($courseDate, $updateData, $statusProvided, $attendanceProvided, $attendanceCheckedProvided, $validated);
+        }
+
+        if (array_key_exists('date', $validated) || array_key_exists('status', $validated)) {
+            $newDate = $courseDate->fresh()->date?->format('Y-m-d');
+            $affectedDates = array_values(array_unique(array_filter([$oldDate, $newDate])));
+
+            if (! empty($affectedDates)) {
+                app(TeachingHolidaySyncService::class)->syncForSchoolyear(
+                    $course->school_id,
+                    $course->schoolyear_id,
+                    $affectedDates,
+                    $course->user_id
+                );
+            }
         }
     }
 
@@ -119,6 +146,16 @@ class TeachingCourseDateService
 
         if (! empty($updateData)) {
             $this->persistWithFallback($courseDate, $updateData, $statusProvided, $attendanceProvided, $attendanceCheckedProvided, $validated);
+        }
+
+        $date = $courseDate->fresh()->date?->format('Y-m-d');
+        if ($date) {
+            app(TeachingHolidaySyncService::class)->syncForSchoolyear(
+                $course->school_id,
+                $course->schoolyear_id,
+                [$date],
+                $course->user_id
+            );
         }
     }
 

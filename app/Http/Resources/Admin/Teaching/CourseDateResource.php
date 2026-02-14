@@ -3,6 +3,7 @@
 namespace App\Http\Resources\Admin\Teaching;
 
 use App\Services\TeachingCourseDateService;
+use App\Services\TeachingHolidaySyncService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -16,6 +17,10 @@ class CourseDateResource extends JsonResource
     public function toArray(Request $request): array
     {
         $service = app(TeachingCourseDateService::class);
+        $holidaySync = app(TeachingHolidaySyncService::class);
+        $course = $this->relationLoaded('teachingCourse')
+            ? $this->teachingCourse
+            : $this->teachingCourse()->first(['id', 'school_id', 'schoolyear_id', 'user_id', 'students']);
 
         $supportsAttendanceColumns = $service->supportsAttendanceColumns();
         $rawStatus = is_array($this->status) ? $this->status : [];
@@ -25,11 +30,20 @@ class CourseDateResource extends JsonResource
         $attendance = $supportsAttendanceColumns
             ? ($attendanceFromColumn ?? $attendanceFromStatus)
             : $attendanceFromStatus;
-        $attendance = $this->normalizeAttendanceForOutput($attendance, $service);
+        $attendance = $this->normalizeAttendanceForOutput($attendance, $service, $course);
         $attendanceCheckedFromStatus = $service->attendanceCheckedFromStatus($rawStatus);
         $attendanceChecked = $supportsAttendanceColumns
             ? (bool) $this->attendance_checked
             : $attendanceCheckedFromStatus;
+        $freeReason = null;
+        if (in_array('free', $status, true) && $course) {
+            $freeReason = $holidaySync->resolveFreeReason(
+                (int) $course->school_id,
+                (int) $course->schoolyear_id,
+                (int) $course->user_id,
+                $this->date?->format('Y-m-d')
+            );
+        }
 
         return [
             'id' => $this->id,
@@ -37,21 +51,18 @@ class CourseDateResource extends JsonResource
             'hours' => $this->hours,
             'content' => $this->content,
             'status' => $status,
+            'free_reason' => $freeReason,
             'attendance' => $attendance,
             'attendance_checked' => $attendanceChecked,
         ];
     }
 
-    private function normalizeAttendanceForOutput($attendance, TeachingCourseDateService $service): array
+    private function normalizeAttendanceForOutput($attendance, TeachingCourseDateService $service, $course): array
     {
         $input = is_array($attendance) ? $attendance : [];
         if (! count($input)) {
             return [];
         }
-
-        $course = $this->relationLoaded('teachingCourse')
-            ? $this->teachingCourse
-            : $this->teachingCourse()->first(['id', 'students']);
 
         $studentIds = $service->courseStudentIds($course ?? new \App\Models\TeachingCourse);
         $studentIdSet = array_fill_keys(array_map(fn ($id) => (string) $id, $studentIds), true);

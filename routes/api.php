@@ -205,6 +205,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/teaching/courses', \App\Http\Controllers\Admin\Teaching\TeachingCourseController::class);
         Route::apiResource('/admin/teaching/course_dates', \App\Http\Controllers\Admin\Teaching\CourseDateController::class);
         Route::patch('/admin/teaching/course_dates/{course_date}/status', [\App\Http\Controllers\Admin\Teaching\CourseDateController::class, 'updateStatus']);
+        Route::apiResource('/admin/teaching/holidays', \App\Http\Controllers\Admin\Teaching\HolidayController::class)->only(['index', 'store', 'destroy']);
+        Route::apiResource('/admin/teaching/my_holidays', \App\Http\Controllers\Admin\Teaching\MyHolidayController::class)
+            ->only(['index', 'store', 'destroy'])
+            ->parameters(['my_holidays' => 'my_holiday']);
         Route::get('/admin/teaching/load_class_students', [\App\Http\Controllers\Admin\Teaching\StudentController::class, 'loadClassStudents']);
         Route::get('/admin/teaching/import116/load_class_students', [\App\Http\Controllers\Admin\Teaching\Import116Controller::class, 'loadClassStudents']);
         Route::apiResource('/admin/teaching/course_works', \App\Http\Controllers\Admin\Teaching\CourseWorkController::class);

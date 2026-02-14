@@ -21,10 +21,16 @@
             :icon="show_schemas ? 'mdi-eye' : 'mdi-eye-off'"
             :color="show_schemas ? 'success' : 'secondary'"
             @click="show_schemas = !show_schemas" />
+        <its-menu-button
+            v-if="canManageOwnHolidays"
+            subtitle="Eigene freie Tage"
+            :icon="show_my_holidays ? 'mdi-eye' : 'mdi-eye-off'"
+            :color="show_my_holidays ? 'success' : 'secondary'"
+            @click="show_my_holidays = !show_my_holidays" />
     </v-card>
 
     <!-- Grundeinstellungen + Verhalten + Verständigungen -->
-    <v-col cols="12" md="6" xl="4" v-if="show_basic_settings || show_behaviour || show_notifications">
+    <v-col cols="12" md="6" xl="4" v-if="show_basic_settings || show_behaviour || show_notifications || (canManageOwnHolidays && show_my_holidays)">
         <ItsGridBox v-if="show_basic_settings" color="primary" title="Grundeinstellungen" icon="mdi-cog" class="w-100">
             <BasicSettings />
         </ItsGridBox>
@@ -33,6 +39,9 @@
         </div>
         <div v-if="show_notifications" :class="{ 'mt-4': show_basic_settings || show_behaviour }">
             <Notifications />
+        </div>
+        <div v-if="canManageOwnHolidays && show_my_holidays" :class="{ 'mt-4': show_basic_settings || show_behaviour || show_notifications }">
+            <MyHolidays />
         </div>
     </v-col>
 
@@ -108,18 +117,21 @@
 import { mapWritableState } from 'pinia'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
+import { useAdminStore } from '@/stores/admin/AdminStore'
 import WorksAndGrades from './components/WorksAndGrades.vue'
 import Grading from './components/Grading.vue'
 import BasicSettings from './components/BasicSettings.vue'
 import Behaviour from './components/Behaviour.vue'
 import Notifications from './components/Notifications.vue'
+import MyHolidays from './components/MyHolidays.vue'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
 export default {
-    components: { WorksAndGrades, Grading, BasicSettings, Behaviour, Notifications, ItsMenuButton, ItsGridBox },
+    components: { WorksAndGrades, Grading, BasicSettings, Behaviour, Notifications, MyHolidays, ItsMenuButton, ItsGridBox },
 
     async beforeMount() {
+        this.adminStore = useAdminStore()
         this.teachingStore = useTeachingStore()
         this.courseStore = useCourseStore()
         await Promise.all([this.teachingStore.loadSettings(), this.courseStore.index()])
@@ -130,13 +142,15 @@ export default {
 
     data() {
         return {
+            adminStore: null,
             teachingStore: null,
             courseStore: null,
             selected_schema_id: null,
             show_basic_settings: true,
-            show_schemas: true,
-            show_behaviour: true,
-            show_notifications: true,
+            show_schemas: false,
+            show_behaviour: false,
+            show_notifications: false,
+            show_my_holidays: false,
             show_works: true,
             show_grading: true,
             is_renaming: false,
@@ -146,6 +160,7 @@ export default {
     },
 
     computed: {
+        ...mapWritableState(useAdminStore, ['config']),
         ...mapWritableState(useTeachingStore, ['settings']),
         ...mapWritableState(useCourseStore, ['courses']),
         schemas() {
@@ -157,6 +172,10 @@ export default {
         selectedSchemaIsStandard() {
             const schema = this.schemas.find((s) => s.id === this.selected_schema_id)
             return schema?.name === 'Standard'
+        },
+        canManageOwnHolidays() {
+            const roles = this.config?.roles || []
+            return roles.includes('teacher') || roles.includes('admin') || roles.includes('super_admin')
         },
     },
 
