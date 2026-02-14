@@ -461,8 +461,8 @@ export default {
         },
         courseDateRowClass(courseDate) {
             if (this.selected_courseDate?.id === courseDate.id) return 'bg-secondary-lighten-5'
-            if (this.hasStatus(courseDate, 'pruefung')) return 'bg-warning-lighten-4'
-            if (this.hasStatus(courseDate, 'free')) return 'bg-success-lighten-2'
+            if (this.hasStatus(courseDate, 'pruefung')) return 'course-date-row--exam'
+            if (this.hasStatus(courseDate, 'free')) return 'course-date-row--free'
             if (this.highlightedDateId === courseDate.id) return 'bg-primary-lighten-4'
             return ''
         },
@@ -616,5 +616,15 @@ export default {
     .course-date-actions {
         order: 1;
     }
+}
+
+.course-date-row--exam {
+    background-color: #ffebee !important;
+    border-left: 4px solid #ff5722;
+}
+
+.course-date-row--free {
+    background-color: #c8e6c9 !important;
+    border-left: 4px solid #4caf50;
 }
 </style>

@@ -341,11 +341,12 @@ export default {
         },
         getStatusClass(item) {
             const status = item?.status || []
-            if (status.includes('pruefung')) {
-                return 'bg-warning-lighten-4'
+            const statusStr = status.join(' ').toLowerCase()
+            if (statusStr.includes('pruefung') || statusStr.includes('prüfung')) {
+                return 'timetable-item--exam'
             }
-            if (status.includes('free')) {
-                return 'bg-success-lighten-2'
+            if (statusStr.includes('frei') || statusStr.includes('free')) {
+                return 'timetable-item--free'
             }
             return ''
         },
@@ -367,5 +368,15 @@ export default {
 .timetable-content :deep(p) {
     margin: 0;
     min-height: 1.2em;
+}
+
+.timetable-item--exam {
+    background-color: #ffebee !important;
+    border-left: 4px solid #ff5722;
+}
+
+.timetable-item--free {
+    background-color: #c8e6c9 !important;
+    border-left: 4px solid #4caf50;
 }
 </style>
