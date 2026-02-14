@@ -21,6 +21,8 @@
 /storage/*.key
 /storage/pail
 /storage/debugbar
+/test-results
+/playwright-report
 /docusaurus
 /vendor
 /docusaurus

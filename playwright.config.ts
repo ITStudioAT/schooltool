@@ -10,7 +10,7 @@ export default defineConfig({
     workers: 1,
     retries: 0,
     use: {
-        baseURL: 'http://localhost:4173',
+        baseURL: 'http://127.0.0.1:8001',
         trace: 'on-first-retry',
     },
     projects: [
@@ -19,5 +19,14 @@ export default defineConfig({
             use: { ...devices['Desktop Chrome'] },
         },
     ],
+    webServer: {
+        command: 'php artisan serve --host=127.0.0.1 --port=8001',
+        url: 'http://127.0.0.1:8001',
+        reuseExistingServer: false,
+        timeout: 120_000,
+        env: {
+            ...process.env,
+            APP_ENV: 'e2e',
+        },
+    },
 })
-

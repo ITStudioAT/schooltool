@@ -108,6 +108,8 @@
                     <div class="login-fields">
                         <v-text-field
                             v-model="login_email"
+                            data-testid="student-login-email"
+                            id="student-login-email"
                             label="E-Mail"
                             variant="outlined"
                             density="comfortable"
@@ -116,8 +118,24 @@
                             hide-details="auto" />
                     </div>
                     <div class="login-actions">
-                        <v-btn color="warning" variant="flat" rounded="pill" :disabled="!canContinueWithEmail" @click="continueWithPassword">Weiter mit Kennwort</v-btn>
-                        <v-btn color="primary" variant="outlined" rounded="pill" :disabled="!canContinueWithEmail" @click="continueWithoutPassword">Weiter ohne Kennwort</v-btn>
+                        <v-btn
+                            data-testid="student-login-continue-password"
+                            color="warning"
+                            variant="flat"
+                            rounded="pill"
+                            :disabled="!canContinueWithEmail"
+                            @click="continueWithPassword">
+                            Weiter mit Kennwort
+                        </v-btn>
+                        <v-btn
+                            data-testid="student-login-continue-code"
+                            color="primary"
+                            variant="outlined"
+                            rounded="pill"
+                            :disabled="!canContinueWithEmail"
+                            @click="continueWithoutPassword">
+                            Weiter ohne Kennwort
+                        </v-btn>
                     </div>
                 </v-form>
             </div>
@@ -165,6 +183,8 @@
                     <div class="login-fields">
                         <v-text-field
                             v-model="data.password"
+                            data-testid="student-login-password"
+                            id="student-login-password"
                             label="Passwort"
                             variant="outlined"
                             density="comfortable"
@@ -178,7 +198,15 @@
                     </div>
                     <div class="login-actions">
                         <v-btn color="warning" variant="text" rounded="pill" @click="backToEmail">Zurück</v-btn>
-                        <v-btn color="success" variant="flat" rounded="pill" :disabled="!canSubmitPassword" @click="submitPassword">Anmelden</v-btn>
+                        <v-btn
+                            data-testid="student-login-submit-password"
+                            color="success"
+                            variant="flat"
+                            rounded="pill"
+                            :disabled="!canSubmitPassword"
+                            @click="submitPassword">
+                            Anmelden
+                        </v-btn>
                     </div>
                 </v-form>
             </div>
