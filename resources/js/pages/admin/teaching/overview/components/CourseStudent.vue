@@ -173,36 +173,35 @@
                                 </v-list-item>
                                 <v-list-item v-else>
                                     <div
-                                        class="entry-row d-flex align-center ga-2 w-100"
+                                        class="entry-row d-flex flex-column ga-1 w-100"
                                         :class="item.stripe % 2 === 1 ? 'entry-list-row--alt' : 'entry-list-row--base'">
-                                        <v-chip v-if="item.entry.date" size="x-small" variant="tonal" color="primary">
-                                            {{ formatDate(item.entry.date) }}
-                                        </v-chip>
-                                        <v-chip v-if="entryIsDisplaySem1ButCountsSem2(item.entry)" size="x-small" variant="tonal" color="warning">
-                                            Zählt zu Sem 2
-                                        </v-chip>
-                                        <v-chip v-if="item.entry.type" size="x-small" variant="outlined">
-                                            {{ workTypeLabel(item.entry.type) }}
-                                        </v-chip>
-                                        <v-chip
-                                            v-if="entryWorkTitle(item.entry)"
-                                            size="x-small"
-                                            variant="outlined"
-                                            color="primary"
-                                            class="entry-work-title">
-                                            {{ entryWorkTitle(item.entry) }}
-                                        </v-chip>
-                                        <v-chip v-if="entryIsDerivedFromWork(item.entry)" size="x-small" variant="tonal" color="info">
-                                            <v-icon start size="12">mdi-lock</v-icon>
-                                            Aus Arbeit
-                                        </v-chip>
-                                        <v-chip v-if="item.entry.grade" size="small" variant="tonal" color="success">
-                                            {{ item.entry.grade }}
-                                        </v-chip>
-                                        <div class="entry-description text-caption flex-grow-1">
-                                            {{ item.entry.description || '' }}
-                                        </div>
-                                        <div class="entry-actions d-flex align-center ga-1">
+                                        <div class="d-flex align-center ga-2 w-100">
+                                            <v-chip v-if="item.entry.date" size="x-small" variant="tonal" color="primary">
+                                                {{ formatDate(item.entry.date) }}
+                                            </v-chip>
+                                            <v-chip v-if="entryIsDisplaySem1ButCountsSem2(item.entry)" size="x-small" variant="tonal" color="warning">
+                                                Zählt zu Sem 2
+                                            </v-chip>
+                                            <v-chip v-if="item.entry.type" size="x-small" variant="outlined">
+                                                {{ workTypeLabel(item.entry.type) }}
+                                            </v-chip>
+                                            <v-chip
+                                                v-if="entryWorkTitle(item.entry)"
+                                                size="x-small"
+                                                variant="outlined"
+                                                color="primary"
+                                                class="entry-work-title">
+                                                {{ entryWorkTitle(item.entry) }}
+                                            </v-chip>
+                                            <v-chip v-if="entryIsDerivedFromWork(item.entry)" size="x-small" variant="tonal" color="info">
+                                                <v-icon start size="12">mdi-lock</v-icon>
+                                                Aus Arbeit
+                                            </v-chip>
+                                            <v-chip v-if="item.entry.grade" size="small" variant="tonal" color="success">
+                                                {{ item.entry.grade }}
+                                            </v-chip>
+                                            <v-spacer />
+                                            <div class="entry-actions d-flex align-center ga-1">
                                             <v-btn
                                                 v-if="entryIsDerivedFromWork(item.entry) && item.entry.teaching_course_work_id"
                                                 icon="mdi-open-in-new"
@@ -226,6 +225,16 @@
                                                 variant="tonal"
                                                 @click="delete_entry_id = null" />
                                             <v-btn v-if="!entryIsDerivedFromWork(item.entry) && delete_entry_id === item.entry.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteEntry(item.entry)" />
+                                        </div>
+                                        </div>
+                                        <div v-if="entryWorkDescription(item.entry)" class="text-caption text-medium-emphasis" style="padding-left: 4px;">
+                                            {{ entryWorkDescription(item.entry) }}
+                                        </div>
+                                        <div v-if="entryWorkComment(item.entry)" class="text-caption" style="padding-left: 4px;">
+                                            <strong>Kommentar:</strong> {{ entryWorkComment(item.entry) }}
+                                        </div>
+                                        <div v-if="!entryIsDerivedFromWork(item.entry) && item.entry.description" class="text-caption" style="padding-left: 4px;">
+                                            <strong>Kommentar:</strong> {{ item.entry.description }}
                                         </div>
                                     </div>
                                 </v-list-item>
@@ -1059,8 +1068,8 @@ export default {
             },
         },
         'entry_form.date'(val) {
-            if (val && val instanceof Date) {
-                this.entry_form.date = this.toDateString(val)
+            if (val) {
+                this.entry_form.date = this.normalizeDateString(val)
             }
         },
         'behaviour_form.date'(val) {
@@ -1240,16 +1249,31 @@ export default {
         },
         async saveEntry() {
             if (!this.selected_course || !this.selected_course_student) return
-            const payload = {
-                id: this.entry_form.id,
-                teaching_course_id: this.selected_course.id,
-                user_id: this.selected_course_student.id,
-                type: this.entry_form.type,
-                grade: this.entry_form.grade,
-                date: this.entry_form.date instanceof Date ? this.toDateString(this.entry_form.date) : this.entry_form.date,
-                description: this.entry_form.description,
+
+            let ok = false
+            if (this.entry_form.id) {
+                // Update: only send fields that can be updated
+                const payload = {
+                    id: this.entry_form.id,
+                    type: this.entry_form.type,
+                    grade: this.entry_form.grade,
+                    date: this.normalizeDateString(this.entry_form.date) || null,
+                    description: this.entry_form.description,
+                }
+                ok = await this.entryStore.update(payload)
+            } else {
+                // Create: send all required fields
+                const payload = {
+                    teaching_course_id: this.selected_course.id,
+                    user_id: this.selected_course_student.id,
+                    type: this.entry_form.type,
+                    grade: this.entry_form.grade,
+                    date: this.normalizeDateString(this.entry_form.date) || null,
+                    description: this.entry_form.description,
+                }
+                ok = await this.entryStore.store(payload)
             }
-            const ok = this.entry_form.id ? await this.entryStore.update(payload) : await this.entryStore.store(payload)
+
             if (ok) {
                 await this.loadEntries()
                 this.abortEntry()
@@ -1618,8 +1642,39 @@ export default {
             if (!workId) return ''
             const work = (this.courseWorkStore?.courseWorks || []).find((w) => w.id === workId)
             if (!work) return ''
+            const title = (work.title || '').toString().trim()
             const desc = (work.description || '').toString().trim()
-            return desc || ''
+            return title || desc || ''
+        },
+        entryWorkDescription(entry) {
+            const workId = entry?.teaching_course_work_id
+            if (!workId) return ''
+            const work = (this.courseWorkStore?.courseWorks || []).find((w) => w.id === workId)
+            if (!work) return ''
+            const title = (work.title || '').toString().trim()
+            const desc = (work.description || '').toString().trim()
+            // Only return description if title exists (otherwise description is already shown in title chip)
+            return title && desc ? desc : ''
+        },
+        entryWorkComment(entry) {
+            const workId = entry?.teaching_course_work_id
+            const userId = entry?.user_id
+            if (!workId || !userId) return ''
+            const work = (this.courseWorkStore?.courseWorks || []).find((w) => w.id === workId)
+            if (!work || !Array.isArray(work.groups)) return ''
+
+            // Find the group containing this student
+            const group = work.groups.find((g) => Array.isArray(g?.student_ids) && g.student_ids.includes(userId))
+            if (!group) return ''
+
+            // Check for individual comment first
+            if (Array.isArray(group.comments)) {
+                const commentObj = group.comments.find((c) => c?.student_id === userId)
+                if (commentObj?.comment) return commentObj.comment.toString().trim()
+            }
+
+            // Fall back to group comment
+            return (group.comment || '').toString().trim()
         },
         async jumpToWork(entry) {
             if (!entry?.teaching_course_work_id || !this.selected_course?.id) return
@@ -1627,6 +1682,10 @@ export default {
             const work = (this.courseWorkStore?.courseWorks || []).find((w) => w.id === entry.teaching_course_work_id)
             if (!work) return
 
+            // Remember the current student and visibility status so we can return to them after editing the work
+            this.courseStore.previous_selected_student = this.selected_course_student
+            this.courseStore.previous_show_infos = this.show_infos
+            this.courseStore.previous_show_dates = this.show_dates
             this.action_2 = ''
             this.selected_course_student = null
             this.show_works = true
@@ -1850,6 +1909,19 @@ export default {
         setDueNextLesson() {
             if (!this.nextCourseLessonDate) return
             this.behaviour_form.due_date = this.nextCourseLessonDate
+        },
+        normalizeDateString(date) {
+            if (!date) return ''
+            // If it's a Date object, convert to string
+            if (date instanceof Date) {
+                return this.toDateString(date)
+            }
+            // If it's a string with ISO format (contains 'T'), extract just the date part
+            if (typeof date === 'string' && date.includes('T')) {
+                return date.split('T')[0]
+            }
+            // Otherwise return as-is (should be YYYY-MM-DD format already)
+            return date
         },
         toDateString(date) {
             const d = parseLocalDate(date)

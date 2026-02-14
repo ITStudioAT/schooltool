@@ -146,6 +146,7 @@ class CourseWorkController extends Controller
     {
         $rules = [
             'type' => $typeRules,
+            'title' => 'nullable|string|max:255',
             'description' => 'nullable|string|max:1024',
             'is_group_work' => 'sometimes|boolean',
             'group_size' => 'nullable|integer|min:2|max:50',

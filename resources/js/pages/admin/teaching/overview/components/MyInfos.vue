@@ -351,6 +351,7 @@ export default {
 
             this.selected_course = course
             this.selected_course_id = course.id
+            this.action = ''
             this.action_2 = ''
 
             this.$nextTick(() => {

@@ -1012,6 +1012,7 @@ export default {
         },
         openStudent(student) {
             if (!student) return
+            this.action = ''
             this.selected_course_student = student
             this.action_2 = 'course_student_view'
         },

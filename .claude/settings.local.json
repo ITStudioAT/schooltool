@@ -24,7 +24,8 @@
       "Bash(powershell:*)",
       "Bash(npx vite build:*)",
       "Bash(Get-Content appHttpControllersAdminTeachingCourseDateController.php)",
-      "Bash(Select-Object -Skip 217 -First 200)"
+      "Bash(Select-Object -Skip 217 -First 200)",
+      "Bash(npm run dev:*)"
     ],
     "deny": [],
     "ask": []

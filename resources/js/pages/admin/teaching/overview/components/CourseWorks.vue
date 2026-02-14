@@ -62,7 +62,7 @@
                             <div class="work-title text-body-2 flex-grow-1" :class="workHasAllGrades(work) ? 'text-success' : ''">
                                 <strong v-if="work.type">{{ workTypeLabel(work.type) }}</strong>
                                 <span v-else class="text-medium-emphasis">eine Arbeit</span>
-                                <span v-if="work.description">– {{ work.description }}</span>
+                                <span v-if="work.title || work.description">– {{ work.title || work.description }}</span>
                             </div>
                             <div class="work-actions d-flex align-center ga-1">
                                 <v-btn v-if="delete_work_id !== work.id" icon="mdi-delete" size="x-small" color="warning" variant="tonal" @click.stop="delete_work_id = work.id" />
@@ -91,6 +91,7 @@
             <v-form ref="form" v-model="is_valid" @submit.prevent class="mb-4">
                 <v-card-text>
                     <v-select v-model="work_form.type" label="Typ" :items="workTypeItems" item-title="title" item-value="value" clearable />
+                    <v-text-field v-model="work_form.title" label="Titel" class="mt-4" />
                     <v-date-input v-model="work_form.date_for_all_groups" label="Datum (für alle Gruppen)" />
                     <div class="d-flex flex-wrap ga-1 mt-1" v-if="nextDates.length">
                         <v-chip v-for="date in nextDates" :key="date.id" size="x-small" variant="outlined" class="cursor-pointer" @click="selectDate(date.date)">
@@ -430,7 +431,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
-        ...mapWritableState(useCourseStore, ['selected_course']),
+        ...mapWritableState(useCourseStore, ['selected_course', 'selected_course_student', 'show_infos', 'show_dates']),
         ...mapWritableState(useCourseWorkStore, ['courseWorks', 'selected_courseWork']),
         ...mapWritableState(useTeachingStore, ['settings']),
         teachingWorks() {
@@ -656,6 +657,7 @@ export default {
                 id: null,
                 teaching_course_id: null,
                 type: '',
+                title: '',
                 description: '',
                 is_group_work: false,
                 group_size: null,
@@ -737,12 +739,32 @@ export default {
         },
         abortEdit() {
             this.action = ''
+            this.selected_courseWork = null
             this.work_form = this.emptyWorkForm()
             this.pending_random_groups = false
             this.show_bulk_action = false
             this.bulk_grade = null
             this.bulk_comment = ''
             this.selected_student_ids = []
+
+            // If we came from student detail, return to it
+            if (this.courseStore.previous_selected_student) {
+                this.selected_course_student = this.courseStore.previous_selected_student
+                this.action_2 = 'course_student_view'
+
+                // Restore the visibility status of Infos and Termine
+                if (this.courseStore.previous_show_infos !== null) {
+                    this.show_infos = this.courseStore.previous_show_infos
+                }
+                if (this.courseStore.previous_show_dates !== null) {
+                    this.show_dates = this.courseStore.previous_show_dates
+                }
+
+                // Clear the saved state
+                this.courseStore.previous_selected_student = null
+                this.courseStore.previous_show_infos = null
+                this.courseStore.previous_show_dates = null
+            }
         },
         async saveWork(stayOnPage = false) {
             // Prevent multiple saves while one is in progress

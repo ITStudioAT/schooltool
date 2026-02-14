@@ -14,6 +14,7 @@ class TeachingCourseWork extends Model
     protected $fillable = [
         'teaching_course_id',
         'type',
+        'title',
         'description',
         'is_group_work',
         'group_size',
