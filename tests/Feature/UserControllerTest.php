@@ -72,7 +72,7 @@ beforeEach(function () {
 });
 
 // ============================================================================
-// storeUser (super admin only)
+// storeUser (super admin and admin)
 // ============================================================================
 
 test('super admin can store user via UserService', function () {
@@ -111,17 +111,17 @@ test('super admin can store user via UserService', function () {
         ]);
 });
 
-test('non super admin cannot store user', function () {
+test('admin can also store user', function () {
     $this->actingAs($this->adminUser, 'sanctum');
 
     $this->postJson('/api/admin/users20/store', [
         'last_name' => 'Nope',
         'email' => 'nope@test.com',
-    ])->assertStatus(403);
+    ])->assertStatus(200);
 });
 
 // ============================================================================
-// deleteUsers (super admin only)
+// deleteUsers (super admin and admin)
 // ============================================================================
 
 test('super admin can delete users through service', function () {
@@ -142,11 +142,11 @@ test('super admin can delete users through service', function () {
         ->assertStatus(204);
 });
 
-test('deleteUsers is forbidden for non super admin', function () {
+test('deleteUsers is allowed for admin', function () {
     $this->actingAs($this->adminUser, 'sanctum');
 
     $this->postJson('/api/admin/users20/delete_users', ['data' => [$this->standardUser->id]])
-        ->assertStatus(403);
+        ->assertStatus(204);
 });
 
 // ============================================================================
@@ -242,7 +242,7 @@ test('admin can confirm users', function () {
 });
 
 // ============================================================================
-// loadUsers (super admin only)
+// loadUsers (super admin and admin)
 // ============================================================================
 
 test('super admin can load users for their school with pagination and sorting', function () {
@@ -286,11 +286,11 @@ test('super admin can load users for their school with pagination and sorting', 
     expect($lastNames)->toEqual($sorted);
 });
 
-test('non super admin is forbidden from loading users', function () {
+test('admin can also load users', function () {
     $this->actingAs($this->adminUser, 'sanctum');
 
     $this->getJson('/api/admin/users20/load_users')
-        ->assertStatus(403);
+        ->assertStatus(200);
 });
 
 test('guest is unauthorized from loading users', function () {
@@ -299,7 +299,7 @@ test('guest is unauthorized from loading users', function () {
 });
 
 // ============================================================================
-// updateUser (super admin only)
+// updateUser (super admin and admin)
 // ============================================================================
 
 test('super admin updates user through service', function () {
@@ -342,14 +342,14 @@ test('super admin updates user through service', function () {
         ]);
 });
 
-test('updateUser is forbidden for non super admin', function () {
+test('updateUser is allowed for admin', function () {
     $this->actingAs($this->adminUser, 'sanctum');
 
     $this->postJson('/api/admin/users20/update', [
         'id' => $this->standardUser->id,
         'last_name' => 'Blocked',
         'email' => 'blocked@test.com',
-    ])->assertStatus(403);
+    ])->assertStatus(200);
 });
 
 // ============================================================================

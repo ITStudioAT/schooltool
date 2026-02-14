@@ -154,13 +154,13 @@ it('does not fall back to legacy status attendance when attendance column is emp
 
     $response->assertOk()
         ->assertJsonPath('attendance', [])
-        ->assertJsonPath('status', ['free'])
+        ->assertJsonPath('status', [])
         ->assertJsonPath('attendance_checked', false)
         ->assertJsonMissingPath('attendance.0')
         ->assertJsonMissingPath('attendance.1');
 
     $courseDate->refresh();
-    expect($courseDate->status)->toBe(['free'])
+    expect($courseDate->status)->toBe([])
         ->and($courseDate->attendance)->toBe([])
         ->and($courseDate->attendance_checked)->toBeFalse();
 });

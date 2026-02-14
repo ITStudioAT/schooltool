@@ -95,11 +95,11 @@ test('super admin can load roles ordered alphabetically', function () {
     ]);
 });
 
-test('admin without super admin role receives 403', function () {
+test('admin without super admin role can load roles', function () {
     $this->actingAs($this->adminUser, 'sanctum');
 
     $this->getJson('/api/admin/roles/load_roles')
-        ->assertStatus(403);
+        ->assertStatus(200);
 });
 
 test('register admin without super admin role receives 403', function () {
