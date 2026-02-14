@@ -66,7 +66,7 @@
                         </v-tab>
                     </v-tabs>
 
-                    <v-tabs-window v-model="currentTab" style="margin-top: 20px;">
+                    <v-tabs-window v-model="currentTab" style="margin-top: 20px">
                         <!-- Übersicht Tab -->
                         <v-tabs-window-item value="overview">
                             <div class="profile-section">
@@ -99,14 +99,13 @@
                             </div>
 
                             <!-- Open Notifications Section (IMPORTANT - directly after general info!) -->
-                            <div v-if="openNotifications.length" class="profile-section" style="margin-top: 20px;">
-                                <h3 class="profile-section-title" style="color: #f44336;">
+                            <div v-if="openNotifications.length" class="profile-section" style="margin-top: 20px">
+                                <h3 class="profile-section-title" style="color: #f44336">
                                     <v-icon size="22" color="#f44336">mdi-bell-alert</v-icon>
                                     Offene Verständigungen
                                 </h3>
                                 <div class="notifications-list">
-                                    <div v-for="notification in openNotifications" :key="notification.id"
-                                         class="notification-item notification-open">
+                                    <div v-for="notification in openNotifications" :key="notification.id" class="notification-item notification-open">
                                         <div class="notification-icon">
                                             <v-icon size="20" color="#f44336">mdi-bell-alert</v-icon>
                                         </div>
@@ -117,9 +116,7 @@
                                             </div>
                                             <div class="notification-description">{{ notification.description }}</div>
                                             <div v-if="notification.due_date" class="notification-dates">
-                                                <span class="notification-due-date">
-                                                    Fällig: {{ formatDate(notification.due_date) }}
-                                                </span>
+                                                <span class="notification-due-date">Fällig: {{ formatDate(notification.due_date) }}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -127,7 +124,7 @@
                             </div>
 
                             <!-- Stars Section (beautiful!) -->
-                            <div v-if="courseStars.length" class="profile-section" style="margin-top: 20px;">
+                            <div v-if="courseStars.length" class="profile-section" style="margin-top: 20px">
                                 <h3 class="profile-section-title">
                                     <v-icon size="22" color="#ffa726">mdi-star</v-icon>
                                     <span class="stars-title-text">Sterne</span>
@@ -152,14 +149,13 @@
                             </div>
 
                             <!-- Closed Notifications Section -->
-                            <div v-if="closedNotifications.length" class="profile-section" style="margin-top: 20px;">
+                            <div v-if="closedNotifications.length" class="profile-section" style="margin-top: 20px">
                                 <h3 class="profile-section-title">
                                     <v-icon size="20" color="#4caf50">mdi-bell-check</v-icon>
                                     Erledigte Verständigungen
                                 </h3>
                                 <div class="notifications-list">
-                                    <div v-for="notification in closedNotifications" :key="notification.id"
-                                         class="notification-item notification-closed">
+                                    <div v-for="notification in closedNotifications" :key="notification.id" class="notification-item notification-closed">
                                         <div class="notification-icon">
                                             <v-icon size="20" color="#4caf50">mdi-bell-check</v-icon>
                                         </div>
@@ -170,12 +166,8 @@
                                             </div>
                                             <div class="notification-description">{{ notification.description }}</div>
                                             <div v-if="notification.due_date || notification.done_date" class="notification-dates">
-                                                <span v-if="notification.due_date" class="notification-due-date">
-                                                    Fällig: {{ formatDate(notification.due_date) }}
-                                                </span>
-                                                <span v-if="notification.done_date" class="notification-done-date">
-                                                    Erledigt: {{ formatDate(notification.done_date) }}
-                                                </span>
+                                                <span v-if="notification.due_date" class="notification-due-date">Fällig: {{ formatDate(notification.due_date) }}</span>
+                                                <span v-if="notification.done_date" class="notification-done-date">Erledigt: {{ formatDate(notification.done_date) }}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -183,7 +175,7 @@
                             </div>
 
                             <!-- Grades Section (last) -->
-                            <div class="profile-section" style="margin-top: 20px;">
+                            <div class="profile-section" style="margin-top: 20px">
                                 <h3 class="profile-section-title">
                                     <v-icon size="20">mdi-chart-line</v-icon>
                                     Noten
@@ -193,16 +185,20 @@
                                         <div class="grade-item" :class="course?.sem_1_grade ? 'grade-set' : 'grade-open'">
                                             <div class="grade-label">1. Semester</div>
                                             <div class="grade-value">{{ course?.sem_1_grade || 'offen' }}</div>
-                                            <div v-if="course?.behaviour_1_grade || !course?.sem_1_grade" class="behaviour-value"
-                                                 :class="course?.behaviour_1_grade ? 'behaviour-set' : 'behaviour-open'">
+                                            <div
+                                                v-if="course?.behaviour_1_grade || !course?.sem_1_grade"
+                                                class="behaviour-value"
+                                                :class="course?.behaviour_1_grade ? 'behaviour-set' : 'behaviour-open'">
                                                 Verhalten: {{ course?.behaviour_1_grade || 'offen' }}
                                             </div>
                                         </div>
                                         <div class="grade-item" :class="course?.sem_2_grade ? 'grade-set' : 'grade-open'">
                                             <div class="grade-label">2. Semester</div>
                                             <div class="grade-value">{{ course?.sem_2_grade || 'offen' }}</div>
-                                            <div v-if="course?.behaviour_2_grade || !course?.sem_2_grade" class="behaviour-value"
-                                                 :class="course?.behaviour_2_grade ? 'behaviour-set' : 'behaviour-open'">
+                                            <div
+                                                v-if="course?.behaviour_2_grade || !course?.sem_2_grade"
+                                                class="behaviour-value"
+                                                :class="course?.behaviour_2_grade ? 'behaviour-set' : 'behaviour-open'">
                                                 Verhalten: {{ course?.behaviour_2_grade || 'offen' }}
                                             </div>
                                         </div>
@@ -211,8 +207,10 @@
                                         <div class="grade-item" :class="course?.sem_grade ? 'grade-set' : 'grade-open'">
                                             <div class="grade-label">Semesternote</div>
                                             <div class="grade-value">{{ course?.sem_grade || 'offen' }}</div>
-                                            <div v-if="course?.behaviour_grade || !course?.sem_grade" class="behaviour-value"
-                                                 :class="course?.behaviour_grade ? 'behaviour-set' : 'behaviour-open'">
+                                            <div
+                                                v-if="course?.behaviour_grade || !course?.sem_grade"
+                                                class="behaviour-value"
+                                                :class="course?.behaviour_grade ? 'behaviour-set' : 'behaviour-open'">
                                                 Verhalten: {{ course?.behaviour_grade || 'offen' }}
                                             </div>
                                         </div>
@@ -263,7 +261,10 @@
                                                     </div>
                                                 </v-list-item>
                                                 <v-list-item v-else>
-                                                    <div class="entry-row" :class="item.stripe % 2 === 1 ? 'entry-row--alt' : 'entry-row--base'">
+                                                    <div class="entry-row" :class="[
+                                                        item.stripe % 2 === 1 ? 'entry-row--alt' : 'entry-row--base',
+                                                        !item.entry.grade || item.entry.grade.trim() === '' ? 'entry-row--open' : ''
+                                                    ]">
                                                         <v-icon size="22" :color="getEntryColor(item.entry.type)">{{ getEntryIcon(item.entry.type) }}</v-icon>
                                                         <v-chip v-if="item.entry.date" size="small" variant="tonal" color="primary">
                                                             {{ formatDate(item.entry.date) }}
@@ -273,7 +274,34 @@
                                                         </v-chip>
                                                         <div class="entry-main text-caption">
                                                             <div v-if="entryTitle(item.entry)" class="entry-title">{{ entryTitle(item.entry) }}</div>
-                                                            <div v-if="entryDescription(item.entry)" class="entry-description">
+                                                            <!-- Show expand button for work entries with details -->
+                                                            <div v-if="item.entry.work && (item.entry.work.description || item.entry.work.is_group_work)" class="entry-work-toggle">
+                                                                <v-btn size="x-small" variant="tonal" color="primary" @click="toggleEntryExpansion(item.entry.id)">
+                                                                    <v-icon start size="small">{{ expandedEntries[item.entry.id] ? 'mdi-chevron-up' : 'mdi-chevron-down' }}</v-icon>
+                                                                    Aufgaben-Details
+                                                                </v-btn>
+                                                            </div>
+                                                            <!-- Show work details if expanded -->
+                                                            <div v-if="item.entry.work && expandedEntries[item.entry.id]" class="entry-work-details">
+                                                                <div v-if="item.entry.work.description" class="work-detail-item">
+                                                                    <strong>Beschreibung:</strong>
+                                                                    <div class="work-description-content" v-html="item.entry.work.description"></div>
+                                                                </div>
+                                                                <div v-if="item.entry.work.is_group_work" class="work-detail-item">
+                                                                    <strong>Gruppenarbeit:</strong>
+                                                                    Ja
+                                                                    <span v-if="item.entry.work.group_size">({{ item.entry.work.group_size }} Personen)</span>
+                                                                </div>
+                                                                <div v-if="item.entry.work.is_group_work" class="work-detail-item">
+                                                                    <strong>Gruppenmitglieder:</strong>
+                                                                    <span v-if="item.entry.work.group_members && item.entry.work.group_members.length">
+                                                                        {{ item.entry.work.group_members.join(', ') }}
+                                                                    </span>
+                                                                    <span v-else class="text-muted">Keine weiteren Gruppenmitglieder</span>
+                                                                </div>
+                                                            </div>
+                                                            <!-- Show description and comment for non-work entries -->
+                                                            <div v-if="!item.entry.work && entryDescription(item.entry)" class="entry-description">
                                                                 {{ entryDescription(item.entry) }}
                                                             </div>
                                                             <div v-if="entryComment(item.entry)" class="entry-comment">
@@ -294,7 +322,8 @@
                                 <div v-else class="profile-info-box">
                                     <v-icon color="#fd802e" size="24">mdi-notebook-outline</v-icon>
                                     <div>
-                                        <strong>Keine Leistungen:</strong> Für dieses Fach sind noch keine Leistungen vorhanden.
+                                        <strong>Keine Leistungen:</strong>
+                                        Für dieses Fach sind noch keine Leistungen vorhanden.
                                     </div>
                                 </div>
                             </div>
@@ -305,7 +334,8 @@
                             <div v-if="behaviourEntries.length === 0" class="profile-info-box">
                                 <v-icon color="#fd802e" size="24">mdi-account-star</v-icon>
                                 <div>
-                                    <strong>Verhalten:</strong> Keine Verhalteneinträge vorhanden.
+                                    <strong>Verhalten:</strong>
+                                    Keine Verhalteneinträge vorhanden.
                                 </div>
                             </div>
                             <div v-else class="behaviour-entries-section">
@@ -331,7 +361,8 @@
                             <div v-if="courseDates.length === 0" class="profile-info-box">
                                 <v-icon color="#fd802e" size="24">mdi-calendar-month</v-icon>
                                 <div>
-                                    <strong>Termine:</strong> Keine Termine vorhanden.
+                                    <strong>Termine:</strong>
+                                    Keine Termine vorhanden.
                                 </div>
                             </div>
                             <div v-else class="dates-section">
@@ -357,10 +388,7 @@
                                     <v-card-text class="pa-0">
                                         <v-list density="comfortable">
                                             <v-list-item v-for="(dateEntry, index) in filteredDates" :key="dateEntry.id || index">
-                                                <div class="date-row" :class="[
-                                                    index % 2 === 1 ? 'date-row--alt' : 'date-row--base',
-                                                    getDateStatusClass(dateEntry.status)
-                                                ]">
+                                                <div class="date-row" :class="[index % 2 === 1 ? 'date-row--alt' : 'date-row--base', getDateStatusClass(dateEntry.status)]">
                                                     <v-icon size="22" :color="getDateIconColor(dateEntry.status)">mdi-calendar</v-icon>
                                                     <v-chip v-if="dateEntry.date" size="small" variant="tonal" color="primary">
                                                         {{ formatDate(dateEntry.date) }}
@@ -377,7 +405,7 @@
                                         </v-list>
                                     </v-card-text>
                                 </v-card>
-                                <div v-else class="profile-info-box" style="margin-top: 16px;">
+                                <div v-else class="profile-info-box" style="margin-top: 16px">
                                     <v-icon color="#999" size="24">mdi-calendar-blank</v-icon>
                                     <div>Keine Termine für dieses Semester vorhanden.</div>
                                 </div>
@@ -438,6 +466,7 @@ export default {
             selectedSemester: 3, // 1 = Semester 1, 2 = Semester 2, 3 = Both (for entries)
             selectedSemesterDates: 3, // 1 = Semester 1, 2 = Semester 2, 3 = Both (for dates)
             sortByType: false,
+            expandedEntries: {}, // Track which work entries are expanded
         }
     },
 
@@ -457,11 +486,11 @@ export default {
         },
 
         openNotifications() {
-            return this.courseNotifications.filter(n => n.is_open)
+            return this.courseNotifications.filter((n) => n.is_open)
         },
 
         closedNotifications() {
-            return this.courseNotifications.filter(n => !n.is_open)
+            return this.courseNotifications.filter((n) => !n.is_open)
         },
 
         behaviourEntries() {
@@ -503,9 +532,7 @@ export default {
 
         notificationTypeLabels() {
             // Use teacher's teaching_notifications from the course
-            const notifications = Array.isArray(this.course?.teacher_teaching_notifications)
-                ? this.course.teacher_teaching_notifications
-                : []
+            const notifications = Array.isArray(this.course?.teacher_teaching_notifications) ? this.course.teacher_teaching_notifications : []
             return notifications.reduce((result, notification) => {
                 if (notification?.short_name) {
                     result[String(notification.short_name)] = notification?.name || String(notification.short_name)
@@ -516,9 +543,7 @@ export default {
 
         behaviourTypeLabels() {
             // Use teacher's teaching_behaviour from the course
-            const behaviours = Array.isArray(this.course?.teacher_teaching_behaviour)
-                ? this.course.teacher_teaching_behaviour
-                : []
+            const behaviours = Array.isArray(this.course?.teacher_teaching_behaviour) ? this.course.teacher_teaching_behaviour : []
             return behaviours.reduce((result, behaviour) => {
                 if (behaviour?.short_name) {
                     result[String(behaviour.short_name)] = behaviour?.name || String(behaviour.short_name)
@@ -536,7 +561,10 @@ export default {
                 return `${year}-02-01`
             }
 
-            const dates = this.entries.map(e => this.normalizeDateKey(e.date)).filter(Boolean).sort((a, b) => a.localeCompare(b))
+            const dates = this.entries
+                .map((e) => this.normalizeDateKey(e.date))
+                .filter(Boolean)
+                .sort((a, b) => a.localeCompare(b))
             if (dates.length < 2) {
                 const now = new Date()
                 const year = now.getMonth() >= 8 ? now.getFullYear() + 1 : now.getFullYear()
@@ -558,7 +586,7 @@ export default {
             const boundary = this.normalizeDateKey(this.semesterBoundary)
             if (!boundary) return this.entries
 
-            return this.entries.filter(entry => {
+            return this.entries.filter((entry) => {
                 if (!entry.date) return true
                 const date = this.normalizeDateKey(entry.date)
                 if (!date) return true
@@ -580,7 +608,7 @@ export default {
             const boundary = this.normalizeDateKey(this.semesterBoundary)
             if (!boundary) return this.courseDates
 
-            return this.courseDates.filter(dateEntry => {
+            return this.courseDates.filter((dateEntry) => {
                 if (!dateEntry.date) return true
                 const date = this.normalizeDateKey(dateEntry.date)
                 if (!date) return true
@@ -595,15 +623,25 @@ export default {
 
         sortedEntries() {
             const list = this.filteredEntries || []
-            if (!this.sortByType) return list
-            return [...list].sort((a, b) => {
-                const typeA = (a.type || '').toString()
-                const typeB = (b.type || '').toString()
-                const typeCompare = typeA.localeCompare(typeB, 'de', { sensitivity: 'base' })
-                if (typeCompare !== 0) return typeCompare
-                const dateA = a.date ? parseLocalDate(a.date).getTime() : 0
-                const dateB = b.date ? parseLocalDate(b.date).getTime() : 0
-                return dateB - dateA
+            const sorted = this.sortByType
+                ? [...list].sort((a, b) => {
+                    const typeA = (a.type || '').toString()
+                    const typeB = (b.type || '').toString()
+                    const typeCompare = typeA.localeCompare(typeB, 'de', { sensitivity: 'base' })
+                    if (typeCompare !== 0) return typeCompare
+                    const dateA = a.date ? parseLocalDate(a.date).getTime() : 0
+                    const dateB = b.date ? parseLocalDate(b.date).getTime() : 0
+                    return dateB - dateA
+                })
+                : [...list]
+
+            // Sort open entries (without grade) first
+            return sorted.sort((a, b) => {
+                const aIsOpen = !a.grade || a.grade.trim() === ''
+                const bIsOpen = !b.grade || b.grade.trim() === ''
+                if (aIsOpen && !bIsOpen) return -1
+                if (!aIsOpen && bIsOpen) return 1
+                return 0
             })
         },
 
@@ -771,7 +809,10 @@ export default {
         },
 
         normalizeText(value) {
-            return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase()
+            return String(value || '')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .toLowerCase()
         },
 
         entryTitle(entry) {
@@ -785,9 +826,7 @@ export default {
             const normalizedTitle = this.normalizeText(title)
 
             const isTypeOnly =
-                normalizedTitle === this.normalizeText(type) ||
-                normalizedTitle === this.normalizeText(typeLabel) ||
-                normalizedTitle === this.normalizeText(chipLabel)
+                normalizedTitle === this.normalizeText(type) || normalizedTitle === this.normalizeText(typeLabel) || normalizedTitle === this.normalizeText(chipLabel)
 
             if (!description && isTypeOnly) {
                 return ''
@@ -831,7 +870,7 @@ export default {
                 return new Intl.DateTimeFormat('de-AT', {
                     day: '2-digit',
                     month: '2-digit',
-                    year: 'numeric'
+                    year: 'numeric',
                 }).format(parseLocalDate(dateString))
             } catch (error) {
                 return dateString
@@ -870,6 +909,10 @@ export default {
                 return '#4caf50'
             }
             return '#2196f3'
+        },
+
+        toggleEntryExpansion(entryId) {
+            this.expandedEntries[entryId] = !this.expandedEntries[entryId]
         },
     },
 }
@@ -935,6 +978,11 @@ export default {
     background-color: #e9edf5;
 }
 
+.entry-row--open {
+    border-left: 4px solid #ff9800 !important;
+    background-color: #fff3e0 !important;
+}
+
 .entry-main {
     min-width: 120px;
     flex: 1 1 260px;
@@ -965,6 +1013,52 @@ export default {
     line-height: 1.4;
     color: #6b7882;
     font-style: italic;
+}
+
+.entry-work-toggle {
+    margin-top: 8px;
+}
+
+.entry-work-details {
+    margin-top: 12px;
+    padding: 12px;
+    background-color: #f5f5f5;
+    border-radius: 6px;
+    border-left: 3px solid #2196f3;
+}
+
+.work-detail-item {
+    margin-bottom: 8px;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: #314d5d;
+}
+
+.work-detail-item:last-child {
+    margin-bottom: 0;
+}
+
+.work-detail-item strong {
+    font-weight: 600;
+    color: #1976d2;
+}
+
+.work-description-content {
+    margin-top: 4px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+.work-description-content :deep(p) {
+    margin: 0.5em 0;
+}
+
+.work-description-content :deep(p:first-child) {
+    margin-top: 0;
+}
+
+.work-description-content :deep(p:last-child) {
+    margin-bottom: 0;
 }
 
 .stars-inline {

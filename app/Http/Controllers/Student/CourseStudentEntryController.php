@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\SchoolTool;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudentEntry;
+use App\Models\User;
 use Illuminate\Http\Request;
 
 class CourseStudentEntryController extends Controller
@@ -20,8 +21,9 @@ class CourseStudentEntryController extends Controller
         $schoolTool = SchoolTool::where('school_id', $auth_user->school_id)->first();
         $active_schoolyear_id = $schoolTool?->active_schoolyear_id ?? $auth_user->schoolyear_id;
 
-        // Get the course
+        // Get the course with all fields including students
         $course = TeachingCourse::with('user:id,teaching_schemas')
+            ->select('*') // Explicitly select all fields
             ->where('id', $courseId)
             ->where('school_id', $auth_user->school_id)
             ->where('schoolyear_id', $active_schoolyear_id)
@@ -53,30 +55,32 @@ class CourseStudentEntryController extends Controller
         // Get entries from TeachingCourseStudentEntry model
         $entries = TeachingCourseStudentEntry::where('teaching_course_id', $course->id)
             ->where('user_id', $auth_user->id)
-            ->with('teachingCourseWork:id,type,title,description,groups')
+            ->with('teachingCourseWork:id,type,title,description,is_group_work,group_size,groups')
             ->orderBy('date', 'desc')
             ->orderBy('id', 'desc')
             ->get();
 
         // Format entries for response
-        $formattedEntries = $entries->map(function ($entry) use ($auth_user) {
+        $formattedEntries = $entries->map(function ($entry) use ($auth_user, $course) {
             // Use teachingCourseWork title and description, or entry description
             $title = null;
             $description = null;
             $comment = null;
+            $work = null;
+            $groupMembers = [];
 
             if ($entry->teachingCourseWork) {
-                $work = $entry->teachingCourseWork;
+                $workObj = $entry->teachingCourseWork;
                 // If there's an associated work, use its title (or description as fallback) as the title
-                $title = $work->title ?? $work->description ?? null;
+                $title = $workObj->title ?? $workObj->description ?? null;
                 // Use work description (if different from title)
-                $description = $work->description ?? null;
+                $description = $workObj->description ?? null;
                 if ($description === $title) {
                     $description = null;
                 }
 
-                // Find the student's comment from the work groups
-                $groups = $work->groups ?? [];
+                // Find the student's comment and group members from the work groups
+                $groups = $workObj->groups ?? [];
                 foreach ($groups as $group) {
                     $studentIds = $group['student_ids'] ?? [];
                     if (in_array($auth_user->id, $studentIds) || in_array((string) $auth_user->id, $studentIds)) {
@@ -85,16 +89,53 @@ class CourseStudentEntryController extends Controller
                         foreach ($comments as $commentObj) {
                             if (isset($commentObj['student_id']) && ($commentObj['student_id'] == $auth_user->id)) {
                                 $comment = $commentObj['comment'] ?? null;
-                                break 2;
+                                break;
                             }
                         }
                         // Fall back to group comment if no individual comment
                         if (!$comment) {
                             $comment = $group['comment'] ?? null;
                         }
+
+                        // Get group member names from User model
+                        // Filter out current user and get other student IDs
+                        $otherStudentIds = array_filter($studentIds, function($studentId) use ($auth_user) {
+                            return (string) $studentId !== (string) $auth_user->id;
+                        });
+
+                        if (!empty($otherStudentIds)) {
+                            // Fetch user names from User model (same school only)
+                            $users = User::whereIn('id', $otherStudentIds)
+                                ->where('school_id', $auth_user->school_id)
+                                ->get(['id', 'first_name', 'last_name'])
+                                ->keyBy('id'); // Key by ID for easier lookup
+
+                            // Preserve order from student_ids array
+                            foreach ($otherStudentIds as $studentId) {
+                                $user = $users->get($studentId);
+                                if ($user) {
+                                    $firstName = trim($user->first_name ?? '');
+                                    $lastName = trim($user->last_name ?? '');
+                                    $fullName = trim("$firstName $lastName");
+                                    if ($fullName) {
+                                        $groupMembers[] = $fullName;
+                                    }
+                                }
+                            }
+                        }
                         break;
                     }
                 }
+
+                // Build work info object
+                $work = [
+                    'id' => $workObj->id,
+                    'title' => $workObj->title,
+                    'description' => $workObj->description,
+                    'is_group_work' => $workObj->is_group_work ?? false,
+                    'group_size' => $workObj->group_size ?? null,
+                    'group_members' => $groupMembers,
+                ];
             } elseif ($entry->description) {
                 // If there's no work but the entry has a description, use that as comment
                 $comment = $entry->description;
@@ -110,6 +151,7 @@ class CourseStudentEntryController extends Controller
                 'grade' => $entry->grade,
                 'status' => $entry->status,
                 'created_at' => $entry->created_at,
+                'work' => $work,
             ];
         });
 
