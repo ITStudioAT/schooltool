@@ -84,7 +84,13 @@ export const useHolidayStore = defineStore('AdminHolidayStore', {
         async destroyMany(ids) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
-            const uniqueIds = [...new Set((ids || []).filter((id) => Number.isFinite(Number(id))))]
+            const uniqueIds = [
+                ...new Set(
+                    (ids || [])
+                        .map((id) => Number(id))
+                        .filter((id) => Number.isInteger(id) && id > 0),
+                ),
+            ]
             if (!uniqueIds.length) return { success: false, deleted: 0, failed: 0 }
 
             adminStore.is_loading++
