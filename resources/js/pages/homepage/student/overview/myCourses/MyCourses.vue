@@ -5,7 +5,7 @@
             <h2>Meine Fächer</h2>
             <v-chip v-if="!loading" size="small" class="ml-auto">{{ courses.length }}</v-chip>
         </div>
-        <p class="content-copy">Hier findest du alle deine eingeschriebenen Fächer.</p>
+        <p class="content-copy">Hier findest du alle deine Fächer.</p>
 
         <!-- Loading State -->
         <div v-if="loading" class="courses-loading">

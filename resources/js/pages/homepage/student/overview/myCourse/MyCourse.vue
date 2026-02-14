@@ -28,6 +28,10 @@
                     </span>
                     <span v-if="user?.schoolclass" class="hero-badge dark">{{ user.schoolclass }}</span>
                 </div>
+
+                <div class="hero-logout-row">
+                    <v-btn class="logout-btn" variant="text" prepend-icon="mdi-logout" @click="handleLogout">Abmelden</v-btn>
+                </div>
             </div>
         </section>
 
@@ -713,6 +717,12 @@ export default {
     },
 
     methods: {
+        async handleLogout() {
+            this.showDrawer = false
+            await this.studentStore.logout()
+            this.$router.push('/student')
+        },
+
         toggleSortByType() {
             this.sortByType = !this.sortByType
         },
@@ -919,6 +929,18 @@ export default {
 </script>
 
 <style scoped>
+.logout-btn {
+    color: var(--charcoal);
+    font-weight: 700;
+    border-radius: 999px;
+}
+
+.hero-logout-row {
+    margin-top: 12px;
+    display: flex;
+    justify-content: flex-end;
+}
+
 .entries-section {
     display: flex;
     flex-direction: column;

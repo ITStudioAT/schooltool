@@ -23,6 +23,10 @@
                     <span v-if="user" class="hero-badge">{{ user.first_name }} {{ user.last_name }}</span>
                     <span v-if="user?.schoolclass" class="hero-badge dark">{{ user.schoolclass }}</span>
                 </div>
+
+                <div class="hero-logout-row">
+                    <v-btn class="logout-btn" variant="text" prepend-icon="mdi-logout" @click="handleLogout">Abmelden</v-btn>
+                </div>
             </div>
         </section>
 
@@ -74,5 +78,27 @@ export default {
             return new Intl.DateTimeFormat('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date())
         },
     },
+
+    methods: {
+        async handleLogout() {
+            this.showDrawer = false
+            await this.studentStore.logout()
+            this.$router.push('/student')
+        },
+    },
 }
 </script>
+
+<style scoped>
+.logout-btn {
+    color: var(--charcoal);
+    font-weight: 700;
+    border-radius: 999px;
+}
+
+.hero-logout-row {
+    margin-top: 12px;
+    display: flex;
+    justify-content: flex-end;
+}
+</style>
