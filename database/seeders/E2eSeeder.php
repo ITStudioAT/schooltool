@@ -65,6 +65,10 @@ class E2eSeeder extends Seeder
             'name' => 'teacher',
             'guard_name' => 'web',
         ]);
+        $adminRole = Role::query()->firstOrCreate([
+            'name' => 'admin',
+            'guard_name' => 'web',
+        ]);
 
         $user = User::query()->create([
             'school_id' => $school->id,
@@ -120,6 +124,21 @@ class E2eSeeder extends Seeder
         $teacher->is_active = true;
         $teacher->save();
         $teacher->assignRole($teacherRole);
+
+        $admin = User::query()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'email' => 'e2e.admin@example.test',
+            'password' => Hash::make('password123'),
+            'first_name' => 'E2E',
+            'last_name' => 'Admin',
+            'is_2fa' => false,
+        ]);
+        $admin->email_verified_at = now();
+        $admin->confirmed_at = now();
+        $admin->is_active = true;
+        $admin->save();
+        $admin->assignRole($adminRole);
 
         $course = TeachingCourse::query()->create([
             'school_id' => $school->id,

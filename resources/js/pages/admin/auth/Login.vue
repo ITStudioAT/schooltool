@@ -11,29 +11,29 @@
             <v-card-text v-if="step == 'LOGIN_ENTER_EMAIL'">
                 <v-form ref="form" v-model="is_valid" @submit.prevent="loginStepEmail()" class="mb-4">
                     <div class="text-caption text-text">Bitte die E-Mail-Adresse eingeben</div>
-                    <v-text-field autofocus v-model="data.email" label="Email" :rules="[required(), mail()]" />
+                    <v-text-field autofocus v-model="data.email" label="Email" :rules="[required(), mail()]" data-testid="admin-login-email" id="admin-login-email" />
                 </v-form>
-                <v-btn block color="success" slim flat rounded="0" type="submit" @click="loginStepEmail()">Weiter</v-btn>
+                <v-btn block color="success" slim flat rounded="0" type="submit" data-testid="admin-login-continue-password" @click="loginStepEmail()">Weiter</v-btn>
                 <div class="text-caption text-center font-weight-light">oder</div>
-                <v-btn block color="primary" slim flat rounded="0" variant="text" @click="passwordUnknown">Kennwort unbekannt</v-btn>
+                <v-btn block color="primary" slim flat rounded="0" variant="text" data-testid="admin-login-unknown-password" @click="passwordUnknown">Kennwort unbekannt</v-btn>
                 <div class="text-caption text-center font-weight-light">oder</div>
                 <div class="text-center mt-2">
-                    <v-btn color="surface" slim flat rounded="0" type="submit" @click="newTeacherStepEmail">Neuer Lehrer</v-btn>
+                    <v-btn color="surface" slim flat rounded="0" type="submit" data-testid="admin-login-new-teacher" @click="newTeacherStepEmail">Neuer Lehrer</v-btn>
                 </div>
 
                 <div v-if="config.register_admin_allowed">
                     <div class="text-caption text-center font-weight-light">oder</div>
-                    <v-btn block color="success" slim flat rounded="0" variant="text" @click="register">Neu registrieren</v-btn>
+                    <v-btn block color="success" slim flat rounded="0" variant="text" data-testid="admin-login-register" @click="register">Neu registrieren</v-btn>
                 </div>
             </v-card-text>
 
             <!-- Login STEP LOGIN_SELECT_SCHOOL -->
             <v-card-text v-if="step == 'LOGIN_SELECT_SCHOOL'">
                 <div class="text-h6">Bitte die Schule auswählen</div>
-                <v-autocomplete v-model="selected_school_id" :items="data.schools" item-title="long_name" item-value="id" label="Auswahl Schule" />
-                <v-btn block color="success" slim flat rounded="0" @click="loginStepSchool()" v-if="school">Weiter</v-btn>
+                <v-autocomplete v-model="selected_school_id" :items="data.schools" item-title="long_name" item-value="id" label="Auswahl Schule" data-testid="admin-login-school-select" />
+                <v-btn block color="success" slim flat rounded="0" data-testid="admin-login-continue-school" @click="loginStepSchool()" v-if="school">Weiter</v-btn>
                 <div class="text-caption text-center font-weight-light">oder</div>
-                <v-btn block color="warning" slim flat rounded="0" variant="text" @click="restartLogin">Zurück</v-btn>
+                <v-btn block color="warning" slim flat rounded="0" variant="text" data-testid="admin-login-back-from-school" @click="restartLogin">Zurück</v-btn>
             </v-card-text>
 
             <!-- Login STEP LOGIN_ENTER_PASSWORD = Password -->
@@ -50,11 +50,13 @@
                         :type="is_password_visible ? 'text' : 'password'"
                         @click:append="() => (is_password_visible = !is_password_visible)"
                         :rules="[required(), minLength(8), maxLength(255)]"
-                        v-model="data.password" />
+                        v-model="data.password"
+                        data-testid="admin-login-password"
+                        id="admin-login-password" />
                 </v-form>
-                <v-btn block color="success" slim flat rounded="0" @click="loginStep2()">Anmelden</v-btn>
+                <v-btn block color="success" slim flat rounded="0" data-testid="admin-login-submit-password" @click="loginStep2()">Anmelden</v-btn>
                 <div class="text-caption text-center font-weight-light">oder</div>
-                <v-btn block color="warning" slim flat rounded="0" variant="text" @click="restartLogin">Zurück</v-btn>
+                <v-btn block color="warning" slim flat rounded="0" variant="text" data-testid="admin-login-back-from-password" @click="restartLogin">Zurück</v-btn>
             </v-card-text>
 
             <!-- Login STEP LOGIN_ENTER_TOKEN = Token_2fa -->
@@ -65,11 +67,11 @@
                 <v-form ref="form" v-model="is_valid" @submit.prevent="loginStep3()" class="mb-4">
                     <v-alert closable color="success" type="info" text="Bitte prüfen Sie Ihre E-Mails" />
                     <div class="text-caption text-text">Bitte den Code laut E-Mail eingeben</div>
-                    <v-otp-input autofocus v-model="data.token_2fa" />
+                    <v-otp-input autofocus v-model="data.token_2fa" data-testid="admin-login-token" id="admin-login-token" />
                 </v-form>
-                <v-btn block color="success" slim flat rounded="0" @click="loginStep3()">Anmelden</v-btn>
+                <v-btn block color="success" slim flat rounded="0" data-testid="admin-login-submit-token" @click="loginStep3()">Anmelden</v-btn>
                 <div class="text-caption text-center font-weight-light">oder</div>
-                <v-btn block color="warning" slim flat rounded="0" variant="text" @click="restartLogin">Zurück</v-btn>
+                <v-btn block color="warning" slim flat rounded="0" variant="text" data-testid="admin-login-back-from-token" @click="restartLogin">Zurück</v-btn>
             </v-card-text>
 
             <!-- NEW TEACHER STEP NEW_TEACHER_SELECT_SCHOOL -->
