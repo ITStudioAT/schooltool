@@ -24,6 +24,7 @@ class SchoolyearStoreRequest extends FormRequest
     {
         return [
             'name' => 'required|string|max:255',
+            'concerns' => 'nullable|string|max:255',
             'from' => 'nullable|date',
             'until' => 'nullable|date',
             'sem_2_start' => 'nullable|date',
