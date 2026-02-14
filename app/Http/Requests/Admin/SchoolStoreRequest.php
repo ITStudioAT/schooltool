@@ -23,7 +23,7 @@ class SchoolStoreRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'long_name' => ['required', 'string', 'max:255', 'unique:schools,long_name'],
+            'long_name' => ['required', 'string', 'max:255'],
             'short_name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:schools,email'],
             'upload_file' => ['nullable', 'string', 'max:255'],

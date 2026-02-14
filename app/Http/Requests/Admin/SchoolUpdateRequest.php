@@ -24,7 +24,7 @@ class SchoolUpdateRequest extends FormRequest
     {
         return [
             'id' => ['required', 'integer', 'exists:schools,id'],
-            'long_name' => ['required', 'string', 'max:255', 'unique:schools,long_name,' . $this->id],
+            'long_name' => ['required', 'string', 'max:255'],
             'short_name' => ['required', 'string', 'max:255'],
             'logo' => ['nullable', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:schools,email,' . $this->id],

@@ -27,62 +27,62 @@ class SchoolService
 
     public function create($data)
     {
-        // Merken falls upload_file gesetzt ist
-        $path = $data['upload_file'] ?? null;
-        unset($data['upload_file']);
+        return DB::transaction(function () use ($data) {
+            // Merken falls upload_file gesetzt ist
+            $path = $data['upload_file'] ?? null;
+            unset($data['upload_file']);
 
+            // Schule anlegen
+            $school  = School::create($data);
 
-        // Schule anlegen
-        $school  = School::create($data);
+            // Schuljahre aus Config anlegen (ab aktuellem Schuljahr)
+            $schoolyear = $this->createSchoolyearsFromConfig($school);
 
-        // Schuljahre aus Config anlegen (ab aktuellem Schuljahr)
-        $schoolyear = $this->createSchoolyearsFromConfig($school);
+            // Super-Admin anlegen
+            $user = User::create([
+                'school_id' => $school->id,
+                'schoolyear_id' => $schoolyear->id,
+                'last_name' => env('SA_LAST_NAME'),
+                'first_name' => env('SA_FIRST_NAME'),
+                'email' => env('SA_EMAIL'),
+                'password' => env('SA_PW'),
+            ]);
 
-        // Super-Admin anlegen
-        $user = User::create([
-            'school_id' => $school->id,
-            'schoolyear_id' => $schoolyear->id,
-            'last_name' => env('SA_LAST_NAME'),
-            'first_name' => env('SA_FIRST_NAME'),
-            'email' => env('SA_EMAIL'),
-            'password' => env('SA_PW'),
-        ]);
+            $user->email_verified_at = now();
+            $user->confirmed_at = now();
+            $user->is_active = 1;
+            $user->save();
 
-        $user->email_verified_at = now();
-        $user->confirmed_at = now();
-        $user->is_active = 1;
-        $user->save();
+            $user->assignRole('super_admin');
 
-        $user->assignRole('super_admin');
+            // SchoolTool - Record erzeugen
+            $schoolTool = SchoolTool::create([
+                'school_id' =>  $school->id,
+                'tutoring_student_must_be_confirmed' => false,
+                'tutoring_confirmer_email' => '',
+            ]);
 
-        // SchoolTool - Record erzeugen 
-        $schoolTool = SchoolTool::create([
-            'school_id' =>  $school->id,
-            'tutoring_student_must_be_confirmed' => false,
-            'tutoring_confirmer_email' => '',
-        ]);
+            // Folder für Logo etc anlegen
+            $hlp_path = $school->id . '/temp';
+            if (!Storage::directoryExists($hlp_path)) {
+                Storage::makeDirectory($hlp_path);
+            }
+            $hlp_path = $school->id . '/excel';
+            if (!Storage::directoryExists($hlp_path)) {
+                Storage::makeDirectory($hlp_path);
+            }
+            $hlp_path = $school->id . '/pdf';
+            if (!Storage::directoryExists($hlp_path)) {
+                Storage::makeDirectory($hlp_path);
+            }
 
-        // Folder für Logo etc anlegen
-        $hlp_path = $school->id . '/temp';
-        if (!Storage::directoryExists($hlp_path)) {
-            Storage::makeDirectory($hlp_path);
-        }
-        $hlp_path = $school->id . '/excel';
-        if (!Storage::directoryExists($hlp_path)) {
-            Storage::makeDirectory($hlp_path);
-        }
-        $hlp_path = $school->id . '/pdf';
-        if (!Storage::directoryExists($hlp_path)) {
-            Storage::makeDirectory($hlp_path);
-        }
+            // Logo verschieben
+            if ($path) {
+                $school = $this->moveLogo($school, $path);
+            }
 
-
-        // Logo verschieben
-        if ($path) {
-            $school = $this->moveLogo($school, $path);
-        }
-
-        return $school;
+            return $school;
+        });
     }
 
     private function createSchoolyearsFromConfig(School $school): Schoolyear
@@ -123,6 +123,7 @@ class SchoolService
             $created = Schoolyear::create([
                 'school_id' => $school->id,
                 'name' => $entry['name'],
+                'concerns' => $entry['concerns'] ?? null,
                 'from' => $entry['from'],
                 'until' => $entry['to'],
                 'sem_2_start' => $entry['sem_2_start'] ?? null,
