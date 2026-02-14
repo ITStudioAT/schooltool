@@ -8,6 +8,9 @@
                         <div class="text-caption text-medium-emphasis">
                             {{ selected_course_student.schoolclass || selected_course_student.class || '–' }}
                         </div>
+                        <div class="text-caption text-medium-emphasis" v-if="selected_course_student.email">
+                            {{ selected_course_student.email }}
+                        </div>
                     </div>
                     <v-btn color="warning" flat tile @click="closeStudent">Zurück</v-btn>
                 </v-card>
