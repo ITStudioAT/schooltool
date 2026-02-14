@@ -46,6 +46,12 @@ beforeEach(function () {
         'schoolyear_id' => $this->schoolyear->id,
     ]);
     $this->admin->assignRole('admin');
+
+    $this->superAdmin = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $this->superAdmin->assignRole('super_admin');
 });
 
 describe('authorization', function () {
@@ -55,6 +61,12 @@ describe('authorization', function () {
 
     test('admin can access own holiday endpoint', function () {
         $this->actingAs($this->admin, 'sanctum');
+
+        $this->getJson('/api/admin/teaching/my_holidays')->assertOk();
+    });
+
+    test('super_admin can access own holiday endpoint', function () {
+        $this->actingAs($this->superAdmin, 'sanctum');
 
         $this->getJson('/api/admin/teaching/my_holidays')->assertOk();
     });
@@ -220,4 +232,3 @@ test('destroy removes own holiday and free status from own course date', functio
     $date->refresh();
     expect($date->status)->toBe([]);
 });
-

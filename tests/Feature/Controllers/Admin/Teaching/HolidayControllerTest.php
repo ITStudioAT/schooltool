@@ -35,6 +35,12 @@ beforeEach(function () {
     ]);
     $this->admin->assignRole('admin');
 
+    $this->superAdmin = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $this->superAdmin->assignRole('super_admin');
+
     $this->teacher = User::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
@@ -51,6 +57,12 @@ describe('authorization', function () {
         $this->actingAs($this->teacher, 'sanctum');
 
         $this->getJson('/api/admin/teaching/holidays')->assertStatus(403);
+    });
+
+    test('allows super_admin on admin holiday index', function () {
+        $this->actingAs($this->superAdmin, 'sanctum');
+
+        $this->getJson('/api/admin/teaching/holidays')->assertOk();
     });
 });
 
@@ -191,4 +203,3 @@ test('destroy rejects teacher-scope holiday on admin endpoint', function () {
         'id' => $teacherHoliday->id,
     ]);
 });
-
