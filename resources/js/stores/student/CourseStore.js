@@ -5,6 +5,7 @@ export const useCourseStore = defineStore('StudentCourseStore', {
     state: () => {
         return {
             courses: [],
+            course: null,
             entries: [],
             typeLabels: {},
         }
@@ -25,6 +26,24 @@ export const useCourseStore = defineStore('StudentCourseStore', {
                     timeout: 3000,
                 })
                 this.courses = []
+                return false
+            }
+        },
+
+        async getCourse(courseId) {
+            try {
+                const response = await axios.get(`/api/homepage/student/courses/${courseId}`)
+                this.course = response.data?.course ?? null
+                return true
+            } catch (error) {
+                const notification = useNotificationStore()
+                notification.notify({
+                    status: error.response?.status || 500,
+                    message: error.response?.data?.message || 'Fehler beim Laden des Fachs.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                this.course = null
                 return false
             }
         },

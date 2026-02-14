@@ -197,8 +197,8 @@
                                                 <v-icon start size="12">mdi-lock</v-icon>
                                                 Aus Arbeit
                                             </v-chip>
-                                            <v-chip v-if="item.entry.grade" size="small" variant="tonal" color="success">
-                                                {{ item.entry.grade }}
+                                            <v-chip size="small" variant="tonal" :color="item.entry.grade ? 'success' : 'error'">
+                                                {{ item.entry.grade || 'offen' }}
                                             </v-chip>
                                             <v-spacer />
                                             <div class="entry-actions d-flex align-center ga-1">

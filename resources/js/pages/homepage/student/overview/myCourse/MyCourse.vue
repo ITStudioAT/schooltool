@@ -20,7 +20,12 @@
                 <div class="hero-badges">
                     <span class="hero-badge">{{ weekdayLabel }}</span>
                     <span class="hero-badge dark">{{ dateLabel }}</span>
-                    <span v-if="user" class="hero-badge">{{ user.first_name }} {{ user.last_name }}</span>
+                    <span v-if="user" class="hero-badge">
+                        {{ user.first_name }} {{ user.last_name }}
+                        <span v-if="courseStars.length" class="stars-inline">
+                            <v-icon v-for="(star, index) in courseStars" :key="index" size="18" color="#fd802e">mdi-star</v-icon>
+                        </span>
+                    </span>
                     <span v-if="user?.schoolclass" class="hero-badge dark">{{ user.schoolclass }}</span>
                 </div>
             </div>
@@ -49,15 +54,15 @@
                         </v-tab>
                         <v-tab value="entries">
                             <v-icon start>mdi-notebook-outline</v-icon>
-                            Einträge
+                            Leistungen
                         </v-tab>
-                        <v-tab value="grades">
-                            <v-icon start>mdi-chart-line</v-icon>
-                            Noten
+                        <v-tab value="behaviour">
+                            <v-icon start>mdi-account-star</v-icon>
+                            Verhalten
                         </v-tab>
-                        <v-tab value="materials">
-                            <v-icon start>mdi-folder-outline</v-icon>
-                            Materialien
+                        <v-tab value="dates">
+                            <v-icon start>mdi-calendar-month</v-icon>
+                            Termine
                         </v-tab>
                     </v-tabs>
 
@@ -92,21 +97,143 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- Open Notifications Section (IMPORTANT - directly after general info!) -->
+                            <div v-if="openNotifications.length" class="profile-section" style="margin-top: 20px;">
+                                <h3 class="profile-section-title" style="color: #f44336;">
+                                    <v-icon size="22" color="#f44336">mdi-bell-alert</v-icon>
+                                    Offene Verständigungen
+                                </h3>
+                                <div class="notifications-list">
+                                    <div v-for="notification in openNotifications" :key="notification.id"
+                                         class="notification-item notification-open">
+                                        <div class="notification-icon">
+                                            <v-icon size="20" color="#f44336">mdi-bell-alert</v-icon>
+                                        </div>
+                                        <div class="notification-content">
+                                            <div class="notification-header">
+                                                <span v-if="notification.date" class="notification-date">{{ formatDate(notification.date) }}</span>
+                                                <span v-if="notification.type" class="notification-type">{{ getNotificationTypeLabel(notification.type) }}</span>
+                                            </div>
+                                            <div class="notification-description">{{ notification.description }}</div>
+                                            <div v-if="notification.due_date" class="notification-dates">
+                                                <span class="notification-due-date">
+                                                    Fällig: {{ formatDate(notification.due_date) }}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Stars Section (beautiful!) -->
+                            <div v-if="courseStars.length" class="profile-section" style="margin-top: 20px;">
+                                <h3 class="profile-section-title">
+                                    <v-icon size="22" color="#ffa726">mdi-star</v-icon>
+                                    <span class="stars-title-text">Sterne</span>
+                                    <span class="stars-title-glow">✨</span>
+                                </h3>
+                                <div class="stars-beautiful-list">
+                                    <div v-for="(star, index) in courseStars" :key="star.id || index" class="star-beautiful-item">
+                                        <div class="star-beautiful-icon-container">
+                                            <div class="star-beautiful-icon">
+                                                <v-icon size="32" color="white">mdi-star</v-icon>
+                                            </div>
+                                        </div>
+                                        <div class="star-beautiful-content">
+                                            <div v-if="star.date" class="star-beautiful-date">
+                                                <v-icon size="16" color="#999">mdi-calendar</v-icon>
+                                                {{ formatDate(star.date) }}
+                                            </div>
+                                            <div class="star-beautiful-comment">{{ star.comment }}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Closed Notifications Section -->
+                            <div v-if="closedNotifications.length" class="profile-section" style="margin-top: 20px;">
+                                <h3 class="profile-section-title">
+                                    <v-icon size="20" color="#4caf50">mdi-bell-check</v-icon>
+                                    Erledigte Verständigungen
+                                </h3>
+                                <div class="notifications-list">
+                                    <div v-for="notification in closedNotifications" :key="notification.id"
+                                         class="notification-item notification-closed">
+                                        <div class="notification-icon">
+                                            <v-icon size="20" color="#4caf50">mdi-bell-check</v-icon>
+                                        </div>
+                                        <div class="notification-content">
+                                            <div class="notification-header">
+                                                <span v-if="notification.date" class="notification-date">{{ formatDate(notification.date) }}</span>
+                                                <span v-if="notification.type" class="notification-type">{{ getNotificationTypeLabel(notification.type) }}</span>
+                                            </div>
+                                            <div class="notification-description">{{ notification.description }}</div>
+                                            <div v-if="notification.due_date || notification.done_date" class="notification-dates">
+                                                <span v-if="notification.due_date" class="notification-due-date">
+                                                    Fällig: {{ formatDate(notification.due_date) }}
+                                                </span>
+                                                <span v-if="notification.done_date" class="notification-done-date">
+                                                    Erledigt: {{ formatDate(notification.done_date) }}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Grades Section (last) -->
+                            <div class="profile-section" style="margin-top: 20px;">
+                                <h3 class="profile-section-title">
+                                    <v-icon size="20">mdi-chart-line</v-icon>
+                                    Noten
+                                </h3>
+                                <div class="grades-display">
+                                    <template v-if="course?.sem_1_grade || course?.sem_2_grade">
+                                        <div class="grade-item" :class="course?.sem_1_grade ? 'grade-set' : 'grade-open'">
+                                            <div class="grade-label">1. Semester</div>
+                                            <div class="grade-value">{{ course?.sem_1_grade || 'offen' }}</div>
+                                            <div v-if="course?.behaviour_1_grade || !course?.sem_1_grade" class="behaviour-value"
+                                                 :class="course?.behaviour_1_grade ? 'behaviour-set' : 'behaviour-open'">
+                                                Verhalten: {{ course?.behaviour_1_grade || 'offen' }}
+                                            </div>
+                                        </div>
+                                        <div class="grade-item" :class="course?.sem_2_grade ? 'grade-set' : 'grade-open'">
+                                            <div class="grade-label">2. Semester</div>
+                                            <div class="grade-value">{{ course?.sem_2_grade || 'offen' }}</div>
+                                            <div v-if="course?.behaviour_2_grade || !course?.sem_2_grade" class="behaviour-value"
+                                                 :class="course?.behaviour_2_grade ? 'behaviour-set' : 'behaviour-open'">
+                                                Verhalten: {{ course?.behaviour_2_grade || 'offen' }}
+                                            </div>
+                                        </div>
+                                    </template>
+                                    <template v-else>
+                                        <div class="grade-item" :class="course?.sem_grade ? 'grade-set' : 'grade-open'">
+                                            <div class="grade-label">Semesternote</div>
+                                            <div class="grade-value">{{ course?.sem_grade || 'offen' }}</div>
+                                            <div v-if="course?.behaviour_grade || !course?.sem_grade" class="behaviour-value"
+                                                 :class="course?.behaviour_grade ? 'behaviour-set' : 'behaviour-open'">
+                                                Verhalten: {{ course?.behaviour_grade || 'offen' }}
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
                         </v-tabs-window-item>
 
-                        <!-- Einträge Tab -->
+                        <!-- Leistungen Tab -->
                         <v-tabs-window-item value="entries">
                             <!-- Loading State -->
                             <div v-if="loadingEntries" class="courses-loading">
                                 <v-progress-circular indeterminate color="#fd802e" />
-                                <p>Lade Einträge...</p>
+                                <p>Lade Leistungen...</p>
                             </div>
 
                             <div v-else class="entries-section">
                                 <div class="entries-toolbar">
                                     <div class="entries-toolbar-title">
                                         <v-icon size="18">mdi-clipboard-text</v-icon>
-                                        <span>Einträge</span>
+                                        <span>Leistungen</span>
                                         <v-chip v-if="sortedEntries.length" size="x-small" color="primary" variant="tonal">
                                             {{ sortedEntries.length }}
                                         </v-chip>
@@ -149,9 +276,12 @@
                                                             <div v-if="entryDescription(item.entry)" class="entry-description">
                                                                 {{ entryDescription(item.entry) }}
                                                             </div>
+                                                            <div v-if="entryComment(item.entry)" class="entry-comment">
+                                                                {{ entryComment(item.entry) }}
+                                                            </div>
                                                         </div>
-                                                        <v-chip v-if="item.entry.grade" class="entry-grade" size="small" variant="tonal" color="success">
-                                                            {{ item.entry.grade }}
+                                                        <v-chip class="entry-grade" size="small" variant="tonal" :color="item.entry.grade ? 'success' : 'error'">
+                                                            {{ item.entry.grade || 'offen' }}
                                                         </v-chip>
                                                     </div>
                                                 </v-list-item>
@@ -164,28 +294,92 @@
                                 <div v-else class="profile-info-box">
                                     <v-icon color="#fd802e" size="24">mdi-notebook-outline</v-icon>
                                     <div>
-                                        <strong>Keine Einträge:</strong> Für dieses Fach sind noch keine Einträge vorhanden.
+                                        <strong>Keine Leistungen:</strong> Für dieses Fach sind noch keine Leistungen vorhanden.
                                     </div>
                                 </div>
                             </div>
                         </v-tabs-window-item>
 
-                        <!-- Noten Tab -->
-                        <v-tabs-window-item value="grades">
-                            <div class="profile-info-box">
-                                <v-icon color="#fd802e" size="24">mdi-chart-line</v-icon>
+                        <!-- Verhalten Tab -->
+                        <v-tabs-window-item value="behaviour">
+                            <div v-if="behaviourEntries.length === 0" class="profile-info-box">
+                                <v-icon color="#fd802e" size="24">mdi-account-star</v-icon>
                                 <div>
-                                    <strong>Noten:</strong> Hier werden deine Noten und Leistungsübersicht angezeigt.
+                                    <strong>Verhalten:</strong> Keine Verhalteneinträge vorhanden.
+                                </div>
+                            </div>
+                            <div v-else class="behaviour-entries-section">
+                                <div class="behaviour-entries-list">
+                                    <div v-for="entry in behaviourEntries" :key="entry.id" class="behaviour-entry-item">
+                                        <div class="behaviour-entry-icon">
+                                            <v-icon size="20" color="#2196f3">mdi-account-star</v-icon>
+                                        </div>
+                                        <div class="behaviour-entry-content">
+                                            <div class="behaviour-entry-header">
+                                                <span v-if="entry.date" class="behaviour-entry-date">{{ formatDate(entry.date) }}</span>
+                                                <span v-if="entry.type" class="behaviour-entry-type">{{ getBehaviourTypeLabel(entry.type) }}</span>
+                                            </div>
+                                            <div class="behaviour-entry-description">{{ entry.description }}</div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </v-tabs-window-item>
 
-                        <!-- Materialien Tab -->
-                        <v-tabs-window-item value="materials">
-                            <div class="profile-info-box">
-                                <v-icon color="#fd802e" size="24">mdi-folder-outline</v-icon>
+                        <!-- Termine Tab -->
+                        <v-tabs-window-item value="dates">
+                            <div v-if="courseDates.length === 0" class="profile-info-box">
+                                <v-icon color="#fd802e" size="24">mdi-calendar-month</v-icon>
                                 <div>
-                                    <strong>Materialien:</strong> Hier werden Dokumente, Links und Ressourcen angezeigt.
+                                    <strong>Termine:</strong> Keine Termine vorhanden.
+                                </div>
+                            </div>
+                            <div v-else class="dates-section">
+                                <div class="dates-toolbar">
+                                    <div class="dates-toolbar-title">
+                                        <v-icon size="18">mdi-calendar-month</v-icon>
+                                        <span>Termine</span>
+                                        <v-chip v-if="filteredDates.length" size="x-small" color="primary" variant="tonal">
+                                            {{ filteredDates.length }}
+                                        </v-chip>
+                                    </div>
+                                </div>
+
+                                <div class="dates-semester-filter">
+                                    <v-btn-toggle v-model="selectedSemesterDates" mandatory density="compact" color="primary">
+                                        <v-btn :value="1" size="small">1. Sem</v-btn>
+                                        <v-btn :value="2" size="small">2. Sem</v-btn>
+                                        <v-btn :value="3" size="small">1+2</v-btn>
+                                    </v-btn-toggle>
+                                </div>
+
+                                <v-card v-if="filteredDates.length > 0" variant="outlined">
+                                    <v-card-text class="pa-0">
+                                        <v-list density="comfortable">
+                                            <v-list-item v-for="(dateEntry, index) in filteredDates" :key="dateEntry.id || index">
+                                                <div class="date-row" :class="[
+                                                    index % 2 === 1 ? 'date-row--alt' : 'date-row--base',
+                                                    getDateStatusClass(dateEntry.status)
+                                                ]">
+                                                    <v-icon size="22" :color="getDateIconColor(dateEntry.status)">mdi-calendar</v-icon>
+                                                    <v-chip v-if="dateEntry.date" size="small" variant="tonal" color="primary">
+                                                        {{ formatDate(dateEntry.date) }}
+                                                    </v-chip>
+                                                    <v-chip v-if="dateEntry.hours && dateEntry.hours.length" size="small" variant="outlined">
+                                                        {{ dateEntry.hours.join(', ') }}. Std
+                                                    </v-chip>
+                                                    <div class="date-main text-caption">
+                                                        <div v-if="dateEntry.content" class="date-content" v-html="dateEntry.content"></div>
+                                                        <div v-else class="date-content-empty">—</div>
+                                                    </div>
+                                                </div>
+                                            </v-list-item>
+                                        </v-list>
+                                    </v-card-text>
+                                </v-card>
+                                <div v-else class="profile-info-box" style="margin-top: 16px;">
+                                    <v-icon color="#999" size="24">mdi-calendar-blank</v-icon>
+                                    <div>Keine Termine für dieses Semester vorhanden.</div>
                                 </div>
                             </div>
                         </v-tabs-window-item>
@@ -241,7 +435,8 @@ export default {
             currentTab: 'overview', // Start with Übersicht as default
             entries: [],
             loadingEntries: false,
-            selectedSemester: 3, // 1 = Semester 1, 2 = Semester 2, 3 = Both
+            selectedSemester: 3, // 1 = Semester 1, 2 = Semester 2, 3 = Both (for entries)
+            selectedSemesterDates: 3, // 1 = Semester 1, 2 = Semester 2, 3 = Both (for dates)
             sortByType: false,
         }
     },
@@ -251,6 +446,30 @@ export default {
 
         courseId() {
             return this.$route.params.id
+        },
+
+        courseStars() {
+            return this.course?.stars || []
+        },
+
+        courseNotifications() {
+            return this.course?.notifications || []
+        },
+
+        openNotifications() {
+            return this.courseNotifications.filter(n => n.is_open)
+        },
+
+        closedNotifications() {
+            return this.courseNotifications.filter(n => !n.is_open)
+        },
+
+        behaviourEntries() {
+            return this.course?.behaviour_entries || []
+        },
+
+        courseDates() {
+            return this.course?.course_dates || []
         },
 
         weekdayLabel() {
@@ -277,6 +496,32 @@ export default {
             return works.reduce((result, work) => {
                 if (work?.short_name) {
                     result[String(work.short_name)] = work?.name || String(work.short_name)
+                }
+                return result
+            }, {})
+        },
+
+        notificationTypeLabels() {
+            // Use teacher's teaching_notifications from the course
+            const notifications = Array.isArray(this.course?.teacher_teaching_notifications)
+                ? this.course.teacher_teaching_notifications
+                : []
+            return notifications.reduce((result, notification) => {
+                if (notification?.short_name) {
+                    result[String(notification.short_name)] = notification?.name || String(notification.short_name)
+                }
+                return result
+            }, {})
+        },
+
+        behaviourTypeLabels() {
+            // Use teacher's teaching_behaviour from the course
+            const behaviours = Array.isArray(this.course?.teacher_teaching_behaviour)
+                ? this.course.teacher_teaching_behaviour
+                : []
+            return behaviours.reduce((result, behaviour) => {
+                if (behaviour?.short_name) {
+                    result[String(behaviour.short_name)] = behaviour?.name || String(behaviour.short_name)
                 }
                 return result
             }, {})
@@ -320,6 +565,28 @@ export default {
                 if (this.selectedSemester === 1) {
                     return date < boundary
                 } else if (this.selectedSemester === 2) {
+                    return date >= boundary
+                }
+                return true
+            })
+        },
+
+        // Filter dates by selected semester
+        filteredDates() {
+            if (this.selectedSemesterDates === 3) {
+                return this.courseDates
+            }
+
+            const boundary = this.normalizeDateKey(this.semesterBoundary)
+            if (!boundary) return this.courseDates
+
+            return this.courseDates.filter(dateEntry => {
+                if (!dateEntry.date) return true
+                const date = this.normalizeDateKey(dateEntry.date)
+                if (!date) return true
+                if (this.selectedSemesterDates === 1) {
+                    return date < boundary
+                } else if (this.selectedSemesterDates === 2) {
                     return date >= boundary
                 }
                 return true
@@ -400,7 +667,7 @@ export default {
 
     watch: {
         currentTab(newTab) {
-            // Load entries when switching to Einträge tab
+            // Load entries when switching to Leistungen tab
             if (newTab === 'entries' && this.entries.length === 0 && !this.loadingEntries) {
                 this.loadEntries()
             }
@@ -428,12 +695,9 @@ export default {
         async loadCourse() {
             this.loading = true
             try {
-                // Get courses from store
-                await this.courseStore.getCourses()
-
-                // Find the specific course by ID
-                const courses = this.courseStore.courses || []
-                this.course = courses.find(c => c.id === parseInt(this.courseId))
+                // Get course details with notifications
+                await this.courseStore.getCourse(this.courseId)
+                this.course = this.courseStore.course
 
                 if (!this.course) {
                     console.error('Course not found:', this.courseId)
@@ -541,6 +805,11 @@ export default {
             return description
         },
 
+        entryComment(entry) {
+            const comment = String(entry?.comment || '').trim()
+            return comment
+        },
+
         getEntryColor(type) {
             const colors = {
                 homework: 'primary',
@@ -567,6 +836,40 @@ export default {
             } catch (error) {
                 return dateString
             }
+        },
+
+        getNotificationTypeLabel(type) {
+            if (!type) return ''
+            return this.notificationTypeLabels[type] || type
+        },
+
+        getBehaviourTypeLabel(type) {
+            if (!type) return ''
+            return this.behaviourTypeLabels[type] || type
+        },
+
+        getDateStatusClass(status) {
+            if (!status || !Array.isArray(status)) return ''
+            const statusStr = status.join(' ').toLowerCase()
+            if (statusStr.includes('pruefung') || statusStr.includes('prüfung')) {
+                return 'date-row--exam'
+            }
+            if (statusStr.includes('frei') || statusStr.includes('free')) {
+                return 'date-row--free'
+            }
+            return ''
+        },
+
+        getDateIconColor(status) {
+            if (!status || !Array.isArray(status)) return '#2196f3'
+            const statusStr = status.join(' ').toLowerCase()
+            if (statusStr.includes('pruefung') || statusStr.includes('prüfung')) {
+                return '#ff5722'
+            }
+            if (statusStr.includes('frei') || statusStr.includes('free')) {
+                return '#4caf50'
+            }
+            return '#2196f3'
         },
     },
 }
@@ -654,6 +957,470 @@ export default {
     font-size: 0.95rem;
     line-height: 1.45;
     color: #55626c;
+}
+
+.entry-comment {
+    margin-top: 6px;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    color: #6b7882;
+    font-style: italic;
+}
+
+.stars-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 8px;
+}
+
+/* Dates Styles */
+.dates-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.dates-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.dates-toolbar-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    color: #314d5d;
+}
+
+.dates-semester-filter {
+    display: flex;
+    justify-content: flex-start;
+}
+
+.date-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 10px;
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+}
+
+.date-row--base {
+    background-color: #ffffff;
+}
+
+.date-row--alt {
+    background-color: #e3f2fd;
+}
+
+.date-row--exam {
+    background-color: #ffebee !important;
+    border-left: 4px solid #ff5722;
+}
+
+.date-row--free {
+    background-color: #c8e6c9 !important;
+    border-left: 4px solid #4caf50;
+}
+
+.date-main {
+    min-width: 120px;
+    flex: 1 1 260px;
+    color: #314d5d;
+}
+
+.date-content {
+    font-size: 0.9rem;
+    font-weight: 400;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+.date-content-empty {
+    font-size: 1rem;
+    color: #999;
+    font-style: italic;
+}
+
+.hero-badge.grade {
+    background-color: #4caf50;
+    border: 1px solid #4caf50;
+    color: white;
+    font-weight: 600;
+}
+
+.grades-display {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.grade-item {
+    flex: 1;
+    min-width: 150px;
+    padding: 16px;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.grade-item.grade-set {
+    background-color: #e8f5e9;
+    border: 2px solid #4caf50;
+}
+
+.grade-item.grade-open {
+    background-color: #ffebee;
+    border: 3px solid #f44336;
+    box-shadow: 0 2px 8px rgba(244, 67, 54, 0.2);
+}
+
+.grade-label {
+    font-size: 0.9rem;
+    color: #666;
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+.grade-set .grade-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #2e7d32;
+}
+
+.grade-open .grade-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #c62828;
+}
+
+.behaviour-value {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-top: 8px;
+    padding: 6px 12px;
+    border-radius: 4px;
+}
+
+.behaviour-value.behaviour-set {
+    color: #2e7d32;
+    background-color: rgba(76, 175, 80, 0.1);
+}
+
+.behaviour-value.behaviour-open {
+    color: #c62828;
+    background-color: rgba(244, 67, 54, 0.1);
+}
+
+/* Compact Grades Display */
+.grades-display-compact {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.grade-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.grade-sem-label {
+    min-width: 120px;
+    font-weight: 600;
+    color: #314d5d;
+    font-size: 0.95rem;
+}
+
+.grade-item-compact {
+    flex: 1;
+    padding: 10px;
+    border-radius: 6px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 1.1rem;
+}
+
+.grade-item-compact.grade-set {
+    background-color: #e8f5e9;
+    border: 2px solid #4caf50;
+    color: #2e7d32;
+}
+
+.grade-item-compact.grade-open {
+    background-color: #ffebee;
+    border: 2px solid #f44336;
+    color: #c62828;
+}
+
+/* Beautiful Stars */
+.stars-title-text {
+    font-size: 1.1rem;
+}
+
+.stars-title-glow {
+    margin-left: 8px;
+    font-size: 1.2rem;
+}
+
+.stars-beautiful-list {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.star-beautiful-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 20px;
+    background: linear-gradient(135deg, #fff5e1 0%, #ffe4b5 100%);
+    border-radius: 12px;
+    border: 2px solid #ffa726;
+    box-shadow: 0 4px 12px rgba(255, 167, 38, 0.2);
+    position: relative;
+    overflow: hidden;
+}
+
+.star-beautiful-item::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.3) 0%, transparent 70%);
+    pointer-events: none;
+}
+
+.star-beautiful-icon-container {
+    flex-shrink: 0;
+    position: relative;
+}
+
+.star-beautiful-icon {
+    background: linear-gradient(135deg, #ffa726 0%, #ff9800 100%);
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 3px 8px rgba(255, 152, 0, 0.4);
+}
+
+.star-beautiful-content {
+    flex: 1;
+    position: relative;
+    z-index: 1;
+}
+
+.star-beautiful-date {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+    color: #666;
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+.star-beautiful-comment {
+    font-size: 1.05rem;
+    color: #314d5d;
+    line-height: 1.5;
+    font-weight: 500;
+}
+
+/* Notifications */
+.notifications-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.notification-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 8px;
+    border-left: 4px solid;
+}
+
+.notification-item.notification-open {
+    background-color: #ffebee;
+    border-left-color: #f44336;
+    border: 3px solid #f44336;
+    box-shadow: 0 3px 10px rgba(244, 67, 54, 0.25);
+}
+
+.notification-item.notification-closed {
+    background-color: #e8f5e9;
+    border: 2px solid #4caf50;
+}
+
+.notification-icon {
+    flex-shrink: 0;
+    padding-top: 2px;
+}
+
+.notification-content {
+    flex: 1;
+}
+
+.notification-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+}
+
+.notification-date {
+    font-size: 0.85rem;
+    color: #666;
+    font-weight: 500;
+}
+
+.notification-type {
+    font-size: 0.8rem;
+    color: #314d5d;
+    font-weight: 600;
+    padding: 4px 10px;
+    background-color: rgba(49, 77, 93, 0.1);
+    border-radius: 4px;
+}
+
+.notification-description {
+    font-size: 1rem;
+    color: #314d5d;
+    line-height: 1.5;
+    margin-bottom: 6px;
+}
+
+.notification-dates {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-top: 6px;
+}
+
+.notification-due-date {
+    font-size: 0.85rem;
+    color: #f44336;
+    font-weight: 600;
+}
+
+.notification-done-date {
+    font-size: 0.85rem;
+    color: #4caf50;
+    font-weight: 500;
+}
+
+/* Behaviour Entries Styles */
+.behaviour-entries-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.behaviour-entries-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.behaviour-entry-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 8px;
+    background-color: #e3f2fd;
+    border: 2px solid #2196f3;
+    box-shadow: 0 2px 8px rgba(33, 150, 243, 0.15);
+}
+
+.behaviour-entry-icon {
+    flex-shrink: 0;
+    padding-top: 2px;
+}
+
+.behaviour-entry-content {
+    flex: 1;
+}
+
+.behaviour-entry-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+}
+
+.behaviour-entry-date {
+    font-size: 0.85rem;
+    color: #666;
+    font-weight: 500;
+}
+
+.behaviour-entry-type {
+    font-size: 0.8rem;
+    color: #314d5d;
+    font-weight: 600;
+    padding: 4px 10px;
+    background-color: rgba(49, 77, 93, 0.1);
+    border-radius: 4px;
+}
+
+.behaviour-entry-description {
+    font-size: 1rem;
+    color: #314d5d;
+    line-height: 1.5;
+}
+
+/* Old stars styles (kept for backwards compatibility) */
+.stars-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.star-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px;
+    background-color: #f9f9f9;
+    border-radius: 8px;
+    border-left: 3px solid #fd802e;
+}
+
+.star-icon {
+    flex-shrink: 0;
+}
+
+.star-content {
+    flex: 1;
+}
+
+.star-date {
+    font-size: 0.85rem;
+    color: #888;
+    margin-bottom: 4px;
+}
+
+.star-comment {
+    font-size: 0.95rem;
+    color: #314d5d;
+    line-height: 1.4;
 }
 
 @media (max-width: 700px) {

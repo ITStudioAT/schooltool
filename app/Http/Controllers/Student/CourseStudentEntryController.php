@@ -53,34 +53,58 @@ class CourseStudentEntryController extends Controller
         // Get entries from TeachingCourseStudentEntry model
         $entries = TeachingCourseStudentEntry::where('teaching_course_id', $course->id)
             ->where('user_id', $auth_user->id)
-            ->with('teachingCourseWork:id,type,description')
+            ->with('teachingCourseWork:id,type,title,description,groups')
             ->orderBy('date', 'desc')
             ->orderBy('id', 'desc')
             ->get();
 
         // Format entries for response
-        $formattedEntries = $entries->map(function ($entry) {
-            // Use teachingCourseWork description as title, or entry description, or generate from type
-            $title = 'Eintrag';
+        $formattedEntries = $entries->map(function ($entry) use ($auth_user) {
+            // Use teachingCourseWork title and description, or entry description
+            $title = null;
             $description = null;
+            $comment = null;
 
             if ($entry->teachingCourseWork) {
-                // If there's an associated work, use its description as the title
-                $title = $entry->teachingCourseWork->description ?? ($entry->teachingCourseWork->type ?? 'Arbeit');
-                // And use the entry's own description as additional details
-                $description = $entry->description;
+                $work = $entry->teachingCourseWork;
+                // If there's an associated work, use its title (or description as fallback) as the title
+                $title = $work->title ?? $work->description ?? null;
+                // Use work description (if different from title)
+                $description = $work->description ?? null;
+                if ($description === $title) {
+                    $description = null;
+                }
+
+                // Find the student's comment from the work groups
+                $groups = $work->groups ?? [];
+                foreach ($groups as $group) {
+                    $studentIds = $group['student_ids'] ?? [];
+                    if (in_array($auth_user->id, $studentIds) || in_array((string) $auth_user->id, $studentIds)) {
+                        // Check individual comment first
+                        $comments = $group['comments'] ?? [];
+                        foreach ($comments as $commentObj) {
+                            if (isset($commentObj['student_id']) && ($commentObj['student_id'] == $auth_user->id)) {
+                                $comment = $commentObj['comment'] ?? null;
+                                break 2;
+                            }
+                        }
+                        // Fall back to group comment if no individual comment
+                        if (!$comment) {
+                            $comment = $group['comment'] ?? null;
+                        }
+                        break;
+                    }
+                }
             } elseif ($entry->description) {
-                // If there's no work but the entry has a description, use that as title
-                $title = $entry->description;
-            } elseif ($entry->type) {
-                // Otherwise, generate title from type
-                $title = ucfirst($entry->type);
+                // If there's no work but the entry has a description, use that as comment
+                $comment = $entry->description;
             }
 
             return [
                 'id' => $entry->id,
                 'title' => $title,
                 'description' => $description,
+                'comment' => $comment,
                 'type' => $entry->type ?? 'info',
                 'date' => $entry->date?->format('Y-m-d'),
                 'grade' => $entry->grade,
