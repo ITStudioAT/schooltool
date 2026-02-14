@@ -13,14 +13,14 @@
 
         <div class="mt-8 w-100 d-flex flex-column align-center justify-center" v-if="is_init && is_login">
             <!-- Email Adresse eingeben-->
-            <v-card tile flat color="primary" min-width="300" v-if="!data.status">
+            <v-card tile flat color="primary" min-width="300" v-if="!data.status" data-testid="tutoring-login-step-email">
                 <v-card-title>Bitte die E-Mail eingeben</v-card-title>
                 <v-card-text>
                     <v-form ref="form" v-model="is_valid" @submit.prevent="checkEmail(data)" class="mb-4">
-                        <v-text-field autofocus v-model="data.email" label="Deine E-Mail-Adresse" :rules="[required(), mail()]" tabindex="1" />
+                        <v-text-field autofocus v-model="data.email" label="Deine E-Mail-Adresse" :rules="[required(), mail()]" tabindex="1" data-testid="tutoring-login-email" id="tutoring-login-email" />
                         <div class="d-flex flex-row align-center justify-space-between mt-4">
                             <v-btn color="warning" slim flat rounded="0" @click="$emit('cancel-login')">Zurück</v-btn>
-                            <v-btn color="success" slim flat rounded="0" type="submit" v-if="data.email" tabindex="2">Weiter</v-btn>
+                            <v-btn color="success" slim flat rounded="0" type="submit" v-if="data.email" tabindex="2" data-testid="tutoring-login-continue-password">Weiter</v-btn>
                         </div>
                     </v-form>
                 </v-card-text>
@@ -129,24 +129,34 @@
             </v-card>
 
             <!-- Benutzer existiert: Kennwort eingeben -->
-            <v-card tile flat color="primary" min-width="300" v-if="data.status == 'USER_FOUND' || data.status == 'RETRY_PASSWORD'">
+            <v-card tile flat color="primary" min-width="300" v-if="data.status == 'USER_FOUND' || data.status == 'RETRY_PASSWORD'" data-testid="tutoring-login-step-password">
                 <v-card-title>Bitte Kennwort eingeben</v-card-title>
                 <v-card-subtitle>E-Mail: {{ data.email }}</v-card-subtitle>
                 <v-card-text>
                     <v-form ref="form" v-model="is_valid" @submit.prevent="loginWithPassword(data)" class="my-4">
-                        <v-alert class="mt-4" color="warning" v-if="data.status == 'RETRY_PASSWORD'">
+                        <v-alert class="mt-4" color="warning" v-if="data.status == 'RETRY_PASSWORD'" data-testid="tutoring-login-password-retry-alert">
                             <div>Das Kennwort war falsch.</div>
                             <div class="mt-2">Bitte probiere es erneut oder klicke auf 'Kennwort unbekannt'.</div>
                         </v-alert>
 
-                        <v-text-field autofocus type="password" v-model="data.password" label="Dein Kennwort" :rules="[required(), maxLength(255)]" tabindex="1" />
+                        <v-text-field
+                            autofocus
+                            type="password"
+                            v-model="data.password"
+                            label="Dein Kennwort"
+                            :rules="[required(), maxLength(255)]"
+                            tabindex="1"
+                            data-testid="tutoring-login-password"
+                            id="tutoring-login-password" />
                         <div class="d-flex flex-row align-center justify-space-between mt-4">
                             <v-btn color="warning" slim flat rounded="0" @click="data.status = ''">Zurück</v-btn>
-                            <v-btn color="success" slim flat rounded="0" type="submit" v-if="data.password" tabindex="2">Weiter</v-btn>
+                            <v-btn color="success" slim flat rounded="0" type="submit" v-if="data.password" tabindex="2" data-testid="tutoring-login-submit-password">Weiter</v-btn>
                         </div>
                         <div class="mt-4 d-flex flex-column align-center justify-center ga-2">
                             <div>oder</div>
-                            <v-btn color="primary" slim flat rounded="0" @click="unknownPassword(data)">Kennwort unbekannt</v-btn>
+                            <v-btn color="primary" slim flat rounded="0" data-testid="tutoring-login-unknown-password" @click="unknownPassword(data)">
+                                Kennwort unbekannt
+                            </v-btn>
                         </div>
                     </v-form>
                 </v-card-text>
@@ -188,7 +198,7 @@
             </v-card>
 
             <!-- Login war erfolgreich -->
-            <v-card tile flat color="primary" min-width="300" v-if="data.status == 'LOGGED_IN'">
+            <v-card tile flat color="primary" min-width="300" v-if="data.status == 'LOGGED_IN'" data-testid="tutoring-login-step-success">
                 <v-card-title>Login war erfolgreich!</v-card-title>
                 <v-card-subtitle>E-Mail: {{ data.email }}</v-card-subtitle>
                 <v-card-text>
@@ -198,7 +208,9 @@
 
                     <div class="d-flex flex-row align-center justify-space-between mt-4">
                         <v-btn color="primary" slim flat rounded="0" @click="$emit('logout')">Logout</v-btn>
-                        <v-btn color="primary" slim flat rounded="0" @click="$emit('login-success')">Weiter</v-btn>
+                        <v-btn color="primary" slim flat rounded="0" data-testid="tutoring-login-continue-after-success" @click="$emit('login-success')">
+                            Weiter
+                        </v-btn>
                     </div>
                 </v-card-text>
             </v-card>

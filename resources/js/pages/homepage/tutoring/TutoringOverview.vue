@@ -52,7 +52,7 @@
                 <!-- Main Menu -->
                 <div class="menu-grid" v-if="action == ''">
                     <!-- Authenticated User Cards -->
-                    <div class="menu-card card-user" @click="moveToTutoring" v-if="offer_config.auth.is_auth">
+                    <div class="menu-card card-user" data-testid="tutoring-overview-go-personal-area" @click="moveToTutoring" v-if="offer_config.auth.is_auth">
                         <div class="card-glow"></div>
                         <div class="card-content">
                             <div class="card-icon">
@@ -113,7 +113,7 @@
                     </div>
 
                     <!-- Login Card for non-authenticated -->
-                    <div class="menu-card card-login" @click="startLogin" v-if="!offer_config.auth.is_auth">
+                    <div class="menu-card card-login" data-testid="tutoring-overview-start-login" @click="startLogin" v-if="!offer_config.auth.is_auth">
                         <div class="card-glow"></div>
                         <div class="card-content">
                             <div class="card-icon">

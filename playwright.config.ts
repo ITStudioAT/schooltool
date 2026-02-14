@@ -27,6 +27,8 @@ export default defineConfig({
         env: {
             ...process.env,
             APP_ENV: 'e2e',
+            TUTORING_ACTIVE: 'true',
+            TEACHING_ACTIVE: 'true',
         },
     },
 })

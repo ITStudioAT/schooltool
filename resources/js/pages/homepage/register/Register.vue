@@ -98,7 +98,7 @@
             </div>
 
             <!-- Step: Email Input -->
-            <div class="content-card" v-if="active_register && data.step == 'EMAIL'">
+            <div class="content-card" v-if="active_register && data.step == 'EMAIL'" data-testid="register-step-email">
                 <div class="card-glow"></div>
                 <div class="card-inner">
                     <div class="step-header">
@@ -121,13 +121,23 @@
                                 prepend-inner-icon="mdi-email"
                                 :rules="[required(), mail()]"
                                 class="mb-6"
-                                tabindex="1" />
+                                tabindex="1"
+                                data-testid="register-email"
+                                id="register-email" />
                             <div class="form-actions">
                                 <v-btn type="button" color="grey" variant="tonal" size="large" rounded="lg" to="/">
                                     <v-icon start>mdi-arrow-left</v-icon>
                                     Zurück
                                 </v-btn>
-                                <v-btn color="success" variant="flat" size="large" rounded="lg" type="submit" :disabled="!data.email" tabindex="2">
+                                <v-btn
+                                    color="success"
+                                    variant="flat"
+                                    size="large"
+                                    rounded="lg"
+                                    type="submit"
+                                    :disabled="!data.email"
+                                    tabindex="2"
+                                    data-testid="register-email-continue">
                                     Weiter
                                     <v-icon end>mdi-arrow-right</v-icon>
                                 </v-btn>
@@ -138,7 +148,7 @@
             </div>
 
             <!-- Step: Email Token Verification (New User) -->
-            <div class="content-card" v-if="active_register && data.step == 'EMAIL_TOKEN'">
+            <div class="content-card" v-if="active_register && data.step == 'EMAIL_TOKEN'" data-testid="register-step-email-token">
                 <div class="card-glow"></div>
                 <div class="card-inner">
                     <div class="step-header">
@@ -228,7 +238,7 @@
             </div>
 
             <!-- Step: Login Token -->
-            <div class="content-card" v-if="active_register && data.step == 'LOGIN_TOKEN'">
+            <div class="content-card" v-if="active_register && data.step == 'LOGIN_TOKEN'" data-testid="register-step-login-token">
                 <div class="card-glow"></div>
                 <div class="card-inner">
                     <div class="step-header">

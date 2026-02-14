@@ -6,11 +6,15 @@ use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
+use App\Models\Register;
+use App\Models\RegisterDate;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseDate;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
 use App\Models\TeachingHoliday;
+use App\Models\TutoringOffer;
+use App\Models\TutoringSubject;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
@@ -42,9 +46,27 @@ class E2eSeeder extends Seeder
                 'is_selectable' => true,
             ],
         );
+        $registerLicence = Licence::query()->firstOrCreate(
+            ['name' => 'Anmeldetool'],
+            [
+                'long_name' => 'Anmeldetool',
+                'price_per_year' => 0,
+                'is_selectable' => true,
+            ],
+        );
+        $tutoringLicence = Licence::query()->firstOrCreate(
+            ['name' => 'Nachhilfetool'],
+            [
+                'long_name' => 'Nachhilfetool',
+                'price_per_year' => 0,
+                'is_selectable' => true,
+            ],
+        );
 
         $school->licences()->syncWithoutDetaching([
             $licence->id => ['valid_until' => now()->addYear()->toDateString()],
+            $registerLicence->id => ['valid_until' => now()->addYear()->toDateString()],
+            $tutoringLicence->id => ['valid_until' => now()->addYear()->toDateString()],
         ]);
 
         SchoolTool::query()->updateOrCreate(
@@ -67,6 +89,14 @@ class E2eSeeder extends Seeder
         ]);
         $adminRole = Role::query()->firstOrCreate([
             'name' => 'admin',
+            'guard_name' => 'web',
+        ]);
+        $registerUserRole = Role::query()->firstOrCreate([
+            'name' => 'register_user',
+            'guard_name' => 'web',
+        ]);
+        $tutoringUserRole = Role::query()->firstOrCreate([
+            'name' => 'tutoring_user',
             'guard_name' => 'web',
         ]);
 
@@ -139,6 +169,108 @@ class E2eSeeder extends Seeder
         $admin->is_active = true;
         $admin->save();
         $admin->assignRole($adminRole);
+
+        $registerUser = User::query()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'email' => 'e2e.register@example.test',
+            'password' => Hash::make('password123'),
+            'first_name' => 'E2E',
+            'last_name' => 'Register',
+            'phone' => '06641234567',
+        ]);
+        $registerUser->email_verified_at = now();
+        $registerUser->confirmed_at = now();
+        $registerUser->is_active = true;
+        $registerUser->save();
+        $registerUser->assignRole($registerUserRole);
+
+        $register = Register::query()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'name' => 'E2E Elternsprechtag',
+            'description_on_website' => 'E2E Registrierung für Browser-Tests',
+            'max_registrations' => 0,
+            'show_phone' => true,
+            'must_phone' => false,
+            'show_student_last_name' => true,
+            'must_student_last_name' => true,
+            'show_student_first_name' => true,
+            'must_student_first_name' => true,
+            'show_student_birthdate' => true,
+            'must_student_birthdate' => false,
+            'show_note' => true,
+            'must_note' => false,
+            'show_booked' => true,
+            'show_end_time' => true,
+            'show_supervisor' => false,
+            'is_active' => true,
+        ]);
+
+        RegisterDate::query()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'register_id' => $register->id,
+            'supervisor' => 'E2E Lehrer',
+            'date' => '2026-05-10',
+            'from' => '14:00',
+            'to' => '14:10',
+            'max_registrations' => 3,
+            'is_locked' => false,
+        ]);
+
+        $registerUser->register_id = $register->id;
+        $registerUser->save();
+
+        $tutoringUser = User::query()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'email' => 'e2e.tutoring@example.test',
+            'password' => Hash::make('password123'),
+            'first_name' => 'E2E',
+            'last_name' => 'Tutoring',
+            'schoolclass' => '2A',
+            'sex' => 'm',
+            'tutoring_filter' => [
+                'schools' => [],
+                'only_boys' => false,
+                'only_girls' => false,
+                'only_in_my_school' => true,
+            ],
+        ]);
+        $tutoringUser->email_verified_at = now();
+        $tutoringUser->confirmed_at = now();
+        $tutoringUser->is_active = true;
+        $tutoringUser->save();
+        $tutoringUser->assignRole($tutoringUserRole);
+
+        $subject = TutoringSubject::query()->create([
+            'school_id' => $school->id,
+            'short_name' => 'M',
+            'long_name' => 'Mathematik',
+            'must_be_accepted' => false,
+            'email_mentors' => ['mentor@example.test'],
+        ]);
+
+        TutoringOffer::query()->create([
+            'school_id' => $school->id,
+            'user_id' => $tutoringUser->id,
+            'subject_id' => $subject->id,
+            'title' => 'E2E Mathe Nachhilfe',
+            'description' => 'E2E Angebot für Browser-Tests',
+            'classes' => [2, 3],
+            'time_table' => ['mo_15'],
+            'active_until' => now()->addMonths(2)->toDateString(),
+            'is_active' => true,
+            'price_per_hour' => 15,
+            'is_group' => false,
+            'max_group_members' => 2,
+            'must_be_accepted' => false,
+            'email_mentor' => null,
+            'accepted_at' => now()->toDateString(),
+            'click_count' => 0,
+            'visible_for_other_schools' => false,
+        ]);
 
         $course = TeachingCourse::query()->create([
             'school_id' => $school->id,
