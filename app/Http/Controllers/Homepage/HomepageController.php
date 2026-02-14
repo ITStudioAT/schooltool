@@ -123,7 +123,8 @@ class HomepageController extends Controller
             'licence' => $isLicenceValid ? new LicenceResource($licence) : null,
             'selectableSchools' => SchoolResource::collection($schools),
             'schoolLicences' => $school ? LicenceResource::collection($schoolLicences) : [],
-            'tutoring_active' => config('schooltool.tutoring_active', false)
+            'tutoring_active' => config('schooltool.tutoring_active', false),
+            'teaching_active' => config('schooltool.teaching_active', false),
         ];
 
         return response()->json($data, 200);

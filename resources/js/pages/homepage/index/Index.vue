@@ -69,17 +69,21 @@
                         </div>
 
                         <!-- Unterricht Card -->
-                        <div class="tool-card card-lernportal" @click="openUnterricht">
+                        <div class="tool-card card-lernportal" :class="{ 'card-disabled': !config?.teaching_active }" @click="config?.teaching_active && openUnterricht()">
                             <div class="card-glow"></div>
                             <div class="card-content">
                                 <div class="card-icon">
                                     <v-icon size="40">mdi-rocket-launch-outline</v-icon>
                                 </div>
                                 <h3 class="card-title">Unterricht</h3>
-                                <p class="card-description">Dein neuer Lernbereich mit modernem Look. Einstieg in den Login-Bereich für Schüler.</p>
-                                <div class="card-action">
+                                <p class="card-description">Einstieg in den Login-Bereich für Schüler.</p>
+                                <div class="card-action" v-if="config?.teaching_active">
                                     <span class="action-text">Starten</span>
                                     <v-icon size="20">mdi-arrow-right</v-icon>
+                                </div>
+                                <div class="card-badge" v-else>
+                                    <v-icon size="16">mdi-wrench</v-icon>
+                                    <span>In Entwicklung</span>
                                 </div>
                             </div>
                         </div>
@@ -242,6 +246,7 @@ export default {
             alert('1')
         },
         openUnterricht() {
+            if (!this.config?.teaching_active) return
             this.$router.push('/homepage/student')
         },
         moveTo(licence, school) {

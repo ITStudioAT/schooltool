@@ -142,6 +142,8 @@ describe('config', function () {
                 'licence',
                 'selectableSchools',
                 'schoolLicences',
+                'tutoring_active',
+                'teaching_active',
             ]);
     });
 
@@ -193,6 +195,19 @@ describe('config', function () {
             ->assertJson([
                 'version' => '1.0.0',
                 'copyright' => '2025 Test',
+            ]);
+    });
+
+    test('config includes teaching_active and tutoring_active flags from config', function () {
+        config(['schooltool.teaching_active' => true]);
+        config(['schooltool.tutoring_active' => false]);
+
+        $response = $this->getJson('/api/homepage/config');
+
+        $response->assertStatus(200)
+            ->assertJson([
+                'teaching_active' => true,
+                'tutoring_active' => false,
             ]);
     });
 });

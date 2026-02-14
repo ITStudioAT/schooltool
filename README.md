@@ -15,6 +15,10 @@ php artisan ide-helper:models -W
 
 # Last Changes
 
+## 3.11.0
+
+- Teacher/Student-Modul implementated
+
 ## 3.10.2
 
 - Tutoring: Manual 1/x
