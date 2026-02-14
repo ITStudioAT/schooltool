@@ -132,6 +132,7 @@ class TeachingController extends Controller
             'teaching_schemas.*.grading.semester_count' => 'nullable|integer|min:1|max:2',
             'teaching_schemas.*.grading.semester_1_weight' => 'nullable|integer|min:0|max:100',
             'teaching_schemas.*.grading.semester_2_weight' => 'nullable|integer|min:0|max:100',
+            'teaching_schemas.*.grading.use_semester_grade_only' => 'nullable|boolean',
             'teaching_schemas.*.grading.categories' => 'nullable|array',
             'teaching_schemas.*.grading.categories.*.name' => 'required|string|max:100',
             'teaching_schemas.*.grading.categories.*.weight' => 'required|integer|min:0|max:100',
