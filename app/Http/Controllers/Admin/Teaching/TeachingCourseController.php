@@ -23,16 +23,12 @@ class TeachingCourseController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $query = TeachingCourse::with(['teachingCourseDates' => fn ($q) => $q->orderBy('date')->orderByRaw('JSON_EXTRACT(hours, "$[0]")')])
+        $courses = TeachingCourse::with(['teachingCourseDates' => fn ($q) => $q->orderBy('date')->orderByRaw('JSON_EXTRACT(hours, "$[0]")')])
             ->where('school_id', $auth_user->school_id)
-            ->where('schoolyear_id', $auth_user->schoolyear_id);
-
-        // Teachers only see their own courses; admins see all courses
-        if (!$auth_user->hasAnyRole(['admin', 'teaching_admin'])) {
-            $query->where('user_id', $auth_user->id);
-        }
-
-        $courses = $query->orderBy('title')->get();
+            ->where('schoolyear_id', $auth_user->schoolyear_id)
+            ->where('user_id', $auth_user->id)
+            ->orderBy('title')
+            ->get();
 
         $studentIds = $courses
             ->flatMap(function ($course) use ($service) {
