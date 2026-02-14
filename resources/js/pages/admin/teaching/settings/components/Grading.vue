@@ -424,7 +424,7 @@ export default {
                 semester_count: grading.semester_count || 2,
                 semester_1_weight: grading.semester_1_weight ?? 50,
                 semester_2_weight: grading.semester_2_weight ?? 50,
-                use_semester_grade_only: grading.use_semester_grade_only ?? false,
+                use_semester_grade_only: Boolean(grading.use_semester_grade_only),
                 categories: (grading.categories || []).map((c) => ({
                     ...c,
                     works: this.normalizeWorks(c.works).filter((w) => validShortNames.includes(w.short_name)),
@@ -540,7 +540,7 @@ export default {
                 semester_count: this.data.semester_count,
                 semester_1_weight: this.data.semester_count === 1 ? 100 : this.data.semester_1_weight,
                 semester_2_weight: this.data.semester_count === 1 ? 0 : this.data.semester_2_weight,
-                use_semester_grade_only: this.data.semester_count === 2 ? this.data.use_semester_grade_only : false,
+                use_semester_grade_only: this.data.semester_count === 2 ? Boolean(this.data.use_semester_grade_only) : false,
                 categories: cleanedCategories,
             }
 
