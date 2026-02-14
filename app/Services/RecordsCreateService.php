@@ -91,9 +91,10 @@ class RecordsCreateService
             Schoolyear::firstOrCreate(
                 [
                     'school_id' => $school->id,
-                    'name' => $schoolyear['name'],
+                    'concerns' => $schoolyear['concerns'],
                 ],
                 [
+                    'name' => $schoolyear['name'],
                     'from' => $schoolyear['from'],
                     'until' => $schoolyear['to'],
                     'sem_2_start' => $schoolyear['sem_2_start'],
@@ -111,6 +112,7 @@ class RecordsCreateService
                 'from' => '2025-09-08',
                 'until' => '2026-07-10',
                 'sem_2_start' => '2026-02-16',
+                'concerns' => '2025/26',
             ]
         );
     }

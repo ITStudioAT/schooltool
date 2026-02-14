@@ -23,6 +23,7 @@
                                         <div>
                                             <div class="text-body-1">
                                                 {{ item.name }}
+                                                <span v-if="item.concerns" class="text-caption text-grey-darken-1 ml-2">({{ item.concerns }})</span>
                                             </div>
                                             <div class="text-caption" v-if="item.from || item.until">
                                                 {{ formatRange(item) }}
@@ -69,6 +70,9 @@
                 <v-row dense>
                     <v-col cols="12">
                         <v-text-field autofocus v-model="data.name" label="Bezeichnung" :rules="[required(), maxLength(255)]" />
+                    </v-col>
+                    <v-col cols="12">
+                        <v-text-field v-model="data.concerns" label="Schuljahr (z.B. 2025/26)" :rules="[maxLength(255)]" />
                     </v-col>
                     <v-col cols="12">
                         <v-text-field v-model="data.from" label="Beginn des Schuljahres (jjjj-mm-tt)" :rules="[dateOrNull()]" />

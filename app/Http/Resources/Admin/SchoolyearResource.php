@@ -17,6 +17,7 @@ class SchoolyearResource extends JsonResource
         return [
             'id' => $this->id,
             'name' => $this->name,
+            'concerns' => $this->concerns,
             'from' => $this->from,
             'until' => $this->until,
             'sem_2_start' => $this->sem_2_start,

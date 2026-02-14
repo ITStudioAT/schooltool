@@ -46,6 +46,7 @@ class Schoolyear extends Model
         'until',
         'sem_2_start',
         'is_active',
+        'concerns',
     ];
 
 
