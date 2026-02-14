@@ -5,7 +5,10 @@
     "scripts": {
         "build": "vite build",
         "dev": "vite",
-        "ide-helper": "php artisan ide-helper:generate && php artisan ide-helper:meta"
+        "ide-helper": "php artisan ide-helper:generate && php artisan ide-helper:meta",
+        "test:ui": "vitest run",
+        "test:ui:watch": "vitest",
+        "test:e2e": "playwright test"
     },
     "devDependencies": {
         "@laravel/echo-vue": "^2.2.6",
