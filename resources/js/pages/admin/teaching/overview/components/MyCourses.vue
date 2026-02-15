@@ -253,9 +253,10 @@ export default {
         addAllStudents() {
             if (!this.data) return
             this.courseStore.ensureCourseStudentCollections(this.data)
-            if (!Array.isArray(this.import116_students_local) || !this.import116_students_local.length) return
+            const toAdd = this.filteredImport116Students
+            if (!toAdd.length) return
 
-            this.import116_students_local.slice().forEach((student) => {
+            toAdd.slice().forEach((student) => {
                 this.addStudent(student)
             })
         },
@@ -277,7 +278,14 @@ export default {
 
             const email = (student.email || '').toString().trim().toLowerCase()
 
-            if (!this.data.students.includes(student.id)) {
+            // Check for duplicates by ID and by email
+            const isDuplicateById = this.data.students.some(id => String(id) === String(student.id))
+            const isDuplicateByEmail = email && this.data.students_info.some(s => {
+                const existingEmail = (s.email || '').toString().trim().toLowerCase()
+                return existingEmail && existingEmail === email
+            })
+
+            if (!isDuplicateById && !isDuplicateByEmail) {
                 this.data.students.push(student.id)
                 this.data.students_info.push(student)
             }
@@ -307,7 +315,13 @@ export default {
         isStudentSelected(student) {
             if (!this.data) return false
             this.courseStore.ensureCourseStudentCollections(this.data)
-            return this.data.students.includes(student.id)
+            if (this.data.students.includes(student.id)) return true
+            const email = (student.email || '').toString().trim().toLowerCase()
+            if (!email) return false
+            return this.data.students_info.some(s => {
+                const existingEmail = (s.email || '').toString().trim().toLowerCase()
+                return existingEmail && existingEmail === email
+            })
         },
 
         removeStudent(student) {
