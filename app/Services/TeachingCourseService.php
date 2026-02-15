@@ -498,18 +498,21 @@ class TeachingCourseService
                 }
             }
 
-            if (isset($data['id']) && is_numeric($data['id'])) {
-                $reference = $this->resolveStudentReferenceFromNumeric((int) $data['id'], $schoolId);
-                if ($reference) {
-                    Log::debug('Resolved via id', ['id' => $data['id'], 'user_id' => $reference['user_id'], 'import116_id' => $reference['import116_id']]);
-                    return $reference;
-                }
-            }
-
+            // Prefer email over ambiguous id - email unambiguously identifies the person
             $email = isset($data['email']) ? trim((string) $data['email']) : '';
             if ($email !== '') {
                 $reference = $this->resolveStudentReferenceByEmail($email, $schoolId, $data);
                 if ($reference) {
+                    Log::debug('Resolved via email', ['email' => $email, 'user_id' => $reference['user_id'], 'import116_id' => $reference['import116_id']]);
+                    return $reference;
+                }
+            }
+
+            // Fallback: resolve by ambiguous id (could be user_id or import116_id)
+            if (isset($data['id']) && is_numeric($data['id'])) {
+                $reference = $this->resolveStudentReferenceFromNumeric((int) $data['id'], $schoolId);
+                if ($reference) {
+                    Log::debug('Resolved via id', ['id' => $data['id'], 'user_id' => $reference['user_id'], 'import116_id' => $reference['import116_id']]);
                     return $reference;
                 }
             }
