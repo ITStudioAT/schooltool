@@ -382,6 +382,14 @@ class TeachingCourseService
             return null;
         }
 
+        $existingUser = User::where('school_id', $schoolId)
+            ->where('email', $data['email'])
+            ->first();
+
+        if ($existingUser) {
+            return $existingUser->id;
+        }
+
         $user = User::create([
             'school_id' => $schoolId,
             'schoolyear_id' => $data['schoolyear_id'] ?? null,
@@ -458,6 +466,14 @@ class TeachingCourseService
 
         $fallbackImportId = $this->findImportIdInSchool($id, $schoolId);
         if ($fallbackImportId) {
+            $import = Import116::find($fallbackImportId);
+            if ($import && $import->email) {
+                $fallbackUserId = $this->findOrCreateUserIdFromImport($import, $schoolId);
+                if ($fallbackUserId) {
+                    return ['user_id' => $fallbackUserId, 'import116_id' => null];
+                }
+            }
+
             return ['user_id' => null, 'import116_id' => $fallbackImportId];
         }
 
@@ -483,6 +499,11 @@ class TeachingCourseService
         $import = $importQuery->first();
         if (! $import) {
             return null;
+        }
+
+        $fallbackUserId = $this->findOrCreateUserIdFromImport($import, $schoolId);
+        if ($fallbackUserId) {
+            return ['user_id' => $fallbackUserId, 'import116_id' => null];
         }
 
         return ['user_id' => null, 'import116_id' => (int) $import->id];

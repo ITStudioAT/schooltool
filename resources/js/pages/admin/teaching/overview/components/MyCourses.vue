@@ -34,7 +34,17 @@
                 <div>{{ data.id ? 'Fach ändern' : 'Neues Fach' }}</div>
                 <v-spacer />
                 <v-btn icon="mdi-close" size="x-small" color="warning" variant="flat" @click="abortNewCourse" />
-                <v-btn icon="mdi-content-save" size="x-small" color="success" variant="flat" @click="$refs.form.validate().then(v => { if (v.valid) save(data) })" v-if="data.title && data?.classes?.length > 0" />
+                <v-btn
+                    icon="mdi-content-save"
+                    size="x-small"
+                    color="success"
+                    variant="flat"
+                    @click="
+                        $refs.form.validate().then((v) => {
+                            if (v.valid) save(data)
+                        })
+                    "
+                    v-if="data.title && data?.classes?.length > 0" />
             </div>
         </template>
         <!-- NEUER/EDIT KURS-->
@@ -43,14 +53,7 @@
                 <v-form ref="form" v-model="is_valid" @submit.prevent="save(data)" class="mb-4">
                     <div class="text-caption text-text">Bitte geben Sie die Felder ein (* = Pflichtfeld)</div>
                     <v-text-field autofocus v-model="data.title" label="Bezeichnung *" :rules="[required(), maxLength(255)]" />
-                    <v-select
-                        v-model="data.teaching_schema_id"
-                        :items="schemaItems"
-                        label="Benotungsschema"
-                        clearable
-                        density="compact"
-                        hide-details
-                        class="mt-2" />
+                    <v-select v-model="data.teaching_schema_id" :items="schemaItems" label="Benotungsschema" clearable density="compact" hide-details class="mt-2" />
 
                     <div class="text-caption text-text mt-4">Klassen auswählen</div>
                     <v-chip-group v-model="data.classes" multiple column>
@@ -184,9 +187,7 @@ export default {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'selected_course_id', 'selected_course_student']),
         schemaItems() {
-            return (this.teachingStore?.schemas || [])
-                .map((s) => ({ title: s.name, value: s.id }))
-                .sort((a, b) => a.title.localeCompare(b.title))
+            return (this.teachingStore?.schemas || []).map((s) => ({ title: s.name, value: s.id })).sort((a, b) => a.title.localeCompare(b.title))
         },
         filteredImport116Students() {
             const list = this.import116_students_local || []
@@ -239,7 +240,7 @@ export default {
 
     methods: {
         async selectStudents(classes) {
-                if (!Array.isArray(classes) || !classes.length) {
+            if (!Array.isArray(classes) || !classes.length) {
                 this.import116_students_local = []
                 return
             }
