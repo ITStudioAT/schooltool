@@ -3,14 +3,30 @@
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
                 <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between">
-                    <div>
-                        <div class="text-body-1 font-weight-medium">{{ selected_course_student.last_name }}, {{ selected_course_student.first_name }}</div>
-                        <div class="text-caption text-medium-emphasis">
-                            {{ selected_course_student.schoolclass || selected_course_student.class || '–' }}
+                    <div class="d-flex align-center ga-2">
+                        <v-btn
+                            icon="mdi-chevron-left"
+                            size="small"
+                            variant="tonal"
+                            color="primary"
+                            :disabled="!hasPreviousStudent"
+                            @click="goToPreviousStudent" />
+                        <div>
+                            <div class="text-body-1 font-weight-medium">{{ selected_course_student.last_name }}, {{ selected_course_student.first_name }}</div>
+                            <div class="text-caption text-medium-emphasis">
+                                {{ selected_course_student.schoolclass || selected_course_student.class || '–' }}
+                            </div>
+                            <div class="text-caption text-medium-emphasis" v-if="selected_course_student.email">
+                                {{ selected_course_student.email }}
+                            </div>
                         </div>
-                        <div class="text-caption text-medium-emphasis" v-if="selected_course_student.email">
-                            {{ selected_course_student.email }}
-                        </div>
+                        <v-btn
+                            icon="mdi-chevron-right"
+                            size="small"
+                            variant="tonal"
+                            color="primary"
+                            :disabled="!hasNextStudent"
+                            @click="goToNextStudent" />
                     </div>
                     <v-btn color="warning" flat tile @click="closeStudent">Zurück</v-btn>
                 </v-card>
@@ -1044,6 +1060,19 @@ export default {
             })
             return result
         },
+        courseStudentsList() {
+            return this.selected_course?.students_info || []
+        },
+        currentStudentIndex() {
+            if (!this.selected_course_student) return -1
+            return this.courseStudentsList.findIndex(s => s.id === this.selected_course_student.id)
+        },
+        hasPreviousStudent() {
+            return this.currentStudentIndex > 0
+        },
+        hasNextStudent() {
+            return this.currentStudentIndex >= 0 && this.currentStudentIndex < this.courseStudentsList.length - 1
+        },
     },
 
     watch: {
@@ -1167,6 +1196,20 @@ export default {
             this.delete_star_id = null
             this.delete_behaviour_id = null
             this.delete_notification_id = null
+        },
+        goToPreviousStudent() {
+            if (!this.hasPreviousStudent) return
+            const prevStudent = this.courseStudentsList[this.currentStudentIndex - 1]
+            if (prevStudent) {
+                this.selected_course_student = prevStudent
+            }
+        },
+        goToNextStudent() {
+            if (!this.hasNextStudent) return
+            const nextStudent = this.courseStudentsList[this.currentStudentIndex + 1]
+            if (nextStudent) {
+                this.selected_course_student = nextStudent
+            }
         },
         editGrades() {
             this.grade_form = {
