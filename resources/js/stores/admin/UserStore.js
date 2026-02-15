@@ -48,7 +48,7 @@ export const useUserStore = defineStore('AdminUserStore', {
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
-                const response = await axios.post('/api/admin/users/update_with_code/', data)
+                const response = await axios.post('/api/admin/users/update_with_code', data)
                 this.item = response.data
                 notification.notify({
                     message: 'Die Profil mit geänderter E-Mail wurde erfolreich gespeichert.',
@@ -75,7 +75,7 @@ export const useUserStore = defineStore('AdminUserStore', {
             adminStore.is_loading++
             this.api_answer = null
             try {
-                const response = await axios.post('/api/admin/users/save_password/', data)
+                const response = await axios.post('/api/admin/users/save_password', data)
                 if (response.data.step) {
                     return response.data.step
                 }
@@ -99,7 +99,7 @@ export const useUserStore = defineStore('AdminUserStore', {
             adminStore.is_loading++
             this.api_answer = null
             try {
-                const response = await axios.post('/api/admin/users/save_password_with_code/', data)
+                const response = await axios.post('/api/admin/users/save_password_with_code', data)
                 notification.notify({
                     message: 'Das Kennwort wurde erfolreich gespeichert.',
                     type: 'success',
@@ -125,7 +125,7 @@ export const useUserStore = defineStore('AdminUserStore', {
             adminStore.is_loading++
             this.api_answer = null
             try {
-                const response = await axios.post('/api/admin/users/save_2fa/', data)
+                const response = await axios.post('/api/admin/users/save_2fa', data)
                 await this.show(data.id)
                 if (response.data.result) {
                     return response.data.result
@@ -150,7 +150,7 @@ export const useUserStore = defineStore('AdminUserStore', {
             adminStore.is_loading++
             this.api_answer = null
             try {
-                const response = await axios.post('/api/admin/users/save_2fa_with_code/', data)
+                const response = await axios.post('/api/admin/users/save_2fa_with_code', data)
                 await this.show(data.id)
                 if (response.data.result) {
                     return response.data.result
