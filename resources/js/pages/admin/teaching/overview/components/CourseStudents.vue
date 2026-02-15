@@ -893,7 +893,14 @@ export default {
 
             const email = (student.email || '').toString().trim().toLowerCase()
 
-            if (!this.selected_course.students.includes(student.id)) {
+            // Check for duplicates by ID (with type conversion) and by email
+            const isDuplicateById = this.selected_course.students.some(id => String(id) === String(student.id))
+            const isDuplicateByEmail = email && this.selected_course.students_info.some(s => {
+                const existingEmail = (s.email || '').toString().trim().toLowerCase()
+                return existingEmail && existingEmail === email
+            })
+
+            if (!isDuplicateById && !isDuplicateByEmail) {
                 this.selected_course.students.push(student.id)
                 this.selected_course.students_info.push(student)
             }
