@@ -38,7 +38,7 @@ export default {
         ...mapWritableState(useAdminStore, ['config']),
         canManageSchoolHolidays() {
             const roles = this.config?.roles || []
-            return roles.includes('admin') || roles.includes('super_admin')
+            return roles.includes('admin') || roles.includes('super_admin') || roles.includes('teaching_admin')
         },
     },
 }

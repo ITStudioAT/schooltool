@@ -27,6 +27,7 @@ beforeEach(function () {
     Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'tutoring_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'teaching_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
 
     // Set environment variables for super admin creation
@@ -432,10 +433,13 @@ describe('schoolInfos', function () {
         $tutoringAdmin = User::factory()->create(['school_id' => $school->id]);
         $tutoringAdmin->assignRole('tutoring_admin');
 
+        $teachingAdmin = User::factory()->create(['school_id' => $school->id]);
+        $teachingAdmin->assignRole('teaching_admin');
+
         $result = $this->service->schoolInfos($school->id);
         $adminsData = $result['admins']->resolve();
 
-        expect($adminsData)->toHaveCount(3);
+        expect($adminsData)->toHaveCount(4);
     });
 });
 
