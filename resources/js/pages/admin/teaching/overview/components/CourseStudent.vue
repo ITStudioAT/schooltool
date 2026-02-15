@@ -972,10 +972,20 @@ export default {
             const totalWeight = w1 + w2
             if (totalWeight <= 0) return null
 
-            const sem1Entries = this.entriesForSemester(this.entries || [], 1)
-            const sem2Entries = this.entriesForSemester(this.entries || [], 2)
-            const sem1Value = this.totalFromCategoryGroups(this.buildCategoryGroups(sem1Entries))
-            const sem2Value = this.totalFromCategoryGroups(this.buildCategoryGroups(sem2Entries))
+            let sem1Value, sem2Value
+
+            // Check if we should use only the semester grades or recalculate from all values
+            if (grading.use_semester_grade_only) {
+                // Use the stored semester grades
+                sem1Value = this.selected_course_student?.sem_1_grade ? parseFloat(this.selected_course_student.sem_1_grade) : null
+                sem2Value = this.selected_course_student?.sem_2_grade ? parseFloat(this.selected_course_student.sem_2_grade) : null
+            } else {
+                // Recalculate from all categories and works
+                const sem1Entries = this.entriesForSemester(this.entries || [], 1)
+                const sem2Entries = this.entriesForSemester(this.entries || [], 2)
+                sem1Value = this.totalFromCategoryGroups(this.buildCategoryGroups(sem1Entries))
+                sem2Value = this.totalFromCategoryGroups(this.buildCategoryGroups(sem2Entries))
+            }
 
             if (sem1Value == null || sem2Value == null) return null
 
