@@ -7,7 +7,6 @@ use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudent;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Log;
 
 class TeachingCourseService
 {
@@ -161,18 +160,7 @@ class TeachingCourseService
             return;
         }
 
-        Log::info('syncCourseStudents - RAW PAYLOAD', [
-            'course_id' => $course->id,
-            'school_id' => $schoolId,
-            'students_payload' => $studentsPayload,
-        ]);
-
         $activeEntries = $this->resolveCourseStudentEntries($studentsPayload, $schoolId);
-
-        Log::info('syncCourseStudents - RESOLVED ENTRIES', [
-            'active_entries' => $activeEntries,
-        ]);
-
         $deletedEntries = $this->resolveCourseStudentEntries($studentsDeletedPayload, $schoolId);
 
         $activeByKey = [];
@@ -230,12 +218,7 @@ class TeachingCourseService
         }
 
         foreach ($activeByKey as $entry) {
-            $payload = $this->buildCourseStudentPayload($entry);
-            Log::info('syncCourseStudents - CREATING RECORD', [
-                'entry' => $entry,
-                'payload' => $payload,
-            ]);
-            $course->teachingCourseStudents()->create($payload);
+            $course->teachingCourseStudents()->create($this->buildCourseStudentPayload($entry));
         }
 
         foreach ($deletedByKey as $entry) {
@@ -444,17 +427,9 @@ class TeachingCourseService
         if (is_array($item) || is_object($item)) {
             $data = (array) $item;
 
-            Log::info('resolveStudentReferenceFromItem - INPUT', [
-                'item' => $data,
-                'school_id' => $schoolId,
-            ]);
-
             if (isset($data['user_id']) && is_numeric($data['user_id'])) {
                 $userId = $this->resolveStudentIdFromNumeric((int) $data['user_id'], $schoolId);
                 if ($userId) {
-                    Log::info('resolveStudentReferenceFromItem - RESOLVED via user_id', [
-                        'user_id' => $userId,
-                    ]);
                     return ['user_id' => $userId, 'import116_id' => null];
                 }
             }
@@ -466,17 +441,10 @@ class TeachingCourseService
                     if ($import && $import->email) {
                         $userId = $this->findOrCreateUserIdFromImport($import, $schoolId);
                         if ($userId) {
-                            Log::info('resolveStudentReferenceFromItem - RESOLVED via import116_id to user', [
-                                'import116_id' => $importId,
-                                'user_id' => $userId,
-                            ]);
                             return ['user_id' => $userId, 'import116_id' => null];
                         }
                     }
 
-                    Log::warning('resolveStudentReferenceFromItem - STORING import116_id (no email or failed)', [
-                        'import116_id' => $importId,
-                    ]);
                     return ['user_id' => null, 'import116_id' => $importId];
                 }
             }
@@ -484,10 +452,6 @@ class TeachingCourseService
             if (isset($data['id']) && is_numeric($data['id'])) {
                 $reference = $this->resolveStudentReferenceFromNumeric((int) $data['id'], $schoolId);
                 if ($reference) {
-                    Log::info('resolveStudentReferenceFromItem - RESOLVED via id', [
-                        'id' => $data['id'],
-                        'reference' => $reference,
-                    ]);
                     return $reference;
                 }
             }
