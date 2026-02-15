@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\TeachingCourseService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 
 class TeachingCourseController extends Controller
@@ -184,7 +185,7 @@ class TeachingCourseController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        \Log::info('=== CONTROLLER UPDATE START ===', [
+        Log::info('=== CONTROLLER UPDATE START ===', [
             'course_id' => $course->id,
             'course_title' => $course->title,
             'request_students_count' => is_array($request->input('students')) ? count($request->input('students')) : 0,
@@ -232,7 +233,7 @@ class TeachingCourseController extends Controller
             }
         }
 
-        \Log::info('Controller determined payloads', [
+        Log::info('Controller determined payloads', [
             'students_payload_count' => count($studentsPayload),
             'students_deleted_payload_count' => count($studentsDeletedPayload),
             'students_payload_sample' => array_slice($studentsPayload, 0, 2),
