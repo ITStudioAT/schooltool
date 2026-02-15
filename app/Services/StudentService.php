@@ -29,6 +29,7 @@ class StudentService
 
         $student = Import116::where('email', $email)
             ->where('school_id', $school_id)
+            ->where('schoolyear_id', $schoolyear_id)
             ->first();
 
         return $student;
@@ -106,10 +107,15 @@ class StudentService
      */
     public function syncUserDataFromImport116(User $user): User
     {
-        // Find Import116 record by email and school_id
-        $import116 = Import116::where('email', $user->email)
-            ->where('school_id', $user->school_id)
-            ->first();
+        // Find Import116 record by email, school_id and schoolyear_id
+        $import116Query = Import116::where('email', $user->email)
+            ->where('school_id', $user->school_id);
+
+        if ($user->schoolyear_id) {
+            $import116Query->where('schoolyear_id', $user->schoolyear_id);
+        }
+
+        $import116 = $import116Query->first();
 
         // If no Import116 record found, return user unchanged
         if (!$import116) {

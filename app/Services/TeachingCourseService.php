@@ -210,17 +210,19 @@ class TeachingCourseService
 
     public function resolveStudentIdFromNumeric(int $id, int $schoolId): ?int
     {
+        // First check if this is an Import116 ID
+        $import = Import116::find($id);
+        if ($import && (int) $import->school_id === $schoolId) {
+            return $this->findOrCreateUserIdFromImport($import, $schoolId);
+        }
+
+        // Fall back to checking if it's a User ID (for already-resolved students)
         $user = User::find($id);
         if ($user && (int) $user->school_id === $schoolId) {
             return $user->id;
         }
 
-        $import = Import116::find($id);
-        if (! $import || (int) $import->school_id !== $schoolId) {
-            return null;
-        }
-
-        return $this->findOrCreateUserIdFromImport($import, $schoolId);
+        return null;
     }
 
     public function findOrCreateUserIdByEmail(string $email, int $schoolId, array $data = []): ?int

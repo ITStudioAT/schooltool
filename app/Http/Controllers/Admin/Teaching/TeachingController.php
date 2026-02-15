@@ -28,6 +28,7 @@ class TeachingController extends Controller
         $searchString = $validated['search_string'] ?? null;
 
         $import116 = Import116::where('school_id', $auth_user->school_id)
+            ->where('schoolyear_id', $auth_user->schoolyear_id)
             ->when($searchString, function ($query) use ($searchString) {
                 $like = '%' . $searchString . '%';
                 $query->where(function ($query) use ($like) {
