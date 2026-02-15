@@ -16,6 +16,8 @@ class CourseResource extends JsonResource
     {
         $data = parent::toArray($request);
         unset($data['teaching_course_dates']);
+        unset($data['teaching_course_students']);
+        unset($data['teaching_course_students_with_trashed']);
 
         return array_merge($data, [
             'students' => $this->students ?? [],

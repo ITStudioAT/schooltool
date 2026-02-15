@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\Import116;
+use App\Models\TeachingCourse;
+use App\Models\TeachingCourseStudent;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 
@@ -50,37 +52,13 @@ class TeachingCourseService
 
     public function resolveStudentIds($value, int $schoolId): array
     {
-        $items = $this->normalizeStudentItems($value);
+        $entries = $this->resolveCourseStudentEntries($value, $schoolId);
         $ids = [];
 
-        foreach ($items as $item) {
-            $resolvedId = null;
-            $fallbackImportId = null;
-
-            if (is_array($item) || is_object($item)) {
-                $data = (array) $item;
-                $email = $data['email'] ?? null;
-                $id = $data['id'] ?? null;
-
-                if ($id) {
-                    $resolvedId = $this->resolveStudentIdFromNumeric((int) $id, $schoolId);
-                    if (! $resolvedId) {
-                        $fallbackImportId = $this->findImportIdInSchool((int) $id, $schoolId);
-                    }
-                } elseif ($email) {
-                    $resolvedId = $this->findOrCreateUserIdByEmail($email, $schoolId, $data);
-                }
-            } elseif (is_numeric($item)) {
-                $resolvedId = $this->resolveStudentIdFromNumeric((int) $item, $schoolId);
-                if (! $resolvedId) {
-                    $fallbackImportId = $this->findImportIdInSchool((int) $item, $schoolId);
-                }
-            }
-
-            if ($resolvedId) {
-                $ids[] = $resolvedId;
-            } elseif ($fallbackImportId) {
-                $ids[] = $fallbackImportId;
+        foreach ($entries as $entry) {
+            $id = $this->studentEntryId($entry);
+            if ($id) {
+                $ids[] = $id;
             }
         }
 
@@ -117,53 +95,136 @@ class TeachingCourseService
 
     public function resolveStudentEntries($value, int $schoolId): array
     {
+        $entries = $this->resolveCourseStudentEntries($value, $schoolId);
+
+        return array_values(array_map(function (array $entry) {
+            return [
+                'id' => $this->studentEntryId($entry),
+                'comment' => $entry['comment'] ?? null,
+                'sem_1_grade' => $entry['sem_1_grade'] ?? null,
+                'sem_2_grade' => $entry['sem_2_grade'] ?? null,
+                'sem_grade' => $entry['sem_grade'] ?? null,
+                'behaviour_1_grade' => $entry['behaviour_1_grade'] ?? null,
+                'behaviour_2_grade' => $entry['behaviour_2_grade'] ?? null,
+                'behaviour_grade' => $entry['behaviour_grade'] ?? null,
+                'stars' => $entry['stars'] ?? [],
+            ];
+        }, $entries));
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function resolveCourseStudentEntries($value, int $schoolId): array
+    {
         $items = $this->normalizeStudentItems($value);
         $entries = [];
 
         foreach ($items as $item) {
-            $resolvedId = null;
-            $fallbackImportId = null;
-            $data = [];
-            $comment = null;
+            $data = (is_array($item) || is_object($item)) ? (array) $item : ['id' => $item];
+            $reference = $this->resolveStudentReferenceFromItem($item, $schoolId);
 
-            if (is_array($item) || is_object($item)) {
-                $data = (array) $item;
-                $comment = $data['comment'] ?? null;
-                $email = $data['email'] ?? null;
-                $id = $data['id'] ?? null;
-
-                if ($id) {
-                    $resolvedId = $this->resolveStudentIdFromNumeric((int) $id, $schoolId);
-                    if (! $resolvedId) {
-                        $fallbackImportId = $this->findImportIdInSchool((int) $id, $schoolId);
-                    }
-                } elseif ($email) {
-                    $resolvedId = $this->findOrCreateUserIdByEmail($email, $schoolId, $data);
-                }
-            } elseif (is_numeric($item)) {
-                $resolvedId = $this->resolveStudentIdFromNumeric((int) $item, $schoolId);
-                if (! $resolvedId) {
-                    $fallbackImportId = $this->findImportIdInSchool((int) $item, $schoolId);
-                }
+            if (! $reference) {
+                continue;
             }
 
-            $entryId = $resolvedId ?: $fallbackImportId;
-            if ($entryId) {
-                $entries[$entryId] = [
-                    'id' => $entryId,
-                    'comment' => $comment,
-                    'sem_1_grade' => $data['sem_1_grade'] ?? null,
-                    'sem_2_grade' => $data['sem_2_grade'] ?? null,
-                    'sem_grade' => $data['sem_grade'] ?? null,
-                    'behaviour_1_grade' => $data['behaviour_1_grade'] ?? null,
-                    'behaviour_2_grade' => $data['behaviour_2_grade'] ?? null,
-                    'behaviour_grade' => $data['behaviour_grade'] ?? null,
-                    'stars' => $this->normalizeStars($data['stars'] ?? []),
-                ];
+            $entry = [
+                'user_id' => $reference['user_id'],
+                'import116_id' => $reference['import116_id'],
+                'id' => $reference['user_id'] ?: $reference['import116_id'],
+                'comment' => $data['comment'] ?? null,
+                'sem_1_grade' => $data['sem_1_grade'] ?? null,
+                'sem_2_grade' => $data['sem_2_grade'] ?? null,
+                'sem_grade' => $data['sem_grade'] ?? null,
+                'behaviour_1_grade' => $data['behaviour_1_grade'] ?? null,
+                'behaviour_2_grade' => $data['behaviour_2_grade'] ?? null,
+                'behaviour_grade' => $data['behaviour_grade'] ?? null,
+                'stars' => $this->normalizeStars($data['stars'] ?? []),
+            ];
+
+            $key = $this->courseStudentEntryKey($entry);
+            if (! $key) {
+                continue;
             }
+
+            $entries[$key] = $entry;
         }
 
         return array_values($entries);
+    }
+
+    public function syncCourseStudents(TeachingCourse $course, mixed $studentsPayload, mixed $studentsDeletedPayload = []): void
+    {
+        $schoolId = (int) $course->school_id;
+        if (! $schoolId) {
+            return;
+        }
+
+        $activeEntries = $this->resolveCourseStudentEntries($studentsPayload, $schoolId);
+        $deletedEntries = $this->resolveCourseStudentEntries($studentsDeletedPayload, $schoolId);
+
+        $activeByKey = [];
+        foreach ($activeEntries as $entry) {
+            $key = $this->courseStudentEntryKey($entry);
+            if (! $key) {
+                continue;
+            }
+            $activeByKey[$key] = $entry;
+        }
+
+        $deletedByKey = [];
+        foreach ($deletedEntries as $entry) {
+            $key = $this->courseStudentEntryKey($entry);
+            if (! $key || isset($activeByKey[$key])) {
+                continue;
+            }
+            $deletedByKey[$key] = $entry;
+        }
+
+        $existing = $course->teachingCourseStudents()->withTrashed()->get();
+        $existingByKey = [];
+        foreach ($existing as $courseStudent) {
+            $key = $this->courseStudentModelKey($courseStudent);
+            if (! $key) {
+                continue;
+            }
+            $existingByKey[$key] = $courseStudent;
+        }
+
+        foreach ($existingByKey as $key => $courseStudent) {
+            if (isset($activeByKey[$key])) {
+                $courseStudent->fill($this->buildCourseStudentPayload($activeByKey[$key]));
+                $courseStudent->save();
+                if ($courseStudent->trashed()) {
+                    $courseStudent->restore();
+                }
+                unset($activeByKey[$key], $deletedByKey[$key]);
+                continue;
+            }
+
+            if (isset($deletedByKey[$key])) {
+                $courseStudent->fill($this->buildCourseStudentPayload($deletedByKey[$key]));
+                $courseStudent->save();
+                if (! $courseStudent->trashed()) {
+                    $courseStudent->delete();
+                }
+                unset($deletedByKey[$key]);
+                continue;
+            }
+
+            if (! $courseStudent->trashed()) {
+                $courseStudent->delete();
+            }
+        }
+
+        foreach ($activeByKey as $entry) {
+            $course->teachingCourseStudents()->create($this->buildCourseStudentPayload($entry));
+        }
+
+        foreach ($deletedByKey as $entry) {
+            $created = $course->teachingCourseStudents()->create($this->buildCourseStudentPayload($entry));
+            $created->delete();
+        }
     }
 
     public function findImportIdInSchool(int $id, int $schoolId): ?int
@@ -182,7 +243,7 @@ class TeachingCourseService
         $stars = [];
 
         foreach ($items as $item) {
-            if (!is_array($item) && !is_object($item)) {
+            if (! is_array($item) && ! is_object($item)) {
                 continue;
             }
 
@@ -291,10 +352,14 @@ class TeachingCourseService
             return null;
         }
 
-        $user = User::where('school_id', $schoolId)
-            ->where('schoolyear_id', $import->schoolyear_id)
-            ->where('email', $import->email)
-            ->first();
+        $userQuery = User::where('school_id', $schoolId)
+            ->where('email', $import->email);
+
+        if ($import->schoolyear_id) {
+            $userQuery->where('schoolyear_id', $import->schoolyear_id);
+        }
+
+        $user = $userQuery->first();
 
         if ($user) {
             return $user->id;
@@ -337,5 +402,153 @@ class TeachingCourseService
         $user->assignRole('student');
 
         return $user->id;
+    }
+
+    private function resolveStudentReferenceFromItem(mixed $item, int $schoolId): ?array
+    {
+        if (is_array($item) || is_object($item)) {
+            $data = (array) $item;
+
+            if (isset($data['user_id']) && is_numeric($data['user_id'])) {
+                $userId = $this->resolveStudentIdFromNumeric((int) $data['user_id'], $schoolId);
+                if ($userId) {
+                    return ['user_id' => $userId, 'import116_id' => null];
+                }
+            }
+
+            if (isset($data['import116_id']) && is_numeric($data['import116_id'])) {
+                $importId = $this->findImportIdInSchool((int) $data['import116_id'], $schoolId);
+                if ($importId) {
+                    return ['user_id' => null, 'import116_id' => $importId];
+                }
+            }
+
+            if (isset($data['id']) && is_numeric($data['id'])) {
+                $reference = $this->resolveStudentReferenceFromNumeric((int) $data['id'], $schoolId);
+                if ($reference) {
+                    return $reference;
+                }
+            }
+
+            $email = isset($data['email']) ? trim((string) $data['email']) : '';
+            if ($email !== '') {
+                $reference = $this->resolveStudentReferenceByEmail($email, $schoolId, $data);
+                if ($reference) {
+                    return $reference;
+                }
+            }
+        } elseif (is_numeric($item)) {
+            return $this->resolveStudentReferenceFromNumeric((int) $item, $schoolId);
+        } elseif (is_string($item)) {
+            $email = trim($item);
+            if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                return $this->resolveStudentReferenceByEmail($email, $schoolId, []);
+            }
+        }
+
+        return null;
+    }
+
+    private function resolveStudentReferenceFromNumeric(int $id, int $schoolId): ?array
+    {
+        $resolvedUserId = $this->resolveStudentIdFromNumeric($id, $schoolId);
+        if ($resolvedUserId) {
+            return ['user_id' => $resolvedUserId, 'import116_id' => null];
+        }
+
+        $fallbackImportId = $this->findImportIdInSchool($id, $schoolId);
+        if ($fallbackImportId) {
+            return ['user_id' => null, 'import116_id' => $fallbackImportId];
+        }
+
+        return null;
+    }
+
+    private function resolveStudentReferenceByEmail(string $email, int $schoolId, array $data): ?array
+    {
+        $resolvedUserId = $this->findOrCreateUserIdByEmail($email, $schoolId, $data);
+        if ($resolvedUserId) {
+            return ['user_id' => $resolvedUserId, 'import116_id' => null];
+        }
+
+        $schoolyearId = $data['schoolyear_id'] ?? null;
+
+        $importQuery = Import116::where('school_id', $schoolId)
+            ->where('email', $email);
+
+        if ($schoolyearId) {
+            $importQuery->where('schoolyear_id', $schoolyearId);
+        }
+
+        $import = $importQuery->first();
+        if (! $import) {
+            return null;
+        }
+
+        return ['user_id' => null, 'import116_id' => (int) $import->id];
+    }
+
+    private function courseStudentEntryKey(array $entry): ?string
+    {
+        $userId = isset($entry['user_id']) ? (int) $entry['user_id'] : 0;
+        if ($userId > 0) {
+            return 'u:'.$userId;
+        }
+
+        $importId = isset($entry['import116_id']) ? (int) $entry['import116_id'] : 0;
+        if ($importId > 0) {
+            return 'i:'.$importId;
+        }
+
+        return null;
+    }
+
+    private function courseStudentModelKey(TeachingCourseStudent $courseStudent): ?string
+    {
+        if ($courseStudent->user_id) {
+            return 'u:'.$courseStudent->user_id;
+        }
+
+        if ($courseStudent->import116_id) {
+            return 'i:'.$courseStudent->import116_id;
+        }
+
+        return null;
+    }
+
+    private function studentEntryId(array $entry): ?int
+    {
+        $userId = isset($entry['user_id']) ? (int) $entry['user_id'] : 0;
+        if ($userId > 0) {
+            return $userId;
+        }
+
+        $importId = isset($entry['import116_id']) ? (int) $entry['import116_id'] : 0;
+        if ($importId > 0) {
+            return $importId;
+        }
+
+        $legacyId = isset($entry['id']) ? (int) $entry['id'] : 0;
+        return $legacyId > 0 ? $legacyId : null;
+    }
+
+    /**
+     * @param array<string, mixed> $entry
+     * @return array<string, mixed>
+     */
+    private function buildCourseStudentPayload(array $entry): array
+    {
+        return [
+            'user_id' => $entry['user_id'] ?? null,
+            'import116_id' => $entry['import116_id'] ?? null,
+            'comment' => $entry['comment'] ?? null,
+            'sem_1_grade' => $entry['sem_1_grade'] ?? null,
+            'sem_2_grade' => $entry['sem_2_grade'] ?? null,
+            'sem_grade' => $entry['sem_grade'] ?? null,
+            'behaviour_1_grade' => $entry['behaviour_1_grade'] ?? null,
+            'behaviour_2_grade' => $entry['behaviour_2_grade'] ?? null,
+            'behaviour_grade' => $entry['behaviour_grade'] ?? null,
+            'stars' => $entry['stars'] ?? [],
+        ];
     }
 }

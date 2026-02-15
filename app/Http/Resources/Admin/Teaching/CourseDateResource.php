@@ -20,7 +20,9 @@ class CourseDateResource extends JsonResource
         $holidaySync = app(TeachingHolidaySyncService::class);
         $course = $this->relationLoaded('teachingCourse')
             ? $this->teachingCourse
-            : $this->teachingCourse()->first(['id', 'school_id', 'schoolyear_id', 'user_id', 'students']);
+            : $this->teachingCourse()
+                ->with(['teachingCourseStudents:id,teaching_course_id,user_id,import116_id'])
+                ->first(['id', 'school_id', 'schoolyear_id', 'user_id']);
 
         $supportsAttendanceColumns = $service->supportsAttendanceColumns();
         $rawStatus = is_array($this->status) ? $this->status : [];

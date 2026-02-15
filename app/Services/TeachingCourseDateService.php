@@ -283,14 +283,25 @@ class TeachingCourseDateService
 
     public function courseStudentIds(TeachingCourse $course): array
     {
+        $students = $course->relationLoaded('teachingCourseStudents')
+            ? $course->teachingCourseStudents
+            : $course->teachingCourseStudents()->get(['user_id', 'import116_id']);
+
+        $ids = $students
+            ->map(fn ($student) => $student->user_id ?: $student->import116_id)
+            ->filter(fn ($id) => $id !== null && $id !== '')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+
+        if (! empty($ids)) {
+            return $ids;
+        }
+
+        // Legacy fallback for historical payloads before relation migration.
         $raw = is_array($course->students) ? $course->students : [];
-        $ids = [];
         foreach ($raw as $item) {
-            if (is_array($item) && array_key_exists('id', $item)) {
-                $id = $item['id'];
-            } else {
-                $id = $item;
-            }
+            $id = (is_array($item) && array_key_exists('id', $item)) ? $item['id'] : $item;
             if ($id === null || $id === '') {
                 continue;
             }

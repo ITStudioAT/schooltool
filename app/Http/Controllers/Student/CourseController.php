@@ -6,10 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\SchoolTool;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseBehaviourEntry;
-use App\Models\User;
 use App\Services\TeachingHolidaySyncService;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 
 class CourseController extends Controller
 {
@@ -23,29 +20,21 @@ class CourseController extends Controller
         $schoolTool = SchoolTool::where('school_id', $auth_user->school_id)->first();
         $active_schoolyear_id = $schoolTool?->active_schoolyear_id ?? $auth_user->schoolyear_id;
 
-        // Get all courses for this school/schoolyear and filter in PHP
-        // This is more reliable than whereJsonContains for different JSON formats
         $courses = TeachingCourse::where('school_id', $auth_user->school_id)
             ->where('schoolyear_id', $active_schoolyear_id)
-            ->with('user:id,first_name,last_name,short,email')
-            ->get()
-            ->filter(function ($course) use ($auth_user) {
-                // Students is an array of objects with 'id' property
-                // Extract the IDs and check if user's ID is in the list
-                $students = $course->students ?? [];
-                $studentIds = array_column($students, 'id');
-                return in_array($auth_user->id, $studentIds) || in_array((string) $auth_user->id, $studentIds);
+            ->whereHas('teachingCourseStudents', function ($query) use ($auth_user) {
+                $query->where('user_id', $auth_user->id);
             })
-            ->map(function ($course) use ($auth_user) {
-                // Find the current student's data including stars
-                $students = $course->students ?? [];
-                $studentData = null;
-                foreach ($students as $student) {
-                    if (isset($student['id']) && ($student['id'] == $auth_user->id || (string) $student['id'] === (string) $auth_user->id)) {
-                        $studentData = $student;
-                        break;
-                    }
-                }
+            ->with('user:id,first_name,last_name,short,email')
+            ->withCount('teachingCourseStudents')
+            ->with([
+                'teachingCourseStudents' => function ($query) use ($auth_user) {
+                    $query->where('user_id', $auth_user->id);
+                },
+            ])
+            ->get()
+            ->map(function ($course) {
+                $studentData = $course->teachingCourseStudents->first();
 
                 return [
                     'id' => $course->id,
@@ -55,14 +44,14 @@ class CourseController extends Controller
                     'teacher' => $course->user ? ($course->user->short ?: ($course->user->first_name . ' ' . $course->user->last_name)) : '—',
                     'teacher_email' => $course->user?->email ?? null,
                     'classes' => $course->classes,
-                    'students_count' => count($course->students ?? []),
-                    'stars' => $studentData['stars'] ?? [],
-                    'sem_1_grade' => $studentData['sem_1_grade'] ?? null,
-                    'sem_2_grade' => $studentData['sem_2_grade'] ?? null,
-                    'sem_grade' => $studentData['sem_grade'] ?? null,
-                    'behaviour_1_grade' => $studentData['behaviour_1_grade'] ?? null,
-                    'behaviour_2_grade' => $studentData['behaviour_2_grade'] ?? null,
-                    'behaviour_grade' => $studentData['behaviour_grade'] ?? null,
+                    'students_count' => (int) ($course->teaching_course_students_count ?? 0),
+                    'stars' => $studentData?->stars ?? [],
+                    'sem_1_grade' => $studentData?->sem_1_grade,
+                    'sem_2_grade' => $studentData?->sem_2_grade,
+                    'sem_grade' => $studentData?->sem_grade,
+                    'behaviour_1_grade' => $studentData?->behaviour_1_grade,
+                    'behaviour_2_grade' => $studentData?->behaviour_2_grade,
+                    'behaviour_grade' => $studentData?->behaviour_grade,
                 ];
             })
             ->values();
@@ -84,29 +73,22 @@ class CourseController extends Controller
 
         // Get the course
         $course = TeachingCourse::with('user:id,first_name,last_name,short,email,teaching_notifications,teaching_behaviour')
+            ->withCount('teachingCourseStudents')
             ->where('id', $courseId)
             ->where('school_id', $auth_user->school_id)
             ->where('schoolyear_id', $active_schoolyear_id)
             ->first();
 
-        if (!$course) {
+        if (! $course) {
             abort(404, 'Fach nicht gefunden');
         }
 
-        // Check if student is enrolled in this course
-        $students = $course->students ?? [];
-        $studentIds = array_column($students, 'id');
-        if (!in_array($auth_user->id, $studentIds) && !in_array((string) $auth_user->id, $studentIds)) {
-            abort(403, 'Sie sind nicht in diesem Fach eingeschrieben');
-        }
+        $studentData = $course->teachingCourseStudents()
+            ->where('user_id', $auth_user->id)
+            ->first();
 
-        // Find the current student's data including stars and grades
-        $studentData = null;
-        foreach ($students as $student) {
-            if (isset($student['id']) && ($student['id'] == $auth_user->id || (string) $student['id'] === (string) $auth_user->id)) {
-                $studentData = $student;
-                break;
-            }
+        if (! $studentData) {
+            abort(403, 'Sie sind nicht in diesem Fach eingeschrieben');
         }
 
         // Get notifications (TeachingCourseBehaviourEntry where kind == 'notification')
@@ -124,7 +106,7 @@ class CourseController extends Controller
                     'done_date' => $notification->done_date?->format('Y-m-d'),
                     'description' => $notification->description,
                     'type' => $notification->type,
-                    'is_open' => !$notification->done_date,
+                    'is_open' => ! $notification->done_date,
                 ];
             });
 
@@ -160,6 +142,7 @@ class CourseController extends Controller
                         $date
                     )
                     : null;
+
                 return [
                     'id' => $courseDate->id,
                     'date' => $date,
@@ -180,14 +163,14 @@ class CourseController extends Controller
             'teacher_teaching_notifications' => $course->user?->teaching_notifications ?? [],
             'teacher_teaching_behaviour' => $course->user?->teaching_behaviour ?? [],
             'classes' => $course->classes,
-            'students_count' => count($course->students ?? []),
-            'stars' => $studentData['stars'] ?? [],
-            'sem_1_grade' => $studentData['sem_1_grade'] ?? null,
-            'sem_2_grade' => $studentData['sem_2_grade'] ?? null,
-            'sem_grade' => $studentData['sem_grade'] ?? null,
-            'behaviour_1_grade' => $studentData['behaviour_1_grade'] ?? null,
-            'behaviour_2_grade' => $studentData['behaviour_2_grade'] ?? null,
-            'behaviour_grade' => $studentData['behaviour_grade'] ?? null,
+            'students_count' => (int) ($course->teaching_course_students_count ?? 0),
+            'stars' => $studentData->stars ?? [],
+            'sem_1_grade' => $studentData->sem_1_grade,
+            'sem_2_grade' => $studentData->sem_2_grade,
+            'sem_grade' => $studentData->sem_grade,
+            'behaviour_1_grade' => $studentData->behaviour_1_grade,
+            'behaviour_2_grade' => $studentData->behaviour_2_grade,
+            'behaviour_grade' => $studentData->behaviour_grade,
             'notifications' => $notifications,
             'behaviour_entries' => $behaviourEntries,
             'course_dates' => $courseDates,

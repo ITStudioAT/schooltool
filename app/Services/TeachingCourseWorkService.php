@@ -17,7 +17,14 @@ class TeachingCourseWorkService
      */
     public function buildIndividualGroups(TeachingCourse $course): array
     {
-        $entries = $this->courseService->normalizeStudentEntries($course->students);
+        $students = $course->relationLoaded('teachingCourseStudents')
+            ? $course->teachingCourseStudents
+            : $course->teachingCourseStudents()->get(['user_id', 'import116_id']);
+
+        $entries = $students->map(function ($student) {
+            return ['id' => $student->user_id ?: $student->import116_id];
+        })->all();
+
         $studentIds = [];
         foreach ($entries as $entry) {
             $resolvedId = $this->courseService->resolveStudentIdFromNumeric((int) ($entry['id'] ?? 0), (int) $course->school_id);

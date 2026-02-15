@@ -7,7 +7,6 @@ use App\Models\SchoolTool;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\User;
-use Illuminate\Http\Request;
 
 class CourseStudentEntryController extends Controller
 {
@@ -21,22 +20,23 @@ class CourseStudentEntryController extends Controller
         $schoolTool = SchoolTool::where('school_id', $auth_user->school_id)->first();
         $active_schoolyear_id = $schoolTool?->active_schoolyear_id ?? $auth_user->schoolyear_id;
 
-        // Get the course with all fields including students
+        // Get the course
         $course = TeachingCourse::with('user:id,teaching_schemas')
-            ->select('*') // Explicitly select all fields
             ->where('id', $courseId)
             ->where('school_id', $auth_user->school_id)
             ->where('schoolyear_id', $active_schoolyear_id)
             ->first();
 
-        if (!$course) {
+        if (! $course) {
             abort(404, 'Fach nicht gefunden');
         }
 
         // Check if student is enrolled in this course
-        $students = $course->students ?? [];
-        $studentIds = array_column($students, 'id');
-        if (!in_array($auth_user->id, $studentIds) && !in_array((string) $auth_user->id, $studentIds)) {
+        $isEnrolled = $course->teachingCourseStudents()
+            ->where('user_id', $auth_user->id)
+            ->exists();
+
+        if (! $isEnrolled) {
             abort(403, 'Sie sind nicht in diesem Fach eingeschrieben');
         }
 
@@ -61,7 +61,7 @@ class CourseStudentEntryController extends Controller
             ->get();
 
         // Format entries for response
-        $formattedEntries = $entries->map(function ($entry) use ($auth_user, $course) {
+        $formattedEntries = $entries->map(function ($entry) use ($auth_user) {
             // Use teachingCourseWork title and description, or entry description
             $title = null;
             $description = null;
@@ -93,17 +93,17 @@ class CourseStudentEntryController extends Controller
                             }
                         }
                         // Fall back to group comment if no individual comment
-                        if (!$comment) {
+                        if (! $comment) {
                             $comment = $group['comment'] ?? null;
                         }
 
                         // Get group member names from User model
                         // Filter out current user and get other student IDs
-                        $otherStudentIds = array_filter($studentIds, function($studentId) use ($auth_user) {
+                        $otherStudentIds = array_filter($studentIds, function ($studentId) use ($auth_user) {
                             return (string) $studentId !== (string) $auth_user->id;
                         });
 
-                        if (!empty($otherStudentIds)) {
+                        if (! empty($otherStudentIds)) {
                             // Fetch user names from User model (same school only)
                             $users = User::whereIn('id', $otherStudentIds)
                                 ->where('school_id', $auth_user->school_id)
