@@ -104,7 +104,7 @@
                 </div>
                 <p class="login-copy">Die Schule ist ausgewählt. Du kannst jetzt deine E-Mail eingeben.</p>
 
-                <v-form ref="loginForm" v-model="is_login_email_valid">
+                <v-form ref="loginForm" v-model="is_login_email_valid" @submit.prevent>
                     <div class="login-fields">
                         <v-text-field
                             v-model="login_email"
@@ -120,6 +120,7 @@
                     <div class="login-actions">
                         <v-btn
                             data-testid="student-login-continue-password"
+                            type="button"
                             color="warning"
                             variant="flat"
                             rounded="pill"
@@ -129,6 +130,7 @@
                         </v-btn>
                         <v-btn
                             data-testid="student-login-continue-code"
+                            type="button"
                             color="primary"
                             variant="outlined"
                             rounded="pill"
@@ -154,13 +156,13 @@
                     gesendet. Bitte gib den Code ein.
                 </p>
 
-                <v-form ref="codeForm" v-model="is_code_valid">
+                <v-form ref="codeForm" v-model="is_code_valid" @submit.prevent="submitCode">
                     <div class="login-fields">
                         <v-otp-input v-model="data.login_code" :length="6" variant="outlined" />
                     </div>
                     <div class="login-actions">
-                        <v-btn color="warning" variant="text" rounded="pill" @click="backToEmail">Zurück</v-btn>
-                        <v-btn color="success" variant="flat" rounded="pill" :disabled="!canSubmitCode" @click="submitCode">Code bestätigen</v-btn>
+                        <v-btn type="button" color="warning" variant="text" rounded="pill" @click="backToEmail">Zurück</v-btn>
+                        <v-btn type="submit" color="success" variant="flat" rounded="pill" :disabled="!canSubmitCode">Code bestätigen</v-btn>
                     </div>
                 </v-form>
             </div>
@@ -179,7 +181,7 @@
                     ein, um dich anzumelden.
                 </p>
 
-                <v-form ref="passwordForm" v-model="is_password_valid">
+                <v-form ref="passwordForm" v-model="is_password_valid" @submit.prevent="submitPassword">
                     <div class="login-fields">
                         <v-text-field
                             v-model="data.password"
@@ -193,18 +195,17 @@
                             :append-inner-icon="show_password ? 'mdi-eye-off' : 'mdi-eye'"
                             :rules="[required(), minLength(8), maxLength(255)]"
                             hide-details="auto"
-                            @click:append-inner="show_password = !show_password"
-                            @keyup.enter="submitPassword" />
+                            @click:append-inner="show_password = !show_password" />
                     </div>
                     <div class="login-actions">
-                        <v-btn color="warning" variant="text" rounded="pill" @click="backToEmail">Zurück</v-btn>
+                        <v-btn type="button" color="warning" variant="text" rounded="pill" @click="backToEmail">Zurück</v-btn>
                         <v-btn
                             data-testid="student-login-submit-password"
+                            type="submit"
                             color="success"
                             variant="flat"
                             rounded="pill"
-                            :disabled="!canSubmitPassword"
-                            @click="submitPassword">
+                            :disabled="!canSubmitPassword">
                             Anmelden
                         </v-btn>
                     </div>
