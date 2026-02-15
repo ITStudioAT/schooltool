@@ -427,6 +427,14 @@ class TeachingCourseService
             if (isset($data['import116_id']) && is_numeric($data['import116_id'])) {
                 $importId = $this->findImportIdInSchool((int) $data['import116_id'], $schoolId);
                 if ($importId) {
+                    $import = Import116::find($importId);
+                    if ($import && $import->email) {
+                        $userId = $this->findOrCreateUserIdFromImport($import, $schoolId);
+                        if ($userId) {
+                            return ['user_id' => $userId, 'import116_id' => null];
+                        }
+                    }
+
                     return ['user_id' => null, 'import116_id' => $importId];
                 }
             }
