@@ -115,6 +115,34 @@ describe('loadConfig', function () {
             ]);
     });
 
+    test('load config returns school tool of authenticated users school', function () {
+        $otherSchool = School::factory()->create();
+        $otherSchoolyear = Schoolyear::factory()->create(['school_id' => $otherSchool->id]);
+        $otherSchoolTool = SchoolTool::create([
+            'school_id' => $otherSchool->id,
+            'tutoring_student_must_be_confirmed' => true,
+            'tutoring_confirmer_email' => 'other@test.com',
+            'tutoring_max_offers_per_student' => 3,
+            'may_visible_for_other_schools' => true,
+        ]);
+
+        $otherAdmin = User::factory()->create([
+            'school_id' => $otherSchool->id,
+            'schoolyear_id' => $otherSchoolyear->id,
+        ]);
+        $otherAdmin->assignRole('admin');
+
+        $this->actingAs($otherAdmin);
+
+        $response = $this->getJson('/api/admin/school_tools/load_config');
+
+        $response->assertStatus(200)
+            ->assertJson([
+                'id' => $otherSchoolTool->id,
+                'tutoring_confirmer_email' => 'other@test.com',
+            ]);
+    });
+
     test('load config returns correct data structure', function () {
         $this->actingAs($this->admin);
 
@@ -146,14 +174,25 @@ describe('loadConfig', function () {
         $response->assertStatus(401);
     });
 
-    test('load config returns 404 if school tool does not exist', function () {
+    test('load config creates school tool if it does not exist', function () {
         $this->actingAs($this->admin);
 
         SchoolTool::where('id', 1)->delete();
 
         $response = $this->getJson('/api/admin/school_tools/load_config');
 
-        $response->assertStatus(404);
+        $response->assertStatus(200)
+            ->assertJsonStructure([
+                'id',
+                'tutoring_student_must_be_confirmed',
+                'tutoring_confirmer_email',
+                'may_visible_for_other_schools',
+            ]);
+
+        $this->assertDatabaseHas('school_tools', [
+            'id' => $response->json('id'),
+            'school_id' => $this->school->id,
+        ]);
     });
 });
 
@@ -373,4 +412,3 @@ describe('saveTutoringSettings', function () {
         ]);
     });
 });
-

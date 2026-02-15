@@ -16,7 +16,15 @@ class SchoolToolController extends Controller
         if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin', 'register_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
-        $schoolTool = SchoolTool::findOrFail(1);
+
+        $schoolTool = SchoolTool::firstOrCreate(
+            ['school_id' => $auth_user->school_id],
+            [
+                'tutoring_student_must_be_confirmed' => false,
+                'tutoring_confirmer_email' => '',
+            ]
+        );
+
         return response()->json(new SchoolToolResource($schoolTool), 200);
     }
 

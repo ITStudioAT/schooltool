@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\School;
+use App\Models\SchoolTool;
+use App\Models\Schoolyear;
 use App\Models\User;
 use App\Services\AdminService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -326,6 +328,35 @@ describe('login', function () {
 
         expect($result->id)->toBe($user->id);
     });
+
+    it('sets teacher schoolyear from school tool when schoolyear_id is null', function () {
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create([
+            'school_id' => $school->id,
+        ]);
+        SchoolTool::factory()->create([
+            'school_id' => $school->id,
+            'active_schoolyear_id' => $schoolyear->id,
+        ]);
+
+        $role = Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+        $user = User::factory()->create([
+            'email' => 'teacher@example.com',
+            'school_id' => $school->id,
+            'schoolyear_id' => null,
+        ]);
+        $user->assignRole($role);
+
+        $data = [
+            'email' => 'teacher@example.com',
+            'school' => ['id' => $school->id],
+        ];
+
+        $this->service->login($data);
+
+        $user->refresh();
+        expect($user->schoolyear_id)->toBe($schoolyear->id);
+    });
 });
 
 describe('login2Fa', function () {
@@ -408,6 +439,38 @@ describe('login2Fa', function () {
 
         $this->service->login2Fa($data);
     })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Der Token ist ungültig oder abgelaufen.');
+
+    it('sets teacher schoolyear from school tool when schoolyear_id is null', function () {
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create([
+            'school_id' => $school->id,
+        ]);
+        SchoolTool::factory()->create([
+            'school_id' => $school->id,
+            'active_schoolyear_id' => $schoolyear->id,
+        ]);
+
+        $role = Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+        $user = User::factory()->create([
+            'email' => 'teacher2fa@example.com',
+            'school_id' => $school->id,
+            'schoolyear_id' => null,
+            'token_2fa' => '123456',
+            'token_2fa_expires_at' => now()->addMinutes(10),
+        ]);
+        $user->assignRole($role);
+
+        $data = [
+            'email' => 'teacher2fa@example.com',
+            'school' => ['id' => $school->id],
+            'token_2fa' => '123456',
+        ];
+
+        $this->service->login2Fa($data);
+
+        $user->refresh();
+        expect($user->schoolyear_id)->toBe($schoolyear->id);
+    });
 });
 
 describe('checkEmail', function () {
@@ -1135,4 +1198,3 @@ describe('sendRegisterToken', function () {
         Notification::assertSentOnDemand(\App\Notifications\StandardEmail::class);
     });
 });
-

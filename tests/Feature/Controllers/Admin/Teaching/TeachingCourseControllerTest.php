@@ -83,6 +83,14 @@ beforeEach(function () {
         'school_id' => $this->otherSchool->id,
     ]);
 
+    $this->schemaId = 'schema-standard';
+    $schemas = [
+        ['id' => $this->schemaId, 'name' => 'Standard'],
+    ];
+    $this->admin->update(['teaching_schemas' => $schemas]);
+    $this->teachingAdmin->update(['teaching_schemas' => $schemas]);
+    $this->teacher->update(['teaching_schemas' => $schemas]);
+
     // Create Import116 records for class validation
     $this->classes = ['1A', '1B', '2A', '2B', '3A'];
     foreach ($this->classes as $class) {
@@ -220,6 +228,7 @@ describe('store', function () {
         $response = $this->postJson('/api/admin/teaching/courses', [
             'title' => 'Mathematik',
             'classes' => ['1A', '1B'],
+            'teaching_schema_id' => $this->schemaId,
         ]);
 
         $response->assertStatus(401);
@@ -242,6 +251,7 @@ describe('store', function () {
         $response = $this->postJson('/api/admin/teaching/courses', [
             'title' => 'Mathematik',
             'classes' => ['1A', '1B'],
+            'teaching_schema_id' => $this->schemaId,
         ]);
 
         $response->assertStatus(201)
@@ -261,6 +271,7 @@ describe('store', function () {
         $response = $this->postJson('/api/admin/teaching/courses', [
             'title' => 'Deutsch',
             'classes' => ['2A'],
+            'teaching_schema_id' => $this->schemaId,
         ]);
 
         $response->assertStatus(201);
@@ -272,6 +283,7 @@ describe('store', function () {
         $response = $this->postJson('/api/admin/teaching/courses', [
             'title' => 'Englisch',
             'classes' => ['3A'],
+            'teaching_schema_id' => $this->schemaId,
         ]);
 
         $response->assertStatus(201);
@@ -329,10 +341,36 @@ describe('store', function () {
         $response = $this->postJson('/api/admin/teaching/courses', [
             'title' => 'Mathematik',
             'classes' => ['INVALID_CLASS'],
+            'teaching_schema_id' => $this->schemaId,
         ]);
 
         $response->assertStatus(422)
             ->assertJsonValidationErrors('classes.0');
+    });
+
+    test('validates teaching_schema_id is required', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $response = $this->postJson('/api/admin/teaching/courses', [
+            'title' => 'Mathematik',
+            'classes' => ['1A'],
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors('teaching_schema_id');
+    });
+
+    test('validates teaching_schema_id must exist in users schemas', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $response = $this->postJson('/api/admin/teaching/courses', [
+            'title' => 'Mathematik',
+            'classes' => ['1A'],
+            'teaching_schema_id' => 'unknown-schema',
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors('teaching_schema_id');
     });
 
     test('classes are sorted in ascending order when stored', function () {
@@ -341,6 +379,7 @@ describe('store', function () {
         $response = $this->postJson('/api/admin/teaching/courses', [
             'title' => 'Mathematik',
             'classes' => ['2B', '1A', '2A', '1B'],
+            'teaching_schema_id' => $this->schemaId,
         ]);
 
         $response->assertStatus(201);
@@ -355,6 +394,7 @@ describe('store', function () {
         $response = $this->postJson('/api/admin/teaching/courses', [
             'title' => 'Physik',
             'classes' => ['1A'],
+            'teaching_schema_id' => $this->schemaId,
         ]);
 
         $response->assertStatus(201);
@@ -382,6 +422,7 @@ describe('update', function () {
         $response = $this->putJson("/api/admin/teaching/courses/{$course->id}", [
             'title' => 'Updated Title',
             'classes' => ['1A', '1B'],
+            'teaching_schema_id' => $this->schemaId,
         ]);
 
         $response->assertStatus(401);
@@ -419,6 +460,7 @@ describe('update', function () {
         $response = $this->putJson("/api/admin/teaching/courses/{$course->id}", [
             'title' => 'Updated Title',
             'classes' => ['1A', '1B'],
+            'teaching_schema_id' => $this->schemaId,
         ]);
 
         $response->assertStatus(200)
@@ -442,6 +484,7 @@ describe('update', function () {
         $response = $this->putJson("/api/admin/teaching/courses/{$course->id}", [
             'title' => 'Updated by Teaching Admin',
             'classes' => ['2A'],
+            'teaching_schema_id' => $this->schemaId,
         ]);
 
         $response->assertStatus(200);
@@ -460,6 +503,7 @@ describe('update', function () {
         $response = $this->putJson("/api/admin/teaching/courses/{$course->id}", [
             'title' => 'Updated by Teacher',
             'classes' => ['3A'],
+            'teaching_schema_id' => $this->schemaId,
         ]);
 
         $response->assertStatus(200);
@@ -514,6 +558,7 @@ describe('update', function () {
         $response = $this->putJson("/api/admin/teaching/courses/{$course->id}", [
             'title' => 'Updated Title',
             'classes' => ['NONEXISTENT_CLASS'],
+            'teaching_schema_id' => $this->schemaId,
         ]);
 
         $response->assertStatus(422)
@@ -533,6 +578,7 @@ describe('update', function () {
         $response = $this->putJson("/api/admin/teaching/courses/{$course->id}", [
             'title' => 'Sorted Classes',
             'classes' => ['3A', '1B', '2A', '1A'],
+            'teaching_schema_id' => $this->schemaId,
         ]);
 
         $response->assertStatus(200);

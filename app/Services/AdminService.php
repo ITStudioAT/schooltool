@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Http\Resources\Admin\SchoolResource;
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\User;
 use App\Notifications\StandardEmail;
 use Illuminate\Support\Facades\Auth;
@@ -85,6 +86,8 @@ class AdminService
             ->where('school_id', $data['school']['id'])
             ->first();
 
+        $this->syncTeacherSchoolyearFromSchoolTool($user);
+
         $user->login_at = now();
         $user->login_ip = request()->ip();
         $user->save();
@@ -108,6 +111,7 @@ class AdminService
 
         $user->token_2fa = null;
         $user->token_2fa_expires_at = null;
+        $this->syncTeacherSchoolyearFromSchoolTool($user);
         $user->save();
 
         Auth::guard('web')->login($user, true);
@@ -358,6 +362,23 @@ class AdminService
         if (! $user->is_active) {
             abort(423, 'Benutzer ist gesperrt.');
         }
+    }
+
+    private function syncTeacherSchoolyearFromSchoolTool(User $user): void
+    {
+        if (! $user->hasRole('teacher') || $user->schoolyear_id) {
+            return;
+        }
+
+        $activeSchoolyearId = SchoolTool::query()
+            ->where('school_id', $user->school_id)
+            ->value('active_schoolyear_id');
+
+        if (! $activeSchoolyearId) {
+            return;
+        }
+
+        $user->schoolyear_id = (int) $activeSchoolyearId;
     }
 
     public function informUserToBeBlockedOrNot($user)

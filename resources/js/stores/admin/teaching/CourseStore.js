@@ -95,6 +95,17 @@ export const useCourseStore = defineStore('AdminCourseStore', {
         async update(data) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
+
+            if (!data?.teaching_schema_id) {
+                notification.notify({
+                    status: 422,
+                    message: 'Bitte ein Benotungsschema auswählen.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            }
+
             adminStore.is_loading++
             try {
                 this.ensureCourseStudentCollections(data)
@@ -117,6 +128,17 @@ export const useCourseStore = defineStore('AdminCourseStore', {
         async store(data) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
+
+            if (!data?.teaching_schema_id) {
+                notification.notify({
+                    status: 422,
+                    message: 'Bitte ein Benotungsschema auswählen.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            }
+
             adminStore.is_loading++
             try {
                 this.ensureCourseStudentCollections(data)

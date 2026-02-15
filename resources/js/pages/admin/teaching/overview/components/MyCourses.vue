@@ -44,16 +44,31 @@
                             if (v.valid) save(data)
                         })
                     "
-                    v-if="data.title && data?.classes?.length > 0" />
+                    v-if="data.title && data?.classes?.length > 0 && data.teaching_schema_id" />
             </div>
         </template>
         <!-- NEUER/EDIT KURS-->
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text>
-                <v-form ref="form" v-model="is_valid" @submit.prevent="save(data)" class="mb-4">
+                <v-form
+                    ref="form"
+                    v-model="is_valid"
+                    @submit.prevent="
+                        $refs.form.validate().then((v) => {
+                            if (v.valid) save(data)
+                        })
+                    "
+                    class="mb-4">
                     <div class="text-caption text-text">Bitte geben Sie die Felder ein (* = Pflichtfeld)</div>
                     <v-text-field autofocus v-model="data.title" label="Bezeichnung *" :rules="[required(), maxLength(255)]" />
-                    <v-select v-model="data.teaching_schema_id" :items="schemaItems" label="Benotungsschema" clearable density="compact" hide-details class="mt-2" />
+                    <v-select
+                        v-model="data.teaching_schema_id"
+                        :items="schemaItems"
+                        label="Benotungsschema *"
+                        :rules="[required()]"
+                        density="compact"
+                        hide-details="auto"
+                        class="mt-2" />
 
                     <div class="text-caption text-text mt-4">Klassen auswählen</div>
                     <v-chip-group v-model="data.classes" multiple column>
@@ -134,7 +149,7 @@
 
                     <div class="d-flex flex-row align-center justify-space-between mt-4">
                         <v-btn color="warning" flat tile @click="abortNewCourse">Abbruch</v-btn>
-                        <v-btn color="success" flat tile type="submit" v-if="data.title && data?.classes?.length > 0">Speichern</v-btn>
+                        <v-btn color="success" flat tile type="submit" v-if="data.title && data?.classes?.length > 0 && data.teaching_schema_id">Speichern</v-btn>
                     </div>
                 </v-form>
             </v-card-text>
@@ -353,6 +368,8 @@ export default {
         },
 
         async save(data) {
+            if (!data?.teaching_schema_id) return
+
             const source = data
             this.courseStore.ensureCourseStudentCollections(source)
             if ((!source.students || source.students.length === 0) && Array.isArray(source.students_info) && source.students_info.length > 0) {

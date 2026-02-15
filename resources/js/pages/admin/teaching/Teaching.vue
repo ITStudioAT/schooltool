@@ -26,7 +26,7 @@
                 :title="config.selected_schoolyear?.name"
                 subtitle="Schuljahr"
                 icon="mdi-calendar"
-                :color="main_action == 'schoolyear' ? 'primary' : 'secondary'"
+                :color="schoolyearButtonColor"
                 @click="main_action = 'schoolyear'"
                 v-if="config.roles.some((item) => ['super_admin', 'admin', 'teaching_admin', 'teacher'].includes(item))" />
         </v-card>
@@ -77,6 +77,10 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'action', 'action_2']),
+        schoolyearButtonColor() {
+            if (!this.config?.selected_schoolyear) return 'error'
+            return this.main_action == 'schoolyear' ? 'primary' : 'secondary'
+        },
     },
 
     methods: {

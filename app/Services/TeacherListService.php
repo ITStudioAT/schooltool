@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\Teacher;
 use App\Models\User;
 use App\Notifications\StandardEmail;
@@ -176,8 +177,13 @@ class TeacherListService
             ->where('email', $data['email'])
             ->first();
 
+        $activeSchoolyearId = SchoolTool::query()
+            ->where('school_id', $teacher->school_id)
+            ->value('active_schoolyear_id');
+
         $user = User::create([
             'school_id' => $teacher->school_id,
+            'schoolyear_id' => $activeSchoolyearId,
             'short' => $teacher->short,
             'last_name' => $teacher->last_name,
             'first_name' => $teacher->first_name,

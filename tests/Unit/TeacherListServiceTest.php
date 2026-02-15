@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\School;
+use App\Models\SchoolTool;
+use App\Models\Schoolyear;
 use App\Models\Teacher;
 use App\Models\User;
 use App\Services\TeacherListService;
@@ -647,5 +649,33 @@ describe('createUserFromTeacher', function () {
         expect($user->password)->not->toBeNull()
             ->and($user->password)->not->toBeEmpty()
             ->and(Hash::needsRehash($user->password))->toBeFalse();
+    });
+
+    it('sets schoolyear_id from school tools active_schoolyear_id', function () {
+        $schoolyear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+        ]);
+
+        SchoolTool::factory()->create([
+            'school_id' => $this->school->id,
+            'active_schoolyear_id' => $schoolyear->id,
+        ]);
+
+        Teacher::create([
+            'school_id' => $this->school->id,
+            'short' => 'KRO',
+            'first_name' => 'Max',
+            'last_name' => 'Mustermann',
+            'email' => 'teacher@example.com',
+        ]);
+
+        $data = [
+            'school_id' => $this->school->id,
+            'email' => 'teacher@example.com',
+        ];
+
+        $user = $this->service->createUserFromTeacher($data);
+
+        expect($user->schoolyear_id)->toBe($schoolyear->id);
     });
 });

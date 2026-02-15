@@ -115,6 +115,11 @@ class TeachingCourseController extends Controller
             ->distinct()
             ->orderBy('class')
             ->pluck('class');
+        $schemaIds = collect($auth_user->teaching_schemas ?? [])
+            ->pluck('id')
+            ->filter(fn ($id) => is_scalar($id) && (string) $id !== '')
+            ->map(fn ($id) => (string) $id)
+            ->values();
 
         $validated = $request->validate([
             'title' => 'required|string|max:255',
@@ -127,7 +132,7 @@ class TeachingCourseController extends Controller
             'students.*.stars.*.comment' => 'nullable|string|max:1024',
             'students.*.stars.*.date' => 'nullable|date',
             'students_deleted' => 'nullable|array',
-            'teaching_schema_id' => 'nullable|string|max:36',
+            'teaching_schema_id' => ['required', 'string', 'max:36', Rule::in($schemaIds)],
         ]);
 
         $sortedClasses = $validated['classes'];
@@ -188,6 +193,11 @@ class TeachingCourseController extends Controller
             ->distinct()
             ->orderBy('class')
             ->pluck('class');
+        $schemaIds = collect($auth_user->teaching_schemas ?? [])
+            ->pluck('id')
+            ->filter(fn ($id) => is_scalar($id) && (string) $id !== '')
+            ->map(fn ($id) => (string) $id)
+            ->values();
 
         $validated = $request->validate([
             'title' => 'required|string|max:255',
@@ -201,7 +211,7 @@ class TeachingCourseController extends Controller
             'students.*.stars.*.comment' => 'nullable|string|max:1024',
             'students.*.stars.*.date' => 'nullable|date',
             'students_deleted' => 'nullable|array',
-            'teaching_schema_id' => 'nullable|string|max:36',
+            'teaching_schema_id' => ['required', 'string', 'max:36', Rule::in($schemaIds)],
         ]);
 
         $sortedClasses = $validated['classes'];
@@ -226,7 +236,7 @@ class TeachingCourseController extends Controller
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
             'classes' => $sortedClasses,
-            'teaching_schema_id' => $validated['teaching_schema_id'] ?? $course->teaching_schema_id,
+            'teaching_schema_id' => $validated['teaching_schema_id'],
         ]);
 
         $service->syncCourseStudents($course, $studentsPayload, $studentsDeletedPayload);

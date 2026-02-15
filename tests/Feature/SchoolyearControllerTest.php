@@ -31,7 +31,7 @@ beforeEach(function () {
         'name' => '2024/2025',
     ]);
 
-    collect(['super_admin', 'admin', 'register_admin'])->each(
+    collect(['super_admin', 'admin', 'register_admin', 'teacher'])->each(
         fn(string $role) => Role::firstOrCreate(['name' => $role, 'guard_name' => 'web'])
     );
 
@@ -48,6 +48,13 @@ beforeEach(function () {
         'email' => 'register.admin@test.com',
     ]);
     $this->registerAdmin->assignRole('register_admin');
+
+    $this->teacherUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'teacher@test.com',
+    ]);
+    $this->teacherUser->assignRole('teacher');
 });
 
 // ============================================================================
@@ -79,6 +86,13 @@ test('admin can list schoolyears sorted by name', function () {
 
 test('register admin can list schoolyears', function () {
     $this->actingAs($this->registerAdmin, 'sanctum');
+
+    $this->getJson('/api/admin/schoolyears')
+        ->assertStatus(200);
+});
+
+test('teacher can list schoolyears', function () {
+    $this->actingAs($this->teacherUser, 'sanctum');
 
     $this->getJson('/api/admin/schoolyears')
         ->assertStatus(200);
@@ -300,6 +314,25 @@ test('register admin can set active schoolyear', function () {
     });
 
     $this->actingAs($this->registerAdmin, 'sanctum');
+
+    $this->postJson('/api/admin/schoolyears/set_active', [
+        'schoolyear_id' => $newYear->id,
+    ])->assertStatus(200);
+});
+
+test('teacher can set active schoolyear', function () {
+    $newYear = Schoolyear::factory()->create([
+        'school_id' => $this->school->id,
+        'name' => '2030/2031',
+    ]);
+
+    $this->mock(SchoolyearService::class, function ($mock) use ($newYear) {
+        $mock->shouldReceive('setToUser')
+            ->once()
+            ->andReturn($newYear);
+    });
+
+    $this->actingAs($this->teacherUser, 'sanctum');
 
     $this->postJson('/api/admin/schoolyears/set_active', [
         'schoolyear_id' => $newYear->id,
