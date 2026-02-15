@@ -329,18 +329,8 @@ class TeachingCourseService
         $userBelongsToSchool = $user && (int) $user->school_id === $schoolId;
         $importBelongsToSchool = $import && (int) $import->school_id === $schoolId;
 
-        // If both exist for this school, check if they're actually related by email
+        // If both exist for this school, prefer User (already resolved entity)
         if ($userBelongsToSchool && $importBelongsToSchool) {
-            // Only return the user if their email matches the import
-            if ($user->email && $import->email && $user->email === $import->email) {
-                return $user->id;
-            }
-            // They have the same ID but different emails - not related!
-            // Resolve the import to find the actual user by email
-            if ($import->email) {
-                return $this->findOrCreateUserIdFromImport($import, $schoolId);
-            }
-            // Import has no email, fall back to user
             return $user->id;
         }
 
@@ -486,9 +476,10 @@ class TeachingCourseService
             ]);
 
             if (isset($data['user_id']) && is_numeric($data['user_id'])) {
-                $userId = $this->resolveStudentIdFromNumeric((int) $data['user_id'], $schoolId);
-                if ($userId) {
-                    return ['user_id' => $userId, 'import116_id' => null];
+                $user = User::find((int) $data['user_id']);
+                if ($user && (int) $user->school_id === $schoolId) {
+                    Log::debug('Resolved via explicit user_id', ['user_id' => $user->id]);
+                    return ['user_id' => $user->id, 'import116_id' => null];
                 }
             }
 

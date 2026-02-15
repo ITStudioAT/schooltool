@@ -134,20 +134,19 @@ class TeachingCourseController extends Controller
         $sortedClasses = $validated['classes'];
         sort($sortedClasses);
 
-        $studentsPayload = $validated['students'] ?? [];
-        if (empty($studentsPayload)) {
-            $studentsInfoPayload = $request->input('students_info', []);
-            if (is_array($studentsInfoPayload) && ! empty($studentsInfoPayload)) {
-                $studentsPayload = $studentsInfoPayload;
-            }
+        // Prefer students_info (has user_id/import116_id) over students (just IDs)
+        $studentsInfoPayload = $request->input('students_info', []);
+        if (is_array($studentsInfoPayload) && ! empty($studentsInfoPayload)) {
+            $studentsPayload = $studentsInfoPayload;
+        } else {
+            $studentsPayload = $validated['students'] ?? [];
         }
 
-        $studentsDeletedPayload = $validated['students_deleted'] ?? [];
-        if (empty($studentsDeletedPayload)) {
-            $studentsDeletedInfoPayload = $request->input('students_deleted_info', []);
-            if (is_array($studentsDeletedInfoPayload) && ! empty($studentsDeletedInfoPayload)) {
-                $studentsDeletedPayload = $studentsDeletedInfoPayload;
-            }
+        $studentsDeletedInfoPayload = $request->input('students_deleted_info', []);
+        if (is_array($studentsDeletedInfoPayload) && ! empty($studentsDeletedInfoPayload)) {
+            $studentsDeletedPayload = $studentsDeletedInfoPayload;
+        } else {
+            $studentsDeletedPayload = $validated['students_deleted'] ?? [];
         }
 
         $course = TeachingCourse::create([
@@ -217,20 +216,19 @@ class TeachingCourseController extends Controller
         $sortedClasses = $validated['classes'];
         sort($sortedClasses);
 
-        $studentsPayload = $validated['students'] ?? [];
-        if (empty($studentsPayload)) {
-            $studentsInfoPayload = $request->input('students_info', []);
-            if (is_array($studentsInfoPayload) && ! empty($studentsInfoPayload)) {
-                $studentsPayload = $studentsInfoPayload;
-            }
+        // Prefer students_info (has user_id/import116_id) over students (just IDs)
+        $studentsInfoPayload = $request->input('students_info', []);
+        if (is_array($studentsInfoPayload) && ! empty($studentsInfoPayload)) {
+            $studentsPayload = $studentsInfoPayload;
+        } else {
+            $studentsPayload = $validated['students'] ?? [];
         }
 
-        $studentsDeletedPayload = $validated['students_deleted'] ?? [];
-        if (empty($studentsDeletedPayload)) {
-            $studentsDeletedInfoPayload = $request->input('students_deleted_info', []);
-            if (is_array($studentsDeletedInfoPayload) && ! empty($studentsDeletedInfoPayload)) {
-                $studentsDeletedPayload = $studentsDeletedInfoPayload;
-            }
+        $studentsDeletedInfoPayload = $request->input('students_deleted_info', []);
+        if (is_array($studentsDeletedInfoPayload) && ! empty($studentsDeletedInfoPayload)) {
+            $studentsDeletedPayload = $studentsDeletedInfoPayload;
+        } else {
+            $studentsDeletedPayload = $validated['students_deleted'] ?? [];
         }
 
         Log::info('Controller determined payloads', [
@@ -308,6 +306,8 @@ class TeachingCourseController extends Controller
         }
 
         $payload['id'] = $resolvedId;
+        $payload['user_id'] = $courseStudent->user_id;
+        $payload['import116_id'] = $courseStudent->import116_id;
         $payload['comment'] = $courseStudent->comment;
         $payload['sem_1_grade'] = $courseStudent->sem_1_grade;
         $payload['sem_2_grade'] = $courseStudent->sem_2_grade;
