@@ -26,7 +26,9 @@ class Import116Controller extends Controller
 
         $studentsQuery = Import116::query()
             ->where('school_id', $auth_user->school_id)
-            ->where('schoolyear_id', $auth_user->schoolyear_id);
+            ->where('schoolyear_id', $auth_user->schoolyear_id)
+            ->whereNotNull('class')
+            ->where('class', '!=', '');
 
         if ($schoolclasses && count($schoolclasses) > 0) {
             $studentsQuery->whereIn('class', $schoolclasses);

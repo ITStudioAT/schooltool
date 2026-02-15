@@ -230,17 +230,29 @@ class TeachingCourseService
             return null;
         }
 
-        $user = User::where('school_id', $schoolId)
-            ->where('email', $email)
-            ->first();
+        $schoolyearId = $data['schoolyear_id'] ?? null;
+
+        $userQuery = User::where('school_id', $schoolId)
+            ->where('email', $email);
+
+        if ($schoolyearId) {
+            $userQuery->where('schoolyear_id', $schoolyearId);
+        }
+
+        $user = $userQuery->first();
 
         if ($user) {
             return $user->id;
         }
 
-        $import = Import116::where('school_id', $schoolId)
-            ->where('email', $email)
-            ->first();
+        $importQuery = Import116::where('school_id', $schoolId)
+            ->where('email', $email);
+
+        if ($schoolyearId) {
+            $importQuery->where('schoolyear_id', $schoolyearId);
+        }
+
+        $import = $importQuery->first();
 
         if ($import) {
             return $this->findOrCreateUserIdFromImport($import, $schoolId);
@@ -248,7 +260,7 @@ class TeachingCourseService
 
         if (! empty($data)) {
             return $this->createStudentUser([
-                'schoolyear_id' => $data['schoolyear_id'] ?? null,
+                'schoolyear_id' => $schoolyearId,
                 'email' => $email,
                 'first_name' => $data['first_name'] ?? null,
                 'last_name' => $data['last_name'] ?? null,
@@ -268,6 +280,7 @@ class TeachingCourseService
         }
 
         $user = User::where('school_id', $schoolId)
+            ->where('schoolyear_id', $import->schoolyear_id)
             ->where('email', $import->email)
             ->first();
 
