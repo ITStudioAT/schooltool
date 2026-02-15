@@ -7,7 +7,6 @@ use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudent;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Log;
 
 class TeachingCourseService
 {
@@ -161,23 +160,8 @@ class TeachingCourseService
             return;
         }
 
-        Log::info('=== SYNC COURSE STUDENTS START ===', [
-            'course_id' => $course->id,
-            'course_title' => $course->title,
-            'school_id' => $schoolId,
-            'students_payload_count' => is_array($studentsPayload) ? count($studentsPayload) : 0,
-            'students_deleted_payload_count' => is_array($studentsDeletedPayload) ? count($studentsDeletedPayload) : 0,
-            'students_payload_sample' => is_array($studentsPayload) && count($studentsPayload) > 0 ? array_slice($studentsPayload, 0, 2) : [],
-        ]);
-
         $activeEntries = $this->resolveCourseStudentEntries($studentsPayload, $schoolId);
         $deletedEntries = $this->resolveCourseStudentEntries($studentsDeletedPayload, $schoolId);
-
-        Log::info('Resolved entries', [
-            'active_count' => count($activeEntries),
-            'deleted_count' => count($deletedEntries),
-            'active_sample' => array_slice($activeEntries, 0, 2),
-        ]);
 
         $activeByKey = [];
         foreach ($activeEntries as $entry) {
@@ -207,13 +191,6 @@ class TeachingCourseService
             $existingByKey[$key] = $courseStudent;
         }
 
-        Log::info('Existing course students in DB', [
-            'existing_count' => count($existing),
-            'existing_keys' => array_keys($existingByKey),
-            'active_keys' => array_keys($activeByKey),
-            'deleted_keys' => array_keys($deletedByKey),
-        ]);
-
         $updated = 0;
         $restored = 0;
         $markedDeleted = 0;
@@ -221,7 +198,6 @@ class TeachingCourseService
 
         foreach ($existingByKey as $key => $courseStudent) {
             if (isset($activeByKey[$key])) {
-                Log::info('Updating existing active student', ['key' => $key, 'user_id' => $activeByKey[$key]['user_id'] ?? null]);
                 $courseStudent->fill($this->buildCourseStudentPayload($activeByKey[$key]));
                 $courseStudent->save();
                 if ($courseStudent->trashed()) {
@@ -234,7 +210,6 @@ class TeachingCourseService
             }
 
             if (isset($deletedByKey[$key])) {
-                Log::info('Updating existing to deleted', ['key' => $key]);
                 $courseStudent->fill($this->buildCourseStudentPayload($deletedByKey[$key]));
                 $courseStudent->save();
                 if (! $courseStudent->trashed()) {
@@ -246,7 +221,6 @@ class TeachingCourseService
             }
 
             if (! $courseStudent->trashed()) {
-                Log::info('Soft deleting student (not in active or deleted)', ['key' => $key]);
                 $courseStudent->delete();
                 $softDeleted++;
             }
@@ -254,28 +228,16 @@ class TeachingCourseService
 
         $created = 0;
         foreach ($activeByKey as $key => $entry) {
-            $payload = $this->buildCourseStudentPayload($entry);
-            Log::info('Creating NEW student', ['key' => $key, 'payload' => $payload]);
-            $course->teachingCourseStudents()->create($payload);
+            $course->teachingCourseStudents()->create($this->buildCourseStudentPayload($entry));
             $created++;
         }
 
         $createdDeleted = 0;
         foreach ($deletedByKey as $key => $entry) {
-            Log::info('Creating student as deleted', ['key' => $key]);
             $created = $course->teachingCourseStudents()->create($this->buildCourseStudentPayload($entry));
             $created->delete();
             $createdDeleted++;
         }
-
-        Log::info('=== SYNC COURSE STUDENTS END ===', [
-            'updated' => $updated,
-            'restored' => $restored,
-            'created' => $created,
-            'soft_deleted' => $softDeleted,
-            'marked_deleted' => $markedDeleted,
-            'created_deleted' => $createdDeleted,
-        ]);
     }
 
     public function findImportIdInSchool(int $id, int $schoolId): ?int
@@ -468,17 +430,9 @@ class TeachingCourseService
         if (is_array($item) || is_object($item)) {
             $data = (array) $item;
 
-            Log::debug('Resolving student reference', [
-                'id' => $data['id'] ?? null,
-                'user_id' => $data['user_id'] ?? null,
-                'import116_id' => $data['import116_id'] ?? null,
-                'email' => $data['email'] ?? null,
-            ]);
-
             if (isset($data['user_id']) && is_numeric($data['user_id'])) {
                 $user = User::find((int) $data['user_id']);
                 if ($user && (int) $user->school_id === $schoolId) {
-                    Log::debug('Resolved via explicit user_id', ['user_id' => $user->id]);
                     return ['user_id' => $user->id, 'import116_id' => null];
                 }
             }
@@ -503,7 +457,6 @@ class TeachingCourseService
             if ($email !== '') {
                 $reference = $this->resolveStudentReferenceByEmail($email, $schoolId, $data);
                 if ($reference) {
-                    Log::debug('Resolved via email', ['email' => $email, 'user_id' => $reference['user_id'], 'import116_id' => $reference['import116_id']]);
                     return $reference;
                 }
             }
@@ -512,7 +465,6 @@ class TeachingCourseService
             if (isset($data['id']) && is_numeric($data['id'])) {
                 $reference = $this->resolveStudentReferenceFromNumeric((int) $data['id'], $schoolId);
                 if ($reference) {
-                    Log::debug('Resolved via id', ['id' => $data['id'], 'user_id' => $reference['user_id'], 'import116_id' => $reference['import116_id']]);
                     return $reference;
                 }
             }

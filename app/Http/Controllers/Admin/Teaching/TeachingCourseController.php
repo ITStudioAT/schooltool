@@ -12,7 +12,6 @@ use App\Models\User;
 use App\Services\TeachingCourseService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 
 class TeachingCourseController extends Controller
@@ -184,14 +183,6 @@ class TeachingCourseController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        Log::info('=== CONTROLLER UPDATE START ===', [
-            'course_id' => $course->id,
-            'course_title' => $course->title,
-            'request_students_count' => is_array($request->input('students')) ? count($request->input('students')) : 0,
-            'request_students_info_count' => is_array($request->input('students_info')) ? count($request->input('students_info')) : 0,
-            'request_students_deleted_count' => is_array($request->input('students_deleted')) ? count($request->input('students_deleted')) : 0,
-        ]);
-
         $classes = Import116::where('school_id', $auth_user->school_id)
             ->where('schoolyear_id', $auth_user->schoolyear_id)
             ->distinct()
@@ -230,12 +221,6 @@ class TeachingCourseController extends Controller
         } else {
             $studentsDeletedPayload = $validated['students_deleted'] ?? [];
         }
-
-        Log::info('Controller determined payloads', [
-            'students_payload_count' => count($studentsPayload),
-            'students_deleted_payload_count' => count($studentsDeletedPayload),
-            'students_payload_sample' => array_slice($studentsPayload, 0, 2),
-        ]);
 
         $course->update([
             'title' => $validated['title'],
