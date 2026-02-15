@@ -50,7 +50,26 @@
 
                 <!-- Course Tabs -->
                 <div v-else-if="course">
-                    <v-tabs v-model="currentTab" bg-color="transparent" color="#fd802e" grow>
+                    <div class="course-tabs-mobile">
+                        <v-btn class="course-tab-mobile-btn" :variant="currentTab === 'overview' ? 'flat' : 'outlined'" :color="currentTab === 'overview' ? 'primary' : undefined" @click="currentTab = 'overview'">
+                            <v-icon start>mdi-information-outline</v-icon>
+                            Übersicht
+                        </v-btn>
+                        <v-btn class="course-tab-mobile-btn" :variant="currentTab === 'entries' ? 'flat' : 'outlined'" :color="currentTab === 'entries' ? 'primary' : undefined" @click="currentTab = 'entries'">
+                            <v-icon start>mdi-notebook-outline</v-icon>
+                            Leistungen
+                        </v-btn>
+                        <v-btn class="course-tab-mobile-btn" :variant="currentTab === 'behaviour' ? 'flat' : 'outlined'" :color="currentTab === 'behaviour' ? 'primary' : undefined" @click="currentTab = 'behaviour'">
+                            <v-icon start>mdi-account-star</v-icon>
+                            Verhalten
+                        </v-btn>
+                        <v-btn class="course-tab-mobile-btn" :variant="currentTab === 'dates' ? 'flat' : 'outlined'" :color="currentTab === 'dates' ? 'primary' : undefined" @click="currentTab = 'dates'">
+                            <v-icon start>mdi-calendar-month</v-icon>
+                            Termine
+                        </v-btn>
+                    </div>
+
+                    <v-tabs v-model="currentTab" class="course-tabs course-tabs-desktop" bg-color="transparent" color="#fd802e" grow>
                         <v-tab value="overview">
                             <v-icon start>mdi-information-outline</v-icon>
                             Übersicht
@@ -245,7 +264,7 @@
                                 </div>
 
                                 <div class="entries-semester-filter">
-                                    <v-btn-toggle v-model="selectedSemester" mandatory density="compact" color="primary">
+                                    <v-btn-toggle v-model="selectedSemester" class="semester-toggle" mandatory density="compact" color="primary">
                                         <v-btn :value="1" size="small">1. Sem</v-btn>
                                         <v-btn :value="2" size="small">2. Sem</v-btn>
                                         <v-btn :value="3" size="small">1+2</v-btn>
@@ -380,7 +399,7 @@
                                 </div>
 
                                 <div class="dates-semester-filter">
-                                    <v-btn-toggle v-model="selectedSemesterDates" mandatory density="compact" color="primary">
+                                    <v-btn-toggle v-model="selectedSemesterDates" class="semester-toggle" mandatory density="compact" color="primary">
                                         <v-btn :value="1" size="small">1. Sem</v-btn>
                                         <v-btn :value="2" size="small">2. Sem</v-btn>
                                         <v-btn :value="3" size="small">1+2</v-btn>
@@ -942,6 +961,36 @@ export default {
     justify-content: flex-end;
 }
 
+.content-head {
+    flex-wrap: wrap;
+    row-gap: 8px;
+}
+
+.content-head h2 {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.course-tabs :deep(.v-slide-group__content) {
+    gap: 4px;
+}
+
+.course-tabs :deep(.v-tab) {
+    min-width: 0;
+}
+
+.course-tabs-mobile {
+    display: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.course-tab-mobile-btn {
+    justify-content: flex-start;
+    text-transform: none;
+}
+
 .entries-section {
     display: flex;
     flex-direction: column;
@@ -967,6 +1016,17 @@ export default {
 .entries-semester-filter {
     display: flex;
     justify-content: flex-start;
+    width: 100%;
+}
+
+.semester-toggle {
+    width: 100%;
+    max-width: 330px;
+}
+
+.semester-toggle :deep(.v-btn) {
+    min-width: 0;
+    flex: 1 1 0;
 }
 
 .entry-divider-row {
@@ -1010,6 +1070,15 @@ export default {
     min-width: 120px;
     flex: 1 1 260px;
     color: #314d5d;
+}
+
+.entry-main,
+.date-main,
+.notification-content,
+.behaviour-entry-content,
+.star-beautiful-content,
+.star-content {
+    min-width: 0;
 }
 
 .entry-grade {
@@ -1072,6 +1141,18 @@ export default {
     white-space: pre-wrap;
 }
 
+.entry-title,
+.entry-description,
+.entry-comment,
+.date-content,
+.notification-description,
+.behaviour-entry-description,
+.star-beautiful-comment,
+.star-comment {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
 .work-description-content :deep(p) {
     margin: 0.5em 0;
 }
@@ -1082,6 +1163,19 @@ export default {
 
 .work-description-content :deep(p:last-child) {
     margin-bottom: 0;
+}
+
+.work-description-content :deep(img),
+.date-content :deep(img) {
+    max-width: 100%;
+    height: auto;
+}
+
+.work-description-content :deep(table),
+.date-content :deep(table) {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
 }
 
 .stars-inline {
@@ -1117,6 +1211,7 @@ export default {
 .dates-semester-filter {
     display: flex;
     justify-content: flex-start;
+    width: 100%;
 }
 
 .date-row {
@@ -1534,13 +1629,102 @@ export default {
     line-height: 1.4;
 }
 
+@media (max-width: 960px) {
+    .course-tabs :deep(.v-slide-group__content) {
+        flex-wrap: wrap;
+    }
+
+    .course-tabs :deep(.v-tab) {
+        flex: 1 1 calc(50% - 4px);
+    }
+}
+
 @media (max-width: 700px) {
-    .entry-main {
+    .course-tabs-desktop {
+        display: none;
+    }
+
+    .course-tabs-mobile {
+        display: grid;
+    }
+
+    .hero-logout-row {
+        justify-content: flex-start;
+    }
+
+    .entries-toolbar,
+    .dates-toolbar {
+        align-items: flex-start;
+    }
+
+    .entries-toolbar > .v-btn {
+        width: 100%;
+    }
+
+    .entry-row,
+    .date-row {
+        padding: 10px;
+    }
+
+    .entry-main,
+    .date-main {
         flex-basis: 100%;
     }
 
     .entry-grade {
-        margin-left: auto;
+        margin-left: 0;
+    }
+
+    .grade-item {
+        min-width: 100%;
+    }
+
+    .grade-set .grade-value,
+    .grade-open .grade-value {
+        font-size: 1.7rem;
+    }
+
+    .notification-item,
+    .behaviour-entry-item,
+    .star-beautiful-item {
+        padding: 12px;
+    }
+}
+
+@media (max-width: 520px) {
+    .course-tabs-mobile {
+        grid-template-columns: 1fr;
+    }
+
+    .course-tab-mobile-btn {
+        width: 100%;
+    }
+
+    .semester-toggle {
+        max-width: 100%;
+    }
+
+    .entry-row :deep(.v-chip),
+    .date-row :deep(.v-chip) {
+        max-width: 100%;
+        width: fit-content;
+        white-space: normal;
+        height: auto;
+        min-height: 26px;
+    }
+
+    .notification-dates {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .star-beautiful-item {
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .star-beautiful-icon-container {
+        align-self: flex-start;
     }
 }
 </style>
