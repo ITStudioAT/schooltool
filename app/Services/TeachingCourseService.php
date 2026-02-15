@@ -210,16 +210,26 @@ class TeachingCourseService
 
     public function resolveStudentIdFromNumeric(int $id, int $schoolId): ?int
     {
-        // First check if this is an Import116 ID
+        // Check both User and Import116 tables
+        $user = User::find($id);
         $import = Import116::find($id);
-        if ($import && (int) $import->school_id === $schoolId) {
-            return $this->findOrCreateUserIdFromImport($import, $schoolId);
+
+        $userBelongsToSchool = $user && (int) $user->school_id === $schoolId;
+        $importBelongsToSchool = $import && (int) $import->school_id === $schoolId;
+
+        // If both exist for this school, prefer User (existing course with User IDs)
+        if ($userBelongsToSchool && $importBelongsToSchool) {
+            return $user->id;
         }
 
-        // Fall back to checking if it's a User ID (for already-resolved students)
-        $user = User::find($id);
-        if ($user && (int) $user->school_id === $schoolId) {
+        // If only User exists, use it (already resolved)
+        if ($userBelongsToSchool) {
             return $user->id;
+        }
+
+        // If only Import116 exists, resolve it to User (new assignment)
+        if ($importBelongsToSchool) {
+            return $this->findOrCreateUserIdFromImport($import, $schoolId);
         }
 
         return null;
