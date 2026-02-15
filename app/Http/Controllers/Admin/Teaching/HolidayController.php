@@ -12,7 +12,7 @@ class HolidayController extends Controller
 {
     public function index(HolidayService $service)
     {
-        if (! $auth_user = $this->userHasRole(['admin'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -25,7 +25,7 @@ class HolidayController extends Controller
 
     public function store(Request $request, HolidayService $service)
     {
-        if (! $auth_user = $this->userHasRole(['admin'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -45,7 +45,7 @@ class HolidayController extends Controller
 
     public function destroy(TeachingHoliday $holiday, HolidayService $service)
     {
-        if (! $auth_user = $this->userHasRole(['admin'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 

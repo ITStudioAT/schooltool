@@ -46,6 +46,12 @@ beforeEach(function () {
         'schoolyear_id' => $this->schoolyear->id,
     ]);
     $this->teacher->assignRole('teacher');
+
+    $this->teachingAdmin = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $this->teachingAdmin->assignRole('teaching_admin');
 });
 
 describe('authorization', function () {
@@ -61,6 +67,12 @@ describe('authorization', function () {
 
     test('allows super_admin on admin holiday index', function () {
         $this->actingAs($this->superAdmin, 'sanctum');
+
+        $this->getJson('/api/admin/teaching/holidays')->assertOk();
+    });
+
+    test('allows teaching_admin on admin holiday index', function () {
+        $this->actingAs($this->teachingAdmin, 'sanctum');
 
         $this->getJson('/api/admin/teaching/holidays')->assertOk();
     });
@@ -201,5 +213,57 @@ test('destroy rejects teacher-scope holiday on admin endpoint', function () {
 
     $this->assertDatabaseHas('teaching_holidays', [
         'id' => $teacherHoliday->id,
+    ]);
+});
+
+test('teaching_admin can create school holidays', function () {
+    $this->actingAs($this->teachingAdmin, 'sanctum');
+
+    $response = $this->postJson('/api/admin/teaching/holidays', [
+        'date_from' => '2026-06-01',
+        'date_until' => '2026-06-02',
+        'reason' => 'Sommerferien',
+    ]);
+
+    $response->assertCreated()
+        ->assertJsonPath('created', 2)
+        ->assertJsonPath('updated', 0);
+
+    $this->assertDatabaseHas('teaching_holidays', [
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'scope' => 'school',
+        'user_id' => null,
+        'date' => '2026-06-01',
+        'reason' => 'Sommerferien',
+    ]);
+
+    $this->assertDatabaseHas('teaching_holidays', [
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'scope' => 'school',
+        'user_id' => null,
+        'date' => '2026-06-02',
+        'reason' => 'Sommerferien',
+    ]);
+});
+
+test('teaching_admin can delete school holidays', function () {
+    $this->actingAs($this->teachingAdmin, 'sanctum');
+
+    $holiday = TeachingHoliday::create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'scope' => 'school',
+        'user_id' => null,
+        'date' => '2026-07-01',
+        'reason' => 'Test Holiday',
+    ]);
+
+    $this->deleteJson("/api/admin/teaching/holidays/{$holiday->id}")
+        ->assertNoContent();
+
+    $this->assertDatabaseMissing('teaching_holidays', [
+        'id' => $holiday->id,
     ]);
 });
