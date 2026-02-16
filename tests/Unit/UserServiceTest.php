@@ -243,6 +243,64 @@ describe('update', function () {
         expect($updated->hasRole('admin'))->toBeFalse();
     });
 
+    it('allows super_admin actor to assign super_admin role to other users', function () {
+        $actor = User::factory()->create(['school_id' => $this->school->id]);
+        $actor->assignRole('super_admin');
+        $user = User::factory()->create(['school_id' => $this->school->id]);
+
+        $data = [
+            'id' => $user->id,
+            'email' => $user->email,
+            'roles' => [
+                ['name' => 'super_admin', 'checked' => true],
+            ],
+        ];
+
+        $updated = $this->service->update($data, $actor);
+
+        expect($updated->hasRole('super_admin'))->toBeTrue();
+    });
+
+    it('does not allow admin actor to assign super_admin role', function () {
+        $actor = User::factory()->create(['school_id' => $this->school->id]);
+        $actor->assignRole('admin');
+        $user = User::factory()->create(['school_id' => $this->school->id]);
+
+        $data = [
+            'id' => $user->id,
+            'email' => $user->email,
+            'roles' => [
+                ['name' => 'super_admin', 'checked' => true],
+            ],
+        ];
+
+        $updated = $this->service->update($data, $actor);
+
+        expect($updated->hasRole('super_admin'))->toBeFalse();
+    });
+
+    it('keeps super_admin role for protected kron account', function () {
+        $actor = User::factory()->create(['school_id' => $this->school->id]);
+        $actor->assignRole('super_admin');
+        $user = User::factory()->create([
+            'school_id' => $this->school->id,
+            'email' => 'kron@naturwelt.at',
+        ]);
+        $user->assignRole('super_admin');
+
+        $data = [
+            'id' => $user->id,
+            'email' => $user->email,
+            'roles' => [
+                ['name' => 'super_admin', 'checked' => false],
+            ],
+        ];
+
+        $updated = $this->service->update($data, $actor);
+
+        expect($updated->hasRole('super_admin'))->toBeTrue();
+    });
+
     it('does not remove register_user role when user has bookings', function () {
         $user = User::factory()->create(['school_id' => $this->school->id]);
         $user->assignRole('register_user');

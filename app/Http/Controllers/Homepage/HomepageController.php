@@ -59,9 +59,26 @@ class HomepageController extends Controller
         $validated = $request->validated();
         $licence = Licence::where('name', $validated['tool'])->first();
 
+        if (!$licence) {
+            return response()->json([
+                'licence' => null,
+                'schools' => [],
+            ], 200);
+        }
+
+        $schools = School::selectables()
+            ->whereHas('licences', function ($q) use ($licence) {
+                $q->where('licences.id', $licence->id)
+                    ->where(function ($subQ) {
+                        $subQ->whereNull('school_licences.valid_until')
+                            ->orWhereDate('school_licences.valid_until', '>=', now()->toDateString());
+                    });
+            })
+            ->get();
+
         $data = [
             'licence' => new LicenceResource($licence),
-            'schools' => SchoolResource::collection($licence->schools->sortBy('long_name')->values())
+            'schools' => SchoolResource::collection($schools),
         ];
 
         return response()->json($data, 200);
@@ -111,6 +128,10 @@ class HomepageController extends Controller
 
 
 
+        $registerLicenceStatus = $this->licenceStatus($isSchoolValid ? $school : null, 'Anmeldetool');
+        $tutoringLicenceStatus = $this->licenceStatus($isSchoolValid ? $school : null, 'Nachhilfetool');
+        $teachingLicenceStatus = $this->licenceStatus($isSchoolValid ? $school : null, 'Lehrertool');
+
         $data = [
             'schooltool_logo' => config('schooltool.logo'),
             'logo' => $school ? $school->logo : null,
@@ -123,11 +144,69 @@ class HomepageController extends Controller
             'licence' => $isLicenceValid ? new LicenceResource($licence) : null,
             'selectableSchools' => SchoolResource::collection($schools),
             'schoolLicences' => $school ? LicenceResource::collection($schoolLicences) : [],
+            'register_licence_status' => $registerLicenceStatus,
+            'register_licence_available' => $registerLicenceStatus === 'active',
             'tutoring_active' => config('schooltool.tutoring_active', false),
             'teaching_active' => config('schooltool.teaching_active', false),
+            'tutoring_licence_status' => $tutoringLicenceStatus,
+            'tutoring_licence_available' => $tutoringLicenceStatus === 'active',
+            'teaching_licence_status' => $teachingLicenceStatus,
+            'teaching_licence_available' => $teachingLicenceStatus === 'active',
         ];
 
         return response()->json($data, 200);
+    }
+
+    private function hasAvailableLicence(?School $school, string $licenceName): bool
+    {
+        if ($school) {
+            return $school->selectableValidLicences()->where('licences.name', $licenceName)->exists();
+        }
+
+        return School::selectables()
+            ->whereHas('licences', function ($q) use ($licenceName) {
+                $q->where('licences.name', $licenceName)
+                    ->where('licences.is_selectable', true)
+                    ->where(function ($subQ) {
+                        $subQ->whereNull('school_licences.valid_until')
+                            ->orWhereDate('school_licences.valid_until', '>=', now()->toDateString());
+                    });
+            })
+            ->exists();
+    }
+
+    private function licenceStatus(?School $school, string $licenceName): string
+    {
+        $licence = Licence::where('name', $licenceName)->where('is_selectable', true)->first();
+        if (!$licence) {
+            return 'missing';
+        }
+
+        if ($school) {
+            $schoolLicence = $school->licences()->where('licence_id', $licence->id)->first();
+            if (!$schoolLicence) {
+                return 'missing';
+            }
+
+            $validUntil = $schoolLicence->pivot->valid_until;
+            if ($validUntil === null || $validUntil >= now()->toDateString()) {
+                return 'active';
+            }
+
+            return 'expired';
+        }
+
+        $hasAssigned = School::selectables()
+            ->whereHas('licences', function ($q) use ($licence) {
+                $q->where('licences.id', $licence->id);
+            })
+            ->exists();
+
+        if (!$hasAssigned) {
+            return 'missing';
+        }
+
+        return $this->hasAvailableLicence(null, $licenceName) ? 'active' : 'expired';
     }
 
     public function logout()

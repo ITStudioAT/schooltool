@@ -35,13 +35,18 @@
                                 <div class="text-body-2" v-if="!school_licences || school_licences.length == 0">Keine gültigen Lizenzen</div>
 
                                 <div v-if="school_licences && school_licences.length > 0">
-                                    <div v-for="licence in school_licences" :key="licence.id" class="d-flex flex-row align-center justify-space-between text-body-1">
+                                    <div v-for="licence in school_licences" :key="licence.id" class="licence-row d-flex flex-row align-center justify-space-between text-body-1">
                                         <div>
-                                            {{ '✅ ' + licence.name }}
+                                            <div class="d-flex flex-row align-center ga-2">
+                                                <v-icon v-if="isLicenceActive(licence)" icon="mdi-checkbox-marked" color="success" size="small" />
+                                                <v-icon v-else icon="mdi-close-circle" color="error" size="small" />
+                                                <span>{{ licence.name }}</span>
+                                            </div>
                                         </div>
                                         <div class="d-flex flex-row align-center ga-2">
                                             <div>
-                                                {{ licence.valid_until }}
+                                                <span v-if="isLicenceActive(licence)">{{ licence.valid_until || 'unbegrenzt' }}</span>
+                                                <span v-else>{{ licence.valid_until }} (abgelaufen)</span>
                                             </div>
                                             <v-btn tile flat color="error" size="small" icon="mdi-delete" @click="deleteLicence(licence.school_licence_id)"></v-btn>
                                         </div>
@@ -300,6 +305,26 @@ export default {
             if (!(await this.schoolStore.addLicence(data))) return
             this.action = ''
         },
+        localDateKey(date = new Date()) {
+            const year = date.getFullYear()
+            const month = String(date.getMonth() + 1).padStart(2, '0')
+            const day = String(date.getDate()).padStart(2, '0')
+            return `${year}-${month}-${day}`
+        },
+        isLicenceActive(licence) {
+            const validUntil = licence?.valid_until
+            if (!validUntil) return true
+            return String(validUntil) >= this.localDateKey()
+        },
     },
 }
 </script>
+<style scoped>
+.licence-row {
+    margin-bottom: 8px;
+}
+
+.licence-row:last-child {
+    margin-bottom: 0;
+}
+</style>

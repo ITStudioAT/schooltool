@@ -47,6 +47,12 @@
                 </div>
             </div>
 
+            <div class="overview-nav" v-if="is_loaded && !is_login && action == ''">
+                <v-btn v-if="offer_config?.auth?.is_auth" class="overview-nav-btn" variant="text" size="small" prepend-icon="mdi-arrow-left" @click="goToMainMenu">
+                    Zurück zum Hauptmenü
+                </v-btn>
+            </div>
+
             <!-- Menu Cards -->
             <div class="menu-section" v-if="is_loaded && !is_login">
                 <!-- Main Menu -->
@@ -116,13 +122,13 @@
                     <div class="menu-card card-login" data-testid="tutoring-overview-start-login" @click="startLogin" v-if="!offer_config.auth.is_auth">
                         <div class="card-glow"></div>
                         <div class="card-content">
-                            <div class="card-icon">
-                                <v-icon size="36">mdi-login</v-icon>
-                            </div>
+                            <v-btn icon variant="flat" class="login-back-icon-btn" aria-label="Zurück zum Hauptmenü" @click.stop="goToMainMenu">
+                                <v-icon size="30">mdi-arrow-left</v-icon>
+                            </v-btn>
                             <h3 class="card-title">Anmelden</h3>
                             <p class="card-description">Melde Dich kostenlos an, um mehr Funktionen nutzen zu können.</p>
                             <div class="card-action">
-                                <span>Los geht's</span>
+                                <span>Anmelden</span>
                                 <v-icon size="18">mdi-arrow-right</v-icon>
                             </div>
                         </div>
@@ -176,6 +182,12 @@
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <div class="login-nav" v-if="is_loaded && is_login">
+                <v-btn class="login-nav-btn" variant="text" prepend-icon="mdi-arrow-left" @click="goToMainMenu">
+                    Zurück zum Hauptmenü
+                </v-btn>
             </div>
 
             <!-- School & User Selection -->
@@ -524,6 +536,9 @@ export default {
             this.data.school_id = this.school.id
             this.is_login = true
         },
+        goToMainMenu() {
+            this.$router.push('/')
+        },
 
         async initWithSchool() {
             await this.offerStore.loadOfferConfig(this.school_name)
@@ -780,6 +795,28 @@ export default {
     animation: fadeInUp 0.8s ease-out 0.2s both;
 }
 
+.overview-nav {
+    display: flex;
+    justify-content: center;
+    margin: 8px 0 0;
+}
+
+.overview-nav-btn {
+    font-weight: 600;
+    color: #37474f;
+}
+
+.login-nav {
+    display: flex;
+    justify-content: center;
+    margin: 8px 0 0;
+}
+
+.login-nav-btn {
+    font-weight: 600;
+    color: #37474f;
+}
+
 @keyframes fadeInUp {
     from {
         opacity: 0;
@@ -950,6 +987,16 @@ export default {
 
 .menu-card:hover .card-action {
     gap: 10px;
+}
+
+.login-back-icon-btn {
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    background: #efe6d8 !important;
+    color: #f39200 !important;
+    box-shadow: none !important;
+    margin-bottom: 16px;
 }
 
 /* Search Section */

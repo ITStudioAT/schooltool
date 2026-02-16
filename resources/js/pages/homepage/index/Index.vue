@@ -30,7 +30,7 @@
 
                     <div class="tools-grid">
                         <!-- Anmeldetool Card -->
-                        <div class="tool-card card-register" @click="loadSchoolsForTool('Anmeldetool')">
+                        <div class="tool-card card-register" :class="{ 'card-disabled': !canStartRegister }" @click="canStartRegister && loadSchoolsForTool('Anmeldetool')" v-if="canShowRegister">
                             <div class="card-glow"></div>
                             <div class="card-content">
                                 <div class="card-icon">
@@ -38,18 +38,19 @@
                                 </div>
                                 <h3 class="card-title">Anmeldetool</h3>
                                 <p class="card-description">Einfache Anmeldung zu Schulveranstaltungen, Elternabenden und Events.</p>
-                                <div class="card-action">
+                                <div class="card-action" v-if="canStartRegister">
                                     <span class="action-text">Starten</span>
                                     <v-icon size="20">mdi-arrow-right</v-icon>
+                                </div>
+                                <div class="card-badge" v-else>
+                                    <v-icon size="16">mdi-lock-outline</v-icon>
+                                    <span>Keine Lizenz</span>
                                 </div>
                             </div>
                         </div>
 
                         <!-- Nachhilfetool Card -->
-                        <div
-                            class="tool-card card-tutoring"
-                            :class="{ 'card-disabled': !config?.tutoring_active }"
-                            @click="config?.tutoring_active && loadSchoolsForTool('Nachhilfetool')">
+                        <div class="tool-card card-tutoring" :class="{ 'card-disabled': !canStartTutoring }" @click="canStartTutoring && loadSchoolsForTool('Nachhilfetool')" v-if="canShowTutoring">
                             <div class="card-glow"></div>
                             <div class="card-content">
                                 <div class="card-icon">
@@ -57,19 +58,19 @@
                                 </div>
                                 <h3 class="card-title">Schüler helfen Schülern</h3>
                                 <p class="card-description">Nachhilfe von Schülern für Schüler. Gemeinsam zum Erfolg.</p>
-                                <div class="card-action" v-if="config?.tutoring_active">
+                                <div class="card-action" v-if="canStartTutoring">
                                     <span class="action-text">Starten</span>
                                     <v-icon size="20">mdi-arrow-right</v-icon>
                                 </div>
                                 <div class="card-badge" v-else>
-                                    <v-icon size="16">mdi-wrench</v-icon>
-                                    <span>In Entwicklung</span>
+                                    <v-icon size="16">mdi-lock-outline</v-icon>
+                                    <span>Keine Lizenz</span>
                                 </div>
                             </div>
                         </div>
 
                         <!-- Unterricht Card -->
-                        <div class="tool-card card-lernportal" :class="{ 'card-disabled': !config?.teaching_active }" @click="config?.teaching_active && openUnterricht()">
+                        <div class="tool-card card-lernportal" :class="{ 'card-disabled': !canStartTeaching }" @click="canStartTeaching && openUnterricht()" v-if="canShowTeaching">
                             <div class="card-glow"></div>
                             <div class="card-content">
                                 <div class="card-icon">
@@ -77,13 +78,13 @@
                                 </div>
                                 <h3 class="card-title">Unterricht</h3>
                                 <p class="card-description">Einstieg in den Login-Bereich für Schüler.</p>
-                                <div class="card-action" v-if="config?.teaching_active">
+                                <div class="card-action" v-if="canStartTeaching">
                                     <span class="action-text">Starten</span>
                                     <v-icon size="20">mdi-arrow-right</v-icon>
                                 </div>
                                 <div class="card-badge" v-else>
-                                    <v-icon size="16">mdi-wrench</v-icon>
-                                    <span>In Entwicklung</span>
+                                    <v-icon size="16">mdi-lock-outline</v-icon>
+                                    <span>Keine Lizenz</span>
                                 </div>
                             </div>
                         </div>
@@ -230,6 +231,36 @@ export default {
 
     computed: {
         ...mapWritableState(useHomepageStore, ['config', 'is_loading', 'schools', 'licence', 'selected_school', 'selected_school_id']),
+        registerLicenceStatus() {
+            if (this.config?.register_licence_status) return this.config.register_licence_status
+            return this.config?.register_licence_available ? 'active' : 'missing'
+        },
+        tutoringLicenceStatus() {
+            if (this.config?.tutoring_licence_status) return this.config.tutoring_licence_status
+            return this.config?.tutoring_licence_available ? 'active' : 'missing'
+        },
+        teachingLicenceStatus() {
+            if (this.config?.teaching_licence_status) return this.config.teaching_licence_status
+            return this.config?.teaching_licence_available ? 'active' : 'missing'
+        },
+        canShowRegister() {
+            return this.registerLicenceStatus !== 'missing'
+        },
+        canStartRegister() {
+            return this.registerLicenceStatus === 'active'
+        },
+        canShowTutoring() {
+            return Boolean(this.config?.tutoring_active && this.tutoringLicenceStatus !== 'missing')
+        },
+        canStartTutoring() {
+            return Boolean(this.config?.tutoring_active && this.tutoringLicenceStatus === 'active')
+        },
+        canShowTeaching() {
+            return Boolean(this.config?.teaching_active && this.teachingLicenceStatus !== 'missing')
+        },
+        canStartTeaching() {
+            return Boolean(this.config?.teaching_active && this.teachingLicenceStatus === 'active')
+        },
     },
 
     watch: {
@@ -246,7 +277,7 @@ export default {
             alert('1')
         },
         openUnterricht() {
-            if (!this.config?.teaching_active) return
+            if (!this.canStartTeaching) return
             this.$router.push('/homepage/student')
         },
         moveTo(licence, school) {
@@ -484,6 +515,7 @@ export default {
     background: white;
     border-radius: 20px;
     padding: 32px;
+    border: 1px solid transparent;
     cursor: pointer;
     transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     text-decoration: none;
@@ -497,6 +529,22 @@ export default {
 .tool-card:hover {
     transform: translateY(-8px);
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+}
+
+.tools-grid > .tool-card:nth-child(odd) {
+    border-color: rgba(58, 170, 53, 0.35);
+}
+
+.tools-grid > .tool-card:nth-child(even) {
+    border-color: rgba(243, 146, 0, 0.35);
+}
+
+.tools-grid > .tool-card:nth-child(odd):hover {
+    border-color: rgba(58, 170, 53, 0.65);
+}
+
+.tools-grid > .tool-card:nth-child(even):hover {
+    border-color: rgba(243, 146, 0, 0.65);
 }
 
 .card-glow {
@@ -513,28 +561,12 @@ export default {
     height: 6px;
 }
 
-.card-register .card-glow {
+.tools-grid > .tool-card:nth-child(odd) .card-glow {
     background: linear-gradient(90deg, #3aaa35, #4bc044);
 }
 
-.card-tutoring .card-glow {
+.tools-grid > .tool-card:nth-child(even) .card-glow {
     background: linear-gradient(90deg, #f39200, #ffb74d);
-}
-
-.card-lernportal .card-glow {
-    background: linear-gradient(90deg, #3aaa35, #4bc044);
-}
-
-.card-lernportal {
-    border: 1px solid rgba(58, 170, 53, 0.35);
-}
-
-.card-lernportal:hover {
-    border-color: rgba(58, 170, 53, 0.6);
-}
-
-.card-lunch .card-glow {
-    background: linear-gradient(90deg, #3aaa35, #4bc044);
 }
 
 .card-content {
@@ -604,20 +636,12 @@ export default {
     margin-top: auto;
 }
 
-.card-register .card-action {
+.tools-grid > .tool-card:nth-child(odd) .card-action {
     color: #3aaa35;
 }
 
-.card-tutoring .card-action {
+.tools-grid > .tool-card:nth-child(even) .card-action {
     color: #f39200;
-}
-
-.card-lernportal .card-action {
-    color: #3aaa35;
-}
-
-.card-lunch .card-action {
-    color: #3aaa35;
 }
 
 .tool-card:hover .card-action {

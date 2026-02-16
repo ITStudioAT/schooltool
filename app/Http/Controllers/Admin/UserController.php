@@ -78,7 +78,7 @@ class UserController extends Controller
         }
         $validated = $request->validated();
 
-        $user = $service->update($validated);
+        $user = $service->update($validated, $auth_user);
         return response()->json(new UserResource($user), 200);
     }
 
@@ -504,7 +504,7 @@ class UserController extends Controller
         $role_ids = $validated['role_ids'];
 
         $userService = new UserService();
-        $userService->setNewUserRoles($user_ids, $role_ids);
+        $userService->setNewUserRoles($user_ids, $role_ids, $user);
 
         return response()->noContent();
     }

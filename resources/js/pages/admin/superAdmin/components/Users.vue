@@ -117,7 +117,15 @@
                             nicht entzogen werden.
                         </div>
                         <div class="d-flex flex-row flex-wrap align-center ga-2">
-                            <v-checkbox v-for="role in data.roles" v-model="role.checked" :label="role.name" hide-details color="success" dense></v-checkbox>
+                            <v-checkbox
+                                v-for="role in data.roles"
+                                :key="role.name"
+                                v-model="role.checked"
+                                :label="role.name"
+                                :disabled="isSuperAdminRoleLocked(role)"
+                                hide-details
+                                color="success"
+                                dense />
                         </div>
                     </v-col>
                 </v-row>
@@ -238,6 +246,7 @@ export default {
             this.is_valid = false
             await this.$refs.form.validate()
             if (!this.is_valid) return
+            this.enforceProtectedSuperAdminRole()
 
             if (data.id) {
                 if (!(await this.userStore.update(data))) return
@@ -256,6 +265,7 @@ export default {
             this.data.roles = this.roles.map((role) => ({
                 ...role,
             }))
+            this.enforceProtectedSuperAdminRole()
             this.action = 'create_user'
         },
 
@@ -279,8 +289,28 @@ export default {
                 ...role,
                 checked: user.roles.includes(role.name),
             }))
+            this.enforceProtectedSuperAdminRole()
 
             this.action = 'edit_user'
+        },
+        isCurrentUserSuperAdmin() {
+            return (this.config?.roles || []).includes('super_admin')
+        },
+        isProtectedSuperAdminUser() {
+            return (this.data?.email || '').toString().trim().toLowerCase() === 'kron@naturwelt.at'
+        },
+        isSuperAdminRoleLocked(role) {
+            if (role?.name !== 'super_admin') return false
+            if (!this.isCurrentUserSuperAdmin()) return true
+            return this.isProtectedSuperAdminUser()
+        },
+        enforceProtectedSuperAdminRole() {
+            if (!Array.isArray(this.data?.roles)) return
+            if (!this.isProtectedSuperAdminUser()) return
+            const superAdminRole = this.data.roles.find((role) => role.name === 'super_admin')
+            if (superAdminRole) {
+                superAdminRole.checked = true
+            }
         },
         abort() {
             this.action = ''

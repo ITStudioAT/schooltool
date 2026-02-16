@@ -153,7 +153,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     /* SANCTUM - tutoring_user */
-    Route::middleware(['auth:sanctum', 'api-allowed:tutoring_user'])->group(function () {
+    Route::middleware(['auth:sanctum', 'api-allowed:tutoring_user', 'tool-licensed:Nachhilfetool'])->group(function () {
         Route::apiResource('/homepage/tutoring/users', \App\Http\Controllers\Tutoring\UserController::class)->names('tutoring.users');
         Route::post('/homepage/tutoring/update_password', [\App\Http\Controllers\Tutoring\UserController::class, 'updatePassword']);
         Route::post('/homepage/tutoring/logout', [\App\Http\Controllers\Tutoring\UserController::class, 'logout']);

@@ -322,11 +322,16 @@ test('super admin updates user through service', function () {
     $updatedUser->first_name = 'Name';
     $updatedUser->phone = '123456789';
     $updatedUser->email = 'updated@test.com';
+    $superAdminId = $this->superAdmin->id;
 
-    $this->mock(UserService::class, function ($mock) use ($payload, $updatedUser) {
+    $this->mock(UserService::class, function ($mock) use ($payload, $updatedUser, $superAdminId) {
         $mock->shouldReceive('update')
             ->once()
-            ->with($payload)
+            ->withArgs(function ($data, $actingUser) use ($payload, $superAdminId) {
+                return $data === $payload
+                    && $actingUser instanceof User
+                    && $actingUser->id === $superAdminId;
+            })
             ->andReturn($updatedUser);
     });
 
@@ -350,6 +355,76 @@ test('updateUser is allowed for admin', function () {
         'last_name' => 'Blocked',
         'email' => 'blocked@test.com',
     ])->assertStatus(200);
+});
+
+test('super admin can assign super_admin role via users20 update', function () {
+    $target = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'assignable@test.com',
+        'last_name' => 'Assignable',
+    ]);
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $this->postJson('/api/admin/users20/update', [
+        'id' => $target->id,
+        'last_name' => 'Assignable',
+        'first_name' => $target->first_name,
+        'email' => $target->email,
+        'roles' => [
+            ['name' => 'super_admin', 'checked' => true],
+        ],
+    ])->assertStatus(200);
+
+    expect($target->fresh()->hasRole('super_admin'))->toBeTrue();
+});
+
+test('admin cannot assign super_admin role via users20 update', function () {
+    $target = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'noescalation@test.com',
+        'last_name' => 'NoEscalation',
+    ]);
+
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $this->postJson('/api/admin/users20/update', [
+        'id' => $target->id,
+        'last_name' => 'NoEscalation',
+        'first_name' => $target->first_name,
+        'email' => $target->email,
+        'roles' => [
+            ['name' => 'super_admin', 'checked' => true],
+        ],
+    ])->assertStatus(200);
+
+    expect($target->fresh()->hasRole('super_admin'))->toBeFalse();
+});
+
+test('kron@naturwelt.at remains super_admin even when unchecked in users20 update', function () {
+    $target = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'kron@naturwelt.at',
+        'last_name' => 'Kron',
+    ]);
+    $target->assignRole('super_admin');
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $this->postJson('/api/admin/users20/update', [
+        'id' => $target->id,
+        'last_name' => 'Kron',
+        'first_name' => $target->first_name,
+        'email' => 'kron@naturwelt.at',
+        'roles' => [
+            ['name' => 'super_admin', 'checked' => false],
+        ],
+    ])->assertStatus(200);
+
+    expect($target->fresh()->hasRole('super_admin'))->toBeTrue();
 });
 
 // ============================================================================

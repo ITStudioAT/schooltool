@@ -17,6 +17,8 @@ use Illuminate\Support\Facades\Notification;
 
 class UserService
 {
+    private const PROTECTED_SUPER_ADMIN_EMAIL = 'kron@naturwelt.at';
+
     public function delete(int $meId, array $data): void
     {
         foreach ($data as $id) {
@@ -62,9 +64,11 @@ class UserService
         return $user;
     }
 
-    public function update(array $data): User
+    public function update(array $data, ?User $actingUser = null): User
     {
         $user = User::findOrFail($data['id']);
+        $isProtectedSuperAdminUser = $this->isProtectedSuperAdminUser($user, $data);
+        $canManageSuperAdminRole = $this->canManageSuperAdminRole($actingUser);
 
         $emailTaken = User::whereNot('id', $user->id)
             ->where('school_id', $user->school_id)
@@ -82,6 +86,18 @@ class UserService
 
         foreach ($userRoles as $role) {
             if ($role['name'] === 'super_admin') {
+                if ($isProtectedSuperAdminUser) {
+                    $user->assignRole('super_admin');
+                    continue;
+                }
+                if (! $canManageSuperAdminRole) {
+                    continue;
+                }
+                if ($role['checked']) {
+                    $user->assignRole('super_admin');
+                } else {
+                    $user->removeRole('super_admin');
+                }
                 continue;
             }
 
@@ -96,6 +112,10 @@ class UserService
                 }
                 $user->removeRole($role['name']);
             }
+        }
+
+        if ($isProtectedSuperAdminUser) {
+            $user->assignRole('super_admin');
         }
 
         return $user;
@@ -161,8 +181,10 @@ class UserService
         }
     }
 
-    public function setNewUserRoles(array $userIds, array $roleIds): void
+    public function setNewUserRoles(array $userIds, array $roleIds, ?User $actingUser = null): void
     {
+        $canManageSuperAdminRole = $this->canManageSuperAdminRole($actingUser);
+
         foreach ($roleIds as &$roleId) {
             $role = Role::findOrFail($roleId['id']);
             $roleId['name'] = $role->name;
@@ -171,15 +193,46 @@ class UserService
 
         foreach ($userIds as $id) {
             $user = User::findOrFail($id);
+            $isProtectedSuperAdminUser = $this->isProtectedSuperAdminUser($user);
 
             foreach ($roleIds as $roleId) {
+                if ($roleId['name'] === 'super_admin') {
+                    if ($isProtectedSuperAdminUser) {
+                        $user->assignRole('super_admin');
+                        continue;
+                    }
+                    if (! $canManageSuperAdminRole) {
+                        continue;
+                    }
+                }
+
                 if ($roleId['role_check'] === 1) {
                     $user->assignRole($roleId['name']);
                 } elseif ($roleId['role_check'] === 2) {
                     $user->removeRole($roleId['name']);
                 }
             }
+
+            if ($isProtectedSuperAdminUser) {
+                $user->assignRole('super_admin');
+            }
         }
+    }
+
+    private function canManageSuperAdminRole(?User $actingUser): bool
+    {
+        return (bool) $actingUser?->hasRole('super_admin');
+    }
+
+    private function isProtectedSuperAdminUser(User $user, array $incomingData = []): bool
+    {
+        return $this->isProtectedSuperAdminEmail($user->email)
+            || $this->isProtectedSuperAdminEmail($incomingData['email'] ?? null);
+    }
+
+    private function isProtectedSuperAdminEmail(?string $email): bool
+    {
+        return mb_strtolower(trim((string) $email)) === self::PROTECTED_SUPER_ADMIN_EMAIL;
     }
 
     public function check2Fa($user, bool $is2fa, ?string $email2fa): TwoFaResult

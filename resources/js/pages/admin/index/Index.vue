@@ -99,11 +99,12 @@
                     <v-card tile flat color="primary" class="mt-4">
                         <v-card-title>Admins</v-card-title>
                         <v-card-text>
-                            <div v-for="admin in school_admins">
+                            <div v-for="admin in school_admins" :key="admin.id" class="mb-2">
                                 <div class="d-flex flex-row flex-wrap align-center ga-2">
                                     <div class="text-body-1">{{ admin.last_name + ' ' + admin.first_name }}</div>
                                     <div class="text-caption">({{ admin.roles.join(', ') }})</div>
                                 </div>
+                                <div class="text-caption text-white">{{ admin.email }}</div>
                             </div>
                         </v-card-text>
                     </v-card>
@@ -112,19 +113,22 @@
                     <v-card tile flat color="primary" class="mt-4">
                         <v-card-title>Lizenzen</v-card-title>
                         <v-card-text>
-                            <div v-for="licence in school_licences" class="mb-2">
+                            <div v-for="licence in school_licences" :key="licence.id" class="licence-item">
                                 <div class="d-flex flex-row flex-wrap align-center justify-space-between">
                                     <div>
                                         <div class="d-flex flex-row flex-wrap align-center ga-2">
-                                            <div v-if="new Date(licence.valid_until) >= new Date()"><v-icon icon="mdi-circle " color="success" /></div>
-                                            <div v-if="new Date(licence.valid_until) < new Date()"><v-icon icon="mdi-circle " color="error" /></div>
+                                            <div v-if="isLicenceActive(licence)"><v-icon icon="mdi-circle " color="success" /></div>
+                                            <div v-else><v-icon icon="mdi-circle " color="error" /></div>
                                             <div class="text-body-1">{{ licence.name }}</div>
                                         </div>
                                         <div class="text-caption font-italic" v-if="licence.long_name">{{ licence.long_name }}</div>
                                     </div>
                                     <div class="text-body-2">
-                                        <div v-if="new Date(licence.valid_until) >= new Date()">aktiv bis: {{ licence.valid_until }}</div>
-                                        <div v-if="new Date(licence.valid_until) < new Date()">abgelaufen seit: {{ licence.valid_until }}</div>
+                                        <div v-if="isLicenceActive(licence)">
+                                            <span v-if="licence.valid_until">aktiv bis: {{ licence.valid_until }}</span>
+                                            <span v-else>aktiv (unbegrenzt)</span>
+                                        </div>
+                                        <div v-else>abgelaufen seit: {{ licence.valid_until }}</div>
                                         <div class="text-body-2 text-right">{{ 'Kosten pro Jahr: EUR ' + licence.price_per_year }}</div>
                                     </div>
                                 </div>
@@ -227,6 +231,27 @@ export default {
         user(id) {
             return this.school_admins.find((a) => a.id === id)
         },
+        localDateKey(date = new Date()) {
+            const year = date.getFullYear()
+            const month = String(date.getMonth() + 1).padStart(2, '0')
+            const day = String(date.getDate()).padStart(2, '0')
+            return `${year}-${month}-${day}`
+        },
+        isLicenceActive(licence) {
+            const validUntil = licence?.valid_until
+            if (!validUntil) return true
+            return String(validUntil) >= this.localDateKey()
+        },
     },
 }
 </script>
+
+<style scoped>
+.licence-item {
+    margin-bottom: 8px;
+}
+
+.licence-item:last-child {
+    margin-bottom: 0;
+}
+</style>

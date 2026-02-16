@@ -60,7 +60,7 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
 
             Route::get('tutoring_response', fn() => view('homepage'));
             Route::get('tutoring_overview', fn() => view('homepage'));
-            Route::get('tutoring', fn() => view('homepage'))->middleware(['auth:sanctum']);
+            Route::get('tutoring', fn() => view('homepage'))->middleware(['auth:sanctum', 'tool-licensed:Nachhilfetool']);
         });
 
         // The three controller routes
