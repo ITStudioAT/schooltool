@@ -3,18 +3,115 @@
 namespace App\Services;
 
 use App\Models\TeachingCourse;
+use App\Models\TeachingSchema;
 use App\Models\User;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 class TeachingService
 {
+    public function schemasForUser(User $user, ?int $schoolyearId = null): Collection
+    {
+        $rows = $this->schemaRows($user, $schoolyearId);
+        return $rows->map(function (TeachingSchema $schema) {
+            return [
+                'id' => (string) $schema->schema_id,
+                'name' => (string) $schema->name,
+                'works' => is_array($schema->works) ? $schema->works : [],
+                'grading' => is_array($schema->grading) ? $schema->grading : [],
+            ];
+        })
+            ->values();
+    }
+
+    public function schemaIdsForUser(User $user, ?int $schoolyearId = null): Collection
+    {
+        return $this->schemasForUser($user, $schoolyearId)
+            ->pluck('id')
+            ->filter(fn ($id) => is_scalar($id) && (string) $id !== '')
+            ->map(fn ($id) => (string) $id)
+            ->values();
+    }
+
+    public function schemaById(User $user, ?string $schemaId, ?int $schoolyearId = null): ?array
+    {
+        if (! $schemaId) {
+            return null;
+        }
+
+        $found = $this->schemasForUser($user, $schoolyearId)
+            ->firstWhere('id', (string) $schemaId);
+
+        return is_array($found) ? $found : null;
+    }
+
+    public function saveSchemas(User $user, array $schemas, ?int $schoolyearId = null): void
+    {
+        $schoolyearId = $this->resolveSchoolyearId($user, $schoolyearId);
+        if (! $schoolyearId) {
+            return;
+        }
+
+        $rows = collect($schemas)
+            ->filter(fn ($schema) => is_array($schema))
+            ->map(function (array $schema) use ($user, $schoolyearId) {
+                $schemaId = (string) ($schema['id'] ?? '');
+                if ($schemaId === '') {
+                    return null;
+                }
+
+                return [
+                    'school_id' => $user->school_id,
+                    'schoolyear_id' => $schoolyearId,
+                    'user_id' => $user->id,
+                    'schema_id' => $schemaId,
+                    'name' => (string) ($schema['name'] ?? 'Standard'),
+                    'works' => is_array($schema['works'] ?? null) ? $schema['works'] : [],
+                    'grading' => is_array($schema['grading'] ?? null) ? $schema['grading'] : [],
+                ];
+            })
+            ->filter()
+            ->values();
+
+        $incomingIds = $rows->pluck('schema_id')->all();
+
+        $query = TeachingSchema::query()
+            ->where('user_id', $user->id)
+            ->where('schoolyear_id', $schoolyearId);
+
+        if (! empty($incomingIds)) {
+            $query->whereNotIn('schema_id', $incomingIds)->delete();
+        } else {
+            $query->delete();
+        }
+
+        foreach ($rows as $row) {
+            TeachingSchema::updateOrCreate(
+                [
+                    'user_id' => $user->id,
+                    'schoolyear_id' => $schoolyearId,
+                    'schema_id' => $row['schema_id'],
+                ],
+                [
+                    'school_id' => $row['school_id'],
+                    'name' => $row['name'],
+                    'works' => $row['works'],
+                    'grading' => $row['grading'],
+                ]
+            );
+        }
+    }
+
     /**
      * Check if any of the given schema IDs are used by courses belonging to the user.
      * Returns the names of schemas that are in use, or an empty collection.
      */
-    public function schemasInUse(User $user, array $schemaIds): \Illuminate\Support\Collection
+    public function schemasInUse(User $user, array $schemaIds, ?int $schoolyearId = null): Collection
     {
+        $schoolyearId = $this->resolveSchoolyearId($user, $schoolyearId);
+
         $usedIds = TeachingCourse::where('user_id', $user->id)
+            ->when($schoolyearId, fn ($query) => $query->where('schoolyear_id', $schoolyearId))
             ->whereIn('teaching_schema_id', $schemaIds)
             ->pluck('teaching_schema_id')
             ->unique();
@@ -23,7 +120,7 @@ class TeachingService
             return collect();
         }
 
-        return collect($user->teaching_schemas ?? [])
+        return $this->schemasForUser($user, $schoolyearId)
             ->whereIn('id', $usedIds)
             ->pluck('name');
     }
@@ -32,9 +129,9 @@ class TeachingService
      * Check if removing schemas (old vs new) would violate course dependencies.
      * Returns the names of schemas that cannot be removed, or an empty collection.
      */
-    public function hasDependencies(User $user, array $newSchemas): \Illuminate\Support\Collection
+    public function hasDependencies(User $user, array $newSchemas, ?int $schoolyearId = null): Collection
     {
-        $oldIds = collect($user->teaching_schemas ?? [])->pluck('id');
+        $oldIds = $this->schemaIdsForUser($user, $schoolyearId);
         $newIds = collect($newSchemas)->pluck('id');
         $removedIds = $oldIds->diff($newIds)->values()->all();
 
@@ -42,15 +139,15 @@ class TeachingService
             return collect();
         }
 
-        return $this->schemasInUse($user, $removedIds);
+        return $this->schemasInUse($user, $removedIds, $schoolyearId);
     }
 
     /**
      * Check if any "Standard" schema has been renamed in the new schemas.
      */
-    public function standardSchemaRenamed(User $user, array $newSchemas): bool
+    public function standardSchemaRenamed(User $user, array $newSchemas, ?int $schoolyearId = null): bool
     {
-        $oldSchemas = collect($user->teaching_schemas ?? []);
+        $oldSchemas = $this->schemasForUser($user, $schoolyearId);
         $newSchemasCollection = collect($newSchemas);
 
         return $oldSchemas
@@ -62,14 +159,19 @@ class TeachingService
      * Ensure the user has at least the default "Standard" schema.
      * Creates and saves it if none exist.
      */
-    public function ensureDefaultSchema(User $user): void
+    public function ensureDefaultSchema(User $user, ?int $schoolyearId = null): void
     {
-        if (! empty($user->teaching_schemas)) {
+        $schoolyearId = $this->resolveSchoolyearId($user, $schoolyearId);
+        if (! $schoolyearId) {
             return;
         }
 
-        $user->teaching_schemas = [self::defaultSchema()];
-        $user->save();
+        $rows = $this->schemaRows($user, $schoolyearId);
+        if ($rows->isNotEmpty()) {
+            return;
+        }
+
+        $this->saveSchemas($user, [self::defaultSchema()], $schoolyearId);
     }
 
     public static function defaultSchema(): array
@@ -129,5 +231,24 @@ class TeachingService
                 ],
             ],
         ];
+    }
+
+    private function resolveSchoolyearId(User $user, ?int $schoolyearId = null): ?int
+    {
+        return $schoolyearId ?? $user->schoolyear_id;
+    }
+
+    private function schemaRows(User $user, ?int $schoolyearId = null): Collection
+    {
+        $schoolyearId = $this->resolveSchoolyearId($user, $schoolyearId);
+        if (! $schoolyearId) {
+            return collect();
+        }
+
+        return TeachingSchema::query()
+            ->where('user_id', $user->id)
+            ->where('schoolyear_id', $schoolyearId)
+            ->orderBy('id')
+            ->get();
     }
 }

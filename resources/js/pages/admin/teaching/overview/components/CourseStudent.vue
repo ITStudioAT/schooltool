@@ -330,7 +330,7 @@
                                 </template>
                                 <v-list-item v-if="semester1Total != null">
                                     <div class="d-flex align-center ga-2 w-100">
-                                        <v-list-item-title class="text-subtitle-2">{{ semesterCount === 2 ? 'Gesamtbewertung Sem 1' : 'Gesamtbewertung' }}</v-list-item-title>
+                                        <v-list-item-title class="text-subtitle-2">{{ semesterCount === 2 ? 'Berechnung Sem 1' : 'Berechnung' }}</v-list-item-title>
                                         <v-spacer />
                                         <div class="text-subtitle-2" :class="semester1HasMissingCategory ? 'text-warning' : 'text-medium-emphasis'">
                                             Bewertung: {{ formatTwoDecimals(semester1Total) }}
@@ -394,7 +394,7 @@
                                 </template>
                                 <v-list-item v-if="semester2Total != null">
                                     <div class="d-flex align-center ga-2 w-100">
-                                        <v-list-item-title class="text-subtitle-2">Gesamtbewertung Sem 2</v-list-item-title>
+                                        <v-list-item-title class="text-subtitle-2">Berechnung Sem 2</v-list-item-title>
                                         <v-spacer />
                                         <div class="text-subtitle-2" :class="semester2HasMissingCategory ? 'text-warning' : 'text-medium-emphasis'">
                                             Bewertung: {{ formatTwoDecimals(semester2Total) }}
@@ -412,7 +412,7 @@
                                         </div>
                                         <v-spacer />
                                         <v-chip size="small" color="secondary" variant="flat">
-                                            Gesamtbewertung: {{ formatTwoDecimals(semesterWeightedGrade.value) }}
+                                            Berechnung: {{ formatTwoDecimals(semesterWeightedGrade.value) }}
                                         </v-chip>
                                     </div>
                                     <div class="sum-formula mt-2">
@@ -420,14 +420,31 @@
                                             <v-chip size="small" variant="tonal" color="primary">Sem 1 {{ semesterWeightedGrade.sem1Weight }}%</v-chip>
                                             <span>{{ formatTwoDecimals(semesterWeightedGrade.sem1Value) }}</span>
                                         </div>
+                                        <div class="text-caption text-medium-emphasis">
+                                            <span v-if="semesterWeightedGrade.sem1Source === 'semester_grade'">
+                                                Basis Sem 1: Semesternote ({{ selected_course_student?.sem_1_grade || '–' }}) laut Einstellung "Nur die Semesternote".
+                                            </span>
+                                            <span v-else>
+                                                Basis Sem 1: Berechnung Sem 1 ({{ formatTwoDecimals(semesterWeightedGrade.sem1CalculatedValue) }}).
+                                            </span>
+                                        </div>
+                                        <div v-if="semesterWeightedGrade.sem1Source === 'calculated' && semesterWeightedGrade.sem1CalculatedFormula" class="text-caption text-medium-emphasis">
+                                            {{ semesterWeightedGrade.sem1CalculatedFormula }}
+                                        </div>
                                         <div class="sum-formula-line">
                                             <v-chip size="small" variant="tonal" color="primary">Sem 2 {{ semesterWeightedGrade.sem2Weight }}%</v-chip>
                                             <span>{{ formatTwoDecimals(semesterWeightedGrade.sem2Value) }}</span>
                                         </div>
+                                        <div class="text-caption text-medium-emphasis">
+                                            Basis Sem 2: Berechnung Sem 2 ({{ formatTwoDecimals(semesterWeightedGrade.sem2CalculatedValue) }}).
+                                        </div>
+                                        <div v-if="semesterWeightedGrade.sem2CalculatedFormula" class="text-caption text-medium-emphasis">
+                                            {{ semesterWeightedGrade.sem2CalculatedFormula }}
+                                        </div>
                                         <div class="sum-formula-line text-medium-emphasis">
                                             <span>
-                                                {{ formatTwoDecimals(semesterWeightedGrade.sem1Value) }} * {{ formatTwoDecimals(semesterWeightedGrade.sem1Weight / 100) }} +
-                                                {{ formatTwoDecimals(semesterWeightedGrade.sem2Value) }} * {{ formatTwoDecimals(semesterWeightedGrade.sem2Weight / 100) }}
+                                                {{ formatTwoDecimals(semesterWeightedGrade.sem1Value) }} * {{ formatTwoDecimals(semesterWeightedGrade.sem1SharePercent) }}% +
+                                                {{ formatTwoDecimals(semesterWeightedGrade.sem2Value) }} * {{ formatTwoDecimals(semesterWeightedGrade.sem2SharePercent) }}%
                                             </span>
                                             <span>=</span>
                                             <strong>{{ formatTwoDecimals(semesterWeightedGrade.value) }}</strong>
@@ -988,29 +1005,49 @@ export default {
             const totalWeight = w1 + w2
             if (totalWeight <= 0) return null
 
-            let sem1Value, sem2Value
+            const sem1Entries = this.entriesForSemester(this.entries || [], 1)
+            const sem2Entries = this.entriesForSemester(this.entries || [], 2)
+            const sem1Groups = this.buildCategoryGroups(sem1Entries)
+            const sem2Groups = this.buildCategoryGroups(sem2Entries)
 
-            // Check if we should use only the semester grades or recalculate from all values
-            if (grading.use_semester_grade_only) {
-                // Use the stored semester grades
-                sem1Value = this.selected_course_student?.sem_1_grade ? parseFloat(this.selected_course_student.sem_1_grade) : null
-                sem2Value = this.selected_course_student?.sem_2_grade ? parseFloat(this.selected_course_student.sem_2_grade) : null
-            } else {
-                // Recalculate from all categories and works
-                const sem1Entries = this.entriesForSemester(this.entries || [], 1)
-                const sem2Entries = this.entriesForSemester(this.entries || [], 2)
-                sem1Value = this.totalFromCategoryGroups(this.buildCategoryGroups(sem1Entries))
-                sem2Value = this.totalFromCategoryGroups(this.buildCategoryGroups(sem2Entries))
-            }
+            // Semester 1 basis for yearly grade:
+            // - use_semester_grade_only = true  -> stored sem_1_grade
+            // - otherwise                        -> calculated Semester-1 value
+            const sem1CalculatedValue = this.totalFromCategoryGroups(sem1Groups)
+            const sem1CalculatedFormula = this.categoryGroupTotalLine(sem1Groups, sem1CalculatedValue)
+            const sem1GradeRaw = this.selected_course_student?.sem_1_grade
+            const sem1GradeValue = sem1GradeRaw != null && sem1GradeRaw !== ''
+                ? parseFloat(String(sem1GradeRaw).replace(',', '.'))
+                : null
+
+            const sem1Source = grading.use_semester_grade_only ? 'semester_grade' : 'calculated'
+            const sem1Value = sem1Source === 'semester_grade'
+                ? (Number.isNaN(sem1GradeValue) ? null : sem1GradeValue)
+                : sem1CalculatedValue
+
+            // Semester 2 for yearly grade is based on calculated Semester-2 value.
+            const sem2CalculatedValue = this.totalFromCategoryGroups(sem2Groups)
+            const sem2CalculatedFormula = this.categoryGroupTotalLine(sem2Groups, sem2CalculatedValue)
+            const sem2Value = sem2CalculatedValue
 
             if (sem1Value == null || sem2Value == null) return null
 
             const value = Number((((sem1Value * w1) + (sem2Value * w2)) / totalWeight).toFixed(2))
+            const sem1SharePercent = Number(((w1 / totalWeight) * 100).toFixed(2))
+            const sem2SharePercent = Number(((w2 / totalWeight) * 100).toFixed(2))
             return {
                 sem1Value,
                 sem2Value,
+                sem1CalculatedValue,
+                sem2CalculatedValue,
+                sem1CalculatedFormula,
+                sem2CalculatedFormula,
+                sem1Source,
                 sem1Weight: w1,
                 sem2Weight: w2,
+                totalWeight,
+                sem1SharePercent,
+                sem2SharePercent,
                 value,
             }
         },
@@ -1109,11 +1146,6 @@ export default {
                 this.loadBehaviourEntries()
             },
         },
-        'entry_form.date'(val) {
-            if (val) {
-                this.entry_form.date = this.normalizeDateString(val)
-            }
-        },
         'behaviour_form.date'(val) {
             if (val && val instanceof Date) {
                 this.behaviour_form.date = this.toDateString(val)
@@ -1168,10 +1200,16 @@ export default {
         countSem2Boundary() {
             return this.normalizeDateKey(this.countSem2StartDate || this.schoolSem2StartDate)
         },
+        toInputDate(value) {
+            const normalized = this.normalizeDateString(value)
+            if (!normalized) return null
+            const parsed = parseLocalDate(normalized)
+            if (Number.isNaN(parsed.getTime())) return null
+            return parsed
+        },
         emptyEntryForm() {
-            const defaultDate = this.selected_courseDate?.date
-                ? this.toDateString(parseLocalDate(this.selected_courseDate.date))
-                : this.toDateString(new Date())
+            const selectedDate = this.selected_courseDate?.date ? this.toInputDate(this.selected_courseDate.date) : null
+            const defaultDate = selectedDate || new Date()
             return {
                 id: null,
                 type: '',
@@ -1295,7 +1333,7 @@ export default {
                 id: entry.id,
                 type: entry.type || '',
                 grade: entry.grade || '',
-                date: entry.date || '',
+                date: this.toInputDate(entry.date),
                 description: entry.description || '',
             }
             this.show_entry_form = true
@@ -1939,6 +1977,31 @@ export default {
             const weighted = weightedCats.reduce((s, c) => s + c.value * c.weight, 0) / totalWeight
             return Number(weighted.toFixed(2))
         },
+        categoryGroupTotalLine(groups, totalValue) {
+            if (totalValue == null || !groups?.length) return ''
+
+            const weightedCats = groups
+                .map((cat) => {
+                    const value = cat.value != null ? cat.value : cat.grade != null ? parseFloat(String(cat.grade).replace(',', '.')) : null
+                    const weightPercent = parseFloat(cat.weight) || 0
+                    return {
+                        value,
+                        weightPercent,
+                    }
+                })
+                .filter((cat) => cat.value != null && !Number.isNaN(cat.value) && cat.weightPercent > 0)
+
+            if (!weightedCats.length) return ''
+
+            const denominator = weightedCats.reduce((sum, cat) => sum + cat.weightPercent, 0)
+            if (denominator <= 0) return ''
+
+            const terms = weightedCats.map((cat) => {
+                const sharePercent = (cat.weightPercent / denominator) * 100
+                return `${this.formatTwoDecimals(cat.value)} * ${this.formatTwoDecimals(sharePercent)}%`
+            })
+            return `Berechnung: ${terms.join(' + ')} = ${this.formatTwoDecimals(totalValue)}`
+        },
         categoryCalculationLine(category) {
             const parts = (category?.calculationParts || []).filter((part) => part.value != null && part.factorPercent > 0)
             if (!parts.length) return ''
@@ -1973,12 +2036,15 @@ export default {
             if (date instanceof Date) {
                 return this.toDateString(date)
             }
-            // If it's a string with ISO format (contains 'T'), extract just the date part
-            if (typeof date === 'string' && date.includes('T')) {
-                return date.split('T')[0]
+            // Keep pure date strings as-is.
+            if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+                return date
             }
-            // Otherwise return as-is (should be YYYY-MM-DD format already)
-            return date
+            // For date-time strings (including timezone), normalize via local parse
+            // to avoid day shifts between list display and date-input edit mode.
+            const parsed = parseLocalDate(date)
+            if (Number.isNaN(parsed.getTime())) return ''
+            return this.toDateString(parsed)
         },
         toDateString(date) {
             const d = parseLocalDate(date)

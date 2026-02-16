@@ -17,6 +17,7 @@ use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseDate;
 use App\Models\TeachingCourseStudentEntry;
+use App\Models\TeachingSchema;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
@@ -86,12 +87,17 @@ beforeEach(function () {
     ]);
 
     $this->schemaId = 'schema-standard';
-    $schemas = [
-        ['id' => $this->schemaId, 'name' => 'Standard'],
-    ];
-    $this->admin->update(['teaching_schemas' => $schemas]);
-    $this->teachingAdmin->update(['teaching_schemas' => $schemas]);
-    $this->teacher->update(['teaching_schemas' => $schemas]);
+    foreach ([$this->admin, $this->teachingAdmin, $this->teacher] as $schemaUser) {
+        TeachingSchema::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $schemaUser->id,
+            'schema_id' => $this->schemaId,
+            'name' => 'Standard',
+            'works' => [],
+            'grading' => [],
+        ]);
+    }
 
     // Create Import116 records for class validation
     $this->classes = ['1A', '1B', '2A', '2B', '3A'];

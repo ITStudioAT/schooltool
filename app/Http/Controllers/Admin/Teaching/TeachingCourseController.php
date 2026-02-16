@@ -10,6 +10,7 @@ use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudent;
 use App\Models\User;
 use App\Services\TeachingCourseService;
+use App\Services\TeachingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
@@ -117,11 +118,7 @@ class TeachingCourseController extends Controller
             ->distinct()
             ->orderBy('class')
             ->pluck('class');
-        $schemaIds = collect($auth_user->teaching_schemas ?? [])
-            ->pluck('id')
-            ->filter(fn ($id) => is_scalar($id) && (string) $id !== '')
-            ->map(fn ($id) => (string) $id)
-            ->values();
+        $schemaIds = (new TeachingService)->schemaIdsForUser($auth_user, $auth_user->schoolyear_id);
 
         $validated = $request->validate([
             'title' => 'required|string|max:255',
@@ -200,11 +197,7 @@ class TeachingCourseController extends Controller
             ->distinct()
             ->orderBy('class')
             ->pluck('class');
-        $schemaIds = collect($auth_user->teaching_schemas ?? [])
-            ->pluck('id')
-            ->filter(fn ($id) => is_scalar($id) && (string) $id !== '')
-            ->map(fn ($id) => (string) $id)
-            ->values();
+        $schemaIds = (new TeachingService)->schemaIdsForUser($auth_user, $course->schoolyear_id);
 
         $validated = $request->validate([
             'title' => 'required|string|max:255',

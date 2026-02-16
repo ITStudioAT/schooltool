@@ -150,7 +150,6 @@ class User extends Authenticatable
         'schoolclass',
         'register_as',
         'import116_id',
-        'teaching_schemas',
         'teaching_active_semester',
         'teaching_count_for_semester_2_date',
         'teaching_behaviour',
@@ -183,7 +182,6 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'token_2fa_expires_at' => 'datetime',
             'tutoring_filter' => 'array',
-            'teaching_schemas' => 'array',
             'teaching_behaviour' => 'array',
             'teaching_notifications' => 'array',
         ];
@@ -236,6 +234,11 @@ class User extends Authenticatable
     public function import116(): BelongsTo
     {
         return $this->belongsTo(Import116::class);
+    }
+
+    public function teachingSchemas(): HasMany
+    {
+        return $this->hasMany(TeachingSchema::class);
     }
 
     public function shouldDelete(): bool

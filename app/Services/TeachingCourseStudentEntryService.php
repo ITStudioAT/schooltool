@@ -12,9 +12,13 @@ class TeachingCourseStudentEntryService
      *
      * @return string[]
      */
-    public function allowedTypesForSchema(User $user, ?string $schemaId): array
+    public function allowedTypesForSchema(User $user, ?string $schemaId, ?int $schoolyearId = null): array
     {
-        $schema = collect($user->teaching_schemas ?? [])->firstWhere('id', $schemaId);
+        if (! $schemaId) {
+            return [];
+        }
+
+        $schema = (new TeachingService)->schemaById($user, $schemaId, $schoolyearId);
 
         return collect($schema['works'] ?? [])
             ->pluck('short_name')

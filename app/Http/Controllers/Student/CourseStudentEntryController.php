@@ -7,6 +7,7 @@ use App\Models\SchoolTool;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\User;
+use App\Services\TeachingService;
 
 class CourseStudentEntryController extends Controller
 {
@@ -21,7 +22,7 @@ class CourseStudentEntryController extends Controller
         $active_schoolyear_id = $schoolTool?->active_schoolyear_id ?? $auth_user->schoolyear_id;
 
         // Get the course
-        $course = TeachingCourse::with('user:id,teaching_schemas')
+        $course = TeachingCourse::with('user:id,school_id,schoolyear_id')
             ->where('id', $courseId)
             ->where('school_id', $auth_user->school_id)
             ->where('schoolyear_id', $active_schoolyear_id)
@@ -41,7 +42,9 @@ class CourseStudentEntryController extends Controller
         }
 
         // Get teaching schema for proper type labels
-        $teachingSchemas = $course->user?->teaching_schemas ?? $auth_user->teaching_schemas ?? [];
+        $teachingService = new TeachingService;
+        $schemaOwner = $course->user ?: $auth_user;
+        $teachingSchemas = $teachingService->schemasForUser($schemaOwner, $course->schoolyear_id)->all();
         $schemaForCourse = null;
         if ($course->teaching_schema_id) {
             foreach ($teachingSchemas as $schema) {

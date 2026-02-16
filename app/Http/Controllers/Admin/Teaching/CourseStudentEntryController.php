@@ -49,7 +49,7 @@ class CourseStudentEntryController extends Controller
         }
 
         $course = TeachingCourse::findOrFail($request->input('teaching_course_id'));
-        $allowedTypes = $entryService->allowedTypesForSchema($auth_user, $course->teaching_schema_id);
+        $allowedTypes = $entryService->allowedTypesForSchema($auth_user, $course->teaching_schema_id, $course->schoolyear_id);
 
         $validated = $request->validate([
             'teaching_course_id' => 'required|integer|exists:teaching_courses,id',
@@ -92,7 +92,7 @@ class CourseStudentEntryController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $allowedTypes = $entryService->allowedTypesForSchema($auth_user, $course->teaching_schema_id);
+        $allowedTypes = $entryService->allowedTypesForSchema($auth_user, $course->teaching_schema_id, $course->schoolyear_id);
 
         $validated = $request->validate([
             'type' => ['required', 'string', 'max:255', Rule::in($allowedTypes)],

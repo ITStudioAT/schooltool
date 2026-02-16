@@ -59,10 +59,11 @@ class TeachingController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        (new TeachingService)->ensureDefaultSchema($auth_user);
+        $teachingService = new TeachingService;
+        $teachingService->ensureDefaultSchema($auth_user, $auth_user->schoolyear_id);
 
         $settings = [
-            'teaching_schemas' => $auth_user->teaching_schemas ?? [],
+            'teaching_schemas' => $teachingService->schemasForUser($auth_user, $auth_user->schoolyear_id)->all(),
             'teaching_behaviour' => $auth_user->teaching_behaviour ?? [],
             'teaching_notifications' => $auth_user->teaching_notifications ?? [],
         ];
@@ -114,6 +115,8 @@ class TeachingController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
+        $teachingService = new TeachingService;
+
         $validated = $request->validate([
             'teaching_schemas' => 'nullable|array',
             'teaching_schemas.*.id' => 'required|string|max:36',
@@ -150,18 +153,17 @@ class TeachingController extends Controller
         ]);
 
         if (isset($validated['teaching_schemas'])) {
-            $teachingService = new TeachingService;
-            $usedNames = $teachingService->hasDependencies($auth_user, $validated['teaching_schemas']);
+            $usedNames = $teachingService->hasDependencies($auth_user, $validated['teaching_schemas'], $auth_user->schoolyear_id);
 
             if ($usedNames->isNotEmpty()) {
                 abort(409, "Schema wird in Fächern verwendet und kann nicht gelöscht werden: {$usedNames->implode(', ')}");
             }
 
-            if ($teachingService->standardSchemaRenamed($auth_user, $validated['teaching_schemas'])) {
+            if ($teachingService->standardSchemaRenamed($auth_user, $validated['teaching_schemas'], $auth_user->schoolyear_id)) {
                 abort(409, 'Das Standard-Schema kann nicht umbenannt werden.');
             }
 
-            $auth_user->teaching_schemas = $validated['teaching_schemas'];
+            $teachingService->saveSchemas($auth_user, $validated['teaching_schemas'], $auth_user->schoolyear_id);
         }
         if (isset($validated['teaching_behaviour'])) {
             $auth_user->teaching_behaviour = $validated['teaching_behaviour'];
@@ -172,7 +174,7 @@ class TeachingController extends Controller
         $auth_user->save();
 
         $settings = [
-            'teaching_schemas' => $auth_user->teaching_schemas ?? [],
+            'teaching_schemas' => $teachingService->schemasForUser($auth_user, $auth_user->schoolyear_id)->all(),
             'teaching_behaviour' => $auth_user->teaching_behaviour ?? [],
             'teaching_notifications' => $auth_user->teaching_notifications ?? [],
         ];

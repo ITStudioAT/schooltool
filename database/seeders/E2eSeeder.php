@@ -13,6 +13,7 @@ use App\Models\TeachingCourseDate;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
 use App\Models\TeachingHoliday;
+use App\Models\TeachingSchema;
 use App\Models\TutoringOffer;
 use App\Models\TutoringSubject;
 use App\Models\User;
@@ -154,21 +155,24 @@ class E2eSeeder extends Seeder
             'first_name' => 'E2E',
             'last_name' => 'Teacher',
             'short' => 'E2T',
-            'teaching_schemas' => [
-                [
-                    'id' => 100,
-                    'name' => 'Standard',
-                    'works' => [
-                        ['short_name' => 'TW', 'name' => 'Testarbeit'],
-                    ],
-                ],
-            ],
         ]);
         $teacher->email_verified_at = now();
         $teacher->confirmed_at = now();
         $teacher->is_active = true;
         $teacher->save();
         $teacher->assignRole($teacherRole);
+
+        TeachingSchema::query()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'user_id' => $teacher->id,
+            'schema_id' => '100',
+            'name' => 'Standard',
+            'works' => [
+                ['short_name' => 'TW', 'name' => 'Testarbeit'],
+            ],
+            'grading' => [],
+        ]);
 
         $admin = User::query()->create([
             'school_id' => $school->id,

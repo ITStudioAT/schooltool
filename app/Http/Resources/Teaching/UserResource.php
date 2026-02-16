@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Teaching;
 
+use App\Services\TeachingService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -14,6 +15,8 @@ class UserResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $teachingService = new TeachingService;
+
         return [
             'id' => $this->id,
             'email' => $this->email,
@@ -22,7 +25,7 @@ class UserResource extends JsonResource
             'sex' => $this->sex,
             'phone' => $this->phone,
             'schoolclass' => $this->schoolclass,
-            'teaching_schemas' => $this->teaching_schemas ?? [],
+            'teaching_schemas' => $teachingService->schemasForUser($this->resource, $this->schoolyear_id)->all(),
         ];
     }
 }

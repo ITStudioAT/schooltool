@@ -6,6 +6,7 @@ use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
+use App\Models\TeachingSchema;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
@@ -51,22 +52,26 @@ beforeEach(function () {
     $this->teacher = User::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
-        'teaching_schemas' => [
-            [
-                'id' => 10,
-                'works' => [
-                    ['short_name' => 'TW', 'name' => 'Testarbeit'],
-                ],
-            ],
-        ],
     ]);
     $this->teacher->assignRole('teacher');
+
+    TeachingSchema::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'schema_id' => '10',
+        'name' => 'Standard',
+        'works' => [
+            ['short_name' => 'TW', 'name' => 'Testarbeit'],
+        ],
+        'grading' => [],
+    ]);
 
     $this->course = TeachingCourse::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'user_id' => $this->teacher->id,
-        'teaching_schema_id' => 10,
+        'teaching_schema_id' => '10',
         'students' => [
             ['id' => $this->student->id],
             ['id' => $this->peer->id],
