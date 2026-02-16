@@ -30,7 +30,7 @@
 
                     <div class="tools-grid">
                         <!-- Anmeldetool Card -->
-                        <div class="tool-card card-register" :class="{ 'card-disabled': !canStartRegister }" @click="canStartRegister && loadSchoolsForTool('Anmeldetool')" v-if="canShowRegister">
+                        <div class="tool-card card-register" @click="loadSchoolsForTool('Anmeldetool')" v-if="canShowRegister">
                             <div class="card-glow"></div>
                             <div class="card-content">
                                 <div class="card-icon">
@@ -38,19 +38,15 @@
                                 </div>
                                 <h3 class="card-title">Anmeldetool</h3>
                                 <p class="card-description">Einfache Anmeldung zu Schulveranstaltungen, Elternabenden und Events.</p>
-                                <div class="card-action" v-if="canStartRegister">
+                                <div class="card-action">
                                     <span class="action-text">Starten</span>
                                     <v-icon size="20">mdi-arrow-right</v-icon>
-                                </div>
-                                <div class="card-badge" v-else>
-                                    <v-icon size="16">mdi-lock-outline</v-icon>
-                                    <span>Keine Lizenz</span>
                                 </div>
                             </div>
                         </div>
 
                         <!-- Nachhilfetool Card -->
-                        <div class="tool-card card-tutoring" :class="{ 'card-disabled': !canStartTutoring }" @click="canStartTutoring && loadSchoolsForTool('Nachhilfetool')" v-if="canShowTutoring">
+                        <div class="tool-card card-tutoring" @click="loadSchoolsForTool('Nachhilfetool')" v-if="canShowTutoring">
                             <div class="card-glow"></div>
                             <div class="card-content">
                                 <div class="card-icon">
@@ -58,19 +54,15 @@
                                 </div>
                                 <h3 class="card-title">Schüler helfen Schülern</h3>
                                 <p class="card-description">Nachhilfe von Schülern für Schüler. Gemeinsam zum Erfolg.</p>
-                                <div class="card-action" v-if="canStartTutoring">
+                                <div class="card-action">
                                     <span class="action-text">Starten</span>
                                     <v-icon size="20">mdi-arrow-right</v-icon>
-                                </div>
-                                <div class="card-badge" v-else>
-                                    <v-icon size="16">mdi-lock-outline</v-icon>
-                                    <span>Keine Lizenz</span>
                                 </div>
                             </div>
                         </div>
 
                         <!-- Unterricht Card -->
-                        <div class="tool-card card-lernportal" :class="{ 'card-disabled': !canStartTeaching }" @click="canStartTeaching && openUnterricht()" v-if="canShowTeaching">
+                        <div class="tool-card card-lernportal" @click="openUnterricht()" v-if="canShowTeaching">
                             <div class="card-glow"></div>
                             <div class="card-content">
                                 <div class="card-icon">
@@ -78,13 +70,9 @@
                                 </div>
                                 <h3 class="card-title">Unterricht</h3>
                                 <p class="card-description">Einstieg in den Login-Bereich für Schüler.</p>
-                                <div class="card-action" v-if="canStartTeaching">
+                                <div class="card-action">
                                     <span class="action-text">Starten</span>
                                     <v-icon size="20">mdi-arrow-right</v-icon>
-                                </div>
-                                <div class="card-badge" v-else>
-                                    <v-icon size="16">mdi-lock-outline</v-icon>
-                                    <span>Keine Lizenz</span>
                                 </div>
                             </div>
                         </div>
@@ -231,35 +219,14 @@ export default {
 
     computed: {
         ...mapWritableState(useHomepageStore, ['config', 'is_loading', 'schools', 'licence', 'selected_school', 'selected_school_id']),
-        registerLicenceStatus() {
-            if (this.config?.register_licence_status) return this.config.register_licence_status
-            return this.config?.register_licence_available ? 'active' : 'missing'
-        },
-        tutoringLicenceStatus() {
-            if (this.config?.tutoring_licence_status) return this.config.tutoring_licence_status
-            return this.config?.tutoring_licence_available ? 'active' : 'missing'
-        },
-        teachingLicenceStatus() {
-            if (this.config?.teaching_licence_status) return this.config.teaching_licence_status
-            return this.config?.teaching_licence_available ? 'active' : 'missing'
-        },
         canShowRegister() {
-            return this.registerLicenceStatus !== 'missing'
-        },
-        canStartRegister() {
-            return this.registerLicenceStatus === 'active'
+            return Boolean(this.config?.register_active ?? true)
         },
         canShowTutoring() {
-            return Boolean(this.config?.tutoring_active && this.tutoringLicenceStatus !== 'missing')
-        },
-        canStartTutoring() {
-            return Boolean(this.config?.tutoring_active && this.tutoringLicenceStatus === 'active')
+            return Boolean(this.config?.tutoring_active)
         },
         canShowTeaching() {
-            return Boolean(this.config?.teaching_active && this.teachingLicenceStatus !== 'missing')
-        },
-        canStartTeaching() {
-            return Boolean(this.config?.teaching_active && this.teachingLicenceStatus === 'active')
+            return Boolean(this.config?.teaching_active)
         },
     },
 
@@ -277,7 +244,7 @@ export default {
             alert('1')
         },
         openUnterricht() {
-            if (!this.canStartTeaching) return
+            if (!this.canShowTeaching) return
             this.$router.push('/homepage/student')
         },
         moveTo(licence, school) {

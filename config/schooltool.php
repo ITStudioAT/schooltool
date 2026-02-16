@@ -1,13 +1,14 @@
 <?php
 
 return [
-    'version' => '3.15.0',
+    'version' => '3.15.1',
     'copyright' => '(c) 2025–2026 ITStudio.at by Günther Kron',
     'logo' => 'schooltool_white.png',
     'pagination' => 30,
     'token_expire_time' => 60,
     'noreply_email' => 'noreply@schooltool.at',
     'sa_pw' => env('SA_PW'),
+    'register_active' => (bool) env('REGISTER_ACTIVE', true),
     'tutoring_active' => (bool) env('TUTORING_ACTIVE', false),
     'teaching_active' => (bool) env('TEACHING_ACTIVE', false),
     'teaching_max_schools_shown' => (int) env('TEACHING_MAX_SCHOOLS_SHOWN', 20),
