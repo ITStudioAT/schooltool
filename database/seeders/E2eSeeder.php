@@ -131,6 +131,21 @@ class E2eSeeder extends Seeder
         $peer->save();
         $peer->assignRole($studentRole);
 
+        $passwordFlowStudent = User::query()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'email' => 'e2e.student.password@example.test',
+            'password' => Hash::make('password123'),
+            'first_name' => 'E2E',
+            'last_name' => 'StudentPassword',
+            'schoolclass' => '1A',
+        ]);
+        $passwordFlowStudent->email_verified_at = now();
+        $passwordFlowStudent->confirmed_at = now();
+        $passwordFlowStudent->is_active = true;
+        $passwordFlowStudent->save();
+        $passwordFlowStudent->assignRole($studentRole);
+
         $teacher = User::query()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $schoolyear->id,
@@ -169,6 +184,22 @@ class E2eSeeder extends Seeder
         $admin->is_active = true;
         $admin->save();
         $admin->assignRole($adminRole);
+
+        $admin2fa = User::query()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'email' => 'e2e.admin2fa@example.test',
+            'password' => Hash::make('password123'),
+            'first_name' => 'E2E',
+            'last_name' => 'Admin2FA',
+        ]);
+        $admin2fa->email_verified_at = now();
+        $admin2fa->confirmed_at = now();
+        $admin2fa->is_active = true;
+        $admin2fa->is_2fa = true;
+        $admin2fa->email_2fa = 'e2e.admin2fa@example.test';
+        $admin2fa->save();
+        $admin2fa->assignRole($adminRole);
 
         $registerUser = User::query()->create([
             'school_id' => $school->id,
@@ -243,6 +274,28 @@ class E2eSeeder extends Seeder
         $tutoringUser->is_active = true;
         $tutoringUser->save();
         $tutoringUser->assignRole($tutoringUserRole);
+
+        $tutoringPeerUser = User::query()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+            'email' => 'e2e.tutoring.peer@example.test',
+            'password' => Hash::make('password123'),
+            'first_name' => 'E2E',
+            'last_name' => 'TutoringPeer',
+            'schoolclass' => '3A',
+            'sex' => 'w',
+            'tutoring_filter' => [
+                'schools' => [],
+                'only_boys' => false,
+                'only_girls' => false,
+                'only_in_my_school' => true,
+            ],
+        ]);
+        $tutoringPeerUser->email_verified_at = now();
+        $tutoringPeerUser->confirmed_at = now();
+        $tutoringPeerUser->is_active = true;
+        $tutoringPeerUser->save();
+        $tutoringPeerUser->assignRole($tutoringUserRole);
 
         $subject = TutoringSubject::query()->create([
             'school_id' => $school->id,

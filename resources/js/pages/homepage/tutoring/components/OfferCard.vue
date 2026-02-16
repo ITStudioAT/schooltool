@@ -1,5 +1,5 @@
 <template>
-    <div class="offer-card" :class="{ 'offer-card-own': is_mark }" @click="$emit('clickCard')">
+    <div class="offer-card" :class="{ 'offer-card-own': is_mark }" :data-testid="offerCardTestId" @click="$emit('clickCard')">
         <div class="card-glow"></div>
 
         <!-- Card Header -->
@@ -56,8 +56,14 @@ export default {
         'mark_icon',
         'mark_color',
         'my_request',
+        'offer_id',
     ],
     emits: ['clickCard'],
+    computed: {
+        offerCardTestId() {
+            return this.offer_id ? `tutoring-offer-card-${this.offer_id}` : 'tutoring-offer-card'
+        },
+    },
 }
 </script>
 

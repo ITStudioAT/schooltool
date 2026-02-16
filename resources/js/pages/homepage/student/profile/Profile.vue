@@ -1,5 +1,5 @@
 <template>
-    <div class="lernportal-page">
+    <div class="lernportal-page" data-testid="student-profile-page">
         <div class="bg-shape bg-shape-1"></div>
         <div class="bg-shape bg-shape-2"></div>
 
@@ -44,11 +44,11 @@
                         <div class="profile-fields">
                             <div class="profile-field">
                                 <label>Vorname</label>
-                                <div class="profile-value">{{ user.first_name || '—' }}</div>
+                                <div class="profile-value" data-testid="student-profile-first-name">{{ user.first_name || '—' }}</div>
                             </div>
                             <div class="profile-field">
                                 <label>Nachname</label>
-                                <div class="profile-value">{{ user.last_name || '—' }}</div>
+                                <div class="profile-value" data-testid="student-profile-last-name">{{ user.last_name || '—' }}</div>
                             </div>
                         </div>
                     </div>
@@ -63,7 +63,7 @@
                             <div class="profile-field">
                                 <label>E-Mail-Adresse</label>
                                 <div class="profile-value">
-                                    {{ user.email }}
+                                    <span data-testid="student-profile-email">{{ user.email }}</span>
                                     <v-chip v-if="user.email_verified_at" size="x-small" color="success" variant="flat" class="ml-2">
                                         <v-icon size="12" class="mr-1">mdi-check-circle</v-icon>
                                         Verifiziert

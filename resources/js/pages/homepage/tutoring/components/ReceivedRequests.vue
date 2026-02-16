@@ -1,5 +1,5 @@
 <template>
-    <div class="received-requests-section" v-if="is_loaded">
+    <div class="received-requests-section" data-testid="tutoring-received-requests-section" v-if="is_loaded">
         <!-- Section Header -->
         <div class="section-header">
             <div class="header-icon">
@@ -16,7 +16,7 @@
 
         <!-- Requests Grid -->
         <div class="requests-grid" v-if="requests && requests.length > 0">
-            <div class="request-card" v-for="request in requests" :key="request.id">
+            <div class="request-card" :data-testid="`tutoring-received-request-${request.id}`" v-for="request in requests" :key="request.id">
                 <div class="card-glow"></div>
                 <div class="card-content">
                     <!-- Card Header -->
@@ -57,12 +57,13 @@
                                 variant="flat"
                                 size="small"
                                 rounded="lg"
+                                :data-testid="`tutoring-received-request-mailto-${request.id}`"
                                 :href="'mailto:' + request.from_user.email + '?subject=Antwort auf Deine Anfrage zu ' + request.offer.subject.long_name"
                                 @click="mailClicked(request.id)">
                                 <v-icon start>mdi-email</v-icon>
                                 {{ request.from_user.email }}
                             </v-btn>
-                            <v-btn color="success" variant="flat" size="small" rounded="lg" @click="mailClicked(request.id)">
+                            <v-btn color="success" variant="flat" size="small" rounded="lg" :data-testid="`tutoring-received-request-mark-done-${request.id}`" @click="mailClicked(request.id)">
                                 <v-icon start>mdi-check</v-icon>
                                 Erledigt!
                             </v-btn>
@@ -95,11 +96,25 @@
 
                     <!-- Card Actions -->
                     <div class="card-action">
-                        <v-btn color="primary" variant="tonal" size="small" rounded="lg" @click="toUserArchive(request)" v-if="request.mail_at && !request.to_user_archived_at">
+                        <v-btn
+                            color="primary"
+                            variant="tonal"
+                            size="small"
+                            rounded="lg"
+                            :data-testid="`tutoring-received-request-archive-${request.id}`"
+                            @click="toUserArchive(request)"
+                            v-if="request.mail_at && !request.to_user_archived_at">
                             <v-icon start>mdi-archive</v-icon>
                             Archivieren
                         </v-btn>
-                        <v-btn color="success" variant="tonal" size="small" rounded="lg" @click="toUserActive(request)" v-if="request.to_user_archived_at">
+                        <v-btn
+                            color="success"
+                            variant="tonal"
+                            size="small"
+                            rounded="lg"
+                            :data-testid="`tutoring-received-request-activate-${request.id}`"
+                            @click="toUserActive(request)"
+                            v-if="request.to_user_archived_at">
                             <v-icon start>mdi-archive-arrow-up</v-icon>
                             Aktivieren
                         </v-btn>

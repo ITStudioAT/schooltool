@@ -10,7 +10,7 @@
             <div class="hero-card">
                 <div class="hero-topline">
                     <v-btn class="back-btn" variant="text" prepend-icon="mdi-arrow-left" @click="$router.push('/')">Zur Startseite</v-btn>
-                    <v-btn class="menu-btn" variant="text" icon="mdi-menu" @click="showDrawer = true" />
+                    <v-btn class="menu-btn" data-testid="student-overview-open-menu" variant="text" icon="mdi-menu" @click="showDrawer = true" />
                 </div>
 
                 <h1 class="hero-title">Unterricht</h1>
@@ -24,7 +24,7 @@
                 </div>
 
                 <div class="hero-logout-row">
-                    <v-btn class="logout-btn" variant="text" prepend-icon="mdi-logout" @click="handleLogout">Abmelden</v-btn>
+                    <v-btn class="logout-btn" data-testid="student-overview-logout" variant="text" prepend-icon="mdi-logout" @click="handleLogout">Abmelden</v-btn>
                 </div>
             </div>
         </section>

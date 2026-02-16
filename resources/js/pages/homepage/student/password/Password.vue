@@ -11,7 +11,7 @@
                 <div class="hero-topline">
                     <v-btn class="back-btn" variant="text" prepend-icon="mdi-arrow-left" @click="$router.push('/student/overview')">Zurück</v-btn>
                     <div class="chip-brand">Passwort ändern</div>
-                    <v-btn class="menu-btn" variant="text" icon="mdi-menu" @click="showDrawer = true" />
+                    <v-btn class="menu-btn" data-testid="student-password-open-menu" variant="text" icon="mdi-menu" @click="showDrawer = true" />
                 </div>
 
                 <h1 class="hero-title">Passwort ändern</h1>
@@ -46,6 +46,7 @@
                             :append-inner-icon="showNewPassword ? 'mdi-eye-off' : 'mdi-eye'"
                             :rules="[required(), minLength(8), maxLength(255)]"
                             hide-details="auto"
+                            data-testid="student-password-new"
                             @click:append-inner="showNewPassword = !showNewPassword" />
 
                         <!-- Confirm Password -->
@@ -59,6 +60,7 @@
                             :append-inner-icon="showConfirmPassword ? 'mdi-eye-off' : 'mdi-eye'"
                             :rules="[required(), minLength(8), maxLength(255), passwordMatch]"
                             hide-details="auto"
+                            data-testid="student-password-confirm"
                             @click:append-inner="showConfirmPassword = !showConfirmPassword"
                             @keyup.enter="handleSubmit" />
                     </div>
@@ -96,14 +98,14 @@
 
                     <div class="password-actions">
                         <v-btn color="secondary" variant="outlined" rounded="pill" @click="$router.push('/student/overview')">Abbrechen</v-btn>
-                        <v-btn color="success" variant="flat" rounded="pill" type="submit" :disabled="!canSubmit">Passwort ändern</v-btn>
+                        <v-btn color="success" variant="flat" rounded="pill" type="submit" data-testid="student-password-submit" :disabled="!canSubmit">Passwort ändern</v-btn>
                     </div>
                 </v-form>
             </div>
         </section>
 
         <!-- Success Dialog -->
-        <v-dialog v-model="showSuccessDialog" max-width="400">
+        <v-dialog v-model="showSuccessDialog" data-testid="student-password-success-dialog" max-width="400">
             <v-card>
                 <v-card-title class="d-flex align-center ga-2">
                     <v-icon color="success" icon="mdi-check-circle" />
@@ -114,7 +116,7 @@
                 </v-card-text>
                 <v-card-actions>
                     <v-spacer />
-                    <v-btn color="success" variant="flat" @click="handleSuccessClose">OK</v-btn>
+                    <v-btn color="success" variant="flat" data-testid="student-password-success-ok" @click="handleSuccessClose">OK</v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>

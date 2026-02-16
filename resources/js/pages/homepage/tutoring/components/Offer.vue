@@ -1,5 +1,5 @@
 <template>
-    <div class="offer-wizard" v-if="is_loaded">
+    <div class="offer-wizard" data-testid="tutoring-offer-wizard" v-if="is_loaded">
         <!-- Section Header -->
         <div class="section-header">
             <div class="header-icon">
@@ -76,7 +76,7 @@
         <!-- Wizard Form -->
         <v-form ref="form" v-model="is_valid" @submit.prevent="doCreateOffer(data)">
             <!-- Step 0: Subject Selection -->
-            <div class="step-card" v-if="step == 0">
+            <div class="step-card" data-testid="tutoring-offer-step-subject" v-if="step == 0">
                 <div class="step-header">
                     <div class="step-icon">
                         <v-icon size="24">mdi-book-open-variant</v-icon>
@@ -91,6 +91,7 @@
                         :key="subject.id"
                         class="subject-chip"
                         :class="{ 'subject-selected': selectedSubjectId === subject.id }"
+                        :data-testid="`tutoring-offer-subject-${subject.id}`"
                         @click="selectedSubjectId = subject.id"
                     >
                         <span class="subject-short">{{ subject.short_name }}</span>
@@ -100,7 +101,7 @@
 
                 <div class="step-actions">
                     <div></div>
-                    <v-btn color="primary" variant="flat" size="large" rounded="lg" @click="nextStep('subject')" :disabled="!selectedSubject">
+                    <v-btn color="primary" variant="flat" size="large" rounded="lg" data-testid="tutoring-offer-next-subject" @click="nextStep('subject')" :disabled="!selectedSubject">
                         Weiter
                         <v-icon end>mdi-arrow-right</v-icon>
                     </v-btn>
@@ -108,7 +109,7 @@
             </div>
 
             <!-- Step 1: Title & Description -->
-            <div class="step-card" v-if="step == 1">
+            <div class="step-card" data-testid="tutoring-offer-step-title" v-if="step == 1">
                 <div class="step-header">
                     <div class="step-icon">
                         <v-icon size="24">mdi-text-box</v-icon>
@@ -125,6 +126,7 @@
                     variant="outlined"
                     density="comfortable"
                     prepend-inner-icon="mdi-format-title"
+                    data-testid="tutoring-offer-title"
                 />
                 <v-textarea
                     v-model="data.description"
@@ -134,6 +136,7 @@
                     rows="4"
                     prepend-inner-icon="mdi-text"
                     hint="Beschreibe, was Du anbietest und wie Du helfen kannst"
+                    data-testid="tutoring-offer-description"
                 />
 
                 <v-alert type="warning" variant="tonal" rounded="lg" v-if="message[1]" class="mt-3">{{ message[1] }}</v-alert>
@@ -143,7 +146,7 @@
                         <v-icon start>mdi-arrow-left</v-icon>
                         Zurück
                     </v-btn>
-                    <v-btn color="primary" variant="flat" size="large" rounded="lg" @click="nextStep('title')">
+                    <v-btn color="primary" variant="flat" size="large" rounded="lg" data-testid="tutoring-offer-next-title" @click="nextStep('title')">
                         Weiter
                         <v-icon end>mdi-arrow-right</v-icon>
                     </v-btn>
@@ -151,7 +154,7 @@
             </div>
 
             <!-- Step 2: Classes -->
-            <div class="step-card" v-if="step == 2">
+            <div class="step-card" data-testid="tutoring-offer-step-classes" v-if="step == 2">
                 <div class="step-header">
                     <div class="step-icon">
                         <v-icon size="24">mdi-account-school</v-icon>
@@ -171,6 +174,7 @@
                                 :key="classNumber"
                                 class="class-option"
                                 :class="{ 'class-selected': data.classes[classNumber] }"
+                                :data-testid="`tutoring-offer-class-${classNumber}`"
                                 @click="data.classes[classNumber] = !data.classes[classNumber]"
                             >
                                 <v-icon size="18" v-if="data.classes[classNumber]">mdi-check</v-icon>
@@ -189,6 +193,7 @@
                                 :key="classNumber + 4"
                                 class="class-option"
                                 :class="{ 'class-selected': data.classes[classNumber + 4] }"
+                                :data-testid="`tutoring-offer-class-${classNumber + 4}`"
                                 @click="data.classes[classNumber + 4] = !data.classes[classNumber + 4]"
                             >
                                 <v-icon size="18" v-if="data.classes[classNumber + 4]">mdi-check</v-icon>
@@ -205,7 +210,7 @@
                         <v-icon start>mdi-arrow-left</v-icon>
                         Zurück
                     </v-btn>
-                    <v-btn color="primary" variant="flat" size="large" rounded="lg" @click="nextStep('classes')">
+                    <v-btn color="primary" variant="flat" size="large" rounded="lg" data-testid="tutoring-offer-next-classes" @click="nextStep('classes')">
                         Weiter
                         <v-icon end>mdi-arrow-right</v-icon>
                     </v-btn>
@@ -213,7 +218,7 @@
             </div>
 
             <!-- Step 3: Validity -->
-            <div class="step-card" v-if="step == 3">
+            <div class="step-card" data-testid="tutoring-offer-step-validity" v-if="step == 3">
                 <div class="step-header">
                     <div class="step-icon">
                         <v-icon size="24">mdi-calendar-clock</v-icon>
@@ -256,7 +261,7 @@
                         <v-icon start>mdi-arrow-left</v-icon>
                         Zurück
                     </v-btn>
-                    <v-btn color="primary" variant="flat" size="large" rounded="lg" @click="nextStep('active_until')">
+                    <v-btn color="primary" variant="flat" size="large" rounded="lg" data-testid="tutoring-offer-next-validity" @click="nextStep('active_until')">
                         Weiter
                         <v-icon end>mdi-arrow-right</v-icon>
                     </v-btn>
@@ -264,7 +269,7 @@
             </div>
 
             <!-- Step 4: Group & Price -->
-            <div class="step-card" v-if="step == 4">
+            <div class="step-card" data-testid="tutoring-offer-step-details" v-if="step == 4">
                 <div class="step-header">
                     <div class="step-icon">
                         <v-icon size="24">mdi-account-group</v-icon>
@@ -320,6 +325,7 @@
                         :max="50"
                         v-model="data.price_per_hour"
                         variant="outlined"
+                        data-testid="tutoring-offer-price-per-hour"
                     />
                     <div class="price-hint" v-if="data.price_per_hour === 0">
                         <v-icon size="16" class="mr-1">mdi-heart</v-icon>
@@ -332,7 +338,7 @@
                         <v-icon start>mdi-arrow-left</v-icon>
                         Zurück
                     </v-btn>
-                    <v-btn color="primary" variant="flat" size="large" rounded="lg" @click="nextStep('more_infos')">
+                    <v-btn color="primary" variant="flat" size="large" rounded="lg" data-testid="tutoring-offer-next-details" @click="nextStep('more_infos')">
                         Weiter
                         <v-icon end>mdi-arrow-right</v-icon>
                     </v-btn>
@@ -340,7 +346,7 @@
             </div>
 
             <!-- Step 5: Teacher Approval -->
-            <div class="step-card" v-if="step == 5">
+            <div class="step-card" data-testid="tutoring-offer-step-mentor" v-if="step == 5">
                 <div class="step-header">
                     <div class="step-icon">
                         <v-icon size="24">mdi-account-check</v-icon>
@@ -366,7 +372,7 @@
                         <v-icon start>mdi-arrow-left</v-icon>
                         Zurück
                     </v-btn>
-                    <v-btn color="primary" variant="flat" size="large" rounded="lg" @click="nextStep('mentor')">
+                    <v-btn color="primary" variant="flat" size="large" rounded="lg" data-testid="tutoring-offer-next-mentor" @click="nextStep('mentor')">
                         Weiter
                         <v-icon end>mdi-arrow-right</v-icon>
                     </v-btn>
@@ -374,7 +380,7 @@
             </div>
 
             <!-- Step 6: Visibility -->
-            <div class="step-card" v-if="step == 6">
+            <div class="step-card" data-testid="tutoring-offer-step-visibility" v-if="step == 6">
                 <div class="step-header">
                     <div class="step-icon">
                         <v-icon size="24">mdi-eye</v-icon>
@@ -425,7 +431,7 @@
                         <v-icon start>mdi-arrow-left</v-icon>
                         Zurück
                     </v-btn>
-                    <v-btn color="primary" variant="flat" size="large" rounded="lg" @click="nextStep('visible_for_other_schools')">
+                    <v-btn color="primary" variant="flat" size="large" rounded="lg" data-testid="tutoring-offer-next-visibility" @click="nextStep('visible_for_other_schools')">
                         Weiter
                         <v-icon end>mdi-arrow-right</v-icon>
                     </v-btn>
@@ -433,7 +439,7 @@
             </div>
 
             <!-- Step 7: Confirm & Submit -->
-            <div class="step-card" v-if="step == 7">
+            <div class="step-card" data-testid="tutoring-offer-step-submit" v-if="step == 7">
                 <div class="step-header">
                     <div class="step-icon step-icon-success">
                         <v-icon size="24">mdi-check-all</v-icon>
@@ -450,7 +456,7 @@
             </div>
 
             <!-- Step 8: Success -->
-            <div class="step-card success-card" v-if="step == 8">
+            <div class="step-card success-card" data-testid="tutoring-offer-step-success" v-if="step == 8">
                 <div class="success-icon">
                     <v-icon size="64" color="success">mdi-check-circle</v-icon>
                 </div>
@@ -461,7 +467,7 @@
                 <p class="success-message" v-else>
                     Dein Angebot wurde erfolgreich {{ data.id ? 'aktualisiert' : 'erstellt' }}. Es kann jederzeit online gestellt werden!
                 </p>
-                <v-btn color="success" variant="flat" size="large" rounded="lg" @click="finished" class="mt-4">
+                <v-btn color="success" variant="flat" size="large" rounded="lg" data-testid="tutoring-offer-finish" @click="finished" class="mt-4">
                     <v-icon start>mdi-check</v-icon>
                     Fertig
                 </v-btn>
@@ -480,7 +486,7 @@
                     <v-icon start>mdi-close</v-icon>
                     Abbrechen
                 </v-btn>
-                <v-btn color="success" variant="flat" size="x-large" rounded="lg" @click="doCreateOffer(data)">
+                <v-btn color="success" variant="flat" size="x-large" rounded="lg" data-testid="tutoring-offer-submit" @click="doCreateOffer(data)">
                     <v-icon start>mdi-check</v-icon>
                     {{ data.id ? 'Speichern' : 'Angebot erstellen' }}
                 </v-btn>

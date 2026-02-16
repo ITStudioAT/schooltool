@@ -67,7 +67,7 @@
                         </div>
                     </div>
 
-                    <div class="menu-card card-requests" @click="action = 'received_requests'" v-if="offer_config.auth.is_auth">
+                    <div class="menu-card card-requests" data-testid="tutoring-overview-received-requests" @click="action = 'received_requests'" v-if="offer_config.auth.is_auth">
                         <div class="card-glow"></div>
                         <div class="card-content">
                             <div class="card-icon">
@@ -82,7 +82,7 @@
                         </div>
                     </div>
 
-                    <div class="menu-card card-my-requests" @click="action = 'my_requests'" v-if="offer_config.auth.is_auth">
+                    <div class="menu-card card-my-requests" data-testid="tutoring-overview-my-requests" @click="action = 'my_requests'" v-if="offer_config.auth.is_auth">
                         <div class="card-glow"></div>
                         <div class="card-content">
                             <div class="card-icon">
@@ -97,7 +97,7 @@
                         </div>
                     </div>
 
-                    <div class="menu-card card-logout" @click="logout" v-if="offer_config.auth.is_auth">
+                    <div class="menu-card card-logout" data-testid="tutoring-overview-logout" @click="logout" v-if="offer_config.auth.is_auth">
                         <div class="card-glow"></div>
                         <div class="card-content">
                             <div class="card-icon">
@@ -131,7 +131,7 @@
 
                 <!-- My Requests Menu -->
                 <div class="sub-menu" v-if="action == 'my_requests'">
-                    <div class="menu-card card-back" @click="action = ''">
+                    <div class="menu-card card-back" data-testid="tutoring-overview-my-requests-back" @click="action = ''">
                         <div class="card-glow"></div>
                         <div class="card-content">
                             <div class="card-icon">
@@ -141,7 +141,7 @@
                             <p class="card-description">Zurück zur Übersicht.</p>
                         </div>
                     </div>
-                    <div class="menu-card card-archive" @click="toArchive(!show_archived)">
+                    <div class="menu-card card-archive" data-testid="tutoring-overview-my-requests-toggle-archive" @click="toArchive(!show_archived)">
                         <div class="card-glow"></div>
                         <div class="card-content">
                             <div class="card-icon">
@@ -155,7 +155,7 @@
 
                 <!-- Received Requests Menu -->
                 <div class="sub-menu" v-if="action == 'received_requests'">
-                    <div class="menu-card card-back" @click="action = ''">
+                    <div class="menu-card card-back" data-testid="tutoring-overview-received-requests-back" @click="action = ''">
                         <div class="card-glow"></div>
                         <div class="card-content">
                             <div class="card-icon">
@@ -165,7 +165,7 @@
                             <p class="card-description">Zurück zur Übersicht.</p>
                         </div>
                     </div>
-                    <div class="menu-card card-archive" @click="toToUserArchive(!show_to_user_archived)">
+                    <div class="menu-card card-archive" data-testid="tutoring-overview-received-requests-toggle-archive" @click="toToUserArchive(!show_to_user_archived)">
                         <div class="card-glow"></div>
                         <div class="card-content">
                             <div class="card-icon">
@@ -271,10 +271,11 @@
                 </div>
 
                 <!-- Offers Grid -->
-                <div class="offers-grid" v-if="offers && offers.length > 0">
+                <div class="offers-grid" data-testid="tutoring-overview-offers-grid" v-if="offers && offers.length > 0">
                     <OfferCard
                         v-for="offer in offers"
                         :key="offer.id"
+                        :offer_id="offer.id"
                         :school_short_name="offer.school.short_name"
                         :school_long_name="offer.school.long_name"
                         :subject="offer.subject.short_name + ': ' + offer.subject.long_name"

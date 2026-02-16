@@ -88,19 +88,52 @@ class RecordsCreateService
         $schoolyears = config('schooltool.schoolyears', []);
 
         foreach ($schoolyears as $schoolyear) {
+            $concerns = $this->resolveSchoolyearConcerns($schoolyear);
+
             Schoolyear::firstOrCreate(
                 [
                     'school_id' => $school->id,
-                    'concerns' => $schoolyear['concerns'],
+                    'concerns' => $concerns,
                 ],
                 [
-                    'name' => $schoolyear['name'],
-                    'from' => $schoolyear['from'],
-                    'until' => $schoolyear['to'],
-                    'sem_2_start' => $schoolyear['sem_2_start'],
+                    'name' => $schoolyear['name'] ?? null,
+                    'from' => $schoolyear['from'] ?? null,
+                    'until' => $schoolyear['to'] ?? null,
+                    'sem_2_start' => $schoolyear['sem_2_start'] ?? null,
                 ]
             );
         }
+    }
+
+    private function resolveSchoolyearConcerns(array $schoolyear): ?string
+    {
+        if (! empty($schoolyear['concerns'])) {
+            return (string) $schoolyear['concerns'];
+        }
+
+        if (! empty($schoolyear['name'])) {
+            return (string) $schoolyear['name'];
+        }
+
+        $fromYear = $this->extractYear($schoolyear['from'] ?? null);
+        $toYear = $this->extractYear($schoolyear['to'] ?? null);
+
+        if ($fromYear !== null && $toYear !== null) {
+            return $fromYear . '/' . substr((string) $toYear, -2);
+        }
+
+        return null;
+    }
+
+    private function extractYear(mixed $value): ?int
+    {
+        if (! is_string($value) || strlen($value) < 4) {
+            return null;
+        }
+
+        $year = (int) substr($value, 0, 4);
+
+        return $year > 0 ? $year : null;
     }
 
     private function firstOrCreateSchoolyear(School $school): Schoolyear

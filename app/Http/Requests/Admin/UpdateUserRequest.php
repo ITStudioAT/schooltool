@@ -31,7 +31,13 @@ class UpdateUserRequest extends FormRequest
                 'email',
                 'max:255',
                 Rule::unique('users')->where(function ($query) {
-                    return $query->where('school_id', auth()->user()->school_id);
+                    $schoolId = auth()->user()?->school_id;
+
+                    if ($schoolId !== null) {
+                        $query->where('school_id', $schoolId);
+                    }
+
+                    return $query;
                 })->ignore($this->id),
             ],
             'is_active' => 'boolean',

@@ -170,13 +170,13 @@
 
                     <v-form ref="form" v-model="is_valid" @submit.prevent="confirmEmail(data)" class="step-form">
                         <div class="otp-label">Bitte den Code eingeben:</div>
-                        <v-otp-input autofocus v-model="data.token_2fa" class="otp-input mb-6" />
+                        <v-otp-input autofocus v-model="data.token_2fa" class="otp-input mb-6" data-testid="register-email-token-input" />
                         <div class="form-actions">
                             <v-btn type="button" color="grey" variant="tonal" size="large" rounded="lg" @click="startRegister">
                                 <v-icon start>mdi-refresh</v-icon>
                                 Neustart
                             </v-btn>
-                            <v-btn color="success" variant="flat" size="large" rounded="lg" type="submit" :disabled="!data.email">
+                            <v-btn color="success" variant="flat" size="large" rounded="lg" type="submit" data-testid="register-email-token-submit" :disabled="!data.email">
                                 Bestätigen
                                 <v-icon end>mdi-check</v-icon>
                             </v-btn>
@@ -260,13 +260,13 @@
 
                     <v-form ref="form" v-model="is_valid" @submit.prevent="loginToken(data)" class="step-form">
                         <div class="otp-label">Bitte den Code eingeben:</div>
-                        <v-otp-input autofocus v-model="data.token_2fa" class="otp-input mb-6" />
+                        <v-otp-input autofocus v-model="data.token_2fa" class="otp-input mb-6" data-testid="register-login-token-input" />
                         <div class="form-actions">
                             <v-btn type="button" color="grey" variant="tonal" size="large" rounded="lg" @click="startRegister">
                                 <v-icon start>mdi-refresh</v-icon>
                                 Neustart
                             </v-btn>
-                            <v-btn color="success" variant="flat" size="large" rounded="lg" type="submit" :disabled="!data.email">
+                            <v-btn color="success" variant="flat" size="large" rounded="lg" type="submit" data-testid="register-login-token-submit" :disabled="!data.email">
                                 Anmelden
                                 <v-icon end>mdi-login</v-icon>
                             </v-btn>

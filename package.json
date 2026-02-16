@@ -7,6 +7,7 @@
         "dev": "vite",
         "ide-helper": "php artisan ide-helper:generate && php artisan ide-helper:meta",
         "preview": "vite preview",
+        "test:all": "composer test && npm run test:ui && npm run test:e2e",
         "test:ui": "vitest run",
         "test:ui:watch": "vitest",
         "pretest:e2e": "npm run build && php -r \"if (!file_exists('.env.e2e')) { fwrite(STDERR, '.env.e2e is missing. Copy .env.e2e.example to .env.e2e first.' . PHP_EOL); exit(1); } if (!file_exists('database/e2e.sqlite')) { touch('database/e2e.sqlite'); }\" && php artisan migrate:fresh --env=e2e --seed --seeder=E2eSeeder --force",

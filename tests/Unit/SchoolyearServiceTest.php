@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Services\SchoolyearService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -121,7 +122,7 @@ describe('setToUser', function () {
         expect($freshUser->schoolyear_id)->toBe($schoolyear->id);
     });
 
-    it('can set schoolyear from different school to user', function () {
+    it('rejects schoolyear from different school', function () {
         $otherSchool = School::factory()->create([
             'short_name' => 'OtherSchool',
             'long_name' => 'Other School Name',
@@ -136,14 +137,8 @@ describe('setToUser', function () {
             'school_id' => $this->school->id,
         ]);
 
-        // Service doesn't validate school matching - it just sets the ID
-        $result = $this->service->setToUser($user, $schoolyear->id);
-
-        expect($result->id)->toBe($schoolyear->id);
-
-        $user->refresh();
-        expect($user->schoolyear_id)->toBe($schoolyear->id);
-    });
+        $this->service->setToUser($user, $schoolyear->id);
+    })->throws(HttpException::class, 'Sie haben keine Berechtigung');
 
     it('handles multiple users set to same schoolyear', function () {
         $schoolyear = Schoolyear::factory()->create([

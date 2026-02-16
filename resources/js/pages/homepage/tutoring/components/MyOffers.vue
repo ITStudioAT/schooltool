@@ -12,7 +12,7 @@
         </div>
 
         <!-- Offers Grid -->
-        <div class="offers-grid" v-if="my_offers && my_offers.length > 0">
+        <div class="offers-grid" data-testid="tutoring-my-offers-grid" v-if="my_offers && my_offers.length > 0">
             <MyOffer v-for="offer in my_offers" :key="offer.id" :offer="offer" />
         </div>
 

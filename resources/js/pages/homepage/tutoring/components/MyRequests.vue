@@ -1,5 +1,5 @@
 <template>
-    <div class="my-requests-section" v-if="is_loaded">
+    <div class="my-requests-section" data-testid="tutoring-my-requests-section" v-if="is_loaded">
         <!-- Section Header -->
         <div class="section-header">
             <div class="header-icon">
@@ -16,7 +16,7 @@
 
         <!-- Requests List -->
         <div class="requests-list" v-if="requests && requests.length > 0">
-            <div class="request-card" v-for="request in requests" :key="request.id">
+            <div class="request-card" :data-testid="`tutoring-my-request-${request.id}`" v-for="request in requests" :key="request.id">
                 <div class="card-glow"></div>
                 <div class="card-content">
                     <!-- Card Header -->
@@ -99,6 +99,7 @@
                             variant="tonal"
                             size="small"
                             rounded="lg"
+                            :data-testid="`tutoring-my-request-archive-${request.id}`"
                             @click="toArchive(request)"
                             v-if="!request.archived_at">
                             <v-icon start>mdi-archive</v-icon>
@@ -109,6 +110,7 @@
                             variant="tonal"
                             size="small"
                             rounded="lg"
+                            :data-testid="`tutoring-my-request-activate-${request.id}`"
                             @click="toActive(request)"
                             v-if="request.archived_at">
                             <v-icon start>mdi-archive-arrow-up</v-icon>

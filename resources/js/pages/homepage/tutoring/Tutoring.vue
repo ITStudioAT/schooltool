@@ -57,7 +57,7 @@
             <div class="menu-section" v-if="action == ''">
                 <div class="menu-grid">
                     <!-- Back to Overview -->
-                    <div class="menu-card card-back" @click="moveToTutoringOverview">
+                    <div class="menu-card card-back" data-testid="tutoring-menu-back-to-overview" @click="moveToTutoringOverview">
                         <div class="card-glow"></div>
                         <div class="card-content">
                             <div class="card-icon">
@@ -73,7 +73,7 @@
                     </div>
 
                     <!-- Create New Offer -->
-                    <div class="menu-card card-offer" @click="createOffer">
+                    <div class="menu-card card-offer" data-testid="tutoring-menu-create-offer" @click="createOffer">
                         <div class="card-glow"></div>
                         <div class="card-content">
                             <div class="card-icon">
@@ -89,7 +89,7 @@
                     </div>
 
                     <!-- Edit Profile -->
-                    <div class="menu-card card-profile" @click="editProfile">
+                    <div class="menu-card card-profile" data-testid="tutoring-menu-edit-profile" @click="editProfile">
                         <div class="card-glow"></div>
                         <div class="card-content">
                             <div class="card-icon">
@@ -105,7 +105,7 @@
                     </div>
 
                     <!-- Change Password -->
-                    <div class="menu-card card-password" @click="editPassword">
+                    <div class="menu-card card-password" data-testid="tutoring-menu-edit-password" @click="editPassword">
                         <div class="card-glow"></div>
                         <div class="card-content">
                             <div class="card-icon">
@@ -121,7 +121,7 @@
                     </div>
 
                     <!-- Logout -->
-                    <div class="menu-card card-logout" @click="logout">
+                    <div class="menu-card card-logout" data-testid="tutoring-menu-logout" @click="logout">
                         <div class="card-glow"></div>
                         <div class="card-content">
                             <div class="card-icon">

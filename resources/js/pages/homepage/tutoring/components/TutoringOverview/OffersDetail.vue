@@ -1,5 +1,5 @@
 <template>
-    <v-dialog v-model="is_offer_dialog" max-width="500">
+    <v-dialog v-model="is_offer_dialog" max-width="500" data-testid="tutoring-offer-detail-dialog">
         <v-card class="w-100">
             <v-card-title>
                 {{ offer.school.short_name }}
@@ -50,6 +50,7 @@
 
             <v-card-actions v-if="!is_contact">
                 <v-btn
+                    data-testid="tutoring-offer-detail-contact"
                     color="success"
                     :text="offer.my_request ? 'Nachfragen' : 'Kontakt'"
                     @click="is_contact = true"
@@ -84,24 +85,29 @@
                         label="Deine Nachricht"
                         :rules="[maxLength(1024)]"
                         counter="1024"
+                        data-testid="tutoring-offer-detail-request-message"
                         v-if="!offer?.my_request?.sent_count || offer?.my_request?.sent_count == 0" />
-                    <v-checkbox color="success" v-model="is_serious_request" label="Ich bestätige, dass es sich um eine ernst gemeinte Anfrage handelt." />
+                    <v-checkbox
+                        color="success"
+                        v-model="is_serious_request"
+                        label="Ich bestätige, dass es sich um eine ernst gemeinte Anfrage handelt."
+                        data-testid="tutoring-offer-detail-serious-request" />
                 </v-card-text>
                 <v-card-actions class="d-flex flex-row align-center justify-space-between w-100" v-if="is_contact">
                     <v-btn color="error" text="Abbruch" @click="is_contact = false" />
-                    <v-btn color="success" type="submit" text="Absenden" v-if="is_serious_request" />
+                    <v-btn color="success" type="submit" text="Absenden" data-testid="tutoring-offer-detail-send-request" v-if="is_serious_request" />
                 </v-card-actions>
             </v-form>
-            <v-card-text v-if="send_request_status == 'NEW_REQUEST'">
+            <v-card-text v-if="send_request_status == 'NEW_REQUEST'" data-testid="tutoring-offer-detail-request-success">
                 <v-alert type="success">Deine Anfrage wurde versandt! Bitte warte auf die Antwort.</v-alert>
             </v-card-text>
 
-            <v-card-text v-if="send_request_status == 'EXISTING_REQUEST'">
+            <v-card-text v-if="send_request_status == 'EXISTING_REQUEST'" data-testid="tutoring-offer-detail-request-existing">
                 <v-alert type="warning">Du hast bereits eine Anfrage geschickt! Bitte warte auf die Antwort.</v-alert>
             </v-card-text>
             <v-card-actions v-if="send_request_status == 'EXISTING_REQUEST' || send_request_status == 'NEW_REQUEST'">
                 <div></div>
-                <v-btn class="ms-auto" text="Fertig" @click="sendRequestFinished" />
+                <v-btn class="ms-auto" text="Fertig" data-testid="tutoring-offer-detail-request-finished" @click="sendRequestFinished" />
             </v-card-actions>
         </v-card>
     </v-dialog>

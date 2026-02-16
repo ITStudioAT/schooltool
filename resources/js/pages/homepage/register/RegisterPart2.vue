@@ -63,7 +63,7 @@
             </div>
 
             <!-- Date Selection Section -->
-            <div class="content-card" v-if="action == '' && bookings.length == 0">
+            <div class="content-card" data-testid="register2-slot-selection" v-if="action == '' && bookings.length == 0">
                 <div class="card-glow"></div>
                 <div class="card-inner">
                     <div class="section-header">
@@ -87,6 +87,7 @@
                                 :variant="selected_date == date ? 'flat' : 'outlined'"
                                 size="large"
                                 class="date-chip"
+                                :data-testid="`register2-date-${date.date}`"
                                 @click="selectDate(date)">
                                 <div class="date-chip-content">
                                     <span class="date-weekday">{{ date.weekday }}</span>
@@ -104,6 +105,7 @@
                                 v-for="register_date in possibleRegisterDates"
                                 :key="register_date.id"
                                 class="time-slot"
+                                :data-testid="`register2-time-slot-${register_date.id}`"
                                 :class="{
                                     'time-slot-selected': selected_register_date.includes(register_date.id),
                                     'time-slot-disabled': register_date.is_locked || register_date.max_registrations - register_date.bookings_count == 0,
@@ -129,7 +131,7 @@
                             <v-icon start>mdi-logout</v-icon>
                             Abmelden
                         </v-btn>
-                        <v-btn color="success" variant="flat" size="large" rounded="lg" @click="editKid" :disabled="selected_register_date.length == 0">
+                        <v-btn color="success" variant="flat" size="large" rounded="lg" data-testid="register2-to-student-form" @click="editKid" :disabled="selected_register_date.length == 0">
                             Weiter
                             <v-icon end>mdi-arrow-right</v-icon>
                         </v-btn>
@@ -138,7 +140,7 @@
             </div>
 
             <!-- Existing Bookings Section -->
-            <div class="content-card" v-if="action == '' && bookings.length > 0">
+            <div class="content-card" data-testid="register2-bookings-overview" v-if="action == '' && bookings.length > 0">
                 <div class="card-glow card-glow-success"></div>
                 <div class="card-inner">
                     <div class="section-header">
@@ -153,7 +155,7 @@
 
                     <!-- Booking Cards -->
                     <div class="bookings-list">
-                        <div class="booking-card" v-for="booking in bookings" :key="booking.id">
+                        <div class="booking-card" :data-testid="`register2-booking-${booking.id}`" v-for="booking in bookings" :key="booking.id">
                             <div class="booking-content">
                                 <div class="booking-datetime">
                                     <div class="booking-date">
@@ -171,7 +173,7 @@
                                 </div>
                             </div>
                             <div class="booking-actions">
-                                <v-btn color="error" variant="tonal" size="small" rounded="lg" @click="deleteBooking(booking)">
+                                <v-btn color="error" variant="tonal" size="small" rounded="lg" :data-testid="`register2-booking-delete-${booking.id}`" @click="deleteBooking(booking)">
                                     <v-icon start>mdi-delete</v-icon>
                                     Stornieren
                                 </v-btn>
@@ -190,7 +192,7 @@
             </div>
 
             <!-- Student Data Form -->
-            <div class="content-card" v-if="action == 'edit_kid'">
+            <div class="content-card" data-testid="register2-student-form" v-if="action == 'edit_kid'">
                 <div class="card-glow"></div>
                 <div class="card-inner">
                     <div class="section-header">
@@ -233,6 +235,7 @@
                             variant="outlined"
                             prepend-inner-icon="mdi-account"
                             :rules="active_register.must_student_last_name ? [required(), maxLength(255)] : [maxLength(255)]"
+                            data-testid="register2-student-last-name"
                             class="mb-4" />
                         <v-text-field
                             v-if="active_register.show_student_first_name"
@@ -241,6 +244,7 @@
                             variant="outlined"
                             prepend-inner-icon="mdi-account-outline"
                             :rules="active_register.must_student_first_name ? [required(), maxLength(255)] : [maxLength(255)]"
+                            data-testid="register2-student-first-name"
                             class="mb-4" />
                         <v-text-field
                             v-if="active_register.show_student_birthdate"
@@ -249,6 +253,7 @@
                             variant="outlined"
                             prepend-inner-icon="mdi-cake-variant"
                             :rules="active_register.must_student_birthdate ? [required(), date()] : [date()]"
+                            data-testid="register2-student-birthdate"
                             class="mb-4" />
                         <v-text-field
                             v-if="active_register.show_note"
@@ -257,6 +262,7 @@
                             variant="outlined"
                             prepend-inner-icon="mdi-note-text"
                             :rules="active_register.must_note ? [required(), maxLength(255)] : [maxLength(255)]"
+                            data-testid="register2-student-note"
                             class="mb-6" />
 
                         <div class="form-actions">
@@ -264,7 +270,7 @@
                                 <v-icon start>mdi-arrow-left</v-icon>
                                 Zurück
                             </v-btn>
-                            <v-btn color="success" variant="flat" size="large" rounded="lg" type="submit">
+                            <v-btn color="success" variant="flat" size="large" rounded="lg" data-testid="register2-submit-booking" type="submit">
                                 <v-icon start>mdi-check</v-icon>
                                 Jetzt buchen
                             </v-btn>
@@ -287,7 +293,7 @@
             </Teleport>
 
             <!-- Booking Success -->
-            <div class="content-card" v-if="action == 'booked'">
+            <div class="content-card" data-testid="register2-booked-success" v-if="action == 'booked'">
                 <div class="card-glow card-glow-success"></div>
                 <div class="card-inner">
                     <div class="success-state">
@@ -325,7 +331,7 @@
                                 <v-icon start>mdi-logout</v-icon>
                                 Abmelden
                             </v-btn>
-                            <v-btn color="success" variant="flat" size="large" rounded="lg" @click="bookingFinished">
+                            <v-btn color="success" variant="flat" size="large" rounded="lg" data-testid="register2-booking-finished" @click="bookingFinished">
                                 <v-icon start>mdi-format-list-bulleted</v-icon>
                                 Zur Übersicht
                             </v-btn>

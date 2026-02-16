@@ -16,24 +16,24 @@
         <v-divider />
 
         <v-list>
-            <v-list-item v-if="currentRoute !== 'password'" prepend-icon="mdi-lock-reset" @click="handlePasswordChange">
+            <v-list-item data-testid="student-drawer-password" v-if="currentRoute !== 'password'" prepend-icon="mdi-lock-reset" @click="handlePasswordChange">
                 <v-list-item-title>Passwort ändern</v-list-item-title>
                 <v-list-item-subtitle>Ändere dein Passwort für mehr Sicherheit</v-list-item-subtitle>
             </v-list-item>
 
-            <v-list-item v-if="currentRoute !== 'profile'" prepend-icon="mdi-account-circle" @click="handleProfileView">
+            <v-list-item data-testid="student-drawer-profile" v-if="currentRoute !== 'profile'" prepend-icon="mdi-account-circle" @click="handleProfileView">
                 <v-list-item-title>Mein Profil</v-list-item-title>
                 <v-list-item-subtitle>Zeige deine persönlichen Informationen</v-list-item-subtitle>
             </v-list-item>
 
-            <v-list-item prepend-icon="mdi-cog" @click="handleSettings">
+            <v-list-item data-testid="student-drawer-settings" prepend-icon="mdi-cog" @click="handleSettings">
                 <v-list-item-title>Einstellungen</v-list-item-title>
                 <v-list-item-subtitle>Verwalte deine Benachrichtigungen und Präferenzen</v-list-item-subtitle>
             </v-list-item>
 
             <v-divider class="my-2" />
 
-            <v-list-item prepend-icon="mdi-logout" @click="handleLogout">
+            <v-list-item data-testid="student-drawer-logout" prepend-icon="mdi-logout" @click="handleLogout">
                 <v-list-item-title>Abmelden</v-list-item-title>
                 <v-list-item-subtitle>Vom Unterrichtsbereich abmelden</v-list-item-subtitle>
             </v-list-item>

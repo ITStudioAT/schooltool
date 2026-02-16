@@ -1,6 +1,6 @@
 <template>
     <!-- Offer Card -->
-    <div class="offer-card" v-if="action == '' && !is_edit">
+    <div class="offer-card" :data-testid="`tutoring-my-offer-${offer.id}`" v-if="action == '' && !is_edit">
         <div class="card-glow" :class="{ 'glow-online': offer.is_active, 'glow-offline': !offer.is_active }"></div>
 
         <!-- Card Header -->
@@ -40,7 +40,13 @@
                         <v-icon size="18">{{ offer.is_active ? 'mdi-web' : 'mdi-web-off' }}</v-icon>
                         <span>{{ offer.is_active ? 'ONLINE' : 'OFFLINE' }}</span>
                     </div>
-                    <v-btn :color="offer.is_active ? 'error' : 'success'" variant="tonal" size="small" rounded="lg" @click="toggleActive(offer)">
+                    <v-btn
+                        :color="offer.is_active ? 'error' : 'success'"
+                        variant="tonal"
+                        size="small"
+                        rounded="lg"
+                        :data-testid="`tutoring-my-offer-toggle-${offer.id}`"
+                        @click="toggleActive(offer)">
                         {{ offer.is_active ? 'Ausschalten' : 'Einschalten' }}
                     </v-btn>
                 </div>
@@ -111,12 +117,12 @@
         <!-- Actions -->
         <div class="card-actions">
             <template v-if="delete_level == 0">
-                <v-btn color="primary" variant="flat" rounded="lg" @click="editOffer(offer)">
+                <v-btn color="primary" variant="flat" rounded="lg" :data-testid="`tutoring-my-offer-edit-${offer.id}`" @click="editOffer(offer)">
                     <v-icon start>mdi-pencil</v-icon>
                     Bearbeiten
                 </v-btn>
 
-                <v-btn color="warning" variant="tonal" rounded="lg" @click="delete_level = 1">
+                <v-btn color="warning" variant="tonal" rounded="lg" :data-testid="`tutoring-my-offer-delete-${offer.id}`" @click="delete_level = 1">
                     <v-icon start>mdi-delete</v-icon>
                     Löschen
                 </v-btn>
@@ -127,7 +133,7 @@
                     <v-icon start>mdi-close</v-icon>
                     Abbrechen
                 </v-btn>
-                <v-btn color="error" variant="flat" rounded="lg" @click="deleteOffer(offer)">
+                <v-btn color="error" variant="flat" rounded="lg" :data-testid="`tutoring-my-offer-delete-confirm-${offer.id}`" @click="deleteOffer(offer)">
                     <v-icon start>mdi-delete-forever</v-icon>
                     Bestätigen
                 </v-btn>

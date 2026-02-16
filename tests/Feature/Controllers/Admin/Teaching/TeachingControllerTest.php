@@ -76,6 +76,9 @@ beforeEach(function () {
         'short_name' => 'OTHER',
         'long_name' => 'Other School',
     ]);
+    $this->otherSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $this->otherSchool->id,
+    ]);
 });
 
 // ============================================================================
@@ -132,6 +135,7 @@ describe('response structure', function () {
 
         Import116::factory()->count(3)->create([
             'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
             'import_user_id' => $this->admin->id,
         ]);
 
@@ -199,12 +203,14 @@ describe('school isolation', function () {
         // Create records for current school
         $ownRecords = Import116::factory()->count(3)->create([
             'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
             'import_user_id' => $this->admin->id,
         ]);
 
         // Create records for other school
         Import116::factory()->count(2)->create([
             'school_id' => $this->otherSchool->id,
+            'schoolyear_id' => $this->otherSchoolyear->id,
             'import_user_id' => $this->admin->id,
         ]);
 
@@ -229,6 +235,7 @@ describe('search functionality', function () {
     beforeEach(function () {
         Import116::factory()->create([
             'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
             'import_user_id' => $this->admin->id,
             'last_name' => 'Mueller',
             'first_name' => 'Hans',
@@ -242,6 +249,7 @@ describe('search functionality', function () {
 
         Import116::factory()->create([
             'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
             'import_user_id' => $this->admin->id,
             'last_name' => 'Schmidt',
             'first_name' => 'Maria',
@@ -255,6 +263,7 @@ describe('search functionality', function () {
 
         Import116::factory()->create([
             'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
             'import_user_id' => $this->admin->id,
             'last_name' => 'Bauer',
             'first_name' => 'Felix',
@@ -421,6 +430,7 @@ describe('sorting', function () {
 
         Import116::factory()->create([
             'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
             'import_user_id' => $this->admin->id,
             'last_name' => 'Zimmermann',
             'first_name' => 'Anton',
@@ -428,6 +438,7 @@ describe('sorting', function () {
 
         Import116::factory()->create([
             'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
             'import_user_id' => $this->admin->id,
             'last_name' => 'Abel',
             'first_name' => 'Zora',
@@ -435,6 +446,7 @@ describe('sorting', function () {
 
         Import116::factory()->create([
             'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
             'import_user_id' => $this->admin->id,
             'last_name' => 'Abel',
             'first_name' => 'Anna',
@@ -465,6 +477,7 @@ describe('pagination', function () {
         // Create more records than default pagination
         Import116::factory()->count(50)->create([
             'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
             'import_user_id' => $this->admin->id,
         ]);
 
@@ -483,6 +496,7 @@ describe('pagination', function () {
 
         Import116::factory()->count(50)->create([
             'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
             'import_user_id' => $this->admin->id,
         ]);
 
