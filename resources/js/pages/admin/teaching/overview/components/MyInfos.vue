@@ -162,6 +162,7 @@ export default {
                 const studentsInfo = Array.isArray(course?.students_info) ? course.students_info : []
                 if (studentsInfo.length) {
                     studentsInfo.forEach((student) => {
+                        if (student?.canceled_at) return
                         if (student?.id != null) ids.add(String(student.id))
                     })
                     return

@@ -19,7 +19,7 @@ class TeachingCourseController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index(Request $request)
+    public function index(Request $request, TeachingCourseService $service)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -63,10 +63,12 @@ class TeachingCourseController extends Controller
             ? collect()
             : Import116::where('school_id', $auth_user->school_id)->whereIn('id', $importIds)->get()->keyBy('id');
 
-        $courses->each(function (TeachingCourse $course) use ($studentsById, $importsById, $request) {
+        $courses->each(function (TeachingCourse $course) use ($studentsById, $importsById, $request, $service) {
+            $removalReasons = $service->removalReasonsForCourse($course);
+
             $activeStudents = [];
             foreach ($course->teachingCourseStudents as $courseStudent) {
-                $payload = $this->serializeCourseStudent($courseStudent, $studentsById, $importsById, $request);
+                $payload = $this->serializeCourseStudent($courseStudent, $studentsById, $importsById, $request, $removalReasons);
                 if ($payload) {
                     $activeStudents[] = $payload;
                 }
@@ -78,7 +80,7 @@ class TeachingCourseController extends Controller
                     continue;
                 }
 
-                $payload = $this->serializeCourseStudent($courseStudent, $studentsById, $importsById, $request);
+                $payload = $this->serializeCourseStudent($courseStudent, $studentsById, $importsById, $request, $removalReasons);
                 if ($payload) {
                     $deletedStudents[] = $payload;
                 }
@@ -131,7 +133,12 @@ class TeachingCourseController extends Controller
             'students.*.stars.*.value' => 'nullable|integer|in:1',
             'students.*.stars.*.comment' => 'nullable|string|max:1024',
             'students.*.stars.*.date' => 'nullable|date',
+            'students.*.canceled_at' => 'nullable|date',
+            'students_info' => 'nullable|array',
+            'students_info.*.canceled_at' => 'nullable|date',
             'students_deleted' => 'nullable|array',
+            'students_deleted_info' => 'nullable|array',
+            'students_deleted_info.*.canceled_at' => 'nullable|date',
             'teaching_schema_id' => ['required', 'string', 'max:36', Rule::in($schemaIds)],
         ]);
 
@@ -210,7 +217,12 @@ class TeachingCourseController extends Controller
             'students.*.stars.*.value' => 'nullable|integer|in:1',
             'students.*.stars.*.comment' => 'nullable|string|max:1024',
             'students.*.stars.*.date' => 'nullable|date',
+            'students.*.canceled_at' => 'nullable|date',
+            'students_info' => 'nullable|array',
+            'students_info.*.canceled_at' => 'nullable|date',
             'students_deleted' => 'nullable|array',
+            'students_deleted_info' => 'nullable|array',
+            'students_deleted_info.*.canceled_at' => 'nullable|date',
             'teaching_schema_id' => ['required', 'string', 'max:36', Rule::in($schemaIds)],
         ]);
 
@@ -270,7 +282,8 @@ class TeachingCourseController extends Controller
         TeachingCourseStudent $courseStudent,
         Collection $studentsById,
         Collection $importsById,
-        Request $request
+        Request $request,
+        array $removalReasons = []
     ): ?array {
         if ($courseStudent->user_id) {
             $student = $studentsById->get((int) $courseStudent->user_id);
@@ -311,7 +324,29 @@ class TeachingCourseController extends Controller
         $payload['behaviour_2_grade'] = $courseStudent->behaviour_2_grade;
         $payload['behaviour_grade'] = $courseStudent->behaviour_grade;
         $payload['stars'] = $courseStudent->stars ?? [];
+        $payload['canceled_at'] = $courseStudent->canceled_at?->toDateTimeString();
+
+        $studentKey = $courseStudent->user_id
+            ? 'u:'.$courseStudent->user_id
+            : ($courseStudent->import116_id ? 'i:'.$courseStudent->import116_id : null);
+        $removalReasonCode = $studentKey ? ($removalReasons[$studentKey] ?? null) : null;
+
+        $payload['is_removable'] = $removalReasonCode === null;
+        $payload['remove_block_reason'] = $this->translateRemovalReasonCode($removalReasonCode);
 
         return $payload;
+    }
+
+    private function translateRemovalReasonCode(?string $reasonCode): ?string
+    {
+        if (! $reasonCode) {
+            return null;
+        }
+
+        return match ($reasonCode) {
+            'course_student_data' => 'Entfernen nicht möglich: Beim Schüler sind bereits Kursdaten erfasst.',
+            'dependent_records' => 'Entfernen nicht möglich: Es gibt bereits abhängige Einträge in anderen Kurs-Tabellen.',
+            default => 'Entfernen nicht möglich: Für diesen Schüler bestehen bereits Abhängigkeiten.',
+        };
     }
 }

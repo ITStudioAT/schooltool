@@ -4,8 +4,13 @@ namespace App\Services;
 
 use App\Models\Import116;
 use App\Models\TeachingCourse;
+use App\Models\TeachingCourseBehaviourEntry;
+use App\Models\TeachingCourseDate;
 use App\Models\TeachingCourseStudent;
+use App\Models\TeachingCourseStudentEntry;
+use App\Models\TeachingCourseWork;
 use App\Models\User;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 
 class TeachingCourseService
@@ -86,6 +91,9 @@ class TeachingCourseService
                     'behaviour_2_grade' => $data['behaviour_2_grade'] ?? null,
                     'behaviour_grade' => $data['behaviour_grade'] ?? null,
                     'stars' => $this->normalizeStars($data['stars'] ?? []),
+                    'canceled_at' => array_key_exists('canceled_at', $data)
+                        ? $this->normalizeCanceledAt($data['canceled_at'])
+                        : null,
                 ];
             }
         }
@@ -108,6 +116,7 @@ class TeachingCourseService
                 'behaviour_2_grade' => $entry['behaviour_2_grade'] ?? null,
                 'behaviour_grade' => $entry['behaviour_grade'] ?? null,
                 'stars' => $entry['stars'] ?? [],
+                'canceled_at' => $entry['canceled_at'] ?? null,
             ];
         }, $entries));
     }
@@ -141,6 +150,9 @@ class TeachingCourseService
                 'behaviour_grade' => $data['behaviour_grade'] ?? null,
                 'stars' => $this->normalizeStars($data['stars'] ?? []),
             ];
+            if (array_key_exists('canceled_at', $data)) {
+                $entry['canceled_at'] = $this->normalizeCanceledAt($data['canceled_at']);
+            }
 
             $key = $this->courseStudentEntryKey($entry);
             if (! $key) {
@@ -191,6 +203,8 @@ class TeachingCourseService
             $existingByKey[$key] = $courseStudent;
         }
 
+        $protectedRemovalReasons = $this->collectProtectedRemovalReasons($course, $existingByKey, $activeByKey);
+
         $updated = 0;
         $restored = 0;
         $markedDeleted = 0;
@@ -210,6 +224,17 @@ class TeachingCourseService
             }
 
             if (isset($deletedByKey[$key])) {
+                if (isset($protectedRemovalReasons[$key])) {
+                    $payload = $this->buildCourseStudentPayload($deletedByKey[$key]);
+                    if (array_key_exists('canceled_at', $payload)) {
+                        $courseStudent->fill(['canceled_at' => $payload['canceled_at']]);
+                        $courseStudent->save();
+                    }
+
+                    unset($deletedByKey[$key]);
+                    continue;
+                }
+
                 $courseStudent->fill($this->buildCourseStudentPayload($deletedByKey[$key]));
                 $courseStudent->save();
                 if (! $courseStudent->trashed()) {
@@ -221,6 +246,10 @@ class TeachingCourseService
             }
 
             if (! $courseStudent->trashed()) {
+                if (isset($protectedRemovalReasons[$key])) {
+                    continue;
+                }
+
                 $courseStudent->delete();
                 $softDeleted++;
             }
@@ -238,6 +267,28 @@ class TeachingCourseService
             $created->delete();
             $createdDeleted++;
         }
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function removalReasonsForCourse(TeachingCourse $course): array
+    {
+        $rows = $course->relationLoaded('teachingCourseStudents')
+            ? $course->teachingCourseStudents
+            : $course->teachingCourseStudents()->get();
+
+        $existingByKey = [];
+        foreach ($rows as $courseStudent) {
+            $key = $this->courseStudentModelKey($courseStudent);
+            if (! $key) {
+                continue;
+            }
+
+            $existingByKey[$key] = $courseStudent;
+        }
+
+        return $this->collectProtectedRemovalReasons($course, $existingByKey, []);
     }
 
     public function findImportIdInSchool(int $id, int $schoolId): ?int
@@ -280,6 +331,24 @@ class TeachingCourseService
         }
 
         return $stars;
+    }
+
+    public function normalizeCanceledAt(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $raw = trim((string) $value);
+        if ($raw === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($raw)->toDateTimeString();
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     public function resolveStudentIdFromNumeric(int $id, int $schoolId): ?int
@@ -582,7 +651,7 @@ class TeachingCourseService
      */
     private function buildCourseStudentPayload(array $entry): array
     {
-        return [
+        $payload = [
             'user_id' => $entry['user_id'] ?? null,
             'import116_id' => $entry['import116_id'] ?? null,
             'comment' => $entry['comment'] ?? null,
@@ -594,5 +663,257 @@ class TeachingCourseService
             'behaviour_grade' => $entry['behaviour_grade'] ?? null,
             'stars' => $entry['stars'] ?? [],
         ];
+
+        if (array_key_exists('canceled_at', $entry)) {
+            $payload['canceled_at'] = $entry['canceled_at'];
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @param array<string, TeachingCourseStudent> $existingByKey
+     * @param array<string, array<string, mixed>> $activeByKey
+     * @return array<string, string>
+     */
+    private function collectProtectedRemovalReasons(TeachingCourse $course, array $existingByKey, array $activeByKey): array
+    {
+        $candidates = [];
+        foreach ($existingByKey as $key => $courseStudent) {
+            if ($courseStudent->trashed() || isset($activeByKey[$key])) {
+                continue;
+            }
+
+            $candidates[$key] = $courseStudent;
+        }
+
+        if (empty($candidates)) {
+            return [];
+        }
+
+        $candidateUserIds = [];
+        foreach ($candidates as $courseStudent) {
+            if ($courseStudent->user_id) {
+                $candidateUserIds[] = (int) $courseStudent->user_id;
+            }
+        }
+
+        $dependentUserIdSet = $this->collectDependentUserIdSet($course, $candidateUserIds);
+
+        $protected = [];
+        foreach ($candidates as $key => $courseStudent) {
+            if ($this->hasProtectedCourseStudentData($courseStudent)) {
+                $protected[$key] = 'course_student_data';
+                continue;
+            }
+
+            $userId = (int) ($courseStudent->user_id ?? 0);
+            if ($userId > 0 && isset($dependentUserIdSet[$userId])) {
+                $protected[$key] = 'dependent_records';
+            }
+        }
+
+        return $protected;
+    }
+
+    /**
+     * @param array<int, int> $userIds
+     * @return array<int, bool>
+     */
+    private function collectDependentUserIdSet(TeachingCourse $course, array $userIds): array
+    {
+        $userIds = array_values(array_unique(array_filter(array_map('intval', $userIds), fn (int $id) => $id > 0)));
+        if (empty($userIds)) {
+            return [];
+        }
+
+        $dependent = [];
+        $courseId = (int) $course->id;
+
+        $entryUserIds = TeachingCourseStudentEntry::query()
+            ->where('teaching_course_id', $courseId)
+            ->whereIn('user_id', $userIds)
+            ->pluck('user_id');
+        foreach ($entryUserIds as $userId) {
+            $dependent[(int) $userId] = true;
+        }
+
+        $behaviourUserIds = TeachingCourseBehaviourEntry::query()
+            ->where('teaching_course_id', $courseId)
+            ->whereIn('user_id', $userIds)
+            ->pluck('user_id');
+        foreach ($behaviourUserIds as $userId) {
+            $dependent[(int) $userId] = true;
+        }
+
+        foreach ($this->collectAttendanceDependentUserIds($courseId, $userIds) as $userId) {
+            $dependent[$userId] = true;
+        }
+
+        foreach ($this->collectWorkGroupDependentUserIds($courseId, $userIds) as $userId) {
+            $dependent[$userId] = true;
+        }
+
+        return $dependent;
+    }
+
+    /**
+     * @param array<int, int> $candidateUserIds
+     * @return array<int, int>
+     */
+    private function collectAttendanceDependentUserIds(int $courseId, array $candidateUserIds): array
+    {
+        if (empty($candidateUserIds)) {
+            return [];
+        }
+
+        $candidateSet = array_fill_keys($candidateUserIds, true);
+        $dependent = [];
+
+        $courseDates = TeachingCourseDate::query()
+            ->where('teaching_course_id', $courseId)
+            ->get(['attendance', 'status']);
+
+        foreach ($courseDates as $courseDate) {
+            $attendance = is_array($courseDate->attendance) ? $courseDate->attendance : [];
+            foreach (array_keys($attendance) as $studentKey) {
+                $studentId = $this->normalizeAttendanceStudentId($studentKey);
+                if ($studentId !== null && isset($candidateSet[$studentId])) {
+                    $dependent[$studentId] = true;
+                }
+            }
+
+            $status = is_array($courseDate->status) ? $courseDate->status : [];
+            foreach ($status as $statusItem) {
+                if (! is_string($statusItem) || ! str_starts_with($statusItem, 'att:')) {
+                    continue;
+                }
+
+                $parts = explode(':', $statusItem);
+                if (count($parts) < 3) {
+                    continue;
+                }
+
+                $studentId = $this->normalizeAttendanceStudentId($parts[1] ?? null);
+                if ($studentId !== null && isset($candidateSet[$studentId])) {
+                    $dependent[$studentId] = true;
+                }
+            }
+        }
+
+        return array_values(array_map('intval', array_keys($dependent)));
+    }
+
+    /**
+     * @param array<int, int> $candidateUserIds
+     * @return array<int, int>
+     */
+    private function collectWorkGroupDependentUserIds(int $courseId, array $candidateUserIds): array
+    {
+        if (empty($candidateUserIds)) {
+            return [];
+        }
+
+        $candidateSet = array_fill_keys($candidateUserIds, true);
+        $dependent = [];
+
+        $works = TeachingCourseWork::query()
+            ->where('teaching_course_id', $courseId)
+            ->get(['groups']);
+
+        foreach ($works as $work) {
+            $groups = is_array($work->groups) ? $work->groups : [];
+            foreach ($groups as $group) {
+                if (! is_array($group)) {
+                    continue;
+                }
+
+                foreach ((array) ($group['student_ids'] ?? []) as $studentId) {
+                    $id = (int) $studentId;
+                    if ($id > 0 && isset($candidateSet[$id])) {
+                        $dependent[$id] = true;
+                    }
+                }
+
+                foreach ((array) ($group['grades'] ?? []) as $gradeItem) {
+                    if (! is_array($gradeItem)) {
+                        continue;
+                    }
+
+                    $id = (int) ($gradeItem['student_id'] ?? 0);
+                    if ($id > 0 && isset($candidateSet[$id])) {
+                        $dependent[$id] = true;
+                    }
+                }
+
+                foreach ((array) ($group['comments'] ?? []) as $commentItem) {
+                    if (! is_array($commentItem)) {
+                        continue;
+                    }
+
+                    $id = (int) ($commentItem['student_id'] ?? 0);
+                    if ($id > 0 && isset($candidateSet[$id])) {
+                        $dependent[$id] = true;
+                    }
+                }
+            }
+        }
+
+        return array_values(array_map('intval', array_keys($dependent)));
+    }
+
+    private function normalizeAttendanceStudentId(mixed $value): ?int
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $studentKey = trim((string) $value);
+        if ($studentKey === '') {
+            return null;
+        }
+
+        if (str_starts_with($studentKey, 's_')) {
+            $studentKey = substr($studentKey, 2);
+        }
+
+        if (! ctype_digit($studentKey)) {
+            return null;
+        }
+
+        $id = (int) $studentKey;
+
+        return $id > 0 ? $id : null;
+    }
+
+    private function hasProtectedCourseStudentData(TeachingCourseStudent $courseStudent): bool
+    {
+        $fields = [
+            $courseStudent->comment,
+            $courseStudent->sem_1_grade,
+            $courseStudent->sem_2_grade,
+            $courseStudent->sem_grade,
+            $courseStudent->behaviour_1_grade,
+            $courseStudent->behaviour_2_grade,
+            $courseStudent->behaviour_grade,
+        ];
+
+        foreach ($fields as $field) {
+            if ($this->hasMeaningfulValue($field)) {
+                return true;
+            }
+        }
+
+        $stars = $courseStudent->stars;
+        return is_array($stars) && ! empty($stars);
+    }
+
+    private function hasMeaningfulValue(mixed $value): bool
+    {
+        if ($value === null) {
+            return false;
+        }
+
+        return trim((string) $value) !== '';
     }
 }

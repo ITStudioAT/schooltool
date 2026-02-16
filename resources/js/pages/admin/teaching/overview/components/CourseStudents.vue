@@ -49,8 +49,8 @@
                         <div class="d-flex align-center ga-2 flex-wrap">
                             <v-icon size="18">mdi-account-check</v-icon>
                             Schüler:innen
-                            <v-chip v-if="selected_course?.students_info?.length" size="x-small" color="primary" variant="tonal">
-                                {{ selected_course.students_info.length }}
+                            <v-chip v-if="activeStudentsCount" size="x-small" color="primary" variant="tonal">
+                                {{ activeStudentsCount }}
                             </v-chip>
                         </div>
                         <v-spacer class="students-header-spacer" />
@@ -108,7 +108,7 @@
                                 v-for="student in sortedSelectedStudents"
                                 :key="student.id"
                                 :class="show_bulk_entry ? '' : ''">
-                                <div class="student-row d-flex flex-wrap align-center ga-2 w-100">
+                                <div class="student-row d-flex flex-wrap align-center ga-2 w-100" :class="{ 'student-row--canceled': isStudentCanceled(student) }">
                                     <v-checkbox
                                         v-if="show_bulk_entry"
                                         v-model="bulk_entry_form.student_ids"
@@ -132,9 +132,15 @@
                                     <v-chip v-if="student.schoolclass || student.class" size="x-small" variant="tonal" color="primary">
                                         {{ student.schoolclass || student.class }}
                                     </v-chip>
-                                    <div class="student-name text-body-2" :class="show_bulk_entry ? '' : 'cursor-pointer'" @click="show_bulk_entry ? null : openStudent(student)">
+                                    <div
+                                        class="student-name text-body-2"
+                                        :class="[show_bulk_entry ? '' : 'cursor-pointer', studentNameClass(student)]"
+                                        @click="show_bulk_entry ? null : openStudent(student)">
                                         {{ student.last_name }}, {{ student.first_name }}
                                     </div>
+                                    <v-chip v-if="isStudentCanceled(student)" size="x-small" variant="tonal" color="warning">
+                                        Storniert{{ student.canceled_at ? `: ${formatCanceledAt(student.canceled_at)}` : '' }}
+                                    </v-chip>
                                     <v-chip v-if="(student.stars || []).length" size="x-small" variant="tonal" color="amber-darken-2">
                                         <v-icon start size="14">mdi-star</v-icon>
                                         {{ (student.stars || []).length }}
@@ -391,6 +397,10 @@ export default {
         sortedSelectedStudents() {
             const list = this.selected_course?.students_info || []
             return [...list].sort((a, b) => {
+                const canceledA = this.isStudentCanceled(a) ? 1 : 0
+                const canceledB = this.isStudentCanceled(b) ? 1 : 0
+                if (canceledA !== canceledB) return canceledA - canceledB
+
                 const classA = (a.schoolclass || a.class || '').toString()
                 const classB = (b.schoolclass || b.class || '').toString()
                 const classCmp = classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
@@ -405,6 +415,10 @@ export default {
                 const firstB = (b.first_name || '').toString()
                 return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
             })
+        },
+        activeStudentsCount() {
+            const list = this.selected_course?.students_info || []
+            return list.filter((student) => !this.isStudentCanceled(student)).length
         },
         selectedCourseDateForCourse() {
             const selectedDate = this.selected_courseDate
@@ -599,6 +613,18 @@ export default {
             const d = parseLocalDate(date)
             if (isNaN(d.getTime())) return ''
             return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        },
+        formatCanceledAt(value) {
+            if (!value) return ''
+            const d = parseLocalDate(value)
+            if (isNaN(d.getTime())) return ''
+            return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        },
+        isStudentCanceled(student) {
+            return !!student?.canceled_at
+        },
+        studentNameClass(student) {
+            return this.isStudentCanceled(student) ? 'student-name--canceled' : ''
         },
         getWeekday(date) {
             if (!date) return ''
@@ -1038,6 +1064,11 @@ export default {
 <style scoped>
 .student-row {
     min-width: 0;
+}
+
+.student-name--canceled {
+    text-decoration: line-through;
+    opacity: 0.75;
 }
 
 .selected-course-date-chip {

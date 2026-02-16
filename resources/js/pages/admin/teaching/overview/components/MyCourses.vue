@@ -83,8 +83,8 @@
                         <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                             <v-icon size="18">mdi-account-check</v-icon>
                             Ausgewählte Schülerinnen
-                            <v-chip v-if="sortedSelectedStudents.length" size="x-small" color="primary" variant="tonal">
-                                {{ sortedSelectedStudents.length }}
+                            <v-chip v-if="activeSelectedStudentsCount" size="x-small" color="primary" variant="tonal">
+                                {{ activeSelectedStudentsCount }}
                             </v-chip>
                             <v-spacer />
                             <v-btn size="x-small" color="error" variant="tonal" prepend-icon="mdi-minus" @click="removeAllStudents">Alle entfernen</v-btn>
@@ -94,13 +94,45 @@
                         <v-card-text class="pa-0">
                             <v-list density="compact">
                                 <v-list-item v-for="student in sortedSelectedStudents" :key="student.id">
-                                    <div class="d-flex align-center ga-2 w-100">
+                                    <div class="d-flex align-center ga-2 w-100 flex-wrap">
                                         <v-chip v-if="student.schoolclass || student.class" size="x-small" variant="tonal" color="primary">
                                             {{ student.schoolclass || student.class }}
                                         </v-chip>
-                                        <div class="text-body-2">{{ student.last_name }}, {{ student.first_name }}</div>
+                                        <div class="text-body-2" :class="studentNameClass(student)">{{ student.last_name }}, {{ student.first_name }}</div>
+                                        <v-chip v-if="isStudentCanceled(student)" size="x-small" variant="tonal" color="warning">
+                                            Storniert: {{ formatDateTime(student.canceled_at) }}
+                                        </v-chip>
+                                        <div v-if="!isStudentRemovable(student)" class="text-caption text-warning">
+                                            {{ student.remove_block_reason || 'Entfernen nicht möglich, bitte stornieren.' }}
+                                        </div>
                                         <v-spacer />
-                                        <v-btn size="x-small" color="error" variant="tonal" prepend-icon="mdi-minus" @click="removeStudent(student)">Entfernen</v-btn>
+                                        <v-btn
+                                            v-if="isStudentRemovable(student)"
+                                            size="x-small"
+                                            color="error"
+                                            variant="tonal"
+                                            prepend-icon="mdi-minus"
+                                            @click="removeStudent(student)">
+                                            Entfernen
+                                        </v-btn>
+                                        <v-btn
+                                            v-else-if="isStudentCanceled(student)"
+                                            size="x-small"
+                                            color="success"
+                                            variant="tonal"
+                                            prepend-icon="mdi-undo"
+                                            @click="uncancelStudent(student)">
+                                            Storno aufheben
+                                        </v-btn>
+                                        <v-btn
+                                            v-else
+                                            size="x-small"
+                                            color="warning"
+                                            variant="tonal"
+                                            prepend-icon="mdi-cancel"
+                                            @click="cancelStudent(student)">
+                                            Stornieren
+                                        </v-btn>
                                     </div>
                                 </v-list-item>
                                 <v-list-item v-if="!sortedSelectedStudents.length">
@@ -164,6 +196,7 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
+import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 
@@ -221,6 +254,10 @@ export default {
         sortedSelectedStudents() {
             const list = this.data?.students_info || []
             return [...list].sort((a, b) => {
+                const canceledA = this.isStudentCanceled(a) ? 1 : 0
+                const canceledB = this.isStudentCanceled(b) ? 1 : 0
+                if (canceledA !== canceledB) return canceledA - canceledB
+
                 const classA = (a.schoolclass || a.class || '').toString()
                 const classB = (b.schoolclass || b.class || '').toString()
                 const classCmp = classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
@@ -235,6 +272,10 @@ export default {
                 const firstB = (b.first_name || '').toString()
                 return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
             })
+        },
+        activeSelectedStudentsCount() {
+            const list = this.data?.students_info || []
+            return list.filter((student) => !this.isStudentCanceled(student)).length
         },
     },
 
@@ -282,9 +323,22 @@ export default {
 
             if (!Array.isArray(this.data.students_info) || !this.data.students_info.length) return
 
+            let canceledCount = 0
             this.data.students_info.slice().forEach((student) => {
-                this.removeStudent(student)
+                if (this.isStudentRemovable(student)) {
+                    this.removeStudent(student)
+                    return
+                }
+
+                if (!this.isStudentCanceled(student)) {
+                    this.cancelStudent(student)
+                    canceledCount++
+                }
             })
+
+            if (canceledCount > 0) {
+                this.notifyWarning(`${canceledCount} Schüler:innen konnten nicht entfernt werden und wurden stattdessen storniert.`)
+            }
         },
 
         addStudent(student) {
@@ -342,6 +396,10 @@ export default {
         removeStudent(student) {
             if (!this.data) return
             this.courseStore.ensureCourseStudentCollections(this.data)
+            if (!this.isStudentRemovable(student)) {
+                this.notifyWarning(student.remove_block_reason || 'Entfernen ist nicht möglich. Bitte stattdessen stornieren.')
+                return
+            }
 
             const index = this.data.students.indexOf(student.id)
             if (index !== -1) {
@@ -365,6 +423,56 @@ export default {
             if (!exists) {
                 this.import116_students_local.push(student)
             }
+        },
+
+        cancelStudent(student) {
+            if (!this.data) return
+            this.courseStore.ensureCourseStudentCollections(this.data)
+
+            const idx = this.data.students_info.findIndex((s) => String(s.id) === String(student.id))
+            if (idx === -1) return
+
+            this.data.students_info[idx].canceled_at = new Date().toISOString()
+        },
+
+        uncancelStudent(student) {
+            if (!this.data) return
+            this.courseStore.ensureCourseStudentCollections(this.data)
+
+            const idx = this.data.students_info.findIndex((s) => String(s.id) === String(student.id))
+            if (idx === -1) return
+
+            this.data.students_info[idx].canceled_at = null
+        },
+
+        isStudentRemovable(student) {
+            if (!student) return true
+            return student.is_removable !== false
+        },
+
+        isStudentCanceled(student) {
+            if (!student) return false
+            return !!student.canceled_at
+        },
+        studentNameClass(student) {
+            return this.isStudentCanceled(student) ? 'student-name--canceled' : ''
+        },
+
+        formatDateTime(value) {
+            if (!value) return '-'
+            const date = new Date(value)
+            if (Number.isNaN(date.getTime())) return value
+            return date.toLocaleDateString('de-DE')
+        },
+
+        notifyWarning(message) {
+            const notification = useNotificationStore()
+            notification.notify({
+                status: 409,
+                message,
+                type: 'warning',
+                timeout: 3000,
+            })
         },
 
         async save(data) {
@@ -504,11 +612,20 @@ export default {
             this.selected_course_id = null
             this.action = 'teaching_course_new_or_edit'
         },
-        editCourse(course) {
+        async editCourse(course) {
             this.selected_course_student = null
             this.action_2 = ''
             this.import116_students_local = []
-            this.selected_course = course
+
+            let freshCourse = course
+            if (course?.id) {
+                const refreshed = await this.courseStore.refreshCourseById(course.id)
+                if (refreshed) {
+                    freshCourse = refreshed
+                }
+            }
+
+            this.selected_course = freshCourse
             this.courseStore.ensureCourseStudentCollections(this.selected_course)
             this.data = JSON.parse(JSON.stringify(this.selected_course))
             this.courseStore.ensureCourseStudentCollections(this.data)
@@ -545,3 +662,10 @@ export default {
     },
 }
 </script>
+
+<style scoped>
+.student-name--canceled {
+    text-decoration: line-through;
+    opacity: 0.75;
+}
+</style>

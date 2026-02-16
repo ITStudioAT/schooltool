@@ -92,6 +92,25 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             }
         },
 
+        async refreshCourseById(courseId) {
+            if (!courseId) {
+                this.selected_course = null
+                this.selected_course_id = null
+                return null
+            }
+
+            const ok = await this.index()
+            if (!ok) {
+                return null
+            }
+
+            const course = this.courses.find((c) => c.id === courseId) || null
+            this.ensureCourseStudentCollections(course)
+            this.selected_course = course
+            this.selected_course_id = course?.id || null
+            return course
+        },
+
         async update(data) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()

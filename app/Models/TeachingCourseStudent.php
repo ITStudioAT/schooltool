@@ -24,10 +24,12 @@ class TeachingCourseStudent extends Model
         'behaviour_2_grade',
         'behaviour_grade',
         'stars',
+        'canceled_at',
     ];
 
     protected $casts = [
         'stars' => 'array',
+        'canceled_at' => 'datetime',
         'deleted_at' => 'datetime',
     ];
 
@@ -66,6 +68,7 @@ class TeachingCourseStudent extends Model
             'behaviour_2_grade' => $this->behaviour_2_grade,
             'behaviour_grade' => $this->behaviour_grade,
             'stars' => $this->stars ?? [],
+            'canceled_at' => $this->canceled_at?->toDateTimeString(),
         ];
     }
 }
