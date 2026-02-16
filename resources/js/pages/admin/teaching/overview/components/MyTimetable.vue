@@ -41,7 +41,7 @@
                     <v-card-text class="pa-0">
                         <v-list density="compact">
                             <v-list-item v-for="item in filteredItems" :key="item.key" class="cursor-pointer pa-0" @click="openCourse(item)">
-                                <div :class="['d-flex flex-column ga-2 w-100 pa-3', getStatusClass(item)]">
+                                <div :class="['d-flex flex-column ga-2 w-100 pa-3', getStatusClass(item)]" :style="getDateBackgroundStyle(item)">
                                     <div class="d-flex flex-wrap align-center ga-2 w-100">
                                         <v-chip size="x-small" variant="tonal" color="primary">{{ formatWeekdayDate(item.date) }}</v-chip>
                                         <v-chip size="x-small" variant="outlined" color="primary">{{ item.hoursLabel }}</v-chip>
@@ -158,6 +158,24 @@ export default {
             const [from, until] = this.currentRangeBounds()
             if (!from || !until) return this.timetableItems
             return this.timetableItems.filter((item) => item.dateObj >= from && item.dateObj <= until)
+        },
+        dateBackgroundByDate() {
+            const accentColor = '#e3f2fd'
+            const mapping = {}
+            let dateIndex = 0
+
+            for (const item of this.filteredItems) {
+                const date = (item?.date || '').toString().slice(0, 10)
+                if (!date || mapping[date]) continue
+                if (dateIndex % 2 === 0) {
+                    mapping[date] = '#ffffff'
+                } else {
+                    mapping[date] = accentColor
+                }
+                dateIndex++
+            }
+
+            return mapping
         },
         semesterMeta() {
             const schoolyear = this.config?.selected_schoolyear || {}
@@ -349,15 +367,26 @@ export default {
             this.offset = 0
         },
         getStatusClass(item) {
-            const status = item?.status || []
-            const statusStr = status.join(' ').toLowerCase()
-            if (statusStr.includes('pruefung') || statusStr.includes('prüfung')) {
+            if (this.hasExamStatus(item)) {
                 return 'timetable-item--exam'
             }
             if (this.hasFreeStatus(item)) {
                 return 'timetable-item--free'
             }
             return ''
+        },
+        getDateBackgroundStyle(item) {
+            if (this.hasExamStatus(item) || this.hasFreeStatus(item)) return {}
+            const date = (item?.date || '').toString().slice(0, 10)
+            if (!date) return {}
+            const backgroundColor = this.dateBackgroundByDate[date]
+            if (!backgroundColor) return {}
+            return { backgroundColor }
+        },
+        hasExamStatus(item) {
+            const status = Array.isArray(item?.status) ? item.status : []
+            const statusStr = status.join(' ').toLowerCase()
+            return statusStr.includes('pruefung') || statusStr.includes('prüfung')
         },
         hasFreeStatus(item) {
             const status = Array.isArray(item?.status) ? item.status : []

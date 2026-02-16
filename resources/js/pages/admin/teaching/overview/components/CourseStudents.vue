@@ -539,7 +539,8 @@ export default {
     methods: {
         normalizeDateKey(date) {
             if (!date) return ''
-            if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date)) {
+            // Keep pure date strings as-is; parse date-time strings in local time.
+            if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
                 return date.slice(0, 10)
             }
             const parsed = parseLocalDate(date)

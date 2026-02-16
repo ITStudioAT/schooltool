@@ -2,7 +2,17 @@
     <ItsGridBox color="primary" title="Meine Fächer" icon="mdi-invoice-list" class="w-100" :disabled="action != ''">
         <!-- KURS ANLEGEN -->
         <v-card tile flat color="transparent" class="mt-4">
-            <its-menu-button title="Fach" subtitle="anlegen" icon="mdi-plus-circle-multiple" color="primary" @click="newCourse" />
+            <div class="d-flex align-start w-100">
+                <its-menu-button title="Fach" subtitle="anlegen" icon="mdi-plus-circle-multiple" color="primary" @click="newCourse" />
+                <v-spacer />
+                <v-btn
+                    icon="mdi-close-circle"
+                    size="small"
+                    variant="flat"
+                    color="error"
+                    v-if="selected_course"
+                    @click="clearSelectedCourse" />
+            </div>
         </v-card>
 
         <!-- ALLE KURSE ANZEIGEN -->
@@ -295,6 +305,11 @@ export default {
     },
 
     methods: {
+        clearSelectedCourse() {
+            this.selectCourse(null)
+            const courseDateStore = useCourseDateStore()
+            courseDateStore.selected_courseDate = null
+        },
         async selectStudents(classes) {
             if (!Array.isArray(classes) || !classes.length) {
                 this.import116_students_local = []
