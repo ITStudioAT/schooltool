@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Licence;
 use App\Models\User;
 use App\Services\UserService;
 use App\Traits\HasRoleTrait;
@@ -21,11 +22,12 @@ class AdminNavigationService
 
         $user = User::findOrFail(Auth::user()->id);
         $user_name = substr($user->last_name . ' ' . $user->first_name, 0, 17);
+        $isSuperAdmin = $this->userHasRole(['super_admin']);
 
         $menu[] = ['title' => 'Home', 'icon' => 'mdi-home', 'to' => '/admin', 'is_active' => true];
 
         // SUPERADMIN
-        if ($this->userHasRole(['super_admin'])) {
+        if ($isSuperAdmin) {
             $menu[] = ['title' => 'Super-Admin', 'icon' => 'mdi-shield-crown', 'to' => '/admin/super_admin', 'is_active' => true];
         } else {
             // ADMIN
@@ -34,20 +36,45 @@ class AdminNavigationService
             }
         }
 
+        $registerLicenceStatus = $this->licenceStatus($user, 'Anmeldetool');
+        $tutoringLicenceStatus = $this->licenceStatus($user, 'Nachhilfetool');
+        $teachingLicenceStatus = $this->licenceStatus($user, 'Lehrertool');
+
         // ANMELDESYSTEM
-        if ($this->userHasRole(['admin', 'register_admin'])) {
-            $menu[] = ['title' => 'Anmeldetool', 'icon' => 'mdi-calendar-cursor', 'to' => '/admin/register_system', 'is_active' => true];
+        if ($isSuperAdmin || $this->userHasRole(['admin', 'register_admin'])) {
+            if ($isSuperAdmin || $registerLicenceStatus !== 'missing') {
+                $menu[] = [
+                    'title' => 'Anmeldetool',
+                    'icon' => 'mdi-calendar-cursor',
+                    'to' => '/admin/register_system',
+                    'is_active' => $isSuperAdmin ? true : ($registerLicenceStatus === 'active' && config('schooltool.register_active', true)),
+                ] + $this->moduleStatusMeta($registerLicenceStatus, 'Anmeldetool');
+            }
         }
 
         // TUTORING
-        if ($this->userHasRole(['admin', 'tutoring_admin', 'teacher'])) {
-            $menu[] = ['title' => 'Nachhilfe', 'icon' => 'mdi-cast-education', 'to' => '/admin/tutoring', 'is_active' => config('schooltool.tutoring_active')];
+        if ($isSuperAdmin || $this->userHasRole(['admin', 'tutoring_admin', 'teacher'])) {
+            if ($isSuperAdmin || $tutoringLicenceStatus !== 'missing') {
+                $menu[] = [
+                    'title' => 'Nachhilfe',
+                    'icon' => 'mdi-cast-education',
+                    'to' => '/admin/tutoring',
+                    'is_active' => $isSuperAdmin ? true : ($tutoringLicenceStatus === 'active' && config('schooltool.tutoring_active', false)),
+                ] + $this->moduleStatusMeta($tutoringLicenceStatus, 'Nachhilfe');
+            }
         }
 
         // TEACHER
 
-        if ($this->userHasRole(['admin', 'teacher'])) {
-            $menu[] = ['title' => 'Unterricht', 'icon' => 'mdi-school', 'to' => '/admin/teaching', 'is_active' => true];
+        if ($isSuperAdmin || $this->userHasRole(['admin', 'teacher'])) {
+            if ($isSuperAdmin || $teachingLicenceStatus !== 'missing') {
+                $menu[] = [
+                    'title' => 'Unterricht',
+                    'icon' => 'mdi-school',
+                    'to' => '/admin/teaching',
+                    'is_active' => $isSuperAdmin ? true : ($teachingLicenceStatus === 'active' && config('schooltool.teaching_active', false)),
+                ] + $this->moduleStatusMeta($teachingLicenceStatus, 'Unterricht');
+            }
         }
 
 
@@ -99,5 +126,50 @@ class AdminNavigationService
         }
 
         return $selection;
+    }
+
+    private function licenceStatus(?User $user, string $licenceName): string
+    {
+        if (!$user || !$user->selectedSchool) {
+            return 'missing';
+        }
+
+        $licence = Licence::where('name', $licenceName)->first();
+        if (!$licence) {
+            return 'missing';
+        }
+
+        $schoolLicence = $user->selectedSchool->licences()->where('licence_id', $licence->id)->first();
+        if (!$schoolLicence) {
+            return 'missing';
+        }
+
+        $validUntil = $schoolLicence->pivot->valid_until;
+        if ($validUntil === null || $validUntil >= now()->toDateString()) {
+            return 'active';
+        }
+
+        return 'expired';
+    }
+
+    private function moduleStatusMeta(string $status, string $moduleLabel): array
+    {
+        if ($status === 'expired') {
+            return [
+                'status_icon' => 'mdi-clock-alert-outline',
+                'status_color' => 'warning',
+                'status_title' => $moduleLabel . ': Lizenz abgelaufen',
+            ];
+        }
+
+        if ($status === 'missing') {
+            return [
+                'status_icon' => 'mdi-alert-circle-outline',
+                'status_color' => 'error',
+                'status_title' => $moduleLabel . ': Lizenz nicht vorhanden',
+            ];
+        }
+
+        return [];
     }
 }
