@@ -86,6 +86,9 @@
                         <v-card-text class="text-body-1">
                             {{ config?.user?.last_name + ' ' + config?.user?.first_name }}
                         </v-card-text>
+                        <v-card-text class="text-caption pt-0">
+                            {{ config?.user?.email }}
+                        </v-card-text>
                         <v-card-text class="text-body-2">
                             <div class="d-flex flex-row">
                                 <span class="text-decoration-underline">Rollen</span>
