@@ -4,6 +4,7 @@ namespace App\Services\Materials;
 
 use App\Models\MaterialCard;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Schema;
 
 class MaterialKeywordService
 {
@@ -121,7 +122,11 @@ class MaterialKeywordService
      */
     public function build(MaterialCard $card): array
     {
-        $card->loadMissing('attachments');
+        if (Schema::hasTable('material_card_classifications')) {
+            $card->loadMissing('attachments', 'classifications.subject', 'classifications.topic', 'classifications.unit');
+        } else {
+            $card->loadMissing('attachments');
+        }
 
         $parts = [
             (string) $card->title,
@@ -133,6 +138,14 @@ class MaterialKeywordService
         foreach ($card->attachments as $attachment) {
             $parts[] = (string) ($attachment->name ?? '');
             $parts[] = $this->normalizeUrlToText($attachment->url);
+        }
+
+        if (Schema::hasTable('material_card_classifications')) {
+            foreach ($card->classifications as $classification) {
+                $parts[] = (string) ($classification->subject?->name ?? '');
+                $parts[] = (string) ($classification->topic?->name ?? '');
+                $parts[] = (string) ($classification->unit?->name ?? '');
+            }
         }
 
         $tokens = $this->tokenize(implode(' ', $parts));

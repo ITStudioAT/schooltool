@@ -14,6 +14,7 @@ class MaterialCard extends Model
     public const STATUS_INBOX = 'inbox';
     public const STATUS_IN_PROGRESS = 'in_progress';
     public const STATUS_DONE = 'done';
+    public const STATUS_UPDATE_NEEDED = 'update_needed';
 
     public const SOURCE_UPLOAD = 'upload';
     public const SOURCE_LINK = 'link';
@@ -57,12 +58,18 @@ class MaterialCard extends Model
         return $this->hasMany(MaterialCardAttachment::class)->orderByDesc('created_at');
     }
 
+    public function classifications(): HasMany
+    {
+        return $this->hasMany(MaterialCardClassification::class, 'material_card_id');
+    }
+
     public static function statusValues(): array
     {
         return [
             self::STATUS_INBOX,
             self::STATUS_IN_PROGRESS,
             self::STATUS_DONE,
+            self::STATUS_UPDATE_NEEDED,
         ];
     }
 

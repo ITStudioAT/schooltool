@@ -1,15 +1,15 @@
 <template>
-    <v-card class="option-card option-card--drop pa-5" rounded="xl" elevation="0">
-        <v-icon size="44" class="mb-3 option-icon">mdi-tray-arrow-down</v-icon>
-        <div class="text-h6 font-weight-bold mb-2">Datei ablegen</div>
-        <div class="text-body-2 option-subline mb-5">Upload wird später implementiert.</div>
+    <v-card class="option-card option-card--clipboard pa-5" rounded="xl" elevation="0">
+        <v-icon size="44" class="mb-3 option-icon">mdi-clipboard-text-outline</v-icon>
+        <div class="text-h6 font-weight-bold mb-2">Zwischenablage</div>
+        <div class="text-body-2 option-subline mb-5">Zwischenablage wird später implementiert.</div>
         <v-btn block size="large" class="option-btn" disabled>Demnächst verfügbar</v-btn>
     </v-card>
 </template>
 
 <script>
 export default {
-    name: 'MaterialsDropOption',
+    name: 'MaterialsClipboardOption',
 }
 </script>
 
@@ -29,8 +29,8 @@ export default {
     border-color: rgba(253, 128, 46, 0.45);
 }
 
-.option-card--drop {
-    background: linear-gradient(180deg, rgba(253, 128, 46, 0.11), rgba(255, 255, 255, 0.95));
+.option-card--clipboard {
+    background: linear-gradient(180deg, rgba(35, 61, 76, 0.12), rgba(255, 255, 255, 0.95));
 }
 
 .option-icon {
@@ -43,6 +43,8 @@ export default {
 
 .option-btn {
     margin-top: auto;
+    background: linear-gradient(155deg, var(--pumpkin) 0%, var(--pumpkin-light) 100%);
+    color: var(--charcoal);
     font-weight: 700;
 }
 </style>

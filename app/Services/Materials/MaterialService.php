@@ -4,10 +4,17 @@ namespace App\Services\Materials;
 
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
+use App\Models\MaterialSubject;
+use App\Models\MaterialTopic;
+use App\Models\MaterialType;
+use App\Models\MaterialUnit;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 
 class MaterialService
 {
@@ -26,10 +33,14 @@ class MaterialService
                 ['value' => MaterialCard::SOURCE_NOTE, 'label' => 'Notiz'],
             ],
             'status_values' => [
-                ['value' => MaterialCard::STATUS_INBOX, 'label' => 'Inbox'],
+                ['value' => MaterialCard::STATUS_INBOX, 'label' => 'Neu/Idee'],
                 ['value' => MaterialCard::STATUS_IN_PROGRESS, 'label' => 'In Arbeit'],
                 ['value' => MaterialCard::STATUS_DONE, 'label' => 'Fertig'],
+                ['value' => MaterialCard::STATUS_UPDATE_NEEDED, 'label' => 'Änderung nötig'],
             ],
+            'type_values' => $this->typeValuesForUser($user),
+            'can_manage_type_values' => $user->hasAnyRole(['admin', 'materials_admin', 'super_admin']),
+            'classification_tree' => $this->classificationTreeForUser($user),
         ];
     }
 
@@ -37,24 +48,39 @@ class MaterialService
     {
         $query = MaterialCard::query()
             ->where('user_id', $user->id)
-            ->with('attachments')
+            ->with($this->cardRelations())
             ->orderByDesc('updated_at');
 
         $search = trim((string) ($filters['search'] ?? ''));
+        $hasClassificationTables = $this->supportsClassificationTables();
         if ($search !== '') {
-            $query->where(function ($q) use ($search) {
+            $query->where(function ($q) use ($search, $hasClassificationTables) {
                 $q->where('title', 'like', '%' . $search . '%')
                     ->orWhere('notes', 'like', '%' . $search . '%')
                     ->orWhere('source_text', 'like', '%' . $search . '%')
                     ->orWhere('source_url', 'like', '%' . $search . '%');
+
+                if ($hasClassificationTables) {
+                    $q->orWhereHas('classifications.subject', fn ($subjectQuery) => $subjectQuery->where('name', 'like', '%' . $search . '%'))
+                        ->orWhereHas('classifications.topic', fn ($topicQuery) => $topicQuery->where('name', 'like', '%' . $search . '%'))
+                        ->orWhereHas('classifications.unit', fn ($unitQuery) => $unitQuery->where('name', 'like', '%' . $search . '%'));
+                }
             });
         }
 
-        foreach (['status', 'subject', 'area', 'unit', 'type'] as $field) {
-            $value = trim((string) ($filters[$field] ?? ''));
-            if ($value !== '') {
-                $query->where($field, $value);
-            }
+        $status = trim((string) ($filters['status'] ?? ''));
+        if ($status !== '') {
+            $query->where('status', $status);
+        }
+
+        $subject = trim((string) ($filters['subject'] ?? ''));
+        if ($subject !== '' && $hasClassificationTables) {
+            $query->whereHas('classifications.subject', fn ($subjectQuery) => $subjectQuery->where('name', $subject));
+        }
+
+        $type = trim((string) ($filters['type'] ?? ''));
+        if ($type !== '') {
+            $query->where('type', $type);
         }
 
         return $query->paginate(config('schooltool.pagination'));
@@ -69,42 +95,49 @@ class MaterialService
             'source_type' => $data['source_type'],
             'source_url' => $data['source_url'] ?? null,
             'source_text' => $data['source_text'] ?? null,
-            'subject' => $data['subject'] ?? null,
-            'area' => $data['area'] ?? null,
-            'unit' => $data['unit'] ?? null,
-            'type' => $data['type'] ?? null,
+            'subject' => null,
+            'area' => null,
+            'unit' => null,
+            'type' => $this->normalizeOptionalName($data['type'] ?? null),
             'status' => $data['status'] ?? MaterialCard::STATUS_INBOX,
             'notes' => $data['notes'] ?? null,
         ]);
 
-        $this->keywordService->rebuild($card);
+        $this->syncClassifications($card, $user, $data['classifications'] ?? null);
 
-        return $card->fresh(['attachments']);
+        $this->keywordService->rebuild($card->fresh($this->cardRelations()));
+
+        return $card->fresh($this->cardRelations());
     }
 
-    public function updateCard(MaterialCard $card, array $data): MaterialCard
+    public function updateCard(MaterialCard $card, array $data, ?User $user = null): MaterialCard
     {
         $card->update([
             'title' => $data['title'],
             'source_type' => $data['source_type'],
             'source_url' => $data['source_url'] ?? null,
             'source_text' => $data['source_text'] ?? null,
-            'subject' => $data['subject'] ?? null,
-            'area' => $data['area'] ?? null,
-            'unit' => $data['unit'] ?? null,
-            'type' => $data['type'] ?? null,
+            'subject' => null,
+            'area' => null,
+            'unit' => null,
+            'type' => $this->normalizeOptionalName($data['type'] ?? null),
             'status' => $data['status'] ?? MaterialCard::STATUS_INBOX,
             'notes' => $data['notes'] ?? null,
         ]);
 
-        $this->keywordService->rebuild($card);
+        $owner = $user ?: $card->user()->first();
+        if ($owner instanceof User) {
+            $this->syncClassifications($card, $owner, $data['classifications'] ?? null);
+        }
 
-        return $card->fresh(['attachments']);
+        $this->keywordService->rebuild($card->fresh($this->cardRelations()));
+
+        return $card->fresh($this->cardRelations());
     }
 
     public function deleteCard(MaterialCard $card): void
     {
-        $card->loadMissing('attachments');
+        $card->loadMissing('attachments', 'classifications');
 
         foreach ($card->attachments as $attachment) {
             if ($attachment->attachment_type === MaterialCardAttachment::TYPE_FILE && $attachment->file_path) {
@@ -127,7 +160,7 @@ class MaterialService
             'size_bytes' => $file->getSize(),
         ]);
 
-        $this->keywordService->rebuild($card->fresh('attachments'));
+        $this->keywordService->rebuild($card->fresh($this->cardRelations()));
 
         return $attachment;
     }
@@ -140,7 +173,7 @@ class MaterialService
             'url' => $url,
         ]);
 
-        $this->keywordService->rebuild($card->fresh('attachments'));
+        $this->keywordService->rebuild($card->fresh($this->cardRelations()));
 
         return $attachment;
     }
@@ -156,7 +189,299 @@ class MaterialService
         $attachment->delete();
 
         if ($card) {
-            $this->keywordService->rebuild($card->fresh('attachments'));
+            $this->keywordService->rebuild($card->fresh($this->cardRelations()));
         }
+    }
+
+    public function typeValuesForUser(User $user): array
+    {
+        if (! Schema::hasTable('material_types')) {
+            return [];
+        }
+
+        $this->ensureTypeValuesForSchool((int) $user->school_id);
+
+        return MaterialType::query()
+            ->where('school_id', $user->school_id)
+            ->orderBy('name')
+            ->get()
+            ->map(fn (MaterialType $type) => [
+                'id' => $type->id,
+                'value' => $type->name,
+                'label' => $type->name,
+            ])
+            ->values()
+            ->all();
+    }
+
+    public function createType(User $user, string $name): MaterialType
+    {
+        if (! Schema::hasTable('material_types')) {
+            throw ValidationException::withMessages([
+                'data.name' => 'Materialtypen sind noch nicht verfügbar.',
+            ]);
+        }
+
+        $normalized = $this->normalizeName($name);
+        if ($normalized === '') {
+            throw ValidationException::withMessages([
+                'data.name' => 'Bitte einen gültigen Typ angeben.',
+            ]);
+        }
+
+        return MaterialType::firstOrCreate([
+            'school_id' => $user->school_id,
+            'name' => $normalized,
+        ]);
+    }
+
+    public function updateType(User $user, MaterialType $type, string $name): MaterialType
+    {
+        if ((int) $type->school_id !== (int) $user->school_id) {
+            abort(403, 'Typ gehört nicht zur aktuellen Schule.');
+        }
+
+        $newName = $this->normalizeName($name);
+        if ($newName === '') {
+            throw ValidationException::withMessages([
+                'data.name' => 'Bitte einen gültigen Typ angeben.',
+            ]);
+        }
+
+        $oldName = (string) $type->name;
+
+        DB::transaction(function () use ($type, $newName, $oldName, $user) {
+            $exists = MaterialType::query()
+                ->where('school_id', $user->school_id)
+                ->where('id', '<>', $type->id)
+                ->where('name', $newName)
+                ->exists();
+
+            if ($exists) {
+                throw ValidationException::withMessages([
+                    'data.name' => 'Dieser Typ existiert bereits.',
+                ]);
+            }
+
+            $type->update(['name' => $newName]);
+
+            if ($oldName !== $newName) {
+                MaterialCard::query()
+                    ->where('school_id', $user->school_id)
+                    ->where('type', $oldName)
+                    ->update(['type' => $newName]);
+            }
+        });
+
+        return $type->fresh();
+    }
+
+    public function deleteType(User $user, MaterialType $type): void
+    {
+        if ((int) $type->school_id !== (int) $user->school_id) {
+            abort(403, 'Typ gehört nicht zur aktuellen Schule.');
+        }
+
+        $inUse = MaterialCard::query()
+            ->where('school_id', $user->school_id)
+            ->where('type', $type->name)
+            ->exists();
+
+        if ($inUse) {
+            throw ValidationException::withMessages([
+                'data.name' => 'Typ ist in Verwendung und kann nicht gelöscht werden.',
+            ]);
+        }
+
+        $type->delete();
+    }
+
+    private function classificationTreeForUser(User $user): array
+    {
+        if (! $this->supportsClassificationTables()) {
+            return [];
+        }
+
+        $subjects = MaterialSubject::query()
+            ->where('user_id', $user->id)
+            ->with(['topics.units'])
+            ->orderBy('name')
+            ->get();
+
+        return $subjects->map(function (MaterialSubject $subject) {
+            return [
+                'id' => $subject->id,
+                'name' => $subject->name,
+                'topics' => $subject->topics->map(function (MaterialTopic $topic) {
+                    return [
+                        'id' => $topic->id,
+                        'name' => $topic->name,
+                        'units' => $topic->units->map(fn (MaterialUnit $unit) => [
+                            'id' => $unit->id,
+                            'name' => $unit->name,
+                        ])->values()->all(),
+                    ];
+                })->values()->all(),
+            ];
+        })->values()->all();
+    }
+
+    private function syncClassifications(MaterialCard $card, User $user, mixed $input): void
+    {
+        if (! $this->supportsClassificationTables()) {
+            return;
+        }
+
+        $rows = $this->normalizeClassifications($input);
+        $card->classifications()->delete();
+
+        foreach ($rows as $row) {
+            $subject = MaterialSubject::firstOrCreate([
+                'user_id' => $user->id,
+                'name' => $row['subject'],
+            ]);
+
+            $topic = null;
+            $unit = null;
+
+            if ($row['topic'] !== '') {
+                $topic = MaterialTopic::firstOrCreate([
+                    'subject_id' => $subject->id,
+                    'name' => $row['topic'],
+                ]);
+
+                if ($row['unit'] !== '') {
+                    $unit = MaterialUnit::firstOrCreate([
+                        'topic_id' => $topic->id,
+                        'name' => $row['unit'],
+                    ]);
+                }
+            }
+
+            $card->classifications()->create([
+                'subject_id' => $subject->id,
+                'topic_id' => $topic?->id,
+                'unit_id' => $unit?->id,
+            ]);
+        }
+    }
+
+    private function normalizeClassifications(mixed $input): array
+    {
+        if (! is_array($input)) {
+            return [];
+        }
+
+        $rows = [];
+        $seen = [];
+
+        foreach ($input as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+
+            $subject = $this->normalizeName($row['subject'] ?? null);
+            $topic = $this->normalizeName($row['topic'] ?? null);
+            $unit = $this->normalizeName($row['unit'] ?? null);
+
+            if ($subject === '') {
+                continue;
+            }
+
+            if ($topic === '') {
+                $unit = '';
+            }
+
+            $key = mb_strtolower($subject . '|' . $topic . '|' . $unit);
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $rows[] = [
+                'subject' => $subject,
+                'topic' => $topic,
+                'unit' => $unit,
+            ];
+        }
+
+        return $rows;
+    }
+
+    private function normalizeName(mixed $value): string
+    {
+        $text = trim((string) $value);
+        if ($text === '') {
+            return '';
+        }
+
+        return mb_substr($text, 0, 255);
+    }
+
+    private function normalizeOptionalName(mixed $value): ?string
+    {
+        $text = $this->normalizeName($value);
+        return $text === '' ? null : $text;
+    }
+
+    private function ensureTypeValuesForSchool(int $schoolId): void
+    {
+        if (! Schema::hasTable('material_types')) {
+            return;
+        }
+
+        $known = MaterialType::query()
+            ->where('school_id', $schoolId)
+            ->pluck('name')
+            ->map(fn ($value) => mb_strtolower(trim((string) $value)))
+            ->filter(fn ($value) => $value !== '')
+            ->flip()
+            ->all();
+
+        $cardTypes = MaterialCard::query()
+            ->where('school_id', $schoolId)
+            ->whereNotNull('type')
+            ->pluck('type');
+
+        foreach ($cardTypes as $rawType) {
+            $name = $this->normalizeName($rawType);
+            if ($name === '') {
+                continue;
+            }
+
+            $key = mb_strtolower($name);
+            if (isset($known[$key])) {
+                continue;
+            }
+
+            MaterialType::query()->create([
+                'school_id' => $schoolId,
+                'name' => $name,
+            ]);
+
+            $known[$key] = true;
+        }
+    }
+
+    private function cardRelations(): array
+    {
+        if (! $this->supportsClassificationTables()) {
+            return ['attachments'];
+        }
+
+        return [
+            'attachments',
+            'classifications.subject',
+            'classifications.topic',
+            'classifications.unit',
+        ];
+    }
+
+    private function supportsClassificationTables(): bool
+    {
+        return Schema::hasTable('material_subjects')
+            && Schema::hasTable('material_topics')
+            && Schema::hasTable('material_units')
+            && Schema::hasTable('material_card_classifications');
     }
 }

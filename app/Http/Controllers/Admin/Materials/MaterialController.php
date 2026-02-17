@@ -16,6 +16,7 @@ use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
 use App\Services\Materials\MaterialService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 
 class MaterialController extends Controller
@@ -47,18 +48,17 @@ class MaterialController extends Controller
 
         $card = $service->createCard($authUser, $validated);
 
-        return response()->json(new MaterialCardResource($card->load('attachments')), 200);
+        return response()->json(new MaterialCardResource($this->loadCardForResponse($card)), 200);
     }
 
     public function quickStore(MaterialCardQuickStoreRequest $request, MaterialService $service)
     {
         $authUser = $this->authorizeForMaterials();
         $validated = $request->validated()['data'];
-        $validated['status'] = MaterialCard::STATUS_INBOX;
 
         $card = $service->createCard($authUser, $validated);
 
-        return response()->json(new MaterialCardResource($card->load('attachments')), 200);
+        return response()->json(new MaterialCardResource($this->loadCardForResponse($card)), 200);
     }
 
     public function show(MaterialCard $material_card)
@@ -66,7 +66,7 @@ class MaterialController extends Controller
         $authUser = $this->authorizeForMaterials();
         $this->assertIsOwner($authUser->id, $material_card->user_id);
 
-        return response()->json(new MaterialCardResource($material_card->load('attachments')), 200);
+        return response()->json(new MaterialCardResource($this->loadCardForResponse($material_card)), 200);
     }
 
     public function update(MaterialCardUpdateRequest $request, MaterialCard $material_card, MaterialService $service)
@@ -75,9 +75,9 @@ class MaterialController extends Controller
         $this->assertIsOwner($authUser->id, $material_card->user_id);
         $validated = $request->validated()['data'];
 
-        $card = $service->updateCard($material_card, $validated);
+        $card = $service->updateCard($material_card, $validated, $authUser);
 
-        return response()->json(new MaterialCardResource($card->load('attachments')), 200);
+        return response()->json(new MaterialCardResource($this->loadCardForResponse($card)), 200);
     }
 
     public function destroy(MaterialCard $material_card, MaterialService $service)
@@ -170,5 +170,19 @@ class MaterialController extends Controller
         if ($authUserId !== $ownerId) {
             abort(403, 'Sie dürfen nur eigene Materialkarten verwalten.');
         }
+    }
+
+    private function loadCardForResponse(MaterialCard $card): MaterialCard
+    {
+        if (Schema::hasTable('material_card_classifications')) {
+            return $card->loadMissing(
+                'attachments',
+                'classifications.subject',
+                'classifications.topic',
+                'classifications.unit'
+            );
+        }
+
+        return $card->loadMissing('attachments');
     }
 }

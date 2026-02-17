@@ -17,6 +17,8 @@ export default {
 <style scoped>
 .option-card {
     min-height: 320px;
+    display: flex;
+    flex-direction: column;
     border: 1px solid rgba(253, 128, 46, 0.25);
     background: rgba(255, 255, 255, 0.7);
     transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
@@ -41,6 +43,7 @@ export default {
 }
 
 .option-btn {
+    margin-top: auto;
     background: linear-gradient(155deg, var(--pumpkin) 0%, var(--pumpkin-light) 100%);
     color: var(--charcoal);
     font-weight: 700;
