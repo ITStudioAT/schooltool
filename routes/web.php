@@ -36,7 +36,7 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
     /* restliche admin-Routen */
     Route::get('/admin/{any?}', function () {
         return view('spa::admin');
-    })->where('any', '.*')->middleware(['auth:sanctum', 'web-allowed:admin,register_admin,tutoring_admin,teacher,lunch_admin']);
+    })->where('any', '.*')->middleware(['auth:sanctum', 'web-allowed:admin,register_admin,tutoring_admin,teaching_admin,materials_admin,teacher,lunch_admin']);
 
 
     /* APPLICATION ROUTES */

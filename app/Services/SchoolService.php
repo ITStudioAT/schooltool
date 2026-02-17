@@ -228,7 +228,7 @@ class SchoolService
             'licences' => LicenceResource::collection($licences)
         ];
 
-        $roles = ['admin', 'register_admin', 'super_admin', 'tutoring_admin', 'teaching_admin'];
+        $roles = ['admin', 'register_admin', 'super_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin'];
         $users = User::where('school_id', $school_id)
             ->role($roles)
             ->orderBy('last_name')

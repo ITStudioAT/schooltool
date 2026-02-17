@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\Licence;
+use App\Models\School;
 use App\Models\User;
 use App\Services\AdminNavigationService;
 use App\Services\UserService;
@@ -80,9 +82,18 @@ describe('dashboardMenu', function () {
     });
 
     it('includes register system menu item for admin role', function () {
+        $school = School::factory()->create();
+        $licence = Licence::create([
+            'name' => 'Anmeldetool',
+            'long_name' => 'Test licence',
+            'price_per_year' => 200,
+        ]);
+        $school->licences()->attach($licence->id, ['valid_until' => now()->addDays(10)->toDateString()]);
+
         $user = User::factory()->create([
             'first_name' => 'Admin',
             'last_name' => 'Regular',
+            'school_id' => $school->id,
         ]);
         $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $user->assignRole($role);
@@ -101,9 +112,18 @@ describe('dashboardMenu', function () {
     });
 
     it('includes register system menu item for register_admin role', function () {
+        $school = School::factory()->create();
+        $licence = Licence::create([
+            'name' => 'Anmeldetool',
+            'long_name' => 'Test licence',
+            'price_per_year' => 200,
+        ]);
+        $school->licences()->attach($licence->id, ['valid_until' => now()->addDays(10)->toDateString()]);
+
         $user = User::factory()->create([
             'first_name' => 'Register',
             'last_name' => 'Admin',
+            'school_id' => $school->id,
         ]);
         $role = Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
         $user->assignRole($role);
@@ -155,9 +175,9 @@ describe('dashboardMenu', function () {
 
         expect($result)
             ->toBeArray()
-            ->toHaveCount(7)
+            ->toHaveCount(8)
             ->and(collect($result)->pluck('title')->toArray())
-            ->toContain('Home', 'Super-Admin', 'Anmeldetool', 'Nachhilfe', 'Unterricht', 'Role Multi', 'Abmelden');
+            ->toContain('Home', 'Super-Admin', 'Anmeldetool', 'Nachhilfe', 'Unterricht', 'Materialien', 'Role Multi', 'Abmelden');
     });
 
     it('ensures Home is always first menu item', function () {
@@ -186,6 +206,61 @@ describe('dashboardMenu', function () {
         expect($lastItem)
             ->toHaveKey('title', 'Abmelden')
             ->and($lastItem['click'])->toBe('logout');
+    });
+
+    it('includes materials menu item for materials_admin with active Materialientool licence', function () {
+        config(['schooltool.materials_active' => true]);
+
+        $school = School::factory()->create();
+        $licence = Licence::create([
+            'name' => 'Materialientool',
+            'long_name' => 'Test licence',
+            'price_per_year' => 200,
+        ]);
+        $school->licences()->attach($licence->id, ['valid_until' => now()->addDays(10)->toDateString()]);
+
+        $user = User::factory()->create(['school_id' => $school->id]);
+        $role = Role::firstOrCreate(['name' => 'materials_admin', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+        $materialsItem = collect($result)->firstWhere('title', 'Materialien');
+
+        expect($materialsItem)
+            ->not->toBeNull()
+            ->and($materialsItem['to'])->toBe('/admin/materials')
+            ->and($materialsItem['is_active'])->toBeTrue();
+    });
+
+    it('adds expired status metadata for materials menu item when Materialientool licence is expired', function () {
+        config(['schooltool.materials_active' => true]);
+
+        $school = School::factory()->create();
+        $licence = Licence::create([
+            'name' => 'Materialientool',
+            'long_name' => 'Test licence',
+            'price_per_year' => 200,
+        ]);
+        $school->licences()->attach($licence->id, ['valid_until' => now()->subDay()->toDateString()]);
+
+        $user = User::factory()->create(['school_id' => $school->id]);
+        $role = Role::firstOrCreate(['name' => 'materials_admin', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+        $materialsItem = collect($result)->firstWhere('title', 'Materialien');
+
+        expect($materialsItem)
+            ->not->toBeNull()
+            ->and($materialsItem['is_active'])->toBeFalse()
+            ->and($materialsItem['status_icon'])->toBe('mdi-clock-alert-outline')
+            ->and($materialsItem['status_color'])->toBe('warning');
     });
 });
 
@@ -503,7 +578,15 @@ describe('userSelection', function () {
 
 describe('HasRoleTrait integration', function () {
     it('properly checks for multiple roles', function () {
-        $user = User::factory()->create();
+        $school = School::factory()->create();
+        $licence = Licence::create([
+            'name' => 'Anmeldetool',
+            'long_name' => 'Test licence',
+            'price_per_year' => 200,
+        ]);
+        $school->licences()->attach($licence->id, ['valid_until' => now()->addDays(10)->toDateString()]);
+
+        $user = User::factory()->create(['school_id' => $school->id]);
         $role1 = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $role2 = Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
         $user->assignRole([$role1, $role2]);
@@ -562,4 +645,3 @@ describe('menu item consistency', function () {
         }
     });
 });
-

@@ -39,6 +39,7 @@ class AdminNavigationService
         $registerLicenceStatus = $this->licenceStatus($user, 'Anmeldetool');
         $tutoringLicenceStatus = $this->licenceStatus($user, 'Nachhilfetool');
         $teachingLicenceStatus = $this->licenceStatus($user, 'Lehrertool');
+        $materialsLicenceStatus = $this->licenceStatus($user, 'Materialientool');
 
         // ANMELDESYSTEM
         if ($isSuperAdmin || $this->userHasRole(['admin', 'register_admin'])) {
@@ -66,7 +67,7 @@ class AdminNavigationService
 
         // TEACHER
 
-        if ($isSuperAdmin || $this->userHasRole(['admin', 'teacher'])) {
+        if ($isSuperAdmin || $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             if ($isSuperAdmin || $teachingLicenceStatus !== 'missing') {
                 $menu[] = [
                     'title' => 'Unterricht',
@@ -74,6 +75,18 @@ class AdminNavigationService
                     'to' => '/admin/teaching',
                     'is_active' => $isSuperAdmin ? true : ($teachingLicenceStatus === 'active' && config('schooltool.teaching_active', false)),
                 ] + $this->moduleStatusMeta($teachingLicenceStatus, 'Unterricht');
+            }
+        }
+
+        // MATERIALS
+        if ($isSuperAdmin || $this->userHasRole(['admin', 'materials_admin', 'teaching_admin', 'teacher'])) {
+            if ($isSuperAdmin || $materialsLicenceStatus !== 'missing') {
+                $menu[] = [
+                    'title' => 'Materialien',
+                    'icon' => 'mdi-folder-multiple-outline',
+                    'to' => '/admin/materials',
+                    'is_active' => $isSuperAdmin ? true : ($materialsLicenceStatus === 'active' && config('schooltool.materials_active', false)),
+                ] + $this->moduleStatusMeta($materialsLicenceStatus, 'Materialien');
             }
         }
 

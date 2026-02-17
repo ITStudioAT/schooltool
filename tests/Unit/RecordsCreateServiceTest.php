@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Licence;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
@@ -98,6 +99,25 @@ describe('initRecords', function () {
         expect($user->is_active)->toBe(1)
             ->and($user->confirmed_at)->not->toBeNull()
             ->and($user->email_verified_at)->not->toBeNull();
+    });
+
+    it('creates Lehrertool licence', function () {
+        $this->service->initRecords();
+
+        expect(Licence::where('name', 'Lehrertool')->exists())->toBeTrue();
+    });
+
+    it('creates Materialientool licence', function () {
+        $this->service->initRecords();
+
+        expect(Licence::where('name', 'Materialientool')->exists())->toBeTrue();
+    });
+
+    it('does not duplicate Materialientool licence when init runs multiple times', function () {
+        $this->service->initRecords();
+        $this->service->initRecords();
+
+        expect(Licence::where('name', 'Materialientool')->count())->toBe(1);
     });
 });
 

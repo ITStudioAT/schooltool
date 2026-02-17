@@ -11,6 +11,7 @@ return [
     'register_active' => (bool) env('REGISTER_ACTIVE', true),
     'tutoring_active' => (bool) env('TUTORING_ACTIVE', false),
     'teaching_active' => (bool) env('TEACHING_ACTIVE', false),
+    'materials_active' => (bool) env('MATERIALS_ACTIVE', false),
     'teaching_max_schools_shown' => (int) env('TEACHING_MAX_SCHOOLS_SHOWN', 20),
 
     'schoolyears' => [

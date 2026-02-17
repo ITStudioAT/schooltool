@@ -5,6 +5,7 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 
 use App\Models\Import116;
+use App\Models\MaterialCard;
 use App\Models\Register;
 use App\Models\RegisterDateBooking;
 use App\Models\School;
@@ -239,6 +240,11 @@ class User extends Authenticatable
     public function teachingSchemas(): HasMany
     {
         return $this->hasMany(TeachingSchema::class);
+    }
+
+    public function materialCards(): HasMany
+    {
+        return $this->hasMany(MaterialCard::class);
     }
 
     public function shouldDelete(): bool
