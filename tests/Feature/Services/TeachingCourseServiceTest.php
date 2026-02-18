@@ -15,6 +15,7 @@
 use App\Models\Import116;
 use App\Models\School;
 use App\Models\Schoolyear;
+use App\Models\TeachingCourse;
 use App\Models\User;
 use App\Services\TeachingCourseService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -283,6 +284,69 @@ describe('resolveStudentIds', function () {
         $result = $this->service->resolveStudentIds([], $this->school->id);
 
         expect($result)->toBe([]);
+    });
+});
+
+// ============================================================================
+// resolveCourseStudentEntries Tests
+// ============================================================================
+
+describe('resolveCourseStudentEntries', function () {
+    test('uses import reference when payload looks like import student and numeric id collides', function () {
+        $collisionId = 9001;
+
+        $teacher = User::factory()->create([
+            'school_id' => $this->school->id,
+            'email' => 'teacher@test.com',
+        ]);
+
+        User::factory()->create([
+            'id' => $collisionId,
+            'school_id' => $this->school->id,
+            'email' => 'clara.foetschl@test.com',
+            'first_name' => 'Clara',
+            'last_name' => 'Foetschl',
+        ]);
+
+        $import = Import116::factory()->create([
+            'id' => $collisionId,
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'import_user_id' => $teacher->id,
+            'first_name' => 'Alina',
+            'last_name' => 'Husic',
+            'class' => '5A',
+            'email' => null,
+        ]);
+
+        $payload = [[
+            'id' => $collisionId,
+            'first_name' => 'Alina',
+            'last_name' => 'Husic',
+            'class' => '5A',
+            'email' => null,
+        ]];
+
+        $entries = $this->service->resolveCourseStudentEntries($payload, $this->school->id);
+
+        expect($entries)->toHaveCount(1)
+            ->and($entries[0]['user_id'])->toBeNull()
+            ->and($entries[0]['import116_id'])->toBe($import->id);
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $teacher->id,
+            'title' => 'Informatik - 5A2',
+            'classes' => ['5A'],
+        ]);
+
+        $this->service->syncCourseStudents($course, $payload, []);
+
+        $courseStudent = $course->teachingCourseStudents()->first();
+        expect($courseStudent)->not->toBeNull()
+            ->and($courseStudent->user_id)->toBeNull()
+            ->and($courseStudent->import116_id)->toBe($import->id);
     });
 });
 

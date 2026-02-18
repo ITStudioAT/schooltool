@@ -16,6 +16,7 @@ class Import116Resource extends JsonResource
     {
         return [
             'id' => $this->id,
+            'import116_id' => $this->id,
             'school_id' => $this->school_id,
             'class' => $this->class,
             'student_code' => $this->student_code,

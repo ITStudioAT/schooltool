@@ -521,6 +521,13 @@ class TeachingCourseService
                 }
             }
 
+            // Legacy clients may send only `id` for Import116 rows.
+            // If payload clearly looks like an Import116 student, prefer that source.
+            $contextualImportReference = $this->resolveStudentReferenceFromContextualImportId($data, $schoolId);
+            if ($contextualImportReference) {
+                return $contextualImportReference;
+            }
+
             // Prefer email over ambiguous id - email unambiguously identifies the person
             $email = isset($data['email']) ? trim((string) $data['email']) : '';
             if ($email !== '') {
@@ -547,6 +554,68 @@ class TeachingCourseService
         }
 
         return null;
+    }
+
+    private function resolveStudentReferenceFromContextualImportId(array $data, int $schoolId): ?array
+    {
+        if (! isset($data['id']) || ! is_numeric($data['id'])) {
+            return null;
+        }
+
+        $importId = $this->findImportIdInSchool((int) $data['id'], $schoolId);
+        if (! $importId) {
+            return null;
+        }
+
+        $import = Import116::find($importId);
+        if (! $import || ! $this->itemLooksLikeImportReference($data, $import)) {
+            return null;
+        }
+
+        if ($import->email) {
+            $userId = $this->findOrCreateUserIdFromImport($import, $schoolId);
+            if ($userId) {
+                return ['user_id' => $userId, 'import116_id' => null];
+            }
+        }
+
+        return ['user_id' => null, 'import116_id' => $importId];
+    }
+
+    private function itemLooksLikeImportReference(array $data, Import116 $import): bool
+    {
+        $hasImportHint = array_key_exists('class', $data)
+            || array_key_exists('student_code', $data)
+            || array_key_exists('import116_id', $data);
+
+        if (! $hasImportHint) {
+            return false;
+        }
+
+        $firstName = isset($data['first_name']) ? trim((string) $data['first_name']) : '';
+        if ($firstName !== '' && $firstName !== (string) ($import->first_name ?? '')) {
+            return false;
+        }
+
+        $lastName = isset($data['last_name']) ? trim((string) $data['last_name']) : '';
+        if ($lastName !== '' && $lastName !== (string) ($import->last_name ?? '')) {
+            return false;
+        }
+
+        $class = isset($data['class']) ? trim((string) $data['class']) : '';
+        if ($class !== '' && $class !== (string) ($import->class ?? '')) {
+            return false;
+        }
+
+        $email = isset($data['email']) ? trim((string) $data['email']) : '';
+        if ($email !== '') {
+            $importEmail = trim((string) ($import->email ?? ''));
+            if ($importEmail === '' || strcasecmp($email, $importEmail) !== 0) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function resolveStudentReferenceFromNumeric(int $id, int $schoolId): ?array

@@ -161,6 +161,24 @@ describe('response structure', function () {
                 'data' => [],
             ]);
     });
+
+    test('includes explicit import116_id in each result row', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $import = Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'import_user_id' => $this->admin->id,
+            'class' => '5A',
+            'last_name' => 'Husic',
+            'first_name' => 'Alina',
+        ]);
+
+        $response = $this->getJson('/api/admin/teaching/import116/load_class_students?schoolclass=5A');
+
+        $response->assertStatus(200)
+            ->assertJsonPath('data.0.import116_id', $import->id);
+    });
 });
 
 // ============================================================================
