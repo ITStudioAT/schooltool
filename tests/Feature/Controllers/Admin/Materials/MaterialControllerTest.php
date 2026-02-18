@@ -294,6 +294,39 @@ test('adding file attachment stores file and allows download', function () {
         ->assertStatus(200);
 });
 
+test('attachment rename updates stored attachment name', function () {
+    Storage::fake('local');
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Physik Experimente',
+        'source_type' => 'upload',
+        'keywords' => [],
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $uploadResponse = $this->post('/api/admin/materials/cards/' . $card->id . '/attachments/file', [
+        'file' => UploadedFile::fake()->create('experimente.pdf', 120, 'application/pdf'),
+        'name' => 'Alte Bezeichnung',
+    ]);
+
+    $attachment = MaterialCardAttachment::findOrFail($uploadResponse->json('id'));
+
+    $this->patchJson('/api/admin/materials/attachments/' . $attachment->id, [
+        'data' => [
+            'name' => 'Neue Bezeichnung',
+        ],
+    ])->assertStatus(200)
+        ->assertJsonFragment([
+            'id' => $attachment->id,
+            'name' => 'Neue Bezeichnung',
+        ]);
+
+    expect($attachment->fresh()->name)->toBe('Neue Bezeichnung');
+});
+
 test('attachment delete removes file from storage', function () {
     Storage::fake('local');
 

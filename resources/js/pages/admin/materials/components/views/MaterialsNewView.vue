@@ -103,11 +103,11 @@
                 </v-card>
 
                 <v-alert
-                    v-if="pendingClipboardFiles.length"
+                    v-if="pendingAttachments.length"
                     type="success"
                     variant="tonal"
                     class="mb-4">
-                    {{ pendingClipboardFiles.length }} Datei(en) aus der Zwischenablage erkannt. Sie werden nach dem Speichern als Anhänge hinzugefügt.
+                    {{ pendingAttachments.length }} Datei(en) erkannt. Sie werden nach dem Speichern als Anhänge hinzugefügt.
                 </v-alert>
 
                 <div class="material-form-width mx-auto">
@@ -116,6 +116,7 @@
                         :title="createForm.title"
                         :description="createForm.description"
                         :material-type="createForm.type"
+                        :pending-attachments="pendingAttachments"
                         :type-options="typeOptions"
                         :can-manage-types="canManageTypeValues"
                         :status="createForm.status"
@@ -129,6 +130,8 @@
                         @update:title="createForm.title = $event"
                         @update:description="createForm.description = $event"
                         @update:materialType="createForm.type = $event"
+                        @update:pendingAttachments="pendingAttachments = $event"
+                        @add-files="addPendingAttachmentsFromPicker"
                         @update:status="createForm.status = $event"
                         @update:classifications="createForm.classifications = $event"
                         @update:classificationEditorVisible="createClassificationEditorVisible = $event"
@@ -168,7 +171,7 @@ export default {
             isSaving: false,
             typeManagerDialogOpen: false,
             createClassificationEditorVisible: false,
-            pendingClipboardFiles: [],
+            pendingAttachments: [],
             clipboardModeActive: false,
             clipboardSummary: null,
             clipboardImagePreviews: [],
@@ -388,8 +391,10 @@ export default {
 
             if (title) this.createForm.title = title.slice(0, 255)
             if (description) this.createForm.description = description
-            if (files.length) this.pendingClipboardFiles = this.mergeUniqueFiles(this.pendingClipboardFiles, files)
-            this.updateClipboardImagePreviews(this.pendingClipboardFiles)
+            if (files.length) {
+                this.pendingAttachments = this.mergeUniquePendingAttachments(this.pendingAttachments, files, 'clipboard')
+            }
+            this.updateClipboardImagePreviews(this.pendingAttachments)
 
             const summary = payload?.summary || {}
             this.clipboardSummary = {
@@ -405,8 +410,9 @@ export default {
                 }).format(new Date()),
             }
         },
-        updateClipboardImagePreviews(files) {
+        updateClipboardImagePreviews(attachments) {
             this.revokeClipboardImagePreviews()
+            const files = this.extractFilesFromPendingAttachments(attachments)
             const imageFiles = (files || []).filter((file) => String(file?.type || '').startsWith('image/'))
             this.clipboardImagePreviews = imageFiles.map((file) => ({
                 name: file?.name || 'Grafik',
@@ -454,19 +460,68 @@ export default {
         toFullText(text) {
             return String(text || '').trim()
         },
-        mergeUniqueFiles(existingFiles, newFiles) {
-            const list = Array.isArray(existingFiles) ? [...existingFiles] : []
+        defaultAttachmentTitle(fileName) {
+            const normalized = String(fileName || '').trim()
+            if (!normalized) return 'Datei'
+
+            const dot = normalized.lastIndexOf('.')
+            const base = dot > 0 ? normalized.slice(0, dot) : normalized
+            return base.slice(0, 255) || 'Datei'
+        },
+        toPendingAttachments(value) {
+            const input = Array.isArray(value) ? value : []
+            const result = []
+
+            for (let index = 0; index < input.length; index += 1) {
+                const item = input[index]
+                const file = item instanceof File ? item : item?.file
+                if (!(file instanceof File)) continue
+
+                const fileName = String(file.name || '').trim() || `Datei ${index + 1}`
+                const rawTitle = item instanceof File ? '' : String(item?.title || '').trim()
+                const source = item instanceof File ? '' : String(item?.source || '').trim()
+                const key = String(item instanceof File ? '' : item?.key || '') || `${fileName}|${file.size}|${file.lastModified}|${index}`
+
+                result.push({
+                    file,
+                    title: rawTitle || this.defaultAttachmentTitle(fileName),
+                    source: source || 'manual',
+                    key,
+                })
+            }
+
+            return result
+        },
+        extractFilesFromPendingAttachments(value) {
+            return this.toPendingAttachments(value).map((item) => item.file)
+        },
+        mergeUniquePendingAttachments(existingAttachments, newFiles, source = 'manual') {
+            const list = this.toPendingAttachments(existingAttachments)
             const getKey = (file) => `${file?.name || ''}|${file?.size || 0}|${file?.type || ''}|${file?.lastModified || 0}`
-            const seen = new Set(list.map((file) => getKey(file)))
+            const seen = new Set(list.map((item) => getKey(item.file)))
 
             for (const file of newFiles || []) {
+                if (!(file instanceof File)) continue
                 const key = getKey(file)
                 if (!seen.has(key)) {
                     seen.add(key)
-                    list.push(file)
+                    list.push({
+                        file,
+                        title: this.defaultAttachmentTitle(file.name),
+                        source: String(source || 'manual').trim(),
+                        key: `${key}|${seen.size}`,
+                    })
                 }
             }
+
             return list
+        },
+        addPendingAttachmentsFromPicker(files) {
+            const incoming = Array.isArray(files) ? files : []
+            if (!incoming.length) return
+
+            this.pendingAttachments = this.mergeUniquePendingAttachments(this.pendingAttachments, incoming, 'picker')
+            this.updateClipboardImagePreviews(this.pendingAttachments)
         },
         openTypeManager() {
             if (!this.canManageTypeValues) return
@@ -520,7 +575,7 @@ export default {
         },
         resetCreateForm() {
             this.createClassificationEditorVisible = false
-            this.pendingClipboardFiles = []
+            this.pendingAttachments = []
             this.clipboardModeActive = false
             this.clipboardSummary = null
             this.revokeClipboardImagePreviews()
@@ -576,9 +631,14 @@ export default {
                 classifications,
             })
 
-            if (saved?.id && this.pendingClipboardFiles.length) {
-                for (const file of this.pendingClipboardFiles) {
-                    await this.materialCardStore.addFileAttachment(saved.id, file, file.name || '')
+            const attachments = this.toPendingAttachments(this.pendingAttachments)
+            if (saved?.id && attachments.length) {
+                for (const attachment of attachments) {
+                    await this.materialCardStore.addFileAttachment(
+                        saved.id,
+                        attachment.file,
+                        this.toNullable(attachment.title) || attachment.file.name || ''
+                    )
                 }
             }
 

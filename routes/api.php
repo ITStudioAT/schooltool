@@ -227,6 +227,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/admin/materials/cards/{material_card}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'destroy']);
         Route::post('/admin/materials/cards/{material_card}/attachments/link', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'storeLinkAttachment']);
         Route::post('/admin/materials/cards/{material_card}/attachments/file', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'storeFileAttachment']);
+        Route::patch('/admin/materials/attachments/{material_card_attachment}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'updateAttachment']);
         Route::delete('/admin/materials/attachments/{material_card_attachment}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'destroyAttachment']);
         Route::get('/admin/materials/attachments/{material_card_attachment}/download', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'downloadAttachment']);
     });

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Materials;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\Materials\MaterialCardAttachmentUpdateRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardFileAttachmentStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardIndexRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardLinkAttachmentStoreRequest;
@@ -135,6 +136,21 @@ class MaterialController extends Controller
         $service->deleteAttachment($material_card_attachment);
 
         return response()->noContent();
+    }
+
+    public function updateAttachment(
+        MaterialCardAttachmentUpdateRequest $request,
+        MaterialCardAttachment $material_card_attachment,
+        MaterialService $service
+    ) {
+        $authUser = $this->authorizeForMaterials();
+        $material_card_attachment->loadMissing('materialCard');
+        $this->assertIsOwner($authUser->id, (int) $material_card_attachment->materialCard->user_id);
+        $validated = $request->validated()['data'];
+
+        $attachment = $service->updateAttachmentName($material_card_attachment, $validated['name']);
+
+        return response()->json(new MaterialCardAttachmentResource($attachment), 200);
     }
 
     public function downloadAttachment(MaterialCardAttachment $material_card_attachment)

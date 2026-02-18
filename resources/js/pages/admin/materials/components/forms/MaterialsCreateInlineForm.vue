@@ -256,18 +256,60 @@
         </div>
 
         <div class="mt-3">
-            <div class="text-subtitle-2 mb-2">Inhalt hinzufügen (später)</div>
+            <div class="text-subtitle-2 mb-2">Inhalt hinzufügen</div>
             <div class="d-flex flex-wrap ga-2">
                 <v-btn variant="tonal" color="primary" prepend-icon="mdi-text-box-plus-outline" disabled>
                     Text hinzufügen
                 </v-btn>
-                <v-btn variant="tonal" color="primary" prepend-icon="mdi-file-plus-outline" disabled>
+                <v-btn variant="tonal" color="primary" prepend-icon="mdi-file-plus-outline" @click="openFilePicker">
                     Datei hinzufügen
                 </v-btn>
                 <v-btn variant="tonal" color="primary" prepend-icon="mdi-link-plus" disabled>
                     Link hinzufügen
                 </v-btn>
             </div>
+
+            <input
+                ref="fileInput"
+                type="file"
+                multiple
+                class="d-none"
+                @change="handleFileSelection">
+
+            <v-card
+                v-if="normalizedPendingAttachments.length"
+                variant="outlined"
+                class="pa-3 mt-3">
+                <div class="text-caption text-medium-emphasis mb-2">Dateien zur Übernahme</div>
+
+                <div
+                    v-for="(item, index) in normalizedPendingAttachments"
+                    :key="`pending-file-${item.key}`"
+                    class="pending-file-row mb-2">
+                    <div class="d-flex align-start ga-2">
+                        <v-text-field
+                            class="flex-grow-1"
+                            :model-value="item.title"
+                            label="Dateititel"
+                            variant="outlined"
+                            density="comfortable"
+                            hide-details="auto"
+                            @update:modelValue="updatePendingAttachmentTitle(index, $event)" />
+
+                        <v-btn
+                            icon="mdi-close"
+                            size="small"
+                            variant="text"
+                            color="error"
+                            class="mt-1"
+                            @click="removePendingAttachment(index)" />
+                    </div>
+
+                    <div class="text-caption text-medium-emphasis mt-1">
+                        {{ item.fileName }}
+                    </div>
+                </div>
+            </v-card>
         </div>
 
         <div class="d-flex flex-wrap justify-end ga-2 mt-5">
@@ -292,6 +334,10 @@ export default {
         materialType: {
             type: String,
             default: '',
+        },
+        pendingAttachments: {
+            type: Array,
+            default: () => [],
         },
         classifications: {
             type: Array,
@@ -350,7 +396,7 @@ export default {
             default: true,
         },
     },
-    emits: ['update:title', 'update:description', 'update:materialType', 'update:status', 'update:classifications', 'update:classificationEditorVisible', 'manage-types', 'save', 'cancel'],
+    emits: ['update:title', 'update:description', 'update:materialType', 'update:pendingAttachments', 'add-files', 'update:status', 'update:classifications', 'update:classificationEditorVisible', 'manage-types', 'save', 'cancel'],
     data() {
         return {
             activeClassificationIndex: null,
@@ -475,6 +521,9 @@ export default {
         currentMaterialTypeColor() {
             return this.normalizedMaterialTypeValue ? 'primary' : 'grey'
         },
+        normalizedPendingAttachments() {
+            return this.toPendingAttachments(this.pendingAttachments)
+        },
         visibleClassificationRows() {
             const rows = this.toClassificationRows(this.classifications)
             return rows.length > 0 ? rows : [this.emptyClassificationRow()]
@@ -546,6 +595,85 @@ export default {
         },
         normalizeText(value) {
             return String(value ?? '').trim().slice(0, 255)
+        },
+        defaultAttachmentTitle(fileName) {
+            const name = String(fileName || '').trim()
+            if (!name) {
+                return 'Datei'
+            }
+
+            const lastDot = name.lastIndexOf('.')
+            const withoutExtension = lastDot > 0 ? name.slice(0, lastDot) : name
+            return this.normalizeText(withoutExtension || name) || 'Datei'
+        },
+        toPendingAttachments(value) {
+            const input = Array.isArray(value) ? value : []
+            const result = []
+
+            for (let index = 0; index < input.length; index += 1) {
+                const item = input[index]
+                const file = item instanceof File ? item : item?.file
+                if (!(file instanceof File)) continue
+
+                const fileName = this.normalizeText(file.name) || `Datei ${index + 1}`
+                const rawTitle = item instanceof File ? '' : item?.title
+                const title = this.normalizeText(rawTitle) || this.defaultAttachmentTitle(fileName)
+                const source = this.normalizeText(item instanceof File ? '' : item?.source)
+                const key = String(item instanceof File ? '' : item?.key) || `${fileName}|${file.size}|${file.lastModified}|${index}`
+
+                result.push({
+                    file,
+                    title,
+                    fileName,
+                    source,
+                    key,
+                })
+            }
+
+            return result
+        },
+        emitPendingAttachments(rows) {
+            const nextRows = (Array.isArray(rows) ? rows : []).map((row, index) => ({
+                file: row.file,
+                title: this.normalizeText(row.title) || this.defaultAttachmentTitle(row.fileName || row.file?.name),
+                source: this.normalizeText(row.source),
+                key: String(row.key || `${row.file?.name || 'datei'}|${row.file?.size || 0}|${row.file?.lastModified || 0}|${index}`),
+            }))
+            this.$emit('update:pendingAttachments', nextRows)
+        },
+        openFilePicker() {
+            const input = this.$refs.fileInput
+            if (input && typeof input.click === 'function') {
+                input.click()
+            }
+        },
+        handleFileSelection(event) {
+            const files = Array.from(event?.target?.files || []).filter((file) => file instanceof File)
+            if (files.length > 0) {
+                this.$emit('add-files', files)
+            }
+
+            if (event?.target) {
+                event.target.value = ''
+            }
+        },
+        updatePendingAttachmentTitle(index, value) {
+            const rows = this.toPendingAttachments(this.pendingAttachments)
+            if (index < 0 || index >= rows.length) return
+
+            rows[index] = {
+                ...rows[index],
+                title: this.normalizeText(value) || this.defaultAttachmentTitle(rows[index].fileName),
+            }
+
+            this.emitPendingAttachments(rows)
+        },
+        removePendingAttachment(index) {
+            const rows = this.toPendingAttachments(this.pendingAttachments)
+            if (index < 0 || index >= rows.length) return
+
+            rows.splice(index, 1)
+            this.emitPendingAttachments(rows)
         },
         isClassificationRowEmpty(row) {
             const subject = this.normalizeText(row?.subject)
@@ -744,7 +872,7 @@ export default {
 <style scoped>
 .create-form-card {
     border: 1px solid rgba(253, 128, 46, 0.35);
-    background: rgba(255, 255, 255, 0.82);
+    background: rgba(255, 255, 255, 0.96);
 }
 
 .form-subline {
@@ -761,6 +889,10 @@ export default {
 
 .assigned-chip {
     cursor: pointer;
+}
+
+.pending-file-row:last-child {
+    margin-bottom: 0 !important;
 }
 
 .classification-row {

@@ -476,6 +476,62 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             }
         },
 
+        async renameAttachment(attachmentId, cardId, name) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const id = Number(attachmentId)
+            const normalizedName = String(name ?? '').trim().slice(0, 255)
+
+            if (!Number.isFinite(id) || id <= 0) {
+                notification.notify({
+                    message: 'Ungültiger Anhang.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            if (!normalizedName) {
+                notification.notify({
+                    message: 'Bitte einen Dateititel eingeben.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            adminStore.is_loading++
+            try {
+                const response = await axios.patch('/api/admin/materials/attachments/' + id, {
+                    data: {
+                        name: normalizedName,
+                    },
+                })
+
+                notification.notify({
+                    message: 'Anhang umbenannt.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                if (cardId) {
+                    await this.show(cardId)
+                }
+
+                return response?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Umbenennen des Anhangs.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
         async createType(name) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()

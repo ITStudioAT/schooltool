@@ -19,6 +19,32 @@
             </v-col>
         </v-row>
 
+        <div class="subject-filter-wrap mb-4">
+            <div class="text-subtitle-2 mb-2">Fach filtern</div>
+
+            <div class="d-flex flex-wrap ga-2">
+                <v-chip
+                    size="small"
+                    :variant="hasActiveSubjectFilter ? 'tonal' : 'flat'"
+                    :color="hasActiveSubjectFilter ? undefined : 'primary'"
+                    :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                    @click="clearSubjectFilter">
+                    Alle
+                </v-chip>
+
+                <v-chip
+                    v-for="subject in subjectFilterOptions"
+                    :key="`subject-filter-${subject}`"
+                    size="small"
+                    color="primary"
+                    :variant="isSubjectFilterActive(subject) ? 'flat' : 'tonal'"
+                    :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                    @click="toggleSubjectFilter(subject)">
+                    {{ subject }}
+                </v-chip>
+            </div>
+        </div>
+
         <v-alert type="info" variant="tonal" class="mb-4">
             {{ totalMaterials }} Material{{ totalMaterials === 1 ? '' : 'ien' }} gespeichert.
         </v-alert>
@@ -33,13 +59,19 @@
                     </v-avatar>
                 </template>
 
-                <div class="d-flex align-center flex-wrap ga-2">
-                    <v-list-item-title class="text-subtitle-1 font-weight-bold">
-                        {{ card.title || 'Ohne Titel' }}
-                    </v-list-item-title>
+                <div class="material-header">
+                    <div class="title-type-inline d-inline-flex align-center flex-wrap ga-2">
+                        <div class="text-subtitle-1 font-weight-bold material-title">
+                            {{ card.title || 'Ohne Titel' }}
+                        </div>
 
-                    <v-chip v-if="card.type" size="small" variant="tonal" color="primary">
-                        {{ card.type }}
+                        <v-chip v-if="card.type" size="small" variant="tonal" color="primary" class="material-type-chip">
+                            {{ card.type }}
+                        </v-chip>
+                    </div>
+
+                    <v-chip size="small" :color="statusColor(card.status)" variant="flat" class="material-status-chip">
+                        {{ statusLabel(card.status) }}
                     </v-chip>
                 </div>
 
@@ -50,22 +82,26 @@
                             :key="`classification-label-${card.id}-${index}`"
                             size="small"
                             variant="tonal"
-                            color="primary">
+                            color="primary"
+                            class="classification-chip"
+                            :title="label">
                             {{ label }}
                         </v-chip>
                     </div>
 
-                    <div class="d-flex flex-wrap ga-2 mt-2 mb-2">
-                        <v-chip size="small" :color="statusColor(card.status)" variant="flat">
-                            {{ statusLabel(card.status) }}
-                        </v-chip>
-
-                        <v-chip v-if="card.attachments_count" size="small" variant="tonal" color="secondary">
+                    <div class="d-flex flex-wrap ga-2 mt-2 mb-1">
+                        <v-chip
+                            v-if="card.attachments_count"
+                            size="small"
+                            variant="flat"
+                            prepend-icon="mdi-paperclip"
+                            class="attachments-count-chip attachments-count-chip-clickable"
+                            @click="openAttachmentManager(card)">
                             {{ card.attachments_count }} Anhang{{ card.attachments_count === 1 ? '' : 'e' }}
                         </v-chip>
                     </div>
 
-                    <div v-if="card.source_url" class="text-body-2 mb-1">
+                    <div v-if="card.source_url" class="text-body-2 mb-1 source-link">
                         <a :href="card.source_url" target="_blank" rel="noopener noreferrer">{{ card.source_url }}</a>
                     </div>
 
@@ -76,11 +112,30 @@
                     <div v-else-if="card.notes" class="text-body-2 text-medium-emphasis mb-1 preview-text">
                         {{ preview(card.notes, 320) }}
                     </div>
-
-                    <div class="text-caption text-medium-emphasis mt-1">
-                        Aktualisiert: {{ formatDateTime(card.updated_at) }}
-                    </div>
                 </v-list-item-subtitle>
+
+                <div v-if="fileAttachments(card).length" class="attachment-block d-flex flex-column ga-2 mt-1 mb-2 pa-2">
+                    <div class="attachment-chip-wrap d-flex flex-wrap ga-2">
+                        <v-chip
+                            v-for="attachment in fileAttachments(card)"
+                            :key="`file-attachment-${card.id}-${attachment.id}`"
+                            size="small"
+                            variant="flat"
+                            color="primary"
+                            prepend-icon="mdi-paperclip"
+                            append-icon="mdi-download"
+                            class="attachment-chip"
+                            :disabled="isDownloadingAttachment(attachment.id)"
+                            :title="attachmentDisplayName(attachment)"
+                            @click.prevent="downloadAttachment(attachment)">
+                            {{ attachmentDisplayName(attachment) }}
+                        </v-chip>
+                    </div>
+                </div>
+
+                <div class="text-caption text-medium-emphasis mt-1">
+                    Aktualisiert: {{ formatDateTime(card.updated_at) }}
+                </div>
 
                 <template #append>
                     <div class="overview-actions d-flex flex-wrap justify-end ga-2">
@@ -136,11 +191,112 @@
         </v-alert>
     </v-card>
 
+    <v-dialog v-model="attachmentDialogOpen" max-width="820" persistent>
+        <v-card rounded="xl">
+            <v-card-title class="d-flex align-center ga-2">
+                <span class="text-h6">Anhänge verwalten</span>
+                <v-spacer />
+                <v-btn icon="mdi-close" variant="text" :disabled="attachmentDialogBusy" @click="closeAttachmentManager" />
+            </v-card-title>
+
+            <v-card-subtitle class="pb-1">
+                {{ attachmentDialogCardTitle || 'Material' }}
+            </v-card-subtitle>
+
+            <v-card-text>
+                <v-alert v-if="!attachmentRows.length" type="info" variant="tonal" class="mb-0">
+                    Keine Anhänge vorhanden.
+                </v-alert>
+
+                <v-list v-else class="bg-transparent pa-0">
+                    <v-list-item
+                        v-for="row in attachmentRows"
+                        :key="`attachment-manage-${row.id}`"
+                        class="px-0 py-2">
+                        <div class="attachment-manage-row d-flex flex-column ga-2 w-100">
+                            <div class="d-flex flex-wrap align-center ga-2">
+                                <v-chip size="x-small" variant="tonal" color="secondary">
+                                    {{ attachmentTypeLabel(row) }}
+                                </v-chip>
+
+                                <div class="text-caption text-medium-emphasis attachment-meta-text">
+                                    {{ attachmentMeta(row) }}
+                                </div>
+                            </div>
+
+                            <div class="d-flex flex-column flex-md-row ga-2">
+                                <v-text-field
+                                    :model-value="row.name"
+                                    label="Titel"
+                                    variant="outlined"
+                                    density="comfortable"
+                                    hide-details="auto"
+                                    class="attachment-name-field flex-grow-1"
+                                    :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
+                                    @update:modelValue="updateAttachmentDraft(row.id, $event)"
+                                    @keyup.enter="saveAttachmentName(row)" />
+
+                                <div class="attachment-manage-actions d-flex flex-wrap ga-2 justify-end">
+                                    <v-btn
+                                        size="small"
+                                        color="primary"
+                                        variant="tonal"
+                                        prepend-icon="mdi-content-save"
+                                        :loading="isAttachmentSaving(row.id)"
+                                        :disabled="!canSaveAttachmentName(row) || isAttachmentDeleting(row.id)"
+                                        @click="saveAttachmentName(row)">
+                                        Speichern
+                                    </v-btn>
+
+                                    <v-btn
+                                        v-if="row.attachment_type === 'file'"
+                                        size="small"
+                                        color="primary"
+                                        variant="tonal"
+                                        prepend-icon="mdi-download"
+                                        :loading="isDownloadingAttachment(row.id)"
+                                        :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
+                                        @click="downloadAttachment(row)">
+                                        Download
+                                    </v-btn>
+
+                                    <v-btn
+                                        v-else-if="row.url"
+                                        size="small"
+                                        color="primary"
+                                        variant="tonal"
+                                        prepend-icon="mdi-open-in-new"
+                                        :href="row.url"
+                                        target="_blank"
+                                        rel="noopener noreferrer">
+                                        Öffnen
+                                    </v-btn>
+
+                                    <v-btn
+                                        size="small"
+                                        color="error"
+                                        variant="flat"
+                                        prepend-icon="mdi-delete"
+                                        :loading="isAttachmentDeleting(row.id)"
+                                        :disabled="isAttachmentSaving(row.id)"
+                                        @click="removeAttachment(row)">
+                                        Löschen
+                                    </v-btn>
+                                </div>
+                            </div>
+                        </div>
+                    </v-list-item>
+                </v-list>
+            </v-card-text>
+        </v-card>
+    </v-dialog>
+
     <v-dialog v-model="editDialogOpen" max-width="640" persistent>
         <MaterialsCreateInlineForm
             :title="editForm.title"
             :description="editForm.description"
             :material-type="editForm.type"
+            :pending-attachments="editForm.pendingAttachments"
             :type-options="typeOptions"
             :can-manage-types="canManageTypeValues"
             :status="editForm.status"
@@ -157,6 +313,8 @@
             @update:title="editForm.title = $event"
             @update:description="editForm.description = $event"
             @update:materialType="editForm.type = $event"
+            @update:pendingAttachments="editForm.pendingAttachments = $event"
+            @add-files="addEditPendingAttachments"
             @update:status="editForm.status = $event"
             @update:classifications="editForm.classifications = $event"
             @update:classificationEditorVisible="editClassificationEditorVisible = $event"
@@ -170,6 +328,7 @@
 
 <script>
 import { useMaterialCardStore } from '@/stores/admin/materials/MaterialCardStore'
+import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import MaterialsCreateInlineForm from '../forms/MaterialsCreateInlineForm.vue'
 import MaterialTypeManagerDialog from '../forms/MaterialTypeManagerDialog.vue'
 
@@ -178,6 +337,7 @@ const createDefaultEditForm = () => ({
     title: '',
     description: '',
     classifications: [{ subject: '', topic: '', unit: '' }],
+    pendingAttachments: [],
     source_type: 'note',
     source_url: '',
     area: '',
@@ -200,9 +360,17 @@ export default {
             isSavingEdit: false,
             isDeletingId: null,
             editDialogOpen: false,
+            attachmentDialogOpen: false,
+            attachmentDialogCardId: null,
+            attachmentDialogCardTitle: '',
+            attachmentRows: [],
+            subjectFilter: '',
             typeManagerDialogOpen: false,
             editClassificationEditorVisible: false,
             editForm: createDefaultEditForm(),
+            downloadingAttachmentIds: [],
+            savingAttachmentIds: [],
+            deletingAttachmentIds: [],
             deleteSteps: {},
         }
     },
@@ -251,12 +419,32 @@ export default {
         deleteModeActive() {
             return this.activeDeleteCardId !== null
         },
+        attachmentDialogBusy() {
+            return this.savingAttachmentIds.length > 0 || this.deletingAttachmentIds.length > 0
+        },
+        subjectFilterOptions() {
+            const options = this.classificationTree
+                .map((entry) => String(entry?.name || '').trim())
+                .filter((value) => value !== '')
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+
+            const selected = String(this.subjectFilter || '').trim()
+            if (selected && !options.some((option) => option.toLocaleLowerCase() === selected.toLocaleLowerCase())) {
+                options.unshift(selected)
+            }
+
+            return options
+        },
+        hasActiveSubjectFilter() {
+            return String(this.subjectFilter || '').trim() !== ''
+        },
     },
     async beforeMount() {
         this.materialCardStore = useMaterialCardStore()
         if (!this.materialCardStore.config) {
             await this.materialCardStore.loadConfig()
         }
+        this.subjectFilter = String(this.materialCardStore?.filters?.subject || '').trim()
         await this.loadCards()
     },
     methods: {
@@ -267,9 +455,100 @@ export default {
             this.resetDeleteSteps()
             this.isLoading = false
         },
+        normalizeFilterText(value) {
+            return String(value ?? '').trim().slice(0, 255)
+        },
+        isSubjectFilterActive(value) {
+            const selected = this.normalizeFilterText(this.subjectFilter).toLocaleLowerCase()
+            const subject = this.normalizeFilterText(value).toLocaleLowerCase()
+            return selected !== '' && selected === subject
+        },
+        async applySubjectFilter(value) {
+            const subject = this.normalizeFilterText(value)
+            this.subjectFilter = subject
+            this.materialCardStore.filters = {
+                ...(this.materialCardStore.filters || {}),
+                subject,
+            }
+            await this.loadCards()
+        },
+        async toggleSubjectFilter(value) {
+            if (this.isSubjectFilterActive(value)) {
+                await this.clearSubjectFilter()
+                return
+            }
+
+            await this.applySubjectFilter(value)
+        },
+        async clearSubjectFilter() {
+            await this.applySubjectFilter('')
+        },
         toNullable(value) {
             const text = String(value ?? '').trim()
             return text === '' ? null : text
+        },
+        defaultAttachmentTitle(fileName) {
+            const normalized = String(fileName || '').trim()
+            if (!normalized) return 'Datei'
+
+            const dot = normalized.lastIndexOf('.')
+            const base = dot > 0 ? normalized.slice(0, dot) : normalized
+            return base.slice(0, 255) || 'Datei'
+        },
+        toPendingAttachments(value) {
+            const input = Array.isArray(value) ? value : []
+            const result = []
+
+            for (let index = 0; index < input.length; index += 1) {
+                const item = input[index]
+                const file = item instanceof File ? item : item?.file
+                if (!(file instanceof File)) continue
+
+                const fileName = String(file.name || '').trim() || `Datei ${index + 1}`
+                const rawTitle = item instanceof File ? '' : String(item?.title || '').trim()
+                const source = item instanceof File ? '' : String(item?.source || '').trim()
+                const key = String(item instanceof File ? '' : item?.key || '') || `${fileName}|${file.size}|${file.lastModified}|${index}`
+
+                result.push({
+                    file,
+                    title: rawTitle || this.defaultAttachmentTitle(fileName),
+                    source: source || 'manual',
+                    key,
+                })
+            }
+
+            return result
+        },
+        mergeUniquePendingAttachments(existingAttachments, newFiles, source = 'manual') {
+            const list = this.toPendingAttachments(existingAttachments)
+            const getKey = (file) => `${file?.name || ''}|${file?.size || 0}|${file?.type || ''}|${file?.lastModified || 0}`
+            const seen = new Set(list.map((item) => getKey(item.file)))
+
+            for (const file of newFiles || []) {
+                if (!(file instanceof File)) continue
+                const key = getKey(file)
+                if (!seen.has(key)) {
+                    seen.add(key)
+                    list.push({
+                        file,
+                        title: this.defaultAttachmentTitle(file.name),
+                        source: String(source || 'manual').trim(),
+                        key: `${key}|${seen.size}`,
+                    })
+                }
+            }
+
+            return list
+        },
+        addEditPendingAttachments(files) {
+            const incoming = Array.isArray(files) ? files : []
+            if (!incoming.length) return
+
+            this.editForm.pendingAttachments = this.mergeUniquePendingAttachments(
+                this.editForm.pendingAttachments,
+                incoming,
+                'picker'
+            )
         },
         deleteStep(cardId) {
             return Number(this.deleteSteps[String(cardId)] || 0)
@@ -318,6 +597,7 @@ export default {
                         unit: String(row?.unit || '').trim(),
                     }))
                     : [{ subject: '', topic: '', unit: '' }],
+                pendingAttachments: [],
                 source_type: card?.source_type || 'note',
                 source_url: card?.source_url || '',
                 area: card?.area || '',
@@ -359,6 +639,18 @@ export default {
             }
 
             const updated = await this.materialCardStore.update(this.editForm.id, payload)
+
+            if (updated) {
+                const pendingAttachments = this.toPendingAttachments(this.editForm.pendingAttachments)
+                for (const attachment of pendingAttachments) {
+                    await this.materialCardStore.addFileAttachment(
+                        this.editForm.id,
+                        attachment.file,
+                        this.toNullable(attachment.title) || attachment.file.name || ''
+                    )
+                }
+            }
+
             this.isSavingEdit = false
 
             if (updated) {
@@ -440,6 +732,291 @@ export default {
 
             return result
         },
+        normalizeAttachmentName(value) {
+            return String(value ?? '').trim().slice(0, 255)
+        },
+        toAttachmentRows(attachments) {
+            const list = Array.isArray(attachments) ? attachments : []
+
+            return list
+                .map((attachment) => {
+                    const id = Number(attachment?.id)
+                    if (!Number.isFinite(id) || id <= 0) return null
+
+                    const type = String(attachment?.attachment_type || '').trim() || 'file'
+                    const baseName = this.normalizeAttachmentName(attachment?.name)
+                    const fallbackName = this.normalizeAttachmentName(this.attachmentDisplayName(attachment))
+                    const name = baseName || fallbackName || 'Anhang'
+
+                    return {
+                        id,
+                        attachment_type: type,
+                        name,
+                        savedName: name,
+                        download_url: String(attachment?.download_url || '').trim(),
+                        url: String(attachment?.url || '').trim(),
+                        file_path: String(attachment?.file_path || '').trim(),
+                        mime_type: String(attachment?.mime_type || '').trim(),
+                        size_bytes: Number(attachment?.size_bytes || 0),
+                    }
+                })
+                .filter(Boolean)
+        },
+        openAttachmentManager(card) {
+            this.attachmentDialogCardId = Number(card?.id) || null
+            this.attachmentDialogCardTitle = String(card?.title || '').trim()
+            this.attachmentRows = this.toAttachmentRows(card?.attachments)
+            this.attachmentDialogOpen = true
+        },
+        closeAttachmentManager() {
+            if (this.attachmentDialogBusy) return
+            this.attachmentDialogOpen = false
+            this.attachmentDialogCardId = null
+            this.attachmentDialogCardTitle = ''
+            this.attachmentRows = []
+            this.savingAttachmentIds = []
+            this.deletingAttachmentIds = []
+        },
+        attachmentTypeLabel(row) {
+            return String(row?.attachment_type || '').trim() === 'link' ? 'Link' : 'Datei'
+        },
+        attachmentMeta(row) {
+            if (String(row?.attachment_type || '').trim() === 'link') {
+                return String(row?.url || '').trim() || 'Link-Anhang'
+            }
+
+            if (String(row?.mime_type || '').trim()) {
+                return row.mime_type
+            }
+
+            return String(row?.file_path || '').trim() || 'Datei-Anhang'
+        },
+        updateAttachmentDraft(attachmentId, value) {
+            const id = Number(attachmentId)
+            if (!Number.isFinite(id) || id <= 0) return
+
+            this.attachmentRows = this.attachmentRows.map((row) => {
+                if (row.id !== id) return row
+                return {
+                    ...row,
+                    name: this.normalizeAttachmentName(value),
+                }
+            })
+        },
+        isAttachmentSaving(attachmentId) {
+            const id = Number(attachmentId)
+            return this.savingAttachmentIds.includes(id)
+        },
+        isAttachmentDeleting(attachmentId) {
+            const id = Number(attachmentId)
+            return this.deletingAttachmentIds.includes(id)
+        },
+        markAttachmentSaving(attachmentId, isSaving) {
+            const id = Number(attachmentId)
+            if (!Number.isFinite(id) || id <= 0) return
+
+            if (isSaving) {
+                if (!this.savingAttachmentIds.includes(id)) {
+                    this.savingAttachmentIds = [...this.savingAttachmentIds, id]
+                }
+                return
+            }
+
+            this.savingAttachmentIds = this.savingAttachmentIds.filter((item) => item !== id)
+        },
+        markAttachmentDeleting(attachmentId, isDeleting) {
+            const id = Number(attachmentId)
+            if (!Number.isFinite(id) || id <= 0) return
+
+            if (isDeleting) {
+                if (!this.deletingAttachmentIds.includes(id)) {
+                    this.deletingAttachmentIds = [...this.deletingAttachmentIds, id]
+                }
+                return
+            }
+
+            this.deletingAttachmentIds = this.deletingAttachmentIds.filter((item) => item !== id)
+        },
+        canSaveAttachmentName(row) {
+            const name = this.normalizeAttachmentName(row?.name)
+            const savedName = this.normalizeAttachmentName(row?.savedName)
+            return name !== '' && name !== savedName
+        },
+        async saveAttachmentName(row) {
+            const id = Number(row?.id)
+            const cardId = Number(this.attachmentDialogCardId)
+            if (!Number.isFinite(id) || id <= 0 || !Number.isFinite(cardId) || cardId <= 0) return
+            if (this.isAttachmentSaving(id) || this.isAttachmentDeleting(id)) return
+            if (!this.canSaveAttachmentName(row)) return
+
+            this.markAttachmentSaving(id, true)
+
+            try {
+                const updated = await this.materialCardStore.renameAttachment(id, cardId, row.name)
+                if (!updated) return
+
+                const nextName = this.normalizeAttachmentName(updated?.name) || this.normalizeAttachmentName(row.name)
+                this.attachmentRows = this.attachmentRows.map((item) => {
+                    if (item.id !== id) return item
+                    return {
+                        ...item,
+                        name: nextName,
+                        savedName: nextName,
+                    }
+                })
+
+                this.applyAttachmentUpdateToCard(id, { name: nextName })
+            } finally {
+                this.markAttachmentSaving(id, false)
+            }
+        },
+        async removeAttachment(row) {
+            const id = Number(row?.id)
+            const cardId = Number(this.attachmentDialogCardId)
+            if (!Number.isFinite(id) || id <= 0 || !Number.isFinite(cardId) || cardId <= 0) return
+            if (this.isAttachmentDeleting(id) || this.isAttachmentSaving(id)) return
+
+            this.markAttachmentDeleting(id, true)
+
+            try {
+                const deleted = await this.materialCardStore.deleteAttachment(id, cardId)
+                if (!deleted) return
+
+                this.attachmentRows = this.attachmentRows.filter((item) => item.id !== id)
+                this.removeAttachmentFromCard(id)
+            } finally {
+                this.markAttachmentDeleting(id, false)
+            }
+        },
+        applyAttachmentUpdateToCard(attachmentId, changes) {
+            const cardId = Number(this.attachmentDialogCardId)
+            const id = Number(attachmentId)
+            if (!Number.isFinite(cardId) || cardId <= 0 || !Number.isFinite(id) || id <= 0) return
+
+            const card = this.cards.find((item) => Number(item?.id) === cardId)
+            if (!card) return
+
+            const attachments = Array.isArray(card.attachments) ? [...card.attachments] : []
+            const index = attachments.findIndex((item) => Number(item?.id) === id)
+            if (index < 0) return
+
+            attachments[index] = {
+                ...attachments[index],
+                ...(changes || {}),
+            }
+
+            card.attachments = attachments
+            card.attachments_count = attachments.length
+        },
+        removeAttachmentFromCard(attachmentId) {
+            const cardId = Number(this.attachmentDialogCardId)
+            const id = Number(attachmentId)
+            if (!Number.isFinite(cardId) || cardId <= 0 || !Number.isFinite(id) || id <= 0) return
+
+            const card = this.cards.find((item) => Number(item?.id) === cardId)
+            if (!card) return
+
+            const attachments = Array.isArray(card.attachments) ? card.attachments : []
+            const nextAttachments = attachments.filter((item) => Number(item?.id) !== id)
+
+            card.attachments = nextAttachments
+            card.attachments_count = nextAttachments.length
+        },
+        isDownloadingAttachment(attachmentId) {
+            const id = Number(attachmentId)
+            return this.downloadingAttachmentIds.includes(id)
+        },
+        markAttachmentDownloading(attachmentId, isLoading) {
+            const id = Number(attachmentId)
+            if (!Number.isFinite(id) || id <= 0) return
+
+            if (isLoading) {
+                if (!this.downloadingAttachmentIds.includes(id)) {
+                    this.downloadingAttachmentIds = [...this.downloadingAttachmentIds, id]
+                }
+                return
+            }
+
+            this.downloadingAttachmentIds = this.downloadingAttachmentIds.filter((item) => item !== id)
+        },
+        normalizeDownloadFileName(value) {
+            const normalized = String(value || '').trim().replace(/[\\/:*?"<>|]/g, '_')
+            return normalized.slice(0, 255) || 'Datei'
+        },
+        filenameFromContentDisposition(headerValue) {
+            const header = String(headerValue || '').trim()
+            if (!header) return ''
+
+            const utf8Match = header.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)
+            if (utf8Match?.[1]) {
+                try {
+                    return decodeURIComponent(utf8Match[1]).trim()
+                } catch {
+                    return String(utf8Match[1]).trim()
+                }
+            }
+
+            const plainMatch = header.match(/filename\s*=\s*\"?([^\";]+)\"?/i)
+            return String(plainMatch?.[1] || '').trim()
+        },
+        async downloadAttachment(attachment) {
+            const id = Number(attachment?.id)
+            const downloadUrl = String(attachment?.download_url || '').trim()
+            if (!Number.isFinite(id) || id <= 0 || !downloadUrl) return
+            if (this.isDownloadingAttachment(id)) return
+
+            this.markAttachmentDownloading(id, true)
+
+            try {
+                const response = await axios.get(downloadUrl, {
+                    responseType: 'blob',
+                })
+
+                const disposition = response?.headers?.['content-disposition']
+                const serverFileName = this.filenameFromContentDisposition(disposition)
+                const fallbackName = this.attachmentDisplayName(attachment)
+                const fileName = this.normalizeDownloadFileName(serverFileName || fallbackName)
+
+                const blob = response?.data instanceof Blob ? response.data : new Blob([response?.data])
+                const objectUrl = URL.createObjectURL(blob)
+                const link = document.createElement('a')
+                link.href = objectUrl
+                link.download = fileName
+                document.body.appendChild(link)
+                link.click()
+                link.remove()
+                URL.revokeObjectURL(objectUrl)
+            } catch (error) {
+                const notification = useNotificationStore()
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Datei konnte nicht heruntergeladen werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+            } finally {
+                this.markAttachmentDownloading(id, false)
+            }
+        },
+        fileAttachments(card) {
+            const attachments = Array.isArray(card?.attachments) ? card.attachments : []
+            return attachments.filter((attachment) =>
+                String(attachment?.attachment_type || '').trim() === 'file'
+                && String(attachment?.download_url || '').trim() !== ''
+            )
+        },
+        attachmentDisplayName(attachment) {
+            const name = String(attachment?.name || '').trim()
+            if (name) return name
+
+            const fallback = String(attachment?.file_path || '').trim()
+            if (fallback) {
+                const parts = fallback.split('/')
+                return parts[parts.length - 1] || 'Datei'
+            }
+
+            return 'Datei'
+        },
         preview(value, limit = 320) {
             const text = String(value || '').trim()
             if (text.length <= limit) return text
@@ -471,6 +1048,96 @@ export default {
     min-width: 260px;
 }
 
+.material-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 8px;
+    align-items: start;
+    row-gap: 6px;
+}
+
+.title-type-inline {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.material-title {
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    word-break: break-word;
+}
+
+.material-type-chip,
+.material-status-chip {
+    max-width: 100%;
+}
+
+.material-status-chip {
+    justify-self: end;
+}
+
+.attachments-count-chip {
+    background-color: #1b4f82 !important;
+    color: #ffffff !important;
+    font-weight: 700;
+    max-width: 100%;
+}
+
+.attachments-count-chip-clickable {
+    cursor: pointer;
+}
+
+.attachment-block {
+    border: 1px solid rgba(31, 95, 191, 0.3);
+    border-radius: 10px;
+    background: rgba(31, 95, 191, 0.08);
+}
+
+.classification-chip,
+.attachment-chip {
+    max-width: min(100%, 360px);
+    font-weight: 600;
+}
+
+.classification-chip :deep(.v-chip__content),
+.attachment-chip :deep(.v-chip__content) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.attachment-chip-wrap {
+    min-width: 0;
+}
+
+.attachment-manage-row {
+    border: 1px solid rgba(40, 58, 80, 0.14);
+    border-radius: 10px;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.75);
+}
+
+.attachment-name-field {
+    min-width: 220px;
+}
+
+.attachment-manage-actions {
+    min-width: 0;
+}
+
+.attachment-meta-text {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.source-link a {
+    word-break: break-all;
+}
+
 .preview-text {
     white-space: pre-wrap;
     word-break: break-word;
@@ -482,10 +1149,51 @@ export default {
 }
 
 @media (max-width: 959px) {
+    :deep(.overview-item.v-list-item) {
+        grid-template-areas:
+            "prepend content"
+            "append append";
+        grid-template-columns: max-content minmax(0, 1fr);
+        align-items: start;
+    }
+
+    :deep(.overview-item .v-list-item__content) {
+        min-width: 0;
+    }
+
+    :deep(.overview-item .v-list-item__append) {
+        grid-area: append;
+        margin-top: 10px;
+        margin-inline-start: 0;
+        width: 100%;
+        justify-self: stretch;
+    }
+
+    .classification-chip,
+    .attachment-chip {
+        max-width: 100%;
+    }
+
     .overview-actions {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        margin-top: 8px;
         width: 100%;
         min-width: 0;
-        margin-top: 8px;
+    }
+
+    .overview-actions :deep(.v-btn) {
+        width: 100%;
+    }
+
+    .attachment-manage-actions {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    }
+
+    .attachment-manage-actions :deep(.v-btn) {
+        width: 100%;
     }
 }
 </style>

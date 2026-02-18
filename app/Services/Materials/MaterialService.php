@@ -14,6 +14,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class MaterialService
@@ -150,13 +151,28 @@ class MaterialService
 
     public function addFileAttachment(MaterialCard $card, UploadedFile $file, ?string $name = null): MaterialCardAttachment
     {
-        $path = $file->store('materials/' . $card->school_id . '/' . $card->user_id, 'local');
+        $path = $file->storeAs(
+            $this->materialAttachmentDirectory($card),
+            $this->materialAttachmentStoredFileName($file),
+            'local'
+        );
+
+        if ($path === false) {
+            throw ValidationException::withMessages([
+                'file' => 'Datei konnte nicht gespeichert werden.',
+            ]);
+        }
+
+        $displayName = $this->normalizeOptionalName($name);
+        if ($displayName === null) {
+            $displayName = mb_substr((string) $file->getClientOriginalName(), 0, 255);
+        }
 
         $attachment = $card->attachments()->create([
             'attachment_type' => MaterialCardAttachment::TYPE_FILE,
-            'name' => $name ?: $file->getClientOriginalName(),
+            'name' => $displayName,
             'file_path' => $path,
-            'mime_type' => $file->getClientMimeType(),
+            'mime_type' => $file->getMimeType() ?: $file->getClientMimeType(),
             'size_bytes' => $file->getSize(),
         ]);
 
@@ -191,6 +207,27 @@ class MaterialService
         if ($card) {
             $this->keywordService->rebuild($card->fresh($this->cardRelations()));
         }
+    }
+
+    public function updateAttachmentName(MaterialCardAttachment $attachment, string $name): MaterialCardAttachment
+    {
+        $normalizedName = $this->normalizeOptionalName($name);
+        if ($normalizedName === null) {
+            throw ValidationException::withMessages([
+                'data.name' => 'Bitte einen Dateititel angeben.',
+            ]);
+        }
+
+        $attachment->update([
+            'name' => $normalizedName,
+        ]);
+
+        $card = $attachment->materialCard()->first();
+        if ($card) {
+            $this->keywordService->rebuild($card->fresh($this->cardRelations()));
+        }
+
+        return $attachment->fresh();
     }
 
     public function typeValuesForUser(User $user): array
@@ -483,5 +520,38 @@ class MaterialService
             && Schema::hasTable('material_topics')
             && Schema::hasTable('material_units')
             && Schema::hasTable('material_card_classifications');
+    }
+
+    private function materialAttachmentDirectory(MaterialCard $card): string
+    {
+        $now = now();
+
+        return implode('/', [
+            'materials',
+            'schools',
+            (string) $card->school_id,
+            'users',
+            (string) $card->user_id,
+            'cards',
+            (string) $card->id,
+            $now->format('Y'),
+            $now->format('m'),
+        ]);
+    }
+
+    private function materialAttachmentStoredFileName(UploadedFile $file): string
+    {
+        $originalBaseName = (string) pathinfo((string) $file->getClientOriginalName(), PATHINFO_FILENAME);
+        $slug = Str::slug($originalBaseName, '-');
+
+        if ($slug === '') {
+            $slug = 'file';
+        }
+
+        $slug = mb_substr($slug, 0, 120);
+        $extension = strtolower((string) $file->getClientOriginalExtension());
+        $suffix = $extension !== '' ? '.' . $extension : '';
+
+        return Str::uuid()->toString() . '-' . $slug . $suffix;
     }
 }
