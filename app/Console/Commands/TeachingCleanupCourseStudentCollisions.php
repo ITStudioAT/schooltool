@@ -15,7 +15,8 @@ class TeachingCleanupCourseStudentCollisions extends Command
 {
     protected $signature = 'teaching:cleanup-course-student-collisions
         {--apply : Persist changes (default is dry-run)}
-        {--course-id=* : Limit cleanup to one or more course ids}';
+        {--course-id=* : Limit cleanup to one or more course ids}
+        {--force-row-id=* : Allow fixing specific row ids even when dependencies exist}';
 
     protected $description = 'Fix wrong TeachingCourseStudent rows caused by numeric ID collisions between users and import116.';
 
@@ -25,10 +26,15 @@ class TeachingCleanupCourseStudentCollisions extends Command
     /** @var array<int, array<int, bool>> */
     private array $workGroupDependencyCache = [];
 
+    /** @var array<int, bool> */
+    private array $forceRowIdSet = [];
+
     public function handle(): int
     {
         $apply = (bool) $this->option('apply');
         $courseIds = array_values(array_unique(array_filter(array_map('intval', (array) $this->option('course-id')), fn (int $id) => $id > 0)));
+        $forceRowIds = array_values(array_unique(array_filter(array_map('intval', (array) $this->option('force-row-id')), fn (int $id) => $id > 0)));
+        $this->forceRowIdSet = array_fill_keys($forceRowIds, true);
 
         $rowsQuery = TeachingCourseStudent::query()
             ->withTrashed()
@@ -57,6 +63,7 @@ class TeachingCleanupCourseStudentCollisions extends Command
 
         $candidates = [];
         $skipped = [];
+        $skippedDetails = [];
 
         foreach ($rows as $row) {
             [$isCandidate, $reason, $context] = $this->evaluateRow($row, $importsById->get((int) $row->user_id));
@@ -65,6 +72,10 @@ class TeachingCleanupCourseStudentCollisions extends Command
                 $candidates[] = $context;
             } else {
                 $skipped[] = $reason;
+                $skippedDetails[] = [
+                    'reason' => $reason,
+                    'context' => $context,
+                ];
             }
         }
 
@@ -73,6 +84,9 @@ class TeachingCleanupCourseStudentCollisions extends Command
         $this->line('Checked rows: '.$rows->count());
         $this->line('Candidate fixes: '.count($candidates));
         $this->line('Skipped rows: '.count($skipped));
+        if (! empty($forceRowIds)) {
+            $this->line('Force row ids: '.implode(', ', $forceRowIds));
+        }
 
         if (! empty($skipped)) {
             $reasonCounts = array_count_values($skipped);
@@ -80,6 +94,30 @@ class TeachingCleanupCourseStudentCollisions extends Command
             foreach ($reasonCounts as $reason => $count) {
                 $this->line("  - {$reason}: {$count}");
             }
+        }
+
+        $dependentRows = array_values(array_filter($skippedDetails, function (array $item): bool {
+            return $item['reason'] === 'dependent_records_exist' && is_array($item['context']) && ! empty($item['context']);
+        }));
+
+        if (! empty($dependentRows)) {
+            $this->line('Blocked by dependencies:');
+            $this->table(
+                ['row_id', 'course_id', 'course', 'old_user', 'new_import', 'dependencies', 'state'],
+                array_map(function (array $item) {
+                    $ctx = $item['context'];
+
+                    return [
+                        'row_id' => $ctx['row_id'] ?? '',
+                        'course_id' => $ctx['course_id'] ?? '',
+                        'course' => $ctx['course_title'] ?? '',
+                        'old_user' => $ctx['old_user'] ?? '',
+                        'new_import' => $ctx['new_import'] ?? '',
+                        'dependencies' => $ctx['dependencies'] ?? '',
+                        'state' => $ctx['row_state'] ?? '',
+                    ];
+                }, $dependentRows)
+            );
         }
 
         if (empty($candidates)) {
@@ -94,12 +132,13 @@ class TeachingCleanupCourseStudentCollisions extends Command
                 'course' => $candidate['course_title'],
                 'old_user' => $candidate['old_user'],
                 'new_import' => $candidate['new_import'],
+                'dependencies' => $candidate['dependencies'] ?? '',
                 'state' => $candidate['row_state'],
             ];
         }, $candidates);
 
         $this->table(
-            ['row_id', 'course_id', 'course', 'old_user', 'new_import', 'state'],
+            ['row_id', 'course_id', 'course', 'old_user', 'new_import', 'dependencies', 'state'],
             $previewRows
         );
 
@@ -156,6 +195,16 @@ class TeachingCleanupCourseStudentCollisions extends Command
             return [false, 'no_import_with_same_id', []];
         }
 
+        $baseContext = [
+            'row_id' => (int) $row->id,
+            'course_id' => (int) $course->id,
+            'course_title' => (string) ($course->title ?? ''),
+            'import_id' => (int) $import->id,
+            'old_user' => $this->formatPerson((int) $user->id, $user->first_name, $user->last_name, $user->schoolclass),
+            'new_import' => $this->formatPerson((int) $import->id, $import->first_name, $import->last_name, $import->class),
+            'row_state' => $row->deleted_at ? 'soft-deleted' : 'active',
+        ];
+
         if ((int) $import->school_id !== (int) $course->school_id) {
             return [false, 'import_school_mismatch', []];
         }
@@ -180,11 +229,19 @@ class TeachingCleanupCourseStudentCollisions extends Command
         }
 
         if ($this->hasProtectedCourseStudentData($row)) {
-            return [false, 'row_has_course_student_data', []];
+            return [false, 'row_has_course_student_data', $baseContext];
         }
 
-        if ($this->hasDependentRecords((int) $row->teaching_course_id, (int) $row->user_id)) {
-            return [false, 'dependent_records_exist', []];
+        $dependencyKinds = $this->dependentRecordKinds((int) $row->teaching_course_id, (int) $row->user_id);
+        if (! empty($dependencyKinds)) {
+            $baseContext['dependencies'] = implode(', ', $dependencyKinds);
+
+            if (! isset($this->forceRowIdSet[(int) $row->id])) {
+                return [false, 'dependent_records_exist', $baseContext];
+            }
+
+            $baseContext['forced'] = true;
+            $baseContext['row_state'] = ($row->deleted_at ? 'soft-deleted' : 'active').' (forced)';
         }
 
         $duplicateImportRowExists = TeachingCourseStudent::query()
@@ -195,18 +252,10 @@ class TeachingCleanupCourseStudentCollisions extends Command
             ->exists();
 
         if ($duplicateImportRowExists) {
-            return [false, 'duplicate_import_row_exists', []];
+            return [false, 'duplicate_import_row_exists', $baseContext];
         }
 
-        return [true, 'candidate', [
-            'row_id' => (int) $row->id,
-            'course_id' => (int) $course->id,
-            'course_title' => (string) ($course->title ?? ''),
-            'import_id' => (int) $import->id,
-            'old_user' => $this->formatPerson((int) $user->id, $user->first_name, $user->last_name, $user->schoolclass),
-            'new_import' => $this->formatPerson((int) $import->id, $import->first_name, $import->last_name, $import->class),
-            'row_state' => $row->deleted_at ? 'soft-deleted' : 'active',
-        ]];
+        return [true, 'candidate', $baseContext];
     }
 
     private function formatPerson(int $id, ?string $firstName, ?string $lastName, ?string $class): string
@@ -262,29 +311,43 @@ class TeachingCleanupCourseStudentCollisions extends Command
 
     private function hasDependentRecords(int $courseId, int $userId): bool
     {
+        return ! empty($this->dependentRecordKinds($courseId, $userId));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function dependentRecordKinds(int $courseId, int $userId): array
+    {
         if ($courseId <= 0 || $userId <= 0) {
-            return false;
+            return [];
         }
+
+        $kinds = [];
 
         if (TeachingCourseStudentEntry::query()
             ->where('teaching_course_id', $courseId)
             ->where('user_id', $userId)
             ->exists()) {
-            return true;
+            $kinds[] = 'student_entries';
         }
 
         if (TeachingCourseBehaviourEntry::query()
             ->where('teaching_course_id', $courseId)
             ->where('user_id', $userId)
             ->exists()) {
-            return true;
+            $kinds[] = 'behaviour_entries';
         }
 
         if ($this->courseAttendanceDependsOnUser($courseId, $userId)) {
-            return true;
+            $kinds[] = 'attendance';
         }
 
-        return $this->courseWorkGroupsDependOnUser($courseId, $userId);
+        if ($this->courseWorkGroupsDependOnUser($courseId, $userId)) {
+            $kinds[] = 'work_groups';
+        }
+
+        return $kinds;
     }
 
     private function courseAttendanceDependsOnUser(int $courseId, int $userId): bool
@@ -403,4 +466,3 @@ class TeachingCleanupCourseStudentCollisions extends Command
         return $id > 0 ? $id : null;
     }
 }
-
