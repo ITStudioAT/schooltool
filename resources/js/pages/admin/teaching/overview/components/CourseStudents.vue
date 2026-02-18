@@ -67,6 +67,17 @@
                             {{ attendanceCheckedForSelectedDate && !hasUnsavedAttendanceChanges ? 'Anwesenheit geprüft' : 'Anwesenheit speichern & prüfen' }}
                         </v-btn>
                         <v-btn
+                            v-if="selectedCourseDateForCourse"
+                            size="small"
+                            class="students-overview-toggle-btn"
+                            :variant="isDayOverviewMode ? 'flat' : 'outlined'"
+                            :color="isDayOverviewMode ? 'secondary' : 'primary'"
+                            @click="toggleStudentsViewMode">
+                            <v-icon start>{{ isDayOverviewMode ? 'mdi-account-group' : 'mdi-view-list' }}</v-icon>
+                            {{ isDayOverviewMode ? 'Schülerliste' : 'Tagesübersicht' }}
+                        </v-btn>
+                        <v-btn
+                            v-if="!isDayOverviewMode"
                             size="small"
                             class="students-bulk-btn"
                             :variant="show_bulk_entry ? 'flat' : 'outlined'"
@@ -75,7 +86,7 @@
                             {{ show_bulk_entry ? 'Sammelaktion schließen' : 'Sammelaktion' }}
                         </v-btn>
                     </v-card-title>
-                    <v-card-text v-if="show_bulk_entry" class="pt-0">
+                    <v-card-text v-if="show_bulk_entry && !isDayOverviewMode" class="pt-0">
                         <v-card variant="outlined" class="pa-3">
                             <div class="text-caption text-medium-emphasis mb-2">Eintrag für mehrere Schüler:innen</div>
                             <v-form ref="bulkEntryForm" @submit.prevent="saveBulkEntry">
@@ -102,7 +113,7 @@
                         </v-card>
                     </v-card-text>
                     <v-divider />
-                    <v-card-text class="pa-0">
+                    <v-card-text class="pa-0" v-if="!isDayOverviewMode">
                         <v-list density="compact">
                             <v-list-item
                                 v-for="student in sortedSelectedStudents"
@@ -172,6 +183,44 @@
                             </v-list-item>
                         </v-list>
                     </v-card-text>
+                    <v-card-text class="pa-0" v-else>
+                        <v-list density="compact">
+                            <v-list-item v-for="item in dayOverviewStudents" :key="`day-overview-${item.student.id}`">
+                                <div class="d-flex flex-column ga-2 w-100 py-1">
+                                    <div class="d-flex align-center ga-2 flex-wrap">
+                                        <v-chip v-if="item.student.schoolclass || item.student.class" size="x-small" variant="tonal" color="primary">
+                                            {{ item.student.schoolclass || item.student.class }}
+                                        </v-chip>
+                                        <div class="text-body-2 font-weight-medium">
+                                            {{ item.student.last_name }}, {{ item.student.first_name }}
+                                        </div>
+                                        <v-chip size="x-small" variant="tonal" color="secondary">{{ item.entries.length }} Eintrag{{ item.entries.length === 1 ? '' : 'e' }}</v-chip>
+                                    </div>
+                                    <div class="d-flex flex-wrap ga-1">
+                                        <v-chip
+                                            v-for="entry in item.entries"
+                                            :key="entry.uid"
+                                            size="x-small"
+                                            :color="dayEntryColor(entry)"
+                                            variant="tonal">
+                                            {{ dayEntryLabel(entry) }}
+                                        </v-chip>
+                                    </div>
+                                    <div class="d-flex flex-column ga-1" v-if="item.entries.some((entry) => !!entry.description)">
+                                        <div class="text-caption text-medium-emphasis" v-for="entry in item.entries.filter((e) => !!e.description)" :key="`${entry.uid}-description`">
+                                            <strong>{{ dayEntryShortLabel(entry) }}:</strong> {{ entry.description }}
+                                        </div>
+                                    </div>
+                                </div>
+                            </v-list-item>
+                            <v-list-item v-if="!selectedCourseDateForCourse">
+                                <v-list-item-title class="text-caption text-medium-emphasis">Bitte zuerst ein Datum auswählen.</v-list-item-title>
+                            </v-list-item>
+                            <v-list-item v-else-if="!dayOverviewStudents.length">
+                                <v-list-item-title class="text-caption text-medium-emphasis">Keine Einträge für den ausgewählten Tag.</v-list-item-title>
+                            </v-list-item>
+                        </v-list>
+                    </v-card-text>
                 </v-card>
             </v-card-text>
         </v-card>
@@ -210,6 +259,12 @@ export default {
             await this.teachingStore.loadSettings()
         }
         this.activeSemester = Number(this.config?.user?.teaching_active_semester) || 1
+        if (this.selected_course?.id) {
+            await Promise.allSettled([
+                this.behaviourEntryStore.indexByCourse(this.selected_course.id),
+                this.entryStore.indexByCourse(this.selected_course.id),
+            ])
+        }
     },
 
     unmounted() {},
@@ -230,6 +285,7 @@ export default {
 
             delete_level: 0,
             show_bulk_entry: false,
+            students_view_mode: 'students',
             bulk_entry_form: this.emptyBulkEntryForm(),
             activeSemester: null,
             presence_date_id: null,
@@ -420,12 +476,66 @@ export default {
             const list = this.selected_course?.students_info || []
             return list.filter((student) => !this.isStudentCanceled(student)).length
         },
+        isDayOverviewMode() {
+            return this.students_view_mode === 'day_overview'
+        },
         selectedCourseDateForCourse() {
             const selectedDate = this.selected_courseDate
             const selectedCourse = this.selected_course
             if (!selectedDate?.id || !selectedCourse?.id) return null
             const exists = (selectedCourse.course_dates || []).some((d) => String(d?.id) === String(selectedDate.id))
             return exists ? selectedDate : null
+        },
+        selectedCourseDateKey() {
+            return this.normalizeDateKey(this.selectedCourseDateForCourse?.date)
+        },
+        dayOverviewStudents() {
+            const dateKey = this.selectedCourseDateKey
+            if (!dateKey) return []
+
+            const entriesByStudent = {}
+            const studentEntries = this.entryStore?.courseEntries || []
+            const behaviourEntries = this.behaviourEntryStore?.courseEntries || []
+
+            studentEntries.forEach((entry) => {
+                if (!entry?.user_id || this.normalizeDateKey(entry.date) !== dateKey) return
+                if (!entriesByStudent[entry.user_id]) entriesByStudent[entry.user_id] = []
+                entriesByStudent[entry.user_id].push({
+                    uid: `se-${entry.id}`,
+                    kind: 'student_entry',
+                    type: entry.type,
+                    grade: entry.grade,
+                    description: entry.description,
+                    source: entry.source || 'manual',
+                })
+            })
+
+            behaviourEntries.forEach((entry) => {
+                if (!entry?.user_id || this.normalizeDateKey(entry.date) !== dateKey) return
+                if (!entriesByStudent[entry.user_id]) entriesByStudent[entry.user_id] = []
+                entriesByStudent[entry.user_id].push({
+                    uid: `be-${entry.id}`,
+                    kind: entry.kind || 'behaviour',
+                    type: entry.type,
+                    description: entry.description,
+                    due_date: entry.due_date,
+                    done_date: entry.done_date,
+                })
+            })
+
+            return this.sortedSelectedStudents
+                .map((student) => ({
+                    student,
+                    entries: (entriesByStudent[student.id] || []).sort((a, b) => {
+                        const kindA = a.kind || ''
+                        const kindB = b.kind || ''
+                        if (kindA !== kindB) return kindA.localeCompare(kindB)
+                        const typeA = (a.type || '').toString()
+                        const typeB = (b.type || '').toString()
+                        return typeA.localeCompare(typeB, 'de', { sensitivity: 'base' })
+                    }),
+                }))
+                .filter((item) => item.entries.length > 0)
         },
         sortedCourseDates() {
             const dates = Array.isArray(this.selected_course?.course_dates) ? [...this.selected_course.course_dates] : []
@@ -489,6 +599,7 @@ export default {
             handler(course) {
                 if (course?.id) {
                     this.behaviourEntryStore.indexByCourse(course.id)
+                    this.entryStore.indexByCourse(course.id)
                     if (this.selected_courseDate?.id) {
                         const dates = Array.isArray(course.course_dates) ? [...course.course_dates] : []
                         const idx = dates.findIndex((d) => String(d?.id) === String(this.selected_courseDate.id))
@@ -504,15 +615,20 @@ export default {
                     }
                 } else {
                     this.behaviourEntryStore.courseEntries = []
+                    this.entryStore.courseEntries = []
                     this.selected_courseDate = null
                     this.presence_date_id = null
                     this.presence_by_student = {}
+                    this.students_view_mode = 'students'
                 }
             },
         },
         selected_courseDate: {
             handler(val, oldVal) {
-                if (!val?.id) return
+                if (!val?.id) {
+                    this.students_view_mode = 'students'
+                    return
+                }
                 this.syncPresenceMapFromDate(val)
                 // Clear unsaved flag only when switching to a different date
                 if (String(val.id) !== String(oldVal?.id)) {
@@ -561,6 +677,47 @@ export default {
             if (this.show_bulk_entry) {
                 this.bulk_entry_form = this.emptyBulkEntryForm()
             }
+        },
+        toggleStudentsViewMode() {
+            if (!this.selectedCourseDateForCourse) {
+                this.students_view_mode = 'students'
+                return
+            }
+            this.students_view_mode = this.isDayOverviewMode ? 'students' : 'day_overview'
+            if (this.students_view_mode === 'day_overview') {
+                this.show_bulk_entry = false
+            }
+        },
+        dayEntryShortLabel(entry) {
+            if (!entry) return 'Eintrag'
+            if (entry.kind === 'student_entry') return 'Leistung'
+            if (entry.kind === 'notification') return 'Erinnerung'
+            if (entry.kind === 'behaviour') return 'Verhalten'
+            return 'Eintrag'
+        },
+        dayEntryLabel(entry) {
+            if (!entry) return ''
+            const base = entry.type ? `${this.dayEntryShortLabel(entry)}: ${entry.type}` : this.dayEntryShortLabel(entry)
+
+            if (entry.kind === 'student_entry' && entry.grade) {
+                return `${base} (${entry.grade})`
+            }
+
+            if (entry.kind === 'notification') {
+                const due = this.normalizeDateKey(entry.due_date)
+                const done = this.normalizeDateKey(entry.done_date)
+                if (done) return `${base} (erledigt)`
+                if (due) return `${base} (fällig ${this.formatDate(due)})`
+            }
+
+            return base
+        },
+        dayEntryColor(entry) {
+            if (!entry) return 'primary'
+            if (entry.kind === 'student_entry') return 'success'
+            if (entry.kind === 'notification') return entry.done_date ? 'success' : 'warning'
+            if (entry.kind === 'behaviour') return 'warning'
+            return 'primary'
         },
         cancelBulkEntry() {
             this.show_bulk_entry = false

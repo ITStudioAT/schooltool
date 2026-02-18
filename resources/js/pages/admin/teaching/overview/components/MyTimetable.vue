@@ -43,6 +43,13 @@
                             <v-list-item v-for="item in filteredItems" :key="item.key" class="cursor-pointer pa-0" @click="openCourse(item)">
                                 <div :class="['d-flex flex-column ga-2 w-100 pa-3', getStatusClass(item)]" :style="getDateBackgroundStyle(item)">
                                     <div class="d-flex flex-wrap align-center ga-2 w-100">
+                                        <v-icon
+                                            v-if="isAttendanceChecked(item)"
+                                            size="16"
+                                            color="success"
+                                            title="Anwesenheit geprüft">
+                                            mdi-check-circle
+                                        </v-icon>
                                         <v-chip size="x-small" variant="tonal" color="primary">{{ formatWeekdayDate(item.date) }}</v-chip>
                                         <v-chip size="x-small" variant="outlined" color="primary">{{ item.hoursLabel }}</v-chip>
                                         <v-chip size="x-small" variant="outlined">{{ item.classLabel }}</v-chip>
@@ -141,6 +148,9 @@ export default {
                             content: (courseDate?.content || '').toString().trim(),
                             freeReason: (courseDate?.free_reason || '').toString().trim(),
                             status,
+                            attendanceChecked: typeof courseDate?.attendance_checked === 'boolean'
+                                ? courseDate.attendance_checked
+                                : status.includes('att_checked:1'),
                         }
                     })
                 })
@@ -392,6 +402,12 @@ export default {
             const status = Array.isArray(item?.status) ? item.status : []
             const statusStr = status.join(' ').toLowerCase()
             return statusStr.includes('frei') || statusStr.includes('free')
+        },
+        isAttendanceChecked(item) {
+            if (!item) return false
+            if (typeof item.attendanceChecked === 'boolean') return item.attendanceChecked
+            const status = Array.isArray(item?.status) ? item.status : []
+            return status.includes('att_checked:1')
         },
     },
 }

@@ -285,7 +285,7 @@ export default {
             activeSemester: null,
             is_valid: false,
             delete_date_id: null,
-            show_contents: false,
+            show_contents: true,
             collapsed_content_ids: [],
             expanded_content_ids: [],
             editing_content_id: null,

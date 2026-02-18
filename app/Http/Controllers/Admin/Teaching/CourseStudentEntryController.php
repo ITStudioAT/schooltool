@@ -20,7 +20,7 @@ class CourseStudentEntryController extends Controller
 
         $validated = $request->validate([
             'course_id' => 'required|integer|exists:teaching_courses,id',
-            'user_id' => 'required|integer|exists:users,id',
+            'user_id' => 'nullable|integer|exists:users,id',
         ]);
 
         $course = TeachingCourse::findOrFail($validated['course_id']);
@@ -28,13 +28,17 @@ class CourseStudentEntryController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $student = User::findOrFail($validated['user_id']);
-        if ($student->school_id !== $auth_user->school_id) {
-            abort(403, 'Sie haben keine Berechtigung');
+        $query = TeachingCourseStudentEntry::where('teaching_course_id', $course->id);
+
+        if (! empty($validated['user_id'])) {
+            $student = User::findOrFail($validated['user_id']);
+            if ($student->school_id !== $auth_user->school_id) {
+                abort(403, 'Sie haben keine Berechtigung');
+            }
+            $query->where('user_id', $student->id);
         }
 
-        $entries = TeachingCourseStudentEntry::where('teaching_course_id', $course->id)
-            ->where('user_id', $student->id)
+        $entries = $query
             ->orderBy('date', 'desc')
             ->orderBy('id', 'desc')
             ->get();
