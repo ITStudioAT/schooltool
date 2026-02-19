@@ -197,7 +197,7 @@
                 </div>
 
                 <template #append>
-                    <div class="overview-actions d-flex flex-wrap justify-end ga-2">
+                    <div class="overview-actions d-flex flex-column align-end ga-2">
                         <v-btn
                             size="small"
                             color="primary"
@@ -206,6 +206,16 @@
                             :disabled="isLoading || isDeletingId !== null || isSavingEdit"
                             @click="openDetailDialog(card)">
                             Detail
+                        </v-btn>
+
+                        <v-btn
+                            size="small"
+                            color="primary"
+                            variant="flat"
+                            prepend-icon="mdi-pencil-outline"
+                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                            @click="openEditDialog(card)">
+                            Bearbeiten
                         </v-btn>
                     </div>
                 </template>
@@ -230,28 +240,10 @@
             </div>
 
             <v-card-text>
-                <div class="attachment-upload-row d-flex flex-column flex-md-row align-md-start ga-2 mb-4">
-                    <v-text-field
-                        v-model="attachmentUploadTitle"
-                        label="Titel (optional)"
-                        variant="outlined"
-                        density="comfortable"
-                        hide-details="auto"
-                        class="attachment-upload-title-field flex-grow-1"
-                        :disabled="attachmentDialogBusy"
-                        @keyup.enter="openAttachmentFilePicker" />
-
-                    <v-btn
-                        color="primary"
-                        variant="tonal"
-                        prepend-icon="mdi-file-plus-outline"
-                        :disabled="attachmentDialogBusy || !csrfToken"
-                        @click="openAttachmentFilePicker">
-                        Datei auswählen
-                    </v-btn>
-                </div>
-
-                <div class="attachment-pond-wrap mb-3">
+                <div
+                    class="attachment-pond-wrap mb-3"
+                    @dragover.capture="onAttachmentDragOver"
+                    @drop.capture="onAttachmentDrop">
                     <file-pond
                         v-if="csrfToken"
                         ref="attachmentPond"
@@ -280,8 +272,11 @@
                     </v-alert>
                 </div>
 
-                <div class="text-caption text-medium-emphasis mb-3">
+                <div class="text-caption text-medium-emphasis mb-1">
                     Maximale Uploadgröße je Datei: {{ maxUploadSizeLabel }}
+                </div>
+                <div class="text-caption text-medium-emphasis mb-3">
+                    Du kannst auch einen Web-Link oder ein Web-Bild hierher ziehen.
                 </div>
 
                 <v-alert v-if="!attachmentRows.length" type="info" variant="tonal" class="mb-0">
@@ -688,7 +683,6 @@ export default {
             attachmentDialogCardId: null,
             attachmentDialogCardTitle: '',
             attachmentRows: [],
-            attachmentUploadTitle: '',
             isUploadingAttachment: false,
             csrfToken: null,
             subjectFilter: '',
@@ -987,12 +981,237 @@ export default {
             const base = dot > 0 ? normalized.slice(0, dot) : normalized
             return base.slice(0, 255) || 'Datei'
         },
+        normalizeUrl(value) {
+            const raw = String(value ?? '').trim()
+            if (!raw) return ''
+
+            try {
+                const parsed = new URL(raw)
+                const protocol = String(parsed.protocol || '').toLowerCase()
+                if (protocol !== 'http:' && protocol !== 'https:') {
+                    return ''
+                }
+
+                return String(parsed.href || '').trim().slice(0, 2048)
+            } catch {
+                return ''
+            }
+        },
+        defaultLinkTitle(url) {
+            const normalizedUrl = this.normalizeUrl(url)
+            if (!normalizedUrl) return 'Link'
+
+            try {
+                const parsed = new URL(normalizedUrl)
+                const lastPath = decodeURIComponent(
+                    parsed.pathname
+                        .split('/')
+                        .filter((segment) => segment !== '')
+                        .pop() || ''
+                )
+                if (lastPath) {
+                    return this.defaultAttachmentTitle(lastPath)
+                }
+
+                const host = String(parsed.hostname || '').replace(/^www\./i, '')
+                return String(host || 'Link').slice(0, 255)
+            } catch {
+                return 'Link'
+            }
+        },
+        extractUrlsFromText(text) {
+            const raw = String(text || '').trim()
+            if (!raw) return []
+
+            const matches = raw.match(/https?:\/\/[^\s<>"'`]+/gi)
+            return Array.isArray(matches) ? matches : []
+        },
+        extractUrlsFromHtml(html) {
+            const raw = String(html || '').trim()
+            if (!raw) return []
+
+            try {
+                const parser = new DOMParser()
+                const doc = parser.parseFromString(raw, 'text/html')
+                const urls = []
+
+                doc.querySelectorAll('a[href], img[src]').forEach((node) => {
+                    if (node instanceof HTMLAnchorElement) {
+                        urls.push(node.getAttribute('href') || '')
+                        return
+                    }
+                    if (node instanceof HTMLImageElement) {
+                        urls.push(node.getAttribute('src') || '')
+                    }
+                })
+
+                return urls.map((entry) => String(entry || '').trim()).filter((entry) => entry !== '')
+            } catch {
+                return []
+            }
+        },
+        extractDropUrls(dataTransfer) {
+            const dt = dataTransfer
+            if (!dt) return []
+
+            const candidates = []
+            const uriList = String(dt.getData?.('text/uri-list') || '').trim()
+            if (uriList) {
+                uriList
+                    .split('\n')
+                    .map((line) => line.trim())
+                    .filter((line) => line !== '' && !line.startsWith('#'))
+                    .forEach((line) => candidates.push(line))
+            }
+
+            const plain = String(dt.getData?.('text/plain') || '').trim()
+            this.extractUrlsFromText(plain).forEach((url) => candidates.push(url))
+
+            const html = String(dt.getData?.('text/html') || '').trim()
+            this.extractUrlsFromHtml(html).forEach((url) => candidates.push(url))
+
+            const result = []
+            const seen = new Set()
+
+            for (const candidate of candidates) {
+                const normalized = this.normalizeUrl(candidate)
+                if (!normalized) continue
+                const key = normalized.toLocaleLowerCase()
+                if (seen.has(key)) continue
+                seen.add(key)
+                result.push(normalized)
+            }
+
+            const imageUrls = result.filter((url) => this.isLikelyImageUrl(url))
+            if (imageUrls.length > 0) {
+                return imageUrls
+            }
+
+            return result
+        },
+        isLikelyImageUrl(url) {
+            const normalized = this.normalizeUrl(url)
+            if (!normalized) return false
+
+            try {
+                const parsed = new URL(normalized)
+                const path = String(parsed.pathname || '').toLocaleLowerCase()
+                return /\.(png|jpe?g|gif|webp|svg|bmp|tiff?|avif|heic)$/i.test(path)
+            } catch {
+                return false
+            }
+        },
+        onAttachmentDragOver(event) {
+            const dt = event?.dataTransfer
+            if (!dt) return
+
+            const hasFiles = (dt.files && dt.files.length > 0)
+                || Array.from(dt.items || []).some((item) => item?.kind === 'file')
+            if (hasFiles) return
+
+            const urls = this.extractDropUrls(dt)
+            if (urls.length > 0 && typeof event.preventDefault === 'function') {
+                event.preventDefault()
+            }
+        },
+        async onAttachmentDrop(event) {
+            const dt = event?.dataTransfer
+            if (!dt) return
+
+            const hasFiles = (dt.files && dt.files.length > 0)
+                || Array.from(dt.items || []).some((item) => item?.kind === 'file')
+            if (hasFiles) return
+
+            if (typeof event.preventDefault === 'function') {
+                event.preventDefault()
+            }
+            if (typeof event.stopPropagation === 'function') {
+                event.stopPropagation()
+            }
+
+            if (this.attachmentDialogBusy) return
+
+            const cardId = Number(this.attachmentDialogCardId)
+            if (!Number.isFinite(cardId) || cardId <= 0) return
+
+            const urls = this.extractDropUrls(dt)
+            if (!urls.length) return
+
+            const knownLinks = new Set(
+                this.attachmentRows
+                    .filter((row) => String(row?.attachment_type || '').trim().toLocaleLowerCase() === 'link')
+                    .map((row) => this.normalizeUrl(row?.url).toLocaleLowerCase())
+                    .filter((url) => url !== '')
+            )
+
+            let changed = false
+            this.isUploadingAttachment = true
+
+            try {
+                for (const url of urls) {
+                    const normalizedUrl = this.normalizeUrl(url)
+                    if (!normalizedUrl) continue
+
+                    const key = normalizedUrl.toLocaleLowerCase()
+                    if (knownLinks.has(key)) continue
+                    knownLinks.add(key)
+
+                    const attachmentTitle = this.defaultLinkTitle(normalizedUrl)
+                    const linkAdded = await this.materialCardStore.addLinkAttachment(cardId, {
+                        url: normalizedUrl,
+                        name: attachmentTitle,
+                    })
+
+                    if (!linkAdded) continue
+                    changed = true
+
+                    if (this.isLikelyImageUrl(normalizedUrl)) {
+                        const imageStored = await this.materialCardStore.addImageUrlAttachment(
+                            cardId,
+                            normalizedUrl,
+                            attachmentTitle
+                        )
+                        if (imageStored) {
+                            changed = true
+                        }
+                    }
+                }
+
+                if (changed) {
+                    await this.refreshAttachmentDialogCard(cardId)
+                }
+            } finally {
+                this.isUploadingAttachment = false
+                this.clearAttachmentPondFiles()
+            }
+        },
         toPendingAttachments(value) {
             const input = Array.isArray(value) ? value : []
             const result = []
 
             for (let index = 0; index < input.length; index += 1) {
                 const item = input[index]
+                const attachmentType = String(item?.attachmentType || '').trim().toLocaleLowerCase()
+                const linkUrl = this.normalizeUrl(item?.url)
+                if ((attachmentType === 'link' || linkUrl) && linkUrl) {
+                    const rawTitle = String(item?.title || '').trim()
+                    const source = String(item?.source || '').trim()
+                    const key = String(item?.key || '') || `link|${linkUrl}|${index}`
+
+                    result.push({
+                        attachmentType: 'link',
+                        tempUpload: '',
+                        file: null,
+                        fileName: '',
+                        title: rawTitle || this.defaultLinkTitle(linkUrl),
+                        url: linkUrl,
+                        storeImageFile: item?.storeImageFile === true,
+                        source: source || 'link',
+                        key,
+                    })
+                    continue
+                }
+
                 const tempUpload = String(item?.tempUpload || '').trim()
                 if (tempUpload) {
                     const fileName = String(item?.fileName || '').trim() || `Datei ${index + 1}`
@@ -1001,10 +1220,13 @@ export default {
                     const key = String(item?.key || '') || `temp|${tempUpload}|${index}`
 
                     result.push({
+                        attachmentType: 'file',
                         tempUpload,
                         file: null,
                         fileName,
                         title: rawTitle || this.defaultAttachmentTitle(fileName),
+                        url: '',
+                        storeImageFile: false,
                         source: source || 'filepond',
                         key,
                     })
@@ -1020,10 +1242,13 @@ export default {
                 const key = String(item instanceof File ? '' : item?.key || '') || `${fileName}|${file.size}|${file.lastModified}|${index}`
 
                 result.push({
+                    attachmentType: 'file',
                     tempUpload: '',
                     file,
                     fileName,
                     title: rawTitle || this.defaultAttachmentTitle(fileName),
+                    url: '',
+                    storeImageFile: false,
                     source: source || 'manual',
                     key,
                 })
@@ -1270,6 +1495,20 @@ export default {
             if (updated) {
                 const pendingAttachments = this.toPendingAttachments(this.editForm.pendingAttachments)
                 for (const attachment of pendingAttachments) {
+                    if (attachment.attachmentType === 'link' && this.normalizeUrl(attachment.url)) {
+                        const normalizedUrl = this.normalizeUrl(attachment.url)
+                        const normalizedName = this.toNullable(attachment.title) || this.defaultLinkTitle(attachment.url)
+                        await this.materialCardStore.addLinkAttachment(this.editForm.id, {
+                            url: normalizedUrl,
+                            name: normalizedName,
+                        })
+
+                        if (attachment.storeImageFile === true) {
+                            await this.materialCardStore.addImageUrlAttachment(this.editForm.id, normalizedUrl, normalizedName)
+                        }
+                        continue
+                    }
+
                     if (attachment.tempUpload) {
                         await this.materialCardStore.addTempFileAttachment(
                             this.editForm.id,
@@ -1292,7 +1531,7 @@ export default {
             this.isSavingEdit = false
 
             if (updated) {
-                await this.closeEditDialog(false)
+                await this.closeEditDialog(true)
                 await this.loadCards()
             }
         },
@@ -1494,7 +1733,6 @@ export default {
             this.attachmentDialogCardId = Number(card?.id) || null
             this.attachmentDialogCardTitle = String(card?.title || '').trim()
             this.attachmentRows = this.toAttachmentRows(card?.attachments)
-            this.attachmentUploadTitle = ''
             this.isUploadingAttachment = false
             this.attachmentDialogOpen = true
         },
@@ -1504,17 +1742,10 @@ export default {
             this.attachmentDialogCardId = null
             this.attachmentDialogCardTitle = ''
             this.attachmentRows = []
-            this.attachmentUploadTitle = ''
             this.isUploadingAttachment = false
             this.savingAttachmentIds = []
             this.deletingAttachmentIds = []
             this.clearAttachmentPondFiles()
-        },
-        openAttachmentFilePicker() {
-            const pond = this.$refs.attachmentPond
-            if (pond && typeof pond.browse === 'function') {
-                pond.browse()
-            }
         },
         clearAttachmentPondFiles() {
             const pond = this.$refs.attachmentPond
@@ -1577,7 +1808,7 @@ export default {
             }
 
             const fileName = String(fileItem?.filename || fileItem?.file?.name || '').trim() || 'Datei'
-            const title = this.normalizeAttachmentName(this.attachmentUploadTitle) || this.defaultAttachmentTitle(fileName)
+            const title = this.defaultAttachmentTitle(fileName)
 
             this.isUploadingAttachment = true
             try {
@@ -1588,7 +1819,6 @@ export default {
                 }
 
                 await this.refreshAttachmentDialogCard(cardId)
-                this.attachmentUploadTitle = ''
             } finally {
                 this.isUploadingAttachment = false
                 const pond = this.$refs.attachmentPond
@@ -1952,6 +2182,10 @@ export default {
 
 .overview-actions {
     min-width: 140px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
 }
 
 .material-header {
@@ -2024,10 +2258,6 @@ export default {
     background: rgba(255, 255, 255, 0.75);
 }
 
-.attachment-upload-title-field {
-    min-width: 220px;
-}
-
 .attachment-name-field {
     min-width: 220px;
 }
@@ -2090,11 +2320,12 @@ export default {
     }
 
     .overview-actions {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
         margin-top: 8px;
         width: 100%;
         min-width: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
     }
 
     .overview-actions :deep(.v-btn) {
@@ -2111,8 +2342,5 @@ export default {
         width: 100%;
     }
 
-    .attachment-upload-row :deep(.v-btn) {
-        width: 100%;
-    }
 }
 </style>

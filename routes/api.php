@@ -226,6 +226,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::put('/admin/materials/cards/{material_card}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'update']);
         Route::delete('/admin/materials/cards/{material_card}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'destroy']);
         Route::post('/admin/materials/cards/{material_card}/attachments/link', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'storeLinkAttachment']);
+        Route::post('/admin/materials/cards/{material_card}/attachments/image-url', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'storeRemoteImageAttachment']);
         Route::post('/admin/materials/cards/{material_card}/attachments/file', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'storeFileAttachment']);
         Route::post('/admin/materials/cards/{material_card}/attachments/file-temp', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'storeTempFileAttachment']);
         Route::patch('/admin/materials/attachments/{material_card_attachment}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'updateAttachment']);

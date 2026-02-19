@@ -425,6 +425,51 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             }
         },
 
+        async addImageUrlAttachment(cardId, url, name = '') {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const normalizedUrl = String(url ?? '').trim().slice(0, 2048)
+            const normalizedName = String(name ?? '').trim().slice(0, 255)
+
+            if (!normalizedUrl) {
+                notification.notify({
+                    message: 'Ungültige Bild-URL.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return false
+            }
+
+            adminStore.is_loading++
+            try {
+                await axios.post('/api/admin/materials/cards/' + cardId + '/attachments/image-url', {
+                    data: {
+                        url: normalizedUrl,
+                        name: normalizedName || null,
+                    },
+                })
+
+                notification.notify({
+                    message: 'Bild-Anhang hinzugefügt.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                await this.show(cardId)
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Importieren des Bildes.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
         async addFileAttachment(cardId, file, name = '') {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()

@@ -266,7 +266,10 @@
                 </v-btn>
             </div>
 
-            <div class="mt-3">
+            <div
+                class="mt-3"
+                @dragover.capture="onAttachmentDragOver"
+                @drop.capture="onAttachmentDrop">
                 <file-pond
                     ref="pond"
                     name="file"
@@ -289,22 +292,35 @@
             <div class="text-caption text-medium-emphasis mt-2">
                 Maximale Uploadgröße je Datei: {{ maxUploadSizeLabel }}
             </div>
+            <div class="text-caption text-medium-emphasis mt-1">
+                Du kannst auch einen Web-Link oder ein Web-Bild hierher ziehen.
+            </div>
 
             <v-card
                 v-if="normalizedPendingAttachments.length"
                 variant="outlined"
                 class="pa-3 mt-3">
-                <div class="text-caption text-medium-emphasis mb-2">Dateien zur Übernahme</div>
+                <div class="text-caption text-medium-emphasis mb-2">Anhänge zur Übernahme</div>
 
                 <div
                     v-for="(item, index) in normalizedPendingAttachments"
-                    :key="`pending-file-${item.key}`"
+                    :key="`pending-attachment-${item.key}`"
                     class="pending-file-row mb-2">
+                    <div class="d-flex align-center ga-2 mb-1">
+                        <v-chip
+                            size="x-small"
+                            variant="tonal"
+                            :color="item.attachmentType === 'link' ? 'secondary' : 'primary'"
+                            :prepend-icon="item.attachmentType === 'link' ? 'mdi-link-variant' : 'mdi-paperclip'">
+                            {{ item.attachmentType === 'link' ? 'Link' : 'Datei' }}
+                        </v-chip>
+                    </div>
+
                     <div class="d-flex align-start ga-2">
                         <v-text-field
                             class="flex-grow-1"
                             :model-value="item.title"
-                            label="Dateititel"
+                            label="Titel"
                             variant="outlined"
                             density="comfortable"
                             hide-details="auto"
@@ -319,8 +335,8 @@
                             @click="removePendingAttachment(index)" />
                     </div>
 
-                    <div class="text-caption text-medium-emphasis mt-1">
-                        {{ item.fileName || 'Datei' }}
+                    <div class="text-caption text-medium-emphasis mt-1 pending-source-text">
+                        {{ item.attachmentType === 'link' ? (item.url || 'Link') : (item.fileName || 'Datei') }}
                     </div>
                 </div>
             </v-card>
@@ -686,6 +702,192 @@ export default {
         normalizeText(value) {
             return String(value ?? '').trim().slice(0, 255)
         },
+        normalizeUrl(value) {
+            const raw = String(value ?? '').trim()
+            if (!raw) return ''
+
+            try {
+                const parsed = new URL(raw)
+                const protocol = String(parsed.protocol || '').toLowerCase()
+                if (protocol !== 'http:' && protocol !== 'https:') {
+                    return ''
+                }
+
+                return String(parsed.href || '').trim().slice(0, 2048)
+            } catch {
+                return ''
+            }
+        },
+        defaultLinkTitle(url) {
+            const normalizedUrl = this.normalizeUrl(url)
+            if (!normalizedUrl) return 'Link'
+
+            try {
+                const parsed = new URL(normalizedUrl)
+                const lastPath = decodeURIComponent(
+                    parsed.pathname
+                        .split('/')
+                        .filter((segment) => segment !== '')
+                        .pop() || ''
+                )
+                if (lastPath) {
+                    return this.defaultAttachmentTitle(lastPath)
+                }
+
+                const host = String(parsed.hostname || '').replace(/^www\./i, '')
+                return this.normalizeText(host) || 'Link'
+            } catch {
+                return 'Link'
+            }
+        },
+        extractUrlsFromText(text) {
+            const value = String(text || '')
+            if (!value) return []
+
+            const matches = value.match(/https?:\/\/[^\s<>"')\]]+/gi) || []
+            return matches.map((entry) => String(entry || '').trim()).filter((entry) => entry !== '')
+        },
+        extractUrlsFromHtml(html) {
+            const value = String(html || '').trim()
+            if (!value || typeof DOMParser === 'undefined') return []
+
+            try {
+                const doc = new DOMParser().parseFromString(value, 'text/html')
+                const urls = []
+
+                doc.querySelectorAll('a[href], img[src]').forEach((node) => {
+                    if (node instanceof HTMLAnchorElement) {
+                        urls.push(node.getAttribute('href') || '')
+                        return
+                    }
+                    if (node instanceof HTMLImageElement) {
+                        urls.push(node.getAttribute('src') || '')
+                    }
+                })
+
+                return urls.map((entry) => String(entry || '').trim()).filter((entry) => entry !== '')
+            } catch {
+                return []
+            }
+        },
+        extractDropUrls(dataTransfer) {
+            const dt = dataTransfer
+            if (!dt) return []
+
+            const candidates = []
+            const uriList = String(dt.getData?.('text/uri-list') || '').trim()
+            if (uriList) {
+                uriList
+                    .split('\n')
+                    .map((line) => line.trim())
+                    .filter((line) => line !== '' && !line.startsWith('#'))
+                    .forEach((line) => candidates.push(line))
+            }
+
+            const plain = String(dt.getData?.('text/plain') || '').trim()
+            this.extractUrlsFromText(plain).forEach((url) => candidates.push(url))
+
+            const html = String(dt.getData?.('text/html') || '').trim()
+            this.extractUrlsFromHtml(html).forEach((url) => candidates.push(url))
+
+            const result = []
+            const seen = new Set()
+
+            for (const candidate of candidates) {
+                const normalized = this.normalizeUrl(candidate)
+                if (!normalized) continue
+                const key = normalized.toLocaleLowerCase()
+                if (seen.has(key)) continue
+                seen.add(key)
+                result.push(normalized)
+            }
+
+            const imageUrls = result.filter((url) => this.isLikelyImageUrl(url))
+            if (imageUrls.length > 0) {
+                return imageUrls
+            }
+
+            return result
+        },
+        isLikelyImageUrl(url) {
+            const normalized = this.normalizeUrl(url)
+            if (!normalized) return false
+
+            try {
+                const parsed = new URL(normalized)
+                const path = String(parsed.pathname || '').toLocaleLowerCase()
+                return /\.(png|jpe?g|gif|webp|svg|bmp|tiff?|avif|heic)$/i.test(path)
+            } catch {
+                return false
+            }
+        },
+        onAttachmentDragOver(event) {
+            const dt = event?.dataTransfer
+            if (!dt) return
+
+            const hasFiles = (dt.files && dt.files.length > 0)
+                || Array.from(dt.items || []).some((item) => item?.kind === 'file')
+            if (hasFiles) return
+
+            const urls = this.extractDropUrls(dt)
+            if (urls.length > 0 && typeof event.preventDefault === 'function') {
+                event.preventDefault()
+            }
+        },
+        onAttachmentDrop(event) {
+            const dt = event?.dataTransfer
+            if (!dt) return
+
+            const hasFiles = (dt.files && dt.files.length > 0)
+                || Array.from(dt.items || []).some((item) => item?.kind === 'file')
+            if (hasFiles) {
+                return
+            }
+
+            if (typeof event.preventDefault === 'function') {
+                event.preventDefault()
+            }
+            if (typeof event.stopPropagation === 'function') {
+                event.stopPropagation()
+            }
+
+            const urls = this.extractDropUrls(dt)
+            if (!urls.length) return
+
+            const rows = this.toPendingAttachments(this.pendingAttachments)
+            const seen = new Set(
+                rows
+                    .filter((row) => row.attachmentType === 'link')
+                    .map((row) => this.normalizeUrl(row.url).toLocaleLowerCase())
+                    .filter((url) => url !== '')
+            )
+
+            let appended = 0
+            for (const url of urls) {
+                const normalized = this.normalizeUrl(url)
+                if (!normalized) continue
+                const key = normalized.toLocaleLowerCase()
+                if (seen.has(key)) continue
+                seen.add(key)
+                appended += 1
+
+                rows.push({
+                    attachmentType: 'link',
+                    tempUpload: '',
+                    file: null,
+                    fileName: '',
+                    title: this.defaultLinkTitle(normalized),
+                    url: normalized,
+                    storeImageFile: this.isLikelyImageUrl(normalized),
+                    source: 'drop-link',
+                    key: `link|${normalized}|${rows.length}`,
+                })
+            }
+
+            if (appended > 0) {
+                this.emitPendingAttachments(rows)
+            }
+        },
         normalizeColor(value) {
             const text = String(value ?? '').trim()
             if (!text) return ''
@@ -711,6 +913,27 @@ export default {
 
             for (let index = 0; index < input.length; index += 1) {
                 const item = input[index]
+                const attachmentType = this.normalizeText(item?.attachmentType).toLocaleLowerCase()
+                const linkUrl = this.normalizeUrl(item?.url)
+                if ((attachmentType === 'link' || linkUrl) && linkUrl) {
+                    const rawTitle = this.normalizeText(item?.title)
+                    const source = this.normalizeText(item?.source)
+                    const key = String(item?.key || '') || `link|${linkUrl}|${index}`
+
+                    result.push({
+                        attachmentType: 'link',
+                        tempUpload: '',
+                        file: null,
+                        title: rawTitle || this.defaultLinkTitle(linkUrl),
+                        fileName: '',
+                        url: linkUrl,
+                        storeImageFile: item?.storeImageFile === true || this.isLikelyImageUrl(linkUrl),
+                        source: source || 'link',
+                        key,
+                    })
+                    continue
+                }
+
                 const tempUpload = this.normalizeText(item?.tempUpload)
                 if (tempUpload) {
                     const fileName = this.normalizeText(item?.fileName) || `Datei ${index + 1}`
@@ -720,10 +943,13 @@ export default {
                     const key = String(item?.key || `temp|${tempUpload}|${index}`)
 
                     result.push({
+                        attachmentType: 'file',
                         tempUpload,
                         file: null,
                         title,
                         fileName,
+                        url: '',
+                        storeImageFile: false,
                         source,
                         key,
                     })
@@ -740,10 +966,13 @@ export default {
                 const key = String(item instanceof File ? '' : item?.key) || `${fileName}|${file.size}|${file.lastModified}|${index}`
 
                 result.push({
+                    attachmentType: 'file',
                     tempUpload: '',
                     file,
                     title,
                     fileName,
+                    url: '',
+                    storeImageFile: false,
                     source,
                     key,
                 })
@@ -753,15 +982,27 @@ export default {
         },
         emitPendingAttachments(rows) {
             const nextRows = (Array.isArray(rows) ? rows : []).map((row, index) => ({
+                attachmentType: this.normalizeText(row?.attachmentType).toLocaleLowerCase() === 'link' ? 'link' : 'file',
                 tempUpload: this.normalizeText(row.tempUpload),
                 file: row.file instanceof File ? row.file : null,
                 fileName: this.normalizeText(row.fileName || row.file?.name),
-                title: this.normalizeText(row.title) || this.defaultAttachmentTitle(row.fileName || row.file?.name),
+                title: this.normalizeText(row.title)
+                    || (
+                        this.normalizeText(row?.attachmentType).toLocaleLowerCase() === 'link'
+                            ? this.defaultLinkTitle(row.url)
+                            : this.defaultAttachmentTitle(row.fileName || row.file?.name)
+                    ),
+                url: this.normalizeUrl(row.url),
+                storeImageFile: this.normalizeText(row?.attachmentType).toLocaleLowerCase() === 'link'
+                    ? row?.storeImageFile === true || this.isLikelyImageUrl(row?.url)
+                    : false,
                 source: this.normalizeText(row.source),
                 key: String(
                     row.key
                     || (
-                        row.tempUpload
+                        this.normalizeText(row?.attachmentType).toLocaleLowerCase() === 'link'
+                            ? `link|${this.normalizeUrl(row.url) || 'link'}|${index}`
+                            : row.tempUpload
                             ? `temp|${row.tempUpload}|${index}`
                             : `${row.file?.name || 'datei'}|${row.file?.size || 0}|${row.file?.lastModified || 0}|${index}`
                     )
@@ -797,10 +1038,13 @@ export default {
             const alreadyExists = rows.some((row) => row.tempUpload === uploadId)
             if (!alreadyExists) {
                 rows.push({
+                    attachmentType: 'file',
                     tempUpload: uploadId,
                     file: null,
                     title: this.defaultAttachmentTitle(fileName),
                     fileName,
+                    url: '',
+                    storeImageFile: false,
                     source: 'filepond',
                     key: `temp|${uploadId}|${rows.length}`,
                 })
@@ -822,7 +1066,12 @@ export default {
 
             rows[index] = {
                 ...rows[index],
-                title: this.normalizeText(value) || this.defaultAttachmentTitle(rows[index].fileName),
+                title: this.normalizeText(value)
+                    || (
+                        rows[index].attachmentType === 'link'
+                            ? this.defaultLinkTitle(rows[index].url)
+                            : this.defaultAttachmentTitle(rows[index].fileName)
+                    ),
             }
 
             this.emitPendingAttachments(rows)
@@ -1058,6 +1307,11 @@ export default {
 
 .pending-file-row:last-child {
     margin-bottom: 0 !important;
+}
+
+.pending-source-text {
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 .classification-row {

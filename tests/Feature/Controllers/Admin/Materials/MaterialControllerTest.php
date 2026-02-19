@@ -8,6 +8,7 @@ use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Storage;
@@ -563,6 +564,45 @@ test('adding file attachment stores file and allows download', function () {
 
     $this->get('/api/admin/materials/attachments/' . $attachment->id . '/download')
         ->assertStatus(200);
+});
+
+test('adding remote image attachment stores image file from url', function () {
+    Storage::fake('local');
+
+    Http::fake([
+        'https://example.org/*' => Http::response('fake-image-bytes', 200, [
+            'Content-Type' => 'image/jpeg',
+        ]),
+    ]);
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Bildimport',
+        'keywords' => [],
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $response = $this->postJson('/api/admin/materials/cards/' . $card->id . '/attachments/image-url', [
+        'data' => [
+            'url' => 'https://example.org/media/diagramm.jpg',
+            'name' => 'Diagramm aus Web',
+        ],
+    ]);
+
+    $response->assertStatus(200)
+        ->assertJsonFragment([
+            'attachment_type' => 'file',
+            'name' => 'Diagramm aus Web',
+            'mime_type' => 'image/jpeg',
+        ]);
+
+    $attachmentId = $response->json('id');
+    $attachment = MaterialCardAttachment::findOrFail($attachmentId);
+
+    Storage::disk('local')->assertExists($attachment->file_path);
+    expect($attachment->url)->toBeNull();
 });
 
 test('attachment rename updates stored attachment name', function () {

@@ -107,7 +107,7 @@
                     type="success"
                     variant="tonal"
                     class="mb-4">
-                    {{ pendingAttachments.length }} Datei(en) erkannt. Sie werden nach dem Speichern als Anhänge hinzugefügt.
+                    {{ pendingAttachments.length }} Anhang/Anhänge erkannt. Sie werden nach dem Speichern hinzugefügt.
                 </v-alert>
 
                 <div class="material-form-width mx-auto">
@@ -484,12 +484,71 @@ export default {
             const base = dot > 0 ? normalized.slice(0, dot) : normalized
             return base.slice(0, 255) || 'Datei'
         },
+        normalizeUrl(value) {
+            const raw = String(value ?? '').trim()
+            if (!raw) return ''
+
+            try {
+                const parsed = new URL(raw)
+                const protocol = String(parsed.protocol || '').toLowerCase()
+                if (protocol !== 'http:' && protocol !== 'https:') {
+                    return ''
+                }
+
+                return String(parsed.href || '').trim().slice(0, 2048)
+            } catch {
+                return ''
+            }
+        },
+        defaultLinkTitle(url) {
+            const normalizedUrl = this.normalizeUrl(url)
+            if (!normalizedUrl) return 'Link'
+
+            try {
+                const parsed = new URL(normalizedUrl)
+                const lastPath = decodeURIComponent(
+                    parsed.pathname
+                        .split('/')
+                        .filter((segment) => segment !== '')
+                        .pop() || ''
+                )
+                if (lastPath) {
+                    return this.defaultAttachmentTitle(lastPath)
+                }
+
+                const host = String(parsed.hostname || '').replace(/^www\./i, '')
+                return String(host || 'Link').slice(0, 255)
+            } catch {
+                return 'Link'
+            }
+        },
         toPendingAttachments(value) {
             const input = Array.isArray(value) ? value : []
             const result = []
 
             for (let index = 0; index < input.length; index += 1) {
                 const item = input[index]
+                const attachmentType = String(item?.attachmentType || '').trim().toLocaleLowerCase()
+                const linkUrl = this.normalizeUrl(item?.url)
+                if ((attachmentType === 'link' || linkUrl) && linkUrl) {
+                    const rawTitle = String(item?.title || '').trim()
+                    const source = String(item?.source || '').trim()
+                    const key = String(item?.key || '') || `link|${linkUrl}|${index}`
+
+                    result.push({
+                        attachmentType: 'link',
+                        tempUpload: '',
+                        file: null,
+                        fileName: '',
+                        title: rawTitle || this.defaultLinkTitle(linkUrl),
+                        url: linkUrl,
+                        storeImageFile: item?.storeImageFile === true,
+                        source: source || 'link',
+                        key,
+                    })
+                    continue
+                }
+
                 const tempUpload = String(item?.tempUpload || '').trim()
                 if (tempUpload) {
                     const fileName = String(item?.fileName || '').trim() || `Datei ${index + 1}`
@@ -498,10 +557,13 @@ export default {
                     const key = String(item?.key || '') || `temp|${tempUpload}|${index}`
 
                     result.push({
+                        attachmentType: 'file',
                         tempUpload,
                         file: null,
                         fileName,
                         title: rawTitle || this.defaultAttachmentTitle(fileName),
+                        url: '',
+                        storeImageFile: false,
                         source: source || 'filepond',
                         key,
                     })
@@ -517,10 +579,13 @@ export default {
                 const key = String(item instanceof File ? '' : item?.key || '') || `${fileName}|${file.size}|${file.lastModified}|${index}`
 
                 result.push({
+                    attachmentType: 'file',
                     tempUpload: '',
                     file,
                     fileName,
                     title: rawTitle || this.defaultAttachmentTitle(fileName),
+                    url: '',
+                    storeImageFile: false,
                     source: source || 'manual',
                     key,
                 })
@@ -696,6 +761,20 @@ export default {
             const attachments = this.toPendingAttachments(this.pendingAttachments)
             if (saved?.id && attachments.length) {
                 for (const attachment of attachments) {
+                    if (attachment.attachmentType === 'link' && this.normalizeUrl(attachment.url)) {
+                        const normalizedUrl = this.normalizeUrl(attachment.url)
+                        const normalizedName = this.toNullable(attachment.title) || this.defaultLinkTitle(attachment.url)
+                        await this.materialCardStore.addLinkAttachment(saved.id, {
+                            url: normalizedUrl,
+                            name: normalizedName,
+                        })
+
+                        if (attachment.storeImageFile === true) {
+                            await this.materialCardStore.addImageUrlAttachment(saved.id, normalizedUrl, normalizedName)
+                        }
+                        continue
+                    }
+
                     if (attachment.tempUpload) {
                         await this.materialCardStore.addTempFileAttachment(
                             saved.id,

@@ -14,6 +14,7 @@ use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -276,6 +277,121 @@ class MaterialService
         $this->keywordService->rebuild($card->fresh($this->cardRelations()));
 
         return $attachment;
+    }
+
+    public function addImageAttachmentFromUrl(MaterialCard $card, string $url, ?string $name = null): MaterialCardAttachment
+    {
+        $normalizedUrl = $this->normalizeRemoteImageUrl($url);
+        if ($normalizedUrl === '') {
+            throw ValidationException::withMessages([
+                'data.url' => 'Ungültige Bild-URL.',
+            ]);
+        }
+
+        $tempFilePath = tempnam(sys_get_temp_dir(), 'material-image-');
+        if (! is_string($tempFilePath) || $tempFilePath === '') {
+            throw ValidationException::withMessages([
+                'data.url' => 'Temporäre Datei konnte nicht erstellt werden.',
+            ]);
+        }
+
+        try {
+            try {
+                $response = Http::connectTimeout(10)
+                    ->timeout(30)
+                    ->withOptions([
+                        'allow_redirects' => true,
+                        'sink' => $tempFilePath,
+                    ])
+                    ->get($normalizedUrl);
+            } catch (\Throwable) {
+                throw ValidationException::withMessages([
+                    'data.url' => 'Bild konnte nicht geladen werden.',
+                ]);
+            }
+
+            if (! $response->successful()) {
+                throw ValidationException::withMessages([
+                    'data.url' => 'Bild konnte nicht geladen werden.',
+                ]);
+            }
+
+            $sizeBytes = (int) (filesize($tempFilePath) ?: 0);
+            if ($sizeBytes <= 0) {
+                throw ValidationException::withMessages([
+                    'data.url' => 'Bild konnte nicht verarbeitet werden.',
+                ]);
+            }
+
+            $maxBytes = $this->maxUploadSizeForSchool((int) $card->school_id) * 1024;
+            if ($maxBytes > 0 && $sizeBytes > $maxBytes) {
+                throw ValidationException::withMessages([
+                    'data.url' => 'Bild überschreitet die maximal erlaubte Uploadgröße.',
+                ]);
+            }
+
+            $headerMimeType = $this->normalizeMimeType($response->header('Content-Type'));
+            $detectedMimeType = $this->detectedMimeTypeForPath($tempFilePath);
+
+            $mimeType = null;
+            if ($this->isImageMimeType($headerMimeType)) {
+                $mimeType = $headerMimeType;
+            } elseif ($this->isImageMimeType($detectedMimeType)) {
+                $mimeType = $detectedMimeType;
+            } else {
+                $mimeType = $this->imageMimeTypeFromExtension($this->extensionFromUrl($normalizedUrl));
+            }
+
+            if (! $this->isImageMimeType($mimeType)) {
+                throw ValidationException::withMessages([
+                    'data.url' => 'URL verweist nicht auf ein Bild.',
+                ]);
+            }
+
+            $originalName = $this->remoteImageOriginalName($normalizedUrl, $mimeType);
+            $destinationPath = $this->materialAttachmentDirectory($card)
+                . '/' . $this->materialAttachmentStoredFileNameFromOriginalName($originalName);
+
+            $stream = fopen($tempFilePath, 'rb');
+            if ($stream === false) {
+                throw ValidationException::withMessages([
+                    'data.url' => 'Bild konnte nicht gespeichert werden.',
+                ]);
+            }
+
+            try {
+                $stored = Storage::disk('local')->put($destinationPath, $stream);
+            } finally {
+                fclose($stream);
+            }
+
+            if (! $stored) {
+                throw ValidationException::withMessages([
+                    'data.url' => 'Bild konnte nicht gespeichert werden.',
+                ]);
+            }
+
+            $displayName = $this->normalizeOptionalName($name);
+            if ($displayName === null) {
+                $displayName = mb_substr($originalName, 0, 255);
+            }
+
+            $storedSizeBytes = (int) (Storage::disk('local')->size($destinationPath) ?: $sizeBytes);
+
+            $attachment = $card->attachments()->create([
+                'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+                'name' => $displayName,
+                'file_path' => $destinationPath,
+                'mime_type' => $mimeType,
+                'size_bytes' => $storedSizeBytes > 0 ? $storedSizeBytes : null,
+            ]);
+
+            $this->keywordService->rebuild($card->fresh($this->cardRelations()));
+
+            return $attachment;
+        } finally {
+            @unlink($tempFilePath);
+        }
     }
 
     public function deleteAttachment(MaterialCardAttachment $attachment): void
@@ -1321,5 +1437,131 @@ class MaterialService
         }
 
         return mb_substr($clean, 0, 255);
+    }
+
+    private function normalizeRemoteImageUrl(string $url): string
+    {
+        $value = trim($url);
+        if ($value === '') {
+            return '';
+        }
+
+        $validated = filter_var($value, FILTER_VALIDATE_URL);
+        if (! is_string($validated) || $validated === '') {
+            return '';
+        }
+
+        $scheme = strtolower((string) parse_url($validated, PHP_URL_SCHEME));
+        if (! in_array($scheme, ['http', 'https'], true)) {
+            return '';
+        }
+
+        return mb_substr($validated, 0, 2048);
+    }
+
+    private function normalizeMimeType(?string $mimeType): ?string
+    {
+        $raw = trim((string) $mimeType);
+        if ($raw === '') {
+            return null;
+        }
+
+        $normalized = strtolower(trim(explode(';', $raw)[0] ?? ''));
+        return $normalized !== '' ? $normalized : null;
+    }
+
+    private function detectedMimeTypeForPath(string $path): ?string
+    {
+        if (! is_file($path)) {
+            return null;
+        }
+
+        if (! function_exists('finfo_open')) {
+            return null;
+        }
+
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        if ($finfo === false) {
+            return null;
+        }
+
+        $mimeType = finfo_file($finfo, $path);
+        finfo_close($finfo);
+
+        return $this->normalizeMimeType(is_string($mimeType) ? $mimeType : null);
+    }
+
+    private function isImageMimeType(?string $mimeType): bool
+    {
+        return is_string($mimeType) && Str::startsWith($mimeType, 'image/');
+    }
+
+    private function extensionFromUrl(string $url): string
+    {
+        $path = (string) parse_url($url, PHP_URL_PATH);
+        $extension = strtolower((string) pathinfo($path, PATHINFO_EXTENSION));
+        return trim($extension);
+    }
+
+    private function imageMimeTypeFromExtension(string $extension): ?string
+    {
+        $map = [
+            'jpg' => 'image/jpeg',
+            'jpeg' => 'image/jpeg',
+            'png' => 'image/png',
+            'gif' => 'image/gif',
+            'webp' => 'image/webp',
+            'svg' => 'image/svg+xml',
+            'bmp' => 'image/bmp',
+            'tif' => 'image/tiff',
+            'tiff' => 'image/tiff',
+            'avif' => 'image/avif',
+            'heic' => 'image/heic',
+        ];
+
+        $key = strtolower(trim($extension));
+        return $map[$key] ?? null;
+    }
+
+    private function imageExtensionFromMimeType(?string $mimeType): ?string
+    {
+        $map = [
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/gif' => 'gif',
+            'image/webp' => 'webp',
+            'image/svg+xml' => 'svg',
+            'image/bmp' => 'bmp',
+            'image/tiff' => 'tiff',
+            'image/avif' => 'avif',
+            'image/heic' => 'heic',
+        ];
+
+        $key = strtolower(trim((string) $mimeType));
+        return $map[$key] ?? null;
+    }
+
+    private function remoteImageOriginalName(string $url, ?string $mimeType): string
+    {
+        $path = (string) parse_url($url, PHP_URL_PATH);
+        $fileName = basename($path);
+        $fileName = trim(urldecode($fileName));
+        if ($fileName === '' || $fileName === '/' || $fileName === '.') {
+            $fileName = 'bild';
+        }
+
+        $baseName = trim((string) pathinfo($fileName, PATHINFO_FILENAME));
+        if ($baseName === '') {
+            $baseName = 'bild';
+        }
+
+        $extension = strtolower((string) pathinfo($fileName, PATHINFO_EXTENSION));
+        if ($extension === '') {
+            $extension = (string) ($this->imageExtensionFromMimeType($mimeType) ?? 'jpg');
+        }
+
+        $extension = preg_replace('/[^a-z0-9]+/i', '', $extension) ?: 'jpg';
+
+        return mb_substr($baseName, 0, 200) . '.' . $extension;
     }
 }

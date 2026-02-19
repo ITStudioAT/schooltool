@@ -8,6 +8,7 @@ use App\Http\Requests\Admin\Materials\MaterialCardFileAttachmentStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardIndexRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardLinkAttachmentStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardQuickStoreRequest;
+use App\Http\Requests\Admin\Materials\MaterialCardRemoteImageAttachmentStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardTempAttachmentStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardUpdateRequest;
@@ -105,6 +106,24 @@ class MaterialController extends Controller
             $material_card,
             $validated['url'],
             $validated['name'] ?? null
+        );
+
+        return response()->json(new MaterialCardAttachmentResource($attachment), 200);
+    }
+
+    public function storeRemoteImageAttachment(
+        MaterialCardRemoteImageAttachmentStoreRequest $request,
+        MaterialCard $material_card,
+        MaterialService $service
+    ) {
+        $authUser = $this->authorizeForMaterials();
+        $this->assertIsOwner($authUser->id, $material_card->user_id);
+        $validated = $request->validated()['data'];
+
+        $attachment = $service->addImageAttachmentFromUrl(
+            $material_card,
+            (string) ($validated['url'] ?? ''),
+            isset($validated['name']) ? (string) $validated['name'] : null
         );
 
         return response()->json(new MaterialCardAttachmentResource($attachment), 200);
