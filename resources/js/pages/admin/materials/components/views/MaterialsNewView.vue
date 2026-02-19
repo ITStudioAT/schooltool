@@ -197,7 +197,7 @@ export default {
                 : [
                     { value: 'inbox', label: 'Neu/Idee' },
                     { value: 'in_progress', label: 'In Arbeit' },
-                    { value: 'done', label: 'Fertig' },
+                    { value: 'done', label: 'ok' },
                     { value: 'update_needed', label: 'Änderung nötig' },
                 ]
         },
@@ -624,7 +624,6 @@ export default {
 
             const saved = await this.materialCardStore.quickStore({
                 title,
-                source_type: 'note',
                 source_text: description || null,
                 type: this.toNullable(this.createForm.type),
                 status: String(this.createForm.status || '').trim() || 'inbox',

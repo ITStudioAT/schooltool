@@ -28,15 +28,10 @@ class MaterialService
         return [
             'module' => 'materials',
             'school_id' => $user->school_id,
-            'source_types' => [
-                ['value' => MaterialCard::SOURCE_UPLOAD, 'label' => 'Upload'],
-                ['value' => MaterialCard::SOURCE_LINK, 'label' => 'Link'],
-                ['value' => MaterialCard::SOURCE_NOTE, 'label' => 'Notiz'],
-            ],
             'status_values' => [
                 ['value' => MaterialCard::STATUS_INBOX, 'label' => 'Neu/Idee'],
                 ['value' => MaterialCard::STATUS_IN_PROGRESS, 'label' => 'In Arbeit'],
-                ['value' => MaterialCard::STATUS_DONE, 'label' => 'Fertig'],
+                ['value' => MaterialCard::STATUS_DONE, 'label' => 'ok'],
                 ['value' => MaterialCard::STATUS_UPDATE_NEEDED, 'label' => 'Änderung nötig'],
             ],
             'type_values' => $this->typeValuesForUser($user),
@@ -93,7 +88,6 @@ class MaterialService
             'school_id' => $user->school_id,
             'user_id' => $user->id,
             'title' => $data['title'],
-            'source_type' => $data['source_type'],
             'source_url' => $data['source_url'] ?? null,
             'source_text' => $data['source_text'] ?? null,
             'subject' => null,
@@ -115,7 +109,6 @@ class MaterialService
     {
         $card->update([
             'title' => $data['title'],
-            'source_type' => $data['source_type'],
             'source_url' => $data['source_url'] ?? null,
             'source_text' => $data['source_text'] ?? null,
             'subject' => null,

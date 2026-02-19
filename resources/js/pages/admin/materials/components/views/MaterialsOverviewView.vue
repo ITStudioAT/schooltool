@@ -12,7 +12,7 @@
                     color="primary"
                     variant="flat"
                     :loading="isLoading"
-                    :disabled="isDeletingId !== null || isSavingEdit || deleteModeActive"
+                    :disabled="isDeletingId !== null || isSavingEdit"
                     @click="loadCards">
                     Aktualisieren
                 </v-btn>
@@ -55,7 +55,7 @@
             <v-list-item v-for="card in cards" :key="card.id" class="overview-item mb-3 px-4 py-3" rounded="lg">
                 <template #prepend>
                     <v-avatar color="primary" variant="tonal" size="38" class="mr-4">
-                        <v-icon :icon="sourceIcon(card.source_type)" />
+                        <v-icon :icon="sourceIcon(card)" />
                     </v-avatar>
                 </template>
 
@@ -126,9 +126,9 @@
                             append-icon="mdi-download"
                             class="attachment-chip"
                             :disabled="isDownloadingAttachment(attachment.id)"
-                            :title="attachmentDisplayName(attachment)"
+                            :title="attachmentChipLabel(attachment)"
                             @click.prevent="downloadAttachment(attachment)">
-                            {{ attachmentDisplayName(attachment) }}
+                            {{ attachmentChipLabel(attachment) }}
                         </v-chip>
                     </div>
                 </div>
@@ -143,44 +143,11 @@
                             size="small"
                             color="primary"
                             variant="tonal"
-                            prepend-icon="mdi-pencil"
-                            :disabled="isLoading || isDeletingId !== null || isSavingEdit || deleteModeActive"
-                            @click="openEditDialog(card)">
-                            Bearbeiten
+                            prepend-icon="mdi-eye-outline"
+                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                            @click="openDetailDialog(card)">
+                            Detail
                         </v-btn>
-
-                        <v-btn
-                            v-if="deleteStep(card.id) === 0"
-                            size="small"
-                            color="warning"
-                            variant="tonal"
-                            prepend-icon="mdi-delete"
-                            :disabled="isLoading || isDeletingId !== null || isSavingEdit || deleteModeActive"
-                            @click="startDeleteFlow(card.id)">
-                            Löschen
-                        </v-btn>
-
-                        <template v-else-if="deleteStep(card.id) === 1">
-                            <v-btn
-                                size="small"
-                                color="success"
-                                variant="tonal"
-                                prepend-icon="mdi-delete-off"
-                                :disabled="isDeletingId !== null"
-                                @click="resetDeleteStep(card.id)">
-                                Abbrechen
-                            </v-btn>
-                            <v-btn
-                                size="small"
-                                color="error"
-                                variant="flat"
-                                prepend-icon="mdi-delete"
-                                :loading="isDeletingId === card.id"
-                                :disabled="isDeletingId !== null && isDeletingId !== card.id"
-                                @click="confirmDelete(card.id)">
-                                Löschen
-                            </v-btn>
-                        </template>
                     </div>
                 </template>
             </v-list-item>
@@ -194,14 +161,14 @@
     <v-dialog v-model="attachmentDialogOpen" max-width="820" persistent>
         <v-card rounded="xl">
             <v-card-title class="d-flex align-center ga-2">
-                <span class="text-h6">Anhänge verwalten</span>
+                <span class="text-h5">Anhänge verwalten</span>
                 <v-spacer />
                 <v-btn icon="mdi-close" variant="text" :disabled="attachmentDialogBusy" @click="closeAttachmentManager" />
             </v-card-title>
 
-            <v-card-subtitle class="pb-1">
+            <div class="px-6 pb-1 text-subtitle-1 font-weight-bold material-title">
                 {{ attachmentDialogCardTitle || 'Material' }}
-            </v-card-subtitle>
+            </div>
 
             <v-card-text>
                 <v-alert v-if="!attachmentRows.length" type="info" variant="tonal" class="mb-0">
@@ -291,6 +258,176 @@
         </v-card>
     </v-dialog>
 
+    <v-dialog v-model="detailDialogOpen" max-width="860" persistent>
+        <v-card rounded="xl">
+            <v-card-title class="d-flex align-center ga-2">
+                <span class="text-h5">Material-Details</span>
+                <v-spacer />
+                <v-btn
+                    icon="mdi-close"
+                    variant="text"
+                    :disabled="detailDialogLoading || isDeletingDetail"
+                    @click="closeDetailDialog" />
+            </v-card-title>
+
+            <v-card-text>
+                <v-skeleton-loader v-if="detailDialogLoading" type="article, list-item-two-line@3" />
+
+                <template v-else-if="detailDialogCard">
+                    <div class="material-header mb-3">
+                        <div class="title-type-inline d-inline-flex align-center flex-wrap ga-2">
+                            <div class="text-subtitle-1 font-weight-bold material-title">
+                                {{ detailDialogCard.title || 'Material' }}
+                            </div>
+
+                            <v-chip v-if="detailDialogCard.type" size="small" variant="tonal" color="primary" class="material-type-chip">
+                                {{ detailDialogCard.type }}
+                            </v-chip>
+                        </div>
+
+                        <v-chip size="small" :color="statusColor(detailDialogCard.status)" variant="flat" class="material-status-chip">
+                            {{ statusLabel(detailDialogCard.status) }}
+                        </v-chip>
+                    </div>
+
+                    <div v-if="classificationLabels(detailDialogCard).length" class="mb-4">
+                        <div class="text-subtitle-2 mb-2">Fach / Thema / Bereich</div>
+                        <div class="d-flex flex-wrap ga-2">
+                            <v-chip
+                                v-for="(label, index) in classificationLabels(detailDialogCard)"
+                                :key="`detail-classification-${detailDialogCard.id}-${index}`"
+                                size="small"
+                                variant="tonal"
+                                color="primary"
+                                class="classification-chip"
+                                :title="label">
+                                {{ label }}
+                            </v-chip>
+                        </div>
+                    </div>
+
+                    <div v-if="detailDialogCard.source_url" class="mb-4 source-link">
+                        <div class="text-subtitle-2 mb-1">Link</div>
+                        <a :href="detailDialogCard.source_url" target="_blank" rel="noopener noreferrer">
+                            {{ detailDialogCard.source_url }}
+                        </a>
+                    </div>
+
+                    <div v-if="detailDialogCard.source_text" class="mb-4">
+                        <div class="text-subtitle-2 mb-1">Beschreibung</div>
+                        <div class="text-body-2 detail-text">{{ detailDialogCard.source_text }}</div>
+                    </div>
+
+                    <div v-if="detailDialogCard.notes" class="mb-4">
+                        <div class="text-subtitle-2 mb-1">Notiz</div>
+                        <div class="text-body-2 detail-text">{{ detailDialogCard.notes }}</div>
+                    </div>
+
+                    <div v-if="detailAttachments(detailDialogCard).length" class="mb-2">
+                        <div class="text-subtitle-2 mb-2">Anhänge</div>
+
+                        <v-list class="bg-transparent pa-0">
+                            <v-list-item
+                                v-for="attachment in detailAttachments(detailDialogCard)"
+                                :key="`detail-attachment-${detailDialogCard.id}-${attachment.id}`"
+                                class="px-0 py-2">
+                                <div class="d-flex flex-column flex-md-row align-md-center ga-2 w-100">
+                                    <div class="flex-grow-1">
+                                        <div class="text-body-2 font-weight-medium">
+                                            {{ attachmentDisplayName(attachment) }}
+                                        </div>
+                                        <div class="text-caption text-medium-emphasis">
+                                            {{ attachmentTypeLabel(attachment) }}
+                                        </div>
+                                    </div>
+
+                                    <div class="d-flex flex-wrap ga-2 justify-end">
+                                        <v-btn
+                                            v-if="attachment.attachment_type === 'file' && attachment.download_url"
+                                            size="small"
+                                            color="primary"
+                                            variant="tonal"
+                                            prepend-icon="mdi-download"
+                                            :loading="isDownloadingAttachment(attachment.id)"
+                                            :disabled="isDeletingDetail"
+                                            @click="downloadAttachment(attachment)">
+                                            Download
+                                        </v-btn>
+
+                                        <v-btn
+                                            v-else-if="attachment.url"
+                                            size="small"
+                                            color="primary"
+                                            variant="tonal"
+                                            prepend-icon="mdi-open-in-new"
+                                            :href="attachment.url"
+                                            target="_blank"
+                                            rel="noopener noreferrer">
+                                            Öffnen
+                                        </v-btn>
+                                    </div>
+                                </div>
+                            </v-list-item>
+                        </v-list>
+                    </div>
+
+                    <div class="text-caption text-medium-emphasis mt-3">
+                        Aktualisiert: {{ formatDateTime(detailDialogCard.updated_at) }}
+                    </div>
+                </template>
+            </v-card-text>
+
+            <v-card-actions class="px-6 pb-6 pt-2 d-flex flex-wrap justify-end ga-2">
+                <template v-if="detailDeleteStep === 0">
+                    <v-btn
+                        color="warning"
+                        variant="tonal"
+                        prepend-icon="mdi-delete"
+                        :disabled="detailDialogLoading || isDeletingDetail || isSavingEdit"
+                        @click="startDetailDeleteFlow">
+                        Löschen
+                    </v-btn>
+                </template>
+
+                <template v-else>
+                    <v-btn
+                        color="success"
+                        variant="tonal"
+                        prepend-icon="mdi-delete-off"
+                        :disabled="isDeletingDetail"
+                        @click="resetDetailDeleteFlow">
+                        Abbrechen
+                    </v-btn>
+                    <v-btn
+                        color="error"
+                        variant="flat"
+                        prepend-icon="mdi-delete"
+                        :loading="isDeletingDetail"
+                        :disabled="detailDialogLoading || isSavingEdit"
+                        @click="confirmDeleteFromDetail">
+                        Löschen
+                    </v-btn>
+                </template>
+
+                <v-btn
+                    variant="text"
+                    :disabled="detailDialogLoading || isDeletingDetail || isSavingEdit"
+                    @click="closeDetailDialog">
+                    Schließen
+                </v-btn>
+
+                <v-btn
+                    color="primary"
+                    variant="flat"
+                    prepend-icon="mdi-pencil"
+                    :disabled="detailDialogLoading || isDeletingDetail || isSavingEdit"
+                    @click="openEditFromDetail">
+                    Bearbeiten
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
+
     <v-dialog v-model="editDialogOpen" max-width="640" persistent>
         <MaterialsCreateInlineForm
             :title="editForm.title"
@@ -320,7 +457,73 @@
             @update:classificationEditorVisible="editClassificationEditorVisible = $event"
             @manage-types="openTypeManager"
             @save="saveEdit"
-            @cancel="closeEditDialog" />
+            @cancel="closeEditDialog">
+            <template #extra-content>
+                <div class="mt-4">
+                    <div class="text-subtitle-2 mb-2">Anhänge</div>
+
+                    <v-alert v-if="!attachmentRows.length" type="info" variant="tonal" class="mb-0">
+                        Keine Anhänge vorhanden.
+                    </v-alert>
+
+                    <v-list v-else class="bg-transparent pa-0">
+                        <v-list-item
+                            v-for="row in attachmentRows"
+                            :key="`edit-attachment-manage-${row.id}`"
+                            class="px-0 py-2">
+                            <div class="attachment-manage-row d-flex flex-column ga-2 w-100">
+                                <div class="d-flex flex-wrap align-center ga-2">
+                                    <v-chip size="x-small" variant="tonal" color="secondary">
+                                        {{ attachmentTypeLabel(row) }}
+                                    </v-chip>
+
+                                    <div class="text-caption text-medium-emphasis attachment-meta-text">
+                                        {{ attachmentMeta(row) }}
+                                    </div>
+                                </div>
+
+                                <div class="d-flex flex-column flex-md-row ga-2">
+                                    <v-text-field
+                                        :model-value="row.name"
+                                        label="Titel"
+                                        variant="outlined"
+                                        density="comfortable"
+                                        hide-details="auto"
+                                        class="attachment-name-field flex-grow-1"
+                                        :disabled="isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
+                                        @update:modelValue="updateAttachmentDraft(row.id, $event)"
+                                        @keyup.enter="saveAttachmentName(row)" />
+
+                                    <div class="attachment-manage-actions d-flex flex-wrap ga-2 justify-end">
+                                        <v-btn
+                                            size="small"
+                                            color="primary"
+                                            variant="tonal"
+                                            prepend-icon="mdi-content-save"
+                                            :loading="isAttachmentSaving(row.id)"
+                                            :disabled="isSavingEdit || !canSaveAttachmentName(row) || isAttachmentDeleting(row.id)"
+                                            @click="saveAttachmentName(row)">
+                                            Speichern
+                                        </v-btn>
+
+                                        <v-btn
+                                            size="small"
+                                            color="error"
+                                            variant="flat"
+                                            prepend-icon="mdi-delete"
+                                            :loading="isAttachmentDeleting(row.id)"
+                                            :disabled="isSavingEdit || isAttachmentSaving(row.id)"
+                                            @click="removeAttachment(row)">
+                                            Löschen
+                                        </v-btn>
+                                    </div>
+                                </div>
+                            </div>
+                        </v-list-item>
+                    </v-list>
+                </div>
+            </template>
+        </MaterialsCreateInlineForm>
     </v-dialog>
 
     <MaterialTypeManagerDialog v-model="typeManagerDialogOpen" />
@@ -338,7 +541,6 @@ const createDefaultEditForm = () => ({
     description: '',
     classifications: [{ subject: '', topic: '', unit: '' }],
     pendingAttachments: [],
-    source_type: 'note',
     source_url: '',
     area: '',
     unit: '',
@@ -371,7 +573,12 @@ export default {
             downloadingAttachmentIds: [],
             savingAttachmentIds: [],
             deletingAttachmentIds: [],
-            deleteSteps: {},
+            detailDialogOpen: false,
+            detailDialogLoading: false,
+            detailDialogCard: null,
+            detailDeleteStep: 0,
+            returnToDetailOnEditCancel: false,
+            detailCardForEditReturn: null,
         }
     },
     computed: {
@@ -389,7 +596,7 @@ export default {
                 : [
                     { value: 'inbox', label: 'Neu/Idee' },
                     { value: 'in_progress', label: 'In Arbeit' },
-                    { value: 'done', label: 'Fertig' },
+                    { value: 'done', label: 'ok' },
                     { value: 'update_needed', label: 'Änderung nötig' },
                 ]
         },
@@ -413,14 +620,13 @@ export default {
         canSaveEdit() {
             return String(this.editForm.title || '').trim().length > 0
         },
-        activeDeleteCardId() {
-            return Object.keys(this.deleteSteps).find((id) => Number(this.deleteSteps[id]) === 1) || null
-        },
-        deleteModeActive() {
-            return this.activeDeleteCardId !== null
-        },
         attachmentDialogBusy() {
             return this.savingAttachmentIds.length > 0 || this.deletingAttachmentIds.length > 0
+        },
+        isDeletingDetail() {
+            const id = Number(this.detailDialogCard?.id)
+            if (!Number.isFinite(id) || id <= 0) return false
+            return this.isDeletingId === id
         },
         subjectFilterOptions() {
             const options = this.classificationTree
@@ -452,7 +658,6 @@ export default {
             if (this.isLoading) return
             this.isLoading = true
             await this.materialCardStore.indexAll()
-            this.resetDeleteSteps()
             this.isLoading = false
         },
         normalizeFilterText(value) {
@@ -550,38 +755,112 @@ export default {
                 'picker'
             )
         },
-        deleteStep(cardId) {
-            return Number(this.deleteSteps[String(cardId)] || 0)
-        },
-        setDeleteStep(cardId, step) {
-            this.deleteSteps = {
-                ...this.deleteSteps,
-                [String(cardId)]: step,
+        sanitizeDialogCard(card) {
+            if (!card || typeof card !== 'object') return null
+
+            return {
+                ...card,
+                classifications: Array.isArray(card.classifications)
+                    ? card.classifications.map((row) => ({
+                        subject: String(row?.subject || '').trim(),
+                        topic: String(row?.topic || '').trim(),
+                        unit: String(row?.unit || '').trim(),
+                    }))
+                    : [],
+                attachments: Array.isArray(card.attachments)
+                    ? card.attachments.map((attachment) => ({
+                        ...attachment,
+                    }))
+                    : [],
             }
         },
-        resetDeleteStep(cardId) {
-            const next = { ...this.deleteSteps }
-            delete next[String(cardId)]
-            this.deleteSteps = next
+        mergeCardIntoOverview(card) {
+            const id = Number(card?.id)
+            if (!Number.isFinite(id) || id <= 0) return
+
+            const next = this.sanitizeDialogCard(card)
+            if (!next) return
+
+            this.materialCardStore.cards = this.cards.map((row) => {
+                if (Number(row?.id) !== id) return row
+                return {
+                    ...row,
+                    ...next,
+                }
+            })
         },
-        resetDeleteSteps() {
-            this.deleteSteps = {}
-        },
-        startDeleteFlow(cardId) {
+        async openDetailDialog(card) {
             if (this.isLoading || this.isSavingEdit || this.isDeletingId !== null) return
-            this.resetDeleteSteps()
-            this.setDeleteStep(cardId, 1)
+
+            const cardId = Number(card?.id)
+            if (!Number.isFinite(cardId) || cardId <= 0) return
+
+            this.detailDialogCard = this.sanitizeDialogCard(card)
+            this.detailDialogOpen = true
+            this.detailDialogLoading = true
+            this.detailDeleteStep = 0
+
+            try {
+                const loaded = await this.materialCardStore.show(cardId)
+                if (!loaded || !this.detailDialogOpen) return
+                if (Number(this.detailDialogCard?.id) !== cardId) return
+
+                const selectedCard = this.materialCardStore?.selected_card
+                if (Number(selectedCard?.id) !== cardId) return
+
+                this.detailDialogCard = this.sanitizeDialogCard(selectedCard)
+                this.mergeCardIntoOverview(selectedCard)
+            } finally {
+                this.detailDialogLoading = false
+            }
         },
-        async confirmDelete(cardId) {
-            if (this.isDeletingId !== null) return
-            if (this.deleteStep(cardId) !== 1) return
+        closeDetailDialog() {
+            if (this.isDeletingDetail) return
+            this.detailDialogOpen = false
+            this.detailDialogLoading = false
+            this.detailDialogCard = null
+            this.detailDeleteStep = 0
+            this.returnToDetailOnEditCancel = false
+            this.detailCardForEditReturn = null
+        },
+        detailAttachments(card) {
+            return Array.isArray(card?.attachments) ? card.attachments : []
+        },
+        openEditFromDetail() {
+            if (!this.detailDialogCard || this.detailDialogLoading || this.isDeletingDetail) return
+
+            const card = this.sanitizeDialogCard(this.detailDialogCard)
+            if (!card) return
+
+            this.returnToDetailOnEditCancel = true
+            this.detailCardForEditReturn = card
+            this.detailDialogOpen = false
+            this.detailDialogLoading = false
+            this.detailDialogCard = null
+            this.detailDeleteStep = 0
+            this.openEditDialog(card)
+        },
+        startDetailDeleteFlow() {
+            if (!this.detailDialogCard || this.detailDialogLoading || this.isDeletingDetail) return
+            this.detailDeleteStep = 1
+        },
+        resetDetailDeleteFlow() {
+            if (this.isDeletingDetail) return
+            this.detailDeleteStep = 0
+        },
+        async confirmDeleteFromDetail() {
+            if (this.isDeletingId !== null || this.detailDeleteStep !== 1) return
+
+            const cardId = Number(this.detailDialogCard?.id)
+            if (!Number.isFinite(cardId) || cardId <= 0) return
 
             this.isDeletingId = cardId
             const deleted = await this.materialCardStore.destroy(cardId)
             this.isDeletingId = null
-            this.resetDeleteStep(cardId)
+            this.detailDeleteStep = 0
 
             if (deleted) {
+                this.closeDetailDialog()
                 await this.loadCards()
             }
         },
@@ -598,7 +877,6 @@ export default {
                     }))
                     : [{ subject: '', topic: '', unit: '' }],
                 pendingAttachments: [],
-                source_type: card?.source_type || 'note',
                 source_url: card?.source_url || '',
                 area: card?.area || '',
                 unit: card?.unit || '',
@@ -606,14 +884,32 @@ export default {
                 status: card?.status || 'inbox',
                 notes: card?.notes || '',
             }
+            this.attachmentDialogCardId = Number(card?.id) || null
+            this.attachmentRows = this.toAttachmentRows(card?.attachments)
             this.editClassificationEditorVisible = false
             this.editDialogOpen = true
         },
-        closeEditDialog() {
+        async closeEditDialog(restoreDetail = true) {
             if (this.isSavingEdit) return
+
+            const shouldRestoreDetail = restoreDetail
+                && this.returnToDetailOnEditCancel
+                && this.detailCardForEditReturn
+            const restoreCard = shouldRestoreDetail
+                ? this.sanitizeDialogCard(this.detailCardForEditReturn)
+                : null
+
             this.editDialogOpen = false
             this.editClassificationEditorVisible = false
             this.editForm = createDefaultEditForm()
+            this.attachmentDialogCardId = null
+            this.attachmentRows = []
+            this.returnToDetailOnEditCancel = false
+            this.detailCardForEditReturn = null
+
+            if (restoreCard) {
+                await this.openDetailDialog(restoreCard)
+            }
         },
         openTypeManager() {
             if (!this.canManageTypeValues) return
@@ -623,11 +919,9 @@ export default {
             if (!this.canSaveEdit || this.isSavingEdit || !this.editForm.id) return
 
             this.isSavingEdit = true
-            const sourceType = String(this.editForm.source_type || 'note').trim() || 'note'
             const classifications = this.normalizeClassifications(this.editForm.classifications)
             const payload = {
                 title: String(this.editForm.title || '').trim(),
-                source_type: sourceType,
                 source_url: this.toNullable(this.editForm.source_url),
                 source_text: this.toNullable(this.editForm.description),
                 classifications,
@@ -654,7 +948,7 @@ export default {
             this.isSavingEdit = false
 
             if (updated) {
-                this.closeEditDialog()
+                await this.closeEditDialog(false)
                 await this.loadCards()
             }
         },
@@ -680,19 +974,26 @@ export default {
 
             return result
         },
-        sourceIcon(sourceType) {
-            const map = {
-                upload: 'mdi-file-upload-outline',
-                link: 'mdi-link-variant',
-                note: 'mdi-note-text-outline',
-            }
-            return map[sourceType] || 'mdi-file-document-outline'
+        sourceIcon(card) {
+            const attachments = Array.isArray(card?.attachments) ? card.attachments : []
+            const hasFileAttachment = attachments.some((attachment) => attachment?.attachment_type === 'file')
+            if (hasFileAttachment) return 'mdi-file-upload-outline'
+
+            const hasSourceUrl = String(card?.source_url || '').trim() !== ''
+            if (hasSourceUrl) return 'mdi-link-variant'
+
+            const hasTextContent = String(card?.source_text || '').trim() !== '' || String(card?.notes || '').trim() !== ''
+            if (hasTextContent) return 'mdi-note-text-outline'
+
+            if (attachments.length > 0) return 'mdi-paperclip'
+
+            return 'mdi-file-document-outline'
         },
         statusLabel(status) {
             const map = {
                 inbox: 'Neu/Idee',
                 in_progress: 'In Arbeit',
-                done: 'Fertig',
+                done: 'ok',
                 update_needed: 'Änderung nötig',
             }
             return map[status] || 'Unbekannt'
@@ -777,16 +1078,81 @@ export default {
             this.savingAttachmentIds = []
             this.deletingAttachmentIds = []
         },
+        attachmentExtension(row) {
+            const extractFromPath = (value) => {
+                const raw = String(value || '').trim()
+                if (!raw) return ''
+                const clean = raw.split('?')[0].split('#')[0]
+                const fileName = clean.split('/').pop()?.split('\\').pop() || ''
+                const dotIndex = fileName.lastIndexOf('.')
+                if (dotIndex <= 0 || dotIndex >= fileName.length - 1) return ''
+                return fileName.slice(dotIndex + 1).toLocaleLowerCase()
+            }
+
+            const fromName = extractFromPath(row?.name)
+            if (fromName) return fromName
+
+            const fromPath = extractFromPath(row?.file_path)
+            if (fromPath) return fromPath
+
+            const mime = String(row?.mime_type || '').trim().toLocaleLowerCase()
+            if (mime === 'application/pdf') return 'pdf'
+            if (mime === 'application/msword') return 'doc'
+            if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx'
+            if (mime === 'application/vnd.ms-excel') return 'xls'
+            if (mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') return 'xlsx'
+            if (mime === 'application/vnd.ms-powerpoint') return 'ppt'
+            if (mime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') return 'pptx'
+            if (mime === 'image/jpeg') return 'jpg'
+            if (mime === 'image/png') return 'png'
+            if (mime === 'image/gif') return 'gif'
+            if (mime === 'image/webp') return 'webp'
+            if (mime === 'image/svg+xml') return 'svg'
+            if (mime === 'text/plain') return 'txt'
+            if (mime === 'text/markdown') return 'md'
+            if (mime === 'text/csv') return 'csv'
+            if (mime === 'application/zip') return 'zip'
+            if (mime === 'application/x-7z-compressed') return '7z'
+            if (mime === 'application/x-rar-compressed') return 'rar'
+
+            return ''
+        },
         attachmentTypeLabel(row) {
-            return String(row?.attachment_type || '').trim() === 'link' ? 'Link' : 'Datei'
+            if (String(row?.attachment_type || '').trim() === 'link') {
+                return 'Link'
+            }
+
+            const ext = this.attachmentExtension(row)
+            const imageExt = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'tif', 'tiff']
+            const wordExt = ['doc', 'docx', 'odt', 'rtf']
+            const excelExt = ['xls', 'xlsx', 'csv', 'ods']
+            const powerpointExt = ['ppt', 'pptx', 'odp']
+            const textExt = ['txt', 'md', 'rtf']
+            const archiveExt = ['zip', 'rar', '7z', 'tar', 'gz', 'bz2']
+            const audioExt = ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac']
+            const videoExt = ['mp4', 'mov', 'avi', 'mkv', 'webm']
+
+            let baseLabel = 'Datei'
+            if (ext === 'pdf') baseLabel = 'PDF-Datei'
+            else if (wordExt.includes(ext)) baseLabel = 'Word-Datei'
+            else if (excelExt.includes(ext)) baseLabel = 'Excel-Datei'
+            else if (powerpointExt.includes(ext)) baseLabel = 'PowerPoint-Datei'
+            else if (imageExt.includes(ext)) baseLabel = 'Bild-Datei'
+            else if (textExt.includes(ext)) baseLabel = 'Text-Datei'
+            else if (archiveExt.includes(ext)) baseLabel = 'Archiv-Datei'
+            else if (audioExt.includes(ext)) baseLabel = 'Audio-Datei'
+            else if (videoExt.includes(ext)) baseLabel = 'Video-Datei'
+
+            return ext ? `${baseLabel} (${ext})` : baseLabel
         },
         attachmentMeta(row) {
             if (String(row?.attachment_type || '').trim() === 'link') {
                 return String(row?.url || '').trim() || 'Link-Anhang'
             }
 
-            if (String(row?.mime_type || '').trim()) {
-                return row.mime_type
+            const ext = this.attachmentExtension(row)
+            if (ext) {
+                return `Dateiformat: ${ext.toUpperCase()}`
             }
 
             return String(row?.file_path || '').trim() || 'Datei-Anhang'
@@ -1017,6 +1383,12 @@ export default {
 
             return 'Datei'
         },
+        attachmentChipLabel(attachment) {
+            const name = this.attachmentDisplayName(attachment)
+            const ext = this.attachmentExtension(attachment)
+            if (!ext) return name
+            return `${name} (${ext.toUpperCase()})`
+        },
         preview(value, limit = 320) {
             const text = String(value || '').trim()
             if (text.length <= limit) return text
@@ -1045,7 +1417,7 @@ export default {
 }
 
 .overview-actions {
-    min-width: 260px;
+    min-width: 140px;
 }
 
 .material-header {
@@ -1139,6 +1511,11 @@ export default {
 }
 
 .preview-text {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.detail-text {
     white-space: pre-wrap;
     word-break: break-word;
 }

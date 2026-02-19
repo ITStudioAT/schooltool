@@ -14,7 +14,6 @@ class MaterialCardResource extends JsonResource
             'school_id' => $this->school_id,
             'user_id' => $this->user_id,
             'title' => $this->title,
-            'source_type' => $this->source_type,
             'source_url' => $this->source_url,
             'source_text' => $this->source_text,
             'subject' => $this->subject,

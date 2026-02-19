@@ -5,6 +5,7 @@
             <v-col cols="12" lg="10" xl="9" class="mx-auto">
                 <MaterialsOverviewView v-if="main_action === 'overview'" />
                 <MaterialsNewView v-if="main_action === 'new_material'" @menu-lock-change="setMenuLocked" />
+                <MaterialsSettingsView v-if="main_action === 'settings'" />
             </v-col>
         </v-row>
     </v-container>
@@ -15,6 +16,7 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import MaterialsMenu from './components/navigation/MaterialsMenu.vue'
 import MaterialsOverviewView from './components/views/MaterialsOverviewView.vue'
 import MaterialsNewView from './components/views/MaterialsNewView.vue'
+import MaterialsSettingsView from './components/views/MaterialsSettingsView.vue'
 
 export default {
     name: 'Materials',
@@ -22,6 +24,7 @@ export default {
         MaterialsMenu,
         MaterialsOverviewView,
         MaterialsNewView,
+        MaterialsSettingsView,
     },
     data() {
         return {

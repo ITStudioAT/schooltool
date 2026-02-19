@@ -19,7 +19,6 @@ class MaterialCardStoreRequest extends FormRequest
     {
         return [
             'data.title' => ['required', 'string', 'max:255'],
-            'data.source_type' => ['required', Rule::in(MaterialCard::sourceValues())],
             'data.source_url' => ['nullable', 'string', 'max:2048'],
             'data.source_text' => ['nullable', 'string', 'max:10000'],
             'data.subject' => ['nullable', 'string', 'max:255'],

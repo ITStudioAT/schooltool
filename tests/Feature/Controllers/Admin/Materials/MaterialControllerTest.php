@@ -113,7 +113,7 @@ test('denies regular user role', function () {
         ->assertStatus(403);
 });
 
-test('config returns source and status options', function () {
+test('config returns status options', function () {
     $this->actingAs($this->teacher, 'sanctum');
 
     $this->getJson('/api/admin/materials/config')
@@ -121,9 +121,6 @@ test('config returns source and status options', function () {
         ->assertJsonStructure([
             'module',
             'school_id',
-            'source_types' => [
-                ['value', 'label'],
-            ],
             'status_values' => [
                 ['value', 'label'],
             ],
@@ -136,7 +133,6 @@ test('teacher can create material card and gets keywords', function () {
     $response = $this->postJson('/api/admin/materials/cards', [
         'data' => [
             'title' => 'Geometrie Arbeitsblatt Dreiecke',
-            'source_type' => 'note',
             'source_text' => 'Dreieck Fläche Winkel',
             'notes' => 'Wiederholung Flächenberechnung',
             'subject' => 'Mathematik',
@@ -147,7 +143,7 @@ test('teacher can create material card and gets keywords', function () {
         ->assertJsonFragment([
             'title' => 'Geometrie Arbeitsblatt Dreiecke',
             'status' => 'inbox',
-            'subject' => 'Mathematik',
+            'subject' => null,
         ]);
 
     $cardId = $response->json('id');
@@ -165,7 +161,6 @@ test('quick store creates inbox card', function () {
     $response = $this->postJson('/api/admin/materials/cards/quick_store', [
         'data' => [
             'title' => 'Merker Link',
-            'source_type' => 'link',
             'source_url' => 'https://example.com/material',
         ],
     ]);
@@ -174,7 +169,6 @@ test('quick store creates inbox card', function () {
         ->assertJsonFragment([
             'title' => 'Merker Link',
             'status' => 'inbox',
-            'source_type' => 'link',
         ]);
 });
 
@@ -190,7 +184,6 @@ test('index returns only own cards', function () {
         'school_id' => $this->school->id,
         'user_id' => $this->teacher->id,
         'title' => 'Eigene Karte',
-        'source_type' => 'note',
         'status' => 'inbox',
         'keywords' => [],
     ]);
@@ -198,7 +191,6 @@ test('index returns only own cards', function () {
         'school_id' => $this->school->id,
         'user_id' => $otherTeacher->id,
         'title' => 'Fremde Karte',
-        'source_type' => 'note',
         'status' => 'inbox',
         'keywords' => [],
     ]);
@@ -226,7 +218,6 @@ test('owner protection blocks update from another teacher', function () {
         'school_id' => $this->school->id,
         'user_id' => $owner->id,
         'title' => 'Private Karte',
-        'source_type' => 'note',
         'status' => 'inbox',
         'keywords' => [],
     ]);
@@ -236,7 +227,6 @@ test('owner protection blocks update from another teacher', function () {
     $this->putJson('/api/admin/materials/cards/' . $card->id, [
         'data' => [
             'title' => 'Manipuliert',
-            'source_type' => 'note',
             'status' => 'done',
         ],
     ])->assertStatus(403);
@@ -247,7 +237,6 @@ test('adding link attachment stores attachment and refreshes keywords', function
         'school_id' => $this->school->id,
         'user_id' => $this->teacher->id,
         'title' => 'Chemie Einführung',
-        'source_type' => 'note',
         'keywords' => [],
     ]);
 
@@ -274,7 +263,6 @@ test('adding file attachment stores file and allows download', function () {
         'school_id' => $this->school->id,
         'user_id' => $this->teacher->id,
         'title' => 'Geschichte Mittelalter',
-        'source_type' => 'upload',
         'keywords' => [],
     ]);
 
@@ -301,7 +289,6 @@ test('attachment rename updates stored attachment name', function () {
         'school_id' => $this->school->id,
         'user_id' => $this->teacher->id,
         'title' => 'Physik Experimente',
-        'source_type' => 'upload',
         'keywords' => [],
     ]);
 
@@ -334,7 +321,6 @@ test('attachment delete removes file from storage', function () {
         'school_id' => $this->school->id,
         'user_id' => $this->teacher->id,
         'title' => 'Deutsch Grammatik',
-        'source_type' => 'upload',
         'keywords' => [],
     ]);
 
@@ -359,7 +345,6 @@ test('teacher can delete own card', function () {
         'school_id' => $this->school->id,
         'user_id' => $this->teacher->id,
         'title' => 'Löschbar',
-        'source_type' => 'note',
         'keywords' => [],
     ]);
 

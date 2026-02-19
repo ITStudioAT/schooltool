@@ -312,6 +312,8 @@
             </v-card>
         </div>
 
+        <slot name="extra-content" />
+
         <div class="d-flex flex-wrap justify-end ga-2 mt-5">
             <v-btn variant="text" :disabled="isSaving" @click="$emit('cancel')">{{ cancelLabel }}</v-btn>
             <v-btn color="primary" variant="flat" :loading="isSaving" :disabled="!canSave || isSaving" @click="$emit('save')">{{ saveLabel }}</v-btn>
@@ -435,7 +437,7 @@ export default {
             const fallback = [
                 { value: 'inbox', label: 'Neu/Idee' },
                 { value: 'in_progress', label: 'In Arbeit' },
-                { value: 'done', label: 'Fertig' },
+                { value: 'done', label: 'ok' },
                 { value: 'update_needed', label: 'Änderung nötig' },
             ]
 

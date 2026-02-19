@@ -20,7 +20,6 @@ class MaterialCardFactory extends Factory
             'school_id' => School::factory(),
             'user_id' => User::factory(),
             'title' => fake()->sentence(4),
-            'source_type' => fake()->randomElement(MaterialCard::sourceValues()),
             'source_url' => fake()->url(),
             'source_text' => fake()->sentence(10),
             'subject' => fake()->randomElement(['Deutsch', 'Mathematik', 'Englisch', null]),

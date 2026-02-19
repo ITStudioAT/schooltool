@@ -16,15 +16,10 @@ class MaterialCard extends Model
     public const STATUS_DONE = 'done';
     public const STATUS_UPDATE_NEEDED = 'update_needed';
 
-    public const SOURCE_UPLOAD = 'upload';
-    public const SOURCE_LINK = 'link';
-    public const SOURCE_NOTE = 'note';
-
     protected $fillable = [
         'school_id',
         'user_id',
         'title',
-        'source_type',
         'source_url',
         'source_text',
         'subject',
@@ -70,15 +65,6 @@ class MaterialCard extends Model
             self::STATUS_IN_PROGRESS,
             self::STATUS_DONE,
             self::STATUS_UPDATE_NEEDED,
-        ];
-    }
-
-    public static function sourceValues(): array
-    {
-        return [
-            self::SOURCE_UPLOAD,
-            self::SOURCE_LINK,
-            self::SOURCE_NOTE,
         ];
     }
 }
