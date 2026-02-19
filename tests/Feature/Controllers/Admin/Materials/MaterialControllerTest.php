@@ -3,6 +3,7 @@
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
 use App\Models\SchoolTool;
+use App\Models\MaterialSubject;
 use App\Models\MaterialType;
 use App\Models\School;
 use App\Models\Schoolyear;
@@ -177,6 +178,95 @@ test('config returns default material type options from schooltool config', func
         ->assertJsonPath('default_type_values.0.label', 'Arbeitsblatt')
         ->assertJsonPath('default_type_values.1.value', 'Test')
         ->assertJsonPath('default_type_values.1.label', 'Test');
+});
+
+test('teacher can create and rename subject topic and unit in own taxonomy', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $subjectResponse = $this->postJson('/api/admin/materials/subjects', [
+        'data' => [
+            'name' => 'Mathematik',
+        ],
+    ])->assertStatus(200);
+
+    $subjectId = (int) $subjectResponse->json('data.id');
+
+    $topicResponse = $this->postJson('/api/admin/materials/topics', [
+        'data' => [
+            'subject_id' => $subjectId,
+            'name' => 'Algebra',
+        ],
+    ])->assertStatus(200);
+
+    $topicId = (int) $topicResponse->json('data.id');
+
+    $unitResponse = $this->postJson('/api/admin/materials/units', [
+        'data' => [
+            'topic_id' => $topicId,
+            'name' => 'Lineare Gleichungen',
+        ],
+    ])->assertStatus(200);
+
+    $unitId = (int) $unitResponse->json('data.id');
+
+    $this->putJson('/api/admin/materials/subjects/' . $subjectId, [
+        'data' => [
+            'name' => 'Mathe',
+        ],
+    ])->assertStatus(200)
+        ->assertJsonPath('data.name', 'Mathe');
+
+    $this->putJson('/api/admin/materials/topics/' . $topicId, [
+        'data' => [
+            'name' => 'Gleichungen',
+        ],
+    ])->assertStatus(200)
+        ->assertJsonPath('data.name', 'Gleichungen');
+
+    $this->putJson('/api/admin/materials/units/' . $unitId, [
+        'data' => [
+            'name' => 'Lineare Systeme',
+        ],
+    ])->assertStatus(200)
+        ->assertJsonPath('data.name', 'Lineare Systeme');
+
+    $this->assertDatabaseHas('material_subjects', [
+        'id' => $subjectId,
+        'user_id' => $this->teacher->id,
+        'name' => 'Mathe',
+    ]);
+    $this->assertDatabaseHas('material_topics', [
+        'id' => $topicId,
+        'subject_id' => $subjectId,
+        'name' => 'Gleichungen',
+    ]);
+    $this->assertDatabaseHas('material_units', [
+        'id' => $unitId,
+        'topic_id' => $topicId,
+        'name' => 'Lineare Systeme',
+    ]);
+});
+
+test('teacher cannot rename subject from another user taxonomy', function () {
+    $otherTeacher = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'other-teacher@materials.test',
+    ]);
+    $otherTeacher->assignRole('teacher');
+
+    $foreignSubject = MaterialSubject::query()->create([
+        'user_id' => $otherTeacher->id,
+        'name' => 'Biologie',
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->putJson('/api/admin/materials/subjects/' . $foreignSubject->id, [
+        'data' => [
+            'name' => 'Bio',
+        ],
+    ])->assertStatus(403);
 });
 
 test('teacher can create material card and gets keywords', function () {

@@ -1035,6 +1035,340 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             }
         },
 
+        async createSubject(name) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const normalizedName = String(name ?? '').trim().slice(0, 255)
+
+            if (!normalizedName) {
+                notification.notify({
+                    message: 'Bitte einen Fachnamen eingeben.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            adminStore.is_loading++
+            try {
+                const response = await axios.post('/api/admin/materials/subjects', {
+                    data: {
+                        name: normalizedName,
+                    },
+                })
+
+                await this.loadConfig()
+                if (Array.isArray(this.cards) && this.cards.length > 0) {
+                    await this.indexAll()
+                }
+
+                notification.notify({
+                    message: 'Fach hinzugefügt.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Anlegen des Fachs.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async updateSubject(subjectId, name) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const id = Number(subjectId)
+            const normalizedName = String(name ?? '').trim().slice(0, 255)
+
+            if (!Number.isFinite(id) || id <= 0) {
+                notification.notify({
+                    message: 'Ungültiges Fach.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            if (!normalizedName) {
+                notification.notify({
+                    message: 'Bitte einen Fachnamen eingeben.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            adminStore.is_loading++
+            try {
+                const response = await axios.put('/api/admin/materials/subjects/' + id, {
+                    data: {
+                        name: normalizedName,
+                    },
+                })
+
+                await this.loadConfig()
+                if (Array.isArray(this.cards) && this.cards.length > 0) {
+                    await this.indexAll()
+                }
+
+                notification.notify({
+                    message: 'Fach umbenannt.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Umbenennen des Fachs.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async createTopic(subjectId, name) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const id = Number(subjectId)
+            const normalizedName = String(name ?? '').trim().slice(0, 255)
+
+            if (!Number.isFinite(id) || id <= 0) {
+                notification.notify({
+                    message: 'Ungültiges Fach.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            if (!normalizedName) {
+                notification.notify({
+                    message: 'Bitte einen Themennamen eingeben.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            adminStore.is_loading++
+            try {
+                const response = await axios.post('/api/admin/materials/topics', {
+                    data: {
+                        subject_id: id,
+                        name: normalizedName,
+                    },
+                })
+
+                await this.loadConfig()
+                if (Array.isArray(this.cards) && this.cards.length > 0) {
+                    await this.indexAll()
+                }
+
+                notification.notify({
+                    message: 'Thema hinzugefügt.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Anlegen des Themas.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async updateTopic(topicId, name) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const id = Number(topicId)
+            const normalizedName = String(name ?? '').trim().slice(0, 255)
+
+            if (!Number.isFinite(id) || id <= 0) {
+                notification.notify({
+                    message: 'Ungültiges Thema.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            if (!normalizedName) {
+                notification.notify({
+                    message: 'Bitte einen Themennamen eingeben.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            adminStore.is_loading++
+            try {
+                const response = await axios.put('/api/admin/materials/topics/' + id, {
+                    data: {
+                        name: normalizedName,
+                    },
+                })
+
+                await this.loadConfig()
+                if (Array.isArray(this.cards) && this.cards.length > 0) {
+                    await this.indexAll()
+                }
+
+                notification.notify({
+                    message: 'Thema umbenannt.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Umbenennen des Themas.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async createUnit(topicId, name) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const id = Number(topicId)
+            const normalizedName = String(name ?? '').trim().slice(0, 255)
+
+            if (!Number.isFinite(id) || id <= 0) {
+                notification.notify({
+                    message: 'Ungültiges Thema.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            if (!normalizedName) {
+                notification.notify({
+                    message: 'Bitte einen Bereichsnamen eingeben.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            adminStore.is_loading++
+            try {
+                const response = await axios.post('/api/admin/materials/units', {
+                    data: {
+                        topic_id: id,
+                        name: normalizedName,
+                    },
+                })
+
+                await this.loadConfig()
+                if (Array.isArray(this.cards) && this.cards.length > 0) {
+                    await this.indexAll()
+                }
+
+                notification.notify({
+                    message: 'Bereich hinzugefügt.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Anlegen des Bereichs.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async updateUnit(unitId, name) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const id = Number(unitId)
+            const normalizedName = String(name ?? '').trim().slice(0, 255)
+
+            if (!Number.isFinite(id) || id <= 0) {
+                notification.notify({
+                    message: 'Ungültiger Bereich.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            if (!normalizedName) {
+                notification.notify({
+                    message: 'Bitte einen Bereichsnamen eingeben.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            adminStore.is_loading++
+            try {
+                const response = await axios.put('/api/admin/materials/units/' + id, {
+                    data: {
+                        name: normalizedName,
+                    },
+                })
+
+                await this.loadConfig()
+                if (Array.isArray(this.cards) && this.cards.length > 0) {
+                    await this.indexAll()
+                }
+
+                notification.notify({
+                    message: 'Bereich umbenannt.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Umbenennen des Bereichs.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
         async updateFileSettings(maxUploadSizeKb) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()

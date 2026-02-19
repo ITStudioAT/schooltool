@@ -11,6 +11,7 @@
                 size="small"
                 variant="flat"
                 :prepend-icon="item.icon"
+                :disabled="isAnySettingsEditActive && selectedAction !== item.value"
                 :class="[
                     'settings-menu-btn',
                     { 'settings-menu-btn--active': selectedAction === item.value },
@@ -84,9 +85,9 @@
                 </v-btn>
             </template>
 
-            <template v-else-if="selectedAction === 'file_settings'">
+            <template v-else-if="selectedAction === 'overview_settings'">
                 <div class="text-body-2 text-medium-emphasis mb-3">
-                    Diese Dateieinstellung gilt für alle Materialien deiner Schule.
+                    Dateieinstellung für die gesamte Schule.
                 </div>
 
                 <div class="d-flex flex-wrap align-center ga-2 mb-3">
@@ -100,13 +101,13 @@
                         color="primary"
                         variant="flat"
                         prepend-icon="mdi-pencil"
-                        :disabled="isSavingFileSettings"
+                        :disabled="isAnySettingsEditActive || isSavingFileSettings"
                         @click="startEditFileSettings">
                         Bearbeiten
                     </v-btn>
                 </div>
 
-                <div v-if="canManageFileSettings && isEditingFileSettings" class="d-flex flex-wrap align-start ga-2">
+                <div v-if="canManageFileSettings && isEditingFileSettings" class="d-flex flex-wrap align-start ga-2 mb-4">
                     <v-text-field
                         v-model="fileSettingsForm.maxUploadSizeMb"
                         type="number"
@@ -136,9 +137,9 @@
                         Speichern
                     </v-btn>
                 </div>
-            </template>
 
-            <template v-else-if="selectedAction === 'overview_settings'">
+                <v-divider class="my-3" />
+
                 <div class="text-body-2 text-medium-emphasis mb-3">
                     Diese Einstellung gilt nur für deine eigene Material-Übersicht.
                 </div>
@@ -154,7 +155,7 @@
                         color="primary"
                         variant="flat"
                         prepend-icon="mdi-pencil"
-                        :disabled="isSavingUserSettings"
+                        :disabled="isAnySettingsEditActive || isSavingUserSettings"
                         @click="startEditUserSettings">
                         Bearbeiten
                     </v-btn>
@@ -192,6 +193,178 @@
                     </v-btn>
                 </div>
             </template>
+
+            <template v-else-if="selectedAction === 'subjects'">
+                <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap ga-2 w-100 mb-4">
+                    <v-btn
+                        v-for="item in subjectsMenuItems"
+                        :key="`materials-subjects-settings-${item.value}`"
+                        rounded="pill"
+                        size="small"
+                        variant="flat"
+                        :prepend-icon="item.icon"
+                        :class="[
+                            'settings-submenu-btn',
+                            { 'settings-submenu-btn--active': selectedSubjectAction === item.value },
+                        ]"
+                        @click="selectedSubjectAction = item.value">
+                        {{ item.label }}
+                    </v-btn>
+                </v-card>
+
+                <v-card variant="outlined" class="pa-4">
+                    <div class="text-subtitle-1 font-weight-bold mb-2">{{ selectedSubjectItemLabel }}</div>
+                    <template v-if="selectedSubjectAction === 'subjects_catalog'">
+                        <div class="text-body-2 text-medium-emphasis mb-3">
+                            Alle verfügbaren Fächer mit zugehörigen Themen und Bereichen.
+                        </div>
+
+                        <div class="d-flex align-center mb-3">
+                            <v-btn
+                                v-if="isSubjectCatalogEditorOpen"
+                                size="small"
+                                variant="text"
+                                :disabled="isSavingSubjectCatalog"
+                                @click="cancelSubjectCatalogEditor">
+                                Abbrechen
+                            </v-btn>
+                        </div>
+
+                        <v-card v-if="isSubjectCatalogEditorOpen" variant="tonal" color="primary" class="pa-3 mb-3">
+                            <div class="text-body-2 font-weight-bold mb-2">{{ subjectCatalogEditorTitle }}</div>
+                            <div class="d-flex flex-wrap align-start ga-2">
+                                <v-text-field
+                                    v-model="subjectCatalogEditor.name"
+                                    label="Name"
+                                    variant="outlined"
+                                    density="comfortable"
+                                    hide-details="auto"
+                                    class="flex-grow-1"
+                                    :disabled="isSavingSubjectCatalog"
+                                    @keyup.enter="saveSubjectCatalogEditor" />
+                                <v-btn
+                                    size="small"
+                                    color="primary"
+                                    variant="flat"
+                                    prepend-icon="mdi-content-save-outline"
+                                    :loading="isSavingSubjectCatalog"
+                                    :disabled="isSavingSubjectCatalog || !canSaveSubjectCatalogEditor"
+                                    @click="saveSubjectCatalogEditor">
+                                    Speichern
+                                </v-btn>
+                            </div>
+                        </v-card>
+
+                        <div class="subjects-tree">
+                            <div v-if="!subjectTreeItems.length" class="text-body-2 text-medium-emphasis mb-2">
+                                Noch keine Fachstruktur vorhanden.
+                            </div>
+                            <ul class="subjects-tree-list">
+                                <li
+                                    v-for="subject in subjectTreeItems"
+                                    :key="`subject-tree-subject-${subject.name}`"
+                                    class="subjects-tree-item">
+                                    <div class="subjects-tree-node subjects-tree-node--subject">
+                                        <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
+                                        <span>{{ subject.name }}</span>
+                                        <div class="subjects-tree-node-actions">
+                                            <v-btn
+                                                icon="mdi-pencil"
+                                                size="x-small"
+                                                variant="text"
+                                                color="primary"
+                                                :disabled="isSavingSubjectCatalog || !subject.id"
+                                                @click="startRenameSubject(subject)" />
+                                        </div>
+                                    </div>
+
+                                    <ul v-if="subject.id" class="subjects-tree-list subjects-tree-list--child">
+                                        <li
+                                            v-for="topic in subject.topics"
+                                            :key="`subject-tree-topic-${subject.name}-${topic.name}`"
+                                            class="subjects-tree-item">
+                                            <div class="subjects-tree-node subjects-tree-node--topic">
+                                                <v-icon size="14" icon="mdi-book-open-page-variant-outline" class="mr-2" />
+                                                <span>{{ topic.name }}</span>
+                                                <div class="subjects-tree-node-actions">
+                                                    <v-btn
+                                                        icon="mdi-pencil"
+                                                        size="x-small"
+                                                        variant="text"
+                                                        color="primary"
+                                                        :disabled="isSavingSubjectCatalog || !topic.id"
+                                                        @click="startRenameTopic(topic)" />
+                                                </div>
+                                            </div>
+
+                                            <ul v-if="topic.id" class="subjects-tree-list subjects-tree-list--child">
+                                                <li
+                                                    v-for="unit in topic.units"
+                                                    :key="`subject-tree-unit-${subject.name}-${topic.name}-${unit.id || unit.name}`"
+                                                    class="subjects-tree-item">
+                                                    <div class="subjects-tree-node subjects-tree-node--unit">
+                                                        <v-icon size="12" icon="mdi-chevron-right" class="mr-1" />
+                                                        <span>{{ unit.name }}</span>
+                                                        <div class="subjects-tree-node-actions">
+                                                            <v-btn
+                                                                icon="mdi-pencil"
+                                                                size="x-small"
+                                                                variant="text"
+                                                                color="primary"
+                                                                :disabled="isSavingSubjectCatalog || !unit.id"
+                                                                @click="startRenameUnit(unit)" />
+                                                        </div>
+                                                    </div>
+                                                </li>
+                                                <li class="subjects-tree-item">
+                                                    <button
+                                                        type="button"
+                                                        class="subjects-tree-new-btn"
+                                                        :disabled="isSavingSubjectCatalog"
+                                                        @click="startCreateUnit(topic)">
+                                                        <span class="subjects-tree-node subjects-tree-node--new">
+                                                            <v-icon size="12" icon="mdi-plus" class="mr-1" />
+                                                            <span>Neue Einheit</span>
+                                                        </span>
+                                                    </button>
+                                                </li>
+                                            </ul>
+                                        </li>
+                                        <li class="subjects-tree-item">
+                                            <button
+                                                type="button"
+                                                class="subjects-tree-new-btn"
+                                                :disabled="isSavingSubjectCatalog"
+                                                @click="startCreateTopic(subject)">
+                                                <span class="subjects-tree-node subjects-tree-node--new">
+                                                    <v-icon size="14" icon="mdi-plus" class="mr-1" />
+                                                    <span>Neues Thema</span>
+                                                </span>
+                                            </button>
+                                        </li>
+                                    </ul>
+                                </li>
+                                <li class="subjects-tree-item">
+                                    <button
+                                        type="button"
+                                        class="subjects-tree-new-btn"
+                                        :disabled="isSavingSubjectCatalog"
+                                        @click="startCreateSubject">
+                                        <span class="subjects-tree-node subjects-tree-node--new">
+                                            <v-icon size="16" icon="mdi-plus" class="mr-1" />
+                                            <span>Neues Fach</span>
+                                        </span>
+                                    </button>
+                                </li>
+                            </ul>
+                        </div>
+                    </template>
+
+                    <template v-else>
+                        <div class="settings-empty-card" />
+                    </template>
+                </v-card>
+            </template>
         </v-card>
 
         <MaterialTypeManagerDialog v-model="typeManagerDialogOpen" />
@@ -206,6 +379,7 @@ import MaterialStatusManagerDialog from '../forms/MaterialStatusManagerDialog.vu
 
 export default {
     name: 'MaterialsSettingsView',
+    emits: ['menu-lock-change'],
     components: {
         MaterialTypeManagerDialog,
         MaterialStatusManagerDialog,
@@ -214,13 +388,19 @@ export default {
         return {
             materialCardStore: null,
             selectedAction: 'overview_settings',
+            selectedSubjectAction: 'subjects_catalog',
             typeManagerDialogOpen: false,
             statusManagerDialogOpen: false,
             menuItems: [
                 { value: 'overview_settings', label: 'Übersicht', icon: 'mdi-view-dashboard-outline' },
+                { value: 'subjects', label: 'Fächer', icon: 'mdi-book-education-outline' },
                 { value: 'materials_types', label: 'Materialtypen', icon: 'mdi-shape-outline' },
                 { value: 'status_values', label: 'Statuswerte', icon: 'mdi-flag-outline' },
-                { value: 'file_settings', label: 'Dateien', icon: 'mdi-file-cog-outline' },
+            ],
+            subjectsMenuItems: [
+                { value: 'subjects_catalog', label: 'Fachkatalog', icon: 'mdi-book-open-variant-outline' },
+                { value: 'subjects_groups', label: 'Fachgruppen', icon: 'mdi-account-group-outline' },
+                { value: 'subjects_mapping', label: 'Zuordnung', icon: 'mdi-link-variant' },
             ],
             fileSettingsForm: {
                 maxUploadSizeMb: '',
@@ -232,6 +412,15 @@ export default {
             },
             isSavingUserSettings: false,
             isEditingUserSettings: false,
+            isSavingSubjectCatalog: false,
+            subjectCatalogEditor: {
+                mode: '',
+                name: '',
+                subjectId: null,
+                topicId: null,
+                unitId: null,
+                parentLabel: '',
+            },
         }
     },
     async beforeMount() {
@@ -242,6 +431,9 @@ export default {
         this.syncFileSettingsForm()
         this.syncUserSettingsForm()
     },
+    unmounted() {
+        this.$emit('menu-lock-change', false)
+    },
     computed: {
         visibleMenuItems() {
             return this.menuItems
@@ -250,6 +442,58 @@ export default {
             const selected = this.visibleMenuItems.find((item) => item.value === this.selectedAction)
             if (selected) return selected.label
             return this.visibleMenuItems[0]?.label || 'Einstellungen'
+        },
+        selectedSubjectItemLabel() {
+            const selected = this.subjectsMenuItems.find((item) => item.value === this.selectedSubjectAction)
+            if (selected) return selected.label
+            return this.subjectsMenuItems[0]?.label || 'Fächer'
+        },
+        subjectTreeItems() {
+            const tree = Array.isArray(this.materialCardStore?.config?.classification_tree)
+                ? this.materialCardStore.config.classification_tree
+                : []
+
+            return tree
+                .map((subjectNode) => {
+                    const subjectId = Number(subjectNode?.id)
+                    const subjectName = this.normalizeTreeName(subjectNode?.name)
+                    if (!subjectName) return null
+
+                    const topicNodes = Array.isArray(subjectNode?.topics) ? subjectNode.topics : []
+                    const topics = topicNodes
+                        .map((topicNode) => {
+                            const topicId = Number(topicNode?.id)
+                            const topicName = this.normalizeTreeName(topicNode?.name)
+                            if (!topicName) return null
+
+                            const unitNodes = Array.isArray(topicNode?.units) ? topicNode.units : []
+                            const units = unitNodes
+                                .map((unitNode) => {
+                                    const unitId = Number(unitNode?.id)
+                                    const unitName = this.normalizeTreeName(unitNode?.name)
+                                    if (!unitName) return null
+                                    return {
+                                        id: Number.isFinite(unitId) && unitId > 0 ? unitId : null,
+                                        name: unitName,
+                                    }
+                                })
+                                .filter(Boolean)
+
+                            return {
+                                id: Number.isFinite(topicId) && topicId > 0 ? topicId : null,
+                                name: topicName,
+                                units,
+                            }
+                        })
+                        .filter(Boolean)
+
+                    return {
+                        id: Number.isFinite(subjectId) && subjectId > 0 ? subjectId : null,
+                        name: subjectName,
+                        topics,
+                    }
+                })
+                .filter(Boolean)
         },
         normalizedTypeOptions() {
             const list = Array.isArray(this.materialCardStore?.config?.type_values)
@@ -323,6 +567,37 @@ export default {
             }
             return String(Math.round(value))
         },
+        isSubjectCatalogEditorOpen() {
+            return this.subjectCatalogEditor.mode !== ''
+        },
+        subjectCatalogEditorTitle() {
+            const parent = this.normalizeTreeName(this.subjectCatalogEditor.parentLabel)
+            switch (this.subjectCatalogEditor.mode) {
+            case 'create_subject':
+                return 'Neues Fach anlegen'
+            case 'rename_subject':
+                return 'Fach umbenennen'
+            case 'create_topic':
+                return parent ? `Neues Thema in "${parent}"` : 'Neues Thema anlegen'
+            case 'rename_topic':
+                return 'Thema umbenennen'
+            case 'create_unit':
+                return parent ? `Neuen Bereich in "${parent}"` : 'Neuen Bereich anlegen'
+            case 'rename_unit':
+                return 'Bereich umbenennen'
+            default:
+                return ''
+            }
+        },
+        canSaveSubjectCatalogEditor() {
+            return this.normalizeTreeName(this.subjectCatalogEditor.name) !== ''
+        },
+        isAnySettingsEditActive() {
+            return this.isEditingFileSettings
+                || this.isSavingFileSettings
+                || this.isEditingUserSettings
+                || this.isSavingUserSettings
+        },
         canSaveFileSettings() {
             const value = Number(String(this.fileSettingsForm.maxUploadSizeMb || '').replace(',', '.'))
             return Number.isFinite(value) && value > 0 && this.hasFileSettingsChanges
@@ -354,6 +629,12 @@ export default {
         },
     },
     watch: {
+        isAnySettingsEditActive: {
+            immediate: true,
+            handler(value) {
+                this.$emit('menu-lock-change', !!value)
+            },
+        },
         visibleMenuItems: {
             immediate: true,
             handler(items) {
@@ -365,6 +646,12 @@ export default {
                     this.selectedAction = items[0].value
                 }
             },
+        },
+        selectedAction(value) {
+            if (value !== 'subjects') return
+            if (!this.subjectsMenuItems.some((item) => item.value === this.selectedSubjectAction)) {
+                this.selectedSubjectAction = this.subjectsMenuItems[0]?.value || ''
+            }
         },
         'materialCardStore.config.file_settings': {
             deep: true,
@@ -380,6 +667,139 @@ export default {
         },
     },
     methods: {
+        normalizeTreeName(value) {
+            return String(value ?? '').trim()
+        },
+        resetSubjectCatalogEditor() {
+            this.subjectCatalogEditor = {
+                mode: '',
+                name: '',
+                subjectId: null,
+                topicId: null,
+                unitId: null,
+                parentLabel: '',
+            }
+        },
+        startCreateSubject() {
+            this.subjectCatalogEditor = {
+                mode: 'create_subject',
+                name: '',
+                subjectId: null,
+                topicId: null,
+                unitId: null,
+                parentLabel: '',
+            }
+        },
+        startRenameSubject(subject) {
+            const id = Number(subject?.id)
+            if (!Number.isFinite(id) || id <= 0) return
+            this.subjectCatalogEditor = {
+                mode: 'rename_subject',
+                name: this.normalizeTreeName(subject?.name),
+                subjectId: id,
+                topicId: null,
+                unitId: null,
+                parentLabel: '',
+            }
+        },
+        startCreateTopic(subject) {
+            const subjectId = Number(subject?.id)
+            if (!Number.isFinite(subjectId) || subjectId <= 0) return
+            this.subjectCatalogEditor = {
+                mode: 'create_topic',
+                name: '',
+                subjectId,
+                topicId: null,
+                unitId: null,
+                parentLabel: this.normalizeTreeName(subject?.name),
+            }
+        },
+        startRenameTopic(topic) {
+            const topicId = Number(topic?.id)
+            if (!Number.isFinite(topicId) || topicId <= 0) return
+            this.subjectCatalogEditor = {
+                mode: 'rename_topic',
+                name: this.normalizeTreeName(topic?.name),
+                subjectId: null,
+                topicId,
+                unitId: null,
+                parentLabel: '',
+            }
+        },
+        startCreateUnit(topic) {
+            const topicId = Number(topic?.id)
+            if (!Number.isFinite(topicId) || topicId <= 0) return
+            this.subjectCatalogEditor = {
+                mode: 'create_unit',
+                name: '',
+                subjectId: null,
+                topicId,
+                unitId: null,
+                parentLabel: this.normalizeTreeName(topic?.name),
+            }
+        },
+        startRenameUnit(unit) {
+            const unitId = Number(unit?.id)
+            if (!Number.isFinite(unitId) || unitId <= 0) return
+            this.subjectCatalogEditor = {
+                mode: 'rename_unit',
+                name: this.normalizeTreeName(unit?.name),
+                subjectId: null,
+                topicId: null,
+                unitId,
+                parentLabel: '',
+            }
+        },
+        cancelSubjectCatalogEditor() {
+            if (this.isSavingSubjectCatalog) return
+            this.resetSubjectCatalogEditor()
+        },
+        async withSubjectCatalogSaving(task) {
+            if (this.isSavingSubjectCatalog) return null
+            this.isSavingSubjectCatalog = true
+            try {
+                return await task()
+            } finally {
+                this.isSavingSubjectCatalog = false
+            }
+        },
+        async saveSubjectCatalogEditor() {
+            if (!this.canSaveSubjectCatalogEditor || this.isSavingSubjectCatalog) return
+
+            const mode = this.subjectCatalogEditor.mode
+            const name = this.normalizeTreeName(this.subjectCatalogEditor.name).slice(0, 255)
+            if (!name) return
+
+            const subjectId = Number(this.subjectCatalogEditor.subjectId)
+            const topicId = Number(this.subjectCatalogEditor.topicId)
+            const unitId = Number(this.subjectCatalogEditor.unitId)
+
+            const result = await this.withSubjectCatalogSaving(async () => {
+                if (mode === 'create_subject') {
+                    return this.materialCardStore.createSubject(name)
+                }
+                if (mode === 'rename_subject' && Number.isFinite(subjectId) && subjectId > 0) {
+                    return this.materialCardStore.updateSubject(subjectId, name)
+                }
+                if (mode === 'create_topic' && Number.isFinite(subjectId) && subjectId > 0) {
+                    return this.materialCardStore.createTopic(subjectId, name)
+                }
+                if (mode === 'rename_topic' && Number.isFinite(topicId) && topicId > 0) {
+                    return this.materialCardStore.updateTopic(topicId, name)
+                }
+                if (mode === 'create_unit' && Number.isFinite(topicId) && topicId > 0) {
+                    return this.materialCardStore.createUnit(topicId, name)
+                }
+                if (mode === 'rename_unit' && Number.isFinite(unitId) && unitId > 0) {
+                    return this.materialCardStore.updateUnit(unitId, name)
+                }
+                return null
+            })
+
+            if (result) {
+                this.resetSubjectCatalogEditor()
+            }
+        },
         syncFileSettingsForm() {
             const value = Number(this.materialCardStore?.config?.file_settings?.max_upload_size_mb)
             if (!Number.isFinite(value) || value <= 0) {
@@ -397,7 +817,7 @@ export default {
             this.userSettingsForm.materialsPaginationNumber = String(Math.round(value))
         },
         startEditFileSettings() {
-            if (!this.canManageFileSettings || this.isSavingFileSettings) return
+            if (!this.canManageFileSettings || this.isSavingFileSettings || this.isAnySettingsEditActive) return
             this.syncFileSettingsForm()
             this.isEditingFileSettings = true
         },
@@ -422,7 +842,7 @@ export default {
             }
         },
         startEditUserSettings() {
-            if (!this.canManageUserSettings || this.isSavingUserSettings) return
+            if (!this.canManageUserSettings || this.isSavingUserSettings || this.isAnySettingsEditActive) return
             this.syncUserSettingsForm()
             this.isEditingUserSettings = true
         },
@@ -462,5 +882,88 @@ export default {
     border-color: rgba(253, 128, 46, 0.9);
     background: linear-gradient(155deg, #fd802e 0%, #ff8f42 100%);
     color: #233d4c;
+}
+
+.settings-submenu-btn {
+    border: 1px solid rgba(35, 61, 76, 0.18);
+    background: rgba(248, 239, 231, 0.6);
+    color: #233d4c;
+    font-weight: 700;
+}
+
+.settings-submenu-btn--active {
+    border-color: rgba(253, 128, 46, 0.9);
+    background: linear-gradient(155deg, #fd802e 0%, #ff8f42 100%);
+    color: #233d4c;
+}
+
+.settings-empty-card {
+    min-height: 120px;
+}
+
+.subjects-tree {
+    border: 1px solid rgba(35, 61, 76, 0.15);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.5);
+    padding: 12px;
+}
+
+.subjects-tree-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.subjects-tree-list--child {
+    margin-left: 22px;
+    padding-left: 12px;
+    border-left: 1px dashed rgba(35, 61, 76, 0.25);
+}
+
+.subjects-tree-item + .subjects-tree-item {
+    margin-top: 6px;
+}
+
+.subjects-tree-node {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    gap: 2px;
+}
+
+.subjects-tree-node--subject {
+    font-weight: 700;
+}
+
+.subjects-tree-node--topic {
+    font-weight: 600;
+    color: #2e4a5a;
+}
+
+.subjects-tree-node--unit {
+    color: #3c5a6d;
+}
+
+.subjects-tree-node--new {
+    color: #1f4f89;
+    font-weight: 600;
+}
+
+.subjects-tree-node-actions {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 6px;
+}
+
+.subjects-tree-new-btn {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+}
+
+.subjects-tree-new-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
 }
 </style>

@@ -5,7 +5,7 @@
             <v-col cols="12" lg="10" xl="9" class="mx-auto">
                 <MaterialsOverviewView v-if="main_action === 'overview'" />
                 <MaterialsNewView v-if="main_action === 'new_material'" @menu-lock-change="setMenuLocked" />
-                <MaterialsSettingsView v-if="main_action === 'settings'" />
+                <MaterialsSettingsView v-if="main_action === 'settings'" @menu-lock-change="setMenuLocked" />
             </v-col>
         </v-row>
     </v-container>
@@ -42,7 +42,7 @@ export default {
     },
     watch: {
         main_action(value) {
-            if (value !== 'new_material') {
+            if (value !== 'new_material' && value !== 'settings') {
                 this.setMenuLocked(false)
             }
         },

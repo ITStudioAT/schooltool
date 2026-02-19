@@ -219,6 +219,12 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     /* SANCTUM - admin, teaching_admin, materials_admin, teacher */
     Route::middleware(['auth:sanctum', 'api-allowed:admin,teaching_admin,materials_admin,teacher'])->group(function () {
         Route::get('/admin/materials/config', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'config']);
+        Route::post('/admin/materials/subjects', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'storeSubject']);
+        Route::put('/admin/materials/subjects/{material_subject}', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'updateSubject']);
+        Route::post('/admin/materials/topics', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'storeTopic']);
+        Route::put('/admin/materials/topics/{material_topic}', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'updateTopic']);
+        Route::post('/admin/materials/units', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'storeUnit']);
+        Route::put('/admin/materials/units/{material_unit}', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'updateUnit']);
         Route::put('/admin/materials/user-settings', [\App\Http\Controllers\Admin\Materials\MaterialUserSettingsController::class, 'update']);
         Route::get('/admin/materials/cards', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'index']);
         Route::post('/admin/materials/cards', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'store']);

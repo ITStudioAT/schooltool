@@ -2,6 +2,7 @@
     <v-dialog
         :model-value="modelValue"
         max-width="720"
+        persistent
         @update:modelValue="$emit('update:modelValue', $event)">
         <v-card rounded="xl">
             <v-card-title class="text-h6 font-weight-bold">Materialtypen verwalten</v-card-title>

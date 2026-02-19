@@ -1,0 +1,160 @@
+<?php
+
+namespace App\Http\Controllers\Admin\Materials;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\Materials\MaterialSubjectStoreRequest;
+use App\Http\Requests\Admin\Materials\MaterialSubjectUpdateRequest;
+use App\Http\Requests\Admin\Materials\MaterialTopicStoreRequest;
+use App\Http\Requests\Admin\Materials\MaterialTopicUpdateRequest;
+use App\Http\Requests\Admin\Materials\MaterialUnitStoreRequest;
+use App\Http\Requests\Admin\Materials\MaterialUnitUpdateRequest;
+use App\Models\MaterialSubject;
+use App\Models\MaterialTopic;
+use App\Models\MaterialUnit;
+use App\Services\Materials\MaterialService;
+
+class MaterialClassificationController extends Controller
+{
+    public function storeSubject(MaterialSubjectStoreRequest $request, MaterialService $service)
+    {
+        $authUser = $this->authorizeForClassificationManagement();
+        $validated = $request->validated()['data'];
+
+        $subject = $service->createSubject(
+            $authUser,
+            (string) ($validated['name'] ?? '')
+        );
+
+        return response()->json([
+            'data' => [
+                'id' => $subject->id,
+                'name' => $subject->name,
+            ],
+        ], 200);
+    }
+
+    public function updateSubject(
+        MaterialSubjectUpdateRequest $request,
+        MaterialSubject $material_subject,
+        MaterialService $service
+    ) {
+        $authUser = $this->authorizeForClassificationManagement();
+        $validated = $request->validated()['data'];
+
+        $subject = $service->updateSubject(
+            $authUser,
+            $material_subject,
+            (string) ($validated['name'] ?? '')
+        );
+
+        return response()->json([
+            'data' => [
+                'id' => $subject->id,
+                'name' => $subject->name,
+            ],
+        ], 200);
+    }
+
+    public function storeTopic(MaterialTopicStoreRequest $request, MaterialService $service)
+    {
+        $authUser = $this->authorizeForClassificationManagement();
+        $validated = $request->validated()['data'];
+        $subjectId = (int) ($validated['subject_id'] ?? 0);
+
+        $subject = MaterialSubject::query()->findOrFail($subjectId);
+
+        $topic = $service->createTopic(
+            $authUser,
+            $subject,
+            (string) ($validated['name'] ?? '')
+        );
+
+        return response()->json([
+            'data' => [
+                'id' => $topic->id,
+                'name' => $topic->name,
+                'subject_id' => $topic->subject_id,
+            ],
+        ], 200);
+    }
+
+    public function updateTopic(
+        MaterialTopicUpdateRequest $request,
+        MaterialTopic $material_topic,
+        MaterialService $service
+    ) {
+        $authUser = $this->authorizeForClassificationManagement();
+        $validated = $request->validated()['data'];
+
+        $topic = $service->updateTopic(
+            $authUser,
+            $material_topic,
+            (string) ($validated['name'] ?? '')
+        );
+
+        return response()->json([
+            'data' => [
+                'id' => $topic->id,
+                'name' => $topic->name,
+                'subject_id' => $topic->subject_id,
+            ],
+        ], 200);
+    }
+
+    public function storeUnit(MaterialUnitStoreRequest $request, MaterialService $service)
+    {
+        $authUser = $this->authorizeForClassificationManagement();
+        $validated = $request->validated()['data'];
+        $topicId = (int) ($validated['topic_id'] ?? 0);
+
+        $topic = MaterialTopic::query()->findOrFail($topicId);
+
+        $unit = $service->createUnit(
+            $authUser,
+            $topic,
+            (string) ($validated['name'] ?? '')
+        );
+
+        return response()->json([
+            'data' => [
+                'id' => $unit->id,
+                'name' => $unit->name,
+                'topic_id' => $unit->topic_id,
+            ],
+        ], 200);
+    }
+
+    public function updateUnit(
+        MaterialUnitUpdateRequest $request,
+        MaterialUnit $material_unit,
+        MaterialService $service
+    ) {
+        $authUser = $this->authorizeForClassificationManagement();
+        $validated = $request->validated()['data'];
+
+        $unit = $service->updateUnit(
+            $authUser,
+            $material_unit,
+            (string) ($validated['name'] ?? '')
+        );
+
+        return response()->json([
+            'data' => [
+                'id' => $unit->id,
+                'name' => $unit->name,
+                'topic_id' => $unit->topic_id,
+            ],
+        ], 200);
+    }
+
+    private function authorizeForClassificationManagement()
+    {
+        if (! $authUser = $this->userHasRole(['admin', 'materials_admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        return $authUser;
+    }
+}
+

@@ -792,6 +792,163 @@ class MaterialService
         return $this->userSettingsForUser($user->fresh());
     }
 
+    public function createSubject(User $user, string $name): MaterialSubject
+    {
+        if (! $this->supportsClassificationTables()) {
+            throw ValidationException::withMessages([
+                'data.name' => 'Fachstruktur ist noch nicht verfügbar.',
+            ]);
+        }
+
+        $normalized = $this->normalizeName($name);
+        if ($normalized === '') {
+            throw ValidationException::withMessages([
+                'data.name' => 'Bitte einen gültigen Fachnamen angeben.',
+            ]);
+        }
+
+        return MaterialSubject::query()->firstOrCreate([
+            'user_id' => $user->id,
+            'name' => $normalized,
+        ]);
+    }
+
+    public function updateSubject(User $user, MaterialSubject $subject, string $name): MaterialSubject
+    {
+        $this->assertSubjectBelongsToUser($user, $subject);
+
+        $normalized = $this->normalizeName($name);
+        if ($normalized === '') {
+            throw ValidationException::withMessages([
+                'data.name' => 'Bitte einen gültigen Fachnamen angeben.',
+            ]);
+        }
+
+        $alreadyExists = MaterialSubject::query()
+            ->where('user_id', $user->id)
+            ->where('name', $normalized)
+            ->where('id', '<>', $subject->id)
+            ->exists();
+
+        if ($alreadyExists) {
+            throw ValidationException::withMessages([
+                'data.name' => 'Dieses Fach existiert bereits.',
+            ]);
+        }
+
+        $subject->update([
+            'name' => $normalized,
+        ]);
+
+        return $subject->fresh();
+    }
+
+    public function createTopic(User $user, MaterialSubject $subject, string $name): MaterialTopic
+    {
+        if (! $this->supportsClassificationTables()) {
+            throw ValidationException::withMessages([
+                'data.name' => 'Fachstruktur ist noch nicht verfügbar.',
+            ]);
+        }
+
+        $this->assertSubjectBelongsToUser($user, $subject);
+
+        $normalized = $this->normalizeName($name);
+        if ($normalized === '') {
+            throw ValidationException::withMessages([
+                'data.name' => 'Bitte einen gültigen Themennamen angeben.',
+            ]);
+        }
+
+        return MaterialTopic::query()->firstOrCreate([
+            'subject_id' => $subject->id,
+            'name' => $normalized,
+        ]);
+    }
+
+    public function updateTopic(User $user, MaterialTopic $topic, string $name): MaterialTopic
+    {
+        $this->assertTopicBelongsToUser($user, $topic);
+
+        $normalized = $this->normalizeName($name);
+        if ($normalized === '') {
+            throw ValidationException::withMessages([
+                'data.name' => 'Bitte einen gültigen Themennamen angeben.',
+            ]);
+        }
+
+        $alreadyExists = MaterialTopic::query()
+            ->where('subject_id', $topic->subject_id)
+            ->where('name', $normalized)
+            ->where('id', '<>', $topic->id)
+            ->exists();
+
+        if ($alreadyExists) {
+            throw ValidationException::withMessages([
+                'data.name' => 'Dieses Thema existiert bereits.',
+            ]);
+        }
+
+        $topic->update([
+            'name' => $normalized,
+        ]);
+
+        return $topic->fresh();
+    }
+
+    public function createUnit(User $user, MaterialTopic $topic, string $name): MaterialUnit
+    {
+        if (! $this->supportsClassificationTables()) {
+            throw ValidationException::withMessages([
+                'data.name' => 'Fachstruktur ist noch nicht verfügbar.',
+            ]);
+        }
+
+        $this->assertTopicBelongsToUser($user, $topic);
+
+        $normalized = $this->normalizeName($name);
+        if ($normalized === '') {
+            throw ValidationException::withMessages([
+                'data.name' => 'Bitte einen gültigen Bereichsnamen angeben.',
+            ]);
+        }
+
+        return MaterialUnit::query()->firstOrCreate([
+            'topic_id' => $topic->id,
+            'name' => $normalized,
+        ]);
+    }
+
+    public function updateUnit(User $user, MaterialUnit $unit, string $name): MaterialUnit
+    {
+        $this->assertUnitBelongsToUser($user, $unit);
+
+        $normalized = $this->normalizeName($name);
+        if ($normalized === '') {
+            throw ValidationException::withMessages([
+                'data.name' => 'Bitte einen gültigen Bereichsnamen angeben.',
+            ]);
+        }
+
+        $alreadyExists = MaterialUnit::query()
+            ->where('topic_id', $unit->topic_id)
+            ->where('name', $normalized)
+            ->where('id', '<>', $unit->id)
+            ->exists();
+
+        if ($alreadyExists) {
+            throw ValidationException::withMessages([
+                'data.name' => 'Dieser Bereich existiert bereits.',
+            ]);
+        }
+
+        $unit->update([
+            'name' => $normalized,
+        ]);
+
+        return $unit->fresh();
+    }
+
     private function classificationTreeForUser(User $user): array
     {
         if (! $this->supportsClassificationTables()) {
@@ -902,6 +1059,33 @@ class MaterialService
         }
 
         return $rows;
+    }
+
+    private function assertSubjectBelongsToUser(User $user, MaterialSubject $subject): void
+    {
+        if ((int) $subject->user_id !== (int) $user->id) {
+            abort(403, 'Fach gehört nicht zum aktuellen Benutzer.');
+        }
+    }
+
+    private function assertTopicBelongsToUser(User $user, MaterialTopic $topic): void
+    {
+        $topic->loadMissing('subject');
+        $subject = $topic->subject;
+        if (! $subject instanceof MaterialSubject || (int) $subject->user_id !== (int) $user->id) {
+            abort(403, 'Thema gehört nicht zum aktuellen Benutzer.');
+        }
+    }
+
+    private function assertUnitBelongsToUser(User $user, MaterialUnit $unit): void
+    {
+        $unit->loadMissing('topic.subject');
+        $topic = $unit->topic;
+        $subject = $topic?->subject;
+
+        if (! $subject instanceof MaterialSubject || (int) $subject->user_id !== (int) $user->id) {
+            abort(403, 'Bereich gehört nicht zum aktuellen Benutzer.');
+        }
     }
 
     private function normalizeName(mixed $value): string
