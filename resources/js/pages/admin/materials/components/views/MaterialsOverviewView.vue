@@ -6,7 +6,23 @@
                 <div class="text-subtitle-1 subline">Hier siehst du alle aktuell gespeicherten Materialien.</div>
             </v-col>
 
-            <v-col cols="12" md="4" class="d-flex justify-md-end">
+            <v-col cols="12" md="4" class="d-flex justify-md-end align-center flex-wrap ga-2">
+                <v-btn-toggle
+                    :model-value="overviewViewMode"
+                    mandatory
+                    color="primary"
+                    variant="tonal"
+                    density="comfortable"
+                    class="overview-mode-toggle"
+                    @update:modelValue="setOverviewMode">
+                    <v-btn value="list" prepend-icon="mdi-format-list-bulleted">
+                        Liste
+                    </v-btn>
+                    <v-btn value="grid" prepend-icon="mdi-view-grid-outline">
+                        Karten
+                    </v-btn>
+                </v-btn-toggle>
+
                 <v-btn
                     prepend-icon="mdi-refresh"
                     color="primary"
@@ -105,7 +121,111 @@
 
         <v-skeleton-loader v-if="isLoading && !hasCards" type="list-item-three-line@4" />
 
-        <v-list v-else-if="hasCards" class="bg-transparent pa-0">
+        <template v-else-if="hasCards">
+            <v-row v-if="isCompactOverview" class="overview-grid ma-0">
+                <v-col
+                    v-for="card in cards"
+                    :key="`grid-card-${card.id}`"
+                    cols="12"
+                    sm="6"
+                    md="4"
+                    lg="3"
+                    xl="2"
+                    class="pa-2 d-flex">
+                    <v-card
+                        class="overview-grid-item d-flex flex-column flex-grow-1"
+                        rounded="lg"
+                        elevation="0"
+                        :style="cardBackgroundStyle(card)">
+                        <v-card-text class="pa-3 d-flex flex-column ga-2">
+                            <div class="overview-grid-header">
+                                <v-avatar :color="statusColor(card.status)" variant="tonal" size="32">
+                                    <v-icon :icon="sourceIcon(card)" :color="statusColor(card.status)" />
+                                </v-avatar>
+
+                                <v-chip size="x-small" :color="statusColor(card.status)" variant="flat" class="material-status-chip">
+                                    {{ statusLabel(card.status) }}
+                                </v-chip>
+                            </div>
+
+                            <div class="text-subtitle-2 font-weight-bold overview-grid-title">
+                                {{ card.title || 'Ohne Titel' }}
+                            </div>
+
+                            <div class="d-flex flex-wrap ga-1">
+                                <v-chip v-if="card.type" size="x-small" variant="tonal" color="primary">
+                                    {{ card.type }}
+                                </v-chip>
+
+                                <v-chip
+                                    v-if="card.attachments_count"
+                                    size="x-small"
+                                    variant="flat"
+                                    prepend-icon="mdi-paperclip"
+                                    class="attachments-count-chip attachments-count-chip-clickable"
+                                    @click="openAttachmentManager(card)">
+                                    {{ card.attachments_count }}
+                                </v-chip>
+                            </div>
+
+                            <div v-if="classificationLabels(card).length" class="d-flex flex-wrap ga-1">
+                                <v-chip
+                                    v-for="(label, index) in classificationLabels(card).slice(0, 2)"
+                                    :key="`grid-classification-label-${card.id}-${index}`"
+                                    size="x-small"
+                                    variant="tonal"
+                                    color="primary"
+                                    class="classification-chip"
+                                    :title="label">
+                                    {{ label }}
+                                </v-chip>
+                            </div>
+
+                            <div v-if="card.source_text" class="text-caption text-medium-emphasis overview-grid-preview">
+                                {{ preview(card.source_text, 160) }}
+                            </div>
+
+                            <div v-else-if="card.notes" class="text-caption text-medium-emphasis overview-grid-preview">
+                                {{ preview(card.notes, 160) }}
+                            </div>
+
+                            <div v-else-if="card.source_url" class="text-caption source-link overview-grid-link">
+                                <a :href="card.source_url" target="_blank" rel="noopener noreferrer">
+                                    {{ preview(card.source_url, 80) }}
+                                </a>
+                            </div>
+
+                            <div class="text-caption text-medium-emphasis mt-auto">
+                                {{ formatDateTime(card.updated_at) }}
+                            </div>
+                        </v-card-text>
+
+                        <v-card-actions class="px-3 pb-3 pt-0 overview-grid-actions">
+                            <v-btn
+                                size="small"
+                                color="primary"
+                                variant="tonal"
+                                prepend-icon="mdi-eye-outline"
+                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                                @click="openDetailDialog(card)">
+                                Detail
+                            </v-btn>
+
+                            <v-btn
+                                size="small"
+                                color="primary"
+                                variant="flat"
+                                prepend-icon="mdi-pencil-outline"
+                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                                @click="openEditDialog(card)">
+                                Bearbeiten
+                            </v-btn>
+                        </v-card-actions>
+                    </v-card>
+                </v-col>
+            </v-row>
+
+            <v-list v-else class="bg-transparent pa-0">
             <v-list-item
                 v-for="card in cards"
                 :key="card.id"
@@ -220,7 +340,8 @@
                     </div>
                 </template>
             </v-list-item>
-        </v-list>
+            </v-list>
+        </template>
 
         <v-alert v-else type="warning" variant="tonal" class="mb-0">
             Aktuell sind keine Materialien gespeichert.
@@ -685,6 +806,7 @@ export default {
             attachmentRows: [],
             isUploadingAttachment: false,
             csrfToken: null,
+            overviewViewMode: 'list',
             subjectFilter: '',
             typeFilter: '',
             statusFilter: '',
@@ -730,6 +852,9 @@ export default {
         },
         hasCards() {
             return this.cards.length > 0
+        },
+        isCompactOverview() {
+            return this.overviewViewMode === 'grid'
         },
         totalMaterials() {
             const total = Number(this.materialCardStore?.meta?.total)
@@ -866,6 +991,12 @@ export default {
         const metaToken = document?.head?.querySelector?.('meta[name="csrf-token"]')?.content
         this.csrfToken = String(metaToken || '').trim() || null
         try {
+            const storedMode = window?.localStorage?.getItem?.('materials.overview.mode')
+            this.overviewViewMode = storedMode === 'grid' ? 'grid' : 'list'
+        } catch {
+            this.overviewViewMode = 'list'
+        }
+        try {
             const response = await axios.get('/api/admin/token')
             const token = String(response?.data || '').trim()
             if (token) {
@@ -885,6 +1016,16 @@ export default {
         await this.loadCards()
     },
     methods: {
+        setOverviewMode(value) {
+            const nextMode = value === 'grid' ? 'grid' : 'list'
+            if (nextMode === this.overviewViewMode) return
+            this.overviewViewMode = nextMode
+            try {
+                window?.localStorage?.setItem?.('materials.overview.mode', nextMode)
+            } catch {
+                // Falls localStorage nicht verfügbar ist, nur im aktuellen Zustand bleiben.
+            }
+        },
         async loadCards() {
             if (this.isLoading) return
             this.isLoading = true
@@ -2180,6 +2321,64 @@ export default {
     background-color: rgba(255, 255, 255, 0.72);
 }
 
+.overview-mode-toggle {
+    max-width: 100%;
+}
+
+.overview-grid {
+    margin-left: -8px;
+    margin-right: -8px;
+}
+
+.overview-grid-item {
+    border: 1px solid rgba(40, 58, 80, 0.12);
+    background-color: rgba(255, 255, 255, 0.72);
+    min-height: 100%;
+}
+
+.overview-grid-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.overview-grid-title {
+    min-height: 2.8em;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.overview-grid-preview {
+    white-space: pre-wrap;
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-height: 3.6em;
+}
+
+.overview-grid-link a {
+    word-break: break-all;
+}
+
+.overview-grid-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    width: 100%;
+}
+
+.overview-grid-actions :deep(.v-btn) {
+    width: 100%;
+}
+
 .overview-actions {
     min-width: 140px;
     display: flex;
@@ -2294,6 +2493,14 @@ export default {
 }
 
 @media (max-width: 959px) {
+    .overview-mode-toggle {
+        width: 100%;
+    }
+
+    .overview-mode-toggle :deep(.v-btn) {
+        flex: 1 1 0;
+    }
+
     :deep(.overview-item.v-list-item) {
         grid-template-areas:
             "prepend content"
