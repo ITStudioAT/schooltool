@@ -261,9 +261,6 @@
                 <v-btn variant="tonal" color="primary" prepend-icon="mdi-text-box-plus-outline" disabled>
                     Text hinzufügen
                 </v-btn>
-                <v-btn variant="tonal" color="primary" prepend-icon="mdi-file-plus-outline" @click="openFilePicker">
-                    Datei hinzufügen
-                </v-btn>
                 <v-btn variant="tonal" color="primary" prepend-icon="mdi-link-plus" disabled>
                     Link hinzufügen
                 </v-btn>
@@ -512,10 +509,10 @@ export default {
         },
         normalizedStatusOptions() {
             const fallback = [
-                { value: 'inbox', label: 'Neu/Idee' },
-                { value: 'in_progress', label: 'In Arbeit' },
-                { value: 'done', label: 'ok' },
-                { value: 'update_needed', label: 'Änderung nötig' },
+                { value: 'inbox', label: 'Neu/Idee', color: '#607d8b' },
+                { value: 'in_progress', label: 'In Arbeit', color: '#f9a825' },
+                { value: 'done', label: 'ok', color: '#2e7d32' },
+                { value: 'update_needed', label: 'Änderung nötig', color: '#c62828' },
             ]
 
             const input = Array.isArray(this.statusOptions) ? this.statusOptions : []
@@ -523,16 +520,17 @@ export default {
                 .map((option) => {
                     if (typeof option === 'string') {
                         const value = this.normalizeText(option)
-                        return value ? { value, label: value } : null
+                        return value ? { value, label: value, color: '' } : null
                     }
 
                     if (!option || typeof option !== 'object') return null
 
                     const value = this.normalizeText(option.value)
                     const label = this.normalizeText(option.label) || value
+                    const color = this.normalizeColor(option.color)
                     if (!value) return null
 
-                    return { value, label }
+                    return { value, label, color }
                 })
                 .filter(Boolean)
 
@@ -557,13 +555,19 @@ export default {
             return this.currentStatusOption?.label || 'Status'
         },
         currentStatusColor() {
+            const configuredColor = this.normalizeColor(this.currentStatusOption?.color)
+            if (configuredColor) {
+                return configuredColor
+            }
+
             const map = {
                 inbox: 'secondary',
                 in_progress: 'warning',
                 done: 'success',
                 update_needed: 'error',
             }
-            return map[this.normalizedStatusValue] || 'primary'
+            const normalizedStatus = this.normalizeText(this.normalizedStatusValue).toLocaleLowerCase()
+            return map[normalizedStatus] || 'primary'
         },
         normalizedTypeOptions() {
             const input = Array.isArray(this.typeOptions) ? this.typeOptions : []
@@ -682,6 +686,15 @@ export default {
         normalizeText(value) {
             return String(value ?? '').trim().slice(0, 255)
         },
+        normalizeColor(value) {
+            const text = String(value ?? '').trim()
+            if (!text) return ''
+            if (!/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(text)) return ''
+            if (text.length === 4) {
+                return `#${text[1]}${text[1]}${text[2]}${text[2]}${text[3]}${text[3]}`.toLowerCase()
+            }
+            return text.toLowerCase()
+        },
         defaultAttachmentTitle(fileName) {
             const name = String(fileName || '').trim()
             if (!name) {
@@ -766,12 +779,6 @@ export default {
             }
 
             return true
-        },
-        openFilePicker() {
-            const pond = this.$refs.pond
-            if (pond && typeof pond.browse === 'function') {
-                pond.browse()
-            }
         },
         onProcessFile(error, fileItem) {
             if (error) {

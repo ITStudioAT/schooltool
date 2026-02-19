@@ -20,6 +20,7 @@ class MaterialTypeUpdateRequest extends FormRequest
         return [
             'data.name' => $this->nameRules(),
             'data.icon' => $this->iconRules(),
+            'data.color' => $this->colorRules(),
         ];
     }
 
@@ -57,6 +58,11 @@ class MaterialTypeUpdateRequest extends FormRequest
         }
 
         return $base;
+    }
+
+    private function colorRules(): array
+    {
+        return ['nullable', 'string', 'max:20', 'regex:/^#(?:[A-Fa-f0-9]{3}|[A-Fa-f0-9]{6})$/'];
     }
 
     private function allowedTypeIcons(): array

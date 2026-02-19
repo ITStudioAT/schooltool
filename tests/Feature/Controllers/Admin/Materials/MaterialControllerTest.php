@@ -125,7 +125,7 @@ test('config returns status options', function () {
             'module',
             'school_id',
             'status_values' => [
-                ['value', 'label'],
+                ['value', 'label', 'color'],
             ],
         ]);
 });
@@ -296,11 +296,23 @@ test('admin may manage school status values and teachers can use them', function
     $response = $this->postJson('/api/admin/materials/statuses', [
         'data' => [
             'label' => 'Zur Freigabe',
+            'color' => '#123abc',
         ],
     ])->assertStatus(200)
-        ->assertJsonPath('data.label', 'Zur Freigabe');
+        ->assertJsonPath('data.label', 'Zur Freigabe')
+        ->assertJsonPath('data.color', '#123abc');
 
+    $statusId = (int) $response->json('data.id');
     $statusValue = (string) $response->json('data.value');
+
+    $this->putJson('/api/admin/materials/statuses/' . $statusId, [
+        'data' => [
+            'label' => 'Zur Freigabe intern',
+            'color' => '#44aa66',
+        ],
+    ])->assertStatus(200)
+        ->assertJsonPath('data.label', 'Zur Freigabe intern')
+        ->assertJsonPath('data.color', '#44aa66');
 
     $this->actingAs($this->teacher, 'sanctum');
 

@@ -22,6 +22,18 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
         normalizeName(value) {
             return String(value ?? '').trim()
         },
+        normalizeTypeColor(value) {
+            const text = String(value ?? '').trim()
+            if (!text) return null
+            if (!/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(text)) return null
+            if (text.length === 4) {
+                return `#${text[1]}${text[1]}${text[2]}${text[2]}${text[3]}${text[3]}`.toLowerCase()
+            }
+            return text.toLowerCase()
+        },
+        normalizeStatusColor(value) {
+            return this.normalizeTypeColor(value)
+        },
 
         ensureConfigObject() {
             if (!this.config || typeof this.config !== 'object') {
@@ -619,6 +631,9 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                 const normalizedIcon = String(
                     typeof rawType === 'object' && rawType !== null ? (rawType.icon ?? '') : ''
                 ).trim().slice(0, 100)
+                const normalizedColor = this.normalizeTypeColor(
+                    typeof rawType === 'object' && rawType !== null ? (rawType.color ?? '') : ''
+                )
                 if (!normalizedName) continue
                 const key = normalizedName.toLocaleLowerCase()
                 if (seen.has(key)) continue
@@ -626,6 +641,7 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                 normalizedTypes.push({
                     name: normalizedName,
                     icon: normalizedIcon || null,
+                    color: normalizedColor,
                 })
             }
 
@@ -645,6 +661,7 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                         data: {
                             name: type.name,
                             icon: type.icon,
+                            color: type.color,
                         },
                     })
                 }
@@ -671,11 +688,12 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             }
         },
 
-        async createType(name, icon = null) {
+        async createType(name, icon = null, color = null) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             const normalizedName = String(name ?? '').trim().slice(0, 255)
             const normalizedIcon = String(icon ?? '').trim().slice(0, 100)
+            const normalizedColor = this.normalizeTypeColor(color)
 
             if (!normalizedName) {
                 notification.notify({
@@ -692,6 +710,7 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                     data: {
                         name: normalizedName,
                         icon: normalizedIcon || null,
+                        color: normalizedColor,
                     },
                 })
 
@@ -717,11 +736,12 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             }
         },
 
-        async updateType(typeId, name, icon = null) {
+        async updateType(typeId, name, icon = null, color = null) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             const normalizedName = String(name ?? '').trim().slice(0, 255)
             const normalizedIcon = String(icon ?? '').trim().slice(0, 100)
+            const normalizedColor = this.normalizeTypeColor(color)
             const id = Number(typeId)
 
             if (!Number.isFinite(id) || id <= 0) {
@@ -748,6 +768,7 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                     data: {
                         name: normalizedName,
                         icon: normalizedIcon || null,
+                        color: normalizedColor,
                     },
                 })
 
@@ -818,10 +839,11 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             }
         },
 
-        async createStatus(label) {
+        async createStatus(label, color = null) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             const normalizedLabel = String(label ?? '').trim().slice(0, 255)
+            const normalizedColor = this.normalizeStatusColor(color)
 
             if (!normalizedLabel) {
                 notification.notify({
@@ -837,6 +859,7 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                 const response = await axios.post('/api/admin/materials/statuses', {
                     data: {
                         label: normalizedLabel,
+                        color: normalizedColor,
                     },
                 })
 
@@ -865,11 +888,12 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             }
         },
 
-        async updateStatus(statusId, label) {
+        async updateStatus(statusId, label, color = null) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             const id = Number(statusId)
             const normalizedLabel = String(label ?? '').trim().slice(0, 255)
+            const normalizedColor = this.normalizeStatusColor(color)
 
             if (!Number.isFinite(id) || id <= 0) {
                 notification.notify({
@@ -894,6 +918,7 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                 const response = await axios.put('/api/admin/materials/statuses/' + id, {
                     data: {
                         label: normalizedLabel,
+                        color: normalizedColor,
                     },
                 })
 

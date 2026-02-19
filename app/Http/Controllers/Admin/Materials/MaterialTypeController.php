@@ -28,7 +28,8 @@ class MaterialTypeController extends Controller
         $type = $service->createType(
             $authUser,
             (string) ($validated['name'] ?? ''),
-            isset($validated['icon']) ? (string) $validated['icon'] : null
+            isset($validated['icon']) ? (string) $validated['icon'] : null,
+            isset($validated['color']) ? (string) $validated['color'] : null
         );
 
         return response()->json([
@@ -37,6 +38,7 @@ class MaterialTypeController extends Controller
                 'value' => $type->name,
                 'label' => $type->name,
                 'icon' => $type->icon,
+                'color' => $type->color,
             ],
         ], 200);
     }
@@ -53,7 +55,8 @@ class MaterialTypeController extends Controller
             $authUser,
             $material_type,
             (string) ($validated['name'] ?? ''),
-            isset($validated['icon']) ? (string) $validated['icon'] : null
+            isset($validated['icon']) ? (string) $validated['icon'] : null,
+            isset($validated['color']) ? (string) $validated['color'] : null
         );
 
         return response()->json([
@@ -62,6 +65,7 @@ class MaterialTypeController extends Controller
                 'value' => $type->name,
                 'label' => $type->name,
                 'icon' => $type->icon,
+                'color' => $type->color,
             ],
         ], 200);
     }

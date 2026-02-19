@@ -15,6 +15,7 @@ class MaterialType extends Model
         'user_id',
         'name',
         'icon',
+        'color',
     ];
 
     public function school(): BelongsTo

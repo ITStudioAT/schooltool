@@ -22,6 +22,32 @@
                         :disabled="isBusy"
                         @keyup.enter="createStatus" />
                     <v-btn
+                        variant="outlined"
+                        class="color-picker-trigger"
+                        :title="newStatusColor || 'Keine Farbe'"
+                        :disabled="isBusy"
+                        @click="openColorPicker('new')">
+                        <span class="color-dot" :style="colorPreviewStyle(newStatusColor)" />
+                    </v-btn>
+                    <v-text-field
+                        v-model="newStatusColor"
+                        label="HEX"
+                        placeholder="#1f77b4"
+                        variant="outlined"
+                        density="comfortable"
+                        hide-details="auto"
+                        class="color-hex-field"
+                        :disabled="isBusy"
+                        @blur="normalizeColorField('new')"
+                        @keyup.enter="normalizeColorField('new')" />
+                    <v-btn
+                        v-if="newStatusColor"
+                        icon="mdi-close"
+                        variant="text"
+                        size="small"
+                        :disabled="isBusy"
+                        @click="clearStatusColor('new')" />
+                    <v-btn
                         color="primary"
                         variant="flat"
                         :loading="isCreating"
@@ -42,19 +68,50 @@
                         class="status-row mb-2"
                         rounded="lg">
                         <template #prepend>
-                            <v-icon icon="mdi-flag-outline" color="primary" class="mr-3" />
+                            <div class="d-flex align-center ga-2 mr-3">
+                                <v-icon icon="mdi-flag-outline" :color="option.color || 'primary'" />
+                                <span class="color-dot color-dot--small" :style="colorPreviewStyle(option.color)" />
+                            </div>
                         </template>
 
                         <template v-if="editingStatusId === option.id">
-                            <v-text-field
-                                v-model="editingStatusLabel"
-                                variant="outlined"
-                                density="compact"
-                                hide-details="auto"
-                                class="mt-1"
-                                :disabled="isBusy"
-                                @keyup.enter="saveStatusRename(option)"
-                                @keyup.esc="cancelStatusRename" />
+                            <div class="d-flex flex-wrap align-start ga-2 mt-1 w-100">
+                                <v-text-field
+                                    v-model="editingStatusLabel"
+                                    variant="outlined"
+                                    density="compact"
+                                    hide-details="auto"
+                                    class="flex-grow-1"
+                                    :disabled="isBusy"
+                                    @keyup.enter="saveStatusRename(option)"
+                                    @keyup.esc="cancelStatusRename" />
+                                <v-btn
+                                    variant="outlined"
+                                    class="color-picker-trigger color-picker-trigger--compact"
+                                    :title="editingStatusColor || 'Keine Farbe'"
+                                    :disabled="isBusy"
+                                    @click="openColorPicker('edit')">
+                                    <span class="color-dot" :style="colorPreviewStyle(editingStatusColor)" />
+                                </v-btn>
+                                <v-text-field
+                                    v-model="editingStatusColor"
+                                    label="HEX"
+                                    placeholder="#1f77b4"
+                                    variant="outlined"
+                                    density="compact"
+                                    hide-details="auto"
+                                    class="color-hex-field color-hex-field--compact"
+                                    :disabled="isBusy"
+                                    @blur="normalizeColorField('edit')"
+                                    @keyup.enter="normalizeColorField('edit')" />
+                                <v-btn
+                                    v-if="editingStatusColor"
+                                    icon="mdi-close"
+                                    variant="text"
+                                    size="small"
+                                    :disabled="isBusy"
+                                    @click="clearStatusColor('edit')" />
+                            </div>
                         </template>
                         <template v-else>
                             <v-list-item-title>{{ option.label }}</v-list-item-title>
@@ -106,6 +163,13 @@
             </v-card-actions>
         </v-card>
     </v-dialog>
+
+    <input
+        ref="colorInput"
+        type="color"
+        class="d-none"
+        :value="pickerInputColor"
+        @input="onColorPicked" />
 </template>
 
 <script>
@@ -124,12 +188,15 @@ export default {
         return {
             materialCardStore: null,
             newStatusLabel: '',
+            newStatusColor: '',
             editingStatusId: null,
             editingStatusLabel: '',
+            editingStatusColor: '',
             deletingStatusId: null,
             isCreating: false,
             isRenaming: false,
             isDeleting: false,
+            colorPickerTarget: 'new',
         }
     },
     computed: {
@@ -144,14 +211,23 @@ export default {
                     const id = Number(option.id)
                     const value = this.normalizeLabel(option.value)
                     const label = this.normalizeLabel(option.label) || value
+                    const color = this.normalizeColor(option.color)
                     if (!Number.isFinite(id) || id <= 0 || !value || !label) return null
                     return {
                         id,
                         value,
                         label,
+                        color,
                     }
                 })
                 .filter(Boolean)
+        },
+        pickerInputColor() {
+            const current = this.colorPickerTarget === 'edit'
+                ? this.normalizeColor(this.editingStatusColor)
+                : this.normalizeColor(this.newStatusColor)
+
+            return current || '#4f6fb3'
         },
         canCreateStatus() {
             return this.normalizeLabel(this.newStatusLabel) !== ''
@@ -173,35 +249,96 @@ export default {
         normalizeLabel(value) {
             return String(value ?? '').trim().slice(0, 255)
         },
+        normalizeColor(value) {
+            const raw = String(value ?? '').trim()
+            if (!raw) return ''
+            const text = raw.startsWith('#') ? raw : `#${raw}`
+            if (!text) return ''
+            if (!/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(text)) return ''
+            if (text.length === 4) {
+                return `#${text[1]}${text[1]}${text[2]}${text[2]}${text[3]}${text[3]}`.toLowerCase()
+            }
+            return text.toLowerCase()
+        },
+        normalizeColorField(target) {
+            if (target === 'edit') {
+                this.editingStatusColor = this.normalizeColor(this.editingStatusColor) || String(this.editingStatusColor || '').trim()
+                return
+            }
+            this.newStatusColor = this.normalizeColor(this.newStatusColor) || String(this.newStatusColor || '').trim()
+        },
+        colorPreviewStyle(value) {
+            const color = this.normalizeColor(value)
+            if (!color) {
+                return {}
+            }
+
+            return {
+                backgroundColor: color,
+                backgroundImage: 'none',
+            }
+        },
+        openColorPicker(target) {
+            if (this.isBusy) return
+            this.colorPickerTarget = target === 'edit' ? 'edit' : 'new'
+            this.$nextTick(() => {
+                const colorInput = this.$refs.colorInput
+                if (colorInput && typeof colorInput.click === 'function') {
+                    colorInput.click()
+                }
+            })
+        },
+        onColorPicked(event) {
+            const value = this.normalizeColor(event?.target?.value)
+            if (!value) return
+
+            if (this.colorPickerTarget === 'edit') {
+                this.editingStatusColor = value
+            } else {
+                this.newStatusColor = value
+            }
+        },
+        clearStatusColor(target) {
+            if (target === 'edit') {
+                this.editingStatusColor = ''
+                return
+            }
+            this.newStatusColor = ''
+        },
         async createStatus() {
             const label = this.normalizeLabel(this.newStatusLabel)
+            const color = this.normalizeColor(this.newStatusColor)
             if (!label || this.isBusy) return
 
             this.isCreating = true
-            const created = await this.materialCardStore.createStatus(label)
+            const created = await this.materialCardStore.createStatus(label, color || null)
             this.isCreating = false
 
             if (created) {
                 this.newStatusLabel = ''
+                this.newStatusColor = ''
             }
         },
         startStatusRename(option) {
             if (this.isBusy) return
             this.editingStatusId = option?.id ?? null
             this.editingStatusLabel = this.normalizeLabel(option?.label)
+            this.editingStatusColor = this.normalizeColor(option?.color)
         },
         cancelStatusRename() {
             this.editingStatusId = null
             this.editingStatusLabel = ''
+            this.editingStatusColor = ''
         },
         async saveStatusRename(option) {
             const optionId = Number(option?.id)
             const label = this.normalizeLabel(this.editingStatusLabel)
+            const color = this.normalizeColor(this.editingStatusColor)
 
             if (!Number.isFinite(optionId) || optionId <= 0 || !label || this.isBusy) return
 
             this.isRenaming = true
-            const updated = await this.materialCardStore.updateStatus(optionId, label)
+            const updated = await this.materialCardStore.updateStatus(optionId, label, color || null)
             this.isRenaming = false
 
             if (updated) {
@@ -234,5 +371,41 @@ export default {
 .status-row {
     border: 1px solid rgba(40, 58, 80, 0.12);
     background-color: rgba(255, 255, 255, 0.72);
+}
+
+.color-picker-trigger {
+    min-width: 44px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+}
+
+.color-picker-trigger--compact {
+    min-width: 40px;
+    width: 40px;
+    height: 40px;
+}
+
+.color-hex-field {
+    max-width: 140px;
+}
+
+.color-hex-field--compact {
+    max-width: 130px;
+}
+
+.color-dot {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid rgba(40, 58, 80, 0.4);
+    background-image: repeating-conic-gradient(#d9dce2 0% 25%, #ffffff 0% 50%);
+    background-size: 8px 8px;
+    background-position: center;
+}
+
+.color-dot--small {
+    width: 14px;
+    height: 14px;
 }
 </style>

@@ -199,10 +199,10 @@ export default {
             return Array.isArray(items) && items.length
                 ? items
                 : [
-                    { value: 'inbox', label: 'Neu/Idee' },
-                    { value: 'in_progress', label: 'In Arbeit' },
-                    { value: 'done', label: 'ok' },
-                    { value: 'update_needed', label: 'Änderung nötig' },
+                    { value: 'inbox', label: 'Neu/Idee', color: '#607d8b' },
+                    { value: 'in_progress', label: 'In Arbeit', color: '#f9a825' },
+                    { value: 'done', label: 'ok', color: '#2e7d32' },
+                    { value: 'update_needed', label: 'Änderung nötig', color: '#c62828' },
                 ]
         },
         typeOptions() {

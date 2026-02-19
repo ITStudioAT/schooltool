@@ -16,6 +16,17 @@ class MaterialStatusUpdateRequest extends FormRequest
     {
         return [
             'data.label' => ['required', 'string', 'max:255'],
+            'data.color' => $this->colorRules(),
+        ];
+    }
+
+    private function colorRules(): array
+    {
+        return [
+            'nullable',
+            'string',
+            'max:20',
+            'regex:/^#(?:[A-Fa-f0-9]{3}|[A-Fa-f0-9]{6})$/',
         ];
     }
 }

@@ -337,6 +337,9 @@ class MaterialService
                 'value' => $type->name,
                 'label' => $type->name,
                 'icon' => $this->normalizeTypeIcon($type->icon ?? null),
+                'color' => $this->hasTypeColorColumn()
+                    ? $this->normalizeTypeColor($type->color ?? null)
+                    : null,
             ])
             ->values()
             ->all();
@@ -363,10 +366,13 @@ class MaterialService
             'id' => $status->id,
             'value' => $status->value,
             'label' => $status->label,
+            'color' => $this->hasStatusColorColumn()
+                ? $this->normalizeStatusColor($status->color ?? null)
+                : null,
         ])->values()->all();
     }
 
-    public function createType(User $user, string $name, ?string $icon = null): MaterialType
+    public function createType(User $user, string $name, ?string $icon = null, ?string $color = null): MaterialType
     {
         if (! Schema::hasTable('material_types')) {
             throw ValidationException::withMessages([
@@ -394,10 +400,14 @@ class MaterialService
             $attributes['icon'] = $this->normalizeTypeIcon($icon);
         }
 
+        if ($this->hasTypeColorColumn()) {
+            $attributes['color'] = $this->normalizeTypeColor($color);
+        }
+
         return MaterialType::firstOrCreate($attributes);
     }
 
-    public function updateType(User $user, MaterialType $type, string $name, ?string $icon = null): MaterialType
+    public function updateType(User $user, MaterialType $type, string $name, ?string $icon = null, ?string $color = null): MaterialType
     {
         if ($this->isUserScopedMaterialTypes()) {
             if ((int) $type->user_id !== (int) $user->id) {
@@ -416,10 +426,11 @@ class MaterialService
 
         $oldName = (string) $type->name;
         $newIcon = $this->normalizeTypeIcon($icon);
+        $newColor = $this->normalizeTypeColor($color);
 
         $isUserScoped = $this->isUserScopedMaterialTypes();
 
-        DB::transaction(function () use ($type, $newName, $oldName, $newIcon, $user, $isUserScoped) {
+        DB::transaction(function () use ($type, $newName, $oldName, $newIcon, $newColor, $user, $isUserScoped) {
             $existsQuery = MaterialType::query()
                 ->where('id', '<>', $type->id)
                 ->where('name', $newName);
@@ -441,6 +452,9 @@ class MaterialService
             $updateData = ['name' => $newName];
             if ($this->hasTypeIconColumn()) {
                 $updateData['icon'] = $newIcon;
+            }
+            if ($this->hasTypeColorColumn()) {
+                $updateData['color'] = $newColor;
             }
 
             $type->update($updateData);
@@ -492,7 +506,7 @@ class MaterialService
         $type->delete();
     }
 
-    public function createStatus(User $user, string $label): MaterialStatus
+    public function createStatus(User $user, string $label, ?string $color = null): MaterialStatus
     {
         if (! Schema::hasTable('material_statuses')) {
             throw ValidationException::withMessages([
@@ -522,14 +536,20 @@ class MaterialService
             ]);
         }
 
-        return MaterialStatus::query()->create([
+        $attributes = [
             'school_id' => $user->school_id,
             'value' => $value,
             'label' => $normalizedLabel,
-        ]);
+        ];
+
+        if ($this->hasStatusColorColumn()) {
+            $attributes['color'] = $this->normalizeStatusColor($color);
+        }
+
+        return MaterialStatus::query()->create($attributes);
     }
 
-    public function updateStatus(User $user, MaterialStatus $status, string $label): MaterialStatus
+    public function updateStatus(User $user, MaterialStatus $status, string $label, ?string $color = null): MaterialStatus
     {
         if ((int) $status->school_id !== (int) $user->school_id) {
             abort(403, 'Status gehört nicht zur aktuellen Schule.');
@@ -542,9 +562,14 @@ class MaterialService
             ]);
         }
 
-        $status->update([
+        $updateData = [
             'label' => $normalizedLabel,
-        ]);
+        ];
+        if ($this->hasStatusColorColumn()) {
+            $updateData['color'] = $this->normalizeStatusColor($color);
+        }
+
+        $status->update($updateData);
 
         return $status->fresh();
     }
@@ -790,6 +815,18 @@ class MaterialService
 
         $cardTypes = $cardTypesQuery->pluck('type');
         $schoolId = (int) $user->school_id;
+        $defaultTypeMeta = [];
+        foreach ($this->defaultTypeValues() as $defaultType) {
+            $defaultName = $this->normalizeName($defaultType['value'] ?? '');
+            if ($defaultName === '') {
+                continue;
+            }
+            $defaultKey = mb_strtolower($defaultName);
+            $defaultTypeMeta[$defaultKey] = [
+                'icon' => $this->normalizeTypeIcon($defaultType['icon'] ?? null),
+                'color' => $this->normalizeTypeColor($defaultType['color'] ?? null),
+            ];
+        }
 
         foreach ($cardTypes as $rawType) {
             $name = $this->normalizeName($rawType);
@@ -812,7 +849,11 @@ class MaterialService
             }
 
             if ($this->hasTypeIconColumn()) {
-                $attributes['icon'] = $this->defaultTypeIcon();
+                $attributes['icon'] = $defaultTypeMeta[$key]['icon'] ?? $this->defaultTypeIcon();
+            }
+
+            if ($this->hasTypeColorColumn()) {
+                $attributes['color'] = $defaultTypeMeta[$key]['color'] ?? null;
             }
 
             MaterialType::query()->create($attributes);
@@ -827,21 +868,51 @@ class MaterialService
             return;
         }
 
+        $hasColorColumn = $this->hasStatusColorColumn();
+        $defaultStatusMeta = [];
+        foreach ($this->defaultStatusValues() as $defaultStatus) {
+            $defaultValue = trim((string) ($defaultStatus['value'] ?? ''));
+            if ($defaultValue === '') {
+                continue;
+            }
+            $defaultStatusMeta[mb_strtolower($defaultValue)] = [
+                'label' => trim((string) ($defaultStatus['label'] ?? '')),
+                'color' => $this->normalizeStatusColor($defaultStatus['color'] ?? null),
+            ];
+        }
+
         $knownRows = MaterialStatus::query()
             ->where('school_id', $schoolId)
             ->get();
 
-        $known = $knownRows
-            ->pluck('value')
-            ->map(fn ($value) => trim((string) $value))
-            ->filter(fn ($value) => $value !== '')
-            ->map(fn ($value) => mb_strtolower($value))
-            ->flip()
-            ->all();
+        $known = [];
+        foreach ($knownRows as $row) {
+            $value = trim((string) ($row->value ?? ''));
+            if ($value === '') {
+                continue;
+            }
+            $key = mb_strtolower($value);
+            $known[$key] = true;
+
+            if (! $hasColorColumn) {
+                continue;
+            }
+
+            $currentColor = $this->normalizeStatusColor($row->color ?? null);
+            $defaultColor = $defaultStatusMeta[$key]['color'] ?? null;
+            if ($currentColor !== null || $defaultColor === null) {
+                continue;
+            }
+
+            $row->update([
+                'color' => $defaultColor,
+            ]);
+        }
 
         foreach ($this->defaultStatusValues() as $defaultStatus) {
             $value = trim((string) ($defaultStatus['value'] ?? ''));
             $label = trim((string) ($defaultStatus['label'] ?? ''));
+            $color = $this->normalizeStatusColor($defaultStatus['color'] ?? null);
             if ($value === '' || $label === '') {
                 continue;
             }
@@ -851,11 +922,16 @@ class MaterialService
                 continue;
             }
 
-            MaterialStatus::query()->create([
+            $attributes = [
                 'school_id' => $schoolId,
                 'value' => $value,
                 'label' => $label,
-            ]);
+            ];
+            if ($hasColorColumn) {
+                $attributes['color'] = $color;
+            }
+
+            MaterialStatus::query()->create($attributes);
             $known[$key] = true;
         }
 
@@ -881,11 +957,16 @@ class MaterialService
                 continue;
             }
 
-            MaterialStatus::query()->create([
+            $attributes = [
                 'school_id' => $schoolId,
                 'value' => $value,
                 'label' => $this->defaultStatusLabelForValue($value),
-            ]);
+            ];
+            if ($hasColorColumn) {
+                $attributes['color'] = $this->defaultStatusColorForValue($value);
+            }
+
+            MaterialStatus::query()->create($attributes);
             $known[$key] = true;
         }
     }
@@ -900,13 +981,23 @@ class MaterialService
         return Schema::hasTable('material_types') && Schema::hasColumn('material_types', 'icon');
     }
 
+    private function hasTypeColorColumn(): bool
+    {
+        return Schema::hasTable('material_types') && Schema::hasColumn('material_types', 'color');
+    }
+
+    private function hasStatusColorColumn(): bool
+    {
+        return Schema::hasTable('material_statuses') && Schema::hasColumn('material_statuses', 'color');
+    }
+
     private function defaultStatusValues(): array
     {
         return [
-            ['value' => MaterialCard::STATUS_INBOX, 'label' => 'Neu/Idee'],
-            ['value' => MaterialCard::STATUS_IN_PROGRESS, 'label' => 'In Arbeit'],
-            ['value' => MaterialCard::STATUS_DONE, 'label' => 'ok'],
-            ['value' => MaterialCard::STATUS_UPDATE_NEEDED, 'label' => 'Änderung nötig'],
+            ['value' => MaterialCard::STATUS_INBOX, 'label' => 'Neu/Idee', 'color' => '#607d8b'],
+            ['value' => MaterialCard::STATUS_IN_PROGRESS, 'label' => 'In Arbeit', 'color' => '#f9a825'],
+            ['value' => MaterialCard::STATUS_DONE, 'label' => 'ok', 'color' => '#2e7d32'],
+            ['value' => MaterialCard::STATUS_UPDATE_NEEDED, 'label' => 'Änderung nötig', 'color' => '#c62828'],
         ];
     }
 
@@ -922,6 +1013,20 @@ class MaterialService
         }
 
         return $value;
+    }
+
+    private function defaultStatusColorForValue(string $value): ?string
+    {
+        $normalizedValue = mb_strtolower(trim($value));
+        foreach ($this->defaultStatusValues() as $status) {
+            $statusValue = mb_strtolower(trim((string) ($status['value'] ?? '')));
+            $statusColor = $this->normalizeStatusColor($status['color'] ?? null);
+            if ($statusValue === $normalizedValue && $statusColor !== null) {
+                return $statusColor;
+            }
+        }
+
+        return null;
     }
 
     private function statusValueFromLabel(string $label): string
@@ -976,10 +1081,12 @@ class MaterialService
         foreach ($rawValues as $rawValue) {
             $name = '';
             $icon = null;
+            $color = null;
 
             if (is_array($rawValue)) {
                 $name = $this->normalizeName($rawValue['value'] ?? $rawValue['label'] ?? '');
                 $icon = $this->normalizeTypeIcon($rawValue['icon'] ?? null);
+                $color = $this->normalizeTypeColor($rawValue['color'] ?? null);
             } else {
                 $name = $this->normalizeName($rawValue);
             }
@@ -998,6 +1105,7 @@ class MaterialService
                 'value' => $name,
                 'label' => $name,
                 'icon' => $icon ?: $this->defaultTypeIcon(),
+                'color' => $color,
             ];
         }
 
@@ -1085,6 +1193,29 @@ class MaterialService
         }
 
         return $this->defaultTypeIcon();
+    }
+
+    private function normalizeTypeColor(?string $color): ?string
+    {
+        $value = trim((string) $color);
+        if ($value === '') {
+            return null;
+        }
+
+        if (! preg_match('/^#(?:[A-Fa-f0-9]{3}|[A-Fa-f0-9]{6})$/', $value)) {
+            return null;
+        }
+
+        if (strlen($value) === 4) {
+            $value = '#' . $value[1] . $value[1] . $value[2] . $value[2] . $value[3] . $value[3];
+        }
+
+        return mb_strtolower($value);
+    }
+
+    private function normalizeStatusColor(?string $color): ?string
+    {
+        return $this->normalizeTypeColor($color);
     }
 
     private function cardRelations(): array

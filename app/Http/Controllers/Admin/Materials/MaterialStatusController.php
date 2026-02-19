@@ -25,13 +25,18 @@ class MaterialStatusController extends Controller
         $authUser = $this->authorizeForStatusManagement();
         $validated = $request->validated()['data'];
 
-        $status = $service->createStatus($authUser, (string) ($validated['label'] ?? ''));
+        $status = $service->createStatus(
+            $authUser,
+            (string) ($validated['label'] ?? ''),
+            isset($validated['color']) ? (string) $validated['color'] : null
+        );
 
         return response()->json([
             'data' => [
                 'id' => $status->id,
                 'value' => $status->value,
                 'label' => $status->label,
+                'color' => $status->color,
             ],
         ], 200);
     }
@@ -44,13 +49,19 @@ class MaterialStatusController extends Controller
         $authUser = $this->authorizeForStatusManagement();
         $validated = $request->validated()['data'];
 
-        $status = $service->updateStatus($authUser, $material_status, (string) ($validated['label'] ?? ''));
+        $status = $service->updateStatus(
+            $authUser,
+            $material_status,
+            (string) ($validated['label'] ?? ''),
+            isset($validated['color']) ? (string) $validated['color'] : null
+        );
 
         return response()->json([
             'data' => [
                 'id' => $status->id,
                 'value' => $status->value,
                 'label' => $status->label,
+                'color' => $status->color,
             ],
         ], 200);
     }

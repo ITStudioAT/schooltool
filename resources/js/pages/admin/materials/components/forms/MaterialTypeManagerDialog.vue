@@ -30,6 +30,32 @@
                         <v-icon :icon="normalizeTypeIcon(newTypeIcon)" />
                     </v-btn>
                     <v-btn
+                        variant="outlined"
+                        class="color-picker-trigger"
+                        :title="newTypeColor || 'Keine Farbe'"
+                        :disabled="isBusy"
+                        @click="openColorPicker('new')">
+                        <span class="color-dot" :style="colorPreviewStyle(newTypeColor)" />
+                    </v-btn>
+                    <v-text-field
+                        v-model="newTypeColor"
+                        label="HEX"
+                        placeholder="#1f77b4"
+                        variant="outlined"
+                        density="comfortable"
+                        hide-details="auto"
+                        class="color-hex-field"
+                        :disabled="isBusy"
+                        @blur="normalizeColorField('new')"
+                        @keyup.enter="normalizeColorField('new')" />
+                    <v-btn
+                        v-if="newTypeColor"
+                        icon="mdi-close"
+                        variant="text"
+                        size="small"
+                        :disabled="isBusy"
+                        @click="clearTypeColor('new')" />
+                    <v-btn
                         color="primary"
                         variant="flat"
                         :loading="isCreating"
@@ -85,7 +111,10 @@
                         class="type-row mb-2"
                         rounded="lg">
                         <template #prepend>
-                            <v-icon :icon="option.icon || defaultTypeIcon" color="primary" class="mr-3" />
+                            <div class="d-flex align-center ga-2 mr-3">
+                                <v-icon :icon="option.icon || defaultTypeIcon" :color="option.color || 'primary'" />
+                                <span class="color-dot color-dot--small" :style="colorPreviewStyle(option.color)" />
+                            </div>
                         </template>
 
                         <template v-if="editingTypeId === option.id">
@@ -107,6 +136,32 @@
                                     @click="openIconPicker('edit')">
                                     <v-icon :icon="normalizeTypeIcon(editingTypeIcon)" />
                                 </v-btn>
+                                <v-btn
+                                    variant="outlined"
+                                    class="color-picker-trigger color-picker-trigger--compact"
+                                    :title="editingTypeColor || 'Keine Farbe'"
+                                    :disabled="isBusy"
+                                    @click="openColorPicker('edit')">
+                                    <span class="color-dot" :style="colorPreviewStyle(editingTypeColor)" />
+                                </v-btn>
+                                <v-text-field
+                                    v-model="editingTypeColor"
+                                    label="HEX"
+                                    placeholder="#1f77b4"
+                                    variant="outlined"
+                                    density="compact"
+                                    hide-details="auto"
+                                    class="color-hex-field color-hex-field--compact"
+                                    :disabled="isBusy"
+                                    @blur="normalizeColorField('edit')"
+                                    @keyup.enter="normalizeColorField('edit')" />
+                                <v-btn
+                                    v-if="editingTypeColor"
+                                    icon="mdi-close"
+                                    variant="text"
+                                    size="small"
+                                    :disabled="isBusy"
+                                    @click="clearTypeColor('edit')" />
                             </div>
                         </template>
                         <template v-else>
@@ -183,6 +238,13 @@
             </v-card-actions>
         </v-card>
     </v-dialog>
+
+    <input
+        ref="colorInput"
+        type="color"
+        class="d-none"
+        :value="pickerInputColor"
+        @input="onColorPicked" />
 </template>
 
 <script>
@@ -202,9 +264,11 @@ export default {
             materialCardStore: null,
             newTypeName: '',
             newTypeIcon: 'mdi-file-document-outline',
+            newTypeColor: '',
             editingTypeId: null,
             editingTypeName: '',
             editingTypeIcon: '',
+            editingTypeColor: '',
             deletingTypeId: null,
             isCreating: false,
             isRenaming: false,
@@ -212,6 +276,7 @@ export default {
             isImportingDefaults: false,
             iconPickerOpen: false,
             iconPickerTarget: 'new',
+            colorPickerTarget: 'new',
         }
     },
     computed: {
@@ -227,12 +292,14 @@ export default {
                     const value = this.normalizeName(option.value)
                     const label = this.normalizeName(option.label) || value
                     const icon = this.normalizeIcon(option.icon)
+                    const color = this.normalizeColor(option.color)
                     if (!Number.isFinite(id) || id <= 0 || !value) return null
                     return {
                         id,
                         value,
                         label,
                         icon: icon || this.defaultTypeIcon,
+                        color,
                     }
                 })
                 .filter(Boolean)
@@ -250,6 +317,7 @@ export default {
                 const value = this.normalizeName(option.value)
                 const label = this.normalizeName(option.label) || value
                 const icon = this.normalizeIcon(option.icon)
+                const color = this.normalizeColor(option.color)
                 if (!value || !label) continue
                 const key = value.toLocaleLowerCase()
                 if (seen.has(key)) continue
@@ -258,6 +326,7 @@ export default {
                     value,
                     label,
                     icon: icon || this.defaultTypeIcon,
+                    color,
                 })
             }
 
@@ -292,6 +361,13 @@ export default {
         defaultTypeIcon() {
             return this.typeIconOptions[0]?.value || 'mdi-file-document-outline'
         },
+        pickerInputColor() {
+            const current = this.colorPickerTarget === 'edit'
+                ? this.normalizeColor(this.editingTypeColor)
+                : this.normalizeColor(this.newTypeColor)
+
+            return current || '#4f6fb3'
+        },
         availableDefaultTypeOptions() {
             return this.normalizedDefaultTypeOptions.filter((option) => !this.isDefaultTypeAlreadyPresent(option))
         },
@@ -319,6 +395,24 @@ export default {
         normalizeIcon(value) {
             return String(value ?? '').trim().slice(0, 100)
         },
+        normalizeColor(value) {
+            const raw = String(value ?? '').trim()
+            if (!raw) return ''
+            const text = raw.startsWith('#') ? raw : `#${raw}`
+            if (!text) return ''
+            if (!/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(text)) return ''
+            if (text.length === 4) {
+                return `#${text[1]}${text[1]}${text[2]}${text[2]}${text[3]}${text[3]}`.toLowerCase()
+            }
+            return text.toLowerCase()
+        },
+        normalizeColorField(target) {
+            if (target === 'edit') {
+                this.editingTypeColor = this.normalizeColor(this.editingTypeColor) || String(this.editingTypeColor || '').trim()
+                return
+            }
+            this.newTypeColor = this.normalizeColor(this.newTypeColor) || String(this.newTypeColor || '').trim()
+        },
         normalizeTypeIcon(value) {
             const normalized = this.normalizeIcon(value)
             if (!normalized) return this.defaultTypeIcon
@@ -333,6 +427,17 @@ export default {
             )
             return this.normalizeIcon(matching?.value) || this.defaultTypeIcon
         },
+        colorPreviewStyle(value) {
+            const color = this.normalizeColor(value)
+            if (!color) {
+                return {}
+            }
+
+            return {
+                backgroundColor: color,
+                backgroundImage: 'none',
+            }
+        },
         iconLabel(value) {
             const normalized = this.normalizeTypeIcon(value)
             const option = this.typeIconOptions.find(
@@ -345,6 +450,33 @@ export default {
             if (this.isBusy) return
             this.iconPickerTarget = target === 'edit' ? 'edit' : 'new'
             this.iconPickerOpen = true
+        },
+        openColorPicker(target) {
+            if (this.isBusy) return
+            this.colorPickerTarget = target === 'edit' ? 'edit' : 'new'
+            this.$nextTick(() => {
+                const colorInput = this.$refs.colorInput
+                if (colorInput && typeof colorInput.click === 'function') {
+                    colorInput.click()
+                }
+            })
+        },
+        onColorPicked(event) {
+            const value = this.normalizeColor(event?.target?.value)
+            if (!value) return
+
+            if (this.colorPickerTarget === 'edit') {
+                this.editingTypeColor = value
+            } else {
+                this.newTypeColor = value
+            }
+        },
+        clearTypeColor(target) {
+            if (target === 'edit') {
+                this.editingTypeColor = ''
+                return
+            }
+            this.newTypeColor = ''
         },
         pickerSelectedIcon() {
             if (this.iconPickerTarget === 'edit') {
@@ -374,24 +506,27 @@ export default {
         async createType() {
             const name = this.normalizeName(this.newTypeName)
             const icon = this.normalizeTypeIcon(this.newTypeIcon)
+            const color = this.normalizeColor(this.newTypeColor)
             if (!name || this.isBusy) return
 
             this.isCreating = true
-            const created = await this.materialCardStore.createType(name, icon)
+            const created = await this.materialCardStore.createType(name, icon, color || null)
             this.isCreating = false
 
             if (created) {
                 this.newTypeName = ''
                 this.newTypeIcon = this.defaultTypeIcon
+                this.newTypeColor = ''
             }
         },
         async importDefaultType(option) {
             const name = this.normalizeName(option?.value)
             const icon = this.normalizeTypeIcon(option?.icon)
+            const color = this.normalizeColor(option?.color)
             if (!name || this.isBusy || this.isDefaultTypeAlreadyPresent({ value: name })) return
 
             this.isImportingDefaults = true
-            await this.materialCardStore.importDefaultTypes([{ name, icon }])
+            await this.materialCardStore.importDefaultTypes([{ name, icon, color: color || null }])
             this.isImportingDefaults = false
         },
         async importAllDefaultTypes() {
@@ -401,6 +536,7 @@ export default {
                 .map((option) => ({
                     name: this.normalizeName(option.value),
                     icon: this.normalizeTypeIcon(option.icon),
+                    color: this.normalizeColor(option.color) || null,
                 }))
                 .filter((option) => option.name)
             if (!types.length) return
@@ -414,21 +550,24 @@ export default {
             this.editingTypeId = option?.id ?? null
             this.editingTypeName = this.normalizeName(option?.label)
             this.editingTypeIcon = this.normalizeTypeIcon(option?.icon)
+            this.editingTypeColor = this.normalizeColor(option?.color)
         },
         cancelTypeRename() {
             this.editingTypeId = null
             this.editingTypeName = ''
             this.editingTypeIcon = ''
+            this.editingTypeColor = ''
         },
         async saveTypeRename(option) {
             const optionId = Number(option?.id)
             const name = this.normalizeName(this.editingTypeName)
             const icon = this.normalizeTypeIcon(this.editingTypeIcon)
+            const color = this.normalizeColor(this.editingTypeColor)
 
             if (!Number.isFinite(optionId) || optionId <= 0 || !name || this.isBusy) return
 
             this.isRenaming = true
-            const updated = await this.materialCardStore.updateType(optionId, name, icon)
+            const updated = await this.materialCardStore.updateType(optionId, name, icon, color || null)
             this.isRenaming = false
 
             if (updated) {
@@ -476,10 +615,46 @@ export default {
     height: 40px;
 }
 
+.color-picker-trigger {
+    min-width: 44px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+}
+
+.color-picker-trigger--compact {
+    min-width: 40px;
+    width: 40px;
+    height: 40px;
+}
+
+.color-hex-field {
+    max-width: 140px;
+}
+
+.color-hex-field--compact {
+    max-width: 130px;
+}
+
 .icon-option-btn {
     min-width: 46px;
     width: 46px;
     height: 46px;
     padding: 0;
+}
+
+.color-dot {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid rgba(40, 58, 80, 0.4);
+    background-image: repeating-conic-gradient(#d9dce2 0% 25%, #ffffff 0% 50%);
+    background-size: 8px 8px;
+    background-position: center;
+}
+
+.color-dot--small {
+    width: 14px;
+    height: 14px;
 }
 </style>

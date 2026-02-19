@@ -37,7 +37,7 @@
                         :key="`settings-material-type-${option.id || option.value}`"
                         size="small"
                         variant="tonal"
-                        color="primary"
+                        :color="option.color || 'primary'"
                         :prepend-icon="option.icon || 'mdi-file-document-outline'">
                         {{ option.label }}
                     </v-chip>
@@ -68,7 +68,7 @@
                         :key="`settings-material-status-${option.id || option.value}`"
                         size="small"
                         variant="tonal"
-                        color="primary"
+                        :color="option.color || 'primary'"
                         prepend-icon="mdi-flag-outline">
                         {{ option.label }}
                     </v-chip>
@@ -201,12 +201,14 @@ export default {
                     const value = String(option.value || '').trim()
                     const label = String(option.label || value).trim()
                     const icon = String(option.icon || '').trim()
+                    const color = String(option.color || '').trim()
                     if (!value || !label) return null
                     return {
                         id: Number.isFinite(id) && id > 0 ? id : null,
                         value,
                         label,
                         icon: icon || 'mdi-file-document-outline',
+                        color,
                     }
                 })
                 .filter(Boolean)
@@ -222,11 +224,13 @@ export default {
                     const id = Number(option.id)
                     const value = String(option.value || '').trim()
                     const label = String(option.label || value).trim()
+                    const color = String(option.color || '').trim()
                     if (!value || !label) return null
                     return {
                         id: Number.isFinite(id) && id > 0 ? id : null,
                         value,
                         label,
+                        color,
                     }
                 })
                 .filter(Boolean)

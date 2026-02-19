@@ -11,6 +11,7 @@ class MaterialStatus extends Model
         'school_id',
         'value',
         'label',
+        'color',
     ];
 
     public function school(): BelongsTo

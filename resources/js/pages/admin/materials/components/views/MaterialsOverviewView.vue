@@ -20,7 +20,7 @@
         </v-row>
 
         <div class="material-filters-wrap mb-4">
-            <div class="filter-section mb-3">
+            <div class="filter-section">
                 <div class="text-subtitle-2 mb-2">Fach filtern</div>
 
                 <div class="d-flex flex-wrap ga-2">
@@ -46,7 +46,7 @@
                 </div>
             </div>
 
-            <div class="filter-section mb-3">
+            <div class="filter-section">
                 <div class="text-subtitle-2 mb-2">Materialtyp filtern</div>
 
                 <div class="d-flex flex-wrap ga-2">
@@ -63,7 +63,7 @@
                         v-for="typeOption in typeFilterOptions"
                         :key="`type-filter-${typeOption.value}`"
                         size="small"
-                        color="primary"
+                        :color="typeColor(typeOption.value) || 'primary'"
                         :variant="isTypeFilterActive(typeOption.value) ? 'flat' : 'tonal'"
                         :disabled="isLoading || isDeletingId !== null || isSavingEdit"
                         @click="toggleTypeFilter(typeOption.value)">
@@ -106,7 +106,12 @@
         <v-skeleton-loader v-if="isLoading && !hasCards" type="list-item-three-line@4" />
 
         <v-list v-else-if="hasCards" class="bg-transparent pa-0">
-            <v-list-item v-for="card in cards" :key="card.id" class="overview-item mb-3 px-4 py-3" rounded="lg">
+            <v-list-item
+                v-for="card in cards"
+                :key="card.id"
+                class="overview-item mb-3 px-4 py-3"
+                rounded="lg"
+                :style="cardBackgroundStyle(card)">
                 <template #prepend>
                     <v-avatar :color="statusColor(card.status)" variant="tonal" size="38" class="mr-4">
                         <v-icon :icon="sourceIcon(card)" :color="statusColor(card.status)" />
@@ -225,6 +230,60 @@
             </div>
 
             <v-card-text>
+                <div class="attachment-upload-row d-flex flex-column flex-md-row align-md-start ga-2 mb-4">
+                    <v-text-field
+                        v-model="attachmentUploadTitle"
+                        label="Titel (optional)"
+                        variant="outlined"
+                        density="comfortable"
+                        hide-details="auto"
+                        class="attachment-upload-title-field flex-grow-1"
+                        :disabled="attachmentDialogBusy"
+                        @keyup.enter="openAttachmentFilePicker" />
+
+                    <v-btn
+                        color="primary"
+                        variant="tonal"
+                        prepend-icon="mdi-file-plus-outline"
+                        :disabled="attachmentDialogBusy || !csrfToken"
+                        @click="openAttachmentFilePicker">
+                        Datei auswählen
+                    </v-btn>
+                </div>
+
+                <div class="attachment-pond-wrap mb-3">
+                    <file-pond
+                        v-if="csrfToken"
+                        ref="attachmentPond"
+                        name="file"
+                        :allow-multiple="false"
+                        :chunk-uploads="true"
+                        :chunk-force="true"
+                        :allow-revert="false"
+                        :allow-remove="true"
+                        :instant-upload="true"
+                        :before-add-file="beforeAttachmentAddFile"
+                        :disabled="attachmentDialogBusy"
+                        :label-idle="'<strong>Datei hierher ziehen oder <i>klicken</i></strong>'"
+                        :label-file-processing-complete="'OK'"
+                        :server="attachmentPondServerConfig"
+                        @processfile="onAttachmentPondProcessFile"
+                        @processfileerror="onAttachmentPondProcessFileError"
+                        @error="onAttachmentPondProcessFileError" />
+
+                    <v-alert
+                        v-else
+                        type="warning"
+                        variant="tonal"
+                        class="mb-0">
+                        Upload-Token fehlt. Bitte Seite neu laden.
+                    </v-alert>
+                </div>
+
+                <div class="text-caption text-medium-emphasis mb-3">
+                    Maximale Uploadgröße je Datei: {{ maxUploadSizeLabel }}
+                </div>
+
                 <v-alert v-if="!attachmentRows.length" type="info" variant="tonal" class="mb-0">
                     Keine Anhänge vorhanden.
                 </v-alert>
@@ -587,10 +646,15 @@
 </template>
 
 <script>
+import vueFilePond from 'vue-filepond/dist/vue-filepond.js'
+import 'filepond/dist/filepond.min.css'
+import FilePondPluginFileValidateType from 'filepond-plugin-file-validate-type'
 import { useMaterialCardStore } from '@/stores/admin/materials/MaterialCardStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import MaterialsCreateInlineForm from '../forms/MaterialsCreateInlineForm.vue'
 import MaterialTypeManagerDialog from '../forms/MaterialTypeManagerDialog.vue'
+
+const FilePond = vueFilePond(FilePondPluginFileValidateType)
 
 const createDefaultEditForm = () => ({
     id: null,
@@ -609,6 +673,7 @@ const createDefaultEditForm = () => ({
 export default {
     name: 'MaterialsOverviewView',
     components: {
+        FilePond,
         MaterialsCreateInlineForm,
         MaterialTypeManagerDialog,
     },
@@ -623,6 +688,9 @@ export default {
             attachmentDialogCardId: null,
             attachmentDialogCardTitle: '',
             attachmentRows: [],
+            attachmentUploadTitle: '',
+            isUploadingAttachment: false,
+            csrfToken: null,
             subjectFilter: '',
             typeFilter: '',
             statusFilter: '',
@@ -653,10 +721,10 @@ export default {
             return Array.isArray(items) && items.length
                 ? items
                 : [
-                    { value: 'inbox', label: 'Neu/Idee' },
-                    { value: 'in_progress', label: 'In Arbeit' },
-                    { value: 'done', label: 'ok' },
-                    { value: 'update_needed', label: 'Änderung nötig' },
+                    { value: 'inbox', label: 'Neu/Idee', color: '#607d8b' },
+                    { value: 'in_progress', label: 'In Arbeit', color: '#f9a825' },
+                    { value: 'done', label: 'ok', color: '#2e7d32' },
+                    { value: 'update_needed', label: 'Änderung nötig', color: '#c62828' },
                 ]
         },
         typeOptions() {
@@ -687,8 +755,38 @@ export default {
             if (!Number.isFinite(value) || value <= 0) return 20480
             return Math.max(1, Math.round(value))
         },
+        maxUploadSizeBytes() {
+            return this.maxUploadSizeKb * 1024
+        },
+        maxUploadSizeLabel() {
+            const mb = this.maxUploadSizeBytes / (1024 * 1024)
+            const rounded = Math.round(mb * 100) / 100
+            return `${rounded} MB`
+        },
+        attachmentPondServerConfig() {
+            return {
+                process: {
+                    url: '/api/admin/materials/uploads/chunk',
+                    method: 'POST',
+                    timeout: 120000,
+                    withCredentials: true,
+                    headers: this.csrfToken ? { 'X-CSRF-TOKEN': this.csrfToken } : {},
+                },
+                patch: {
+                    url: '/api/admin/materials/uploads/chunk?patch=',
+                    method: 'PATCH',
+                    timeout: 120000,
+                    withCredentials: true,
+                    headers: this.csrfToken ? { 'X-CSRF-TOKEN': this.csrfToken } : {},
+                },
+                revert: null,
+                restore: null,
+                load: null,
+                fetch: null,
+            }
+        },
         attachmentDialogBusy() {
-            return this.savingAttachmentIds.length > 0 || this.deletingAttachmentIds.length > 0
+            return this.savingAttachmentIds.length > 0 || this.deletingAttachmentIds.length > 0 || this.isUploadingAttachment
         },
         isDeletingDetail() {
             const id = Number(this.detailDialogCard?.id)
@@ -771,6 +869,18 @@ export default {
         },
     },
     async beforeMount() {
+        const metaToken = document?.head?.querySelector?.('meta[name="csrf-token"]')?.content
+        this.csrfToken = String(metaToken || '').trim() || null
+        try {
+            const response = await axios.get('/api/admin/token')
+            const token = String(response?.data || '').trim()
+            if (token) {
+                this.csrfToken = token
+            }
+        } catch {
+            // Falls Token-Refresh fehlschlägt, wird der vorhandene Meta-Token verwendet.
+        }
+
         this.materialCardStore = useMaterialCardStore()
         if (!this.materialCardStore.config) {
             await this.materialCardStore.loadConfig()
@@ -1236,6 +1346,54 @@ export default {
 
             return 'mdi-file-document-outline'
         },
+        normalizeTypeColor(value) {
+            const text = String(value ?? '').trim()
+            if (!/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(text)) return ''
+            if (text.length === 4) {
+                return `#${text[1]}${text[1]}${text[2]}${text[2]}${text[3]}${text[3]}`.toLowerCase()
+            }
+            return text.toLowerCase()
+        },
+        normalizeStatusColor(value) {
+            return this.normalizeTypeColor(value)
+        },
+        typeColor(typeValue) {
+            const value = String(typeValue || '').trim().toLocaleLowerCase()
+            if (!value) return ''
+
+            const option = this.typeOptions.find((entry) => {
+                const entryValue = String(entry?.value || '').trim().toLocaleLowerCase()
+                return entryValue !== '' && entryValue === value
+            })
+
+            return this.normalizeTypeColor(option?.color)
+        },
+        hexToRgba(hexColor, alpha = 1) {
+            const color = this.normalizeTypeColor(hexColor)
+            if (!color) return ''
+
+            const r = parseInt(color.slice(1, 3), 16)
+            const g = parseInt(color.slice(3, 5), 16)
+            const b = parseInt(color.slice(5, 7), 16)
+            if ([r, g, b].some((value) => Number.isNaN(value))) return ''
+
+            const normalizedAlpha = Number.isFinite(alpha) ? Math.min(1, Math.max(0, alpha)) : 1
+            return `rgba(${r}, ${g}, ${b}, ${normalizedAlpha})`
+        },
+        cardBackgroundStyle(card) {
+            const color = this.typeColor(card?.type)
+            if (!color) return null
+
+            const background = this.hexToRgba(color, 0.16)
+            const border = this.hexToRgba(color, 0.45)
+
+            if (!background) return null
+
+            return {
+                backgroundColor: background,
+                borderColor: border || 'rgba(40, 58, 80, 0.12)',
+            }
+        },
         statusLabel(status) {
             const normalized = String(status || '').trim().toLocaleLowerCase()
             const configured = this.statusOptions.find((option) => {
@@ -1257,13 +1415,24 @@ export default {
             return map[status] || 'Unbekannt'
         },
         statusColor(status) {
+            const normalized = String(status || '').trim().toLocaleLowerCase()
+            const configured = this.statusOptions.find((option) => {
+                const value = String(option?.value || '').trim().toLocaleLowerCase()
+                return value !== '' && value === normalized
+            })
+
+            const configuredColor = this.normalizeStatusColor(configured?.color)
+            if (configuredColor) {
+                return configuredColor
+            }
+
             const map = {
                 inbox: 'secondary',
                 in_progress: 'warning',
                 done: 'success',
                 update_needed: 'error',
             }
-            return map[status] || 'primary'
+            return map[normalized] || 'primary'
         },
         classificationLabels(card) {
             const rows = Array.isArray(card?.classifications) ? card.classifications : []
@@ -1325,6 +1494,8 @@ export default {
             this.attachmentDialogCardId = Number(card?.id) || null
             this.attachmentDialogCardTitle = String(card?.title || '').trim()
             this.attachmentRows = this.toAttachmentRows(card?.attachments)
+            this.attachmentUploadTitle = ''
+            this.isUploadingAttachment = false
             this.attachmentDialogOpen = true
         },
         closeAttachmentManager() {
@@ -1333,8 +1504,102 @@ export default {
             this.attachmentDialogCardId = null
             this.attachmentDialogCardTitle = ''
             this.attachmentRows = []
+            this.attachmentUploadTitle = ''
+            this.isUploadingAttachment = false
             this.savingAttachmentIds = []
             this.deletingAttachmentIds = []
+            this.clearAttachmentPondFiles()
+        },
+        openAttachmentFilePicker() {
+            const pond = this.$refs.attachmentPond
+            if (pond && typeof pond.browse === 'function') {
+                pond.browse()
+            }
+        },
+        clearAttachmentPondFiles() {
+            const pond = this.$refs.attachmentPond
+            if (pond && typeof pond.removeFiles === 'function') {
+                pond.removeFiles()
+            }
+        },
+        beforeAttachmentAddFile(fileItem) {
+            const size = Number(fileItem?.file?.size || fileItem?.size || 0)
+            if (!Number.isFinite(size) || size <= 0) return true
+
+            if (size > this.maxUploadSizeBytes) {
+                this.notifyUploadError(`Datei ist zu groß. Maximal erlaubt: ${this.maxUploadSizeLabel}.`)
+                return false
+            }
+
+            return true
+        },
+        async refreshAttachmentDialogCard(cardId) {
+            const id = Number(cardId)
+            if (!Number.isFinite(id) || id <= 0) return
+
+            const selectedCard = this.materialCardStore?.selected_card
+            if (Number(selectedCard?.id) === id) {
+                this.mergeCardIntoOverview(selectedCard)
+                this.attachmentRows = this.toAttachmentRows(selectedCard?.attachments)
+                const nextTitle = String(selectedCard?.title || '').trim()
+                if (nextTitle) {
+                    this.attachmentDialogCardTitle = nextTitle
+                }
+                return
+            }
+
+            const loaded = await this.materialCardStore.show(id)
+            if (!loaded) return
+
+            const refreshedCard = this.materialCardStore?.selected_card
+            if (Number(refreshedCard?.id) !== id) return
+            this.mergeCardIntoOverview(refreshedCard)
+            this.attachmentRows = this.toAttachmentRows(refreshedCard?.attachments)
+            const nextTitle = String(refreshedCard?.title || '').trim()
+            if (nextTitle) {
+                this.attachmentDialogCardTitle = nextTitle
+            }
+        },
+        async onAttachmentPondProcessFile(error, fileItem) {
+            if (error) {
+                this.onAttachmentPondProcessFileError(error)
+                return
+            }
+
+            const cardId = Number(this.attachmentDialogCardId)
+            if (!Number.isFinite(cardId) || cardId <= 0) return
+            if (this.attachmentDialogBusy) return
+
+            const uploadId = String(fileItem?.serverId || '').trim()
+            if (!uploadId) {
+                this.onAttachmentPondProcessFileError()
+                return
+            }
+
+            const fileName = String(fileItem?.filename || fileItem?.file?.name || '').trim() || 'Datei'
+            const title = this.normalizeAttachmentName(this.attachmentUploadTitle) || this.defaultAttachmentTitle(fileName)
+
+            this.isUploadingAttachment = true
+            try {
+                const attached = await this.materialCardStore.addTempFileAttachment(cardId, uploadId, title)
+                if (!attached) {
+                    await this.materialCardStore.deleteTempUpload(uploadId, false)
+                    return
+                }
+
+                await this.refreshAttachmentDialogCard(cardId)
+                this.attachmentUploadTitle = ''
+            } finally {
+                this.isUploadingAttachment = false
+                const pond = this.$refs.attachmentPond
+                if (pond && typeof pond.removeFile === 'function') {
+                    pond.removeFile(fileItem?.id)
+                }
+            }
+        },
+        onAttachmentPondProcessFileError(error) {
+            const message = String(error?.main || error?.body || error?.message || '').trim()
+            this.notifyUploadError(message || 'Datei konnte nicht hochgeladen werden.')
         },
         attachmentExtension(row) {
             const extractFromPath = (value) => {
@@ -1669,6 +1934,17 @@ export default {
 </script>
 
 <style scoped>
+.material-filters-wrap {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+    align-items: start;
+}
+
+.filter-section {
+    min-width: 0;
+}
+
 .overview-item {
     border: 1px solid rgba(40, 58, 80, 0.12);
     background-color: rgba(255, 255, 255, 0.72);
@@ -1746,6 +2022,10 @@ export default {
     border-radius: 10px;
     padding: 10px;
     background: rgba(255, 255, 255, 0.75);
+}
+
+.attachment-upload-title-field {
+    min-width: 220px;
 }
 
 .attachment-name-field {
@@ -1828,6 +2108,10 @@ export default {
     }
 
     .attachment-manage-actions :deep(.v-btn) {
+        width: 100%;
+    }
+
+    .attachment-upload-row :deep(.v-btn) {
         width: 100%;
     }
 }
