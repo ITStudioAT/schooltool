@@ -388,6 +388,110 @@
                         </div>
                     </template>
 
+                    <template v-else-if="selectedSubjectAction === 'subjects_groups'">
+                        <div class="text-body-2 text-medium-emphasis mb-3">
+                            Alle Fächer, Themen und Einheiten mit zugeordneten Materialien.
+                            Materialien können hier in eine andere Zuordnung verschoben oder kopiert werden.
+                        </div>
+
+                        <div class="d-flex flex-wrap align-center ga-2 mb-3">
+                            <v-btn
+                                size="small"
+                                color="primary"
+                                variant="flat"
+                                prepend-icon="mdi-refresh"
+                                :loading="isLoadingSubjectAssignments"
+                                :disabled="isSavingSubjectAssignment"
+                                @click="loadSubjectAssignments(true)">
+                                Aktualisieren
+                            </v-btn>
+
+                            <v-chip size="small" variant="tonal" color="primary" prepend-icon="mdi-graph-outline">
+                                Einträge mit Materialien: {{ subjectAssignmentGroups.length }}
+                            </v-chip>
+                        </div>
+
+                        <v-progress-linear
+                            v-if="isLoadingSubjectAssignments"
+                            indeterminate
+                            color="primary"
+                            rounded
+                            class="mb-3" />
+
+                        <v-alert
+                            v-else-if="!subjectAssignmentGroups.length"
+                            type="info"
+                            variant="tonal"
+                            class="mb-2">
+                            Keine Zuordnungen mit Materialien gefunden.
+                        </v-alert>
+
+                        <v-expansion-panels
+                            v-else
+                            variant="accordion"
+                            multiple
+                            class="subject-assignments-panels">
+                            <v-expansion-panel
+                                v-for="group in subjectAssignmentGroups"
+                                :key="`subject-assignment-group-${group.key}`">
+                                <v-expansion-panel-title>
+                                    <div class="d-flex align-center flex-wrap ga-2 w-100">
+                                        <v-chip size="x-small" variant="tonal" color="primary">
+                                            {{ group.levelLabel }}
+                                        </v-chip>
+                                        <span class="font-weight-medium">{{ group.label }}</span>
+                                        <v-chip size="x-small" variant="tonal" color="primary" class="ml-auto">
+                                            {{ group.materials.length }}
+                                        </v-chip>
+                                    </div>
+                                </v-expansion-panel-title>
+                                <v-expansion-panel-text>
+                                    <div
+                                        v-for="material in group.materials"
+                                        :key="`subject-assignment-material-${group.key}-${material.cardId}`"
+                                        class="subject-assignment-material-row">
+                                        <div class="subject-assignment-material-meta">
+                                            <div class="text-body-2 font-weight-medium">{{ material.title }}</div>
+                                        </div>
+
+                                        <div class="d-flex flex-wrap ga-2">
+                                            <v-btn
+                                                size="small"
+                                                color="primary"
+                                                variant="outlined"
+                                                prepend-icon="mdi-swap-horizontal"
+                                                class="subject-assignment-action-btn"
+                                                :disabled="isSavingSubjectAssignment"
+                                                @click="openSubjectAssignmentDialog('move', group, material)">
+                                                Verschieben
+                                            </v-btn>
+                                            <v-btn
+                                                size="small"
+                                                color="primary"
+                                                variant="outlined"
+                                                prepend-icon="mdi-content-copy"
+                                                class="subject-assignment-action-btn"
+                                                :disabled="isSavingSubjectAssignment"
+                                                @click="openSubjectAssignmentDialog('copy', group, material)">
+                                                Kopieren
+                                            </v-btn>
+                                            <v-btn
+                                                size="small"
+                                                color="error"
+                                                variant="outlined"
+                                                prepend-icon="mdi-delete-outline"
+                                                class="subject-assignment-action-btn"
+                                                :disabled="isSavingSubjectAssignment || !canDeleteSubjectAssignment(material, group)"
+                                                @click="openSubjectAssignmentDeleteDialog(group, material)">
+                                                Zuordnung löschen
+                                            </v-btn>
+                                        </div>
+                                    </div>
+                                </v-expansion-panel-text>
+                            </v-expansion-panel>
+                        </v-expansion-panels>
+                    </template>
+
                     <template v-else>
                         <div class="settings-empty-card" />
                     </template>
@@ -418,6 +522,147 @@
                         :loading="isSavingSubjectCatalog"
                         :disabled="isSavingSubjectCatalog"
                         @click="confirmDeleteEntry">
+                        Löschen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="subjectAssignmentDialog.open" max-width="640" persistent>
+            <v-card rounded="xl">
+                <v-card-title class="text-h6 font-weight-bold">{{ subjectAssignmentDialogTitle }}</v-card-title>
+                <v-card-text class="pb-2">
+                    <div class="subject-assignment-info mb-3">
+                        <div class="subject-assignment-info-label">Material</div>
+                        <div class="subject-assignment-info-value">
+                            {{ subjectAssignmentDialog.card?.title || 'Ohne Titel' }}
+                        </div>
+                    </div>
+
+                    <div class="subject-assignment-info mb-3">
+                        <div class="subject-assignment-info-label">Aktuelle Zuordnung</div>
+                        <div class="subject-assignment-info-value">{{ subjectAssignmentDialogSourceLabel }}</div>
+                    </div>
+
+                    <div class="subject-assignment-chip-section mb-3">
+                        <div class="subject-assignment-chip-label mb-2">Fach</div>
+                        <v-chip-group
+                            :model-value="subjectAssignmentDialog.targetRow.subject"
+                            column
+                            :disabled="isSavingSubjectAssignment"
+                            selected-class="subject-assignment-chip--selected"
+                            @update:modelValue="updateSubjectAssignmentTargetSubject">
+                            <v-chip
+                                v-for="subject in subjectAssignmentSubjectOptions"
+                                :key="`subject-assignment-subject-chip-${subject}`"
+                                :value="subject"
+                                size="small"
+                                variant="outlined"
+                                filter>
+                                {{ subject }}
+                            </v-chip>
+                        </v-chip-group>
+                    </div>
+
+                    <div class="subject-assignment-chip-section mb-3">
+                        <div class="subject-assignment-chip-label mb-2">Thema</div>
+                        <v-chip-group
+                            :model-value="subjectAssignmentDialog.targetRow.topic"
+                            column
+                            :disabled="isSavingSubjectAssignment || !subjectAssignmentDialog.targetRow.subject"
+                            selected-class="subject-assignment-chip--selected"
+                            @update:modelValue="updateSubjectAssignmentTargetTopic">
+                            <v-chip
+                                value=""
+                                size="small"
+                                variant="outlined"
+                                filter>
+                                Ohne Thema
+                            </v-chip>
+                            <v-chip
+                                v-for="topic in subjectAssignmentTopicOptions"
+                                :key="`subject-assignment-topic-chip-${topic}`"
+                                :value="topic"
+                                size="small"
+                                variant="outlined"
+                                filter>
+                                {{ topic }}
+                            </v-chip>
+                        </v-chip-group>
+                    </div>
+
+                    <div class="subject-assignment-chip-section">
+                        <div class="subject-assignment-chip-label mb-2">Einheit</div>
+                        <v-chip-group
+                            :model-value="subjectAssignmentDialog.targetRow.unit"
+                            column
+                            :disabled="isSavingSubjectAssignment || !subjectAssignmentDialog.targetRow.topic"
+                            selected-class="subject-assignment-chip--selected"
+                            @update:modelValue="updateSubjectAssignmentTargetUnit">
+                            <v-chip
+                                value=""
+                                size="small"
+                                variant="outlined"
+                                filter>
+                                Ohne Einheit
+                            </v-chip>
+                            <v-chip
+                                v-for="unit in subjectAssignmentUnitOptions"
+                                :key="`subject-assignment-unit-chip-${unit}`"
+                                :value="unit"
+                                size="small"
+                                variant="outlined"
+                                filter>
+                                {{ unit }}
+                            </v-chip>
+                        </v-chip-group>
+                    </div>
+                </v-card-text>
+                <v-card-actions class="justify-end px-4 pb-4">
+                    <v-btn
+                        variant="text"
+                        :disabled="isSavingSubjectAssignment"
+                        @click="closeSubjectAssignmentDialog">
+                        Abbrechen
+                    </v-btn>
+                    <v-btn
+                        color="primary"
+                        variant="flat"
+                        prepend-icon="mdi-content-save-outline"
+                        :loading="isSavingSubjectAssignment"
+                        :disabled="!canSaveSubjectAssignmentDialog"
+                        @click="saveSubjectAssignmentDialog">
+                        {{ subjectAssignmentDialogActionLabel }}
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="subjectAssignmentDeleteDialog.open" max-width="560" persistent>
+            <v-card rounded="xl">
+                <v-card-title class="text-h6 font-weight-bold">Zuordnung löschen</v-card-title>
+                <v-card-text>
+                    <div class="text-body-1 mb-2">
+                        {{ subjectAssignmentDeleteDialogLabel }}
+                    </div>
+                    <div class="text-body-2 text-medium-emphasis">
+                        Diese Zuordnung wird vom Material entfernt. Die letzte verbleibende Zuordnung kann nicht gelöscht werden.
+                    </div>
+                </v-card-text>
+                <v-card-actions class="justify-end px-4 pb-4">
+                    <v-btn
+                        variant="text"
+                        :disabled="isSavingSubjectAssignment"
+                        @click="closeSubjectAssignmentDeleteDialog">
+                        Abbrechen
+                    </v-btn>
+                    <v-btn
+                        color="error"
+                        variant="flat"
+                        prepend-icon="mdi-delete-outline"
+                        :loading="isSavingSubjectAssignment"
+                        :disabled="isSavingSubjectAssignment"
+                        @click="confirmSubjectAssignmentDelete">
                         Löschen
                     </v-btn>
                 </v-card-actions>
@@ -456,8 +701,7 @@ export default {
             ],
             subjectsMenuItems: [
                 { value: 'subjects_catalog', label: 'Fachkatalog', icon: 'mdi-book-open-variant-outline' },
-                { value: 'subjects_groups', label: 'Fachgruppen', icon: 'mdi-account-group-outline' },
-                { value: 'subjects_mapping', label: 'Zuordnung', icon: 'mdi-link-variant' },
+                { value: 'subjects_groups', label: 'Zuordnung', icon: 'mdi-account-group-outline' },
             ],
             fileSettingsForm: {
                 maxUploadSizeMb: '',
@@ -483,6 +727,33 @@ export default {
                 kind: '',
                 id: null,
                 label: '',
+            },
+            isLoadingSubjectAssignments: false,
+            isSavingSubjectAssignment: false,
+            subjectAssignmentGroups: [],
+            subjectAssignmentDialog: {
+                open: false,
+                mode: '',
+                card: null,
+                sourceRow: {
+                    subject: '',
+                    topic: '',
+                    unit: '',
+                },
+                targetRow: {
+                    subject: '',
+                    topic: '',
+                    unit: '',
+                },
+            },
+            subjectAssignmentDeleteDialog: {
+                open: false,
+                card: null,
+                sourceRow: {
+                    subject: '',
+                    topic: '',
+                    unit: '',
+                },
             },
         }
     },
@@ -661,6 +932,90 @@ export default {
         canSaveSubjectCatalogEditor() {
             return this.normalizeTreeName(this.subjectCatalogEditor.name) !== ''
         },
+        subjectAssignmentDialogTitle() {
+            if (this.subjectAssignmentDialog.mode === 'move') {
+                return 'Material verschieben'
+            }
+            if (this.subjectAssignmentDialog.mode === 'copy') {
+                return 'Material kopieren'
+            }
+            return 'Zuordnung bearbeiten'
+        },
+        subjectAssignmentDialogActionLabel() {
+            return this.subjectAssignmentDialog.mode === 'move' ? 'Verschieben' : 'Kopieren'
+        },
+        subjectAssignmentDialogSourceLabel() {
+            return this.classificationLabel(this.subjectAssignmentDialog.sourceRow)
+        },
+        subjectAssignmentDeleteDialogLabel() {
+            return this.classificationLabel(this.subjectAssignmentDeleteDialog.sourceRow)
+        },
+        subjectAssignmentSubjectOptions() {
+            return this.subjectTreeItems
+                .map((subject) => this.normalizeTreeName(subject?.name))
+                .filter((name) => name !== '')
+        },
+        subjectAssignmentTopicOptions() {
+            const subjectName = this.normalizeTreeName(this.subjectAssignmentDialog.targetRow.subject)
+            if (!subjectName) return []
+
+            const subjectNode = this.subjectNodeByName(subjectName)
+            const topics = Array.isArray(subjectNode?.topics) ? subjectNode.topics : []
+            return topics
+                .map((topic) => this.normalizeTreeName(topic?.name))
+                .filter((name) => name !== '')
+        },
+        subjectAssignmentUnitOptions() {
+            const subjectName = this.normalizeTreeName(this.subjectAssignmentDialog.targetRow.subject)
+            const topicName = this.normalizeTreeName(this.subjectAssignmentDialog.targetRow.topic)
+            if (!subjectName || !topicName) return []
+
+            const topicNode = this.topicNodeByNames(subjectName, topicName)
+            const units = Array.isArray(topicNode?.units) ? topicNode.units : []
+            return units
+                .map((unit) => this.normalizeTreeName(unit?.name))
+                .filter((name) => name !== '')
+        },
+        canSaveSubjectAssignmentDialog() {
+            if (!this.subjectAssignmentDialog.open || this.isSavingSubjectAssignment) {
+                return false
+            }
+
+            const mode = String(this.subjectAssignmentDialog.mode || '')
+            if (mode !== 'move' && mode !== 'copy') {
+                return false
+            }
+
+            const cardId = Number(this.subjectAssignmentDialog.card?.id)
+            if (!Number.isFinite(cardId) || cardId <= 0) {
+                return false
+            }
+
+            const sourceRow = this.normalizeClassificationRow(this.subjectAssignmentDialog.sourceRow)
+            const targetRow = this.normalizeClassificationRow(this.subjectAssignmentDialog.targetRow)
+            if (!targetRow.subject) {
+                return false
+            }
+
+            if (this.classificationRowsEqual(sourceRow, targetRow)) {
+                return false
+            }
+
+            const currentRows = this.normalizeClassificationRows(this.subjectAssignmentDialog.card?.classifications)
+            const hasSource = currentRows.some((row) => this.classificationRowsEqual(row, sourceRow))
+            if (!hasSource) {
+                return false
+            }
+
+            if (mode === 'copy') {
+                const targetExists = currentRows.some((row) => this.classificationRowsEqual(row, targetRow))
+                if (targetExists) {
+                    return false
+                }
+            }
+
+            return true
+        },
         isAnySettingsEditActive() {
             return this.isEditingFileSettings
                 || this.isSavingFileSettings
@@ -721,6 +1076,14 @@ export default {
             if (!this.subjectsMenuItems.some((item) => item.value === this.selectedSubjectAction)) {
                 this.selectedSubjectAction = this.subjectsMenuItems[0]?.value || ''
             }
+            if (this.selectedSubjectAction === 'subjects_groups') {
+                this.loadSubjectAssignments()
+            }
+        },
+        selectedSubjectAction(value) {
+            if (value === 'subjects_groups') {
+                this.loadSubjectAssignments()
+            }
         },
         'materialCardStore.config.file_settings': {
             deep: true,
@@ -780,6 +1143,326 @@ export default {
 
             return {
                 '--topic-accent-color': tokens.base,
+            }
+        },
+        normalizeClassificationRow(row) {
+            const subject = this.normalizeTreeName(row?.subject).slice(0, 255)
+            const topic = this.normalizeTreeName(row?.topic).slice(0, 255)
+            let unit = this.normalizeTreeName(row?.unit).slice(0, 255)
+            if (!topic) {
+                unit = ''
+            }
+
+            return { subject, topic, unit }
+        },
+        normalizeClassificationRows(rows) {
+            const list = Array.isArray(rows) ? rows : []
+            const result = []
+            const seen = new Set()
+
+            for (const row of list) {
+                const normalizedRow = this.normalizeClassificationRow(row)
+                if (!normalizedRow.subject) continue
+                const key = this.classificationKey(normalizedRow)
+                if (seen.has(key)) continue
+                seen.add(key)
+                result.push(normalizedRow)
+            }
+
+            return result
+        },
+        classificationKey(row) {
+            const normalizedRow = this.normalizeClassificationRow(row)
+            return `${normalizedRow.subject.toLocaleLowerCase()}|${normalizedRow.topic.toLocaleLowerCase()}|${normalizedRow.unit.toLocaleLowerCase()}`
+        },
+        classificationRowsEqual(a, b) {
+            return this.classificationKey(a) === this.classificationKey(b)
+        },
+        classificationLabel(row) {
+            const normalizedRow = this.normalizeClassificationRow(row)
+            let label = normalizedRow.subject
+            if (normalizedRow.topic) label += ` / ${normalizedRow.topic}`
+            if (normalizedRow.unit) label += ` / ${normalizedRow.unit}`
+            return label
+        },
+        subjectNodeByName(name) {
+            const normalizedName = this.normalizeTreeName(name)
+            if (!normalizedName) return null
+
+            return this.subjectTreeItems.find(
+                (subjectNode) => this.normalizeTreeName(subjectNode?.name).toLocaleLowerCase() === normalizedName.toLocaleLowerCase()
+            ) || null
+        },
+        topicNodeByNames(subjectName, topicName) {
+            const subjectNode = this.subjectNodeByName(subjectName)
+            const normalizedTopicName = this.normalizeTreeName(topicName)
+            if (!subjectNode || !normalizedTopicName) return null
+
+            const topicNodes = Array.isArray(subjectNode.topics) ? subjectNode.topics : []
+            return topicNodes.find(
+                (topicNode) => this.normalizeTreeName(topicNode?.name).toLocaleLowerCase() === normalizedTopicName.toLocaleLowerCase()
+            ) || null
+        },
+        buildSubjectAssignmentGroups(cards) {
+            const groupsByKey = new Map()
+            const cardList = Array.isArray(cards) ? cards : []
+
+            for (const card of cardList) {
+                const cardId = Number(card?.id)
+                if (!Number.isFinite(cardId) || cardId <= 0) continue
+
+                const title = this.normalizeTreeName(card?.title) || 'Ohne Titel'
+                const rows = this.normalizeClassificationRows(card?.classifications)
+
+                for (const row of rows) {
+                    const key = this.classificationKey(row)
+                    if (!groupsByKey.has(key)) {
+                        const level = row.unit ? 'unit' : row.topic ? 'topic' : 'subject'
+                        const levelLabel = level === 'unit' ? 'Einheit' : level === 'topic' ? 'Thema' : 'Fach'
+                        groupsByKey.set(key, {
+                            key,
+                            level,
+                            levelLabel,
+                            subject: row.subject,
+                            topic: row.topic,
+                            unit: row.unit,
+                            label: this.classificationLabel(row),
+                            materials: [],
+                        })
+                    }
+
+                    const group = groupsByKey.get(key)
+                    if (!group.materials.some((item) => item.cardId === cardId)) {
+                        group.materials.push({
+                            cardId,
+                            title,
+                            card,
+                            sourceRow: row,
+                        })
+                    }
+                }
+            }
+
+            const groups = Array.from(groupsByKey.values())
+            groups.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
+            for (const group of groups) {
+                group.materials.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }))
+            }
+
+            return groups
+        },
+        async loadSubjectAssignments(force = false) {
+            if (this.isLoadingSubjectAssignments) return
+            if (!force && Array.isArray(this.subjectAssignmentGroups) && this.subjectAssignmentGroups.length > 0) {
+                return
+            }
+
+            this.isLoadingSubjectAssignments = true
+            try {
+                const cards = await this.materialCardStore.listAllCardsSnapshot({})
+                if (!Array.isArray(cards)) return
+                this.subjectAssignmentGroups = this.buildSubjectAssignmentGroups(cards)
+            } finally {
+                this.isLoadingSubjectAssignments = false
+            }
+        },
+        canDeleteSubjectAssignment(material, group) {
+            const card = material?.card
+            const sourceRow = this.normalizeClassificationRow(material?.sourceRow || group)
+            const cardId = Number(card?.id)
+            if (!Number.isFinite(cardId) || cardId <= 0 || !sourceRow.subject) {
+                return false
+            }
+
+            const currentRows = this.normalizeClassificationRows(card?.classifications)
+            if (currentRows.length <= 1) {
+                return false
+            }
+
+            return currentRows.some((row) => this.classificationRowsEqual(row, sourceRow))
+        },
+        openSubjectAssignmentDialog(mode, group, material) {
+            const normalizedMode = String(mode || '') === 'move' ? 'move' : 'copy'
+            const card = material?.card
+            const sourceRow = this.normalizeClassificationRow(material?.sourceRow || group)
+            const cardId = Number(card?.id)
+            if (!Number.isFinite(cardId) || cardId <= 0 || !sourceRow.subject) {
+                return
+            }
+
+            this.subjectAssignmentDialog = {
+                open: true,
+                mode: normalizedMode,
+                card,
+                sourceRow: { ...sourceRow },
+                targetRow: { ...sourceRow },
+            }
+        },
+        openSubjectAssignmentDeleteDialog(group, material) {
+            if (!this.canDeleteSubjectAssignment(material, group) || this.isSavingSubjectAssignment) {
+                return
+            }
+
+            const sourceRow = this.normalizeClassificationRow(material?.sourceRow || group)
+            this.subjectAssignmentDeleteDialog = {
+                open: true,
+                card: material?.card || null,
+                sourceRow: { ...sourceRow },
+            }
+        },
+        closeSubjectAssignmentDeleteDialog() {
+            if (this.isSavingSubjectAssignment) return
+            this.subjectAssignmentDeleteDialog = {
+                open: false,
+                card: null,
+                sourceRow: {
+                    subject: '',
+                    topic: '',
+                    unit: '',
+                },
+            }
+        },
+        async confirmSubjectAssignmentDelete() {
+            if (this.isSavingSubjectAssignment) return
+
+            const card = this.subjectAssignmentDeleteDialog.card
+            const sourceRow = this.normalizeClassificationRow(this.subjectAssignmentDeleteDialog.sourceRow)
+            const cardId = Number(card?.id)
+            if (!Number.isFinite(cardId) || cardId <= 0 || !sourceRow.subject) {
+                return
+            }
+
+            const currentRows = this.normalizeClassificationRows(card?.classifications)
+            if (currentRows.length <= 1) {
+                return
+            }
+
+            let removed = false
+            const nextRows = currentRows.filter((row) => {
+                if (!removed && this.classificationRowsEqual(row, sourceRow)) {
+                    removed = true
+                    return false
+                }
+                return true
+            })
+
+            if (!removed || nextRows.length < 1) {
+                return
+            }
+
+            const payload = this.buildMaterialUpdatePayload(card, nextRows)
+            if (!payload) {
+                return
+            }
+
+            this.isSavingSubjectAssignment = true
+            const updated = await this.materialCardStore.update(cardId, payload)
+            this.isSavingSubjectAssignment = false
+
+            if (updated) {
+                this.closeSubjectAssignmentDeleteDialog()
+                await this.loadSubjectAssignments(true)
+            }
+        },
+        closeSubjectAssignmentDialog() {
+            if (this.isSavingSubjectAssignment) return
+            this.subjectAssignmentDialog = {
+                open: false,
+                mode: '',
+                card: null,
+                sourceRow: {
+                    subject: '',
+                    topic: '',
+                    unit: '',
+                },
+                targetRow: {
+                    subject: '',
+                    topic: '',
+                    unit: '',
+                },
+            }
+        },
+        updateSubjectAssignmentTargetSubject(value) {
+            const subject = this.normalizeTreeName(value).slice(0, 255)
+            this.subjectAssignmentDialog.targetRow.subject = subject
+            this.subjectAssignmentDialog.targetRow.topic = ''
+            this.subjectAssignmentDialog.targetRow.unit = ''
+        },
+        updateSubjectAssignmentTargetTopic(value) {
+            const topic = this.normalizeTreeName(value).slice(0, 255)
+            this.subjectAssignmentDialog.targetRow.topic = topic
+            this.subjectAssignmentDialog.targetRow.unit = ''
+        },
+        updateSubjectAssignmentTargetUnit(value) {
+            const unit = this.normalizeTreeName(value).slice(0, 255)
+            this.subjectAssignmentDialog.targetRow.unit = unit
+        },
+        nullableText(value, maxLength = 255) {
+            const text = this.normalizeTreeName(value).slice(0, maxLength)
+            return text !== '' ? text : null
+        },
+        buildMaterialUpdatePayload(card, classifications) {
+            const title = this.normalizeTreeName(card?.title).slice(0, 255)
+            if (!title) return null
+
+            const status = this.normalizeTreeName(card?.status).slice(0, 255)
+            const fallbackStatus = this.normalizeTreeName(this.normalizedStatusOptions?.[0]?.value).slice(0, 255)
+
+            return {
+                title,
+                source_url: this.nullableText(card?.source_url, 2048),
+                source_text: this.nullableText(card?.source_text, 10000),
+                subject: this.nullableText(card?.subject, 255),
+                area: this.nullableText(card?.area, 255),
+                unit: this.nullableText(card?.unit, 255),
+                type: this.nullableText(card?.type, 255),
+                status: status || fallbackStatus || null,
+                notes: this.nullableText(card?.notes, 4000),
+                classifications: this.normalizeClassificationRows(classifications),
+            }
+        },
+        async saveSubjectAssignmentDialog() {
+            if (!this.canSaveSubjectAssignmentDialog || this.isSavingSubjectAssignment) return
+
+            const mode = String(this.subjectAssignmentDialog.mode || '')
+            const card = this.subjectAssignmentDialog.card
+            const sourceRow = this.normalizeClassificationRow(this.subjectAssignmentDialog.sourceRow)
+            const targetRow = this.normalizeClassificationRow(this.subjectAssignmentDialog.targetRow)
+            const currentRows = this.normalizeClassificationRows(card?.classifications)
+
+            let nextRows = currentRows.map((row) => ({ ...row }))
+
+            if (mode === 'copy') {
+                nextRows.push(targetRow)
+            } else {
+                let replaced = false
+                nextRows = nextRows.map((row) => {
+                    if (!replaced && this.classificationRowsEqual(row, sourceRow)) {
+                        replaced = true
+                        return { ...targetRow }
+                    }
+                    return row
+                })
+
+                if (!replaced) {
+                    return
+                }
+            }
+
+            nextRows = this.normalizeClassificationRows(nextRows)
+            const payload = this.buildMaterialUpdatePayload(card, nextRows)
+            const cardId = Number(card?.id)
+            if (!payload || !Number.isFinite(cardId) || cardId <= 0) {
+                return
+            }
+
+            this.isSavingSubjectAssignment = true
+            const updated = await this.materialCardStore.update(cardId, payload)
+            this.isSavingSubjectAssignment = false
+
+            if (updated) {
+                this.closeSubjectAssignmentDialog()
+                await this.loadSubjectAssignments(true)
             }
         },
         resetSubjectCatalogEditor() {
@@ -1082,6 +1765,74 @@ export default {
 
 .settings-empty-card {
     min-height: 120px;
+}
+
+.subject-assignments-panels {
+    display: grid;
+    gap: 8px;
+}
+
+.subject-assignment-material-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 8px 0;
+    border-top: 1px solid rgba(35, 61, 76, 0.12);
+}
+
+.subject-assignment-material-row:first-child {
+    border-top: 0;
+    padding-top: 0;
+}
+
+.subject-assignment-material-meta {
+    min-width: 220px;
+    flex: 1 1 auto;
+}
+
+.subject-assignment-action-btn {
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+.subject-assignment-info {
+    border: 1px solid rgba(35, 61, 76, 0.16);
+    border-radius: 10px;
+    background: rgba(35, 61, 76, 0.04);
+    padding: 10px 12px;
+}
+
+.subject-assignment-info-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: rgba(35, 61, 76, 0.76);
+    margin-bottom: 4px;
+}
+
+.subject-assignment-info-value {
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #233d4c;
+    word-break: break-word;
+}
+
+.subject-assignment-chip-section {
+    border-top: 1px solid rgba(35, 61, 76, 0.12);
+    padding-top: 12px;
+}
+
+.subject-assignment-chip-label {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: rgba(35, 61, 76, 0.8);
+}
+
+.subject-assignment-chip--selected {
+    background: rgba(31, 111, 139, 0.14);
+    border-color: rgba(31, 111, 139, 0.85);
+    color: #1f6f8b;
 }
 
 .subjects-tree {

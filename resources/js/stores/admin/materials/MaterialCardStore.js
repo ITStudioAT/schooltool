@@ -227,49 +227,61 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             }
         },
 
+        buildFilterParams(sourceFilters) {
+            const params = {}
+            for (const [key, value] of Object.entries(sourceFilters || {})) {
+                if (value !== null && value !== undefined && String(value).trim() !== '') {
+                    params[key] = value
+                }
+            }
+            return params
+        },
+
+        async fetchAllCardsPages(baseParams = {}) {
+            const allCards = []
+            let page = 1
+            let hasMorePages = true
+            let lastMeta = null
+
+            while (hasMorePages) {
+                const response = await axios.get('/api/admin/materials/cards', {
+                    params: {
+                        ...baseParams,
+                        page,
+                    },
+                })
+
+                const pageCards = response.data?.data || []
+                const pageMeta = response.data?.meta || null
+
+                allCards.push(...pageCards)
+                lastMeta = pageMeta
+
+                const currentPage = Number(pageMeta?.current_page || page)
+                const lastPage = Number(pageMeta?.last_page || currentPage)
+
+                if (!pageMeta || !Number.isFinite(lastPage) || currentPage >= lastPage) {
+                    hasMorePages = false
+                } else {
+                    page = currentPage + 1
+                }
+            }
+
+            return {
+                cards: allCards,
+                meta: lastMeta,
+            }
+        },
+
         async indexAll() {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
-                const baseParams = {}
-                for (const [key, value] of Object.entries(this.filters || {})) {
-                    if (value !== null && value !== undefined && String(value).trim() !== '') {
-                        baseParams[key] = value
-                    }
-                }
-
-                const allCards = []
-                let page = 1
-                let hasMorePages = true
-                let lastMeta = null
-
-                while (hasMorePages) {
-                    const response = await axios.get('/api/admin/materials/cards', {
-                        params: {
-                            ...baseParams,
-                            page,
-                        },
-                    })
-
-                    const pageCards = response.data?.data || []
-                    const pageMeta = response.data?.meta || null
-
-                    allCards.push(...pageCards)
-                    lastMeta = pageMeta
-
-                    const currentPage = Number(pageMeta?.current_page || page)
-                    const lastPage = Number(pageMeta?.last_page || currentPage)
-
-                    if (!pageMeta || !Number.isFinite(lastPage) || currentPage >= lastPage) {
-                        hasMorePages = false
-                    } else {
-                        page = currentPage + 1
-                    }
-                }
-
-                this.cards = allCards
-                this.meta = lastMeta
+                const baseParams = this.buildFilterParams(this.filters)
+                const result = await this.fetchAllCardsPages(baseParams)
+                this.cards = result.cards
+                this.meta = result.meta
                 this.syncClassificationTreeFromCards(this.cards)
                 return true
             } catch (error) {
@@ -280,6 +292,28 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                     timeout: 3000,
                 })
                 return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async listAllCardsSnapshot(filters = {}) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+
+            try {
+                const baseParams = this.buildFilterParams(filters)
+                const result = await this.fetchAllCardsPages(baseParams)
+                return result.cards
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Laden der Materialkarten.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
             } finally {
                 adminStore.is_loading--
             }
