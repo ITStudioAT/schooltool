@@ -184,7 +184,7 @@ export default {
                 title: '',
                 description: '',
                 type: '',
-                status: 'inbox',
+                status: '',
                 classifications: [{ subject: '', topic: '', unit: '' }],
             },
         }
@@ -212,11 +212,17 @@ export default {
             const items = this.materialCardStore?.config?.classification_tree
             return Array.isArray(items) ? items : []
         },
+        defaultStatusValue() {
+            return String(this.statusOptions?.[0]?.value || '').trim() || 'inbox'
+        },
     },
     async beforeMount() {
         this.materialCardStore = useMaterialCardStore()
         if (!this.materialCardStore.config) {
             await this.materialCardStore.loadConfig()
+        }
+        if (!String(this.createForm.status || '').trim()) {
+            this.createForm.status = this.defaultStatusValue
         }
     },
     unmounted() {
@@ -588,7 +594,7 @@ export default {
                 title: '',
                 description: '',
                 type: '',
-                status: 'inbox',
+                status: this.defaultStatusValue,
                 classifications: [{ subject: '', topic: '', unit: '' }],
             }
         },
@@ -626,7 +632,7 @@ export default {
                 title,
                 source_text: description || null,
                 type: this.toNullable(this.createForm.type),
-                status: String(this.createForm.status || '').trim() || 'inbox',
+                status: String(this.createForm.status || '').trim() || this.defaultStatusValue,
                 classifications,
             })
 

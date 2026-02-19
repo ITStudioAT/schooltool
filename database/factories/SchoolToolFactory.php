@@ -22,6 +22,7 @@ class SchoolToolFactory extends Factory
             'tutoring_student_must_be_confirmed' => false,
             'tutoring_confirmer_email' => null,
             'tutoring_max_offers_per_student' => 0,
+            'material_max_file_upload_size' => 20480,
         ];
     }
 

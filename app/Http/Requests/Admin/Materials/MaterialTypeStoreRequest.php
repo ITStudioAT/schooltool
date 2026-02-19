@@ -18,6 +18,7 @@ class MaterialTypeStoreRequest extends FormRequest
     {
         return [
             'data.name' => $this->nameRules(),
+            'data.icon' => $this->iconRules(),
         ];
     }
 
@@ -42,5 +43,36 @@ class MaterialTypeStoreRequest extends FormRequest
         }
 
         return $base;
+    }
+
+    private function iconRules(): array
+    {
+        $base = ['nullable', 'string', 'max:100'];
+        $allowedIcons = $this->allowedTypeIcons();
+        if (! empty($allowedIcons)) {
+            $base[] = Rule::in($allowedIcons);
+        }
+
+        return $base;
+    }
+
+    private function allowedTypeIcons(): array
+    {
+        $rawOptions = config('schooltool.materials_type_icon_options', []);
+        if (! is_array($rawOptions)) {
+            return [];
+        }
+
+        $icons = [];
+        foreach ($rawOptions as $rawOption) {
+            $value = is_array($rawOption)
+                ? trim((string) ($rawOption['value'] ?? ''))
+                : trim((string) $rawOption);
+            if ($value !== '') {
+                $icons[] = $value;
+            }
+        }
+
+        return array_values(array_unique($icons));
     }
 }

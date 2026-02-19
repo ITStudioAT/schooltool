@@ -4,10 +4,12 @@ namespace App\Services\Materials;
 
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
+use App\Models\MaterialStatus;
 use App\Models\MaterialSubject;
 use App\Models\MaterialTopic;
 use App\Models\MaterialType;
 use App\Models\MaterialUnit;
+use App\Models\SchoolTool;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\UploadedFile;
@@ -19,6 +21,9 @@ use Illuminate\Validation\ValidationException;
 
 class MaterialService
 {
+    private const DEFAULT_MAX_UPLOAD_SIZE_KB = 20480;
+    private const DEFAULT_TYPE_ICON = 'mdi-file-document-outline';
+
     public function __construct(
         private readonly MaterialKeywordService $keywordService,
     ) {}
@@ -28,15 +33,14 @@ class MaterialService
         return [
             'module' => 'materials',
             'school_id' => $user->school_id,
-            'status_values' => [
-                ['value' => MaterialCard::STATUS_INBOX, 'label' => 'Neu/Idee'],
-                ['value' => MaterialCard::STATUS_IN_PROGRESS, 'label' => 'In Arbeit'],
-                ['value' => MaterialCard::STATUS_DONE, 'label' => 'ok'],
-                ['value' => MaterialCard::STATUS_UPDATE_NEEDED, 'label' => 'Änderung nötig'],
-            ],
+            'status_values' => $this->statusValuesForUser($user),
             'type_values' => $this->typeValuesForUser($user),
             'default_type_values' => $this->defaultTypeValues(),
+            'type_icon_options' => $this->typeIconOptions(),
             'can_manage_type_values' => true,
+            'can_manage_status_values' => $user->hasAnyRole(['admin', 'super_admin']),
+            'file_settings' => $this->fileSettingsForUser($user),
+            'can_manage_file_settings' => $user->hasAnyRole(['admin', 'super_admin']) && $this->supportsSchoolFileSettings(),
             'classification_tree' => $this->classificationTreeForUser($user),
         ];
     }
@@ -85,6 +89,8 @@ class MaterialService
 
     public function createCard(User $user, array $data): MaterialCard
     {
+        $defaultStatus = $this->defaultStatusValueForUser($user);
+
         $card = MaterialCard::create([
             'school_id' => $user->school_id,
             'user_id' => $user->id,
@@ -95,7 +101,7 @@ class MaterialService
             'area' => null,
             'unit' => null,
             'type' => $this->normalizeOptionalName($data['type'] ?? null),
-            'status' => $data['status'] ?? MaterialCard::STATUS_INBOX,
+            'status' => $data['status'] ?? $defaultStatus,
             'notes' => $data['notes'] ?? null,
         ]);
 
@@ -108,6 +114,9 @@ class MaterialService
 
     public function updateCard(MaterialCard $card, array $data, ?User $user = null): MaterialCard
     {
+        $owner = $user ?: $card->user()->first();
+        $defaultStatus = $owner instanceof User ? $this->defaultStatusValueForUser($owner) : MaterialCard::STATUS_INBOX;
+
         $card->update([
             'title' => $data['title'],
             'source_url' => $data['source_url'] ?? null,
@@ -116,11 +125,10 @@ class MaterialService
             'area' => null,
             'unit' => null,
             'type' => $this->normalizeOptionalName($data['type'] ?? null),
-            'status' => $data['status'] ?? MaterialCard::STATUS_INBOX,
+            'status' => $data['status'] ?? $defaultStatus,
             'notes' => $data['notes'] ?? null,
         ]);
 
-        $owner = $user ?: $card->user()->first();
         if ($owner instanceof User) {
             $this->syncClassifications($card, $owner, $data['classifications'] ?? null);
         }
@@ -246,12 +254,37 @@ class MaterialService
                 'id' => $type->id,
                 'value' => $type->name,
                 'label' => $type->name,
+                'icon' => $this->normalizeTypeIcon($type->icon ?? null),
             ])
             ->values()
             ->all();
     }
 
-    public function createType(User $user, string $name): MaterialType
+    public function statusValuesForUser(User $user): array
+    {
+        if (! Schema::hasTable('material_statuses')) {
+            return $this->defaultStatusValues();
+        }
+
+        $this->ensureStatusValuesForSchool((int) $user->school_id);
+
+        $rows = MaterialStatus::query()
+            ->where('school_id', $user->school_id)
+            ->orderBy('id')
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return $this->defaultStatusValues();
+        }
+
+        return $rows->map(fn (MaterialStatus $status) => [
+            'id' => $status->id,
+            'value' => $status->value,
+            'label' => $status->label,
+        ])->values()->all();
+    }
+
+    public function createType(User $user, string $name, ?string $icon = null): MaterialType
     {
         if (! Schema::hasTable('material_types')) {
             throw ValidationException::withMessages([
@@ -275,10 +308,14 @@ class MaterialService
             $attributes['user_id'] = $user->id;
         }
 
+        if ($this->hasTypeIconColumn()) {
+            $attributes['icon'] = $this->normalizeTypeIcon($icon);
+        }
+
         return MaterialType::firstOrCreate($attributes);
     }
 
-    public function updateType(User $user, MaterialType $type, string $name): MaterialType
+    public function updateType(User $user, MaterialType $type, string $name, ?string $icon = null): MaterialType
     {
         if ($this->isUserScopedMaterialTypes()) {
             if ((int) $type->user_id !== (int) $user->id) {
@@ -296,10 +333,11 @@ class MaterialService
         }
 
         $oldName = (string) $type->name;
+        $newIcon = $this->normalizeTypeIcon($icon);
 
         $isUserScoped = $this->isUserScopedMaterialTypes();
 
-        DB::transaction(function () use ($type, $newName, $oldName, $user, $isUserScoped) {
+        DB::transaction(function () use ($type, $newName, $oldName, $newIcon, $user, $isUserScoped) {
             $existsQuery = MaterialType::query()
                 ->where('id', '<>', $type->id)
                 ->where('name', $newName);
@@ -318,7 +356,12 @@ class MaterialService
                 ]);
             }
 
-            $type->update(['name' => $newName]);
+            $updateData = ['name' => $newName];
+            if ($this->hasTypeIconColumn()) {
+                $updateData['icon'] = $newIcon;
+            }
+
+            $type->update($updateData);
 
             if ($oldName !== $newName) {
                 $cards = MaterialCard::query()
@@ -365,6 +408,129 @@ class MaterialService
         }
 
         $type->delete();
+    }
+
+    public function createStatus(User $user, string $label): MaterialStatus
+    {
+        if (! Schema::hasTable('material_statuses')) {
+            throw ValidationException::withMessages([
+                'data.label' => 'Statuswerte sind noch nicht verfügbar.',
+            ]);
+        }
+
+        $normalizedLabel = $this->normalizeName($label);
+        if ($normalizedLabel === '') {
+            throw ValidationException::withMessages([
+                'data.label' => 'Bitte einen gültigen Status angeben.',
+            ]);
+        }
+
+        $this->ensureStatusValuesForSchool((int) $user->school_id);
+
+        $value = $this->statusValueFromLabel($normalizedLabel);
+
+        $alreadyExists = MaterialStatus::query()
+            ->where('school_id', $user->school_id)
+            ->where('value', $value)
+            ->exists();
+
+        if ($alreadyExists) {
+            throw ValidationException::withMessages([
+                'data.label' => 'Dieser Status existiert bereits.',
+            ]);
+        }
+
+        return MaterialStatus::query()->create([
+            'school_id' => $user->school_id,
+            'value' => $value,
+            'label' => $normalizedLabel,
+        ]);
+    }
+
+    public function updateStatus(User $user, MaterialStatus $status, string $label): MaterialStatus
+    {
+        if ((int) $status->school_id !== (int) $user->school_id) {
+            abort(403, 'Status gehört nicht zur aktuellen Schule.');
+        }
+
+        $normalizedLabel = $this->normalizeName($label);
+        if ($normalizedLabel === '') {
+            throw ValidationException::withMessages([
+                'data.label' => 'Bitte einen gültigen Status angeben.',
+            ]);
+        }
+
+        $status->update([
+            'label' => $normalizedLabel,
+        ]);
+
+        return $status->fresh();
+    }
+
+    public function deleteStatus(User $user, MaterialStatus $status): void
+    {
+        if ((int) $status->school_id !== (int) $user->school_id) {
+            abort(403, 'Status gehört nicht zur aktuellen Schule.');
+        }
+
+        $countInSchool = MaterialStatus::query()
+            ->where('school_id', $user->school_id)
+            ->count();
+
+        if ($countInSchool <= 1) {
+            throw ValidationException::withMessages([
+                'data.label' => 'Mindestens ein Status muss bestehen bleiben.',
+            ]);
+        }
+
+        $inUse = MaterialCard::query()
+            ->where('school_id', $user->school_id)
+            ->where('status', $status->value)
+            ->exists();
+
+        if ($inUse) {
+            throw ValidationException::withMessages([
+                'data.label' => 'Status ist in Verwendung und kann nicht gelöscht werden.',
+            ]);
+        }
+
+        $status->delete();
+    }
+
+    public function fileSettingsForUser(User $user): array
+    {
+        $maxUploadSizeKb = $this->maxUploadSizeForSchool((int) $user->school_id);
+
+        return [
+            'max_upload_size_kb' => $maxUploadSizeKb,
+            'max_upload_size_mb' => round($maxUploadSizeKb / 1024, 2),
+        ];
+    }
+
+    public function updateFileSettings(User $user, int $maxUploadSizeKb): array
+    {
+        $normalized = max(1, min(1024 * 1024, (int) $maxUploadSizeKb));
+
+        if (! $this->supportsSchoolFileSettings()) {
+            throw ValidationException::withMessages([
+                'data.max_upload_size_kb' => 'Dateieinstellungen sind noch nicht verfügbar. Bitte Migration ausführen.',
+            ]);
+        }
+
+        $schoolTool = SchoolTool::query()->firstOrCreate(
+            ['school_id' => $user->school_id],
+            [
+                'tutoring_student_must_be_confirmed' => false,
+                'tutoring_confirmer_email' => '',
+                'material_max_file_upload_size' => self::DEFAULT_MAX_UPLOAD_SIZE_KB,
+            ]
+        );
+
+        $schoolTool->update([
+            'material_max_file_upload_size' => $normalized,
+        ]);
+
+        return $this->fileSettingsForUser($user);
     }
 
     private function classificationTreeForUser(User $user): array
@@ -495,6 +661,21 @@ class MaterialService
         return $text === '' ? null : $text;
     }
 
+    private function defaultStatusValueForUser(User $user): string
+    {
+        $statusValues = $this->statusValuesForUser($user);
+        foreach ($statusValues as $status) {
+            $value = trim((string) ($status['value'] ?? ''));
+            if ($value === MaterialCard::STATUS_INBOX) {
+                return $value;
+            }
+        }
+
+        $first = trim((string) ($statusValues[0]['value'] ?? ''));
+
+        return $first !== '' ? $first : MaterialCard::STATUS_INBOX;
+    }
+
     private function ensureTypeValuesForUser(User $user): void
     {
         if (! Schema::hasTable('material_types')) {
@@ -548,8 +729,81 @@ class MaterialService
                 $attributes['user_id'] = $user->id;
             }
 
+            if ($this->hasTypeIconColumn()) {
+                $attributes['icon'] = $this->defaultTypeIcon();
+            }
+
             MaterialType::query()->create($attributes);
 
+            $known[$key] = true;
+        }
+    }
+
+    private function ensureStatusValuesForSchool(int $schoolId): void
+    {
+        if (! Schema::hasTable('material_statuses')) {
+            return;
+        }
+
+        $knownRows = MaterialStatus::query()
+            ->where('school_id', $schoolId)
+            ->get();
+
+        $known = $knownRows
+            ->pluck('value')
+            ->map(fn ($value) => trim((string) $value))
+            ->filter(fn ($value) => $value !== '')
+            ->map(fn ($value) => mb_strtolower($value))
+            ->flip()
+            ->all();
+
+        foreach ($this->defaultStatusValues() as $defaultStatus) {
+            $value = trim((string) ($defaultStatus['value'] ?? ''));
+            $label = trim((string) ($defaultStatus['label'] ?? ''));
+            if ($value === '' || $label === '') {
+                continue;
+            }
+
+            $key = mb_strtolower($value);
+            if (isset($known[$key])) {
+                continue;
+            }
+
+            MaterialStatus::query()->create([
+                'school_id' => $schoolId,
+                'value' => $value,
+                'label' => $label,
+            ]);
+            $known[$key] = true;
+        }
+
+        if (! Schema::hasTable('material_cards')) {
+            return;
+        }
+
+        $cardStatuses = MaterialCard::query()
+            ->where('school_id', $schoolId)
+            ->whereNotNull('status')
+            ->where('status', '<>', '')
+            ->distinct()
+            ->pluck('status');
+
+        foreach ($cardStatuses as $rawStatus) {
+            $value = $this->normalizeName($rawStatus);
+            if ($value === '') {
+                continue;
+            }
+
+            $key = mb_strtolower($value);
+            if (isset($known[$key])) {
+                continue;
+            }
+
+            MaterialStatus::query()->create([
+                'school_id' => $schoolId,
+                'value' => $value,
+                'label' => $this->defaultStatusLabelForValue($value),
+            ]);
             $known[$key] = true;
         }
     }
@@ -557,6 +811,74 @@ class MaterialService
     private function isUserScopedMaterialTypes(): bool
     {
         return Schema::hasTable('material_types') && Schema::hasColumn('material_types', 'user_id');
+    }
+
+    private function hasTypeIconColumn(): bool
+    {
+        return Schema::hasTable('material_types') && Schema::hasColumn('material_types', 'icon');
+    }
+
+    private function defaultStatusValues(): array
+    {
+        return [
+            ['value' => MaterialCard::STATUS_INBOX, 'label' => 'Neu/Idee'],
+            ['value' => MaterialCard::STATUS_IN_PROGRESS, 'label' => 'In Arbeit'],
+            ['value' => MaterialCard::STATUS_DONE, 'label' => 'ok'],
+            ['value' => MaterialCard::STATUS_UPDATE_NEEDED, 'label' => 'Änderung nötig'],
+        ];
+    }
+
+    private function defaultStatusLabelForValue(string $value): string
+    {
+        $normalizedValue = mb_strtolower(trim($value));
+        foreach ($this->defaultStatusValues() as $status) {
+            $statusValue = mb_strtolower(trim((string) ($status['value'] ?? '')));
+            $statusLabel = trim((string) ($status['label'] ?? ''));
+            if ($statusValue === $normalizedValue && $statusLabel !== '') {
+                return $statusLabel;
+            }
+        }
+
+        return $value;
+    }
+
+    private function statusValueFromLabel(string $label): string
+    {
+        $value = Str::slug($label, '_');
+
+        if ($value === '') {
+            $value = 'status';
+        }
+
+        return mb_substr($value, 0, 255);
+    }
+
+    private function maxUploadSizeForSchool(int $schoolId): int
+    {
+        if ($schoolId <= 0 || ! $this->supportsSchoolFileSettings()) {
+            return self::DEFAULT_MAX_UPLOAD_SIZE_KB;
+        }
+
+        $schoolTool = SchoolTool::query()->firstOrCreate(
+            ['school_id' => $schoolId],
+            [
+                'tutoring_student_must_be_confirmed' => false,
+                'tutoring_confirmer_email' => '',
+                'material_max_file_upload_size' => self::DEFAULT_MAX_UPLOAD_SIZE_KB,
+            ]
+        );
+
+        $value = (int) ($schoolTool->material_max_file_upload_size ?? 0);
+        if ($value <= 0) {
+            return self::DEFAULT_MAX_UPLOAD_SIZE_KB;
+        }
+
+        return $value;
+    }
+
+    private function supportsSchoolFileSettings(): bool
+    {
+        return Schema::hasTable('school_tools') && Schema::hasColumn('school_tools', 'material_max_file_upload_size');
     }
 
     private function defaultTypeValues(): array
@@ -570,7 +892,16 @@ class MaterialService
         $seen = [];
 
         foreach ($rawValues as $rawValue) {
-            $name = $this->normalizeName($rawValue);
+            $name = '';
+            $icon = null;
+
+            if (is_array($rawValue)) {
+                $name = $this->normalizeName($rawValue['value'] ?? $rawValue['label'] ?? '');
+                $icon = $this->normalizeTypeIcon($rawValue['icon'] ?? null);
+            } else {
+                $name = $this->normalizeName($rawValue);
+            }
+
             if ($name === '') {
                 continue;
             }
@@ -584,10 +915,94 @@ class MaterialService
             $result[] = [
                 'value' => $name,
                 'label' => $name,
+                'icon' => $icon ?: $this->defaultTypeIcon(),
             ];
         }
 
         return $result;
+    }
+
+    private function typeIconOptions(): array
+    {
+        $rawOptions = config('schooltool.materials_type_icon_options', []);
+        if (! is_array($rawOptions) || count($rawOptions) === 0) {
+            return [
+                ['value' => self::DEFAULT_TYPE_ICON, 'label' => 'Dokument'],
+            ];
+        }
+
+        $result = [];
+        $seen = [];
+
+        foreach ($rawOptions as $rawOption) {
+            $value = '';
+            $label = '';
+
+            if (is_array($rawOption)) {
+                $value = trim((string) ($rawOption['value'] ?? ''));
+                $label = trim((string) ($rawOption['label'] ?? ''));
+            } else {
+                $value = trim((string) $rawOption);
+            }
+
+            if ($value === '') {
+                continue;
+            }
+
+            $key = mb_strtolower($value);
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            if ($label === '') {
+                $label = $value;
+            }
+
+            $seen[$key] = true;
+            $result[] = [
+                'value' => $value,
+                'label' => $label,
+            ];
+        }
+
+        if (count($result) === 0) {
+            return [
+                ['value' => self::DEFAULT_TYPE_ICON, 'label' => 'Dokument'],
+            ];
+        }
+
+        return $result;
+    }
+
+    private function defaultTypeIcon(): string
+    {
+        return (string) ($this->typeIconOptions()[0]['value'] ?? self::DEFAULT_TYPE_ICON);
+    }
+
+    private function allowedTypeIcons(): array
+    {
+        return array_values(array_filter(
+            array_map(
+                fn (array $option) => trim((string) ($option['value'] ?? '')),
+                $this->typeIconOptions()
+            ),
+            fn ($value) => $value !== ''
+        ));
+    }
+
+    private function normalizeTypeIcon(?string $icon): string
+    {
+        $value = trim((string) $icon);
+        if ($value === '') {
+            return $this->defaultTypeIcon();
+        }
+
+        $allowed = $this->allowedTypeIcons();
+        if (in_array($value, $allowed, true)) {
+            return $value;
+        }
+
+        return $this->defaultTypeIcon();
     }
 
     private function cardRelations(): array

@@ -240,6 +240,15 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/admin/materials/types/{material_type}', [\App\Http\Controllers\Admin\Materials\MaterialTypeController::class, 'destroy']);
     });
 
+    /* SANCTUM - admin */
+    Route::middleware(['auth:sanctum', 'api-allowed:admin'])->group(function () {
+        Route::get('/admin/materials/statuses', [\App\Http\Controllers\Admin\Materials\MaterialStatusController::class, 'index']);
+        Route::post('/admin/materials/statuses', [\App\Http\Controllers\Admin\Materials\MaterialStatusController::class, 'store']);
+        Route::put('/admin/materials/statuses/{material_status}', [\App\Http\Controllers\Admin\Materials\MaterialStatusController::class, 'update']);
+        Route::delete('/admin/materials/statuses/{material_status}', [\App\Http\Controllers\Admin\Materials\MaterialStatusController::class, 'destroy']);
+        Route::put('/admin/materials/file-settings', [\App\Http\Controllers\Admin\Materials\MaterialFileSettingsController::class, 'update']);
+    });
+
     /* SANCTUM - admin, register_admin, tutoring_admin, teaching_admin, materials_admin, teacher */
     Route::middleware(['auth:sanctum', 'api-allowed:admin,register_admin,tutoring_admin,teaching_admin,materials_admin,teacher'])->group(function () {
 

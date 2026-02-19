@@ -19,29 +19,83 @@
             </v-col>
         </v-row>
 
-        <div class="subject-filter-wrap mb-4">
-            <div class="text-subtitle-2 mb-2">Fach filtern</div>
+        <div class="material-filters-wrap mb-4">
+            <div class="filter-section mb-3">
+                <div class="text-subtitle-2 mb-2">Fach filtern</div>
 
-            <div class="d-flex flex-wrap ga-2">
-                <v-chip
-                    size="small"
-                    :variant="hasActiveSubjectFilter ? 'tonal' : 'flat'"
-                    :color="hasActiveSubjectFilter ? undefined : 'primary'"
-                    :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                    @click="clearSubjectFilter">
-                    Alle
-                </v-chip>
+                <div class="d-flex flex-wrap ga-2">
+                    <v-chip
+                        size="small"
+                        :variant="hasActiveSubjectFilter ? 'tonal' : 'flat'"
+                        :color="hasActiveSubjectFilter ? undefined : 'primary'"
+                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                        @click="clearSubjectFilter">
+                        Alle
+                    </v-chip>
 
-                <v-chip
-                    v-for="subject in subjectFilterOptions"
-                    :key="`subject-filter-${subject}`"
-                    size="small"
-                    color="primary"
-                    :variant="isSubjectFilterActive(subject) ? 'flat' : 'tonal'"
-                    :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                    @click="toggleSubjectFilter(subject)">
-                    {{ subject }}
-                </v-chip>
+                    <v-chip
+                        v-for="subject in subjectFilterOptions"
+                        :key="`subject-filter-${subject}`"
+                        size="small"
+                        color="primary"
+                        :variant="isSubjectFilterActive(subject) ? 'flat' : 'tonal'"
+                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                        @click="toggleSubjectFilter(subject)">
+                        {{ subject }}
+                    </v-chip>
+                </div>
+            </div>
+
+            <div class="filter-section mb-3">
+                <div class="text-subtitle-2 mb-2">Materialtyp filtern</div>
+
+                <div class="d-flex flex-wrap ga-2">
+                    <v-chip
+                        size="small"
+                        :variant="hasActiveTypeFilter ? 'tonal' : 'flat'"
+                        :color="hasActiveTypeFilter ? undefined : 'primary'"
+                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                        @click="clearTypeFilter">
+                        Alle
+                    </v-chip>
+
+                    <v-chip
+                        v-for="typeOption in typeFilterOptions"
+                        :key="`type-filter-${typeOption.value}`"
+                        size="small"
+                        color="primary"
+                        :variant="isTypeFilterActive(typeOption.value) ? 'flat' : 'tonal'"
+                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                        @click="toggleTypeFilter(typeOption.value)">
+                        {{ typeOption.label }}
+                    </v-chip>
+                </div>
+            </div>
+
+            <div class="filter-section">
+                <div class="text-subtitle-2 mb-2">Status filtern</div>
+
+                <div class="d-flex flex-wrap ga-2">
+                    <v-chip
+                        size="small"
+                        :variant="hasActiveStatusFilter ? 'tonal' : 'flat'"
+                        :color="hasActiveStatusFilter ? undefined : 'primary'"
+                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                        @click="clearStatusFilter">
+                        Alle
+                    </v-chip>
+
+                    <v-chip
+                        v-for="statusOption in statusFilterOptions"
+                        :key="`status-filter-${statusOption.value}`"
+                        size="small"
+                        :color="statusColor(statusOption.value)"
+                        :variant="isStatusFilterActive(statusOption.value) ? 'flat' : 'tonal'"
+                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                        @click="toggleStatusFilter(statusOption.value)">
+                        {{ statusOption.label }}
+                    </v-chip>
+                </div>
             </div>
         </div>
 
@@ -54,8 +108,8 @@
         <v-list v-else-if="hasCards" class="bg-transparent pa-0">
             <v-list-item v-for="card in cards" :key="card.id" class="overview-item mb-3 px-4 py-3" rounded="lg">
                 <template #prepend>
-                    <v-avatar color="primary" variant="tonal" size="38" class="mr-4">
-                        <v-icon :icon="sourceIcon(card)" />
+                    <v-avatar :color="statusColor(card.status)" variant="tonal" size="38" class="mr-4">
+                        <v-icon :icon="sourceIcon(card)" :color="statusColor(card.status)" />
                     </v-avatar>
                 </template>
 
@@ -545,7 +599,7 @@ const createDefaultEditForm = () => ({
     area: '',
     unit: '',
     type: '',
-    status: 'inbox',
+    status: '',
     notes: '',
 })
 
@@ -567,6 +621,8 @@ export default {
             attachmentDialogCardTitle: '',
             attachmentRows: [],
             subjectFilter: '',
+            typeFilter: '',
+            statusFilter: '',
             typeManagerDialogOpen: false,
             editClassificationEditorVisible: false,
             editForm: createDefaultEditForm(),
@@ -620,6 +676,9 @@ export default {
         canSaveEdit() {
             return String(this.editForm.title || '').trim().length > 0
         },
+        defaultStatusValue() {
+            return String(this.statusOptions?.[0]?.value || '').trim() || 'inbox'
+        },
         attachmentDialogBusy() {
             return this.savingAttachmentIds.length > 0 || this.deletingAttachmentIds.length > 0
         },
@@ -644,6 +703,64 @@ export default {
         hasActiveSubjectFilter() {
             return String(this.subjectFilter || '').trim() !== ''
         },
+        typeFilterOptions() {
+            const result = []
+            const seen = new Set()
+            const list = Array.isArray(this.typeOptions) ? this.typeOptions : []
+
+            for (const option of list) {
+                const value = this.normalizeFilterText(option?.value)
+                const label = this.normalizeFilterText(option?.label || value) || value
+                if (!value || !label) continue
+                const key = value.toLocaleLowerCase()
+                if (seen.has(key)) continue
+                seen.add(key)
+                result.push({ value, label })
+            }
+
+            const selected = this.normalizeFilterText(this.typeFilter)
+            const selectedExists = selected !== '' && result.some((option) => option.value.toLocaleLowerCase() === selected.toLocaleLowerCase())
+            if (selected !== '' && !selectedExists) {
+                result.unshift({
+                    value: selected,
+                    label: selected,
+                })
+            }
+
+            return result
+        },
+        hasActiveTypeFilter() {
+            return this.normalizeFilterText(this.typeFilter) !== ''
+        },
+        statusFilterOptions() {
+            const result = []
+            const seen = new Set()
+            const list = Array.isArray(this.statusOptions) ? this.statusOptions : []
+
+            for (const option of list) {
+                const value = this.normalizeFilterText(option?.value)
+                const label = this.normalizeFilterText(option?.label || value) || value
+                if (!value || !label) continue
+                const key = value.toLocaleLowerCase()
+                if (seen.has(key)) continue
+                seen.add(key)
+                result.push({ value, label })
+            }
+
+            const selected = this.normalizeFilterText(this.statusFilter)
+            const selectedExists = selected !== '' && result.some((option) => option.value.toLocaleLowerCase() === selected.toLocaleLowerCase())
+            if (selected !== '' && !selectedExists) {
+                result.unshift({
+                    value: selected,
+                    label: this.statusLabel(selected),
+                })
+            }
+
+            return result
+        },
+        hasActiveStatusFilter() {
+            return this.normalizeFilterText(this.statusFilter) !== ''
+        },
     },
     async beforeMount() {
         this.materialCardStore = useMaterialCardStore()
@@ -651,6 +768,8 @@ export default {
             await this.materialCardStore.loadConfig()
         }
         this.subjectFilter = String(this.materialCardStore?.filters?.subject || '').trim()
+        this.typeFilter = String(this.materialCardStore?.filters?.type || '').trim()
+        this.statusFilter = String(this.materialCardStore?.filters?.status || '').trim()
         await this.loadCards()
     },
     methods: {
@@ -687,6 +806,56 @@ export default {
         },
         async clearSubjectFilter() {
             await this.applySubjectFilter('')
+        },
+        isTypeFilterActive(value) {
+            const selected = this.normalizeFilterText(this.typeFilter).toLocaleLowerCase()
+            const type = this.normalizeFilterText(value).toLocaleLowerCase()
+            return selected !== '' && selected === type
+        },
+        async applyTypeFilter(value) {
+            const type = this.normalizeFilterText(value)
+            this.typeFilter = type
+            this.materialCardStore.filters = {
+                ...(this.materialCardStore.filters || {}),
+                type,
+            }
+            await this.loadCards()
+        },
+        async toggleTypeFilter(value) {
+            if (this.isTypeFilterActive(value)) {
+                await this.clearTypeFilter()
+                return
+            }
+
+            await this.applyTypeFilter(value)
+        },
+        async clearTypeFilter() {
+            await this.applyTypeFilter('')
+        },
+        isStatusFilterActive(value) {
+            const selected = this.normalizeFilterText(this.statusFilter).toLocaleLowerCase()
+            const status = this.normalizeFilterText(value).toLocaleLowerCase()
+            return selected !== '' && selected === status
+        },
+        async applyStatusFilter(value) {
+            const status = this.normalizeFilterText(value)
+            this.statusFilter = status
+            this.materialCardStore.filters = {
+                ...(this.materialCardStore.filters || {}),
+                status,
+            }
+            await this.loadCards()
+        },
+        async toggleStatusFilter(value) {
+            if (this.isStatusFilterActive(value)) {
+                await this.clearStatusFilter()
+                return
+            }
+
+            await this.applyStatusFilter(value)
+        },
+        async clearStatusFilter() {
+            await this.applyStatusFilter('')
         },
         toNullable(value) {
             const text = String(value ?? '').trim()
@@ -881,7 +1050,7 @@ export default {
                 area: card?.area || '',
                 unit: card?.unit || '',
                 type: card?.type || '',
-                status: card?.status || 'inbox',
+                status: card?.status || this.defaultStatusValue,
                 notes: card?.notes || '',
             }
             this.attachmentDialogCardId = Number(card?.id) || null
@@ -928,7 +1097,7 @@ export default {
                 area: this.toNullable(this.editForm.area),
                 unit: this.toNullable(this.editForm.unit),
                 type: this.toNullable(this.editForm.type),
-                status: this.toNullable(this.editForm.status) || 'inbox',
+                status: this.toNullable(this.editForm.status) || this.defaultStatusValue,
                 notes: this.toNullable(this.editForm.notes),
             }
 
@@ -975,6 +1144,19 @@ export default {
             return result
         },
         sourceIcon(card) {
+            const cardType = String(card?.type || '').trim()
+            if (cardType) {
+                const typeOption = this.typeOptions.find((option) => {
+                    const value = String(option?.value || '').trim()
+                    return value !== '' && value.toLocaleLowerCase() === cardType.toLocaleLowerCase()
+                })
+
+                const configuredIcon = String(typeOption?.icon || '').trim()
+                if (configuredIcon) {
+                    return configuredIcon
+                }
+            }
+
             const attachments = Array.isArray(card?.attachments) ? card.attachments : []
             const hasFileAttachment = attachments.some((attachment) => attachment?.attachment_type === 'file')
             if (hasFileAttachment) return 'mdi-file-upload-outline'
@@ -990,6 +1172,17 @@ export default {
             return 'mdi-file-document-outline'
         },
         statusLabel(status) {
+            const normalized = String(status || '').trim().toLocaleLowerCase()
+            const configured = this.statusOptions.find((option) => {
+                const value = String(option?.value || '').trim().toLocaleLowerCase()
+                return value !== '' && value === normalized
+            })
+
+            const configuredLabel = String(configured?.label || '').trim()
+            if (configuredLabel) {
+                return configuredLabel
+            }
+
             const map = {
                 inbox: 'Neu/Idee',
                 in_progress: 'In Arbeit',

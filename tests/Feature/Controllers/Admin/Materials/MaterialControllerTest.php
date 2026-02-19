@@ -2,6 +2,7 @@
 
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
+use App\Models\SchoolTool;
 use App\Models\MaterialType;
 use App\Models\School;
 use App\Models\Schoolyear;
@@ -127,6 +128,32 @@ test('config returns status options', function () {
                 ['value', 'label'],
             ],
         ]);
+});
+
+test('config exposes status management only for admin', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+    $this->getJson('/api/admin/materials/config')
+        ->assertStatus(200)
+        ->assertJsonPath('can_manage_status_values', false);
+
+    $this->actingAs($this->admin, 'sanctum');
+    $this->getJson('/api/admin/materials/config')
+        ->assertStatus(200)
+        ->assertJsonPath('can_manage_status_values', true);
+});
+
+test('config exposes file settings and file setting management only for admin', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+    $this->getJson('/api/admin/materials/config')
+        ->assertStatus(200)
+        ->assertJsonPath('can_manage_file_settings', false)
+        ->assertJsonPath('file_settings.max_upload_size_kb', 20480);
+
+    $this->actingAs($this->admin, 'sanctum');
+    $this->getJson('/api/admin/materials/config')
+        ->assertStatus(200)
+        ->assertJsonPath('can_manage_file_settings', true)
+        ->assertJsonPath('file_settings.max_upload_size_kb', 20480);
 });
 
 test('config returns default material type options from schooltool config', function () {
@@ -261,6 +288,86 @@ test('material types are separated per user', function () {
             'type' => 'Nur Lehrer A',
         ],
     ])->assertStatus(422);
+});
+
+test('admin may manage school status values and teachers can use them', function () {
+    $this->actingAs($this->admin, 'sanctum');
+
+    $response = $this->postJson('/api/admin/materials/statuses', [
+        'data' => [
+            'label' => 'Zur Freigabe',
+        ],
+    ])->assertStatus(200)
+        ->assertJsonPath('data.label', 'Zur Freigabe');
+
+    $statusValue = (string) $response->json('data.value');
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->postJson('/api/admin/materials/cards', [
+        'data' => [
+            'title' => 'Statusprüfung',
+            'status' => $statusValue,
+        ],
+    ])->assertStatus(200)
+        ->assertJsonFragment([
+            'status' => $statusValue,
+        ]);
+});
+
+test('teacher cannot manage school status values', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->postJson('/api/admin/materials/statuses', [
+        'data' => [
+            'label' => 'Freigegeben',
+        ],
+    ])->assertStatus(403);
+});
+
+test('admin can update school max upload size and upload is validated against it', function () {
+    Storage::fake('local');
+
+    $this->actingAs($this->admin, 'sanctum');
+
+    $this->putJson('/api/admin/materials/file-settings', [
+        'data' => [
+            'max_upload_size_kb' => 100,
+        ],
+    ])->assertStatus(200)
+        ->assertJsonPath('data.max_upload_size_kb', 100);
+
+    $schoolTool = SchoolTool::query()->where('school_id', $this->school->id)->first();
+    expect((int) ($schoolTool?->material_max_file_upload_size ?? 0))->toBe(100);
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Uploadgrenze Test',
+        'keywords' => [],
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->post(
+        '/api/admin/materials/cards/' . $card->id . '/attachments/file',
+        ['file' => UploadedFile::fake()->create('zu-gross.pdf', 120, 'application/pdf')],
+        ['Accept' => 'application/json']
+    )->assertStatus(422);
+
+    $this->post('/api/admin/materials/cards/' . $card->id . '/attachments/file', [
+        'file' => UploadedFile::fake()->create('ok.pdf', 90, 'application/pdf'),
+    ])->assertStatus(200);
+});
+
+test('teacher cannot update school max upload size', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->putJson('/api/admin/materials/file-settings', [
+        'data' => [
+            'max_upload_size_kb' => 100,
+        ],
+    ])->assertStatus(403);
 });
 
 test('index returns only own cards', function () {

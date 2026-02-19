@@ -5,6 +5,7 @@ namespace App\Http\Requests\Admin\Materials;
 use App\Models\MaterialCard;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
@@ -22,7 +23,7 @@ class MaterialCardQuickStoreRequest extends FormRequest
             'data.source_url' => ['nullable', 'string', 'max:2048'],
             'data.source_text' => ['nullable', 'string', 'max:10000'],
             'data.type' => $this->typeRules(),
-            'data.status' => ['nullable', Rule::in(MaterialCard::statusValues())],
+            'data.status' => $this->statusRules(),
             'data.subject' => ['nullable', 'string', 'max:255'],
             'data.classifications' => ['nullable', 'array'],
             'data.classifications.*' => ['array'],
@@ -51,6 +52,34 @@ class MaterialCardQuickStoreRequest extends FormRequest
                 fn ($query) => $query->where('school_id', $schoolId)
             );
         }
+
+        return $base;
+    }
+
+    private function statusRules(): array
+    {
+        $base = ['nullable', 'string', 'max:255'];
+        $schoolId = Auth::user()?->school_id;
+
+        if (! $schoolId || ! Schema::hasTable('material_statuses')) {
+            $base[] = Rule::in(MaterialCard::statusValues());
+
+            return $base;
+        }
+
+        $hasRows = DB::table('material_statuses')
+            ->where('school_id', $schoolId)
+            ->exists();
+
+        if (! $hasRows) {
+            $base[] = Rule::in(MaterialCard::statusValues());
+
+            return $base;
+        }
+
+        $base[] = Rule::exists('material_statuses', 'value')->where(
+            fn ($query) => $query->where('school_id', $schoolId)
+        );
 
         return $base;
     }

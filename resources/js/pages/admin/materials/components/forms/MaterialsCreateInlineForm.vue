@@ -463,7 +463,14 @@ export default {
         },
         normalizedStatusValue() {
             const value = this.normalizeText(this.status)
-            if (value) return value
+            if (value) {
+                const matchingOption = this.normalizedStatusOptions.find(
+                    (option) => option.value.toLocaleLowerCase() === value.toLocaleLowerCase()
+                )
+                if (matchingOption) {
+                    return matchingOption.value
+                }
+            }
             return this.normalizedStatusOptions[0]?.value || 'inbox'
         },
         currentStatusOption() {

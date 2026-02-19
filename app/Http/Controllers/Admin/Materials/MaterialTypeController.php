@@ -25,13 +25,18 @@ class MaterialTypeController extends Controller
         $authUser = $this->authorizeForTypeManagement();
         $validated = $request->validated()['data'];
 
-        $type = $service->createType($authUser, (string) ($validated['name'] ?? ''));
+        $type = $service->createType(
+            $authUser,
+            (string) ($validated['name'] ?? ''),
+            isset($validated['icon']) ? (string) $validated['icon'] : null
+        );
 
         return response()->json([
             'data' => [
                 'id' => $type->id,
                 'value' => $type->name,
                 'label' => $type->name,
+                'icon' => $type->icon,
             ],
         ], 200);
     }
@@ -44,13 +49,19 @@ class MaterialTypeController extends Controller
         $authUser = $this->authorizeForTypeManagement();
         $validated = $request->validated()['data'];
 
-        $type = $service->updateType($authUser, $material_type, (string) ($validated['name'] ?? ''));
+        $type = $service->updateType(
+            $authUser,
+            $material_type,
+            (string) ($validated['name'] ?? ''),
+            isset($validated['icon']) ? (string) $validated['icon'] : null
+        );
 
         return response()->json([
             'data' => [
                 'id' => $type->id,
                 'value' => $type->name,
                 'label' => $type->name,
+                'icon' => $type->icon,
             ],
         ], 200);
     }

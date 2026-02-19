@@ -532,23 +532,31 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             }
         },
 
-        async importDefaultTypes(names) {
+        async importDefaultTypes(types) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
-            const incoming = Array.isArray(names) ? names : [names]
-            const uniqueNames = []
+            const incoming = Array.isArray(types) ? types : [types]
+            const normalizedTypes = []
             const seen = new Set()
 
-            for (const rawName of incoming) {
-                const normalizedName = String(rawName ?? '').trim().slice(0, 255)
+            for (const rawType of incoming) {
+                const normalizedName = String(
+                    typeof rawType === 'object' && rawType !== null ? rawType.name : rawType
+                ).trim().slice(0, 255)
+                const normalizedIcon = String(
+                    typeof rawType === 'object' && rawType !== null ? (rawType.icon ?? '') : ''
+                ).trim().slice(0, 100)
                 if (!normalizedName) continue
                 const key = normalizedName.toLocaleLowerCase()
                 if (seen.has(key)) continue
                 seen.add(key)
-                uniqueNames.push(normalizedName)
+                normalizedTypes.push({
+                    name: normalizedName,
+                    icon: normalizedIcon || null,
+                })
             }
 
-            if (!uniqueNames.length) {
+            if (!normalizedTypes.length) {
                 notification.notify({
                     message: 'Keine Standardtypen ausgewählt.',
                     type: 'warning',
@@ -559,9 +567,12 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
 
             adminStore.is_loading++
             try {
-                for (const name of uniqueNames) {
+                for (const type of normalizedTypes) {
                     await axios.post('/api/admin/materials/types', {
-                        data: { name },
+                        data: {
+                            name: type.name,
+                            icon: type.icon,
+                        },
                     })
                 }
 
@@ -587,10 +598,11 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             }
         },
 
-        async createType(name) {
+        async createType(name, icon = null) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             const normalizedName = String(name ?? '').trim().slice(0, 255)
+            const normalizedIcon = String(icon ?? '').trim().slice(0, 100)
 
             if (!normalizedName) {
                 notification.notify({
@@ -606,6 +618,7 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                 const response = await axios.post('/api/admin/materials/types', {
                     data: {
                         name: normalizedName,
+                        icon: normalizedIcon || null,
                     },
                 })
 
@@ -631,10 +644,11 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             }
         },
 
-        async updateType(typeId, name) {
+        async updateType(typeId, name, icon = null) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             const normalizedName = String(name ?? '').trim().slice(0, 255)
+            const normalizedIcon = String(icon ?? '').trim().slice(0, 100)
             const id = Number(typeId)
 
             if (!Number.isFinite(id) || id <= 0) {
@@ -660,6 +674,7 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                 const response = await axios.put('/api/admin/materials/types/' + id, {
                     data: {
                         name: normalizedName,
+                        icon: normalizedIcon || null,
                     },
                 })
 
@@ -725,6 +740,196 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                     timeout: 3000,
                 })
                 return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async createStatus(label) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const normalizedLabel = String(label ?? '').trim().slice(0, 255)
+
+            if (!normalizedLabel) {
+                notification.notify({
+                    message: 'Bitte eine Statusbezeichnung eingeben.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            adminStore.is_loading++
+            try {
+                const response = await axios.post('/api/admin/materials/statuses', {
+                    data: {
+                        label: normalizedLabel,
+                    },
+                })
+
+                await this.loadConfig()
+                if (Array.isArray(this.cards) && this.cards.length > 0) {
+                    await this.indexAll()
+                }
+
+                notification.notify({
+                    message: 'Status hinzugefügt.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Anlegen des Status.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async updateStatus(statusId, label) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const id = Number(statusId)
+            const normalizedLabel = String(label ?? '').trim().slice(0, 255)
+
+            if (!Number.isFinite(id) || id <= 0) {
+                notification.notify({
+                    message: 'Ungültiger Status.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            if (!normalizedLabel) {
+                notification.notify({
+                    message: 'Bitte eine Statusbezeichnung eingeben.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            adminStore.is_loading++
+            try {
+                const response = await axios.put('/api/admin/materials/statuses/' + id, {
+                    data: {
+                        label: normalizedLabel,
+                    },
+                })
+
+                await this.loadConfig()
+                if (Array.isArray(this.cards) && this.cards.length > 0) {
+                    await this.indexAll()
+                }
+
+                notification.notify({
+                    message: 'Status aktualisiert.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Aktualisieren des Status.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async deleteStatus(statusId) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const id = Number(statusId)
+
+            if (!Number.isFinite(id) || id <= 0) {
+                notification.notify({
+                    message: 'Ungültiger Status.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return false
+            }
+
+            adminStore.is_loading++
+            try {
+                await axios.delete('/api/admin/materials/statuses/' + id)
+                await this.loadConfig()
+                if (Array.isArray(this.cards) && this.cards.length > 0) {
+                    await this.indexAll()
+                }
+
+                notification.notify({
+                    message: 'Status gelöscht.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Löschen des Status.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async updateFileSettings(maxUploadSizeKb) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const value = Number(maxUploadSizeKb)
+
+            if (!Number.isFinite(value) || value <= 0) {
+                notification.notify({
+                    message: 'Bitte eine gültige Uploadgröße eingeben.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            adminStore.is_loading++
+            try {
+                const response = await axios.put('/api/admin/materials/file-settings', {
+                    data: {
+                        max_upload_size_kb: Math.round(value),
+                    },
+                })
+
+                await this.loadConfig()
+
+                notification.notify({
+                    message: 'Dateieinstellungen gespeichert.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Speichern der Dateieinstellungen.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
             } finally {
                 adminStore.is_loading--
             }
