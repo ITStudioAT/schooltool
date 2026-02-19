@@ -269,12 +269,29 @@
                 </v-btn>
             </div>
 
-            <input
-                ref="fileInput"
-                type="file"
-                multiple
-                class="d-none"
-                @change="handleFileSelection">
+            <div class="mt-3">
+                <file-pond
+                    ref="pond"
+                    name="file"
+                    allow-multiple
+                    :chunk-uploads="true"
+                    :chunk-force="true"
+                    :allow-revert="false"
+                    :allow-remove="true"
+                    :instant-upload="true"
+                    :before-add-file="beforeAddFile"
+                    :label-idle="'<strong>Dateien hierher ziehen oder <i>klicken</i></strong>'"
+                    :label-file-processing-complete="'OK'"
+                    :server="pondServerConfig"
+                    @processfile="onProcessFile"
+                    @processfileerror="onProcessFileError"
+                    @error="onProcessFileError"
+                    v-if="csrfToken" />
+            </div>
+
+            <div class="text-caption text-medium-emphasis mt-2">
+                Maximale Uploadgröße je Datei: {{ maxUploadSizeLabel }}
+            </div>
 
             <v-card
                 v-if="normalizedPendingAttachments.length"
@@ -306,7 +323,7 @@
                     </div>
 
                     <div class="text-caption text-medium-emphasis mt-1">
-                        {{ item.fileName }}
+                        {{ item.fileName || 'Datei' }}
                     </div>
                 </div>
             </v-card>
@@ -322,8 +339,17 @@
 </template>
 
 <script>
+import vueFilePond from 'vue-filepond/dist/vue-filepond.js'
+import 'filepond/dist/filepond.min.css'
+import FilePondPluginFileValidateType from 'filepond-plugin-file-validate-type'
+
+const FilePond = vueFilePond(FilePondPluginFileValidateType)
+
 export default {
     name: 'MaterialsCreateInlineForm',
+    components: {
+        FilePond,
+    },
     props: {
         title: {
             type: String,
@@ -397,12 +423,17 @@ export default {
             type: Boolean,
             default: true,
         },
+        maxUploadSizeKb: {
+            type: Number,
+            default: 20480,
+        },
     },
-    emits: ['update:title', 'update:description', 'update:materialType', 'update:pendingAttachments', 'add-files', 'update:status', 'update:classifications', 'update:classificationEditorVisible', 'manage-types', 'save', 'cancel'],
+    emits: ['update:title', 'update:description', 'update:materialType', 'update:pendingAttachments', 'add-files', 'remove-temp-upload', 'upload-error', 'update:status', 'update:classifications', 'update:classificationEditorVisible', 'manage-types', 'save', 'cancel'],
     data() {
         return {
             activeClassificationIndex: null,
             newlyAddedClassificationIndex: null,
+            csrfToken: null,
         }
     },
     watch: {
@@ -429,7 +460,53 @@ export default {
             },
         },
     },
+    async beforeMount() {
+        const metaToken = document?.head?.querySelector?.('meta[name=\"csrf-token\"]')?.content
+        this.csrfToken = String(metaToken || '').trim() || null
+
+        try {
+            const response = await axios.get('/api/admin/token')
+            const token = String(response?.data || '').trim()
+            if (token) {
+                this.csrfToken = token
+            }
+        } catch {
+            // Falls Token-Refresh fehlschlägt, wird der vorhandene Meta-Token verwendet.
+        }
+    },
     computed: {
+        maxUploadSizeBytes() {
+            const value = Number(this.maxUploadSizeKb)
+            if (!Number.isFinite(value) || value <= 0) return 20480 * 1024
+            return Math.max(1, Math.round(value)) * 1024
+        },
+        maxUploadSizeLabel() {
+            const mb = this.maxUploadSizeBytes / (1024 * 1024)
+            const rounded = Math.round(mb * 100) / 100
+            return `${rounded} MB`
+        },
+        pondServerConfig() {
+            return {
+                process: {
+                    url: '/api/admin/materials/uploads/chunk',
+                    method: 'POST',
+                    timeout: 120000,
+                    withCredentials: true,
+                    headers: this.csrfToken ? { 'X-CSRF-TOKEN': this.csrfToken } : {},
+                },
+                patch: {
+                    url: '/api/admin/materials/uploads/chunk?patch=',
+                    method: 'PATCH',
+                    timeout: 120000,
+                    withCredentials: true,
+                    headers: this.csrfToken ? { 'X-CSRF-TOKEN': this.csrfToken } : {},
+                },
+                revert: null,
+                restore: null,
+                load: null,
+                fetch: null,
+            }
+        },
         canSave() {
             return String(this.title || '').trim().length > 0
         },
@@ -621,6 +698,25 @@ export default {
 
             for (let index = 0; index < input.length; index += 1) {
                 const item = input[index]
+                const tempUpload = this.normalizeText(item?.tempUpload)
+                if (tempUpload) {
+                    const fileName = this.normalizeText(item?.fileName) || `Datei ${index + 1}`
+                    const rawTitle = item?.title
+                    const title = this.normalizeText(rawTitle) || this.defaultAttachmentTitle(fileName)
+                    const source = this.normalizeText(item?.source) || 'filepond'
+                    const key = String(item?.key || `temp|${tempUpload}|${index}`)
+
+                    result.push({
+                        tempUpload,
+                        file: null,
+                        title,
+                        fileName,
+                        source,
+                        key,
+                    })
+                    continue
+                }
+
                 const file = item instanceof File ? item : item?.file
                 if (!(file instanceof File)) continue
 
@@ -631,6 +727,7 @@ export default {
                 const key = String(item instanceof File ? '' : item?.key) || `${fileName}|${file.size}|${file.lastModified}|${index}`
 
                 result.push({
+                    tempUpload: '',
                     file,
                     title,
                     fileName,
@@ -643,28 +740,74 @@ export default {
         },
         emitPendingAttachments(rows) {
             const nextRows = (Array.isArray(rows) ? rows : []).map((row, index) => ({
-                file: row.file,
+                tempUpload: this.normalizeText(row.tempUpload),
+                file: row.file instanceof File ? row.file : null,
+                fileName: this.normalizeText(row.fileName || row.file?.name),
                 title: this.normalizeText(row.title) || this.defaultAttachmentTitle(row.fileName || row.file?.name),
                 source: this.normalizeText(row.source),
-                key: String(row.key || `${row.file?.name || 'datei'}|${row.file?.size || 0}|${row.file?.lastModified || 0}|${index}`),
+                key: String(
+                    row.key
+                    || (
+                        row.tempUpload
+                            ? `temp|${row.tempUpload}|${index}`
+                            : `${row.file?.name || 'datei'}|${row.file?.size || 0}|${row.file?.lastModified || 0}|${index}`
+                    )
+                ),
             }))
             this.$emit('update:pendingAttachments', nextRows)
         },
-        openFilePicker() {
-            const input = this.$refs.fileInput
-            if (input && typeof input.click === 'function') {
-                input.click()
-            }
-        },
-        handleFileSelection(event) {
-            const files = Array.from(event?.target?.files || []).filter((file) => file instanceof File)
-            if (files.length > 0) {
-                this.$emit('add-files', files)
+        beforeAddFile(fileItem) {
+            const size = Number(fileItem?.file?.size || fileItem?.size || 0)
+            if (!Number.isFinite(size) || size <= 0) return true
+
+            if (size > this.maxUploadSizeBytes) {
+                this.$emit('upload-error', `Datei ist zu groß. Maximal erlaubt: ${this.maxUploadSizeLabel}.`)
+                return false
             }
 
-            if (event?.target) {
-                event.target.value = ''
+            return true
+        },
+        openFilePicker() {
+            const pond = this.$refs.pond
+            if (pond && typeof pond.browse === 'function') {
+                pond.browse()
             }
+        },
+        onProcessFile(error, fileItem) {
+            if (error) {
+                this.onProcessFileError(error)
+                return
+            }
+
+            const uploadId = this.normalizeText(fileItem?.serverId)
+            if (!uploadId) {
+                this.onProcessFileError()
+                return
+            }
+
+            const fileName = this.normalizeText(fileItem?.filename || fileItem?.file?.name) || 'Datei'
+            const rows = this.toPendingAttachments(this.pendingAttachments)
+            const alreadyExists = rows.some((row) => row.tempUpload === uploadId)
+            if (!alreadyExists) {
+                rows.push({
+                    tempUpload: uploadId,
+                    file: null,
+                    title: this.defaultAttachmentTitle(fileName),
+                    fileName,
+                    source: 'filepond',
+                    key: `temp|${uploadId}|${rows.length}`,
+                })
+                this.emitPendingAttachments(rows)
+            }
+
+            const pond = this.$refs.pond
+            if (pond && typeof pond.removeFile === 'function') {
+                pond.removeFile(fileItem?.id)
+            }
+        },
+        onProcessFileError(error) {
+            const message = String(error?.main || error?.body || error?.message || '').trim()
+            this.$emit('upload-error', message || 'Datei konnte nicht hochgeladen werden.')
         },
         updatePendingAttachmentTitle(index, value) {
             const rows = this.toPendingAttachments(this.pendingAttachments)
@@ -681,8 +824,14 @@ export default {
             const rows = this.toPendingAttachments(this.pendingAttachments)
             if (index < 0 || index >= rows.length) return
 
+            const removed = rows[index]
+            const tempUpload = this.normalizeText(removed?.tempUpload)
             rows.splice(index, 1)
             this.emitPendingAttachments(rows)
+
+            if (tempUpload) {
+                this.$emit('remove-temp-upload', tempUpload)
+            }
         },
         isClassificationRowEmpty(row) {
             const subject = this.normalizeText(row?.subject)

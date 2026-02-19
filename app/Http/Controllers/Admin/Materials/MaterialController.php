@@ -9,6 +9,7 @@ use App\Http\Requests\Admin\Materials\MaterialCardIndexRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardLinkAttachmentStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardQuickStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardStoreRequest;
+use App\Http\Requests\Admin\Materials\MaterialCardTempAttachmentStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardUpdateRequest;
 use App\Http\Resources\Admin\Materials\MaterialCardAttachmentResource;
 use App\Http\Resources\Admin\Materials\MaterialCardResource;
@@ -122,6 +123,25 @@ class MaterialController extends Controller
             $material_card,
             $validated['file'],
             $validated['name'] ?? null
+        );
+
+        return response()->json(new MaterialCardAttachmentResource($attachment), 200);
+    }
+
+    public function storeTempFileAttachment(
+        MaterialCardTempAttachmentStoreRequest $request,
+        MaterialCard $material_card,
+        MaterialService $service
+    ) {
+        $authUser = $this->authorizeForMaterials();
+        $this->assertIsOwner($authUser->id, $material_card->user_id);
+        $validated = $request->validated()['data'];
+
+        $attachment = $service->addFileAttachmentFromTempUpload(
+            $authUser,
+            $material_card,
+            (string) ($validated['upload_id'] ?? ''),
+            isset($validated['name']) ? (string) $validated['name'] : null
         );
 
         return response()->json(new MaterialCardAttachmentResource($attachment), 200);

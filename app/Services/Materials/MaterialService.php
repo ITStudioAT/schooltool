@@ -155,7 +155,7 @@ class MaterialService
     {
         $path = $file->storeAs(
             $this->materialAttachmentDirectory($card),
-            $this->materialAttachmentStoredFileName($file),
+            $this->materialAttachmentStoredFileNameFromOriginalName((string) $file->getClientOriginalName()),
             'local'
         );
 
@@ -181,6 +181,88 @@ class MaterialService
         $this->keywordService->rebuild($card->fresh($this->cardRelations()));
 
         return $attachment;
+    }
+
+    public function addFileAttachmentFromTempUpload(
+        User $user,
+        MaterialCard $card,
+        string $uploadId,
+        ?string $name = null
+    ): MaterialCardAttachment {
+        $normalizedUploadId = $this->normalizeTempUploadId($uploadId);
+        $tempPath = $this->tempUploadPathById($user, $normalizedUploadId);
+
+        if ($tempPath === null || ! Storage::disk('local')->exists($tempPath)) {
+            throw ValidationException::withMessages([
+                'data.upload_id' => 'Upload wurde nicht gefunden.',
+            ]);
+        }
+
+        $sizeBytes = (int) (Storage::disk('local')->size($tempPath) ?: 0);
+        $maxBytes = $this->maxUploadSizeForSchool((int) $user->school_id) * 1024;
+        if ($maxBytes > 0 && $sizeBytes > $maxBytes) {
+            Storage::disk('local')->delete($tempPath);
+            throw ValidationException::withMessages([
+                'data.upload_id' => 'Datei überschreitet die maximal erlaubte Uploadgröße.',
+            ]);
+        }
+
+        $tempFileName = basename($tempPath);
+        $destinationPath = $this->materialAttachmentDirectory($card)
+            . '/' . $this->materialAttachmentStoredFileNameFromOriginalName($tempFileName);
+
+        $moved = Storage::disk('local')->move($tempPath, $destinationPath);
+        if (! $moved) {
+            throw ValidationException::withMessages([
+                'data.upload_id' => 'Upload konnte nicht übernommen werden.',
+            ]);
+        }
+
+        $displayName = $this->normalizeOptionalName($name);
+        if ($displayName === null) {
+            $displayName = $this->defaultAttachmentNameFromTempFileName($tempFileName);
+        }
+
+        $mimeType = Storage::disk('local')->mimeType($destinationPath);
+        $finalSizeBytes = (int) (Storage::disk('local')->size($destinationPath) ?: $sizeBytes);
+
+        $attachment = $card->attachments()->create([
+            'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+            'name' => $displayName,
+            'file_path' => $destinationPath,
+            'mime_type' => is_string($mimeType) ? $mimeType : null,
+            'size_bytes' => $finalSizeBytes > 0 ? $finalSizeBytes : null,
+        ]);
+
+        $this->keywordService->rebuild($card->fresh($this->cardRelations()));
+
+        return $attachment;
+    }
+
+    public function deleteTempUpload(User $user, string $uploadId): void
+    {
+        $normalizedUploadId = $this->normalizeTempUploadId($uploadId);
+        $tempPath = $this->tempUploadPathById($user, $normalizedUploadId);
+        if ($tempPath === null) {
+            return;
+        }
+
+        Storage::disk('local')->delete($tempPath);
+    }
+
+    public function resolveTempUploadPathForUser(User $user, string $uploadId): ?string
+    {
+        return $this->tempUploadPathById($user, $uploadId);
+    }
+
+    public function tempUploadStoragePathForUser(User $user): string
+    {
+        return 'app/private/' . $this->tempUploadDirectoryForUser($user);
+    }
+
+    public function maxUploadSizeKbForUser(User $user): int
+    {
+        return $this->maxUploadSizeForSchool((int) $user->school_id);
     }
 
     public function addLinkAttachment(MaterialCard $card, string $url, ?string $name = null): MaterialCardAttachment
@@ -1044,9 +1126,9 @@ class MaterialService
         ]);
     }
 
-    private function materialAttachmentStoredFileName(UploadedFile $file): string
+    private function materialAttachmentStoredFileNameFromOriginalName(string $originalName): string
     {
-        $originalBaseName = (string) pathinfo((string) $file->getClientOriginalName(), PATHINFO_FILENAME);
+        $originalBaseName = (string) pathinfo($originalName, PATHINFO_FILENAME);
         $slug = Str::slug($originalBaseName, '-');
 
         if ($slug === '') {
@@ -1054,9 +1136,59 @@ class MaterialService
         }
 
         $slug = mb_substr($slug, 0, 120);
-        $extension = strtolower((string) $file->getClientOriginalExtension());
+        $extension = strtolower((string) pathinfo($originalName, PATHINFO_EXTENSION));
         $suffix = $extension !== '' ? '.' . $extension : '';
 
         return Str::uuid()->toString() . '-' . $slug . $suffix;
+    }
+
+    private function tempUploadDirectoryForUser(User $user): string
+    {
+        return implode('/', [
+            'materials',
+            'temp',
+            (string) $user->school_id,
+            (string) $user->id,
+        ]);
+    }
+
+    private function normalizeTempUploadId(string $uploadId): string
+    {
+        $value = trim($uploadId);
+        if ($value === '' || ! preg_match('/^[a-f0-9-]{20,64}$/i', $value)) {
+            throw ValidationException::withMessages([
+                'data.upload_id' => 'Ungültige Upload-ID.',
+            ]);
+        }
+
+        return $value;
+    }
+
+    private function tempUploadPathById(User $user, string $uploadId): ?string
+    {
+        $normalizedUploadId = $this->normalizeTempUploadId($uploadId);
+        $directory = $this->tempUploadDirectoryForUser($user);
+        $files = Storage::disk('local')->files($directory);
+
+        foreach ($files as $file) {
+            $name = basename((string) $file);
+            if (Str::startsWith($name, $normalizedUploadId)) {
+                return $file;
+            }
+        }
+
+        return null;
+    }
+
+    private function defaultAttachmentNameFromTempFileName(string $tempFileName): string
+    {
+        $base = (string) pathinfo($tempFileName, PATHINFO_FILENAME);
+        $clean = preg_replace('/^[a-f0-9-]{20,64}-?/i', '', $base);
+        $clean = trim((string) $clean);
+        if ($clean === '') {
+            $clean = $base;
+        }
+
+        return mb_substr($clean, 0, 255);
     }
 }

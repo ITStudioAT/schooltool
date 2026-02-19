@@ -450,6 +450,79 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             }
         },
 
+        async addTempFileAttachment(cardId, uploadId, name = '') {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const id = Number(cardId)
+            const normalizedUploadId = String(uploadId ?? '').trim()
+            const normalizedName = String(name ?? '').trim().slice(0, 255)
+
+            if (!Number.isFinite(id) || id <= 0 || normalizedUploadId === '') {
+                notification.notify({
+                    message: 'Ungültige Upload-Daten.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return false
+            }
+
+            adminStore.is_loading++
+            try {
+                await axios.post('/api/admin/materials/cards/' + id + '/attachments/file-temp', {
+                    data: {
+                        upload_id: normalizedUploadId,
+                        name: normalizedName || null,
+                    },
+                })
+
+                notification.notify({
+                    message: 'Datei-Anhang hinzugefügt.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+                await this.show(id)
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Datei-Upload.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async deleteTempUpload(uploadId, notify = false) {
+            const notification = useNotificationStore()
+            const normalizedUploadId = String(uploadId ?? '').trim()
+            if (!normalizedUploadId) return false
+
+            try {
+                await axios.delete('/api/admin/materials/uploads/chunk/' + encodeURIComponent(normalizedUploadId))
+                if (notify) {
+                    notification.notify({
+                        message: 'Temporärer Upload gelöscht.',
+                        type: 'success',
+                        timeout: 2000,
+                    })
+                }
+                return true
+            } catch (error) {
+                if (notify) {
+                    notification.notify({
+                        status: error.response?.status,
+                        message: error.response?.data?.message || 'Temporärer Upload konnte nicht gelöscht werden.',
+                        type: 'error',
+                        timeout: 3000,
+                    })
+                }
+                return false
+            }
+        },
+
         async deleteAttachment(attachmentId, cardId) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()

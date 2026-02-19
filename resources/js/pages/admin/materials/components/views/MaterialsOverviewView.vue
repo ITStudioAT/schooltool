@@ -488,6 +488,7 @@
             :description="editForm.description"
             :material-type="editForm.type"
             :pending-attachments="editForm.pendingAttachments"
+            :max-upload-size-kb="maxUploadSizeKb"
             :type-options="typeOptions"
             :can-manage-types="canManageTypeValues"
             :status="editForm.status"
@@ -505,6 +506,8 @@
             @update:description="editForm.description = $event"
             @update:materialType="editForm.type = $event"
             @update:pendingAttachments="editForm.pendingAttachments = $event"
+            @remove-temp-upload="removeEditTempUpload"
+            @upload-error="notifyUploadError"
             @add-files="addEditPendingAttachments"
             @update:status="editForm.status = $event"
             @update:classifications="editForm.classifications = $event"
@@ -678,6 +681,11 @@ export default {
         },
         defaultStatusValue() {
             return String(this.statusOptions?.[0]?.value || '').trim() || 'inbox'
+        },
+        maxUploadSizeKb() {
+            const value = Number(this.materialCardStore?.config?.file_settings?.max_upload_size_kb)
+            if (!Number.isFinite(value) || value <= 0) return 20480
+            return Math.max(1, Math.round(value))
         },
         attachmentDialogBusy() {
             return this.savingAttachmentIds.length > 0 || this.deletingAttachmentIds.length > 0
@@ -875,6 +883,24 @@ export default {
 
             for (let index = 0; index < input.length; index += 1) {
                 const item = input[index]
+                const tempUpload = String(item?.tempUpload || '').trim()
+                if (tempUpload) {
+                    const fileName = String(item?.fileName || '').trim() || `Datei ${index + 1}`
+                    const rawTitle = String(item?.title || '').trim()
+                    const source = String(item?.source || '').trim()
+                    const key = String(item?.key || '') || `temp|${tempUpload}|${index}`
+
+                    result.push({
+                        tempUpload,
+                        file: null,
+                        fileName,
+                        title: rawTitle || this.defaultAttachmentTitle(fileName),
+                        source: source || 'filepond',
+                        key,
+                    })
+                    continue
+                }
+
                 const file = item instanceof File ? item : item?.file
                 if (!(file instanceof File)) continue
 
@@ -884,7 +910,9 @@ export default {
                 const key = String(item instanceof File ? '' : item?.key || '') || `${fileName}|${file.size}|${file.lastModified}|${index}`
 
                 result.push({
+                    tempUpload: '',
                     file,
+                    fileName,
                     title: rawTitle || this.defaultAttachmentTitle(fileName),
                     source: source || 'manual',
                     key,
@@ -923,6 +951,30 @@ export default {
                 incoming,
                 'picker'
             )
+        },
+        notifyUploadError(message) {
+            const text = String(message || '').trim()
+            const notification = useNotificationStore()
+            notification.notify({
+                message: text || 'Datei konnte nicht hochgeladen werden.',
+                type: 'error',
+                timeout: 3500,
+            })
+        },
+        async removeEditTempUpload(uploadId) {
+            const value = String(uploadId || '').trim()
+            if (!value) return
+            await this.materialCardStore.deleteTempUpload(value, false)
+        },
+        async cleanupPendingTempUploads(rows = null) {
+            const list = this.toPendingAttachments(rows ?? this.editForm.pendingAttachments)
+            const uploads = list
+                .map((item) => String(item?.tempUpload || '').trim())
+                .filter((value) => value !== '')
+
+            for (const uploadId of uploads) {
+                await this.materialCardStore.deleteTempUpload(uploadId, false)
+            }
         },
         sanitizeDialogCard(card) {
             if (!card || typeof card !== 'object') return null
@@ -1061,6 +1113,8 @@ export default {
         async closeEditDialog(restoreDetail = true) {
             if (this.isSavingEdit) return
 
+            await this.cleanupPendingTempUploads(this.editForm.pendingAttachments)
+
             const shouldRestoreDetail = restoreDetail
                 && this.returnToDetailOnEditCancel
                 && this.detailCardForEditReturn
@@ -1106,11 +1160,22 @@ export default {
             if (updated) {
                 const pendingAttachments = this.toPendingAttachments(this.editForm.pendingAttachments)
                 for (const attachment of pendingAttachments) {
-                    await this.materialCardStore.addFileAttachment(
-                        this.editForm.id,
-                        attachment.file,
-                        this.toNullable(attachment.title) || attachment.file.name || ''
-                    )
+                    if (attachment.tempUpload) {
+                        await this.materialCardStore.addTempFileAttachment(
+                            this.editForm.id,
+                            attachment.tempUpload,
+                            this.toNullable(attachment.title) || attachment.fileName || ''
+                        )
+                        continue
+                    }
+
+                    if (attachment.file instanceof File) {
+                        await this.materialCardStore.addFileAttachment(
+                            this.editForm.id,
+                            attachment.file,
+                            this.toNullable(attachment.title) || attachment.file.name || ''
+                        )
+                    }
                 }
             }
 

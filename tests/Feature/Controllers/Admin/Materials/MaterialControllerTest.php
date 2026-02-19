@@ -360,6 +360,79 @@ test('admin can update school max upload size and upload is validated against it
     ])->assertStatus(200);
 });
 
+test('teacher can upload file in chunks and attach it to material card', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Chunk Upload Karte',
+        'keywords' => [],
+    ]);
+
+    $content = str_repeat('A', 4096);
+    $length = (string) strlen($content);
+
+    $startResponse = $this
+        ->withHeaders([
+            'Accept' => 'text/plain',
+            'Upload-Length' => $length,
+            'Upload-Name' => 'chunk-upload-test.pdf',
+        ])
+        ->post('/api/admin/materials/uploads/chunk');
+
+    $startResponse->assertStatus(200);
+    $uploadId = trim((string) $startResponse->getContent());
+    expect($uploadId)->not->toBe('');
+
+    $patchResponse = $this->call('PATCH', '/api/admin/materials/uploads/chunk?patch=' . $uploadId, [], [], [], [
+        'HTTP_ACCEPT' => 'text/plain',
+        'HTTP_UPLOAD_LENGTH' => $length,
+        'HTTP_UPLOAD_NAME' => 'chunk-upload-test.pdf',
+    ], $content);
+
+    $patchResponse->assertStatus(200);
+    expect(trim((string) $patchResponse->getContent()))->toBe($uploadId);
+
+    $attachResponse = $this->postJson('/api/admin/materials/cards/' . $card->id . '/attachments/file-temp', [
+        'data' => [
+            'upload_id' => $uploadId,
+            'name' => 'Chunk Test Datei',
+        ],
+    ]);
+
+    $attachResponse->assertStatus(200)
+        ->assertJsonFragment([
+            'name' => 'Chunk Test Datei',
+        ]);
+
+    $attachmentId = $attachResponse->json('id');
+    $attachment = MaterialCardAttachment::findOrFail($attachmentId);
+    Storage::disk('local')->assertExists($attachment->file_path);
+});
+
+test('chunk upload respects school max upload size from settings', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+
+    SchoolTool::query()->updateOrCreate(
+        ['school_id' => $this->school->id],
+        [
+            'tutoring_student_must_be_confirmed' => false,
+            'tutoring_confirmer_email' => '',
+            'material_max_file_upload_size' => 1, // 1 KB
+        ]
+    );
+
+    $this
+        ->withHeaders([
+            'Accept' => 'application/json',
+            'Upload-Length' => '2048',
+            'Upload-Name' => 'zu-gross.pdf',
+        ])
+        ->post('/api/admin/materials/uploads/chunk')
+        ->assertStatus(422);
+});
+
 test('teacher cannot update school max upload size', function () {
     $this->actingAs($this->teacher, 'sanctum');
 

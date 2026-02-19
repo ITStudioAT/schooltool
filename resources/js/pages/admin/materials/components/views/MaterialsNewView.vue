@@ -117,6 +117,7 @@
                         :description="createForm.description"
                         :material-type="createForm.type"
                         :pending-attachments="pendingAttachments"
+                        :max-upload-size-kb="maxUploadSizeKb"
                         :type-options="typeOptions"
                         :can-manage-types="canManageTypeValues"
                         :status="createForm.status"
@@ -131,6 +132,8 @@
                         @update:description="createForm.description = $event"
                         @update:materialType="createForm.type = $event"
                         @update:pendingAttachments="pendingAttachments = $event"
+                        @remove-temp-upload="removePendingTempUpload"
+                        @upload-error="notifyUploadError"
                         @add-files="addPendingAttachmentsFromPicker"
                         @update:status="createForm.status = $event"
                         @update:classifications="createForm.classifications = $event"
@@ -148,6 +151,7 @@
 
 <script>
 import { useMaterialCardStore } from '@/stores/admin/materials/MaterialCardStore'
+import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import MaterialsAddOption from '../options/MaterialsAddOption.vue'
 import MaterialsClipboardOption from '../options/MaterialsClipboardOption.vue'
 import MaterialsDropOption from '../options/MaterialsDropOption.vue'
@@ -215,6 +219,11 @@ export default {
         defaultStatusValue() {
             return String(this.statusOptions?.[0]?.value || '').trim() || 'inbox'
         },
+        maxUploadSizeKb() {
+            const value = Number(this.materialCardStore?.config?.file_settings?.max_upload_size_kb)
+            if (!Number.isFinite(value) || value <= 0) return 20480
+            return Math.max(1, Math.round(value))
+        },
     },
     async beforeMount() {
         this.materialCardStore = useMaterialCardStore()
@@ -226,6 +235,7 @@ export default {
         }
     },
     unmounted() {
+        this.cleanupPendingTempUploads().catch(() => {})
         this.revokeClipboardImagePreviews()
         this.$emit('menu-lock-change', false)
     },
@@ -480,6 +490,24 @@ export default {
 
             for (let index = 0; index < input.length; index += 1) {
                 const item = input[index]
+                const tempUpload = String(item?.tempUpload || '').trim()
+                if (tempUpload) {
+                    const fileName = String(item?.fileName || '').trim() || `Datei ${index + 1}`
+                    const rawTitle = String(item?.title || '').trim()
+                    const source = String(item?.source || '').trim()
+                    const key = String(item?.key || '') || `temp|${tempUpload}|${index}`
+
+                    result.push({
+                        tempUpload,
+                        file: null,
+                        fileName,
+                        title: rawTitle || this.defaultAttachmentTitle(fileName),
+                        source: source || 'filepond',
+                        key,
+                    })
+                    continue
+                }
+
                 const file = item instanceof File ? item : item?.file
                 if (!(file instanceof File)) continue
 
@@ -489,7 +517,9 @@ export default {
                 const key = String(item instanceof File ? '' : item?.key || '') || `${fileName}|${file.size}|${file.lastModified}|${index}`
 
                 result.push({
+                    tempUpload: '',
                     file,
+                    fileName,
                     title: rawTitle || this.defaultAttachmentTitle(fileName),
                     source: source || 'manual',
                     key,
@@ -499,7 +529,9 @@ export default {
             return result
         },
         extractFilesFromPendingAttachments(value) {
-            return this.toPendingAttachments(value).map((item) => item.file)
+            return this.toPendingAttachments(value)
+                .filter((item) => item.file instanceof File)
+                .map((item) => item.file)
         },
         mergeUniquePendingAttachments(existingAttachments, newFiles, source = 'manual') {
             const list = this.toPendingAttachments(existingAttachments)
@@ -528,6 +560,30 @@ export default {
 
             this.pendingAttachments = this.mergeUniquePendingAttachments(this.pendingAttachments, incoming, 'picker')
             this.updateClipboardImagePreviews(this.pendingAttachments)
+        },
+        notifyUploadError(message) {
+            const text = String(message || '').trim()
+            const notification = useNotificationStore()
+            notification.notify({
+                message: text || 'Datei konnte nicht hochgeladen werden.',
+                type: 'error',
+                timeout: 3500,
+            })
+        },
+        async removePendingTempUpload(uploadId) {
+            const value = String(uploadId || '').trim()
+            if (!value) return
+            await this.materialCardStore.deleteTempUpload(value, false)
+        },
+        async cleanupPendingTempUploads(rows = null) {
+            const list = this.toPendingAttachments(rows ?? this.pendingAttachments)
+            const uploads = list
+                .map((item) => String(item?.tempUpload || '').trim())
+                .filter((value) => value !== '')
+
+            for (const uploadId of uploads) {
+                await this.materialCardStore.deleteTempUpload(uploadId, false)
+            }
         },
         openTypeManager() {
             if (!this.canManageTypeValues) return
@@ -574,7 +630,8 @@ export default {
             })
             this.applyClipboardPayload(payload, 'Manuelle Übernahme (Button)')
         },
-        cancelCreateForm() {
+        async cancelCreateForm() {
+            await this.cleanupPendingTempUploads()
             this.$emit('menu-lock-change', false)
             this.resetCreateForm()
             this.createFormOpen = false
@@ -639,18 +696,29 @@ export default {
             const attachments = this.toPendingAttachments(this.pendingAttachments)
             if (saved?.id && attachments.length) {
                 for (const attachment of attachments) {
-                    await this.materialCardStore.addFileAttachment(
-                        saved.id,
-                        attachment.file,
-                        this.toNullable(attachment.title) || attachment.file.name || ''
-                    )
+                    if (attachment.tempUpload) {
+                        await this.materialCardStore.addTempFileAttachment(
+                            saved.id,
+                            attachment.tempUpload,
+                            this.toNullable(attachment.title) || attachment.fileName || ''
+                        )
+                        continue
+                    }
+
+                    if (attachment.file instanceof File) {
+                        await this.materialCardStore.addFileAttachment(
+                            saved.id,
+                            attachment.file,
+                            this.toNullable(attachment.title) || attachment.file.name || ''
+                        )
+                    }
                 }
             }
 
             this.isSaving = false
 
             if (saved) {
-                this.cancelCreateForm()
+                await this.cancelCreateForm()
             }
         },
     },
