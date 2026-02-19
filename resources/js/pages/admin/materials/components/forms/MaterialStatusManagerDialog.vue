@@ -165,6 +165,35 @@
         </v-card>
     </v-dialog>
 
+    <v-dialog v-model="deleteStatusDialog.open" max-width="520" persistent>
+        <v-card rounded="xl">
+            <v-card-title class="text-h6 font-weight-bold">Löschen bestätigen</v-card-title>
+            <v-card-text>
+                <div class="text-body-1 mb-1">{{ deleteStatusDialog.label || 'Diesen Status' }}</div>
+                <div class="text-body-2 text-medium-emphasis">
+                    Wirklich löschen?
+                </div>
+            </v-card-text>
+            <v-card-actions class="justify-end px-4 pb-4">
+                <v-btn
+                    variant="text"
+                    :disabled="isDeleting"
+                    @click="cancelDeleteStatusDialog">
+                    Abbrechen
+                </v-btn>
+                <v-btn
+                    color="error"
+                    variant="flat"
+                    prepend-icon="mdi-delete-outline"
+                    :loading="isDeleting"
+                    :disabled="isDeleting"
+                    @click="confirmDeleteStatusDialog">
+                    Löschen
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
+
     <input
         ref="colorInput"
         type="color"
@@ -198,6 +227,11 @@ export default {
             isRenaming: false,
             isDeleting: false,
             colorPickerTarget: 'new',
+            deleteStatusDialog: {
+                open: false,
+                id: null,
+                label: '',
+            },
         }
     },
     computed: {
@@ -350,9 +384,23 @@ export default {
             const optionId = Number(option?.id)
             if (!Number.isFinite(optionId) || optionId <= 0 || this.isBusy) return
 
-            const label = this.normalizeLabel(option?.label) || 'Diesen Status'
-            const confirmed = window.confirm(`${label} wirklich löschen?`)
-            if (!confirmed) return
+            this.deleteStatusDialog = {
+                open: true,
+                id: optionId,
+                label: this.normalizeLabel(option?.label) || 'Diesen Status',
+            }
+        },
+        cancelDeleteStatusDialog() {
+            if (this.isDeleting) return
+            this.deleteStatusDialog = {
+                open: false,
+                id: null,
+                label: '',
+            }
+        },
+        async confirmDeleteStatusDialog() {
+            const optionId = Number(this.deleteStatusDialog?.id)
+            if (!Number.isFinite(optionId) || optionId <= 0 || this.isBusy) return
 
             this.deletingStatusId = optionId
             this.isDeleting = true
@@ -362,6 +410,9 @@ export default {
 
             if (deleted && this.editingStatusId === optionId) {
                 this.cancelStatusRename()
+            }
+            if (deleted) {
+                this.cancelDeleteStatusDialog()
             }
         },
     },

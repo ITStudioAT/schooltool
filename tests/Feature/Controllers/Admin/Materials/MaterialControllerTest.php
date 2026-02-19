@@ -2,6 +2,7 @@
 
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
+use App\Models\MaterialCardClassification;
 use App\Models\SchoolTool;
 use App\Models\MaterialSubject;
 use App\Models\MaterialType;
@@ -267,6 +268,278 @@ test('teacher cannot rename subject from another user taxonomy', function () {
             'name' => 'Bio',
         ],
     ])->assertStatus(403);
+});
+
+test('teacher can delete unused subject topic and unit', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $subjectResponse = $this->postJson('/api/admin/materials/subjects', [
+        'data' => ['name' => 'Informatik'],
+    ])->assertStatus(200);
+    $subjectId = (int) $subjectResponse->json('data.id');
+
+    $topicResponse = $this->postJson('/api/admin/materials/topics', [
+        'data' => [
+            'subject_id' => $subjectId,
+            'name' => 'Programmierung',
+        ],
+    ])->assertStatus(200);
+    $topicId = (int) $topicResponse->json('data.id');
+
+    $unitResponse = $this->postJson('/api/admin/materials/units', [
+        'data' => [
+            'topic_id' => $topicId,
+            'name' => 'Variablen',
+        ],
+    ])->assertStatus(200);
+    $unitId = (int) $unitResponse->json('data.id');
+
+    $this->deleteJson('/api/admin/materials/units/' . $unitId)
+        ->assertStatus(204);
+    $this->assertDatabaseMissing('material_units', ['id' => $unitId]);
+
+    $this->deleteJson('/api/admin/materials/topics/' . $topicId)
+        ->assertStatus(204);
+    $this->assertDatabaseMissing('material_topics', ['id' => $topicId]);
+
+    $this->deleteJson('/api/admin/materials/subjects/' . $subjectId)
+        ->assertStatus(204);
+    $this->assertDatabaseMissing('material_subjects', ['id' => $subjectId]);
+});
+
+test('teacher can delete subject when only subject level is used', function () {
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->teacher->id,
+        'name' => 'Physik',
+    ]);
+
+    $card = MaterialCard::query()->create([
+        'school_id' => $this->teacher->school_id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Testkarte',
+        'status' => 'inbox',
+    ]);
+
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $card->id,
+        'subject_id' => $subject->id,
+        'topic_id' => null,
+        'unit_id' => null,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+    $this->deleteJson('/api/admin/materials/subjects/' . $subject->id)
+        ->assertStatus(204);
+
+    $this->assertDatabaseMissing('material_subjects', ['id' => $subject->id]);
+});
+
+test('teacher can delete topic when only topic level is used', function () {
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->teacher->id,
+        'name' => 'Chemie',
+    ]);
+    $topic = $subject->topics()->create(['name' => 'Atombau']);
+    $topic->units()->create(['name' => 'Elektronen']);
+
+    $card = MaterialCard::query()->create([
+        'school_id' => $this->teacher->school_id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Testkarte',
+        'status' => 'inbox',
+    ]);
+
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $card->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => null,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+    $this->deleteJson('/api/admin/materials/topics/' . $topic->id)
+        ->assertStatus(204);
+
+    $this->assertDatabaseMissing('material_topics', ['id' => $topic->id]);
+});
+
+test('teacher cannot delete subject when a topic below is used', function () {
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->teacher->id,
+        'name' => 'Biologie',
+    ]);
+    $topic = $subject->topics()->create(['name' => 'Zelle']);
+
+    $card = MaterialCard::query()->create([
+        'school_id' => $this->teacher->school_id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Testkarte',
+        'status' => 'inbox',
+    ]);
+
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $card->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => null,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+    $this->deleteJson('/api/admin/materials/subjects/' . $subject->id)
+        ->assertStatus(422);
+
+    $this->assertDatabaseHas('material_subjects', ['id' => $subject->id]);
+});
+
+test('teacher cannot delete topic when a unit below is used', function () {
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->teacher->id,
+        'name' => 'Englisch',
+    ]);
+    $topic = $subject->topics()->create(['name' => 'Vocabulary']);
+    $unit = $topic->units()->create(['name' => 'Daily Routines']);
+
+    $card = MaterialCard::query()->create([
+        'school_id' => $this->teacher->school_id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Testkarte',
+        'status' => 'inbox',
+    ]);
+
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $card->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => $unit->id,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+    $this->deleteJson('/api/admin/materials/topics/' . $topic->id)
+        ->assertStatus(422);
+
+    $this->assertDatabaseHas('material_topics', ['id' => $topic->id]);
+});
+
+test('teacher cannot delete unit when used by materials', function () {
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->teacher->id,
+        'name' => 'Deutsch',
+    ]);
+    $topic = $subject->topics()->create(['name' => 'Grammatik']);
+    $unit = $topic->units()->create(['name' => 'Satzglieder']);
+
+    $card = MaterialCard::query()->create([
+        'school_id' => $this->teacher->school_id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Testkarte',
+        'status' => 'inbox',
+    ]);
+
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $card->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => $unit->id,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+    $this->deleteJson('/api/admin/materials/units/' . $unit->id)
+        ->assertStatus(422);
+
+    $this->assertDatabaseHas('material_units', ['id' => $unit->id]);
+});
+
+test('config marks used taxonomy items as not deletable', function () {
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->teacher->id,
+        'name' => 'Lehrpläne',
+    ]);
+    $topic = $subject->topics()->create(['name' => 'Informatik']);
+    $unit = $topic->units()->create(['name' => 'Tagesschule']);
+
+    $card = MaterialCard::query()->create([
+        'school_id' => $this->teacher->school_id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Testkarte',
+        'status' => 'inbox',
+    ]);
+
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $card->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => $unit->id,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $response = $this->getJson('/api/admin/materials/config')
+        ->assertStatus(200);
+
+    $tree = collect($response->json('classification_tree', []));
+    $subjectNode = $tree->firstWhere('id', $subject->id);
+
+    expect($subjectNode)->not->toBeNull()
+        ->and((bool) ($subjectNode['can_delete'] ?? true))->toBeFalse();
+
+    $topicNode = collect($subjectNode['topics'] ?? [])->firstWhere('id', $topic->id);
+    expect($topicNode)->not->toBeNull()
+        ->and((bool) ($topicNode['can_delete'] ?? true))->toBeFalse();
+
+    $unitNode = collect($topicNode['units'] ?? [])->firstWhere('id', $unit->id);
+    expect($unitNode)->not->toBeNull()
+        ->and((bool) ($unitNode['can_delete'] ?? true))->toBeFalse();
+});
+
+test('config keeps topic deletable without unit usage while subject follows lower-level usage', function () {
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->teacher->id,
+        'name' => 'Geschichte',
+    ]);
+    $topic = $subject->topics()->create(['name' => 'Mittelalter']);
+    $unit = $topic->units()->create(['name' => 'Kreuzzüge']);
+
+    $subjectLevelCard = MaterialCard::query()->create([
+        'school_id' => $this->teacher->school_id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Subjekt-Ebene',
+        'status' => 'inbox',
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $subjectLevelCard->id,
+        'subject_id' => $subject->id,
+        'topic_id' => null,
+        'unit_id' => null,
+    ]);
+
+    $topicLevelCard = MaterialCard::query()->create([
+        'school_id' => $this->teacher->school_id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Thema-Ebene',
+        'status' => 'inbox',
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $topicLevelCard->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => null,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+    $response = $this->getJson('/api/admin/materials/config')->assertStatus(200);
+
+    $tree = collect($response->json('classification_tree', []));
+    $subjectNode = $tree->firstWhere('id', $subject->id);
+    expect($subjectNode)->not->toBeNull()
+        ->and((bool) ($subjectNode['can_delete'] ?? false))->toBeFalse(); // topic level is lower than subject
+
+    $topicNode = collect($subjectNode['topics'] ?? [])->firstWhere('id', $topic->id);
+    expect($topicNode)->not->toBeNull()
+        ->and((bool) ($topicNode['can_delete'] ?? false))->toBeTrue();
+
+    $unitNode = collect($topicNode['units'] ?? [])->firstWhere('id', $unit->id);
+    expect($unitNode)->not->toBeNull()
+        ->and((bool) ($unitNode['can_delete'] ?? false))->toBeTrue();
 });
 
 test('teacher can create material card and gets keywords', function () {

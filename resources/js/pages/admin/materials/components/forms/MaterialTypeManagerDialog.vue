@@ -240,6 +240,35 @@
         </v-card>
     </v-dialog>
 
+    <v-dialog v-model="deleteTypeDialog.open" max-width="520" persistent>
+        <v-card rounded="xl">
+            <v-card-title class="text-h6 font-weight-bold">Löschen bestätigen</v-card-title>
+            <v-card-text>
+                <div class="text-body-1 mb-1">{{ deleteTypeDialog.label || 'Diesen Typ' }}</div>
+                <div class="text-body-2 text-medium-emphasis">
+                    Wirklich löschen?
+                </div>
+            </v-card-text>
+            <v-card-actions class="justify-end px-4 pb-4">
+                <v-btn
+                    variant="text"
+                    :disabled="isDeleting"
+                    @click="cancelDeleteTypeDialog">
+                    Abbrechen
+                </v-btn>
+                <v-btn
+                    color="error"
+                    variant="flat"
+                    prepend-icon="mdi-delete-outline"
+                    :loading="isDeleting"
+                    :disabled="isDeleting"
+                    @click="confirmDeleteTypeDialog">
+                    Löschen
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
+
     <input
         ref="colorInput"
         type="color"
@@ -278,6 +307,11 @@ export default {
             iconPickerOpen: false,
             iconPickerTarget: 'new',
             colorPickerTarget: 'new',
+            deleteTypeDialog: {
+                open: false,
+                id: null,
+                label: '',
+            },
         }
     },
     computed: {
@@ -579,9 +613,23 @@ export default {
             const optionId = Number(option?.id)
             if (!Number.isFinite(optionId) || optionId <= 0 || this.isBusy) return
 
-            const label = this.normalizeName(option?.label) || 'Diesen Typ'
-            const confirmed = window.confirm(`${label} wirklich löschen?`)
-            if (!confirmed) return
+            this.deleteTypeDialog = {
+                open: true,
+                id: optionId,
+                label: this.normalizeName(option?.label) || 'Diesen Typ',
+            }
+        },
+        cancelDeleteTypeDialog() {
+            if (this.isDeleting) return
+            this.deleteTypeDialog = {
+                open: false,
+                id: null,
+                label: '',
+            }
+        },
+        async confirmDeleteTypeDialog() {
+            const optionId = Number(this.deleteTypeDialog?.id)
+            if (!Number.isFinite(optionId) || optionId <= 0 || this.isBusy) return
 
             this.deletingTypeId = optionId
             this.isDeleting = true
@@ -591,6 +639,9 @@ export default {
 
             if (deleted && this.editingTypeId === optionId) {
                 this.cancelTypeRename()
+            }
+            if (deleted) {
+                this.cancelDeleteTypeDialog()
             }
         },
     },

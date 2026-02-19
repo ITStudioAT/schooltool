@@ -4,6 +4,7 @@ namespace App\Services\Materials;
 
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
+use App\Models\MaterialCardClassification;
 use App\Models\MaterialStatus;
 use App\Models\MaterialSubject;
 use App\Models\MaterialTopic;
@@ -843,6 +844,51 @@ class MaterialService
         return $subject->fresh();
     }
 
+    public function deleteSubject(User $user, MaterialSubject $subject): void
+    {
+        $this->assertSubjectBelongsToUser($user, $subject);
+
+        $topicIds = MaterialTopic::query()
+            ->where('subject_id', $subject->id)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->values();
+
+        $unitIds = $topicIds->isEmpty()
+            ? collect()
+            : MaterialUnit::query()
+                ->whereIn('topic_id', $topicIds->all())
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn ($id) => $id > 0)
+                ->values();
+
+        $inUse = false;
+        if (! $topicIds->isEmpty() || ! $unitIds->isEmpty()) {
+            $inUse = MaterialCardClassification::query()
+                ->where(function ($query) use ($topicIds, $unitIds) {
+                    if (! $topicIds->isEmpty()) {
+                        $query->whereIn('topic_id', $topicIds->all());
+                    }
+
+                    if (! $unitIds->isEmpty()) {
+                        $method = $topicIds->isEmpty() ? 'whereIn' : 'orWhereIn';
+                        $query->{$method}('unit_id', $unitIds->all());
+                    }
+                })
+                ->exists();
+        }
+
+        if ($inUse) {
+            throw ValidationException::withMessages([
+                'data.name' => 'Fach kann nicht gelöscht werden, solange Themen oder Einheiten daraus in Materialien verwendet werden.',
+            ]);
+        }
+
+        $subject->delete();
+    }
+
     public function createTopic(User $user, MaterialSubject $subject, string $name): MaterialTopic
     {
         if (! $this->supportsClassificationTables()) {
@@ -894,6 +940,33 @@ class MaterialService
         ]);
 
         return $topic->fresh();
+    }
+
+    public function deleteTopic(User $user, MaterialTopic $topic): void
+    {
+        $this->assertTopicBelongsToUser($user, $topic);
+
+        $unitIds = MaterialUnit::query()
+            ->where('topic_id', $topic->id)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->values();
+
+        $inUse = false;
+        if (! $unitIds->isEmpty()) {
+            $inUse = MaterialCardClassification::query()
+                ->whereIn('unit_id', $unitIds->all())
+                ->exists();
+        }
+
+        if ($inUse) {
+            throw ValidationException::withMessages([
+                'data.name' => 'Thema kann nicht gelöscht werden, solange eine Einheit daraus in Materialien verwendet wird.',
+            ]);
+        }
+
+        $topic->delete();
     }
 
     public function createUnit(User $user, MaterialTopic $topic, string $name): MaterialUnit
@@ -949,6 +1022,23 @@ class MaterialService
         return $unit->fresh();
     }
 
+    public function deleteUnit(User $user, MaterialUnit $unit): void
+    {
+        $this->assertUnitBelongsToUser($user, $unit);
+
+        $inUse = MaterialCardClassification::query()
+            ->where('unit_id', $unit->id)
+            ->exists();
+
+        if ($inUse) {
+            throw ValidationException::withMessages([
+                'data.name' => 'Einheit ist in Materialien verwendet und kann nicht gelöscht werden.',
+            ]);
+        }
+
+        $unit->delete();
+    }
+
     private function classificationTreeForUser(User $user): array
     {
         if (! $this->supportsClassificationTables()) {
@@ -961,17 +1051,63 @@ class MaterialService
             ->orderBy('name')
             ->get();
 
-        return $subjects->map(function (MaterialSubject $subject) {
+        $subjectIds = $subjects->pluck('id')->map(fn ($id) => (int) $id)->filter(fn ($id) => $id > 0)->values();
+        $usageRows = $subjectIds->isEmpty()
+            ? collect()
+            : MaterialCardClassification::query()
+                ->whereIn('subject_id', $subjectIds->all())
+                ->select(['subject_id', 'topic_id', 'unit_id'])
+                ->distinct()
+                ->get();
+
+        $usedTopicIds = [];
+        $usedUnitIds = [];
+        foreach ($usageRows as $row) {
+            $topicId = (int) ($row->topic_id ?? 0);
+            $unitId = (int) ($row->unit_id ?? 0);
+
+            if ($topicId > 0) {
+                $usedTopicIds[$topicId] = true;
+            }
+            if ($unitId > 0) {
+                $usedUnitIds[$unitId] = true;
+            }
+        }
+
+        return $subjects->map(function (MaterialSubject $subject) use ($usedTopicIds, $usedUnitIds) {
+            $subjectTopicIds = $subject->topics
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn ($id) => $id > 0);
+
+            $subjectUnitIds = $subject->topics
+                ->flatMap(fn (MaterialTopic $topic) => $topic->units->pluck('id'))
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn ($id) => $id > 0);
+
+            $subjectHasLowerLevelUsage = $subjectTopicIds->contains(fn ($id) => isset($usedTopicIds[$id]))
+                || $subjectUnitIds->contains(fn ($id) => isset($usedUnitIds[$id]));
+
             return [
                 'id' => $subject->id,
                 'name' => $subject->name,
-                'topics' => $subject->topics->map(function (MaterialTopic $topic) {
+                'can_delete' => ! $subjectHasLowerLevelUsage,
+                'topics' => $subject->topics->map(function (MaterialTopic $topic) use ($usedUnitIds) {
+                    $topicUnitIds = $topic->units
+                        ->pluck('id')
+                        ->map(fn ($id) => (int) $id)
+                        ->filter(fn ($id) => $id > 0);
+
+                    $topicHasUnitUsage = $topicUnitIds->contains(fn ($id) => isset($usedUnitIds[$id]));
+
                     return [
                         'id' => $topic->id,
                         'name' => $topic->name,
+                        'can_delete' => ! $topicHasUnitUsage,
                         'units' => $topic->units->map(fn (MaterialUnit $unit) => [
                             'id' => $unit->id,
                             'name' => $unit->name,
+                            'can_delete' => ! isset($usedUnitIds[(int) $unit->id]),
                         ])->values()->all(),
                     ];
                 })->values()->all(),

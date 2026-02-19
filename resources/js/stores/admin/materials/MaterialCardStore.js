@@ -84,9 +84,12 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                     subjectNode = {
                         id: null,
                         name: row.subject,
+                        can_delete: false,
                         topics: [],
                     }
                     tree.push(subjectNode)
+                } else if (subjectNode && typeof subjectNode === 'object' && !Object.prototype.hasOwnProperty.call(subjectNode, 'can_delete')) {
+                    subjectNode.can_delete = false
                 }
 
                 if (!Array.isArray(subjectNode.topics)) {
@@ -102,9 +105,12 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                     topicNode = {
                         id: null,
                         name: row.topic,
+                        can_delete: false,
                         units: [],
                     }
                     subjectNode.topics.push(topicNode)
+                } else if (topicNode && typeof topicNode === 'object' && !Object.prototype.hasOwnProperty.call(topicNode, 'can_delete')) {
+                    topicNode.can_delete = false
                 }
 
                 if (!Array.isArray(topicNode.units)) {
@@ -122,7 +128,15 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                     topicNode.units.push({
                         id: null,
                         name: row.unit,
+                        can_delete: false,
                     })
+                } else {
+                    const existingUnit = topicNode.units.find(
+                        (unitNode) => String(unitNode?.name || '').toLocaleLowerCase() === row.unit.toLocaleLowerCase()
+                    )
+                    if (existingUnit && typeof existingUnit === 'object' && !Object.prototype.hasOwnProperty.call(existingUnit, 'can_delete')) {
+                        existingUnit.can_delete = false
+                    }
                 }
             }
 
@@ -1364,6 +1378,132 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                     timeout: 3000,
                 })
                 return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async deleteSubject(subjectId) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const id = Number(subjectId)
+
+            if (!Number.isFinite(id) || id <= 0) {
+                notification.notify({
+                    message: 'Ungültiges Fach.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return false
+            }
+
+            adminStore.is_loading++
+            try {
+                await axios.delete('/api/admin/materials/subjects/' + id)
+                await this.loadConfig()
+                if (Array.isArray(this.cards) && this.cards.length > 0) {
+                    await this.indexAll()
+                }
+
+                notification.notify({
+                    message: 'Fach gelöscht.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Löschen des Fachs.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async deleteTopic(topicId) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const id = Number(topicId)
+
+            if (!Number.isFinite(id) || id <= 0) {
+                notification.notify({
+                    message: 'Ungültiges Thema.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return false
+            }
+
+            adminStore.is_loading++
+            try {
+                await axios.delete('/api/admin/materials/topics/' + id)
+                await this.loadConfig()
+                if (Array.isArray(this.cards) && this.cards.length > 0) {
+                    await this.indexAll()
+                }
+
+                notification.notify({
+                    message: 'Thema gelöscht.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Löschen des Themas.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async deleteUnit(unitId) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const id = Number(unitId)
+
+            if (!Number.isFinite(id) || id <= 0) {
+                notification.notify({
+                    message: 'Ungültige Einheit.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return false
+            }
+
+            adminStore.is_loading++
+            try {
+                await axios.delete('/api/admin/materials/units/' + id)
+                await this.loadConfig()
+                if (Array.isArray(this.cards) && this.cards.length > 0) {
+                    await this.indexAll()
+                }
+
+                notification.notify({
+                    message: 'Einheit gelöscht.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Löschen der Einheit.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
             } finally {
                 adminStore.is_loading--
             }

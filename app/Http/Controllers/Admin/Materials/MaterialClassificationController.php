@@ -56,6 +56,14 @@ class MaterialClassificationController extends Controller
         ], 200);
     }
 
+    public function destroySubject(MaterialSubject $material_subject, MaterialService $service)
+    {
+        $authUser = $this->authorizeForClassificationManagement();
+        $service->deleteSubject($authUser, $material_subject);
+
+        return response()->noContent();
+    }
+
     public function storeTopic(MaterialTopicStoreRequest $request, MaterialService $service)
     {
         $authUser = $this->authorizeForClassificationManagement();
@@ -100,6 +108,14 @@ class MaterialClassificationController extends Controller
                 'subject_id' => $topic->subject_id,
             ],
         ], 200);
+    }
+
+    public function destroyTopic(MaterialTopic $material_topic, MaterialService $service)
+    {
+        $authUser = $this->authorizeForClassificationManagement();
+        $service->deleteTopic($authUser, $material_topic);
+
+        return response()->noContent();
     }
 
     public function storeUnit(MaterialUnitStoreRequest $request, MaterialService $service)
@@ -148,6 +164,14 @@ class MaterialClassificationController extends Controller
         ], 200);
     }
 
+    public function destroyUnit(MaterialUnit $material_unit, MaterialService $service)
+    {
+        $authUser = $this->authorizeForClassificationManagement();
+        $service->deleteUnit($authUser, $material_unit);
+
+        return response()->noContent();
+    }
+
     private function authorizeForClassificationManagement()
     {
         if (! $authUser = $this->userHasRole(['admin', 'materials_admin', 'teaching_admin', 'teacher'])) {
@@ -157,4 +181,3 @@ class MaterialClassificationController extends Controller
         return $authUser;
     }
 }
-

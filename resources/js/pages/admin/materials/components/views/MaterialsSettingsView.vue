@@ -234,6 +234,7 @@
                             <div class="text-body-2 font-weight-bold mb-2">{{ subjectCatalogEditorTitle }}</div>
                             <div class="d-flex flex-wrap align-start ga-2">
                                 <v-text-field
+                                    ref="subjectCatalogEditorNameField"
                                     v-model="subjectCatalogEditor.name"
                                     label="Name"
                                     variant="outlined"
@@ -264,85 +265,112 @@
                                     v-for="subject in subjectTreeItems"
                                     :key="`subject-tree-subject-${subject.name}`"
                                     class="subjects-tree-item">
-                                    <div class="subjects-tree-node subjects-tree-node--subject">
-                                        <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
-                                        <span>{{ subject.name }}</span>
-                                        <div class="subjects-tree-node-actions">
-                                            <v-btn
-                                                icon="mdi-pencil"
-                                                size="x-small"
-                                                variant="text"
-                                                color="primary"
-                                                :disabled="isSavingSubjectCatalog || !subject.id"
-                                                @click="startRenameSubject(subject)" />
-                                        </div>
-                                    </div>
-
-                                    <ul v-if="subject.id" class="subjects-tree-list subjects-tree-list--child">
-                                        <li
-                                            v-for="topic in subject.topics"
-                                            :key="`subject-tree-topic-${subject.name}-${topic.name}`"
-                                            class="subjects-tree-item">
-                                            <div class="subjects-tree-node subjects-tree-node--topic">
-                                                <v-icon size="14" icon="mdi-book-open-page-variant-outline" class="mr-2" />
-                                                <span>{{ topic.name }}</span>
-                                                <div class="subjects-tree-node-actions">
-                                                    <v-btn
-                                                        icon="mdi-pencil"
-                                                        size="x-small"
-                                                        variant="text"
-                                                        color="primary"
-                                                        :disabled="isSavingSubjectCatalog || !topic.id"
-                                                        @click="startRenameTopic(topic)" />
-                                                </div>
+                                    <div class="subjects-tree-group" :style="subjectGroupStyle(subject)">
+                                        <div class="subjects-tree-node subjects-tree-node--subject">
+                                            <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
+                                            <span>{{ subject.name }}</span>
+                                            <div class="subjects-tree-node-actions">
+                                                <v-btn
+                                                    icon="mdi-pencil"
+                                                    size="x-small"
+                                                    variant="text"
+                                                    color="primary"
+                                                    :disabled="isSavingSubjectCatalog || !subject.id"
+                                                    @click="startRenameSubject(subject)" />
+                                                <v-btn
+                                                    v-if="subject.canDelete"
+                                                    icon="mdi-delete-outline"
+                                                    size="x-small"
+                                                    variant="text"
+                                                    color="error"
+                                                    :disabled="isSavingSubjectCatalog || !subject.id"
+                                                    @click="openDeleteConfirm('subject', subject)" />
                                             </div>
+                                        </div>
 
-                                            <ul v-if="topic.id" class="subjects-tree-list subjects-tree-list--child">
-                                                <li
-                                                    v-for="unit in topic.units"
-                                                    :key="`subject-tree-unit-${subject.name}-${topic.name}-${unit.id || unit.name}`"
-                                                    class="subjects-tree-item">
-                                                    <div class="subjects-tree-node subjects-tree-node--unit">
-                                                        <v-icon size="12" icon="mdi-chevron-right" class="mr-1" />
-                                                        <span>{{ unit.name }}</span>
-                                                        <div class="subjects-tree-node-actions">
-                                                            <v-btn
-                                                                icon="mdi-pencil"
-                                                                size="x-small"
-                                                                variant="text"
-                                                                color="primary"
-                                                                :disabled="isSavingSubjectCatalog || !unit.id"
-                                                                @click="startRenameUnit(unit)" />
-                                                        </div>
+                                        <ul v-if="subject.id" class="subjects-tree-list subjects-tree-list--child">
+                                            <li
+                                                v-for="topic in subject.topics"
+                                                :key="`subject-tree-topic-${subject.name}-${topic.name}`"
+                                                class="subjects-tree-item subjects-tree-topic-group"
+                                                :style="topicGroupStyle(subject)">
+                                                <div class="subjects-tree-node subjects-tree-node--topic">
+                                                    <v-icon size="14" icon="mdi-book-open-page-variant-outline" class="mr-2" />
+                                                    <span>{{ topic.name }}</span>
+                                                    <div class="subjects-tree-node-actions">
+                                                        <v-btn
+                                                            icon="mdi-pencil"
+                                                            size="x-small"
+                                                            variant="text"
+                                                            color="primary"
+                                                            :disabled="isSavingSubjectCatalog || !topic.id"
+                                                            @click="startRenameTopic(topic)" />
+                                                        <v-btn
+                                                            v-if="topic.canDelete"
+                                                            icon="mdi-delete-outline"
+                                                            size="x-small"
+                                                            variant="text"
+                                                            color="error"
+                                                            :disabled="isSavingSubjectCatalog || !topic.id"
+                                                            @click="openDeleteConfirm('topic', topic)" />
                                                     </div>
-                                                </li>
-                                                <li class="subjects-tree-item">
-                                                    <button
-                                                        type="button"
-                                                        class="subjects-tree-new-btn"
-                                                        :disabled="isSavingSubjectCatalog"
-                                                        @click="startCreateUnit(topic)">
-                                                        <span class="subjects-tree-node subjects-tree-node--new">
-                                                            <v-icon size="12" icon="mdi-plus" class="mr-1" />
-                                                            <span>Neue Einheit</span>
-                                                        </span>
-                                                    </button>
-                                                </li>
-                                            </ul>
-                                        </li>
-                                        <li class="subjects-tree-item">
-                                            <button
-                                                type="button"
-                                                class="subjects-tree-new-btn"
-                                                :disabled="isSavingSubjectCatalog"
-                                                @click="startCreateTopic(subject)">
-                                                <span class="subjects-tree-node subjects-tree-node--new">
-                                                    <v-icon size="14" icon="mdi-plus" class="mr-1" />
-                                                    <span>Neues Thema</span>
-                                                </span>
-                                            </button>
-                                        </li>
-                                    </ul>
+                                                </div>
+
+                                                <ul v-if="topic.id" class="subjects-tree-list subjects-tree-list--child">
+                                                    <li
+                                                        v-for="unit in topic.units"
+                                                        :key="`subject-tree-unit-${subject.name}-${topic.name}-${unit.id || unit.name}`"
+                                                        class="subjects-tree-item">
+                                                        <div class="subjects-tree-node subjects-tree-node--unit">
+                                                            <v-icon size="12" icon="mdi-chevron-right" class="mr-1" />
+                                                            <span>{{ unit.name }}</span>
+                                                            <div class="subjects-tree-node-actions">
+                                                                <v-btn
+                                                                    icon="mdi-pencil"
+                                                                    size="x-small"
+                                                                    variant="text"
+                                                                    color="primary"
+                                                                    :disabled="isSavingSubjectCatalog || !unit.id"
+                                                                    @click="startRenameUnit(unit)" />
+                                                                <v-btn
+                                                                    v-if="unit.canDelete"
+                                                                    icon="mdi-delete-outline"
+                                                                    size="x-small"
+                                                                    variant="text"
+                                                                    color="error"
+                                                                    :disabled="isSavingSubjectCatalog || !unit.id"
+                                                                    @click="openDeleteConfirm('unit', unit)" />
+                                                            </div>
+                                                        </div>
+                                                    </li>
+                                                    <li class="subjects-tree-item">
+                                                        <button
+                                                            type="button"
+                                                            class="subjects-tree-new-btn"
+                                                            :disabled="isSavingSubjectCatalog"
+                                                            @click="startCreateUnit(topic)">
+                                                            <span class="subjects-tree-node subjects-tree-node--new">
+                                                                <v-icon size="12" icon="mdi-plus" class="mr-1" />
+                                                                <span>Neue Einheit</span>
+                                                            </span>
+                                                        </button>
+                                                    </li>
+                                                </ul>
+                                            </li>
+                                            <li class="subjects-tree-item subjects-tree-new-topic-item">
+                                                <button
+                                                    type="button"
+                                                    class="subjects-tree-new-btn"
+                                                    :disabled="isSavingSubjectCatalog"
+                                                    @click="startCreateTopic(subject)">
+                                                    <span class="subjects-tree-node subjects-tree-node--new">
+                                                        <v-icon size="14" icon="mdi-plus" class="mr-1" />
+                                                        <span>Neues Thema</span>
+                                                    </span>
+                                                </button>
+                                            </li>
+                                        </ul>
+                                    </div>
                                 </li>
                                 <li class="subjects-tree-item">
                                     <button
@@ -366,6 +394,35 @@
                 </v-card>
             </template>
         </v-card>
+
+        <v-dialog v-model="deleteConfirmDialog.open" max-width="520" persistent>
+            <v-card rounded="xl">
+                <v-card-title class="text-h6 font-weight-bold">Löschen bestätigen</v-card-title>
+                <v-card-text>
+                    <div class="text-body-1 mb-1">{{ deleteConfirmDialog.label || 'Diesen Eintrag' }}</div>
+                    <div class="text-body-2 text-medium-emphasis">
+                        Wirklich löschen? Das ist nur möglich, wenn keine Materialien zugeordnet sind.
+                    </div>
+                </v-card-text>
+                <v-card-actions class="justify-end px-4 pb-4">
+                    <v-btn
+                        variant="text"
+                        :disabled="isSavingSubjectCatalog"
+                        @click="cancelDeleteConfirm">
+                        Abbrechen
+                    </v-btn>
+                    <v-btn
+                        color="error"
+                        variant="flat"
+                        prepend-icon="mdi-delete-outline"
+                        :loading="isSavingSubjectCatalog"
+                        :disabled="isSavingSubjectCatalog"
+                        @click="confirmDeleteEntry">
+                        Löschen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
 
         <MaterialTypeManagerDialog v-model="typeManagerDialogOpen" />
         <MaterialStatusManagerDialog v-model="statusManagerDialogOpen" />
@@ -421,6 +478,12 @@ export default {
                 unitId: null,
                 parentLabel: '',
             },
+            deleteConfirmDialog: {
+                open: false,
+                kind: '',
+                id: null,
+                label: '',
+            },
         }
     },
     async beforeMount() {
@@ -458,6 +521,7 @@ export default {
                     const subjectId = Number(subjectNode?.id)
                     const subjectName = this.normalizeTreeName(subjectNode?.name)
                     if (!subjectName) return null
+                    const subjectCanDelete = subjectNode?.can_delete !== false
 
                     const topicNodes = Array.isArray(subjectNode?.topics) ? subjectNode.topics : []
                     const topics = topicNodes
@@ -465,6 +529,7 @@ export default {
                             const topicId = Number(topicNode?.id)
                             const topicName = this.normalizeTreeName(topicNode?.name)
                             if (!topicName) return null
+                            const topicCanDelete = topicNode?.can_delete !== false
 
                             const unitNodes = Array.isArray(topicNode?.units) ? topicNode.units : []
                             const units = unitNodes
@@ -472,9 +537,11 @@ export default {
                                     const unitId = Number(unitNode?.id)
                                     const unitName = this.normalizeTreeName(unitNode?.name)
                                     if (!unitName) return null
+                                    const unitCanDelete = unitNode?.can_delete !== false
                                     return {
                                         id: Number.isFinite(unitId) && unitId > 0 ? unitId : null,
                                         name: unitName,
+                                        canDelete: unitCanDelete,
                                     }
                                 })
                                 .filter(Boolean)
@@ -482,6 +549,7 @@ export default {
                             return {
                                 id: Number.isFinite(topicId) && topicId > 0 ? topicId : null,
                                 name: topicName,
+                                canDelete: topicCanDelete,
                                 units,
                             }
                         })
@@ -490,6 +558,7 @@ export default {
                     return {
                         id: Number.isFinite(subjectId) && subjectId > 0 ? subjectId : null,
                         name: subjectName,
+                        canDelete: subjectCanDelete,
                         topics,
                     }
                 })
@@ -670,6 +739,49 @@ export default {
         normalizeTreeName(value) {
             return String(value ?? '').trim()
         },
+        stringHash(value) {
+            const input = String(value ?? '')
+            let hash = 0
+            for (let index = 0; index < input.length; index += 1) {
+                hash = ((hash << 5) - hash) + input.charCodeAt(index)
+                hash |= 0
+            }
+            return Math.abs(hash)
+        },
+        subjectColorSeed(subject) {
+            const subjectId = Number(subject?.id)
+            const subjectName = this.normalizeTreeName(subject?.name).toLowerCase()
+            return Number.isFinite(subjectId) && subjectId > 0
+                ? `subject-${subjectId}`
+                : `subject-${subjectName}`
+        },
+        subjectColorHue(seed) {
+            // Deliberately excludes violet/purple tones.
+            const hues = [12, 22, 34, 46, 58, 74, 96, 122, 148, 176, 198, 214]
+            const hash = this.stringHash(seed)
+            return hues[hash % hues.length]
+        },
+        subjectColorTokens() {
+            return {
+                base: '#1f6f8b',
+                soft: 'rgba(31, 111, 139, 0.14)',
+            }
+        },
+        subjectGroupStyle(subject) {
+            const tokens = this.subjectColorTokens(subject)
+
+            return {
+                backgroundColor: tokens.soft,
+                borderColor: tokens.base,
+            }
+        },
+        topicGroupStyle(subject) {
+            const tokens = this.subjectColorTokens(subject)
+
+            return {
+                '--topic-accent-color': tokens.base,
+            }
+        },
         resetSubjectCatalogEditor() {
             this.subjectCatalogEditor = {
                 mode: '',
@@ -680,6 +792,20 @@ export default {
                 parentLabel: '',
             }
         },
+        focusSubjectCatalogEditorInput() {
+            this.$nextTick(() => {
+                const field = this.$refs.subjectCatalogEditorNameField
+                if (field && typeof field.focus === 'function') {
+                    field.focus()
+                    return
+                }
+
+                const input = field?.$el?.querySelector?.('input')
+                if (input && typeof input.focus === 'function') {
+                    input.focus()
+                }
+            })
+        },
         startCreateSubject() {
             this.subjectCatalogEditor = {
                 mode: 'create_subject',
@@ -689,6 +815,7 @@ export default {
                 unitId: null,
                 parentLabel: '',
             }
+            this.focusSubjectCatalogEditorInput()
         },
         startRenameSubject(subject) {
             const id = Number(subject?.id)
@@ -701,6 +828,7 @@ export default {
                 unitId: null,
                 parentLabel: '',
             }
+            this.focusSubjectCatalogEditorInput()
         },
         startCreateTopic(subject) {
             const subjectId = Number(subject?.id)
@@ -713,6 +841,7 @@ export default {
                 unitId: null,
                 parentLabel: this.normalizeTreeName(subject?.name),
             }
+            this.focusSubjectCatalogEditorInput()
         },
         startRenameTopic(topic) {
             const topicId = Number(topic?.id)
@@ -725,6 +854,7 @@ export default {
                 unitId: null,
                 parentLabel: '',
             }
+            this.focusSubjectCatalogEditorInput()
         },
         startCreateUnit(topic) {
             const topicId = Number(topic?.id)
@@ -737,6 +867,7 @@ export default {
                 unitId: null,
                 parentLabel: this.normalizeTreeName(topic?.name),
             }
+            this.focusSubjectCatalogEditorInput()
         },
         startRenameUnit(unit) {
             const unitId = Number(unit?.id)
@@ -749,10 +880,62 @@ export default {
                 unitId,
                 parentLabel: '',
             }
+            this.focusSubjectCatalogEditorInput()
         },
         cancelSubjectCatalogEditor() {
             if (this.isSavingSubjectCatalog) return
             this.resetSubjectCatalogEditor()
+        },
+        openDeleteConfirm(kind, row) {
+            const id = Number(row?.id)
+            if (!Number.isFinite(id) || id <= 0 || this.isSavingSubjectCatalog) return
+
+            const allowedKinds = ['subject', 'topic', 'unit']
+            const normalizedKind = allowedKinds.includes(String(kind)) ? String(kind) : ''
+            if (!normalizedKind) return
+
+            const label = this.normalizeTreeName(row?.name)
+            this.deleteConfirmDialog = {
+                open: true,
+                kind: normalizedKind,
+                id,
+                label,
+            }
+        },
+        cancelDeleteConfirm() {
+            if (this.isSavingSubjectCatalog) return
+            this.deleteConfirmDialog = {
+                open: false,
+                kind: '',
+                id: null,
+                label: '',
+            }
+        },
+        async confirmDeleteEntry() {
+            const id = Number(this.deleteConfirmDialog.id)
+            const kind = String(this.deleteConfirmDialog.kind || '')
+            if (!Number.isFinite(id) || id <= 0 || !kind || this.isSavingSubjectCatalog) return
+
+            if (kind === 'subject' && this.subjectCatalogEditor.subjectId === id) {
+                this.resetSubjectCatalogEditor()
+            }
+            if (kind === 'topic' && this.subjectCatalogEditor.topicId === id) {
+                this.resetSubjectCatalogEditor()
+            }
+            if (kind === 'unit' && this.subjectCatalogEditor.unitId === id) {
+                this.resetSubjectCatalogEditor()
+            }
+
+            const result = await this.withSubjectCatalogSaving(async () => {
+                if (kind === 'subject') return this.materialCardStore.deleteSubject(id)
+                if (kind === 'topic') return this.materialCardStore.deleteTopic(id)
+                if (kind === 'unit') return this.materialCardStore.deleteUnit(id)
+                return false
+            })
+
+            if (result) {
+                this.cancelDeleteConfirm()
+            }
         },
         async withSubjectCatalogSaving(task) {
             if (this.isSavingSubjectCatalog) return null
@@ -902,57 +1085,101 @@ export default {
 }
 
 .subjects-tree {
-    border: 1px solid rgba(35, 61, 76, 0.15);
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.5);
-    padding: 12px;
+    border: 1px solid rgba(35, 61, 76, 0.18);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.6) 100%);
+    padding: 14px;
 }
 
 .subjects-tree-list {
     list-style: none;
     margin: 0;
     padding: 0;
+    display: grid;
+    gap: 8px;
+}
+
+.subjects-tree > .subjects-tree-list {
+    gap: 32px;
 }
 
 .subjects-tree-list--child {
-    margin-left: 22px;
-    padding-left: 12px;
+    margin-top: 6px;
+    margin-left: 34px;
+    padding-left: 20px;
     border-left: 1px dashed rgba(35, 61, 76, 0.25);
 }
 
-.subjects-tree-item + .subjects-tree-item {
-    margin-top: 6px;
+.subjects-tree-group {
+    border: 1px solid rgba(35, 61, 76, 0.24);
+    border-radius: 12px;
+    padding: 10px 12px;
+}
+
+.subjects-tree-topic-group {
+    position: relative;
+    padding-left: 12px;
+    border-radius: 8px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.52) 0%, rgba(255, 255, 255, 0.24) 34%, transparent 62%);
+}
+
+.subjects-tree-topic-group::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 5px;
+    bottom: 5px;
+    width: 2px;
+    border-radius: 999px;
+    background: var(--topic-accent-color, #1f6f8b);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.32);
+}
+
+.subjects-tree-topic-group + .subjects-tree-topic-group {
+    margin-top: 24px;
+}
+
+.subjects-tree-new-topic-item {
+    margin-top: 24px;
 }
 
 .subjects-tree-node {
     display: inline-flex;
     align-items: center;
-    min-height: 24px;
-    gap: 2px;
+    min-height: 28px;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 8px;
 }
 
 .subjects-tree-node--subject {
     font-weight: 700;
+    background: rgba(35, 61, 76, 0.08);
 }
 
 .subjects-tree-node--topic {
     font-weight: 600;
     color: #2e4a5a;
+    background: rgba(35, 61, 76, 0.05);
 }
 
 .subjects-tree-node--unit {
     color: #3c5a6d;
+    background: rgba(35, 61, 76, 0.03);
 }
 
 .subjects-tree-node--new {
     color: #1f4f89;
     font-weight: 600;
+    border: 1px dashed rgba(31, 79, 137, 0.35);
+    background: rgba(31, 79, 137, 0.08);
 }
 
 .subjects-tree-node-actions {
     display: inline-flex;
     align-items: center;
-    margin-left: 6px;
+    gap: 2px;
+    margin-left: 10px;
 }
 
 .subjects-tree-new-btn {
@@ -965,5 +1192,10 @@ export default {
 .subjects-tree-new-btn:disabled {
     opacity: 0.5;
     cursor: default;
+}
+
+.subjects-tree-new-btn:not(:disabled):hover .subjects-tree-node--new {
+    border-color: rgba(31, 79, 137, 0.6);
+    background: rgba(31, 79, 137, 0.15);
 }
 </style>
