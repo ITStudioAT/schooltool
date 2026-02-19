@@ -532,6 +532,61 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             }
         },
 
+        async importDefaultTypes(names) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const incoming = Array.isArray(names) ? names : [names]
+            const uniqueNames = []
+            const seen = new Set()
+
+            for (const rawName of incoming) {
+                const normalizedName = String(rawName ?? '').trim().slice(0, 255)
+                if (!normalizedName) continue
+                const key = normalizedName.toLocaleLowerCase()
+                if (seen.has(key)) continue
+                seen.add(key)
+                uniqueNames.push(normalizedName)
+            }
+
+            if (!uniqueNames.length) {
+                notification.notify({
+                    message: 'Keine Standardtypen ausgewählt.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return false
+            }
+
+            adminStore.is_loading++
+            try {
+                for (const name of uniqueNames) {
+                    await axios.post('/api/admin/materials/types', {
+                        data: { name },
+                    })
+                }
+
+                await this.loadConfig()
+
+                notification.notify({
+                    message: 'Standardtypen übernommen.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Übernehmen der Standardtypen.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
         async createType(name) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()

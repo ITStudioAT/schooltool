@@ -65,7 +65,7 @@ class MaterialTypeController extends Controller
 
     private function authorizeForTypeManagement()
     {
-        if (! $authUser = $this->userHasRole(['admin', 'materials_admin'])) {
+        if (! $authUser = $this->userHasRole(['admin', 'materials_admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 

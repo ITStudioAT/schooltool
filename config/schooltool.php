@@ -12,6 +12,13 @@ return [
     'tutoring_active' => (bool) env('TUTORING_ACTIVE', false),
     'teaching_active' => (bool) env('TEACHING_ACTIVE', false),
     'materials_active' => (bool) env('MATERIALS_ACTIVE', false),
+    'materials_default_types' => [
+        'Arbeitsblatt',
+        'Merkblatt',
+        'Präsentation',
+        'Übung',
+        'Test',
+    ],
     'teaching_max_schools_shown' => (int) env('TEACHING_MAX_SCHOOLS_SHOWN', 20),
 
     'schoolyears' => [

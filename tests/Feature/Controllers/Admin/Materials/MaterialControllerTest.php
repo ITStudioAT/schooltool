@@ -2,11 +2,13 @@
 
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
+use App\Models\MaterialType;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 
@@ -127,6 +129,19 @@ test('config returns status options', function () {
         ]);
 });
 
+test('config returns default material type options from schooltool config', function () {
+    Config::set('schooltool.materials_default_types', ['Arbeitsblatt', 'Test']);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->getJson('/api/admin/materials/config')
+        ->assertStatus(200)
+        ->assertJsonPath('default_type_values.0.value', 'Arbeitsblatt')
+        ->assertJsonPath('default_type_values.0.label', 'Arbeitsblatt')
+        ->assertJsonPath('default_type_values.1.value', 'Test')
+        ->assertJsonPath('default_type_values.1.label', 'Test');
+});
+
 test('teacher can create material card and gets keywords', function () {
     $this->actingAs($this->teacher, 'sanctum');
 
@@ -170,6 +185,82 @@ test('quick store creates inbox card', function () {
             'title' => 'Merker Link',
             'status' => 'inbox',
         ]);
+});
+
+test('teacher can only use own existing material types', function () {
+    MaterialType::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'name' => 'Arbeitsblatt',
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->postJson('/api/admin/materials/cards', [
+        'data' => [
+            'title' => 'Typprüfung',
+            'type' => 'Neuer Typ Lehrer',
+        ],
+    ])->assertStatus(422);
+
+    $this->postJson('/api/admin/materials/cards', [
+        'data' => [
+            'title' => 'Typprüfung erlaubt',
+            'type' => 'Arbeitsblatt',
+        ],
+    ])->assertStatus(200)
+        ->assertJsonFragment([
+            'type' => 'Arbeitsblatt',
+        ]);
+});
+
+test('teacher may manage own material types and use them', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->postJson('/api/admin/materials/types', [
+        'data' => [
+            'name' => 'Mein Eigener Typ',
+        ],
+    ])->assertStatus(200)
+        ->assertJsonFragment([
+            'value' => 'Mein Eigener Typ',
+        ]);
+
+    $this->postJson('/api/admin/materials/cards', [
+        'data' => [
+            'title' => 'Typ durch Lehrer',
+            'type' => 'Mein Eigener Typ',
+        ],
+    ])->assertStatus(200)
+        ->assertJsonFragment([
+            'type' => 'Mein Eigener Typ',
+        ]);
+});
+
+test('material types are separated per user', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->postJson('/api/admin/materials/types', [
+        'data' => [
+            'name' => 'Nur Lehrer A',
+        ],
+    ])->assertStatus(200);
+
+    $otherTeacher = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'other-teacher-types@materials.test',
+    ]);
+    $otherTeacher->assignRole('teacher');
+
+    $this->actingAs($otherTeacher, 'sanctum');
+
+    $this->postJson('/api/admin/materials/cards', [
+        'data' => [
+            'title' => 'Fremder Typ',
+            'type' => 'Nur Lehrer A',
+        ],
+    ])->assertStatus(422);
 });
 
 test('index returns only own cards', function () {

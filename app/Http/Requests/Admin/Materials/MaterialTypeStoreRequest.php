@@ -24,17 +24,23 @@ class MaterialTypeStoreRequest extends FormRequest
     private function nameRules(): array
     {
         $base = ['required', 'string', 'max:255'];
-        $schoolId = Auth::user()?->school_id;
+        $authUser = Auth::user();
+        $schoolId = $authUser?->school_id;
 
         if (! $schoolId || ! Schema::hasTable('material_types')) {
             return $base;
         }
 
-        $base[] = Rule::unique('material_types', 'name')->where(
-            fn ($query) => $query->where('school_id', $schoolId)
-        );
+        if (Schema::hasColumn('material_types', 'user_id')) {
+            $base[] = Rule::unique('material_types', 'name')->where(
+                fn ($query) => $query->where('user_id', $authUser?->id)
+            );
+        } else {
+            $base[] = Rule::unique('material_types', 'name')->where(
+                fn ($query) => $query->where('school_id', $schoolId)
+            );
+        }
 
         return $base;
     }
 }
-

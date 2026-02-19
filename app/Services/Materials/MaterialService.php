@@ -35,7 +35,8 @@ class MaterialService
                 ['value' => MaterialCard::STATUS_UPDATE_NEEDED, 'label' => 'Änderung nötig'],
             ],
             'type_values' => $this->typeValuesForUser($user),
-            'can_manage_type_values' => $user->hasAnyRole(['admin', 'materials_admin', 'super_admin']),
+            'default_type_values' => $this->defaultTypeValues(),
+            'can_manage_type_values' => true,
             'classification_tree' => $this->classificationTreeForUser($user),
         ];
     }
@@ -229,12 +230,18 @@ class MaterialService
             return [];
         }
 
-        $this->ensureTypeValuesForSchool((int) $user->school_id);
+        $this->ensureTypeValuesForUser($user);
 
-        return MaterialType::query()
-            ->where('school_id', $user->school_id)
-            ->orderBy('name')
-            ->get()
+        $query = MaterialType::query()
+            ->orderBy('name');
+
+        if ($this->isUserScopedMaterialTypes()) {
+            $query->where('user_id', $user->id);
+        } else {
+            $query->where('school_id', $user->school_id);
+        }
+
+        return $query->get()
             ->map(fn (MaterialType $type) => [
                 'id' => $type->id,
                 'value' => $type->name,
@@ -259,15 +266,25 @@ class MaterialService
             ]);
         }
 
-        return MaterialType::firstOrCreate([
+        $attributes = [
             'school_id' => $user->school_id,
             'name' => $normalized,
-        ]);
+        ];
+
+        if ($this->isUserScopedMaterialTypes()) {
+            $attributes['user_id'] = $user->id;
+        }
+
+        return MaterialType::firstOrCreate($attributes);
     }
 
     public function updateType(User $user, MaterialType $type, string $name): MaterialType
     {
-        if ((int) $type->school_id !== (int) $user->school_id) {
+        if ($this->isUserScopedMaterialTypes()) {
+            if ((int) $type->user_id !== (int) $user->id) {
+                abort(403, 'Typ gehört nicht zum aktuellen Benutzer.');
+            }
+        } elseif ((int) $type->school_id !== (int) $user->school_id) {
             abort(403, 'Typ gehört nicht zur aktuellen Schule.');
         }
 
@@ -280,12 +297,20 @@ class MaterialService
 
         $oldName = (string) $type->name;
 
-        DB::transaction(function () use ($type, $newName, $oldName, $user) {
-            $exists = MaterialType::query()
-                ->where('school_id', $user->school_id)
+        $isUserScoped = $this->isUserScopedMaterialTypes();
+
+        DB::transaction(function () use ($type, $newName, $oldName, $user, $isUserScoped) {
+            $existsQuery = MaterialType::query()
                 ->where('id', '<>', $type->id)
-                ->where('name', $newName)
-                ->exists();
+                ->where('name', $newName);
+
+            if ($isUserScoped) {
+                $existsQuery->where('user_id', $user->id);
+            } else {
+                $existsQuery->where('school_id', $user->school_id);
+            }
+
+            $exists = $existsQuery->exists();
 
             if ($exists) {
                 throw ValidationException::withMessages([
@@ -296,10 +321,16 @@ class MaterialService
             $type->update(['name' => $newName]);
 
             if ($oldName !== $newName) {
-                MaterialCard::query()
-                    ->where('school_id', $user->school_id)
-                    ->where('type', $oldName)
-                    ->update(['type' => $newName]);
+                $cards = MaterialCard::query()
+                    ->where('type', $oldName);
+
+                if ($isUserScoped) {
+                    $cards->where('user_id', $user->id);
+                } else {
+                    $cards->where('school_id', $user->school_id);
+                }
+
+                $cards->update(['type' => $newName]);
             }
         });
 
@@ -308,14 +339,24 @@ class MaterialService
 
     public function deleteType(User $user, MaterialType $type): void
     {
-        if ((int) $type->school_id !== (int) $user->school_id) {
+        if ($this->isUserScopedMaterialTypes()) {
+            if ((int) $type->user_id !== (int) $user->id) {
+                abort(403, 'Typ gehört nicht zum aktuellen Benutzer.');
+            }
+        } elseif ((int) $type->school_id !== (int) $user->school_id) {
             abort(403, 'Typ gehört nicht zur aktuellen Schule.');
         }
 
-        $inUse = MaterialCard::query()
-            ->where('school_id', $user->school_id)
-            ->where('type', $type->name)
-            ->exists();
+        $inUseQuery = MaterialCard::query()
+            ->where('type', $type->name);
+
+        if ($this->isUserScopedMaterialTypes()) {
+            $inUseQuery->where('user_id', $user->id);
+        } else {
+            $inUseQuery->where('school_id', $user->school_id);
+        }
+
+        $inUse = $inUseQuery->exists();
 
         if ($inUse) {
             throw ValidationException::withMessages([
@@ -454,24 +495,38 @@ class MaterialService
         return $text === '' ? null : $text;
     }
 
-    private function ensureTypeValuesForSchool(int $schoolId): void
+    private function ensureTypeValuesForUser(User $user): void
     {
         if (! Schema::hasTable('material_types')) {
             return;
         }
 
-        $known = MaterialType::query()
-            ->where('school_id', $schoolId)
+        $knownQuery = MaterialType::query();
+        if ($this->isUserScopedMaterialTypes()) {
+            $knownQuery->where('user_id', $user->id);
+        } else {
+            $knownQuery->where('school_id', $user->school_id);
+        }
+
+        $known = $knownQuery
             ->pluck('name')
             ->map(fn ($value) => mb_strtolower(trim((string) $value)))
             ->filter(fn ($value) => $value !== '')
             ->flip()
             ->all();
 
-        $cardTypes = MaterialCard::query()
-            ->where('school_id', $schoolId)
+        $cardTypesQuery = MaterialCard::query()
             ->whereNotNull('type')
-            ->pluck('type');
+            ->where('type', '<>', '');
+
+        if ($this->isUserScopedMaterialTypes()) {
+            $cardTypesQuery->where('user_id', $user->id);
+        } else {
+            $cardTypesQuery->where('school_id', $user->school_id);
+        }
+
+        $cardTypes = $cardTypesQuery->pluck('type');
+        $schoolId = (int) $user->school_id;
 
         foreach ($cardTypes as $rawType) {
             $name = $this->normalizeName($rawType);
@@ -484,13 +539,55 @@ class MaterialService
                 continue;
             }
 
-            MaterialType::query()->create([
+            $attributes = [
                 'school_id' => $schoolId,
                 'name' => $name,
-            ]);
+            ];
+
+            if ($this->isUserScopedMaterialTypes()) {
+                $attributes['user_id'] = $user->id;
+            }
+
+            MaterialType::query()->create($attributes);
 
             $known[$key] = true;
         }
+    }
+
+    private function isUserScopedMaterialTypes(): bool
+    {
+        return Schema::hasTable('material_types') && Schema::hasColumn('material_types', 'user_id');
+    }
+
+    private function defaultTypeValues(): array
+    {
+        $rawValues = config('schooltool.materials_default_types', []);
+        if (! is_array($rawValues)) {
+            return [];
+        }
+
+        $result = [];
+        $seen = [];
+
+        foreach ($rawValues as $rawValue) {
+            $name = $this->normalizeName($rawValue);
+            if ($name === '') {
+                continue;
+            }
+
+            $key = mb_strtolower($name);
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $result[] = [
+                'value' => $name,
+                'label' => $name,
+            ];
+        }
+
+        return $result;
     }
 
     private function cardRelations(): array

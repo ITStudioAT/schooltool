@@ -38,15 +38,22 @@ class MaterialCardStoreRequest extends FormRequest
     private function typeRules(): array
     {
         $base = ['nullable', 'string', 'max:255'];
-        $schoolId = Auth::user()?->school_id;
+        $authUser = Auth::user();
+        $schoolId = $authUser?->school_id;
 
         if (! $schoolId || ! Schema::hasTable('material_types')) {
             return $base;
         }
 
-        $base[] = Rule::exists('material_types', 'name')->where(
-            fn ($query) => $query->where('school_id', $schoolId)
-        );
+        if (Schema::hasColumn('material_types', 'user_id')) {
+            $base[] = Rule::exists('material_types', 'name')->where(
+                fn ($query) => $query->where('user_id', $authUser?->id)
+            );
+        } else {
+            $base[] = Rule::exists('material_types', 'name')->where(
+                fn ($query) => $query->where('school_id', $schoolId)
+            );
+        }
 
         return $base;
     }

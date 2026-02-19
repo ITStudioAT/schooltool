@@ -232,8 +232,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/materials/attachments/{material_card_attachment}/download', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'downloadAttachment']);
     });
 
-    /* SANCTUM - admin, materials_admin */
-    Route::middleware(['auth:sanctum', 'api-allowed:admin,materials_admin'])->group(function () {
+    /* SANCTUM - admin, teaching_admin, materials_admin, teacher */
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,teaching_admin,materials_admin,teacher'])->group(function () {
         Route::get('/admin/materials/types', [\App\Http\Controllers\Admin\Materials\MaterialTypeController::class, 'index']);
         Route::post('/admin/materials/types', [\App\Http\Controllers\Admin\Materials\MaterialTypeController::class, 'store']);
         Route::put('/admin/materials/types/{material_type}', [\App\Http\Controllers\Admin\Materials\MaterialTypeController::class, 'update']);
