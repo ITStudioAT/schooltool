@@ -137,6 +137,61 @@
                     </v-btn>
                 </div>
             </template>
+
+            <template v-else-if="selectedAction === 'overview_settings'">
+                <div class="text-body-2 text-medium-emphasis mb-3">
+                    Diese Einstellung gilt nur für deine eigene Material-Übersicht.
+                </div>
+
+                <div class="d-flex flex-wrap align-center ga-2 mb-3">
+                    <v-chip size="small" variant="tonal" color="primary" prepend-icon="mdi-format-list-numbered">
+                        Materialien pro Seite: {{ currentMaterialsPaginationNumber }}
+                    </v-chip>
+
+                    <v-btn
+                        v-if="canManageUserSettings && !isEditingUserSettings"
+                        size="small"
+                        color="primary"
+                        variant="flat"
+                        prepend-icon="mdi-pencil"
+                        :disabled="isSavingUserSettings"
+                        @click="startEditUserSettings">
+                        Bearbeiten
+                    </v-btn>
+                </div>
+
+                <div v-if="canManageUserSettings && isEditingUserSettings" class="d-flex flex-wrap align-start ga-2">
+                    <v-text-field
+                        v-model="userSettingsForm.materialsPaginationNumber"
+                        type="number"
+                        step="1"
+                        min="1"
+                        max="200"
+                        label="Materialien pro Seite"
+                        variant="outlined"
+                        density="comfortable"
+                        class="flex-grow-1"
+                        hide-details="auto"
+                        :disabled="isSavingUserSettings" />
+
+                    <v-btn
+                        variant="text"
+                        :disabled="isSavingUserSettings"
+                        @click="cancelEditUserSettings">
+                        Abbrechen
+                    </v-btn>
+
+                    <v-btn
+                        color="primary"
+                        variant="flat"
+                        prepend-icon="mdi-content-save-outline"
+                        :loading="isSavingUserSettings"
+                        :disabled="isSavingUserSettings || !canSaveUserSettings"
+                        @click="saveUserSettings">
+                        Speichern
+                    </v-btn>
+                </div>
+            </template>
         </v-card>
 
         <MaterialTypeManagerDialog v-model="typeManagerDialogOpen" />
@@ -158,10 +213,11 @@ export default {
     data() {
         return {
             materialCardStore: null,
-            selectedAction: 'materials_types',
+            selectedAction: 'overview_settings',
             typeManagerDialogOpen: false,
             statusManagerDialogOpen: false,
             menuItems: [
+                { value: 'overview_settings', label: 'Übersicht', icon: 'mdi-view-dashboard-outline' },
                 { value: 'materials_types', label: 'Materialtypen', icon: 'mdi-shape-outline' },
                 { value: 'status_values', label: 'Statuswerte', icon: 'mdi-flag-outline' },
                 { value: 'file_settings', label: 'Dateien', icon: 'mdi-file-cog-outline' },
@@ -171,6 +227,11 @@ export default {
             },
             isSavingFileSettings: false,
             isEditingFileSettings: false,
+            userSettingsForm: {
+                materialsPaginationNumber: '',
+            },
+            isSavingUserSettings: false,
+            isEditingUserSettings: false,
         }
     },
     async beforeMount() {
@@ -179,6 +240,7 @@ export default {
             await this.materialCardStore.loadConfig()
         }
         this.syncFileSettingsForm()
+        this.syncUserSettingsForm()
     },
     computed: {
         visibleMenuItems() {
@@ -244,12 +306,22 @@ export default {
         canManageFileSettings() {
             return this.materialCardStore?.config?.can_manage_file_settings === true
         },
+        canManageUserSettings() {
+            return this.materialCardStore?.config?.can_manage_user_settings === true
+        },
         currentMaxUploadSizeMb() {
             const value = Number(this.materialCardStore?.config?.file_settings?.max_upload_size_mb)
             if (!Number.isFinite(value) || value <= 0) {
                 return '20'
             }
             return String(value)
+        },
+        currentMaterialsPaginationNumber() {
+            const value = Number(this.materialCardStore?.config?.user_settings?.materials_pagination_number)
+            if (!Number.isFinite(value) || value <= 0) {
+                return '30'
+            }
+            return String(Math.round(value))
         },
         canSaveFileSettings() {
             const value = Number(String(this.fileSettingsForm.maxUploadSizeMb || '').replace(',', '.'))
@@ -263,6 +335,22 @@ export default {
             }
 
             return Math.abs(value - current) > 0.0001
+        },
+        canSaveUserSettings() {
+            const value = Number(String(this.userSettingsForm.materialsPaginationNumber || '').replace(',', '.'))
+            return Number.isFinite(value)
+                && value >= 1
+                && value <= 200
+                && this.hasUserSettingsChanges
+        },
+        hasUserSettingsChanges() {
+            const value = Number(String(this.userSettingsForm.materialsPaginationNumber || '').replace(',', '.'))
+            const current = Number(this.currentMaterialsPaginationNumber)
+            if (!Number.isFinite(value) || value < 1 || value > 200 || !Number.isFinite(current) || current <= 0) {
+                return false
+            }
+
+            return Math.round(value) !== Math.round(current)
         },
     },
     watch: {
@@ -284,6 +372,12 @@ export default {
                 this.syncFileSettingsForm()
             },
         },
+        'materialCardStore.config.user_settings': {
+            deep: true,
+            handler() {
+                this.syncUserSettingsForm()
+            },
+        },
     },
     methods: {
         syncFileSettingsForm() {
@@ -293,6 +387,14 @@ export default {
                 return
             }
             this.fileSettingsForm.maxUploadSizeMb = String(value)
+        },
+        syncUserSettingsForm() {
+            const value = Number(this.materialCardStore?.config?.user_settings?.materials_pagination_number)
+            if (!Number.isFinite(value) || value <= 0) {
+                this.userSettingsForm.materialsPaginationNumber = '30'
+                return
+            }
+            this.userSettingsForm.materialsPaginationNumber = String(Math.round(value))
         },
         startEditFileSettings() {
             if (!this.canManageFileSettings || this.isSavingFileSettings) return
@@ -317,6 +419,31 @@ export default {
             if (saved) {
                 this.syncFileSettingsForm()
                 this.isEditingFileSettings = false
+            }
+        },
+        startEditUserSettings() {
+            if (!this.canManageUserSettings || this.isSavingUserSettings) return
+            this.syncUserSettingsForm()
+            this.isEditingUserSettings = true
+        },
+        cancelEditUserSettings() {
+            if (this.isSavingUserSettings) return
+            this.syncUserSettingsForm()
+            this.isEditingUserSettings = false
+        },
+        async saveUserSettings() {
+            if (!this.canManageUserSettings || !this.canSaveUserSettings || this.isSavingUserSettings) return
+
+            const value = Number(String(this.userSettingsForm.materialsPaginationNumber || '').replace(',', '.'))
+            const normalized = Math.max(1, Math.min(200, Math.round(value)))
+
+            this.isSavingUserSettings = true
+            const saved = await this.materialCardStore.updateUserSettings(normalized)
+            this.isSavingUserSettings = false
+
+            if (saved) {
+                this.syncUserSettingsForm()
+                this.isEditingUserSettings = false
             }
         },
     },

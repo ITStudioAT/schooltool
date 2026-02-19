@@ -23,6 +23,7 @@ use Illuminate\Validation\ValidationException;
 class MaterialService
 {
     private const DEFAULT_MAX_UPLOAD_SIZE_KB = 20480;
+    private const DEFAULT_MATERIALS_PAGINATION_NUMBER = 30;
     private const DEFAULT_TYPE_ICON = 'mdi-file-document-outline';
 
     public function __construct(
@@ -42,6 +43,8 @@ class MaterialService
             'can_manage_status_values' => $user->hasAnyRole(['admin', 'super_admin']),
             'file_settings' => $this->fileSettingsForUser($user),
             'can_manage_file_settings' => $user->hasAnyRole(['admin', 'super_admin']) && $this->supportsSchoolFileSettings(),
+            'user_settings' => $this->userSettingsForUser($user),
+            'can_manage_user_settings' => $this->supportsUserMaterialsPaginationSettings(),
             'classification_tree' => $this->classificationTreeForUser($user),
         ];
     }
@@ -85,7 +88,7 @@ class MaterialService
             $query->where('type', $type);
         }
 
-        return $query->paginate(config('schooltool.pagination'));
+        return $query->paginate($this->materialsPaginationNumberForUser($user));
     }
 
     public function createCard(User $user, array $data): MaterialCard
@@ -756,6 +759,29 @@ class MaterialService
         return $this->fileSettingsForUser($user);
     }
 
+    public function userSettingsForUser(User $user): array
+    {
+        return [
+            'materials_pagination_number' => $this->materialsPaginationNumberForUser($user),
+        ];
+    }
+
+    public function updateUserSettings(User $user, int $materialsPaginationNumber): array
+    {
+        $normalized = max(1, min(200, (int) $materialsPaginationNumber));
+
+        if (! $this->supportsUserMaterialsPaginationSettings()) {
+            throw ValidationException::withMessages([
+                'data.materials_pagination_number' => 'Benutzereinstellungen sind noch nicht verfügbar. Bitte Migration ausführen.',
+            ]);
+        }
+
+        $user->materials_pagination_number = $normalized;
+        $user->save();
+
+        return $this->userSettingsForUser($user->fresh());
+    }
+
     private function classificationTreeForUser(User $user): array
     {
         if (! $this->supportsClassificationTables()) {
@@ -1182,6 +1208,28 @@ class MaterialService
     private function supportsSchoolFileSettings(): bool
     {
         return Schema::hasTable('school_tools') && Schema::hasColumn('school_tools', 'material_max_file_upload_size');
+    }
+
+    private function supportsUserMaterialsPaginationSettings(): bool
+    {
+        return Schema::hasTable('users') && Schema::hasColumn('users', 'materials_pagination_number');
+    }
+
+    private function materialsPaginationNumberForUser(User $user): int
+    {
+        $configValue = (int) config('schooltool.pagination', self::DEFAULT_MATERIALS_PAGINATION_NUMBER);
+        $defaultValue = max(1, min(200, $configValue > 0 ? $configValue : self::DEFAULT_MATERIALS_PAGINATION_NUMBER));
+
+        if (! $this->supportsUserMaterialsPaginationSettings()) {
+            return $defaultValue;
+        }
+
+        $value = (int) ($user->materials_pagination_number ?? 0);
+        if ($value <= 0) {
+            return $defaultValue;
+        }
+
+        return max(1, min(200, $value));
     }
 
     private function defaultTypeValues(): array

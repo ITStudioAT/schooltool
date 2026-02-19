@@ -1077,5 +1077,49 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                 adminStore.is_loading--
             }
         },
+
+        async updateUserSettings(materialsPaginationNumber) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const value = Number(materialsPaginationNumber)
+
+            if (!Number.isFinite(value) || value <= 0) {
+                notification.notify({
+                    message: 'Bitte eine gültige Zahl für die Materialseiten eingeben.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            adminStore.is_loading++
+            try {
+                const response = await axios.put('/api/admin/materials/user-settings', {
+                    data: {
+                        materials_pagination_number: Math.max(1, Math.min(200, Math.round(value))),
+                    },
+                })
+
+                await this.loadConfig()
+
+                notification.notify({
+                    message: 'Benutzereinstellungen gespeichert.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Speichern der Benutzereinstellungen.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
     },
 })

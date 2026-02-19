@@ -1,0 +1,22 @@
+<?php
+
+namespace App\Http\Requests\Admin\Materials;
+
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Auth;
+
+class MaterialUserSettingsUpdateRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return Auth::check();
+    }
+
+    public function rules(): array
+    {
+        return [
+            'data.materials_pagination_number' => ['required', 'integer', 'min:1', 'max:200'],
+        ];
+    }
+}
+

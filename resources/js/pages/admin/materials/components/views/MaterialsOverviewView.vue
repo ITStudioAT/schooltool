@@ -341,6 +341,52 @@
                 </template>
             </v-list-item>
             </v-list>
+
+            <div class="overview-pagination d-flex flex-wrap align-center justify-end ga-2 mt-2">
+                <div class="text-caption text-medium-emphasis page-indicator">
+                    Seite {{ currentMetaPage }} von {{ lastMetaPage }}
+                </div>
+
+                <v-btn
+                    size="small"
+                    variant="tonal"
+                    color="primary"
+                    prepend-icon="mdi-page-first"
+                    :disabled="isLoading || isDeletingId !== null || isSavingEdit || !hasPreviousPage"
+                    @click="goToFirstPage">
+                    Erste
+                </v-btn>
+
+                <v-btn
+                    size="small"
+                    variant="tonal"
+                    color="primary"
+                    prepend-icon="mdi-chevron-left"
+                    :disabled="isLoading || isDeletingId !== null || isSavingEdit || !hasPreviousPage"
+                    @click="goToPreviousPage">
+                    Zurück
+                </v-btn>
+
+                <v-btn
+                    size="small"
+                    variant="tonal"
+                    color="primary"
+                    append-icon="mdi-chevron-right"
+                    :disabled="isLoading || isDeletingId !== null || isSavingEdit || !hasNextPage"
+                    @click="goToNextPage">
+                    Weiter
+                </v-btn>
+
+                <v-btn
+                    size="small"
+                    variant="tonal"
+                    color="primary"
+                    append-icon="mdi-page-last"
+                    :disabled="isLoading || isDeletingId !== null || isSavingEdit || !hasNextPage"
+                    @click="goToLastPage">
+                    Letzte
+                </v-btn>
+            </div>
         </template>
 
         <v-alert v-else type="warning" variant="tonal" class="mb-0">
@@ -807,6 +853,7 @@ export default {
             isUploadingAttachment: false,
             csrfToken: null,
             overviewViewMode: 'list',
+            currentPage: 1,
             subjectFilter: '',
             typeFilter: '',
             statusFilter: '',
@@ -855,6 +902,22 @@ export default {
         },
         isCompactOverview() {
             return this.overviewViewMode === 'grid'
+        },
+        currentMetaPage() {
+            const value = Number(this.materialCardStore?.meta?.current_page || this.currentPage)
+            if (!Number.isFinite(value) || value <= 0) return 1
+            return Math.round(value)
+        },
+        lastMetaPage() {
+            const value = Number(this.materialCardStore?.meta?.last_page || 1)
+            if (!Number.isFinite(value) || value <= 0) return 1
+            return Math.round(value)
+        },
+        hasPreviousPage() {
+            return this.currentMetaPage > 1
+        },
+        hasNextPage() {
+            return this.currentMetaPage < this.lastMetaPage
         },
         totalMaterials() {
             const total = Number(this.materialCardStore?.meta?.total)
@@ -1026,11 +1089,48 @@ export default {
                 // Falls localStorage nicht verfügbar ist, nur im aktuellen Zustand bleiben.
             }
         },
-        async loadCards() {
+        async loadCards(page = null) {
             if (this.isLoading) return
+            let targetPage = Number(page ?? this.currentPage)
+            if (!Number.isFinite(targetPage) || targetPage <= 0) {
+                targetPage = 1
+            }
+            targetPage = Math.max(1, Math.round(targetPage))
+
             this.isLoading = true
-            await this.materialCardStore.indexAll()
+            const loaded = await this.materialCardStore.index(targetPage)
+            if (loaded) {
+                let currentPage = Number(this.materialCardStore?.meta?.current_page || targetPage)
+                let lastPage = Number(this.materialCardStore?.meta?.last_page || currentPage)
+
+                if (Number.isFinite(lastPage) && lastPage > 0 && targetPage > lastPage) {
+                    await this.materialCardStore.index(lastPage)
+                    currentPage = Number(this.materialCardStore?.meta?.current_page || lastPage)
+                    lastPage = Number(this.materialCardStore?.meta?.last_page || currentPage)
+                }
+
+                if (!Number.isFinite(currentPage) || currentPage <= 0) {
+                    currentPage = 1
+                }
+                this.currentPage = Math.max(1, Math.round(currentPage))
+            }
             this.isLoading = false
+        },
+        async goToFirstPage() {
+            if (!this.hasPreviousPage) return
+            await this.loadCards(1)
+        },
+        async goToPreviousPage() {
+            if (!this.hasPreviousPage) return
+            await this.loadCards(this.currentMetaPage - 1)
+        },
+        async goToNextPage() {
+            if (!this.hasNextPage) return
+            await this.loadCards(this.currentMetaPage + 1)
+        },
+        async goToLastPage() {
+            if (!this.hasNextPage) return
+            await this.loadCards(this.lastMetaPage)
         },
         normalizeFilterText(value) {
             return String(value ?? '').trim().slice(0, 255)
@@ -1043,11 +1143,12 @@ export default {
         async applySubjectFilter(value) {
             const subject = this.normalizeFilterText(value)
             this.subjectFilter = subject
+            this.currentPage = 1
             this.materialCardStore.filters = {
                 ...(this.materialCardStore.filters || {}),
                 subject,
             }
-            await this.loadCards()
+            await this.loadCards(1)
         },
         async toggleSubjectFilter(value) {
             if (this.isSubjectFilterActive(value)) {
@@ -1068,11 +1169,12 @@ export default {
         async applyTypeFilter(value) {
             const type = this.normalizeFilterText(value)
             this.typeFilter = type
+            this.currentPage = 1
             this.materialCardStore.filters = {
                 ...(this.materialCardStore.filters || {}),
                 type,
             }
-            await this.loadCards()
+            await this.loadCards(1)
         },
         async toggleTypeFilter(value) {
             if (this.isTypeFilterActive(value)) {
@@ -1093,11 +1195,12 @@ export default {
         async applyStatusFilter(value) {
             const status = this.normalizeFilterText(value)
             this.statusFilter = status
+            this.currentPage = 1
             this.materialCardStore.filters = {
                 ...(this.materialCardStore.filters || {}),
                 status,
             }
-            await this.loadCards()
+            await this.loadCards(1)
         },
         async toggleStatusFilter(value) {
             if (this.isStatusFilterActive(value)) {
@@ -2387,6 +2490,14 @@ export default {
     gap: 8px;
 }
 
+.overview-pagination {
+    width: 100%;
+}
+
+.page-indicator {
+    margin-right: 4px;
+}
+
 .material-header {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -2537,6 +2648,14 @@ export default {
 
     .overview-actions :deep(.v-btn) {
         width: 100%;
+    }
+
+    .overview-pagination {
+        justify-content: stretch;
+    }
+
+    .overview-pagination :deep(.v-btn) {
+        flex: 1 1 auto;
     }
 
     .attachment-manage-actions {

@@ -157,6 +157,15 @@ test('config exposes file settings and file setting management only for admin', 
         ->assertJsonPath('file_settings.max_upload_size_kb', 20480);
 });
 
+test('config exposes user pagination settings for materials overview', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->getJson('/api/admin/materials/config')
+        ->assertStatus(200)
+        ->assertJsonPath('can_manage_user_settings', true)
+        ->assertJsonPath('user_settings.materials_pagination_number', (int) config('schooltool.pagination'));
+});
+
 test('config returns default material type options from schooltool config', function () {
     Config::set('schooltool.materials_default_types', ['Arbeitsblatt', 'Test']);
 
@@ -456,6 +465,19 @@ test('teacher cannot update school max upload size', function () {
     ])->assertStatus(403);
 });
 
+test('teacher can update own materials pagination setting', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->putJson('/api/admin/materials/user-settings', [
+        'data' => [
+            'materials_pagination_number' => 12,
+        ],
+    ])->assertStatus(200)
+        ->assertJsonPath('data.materials_pagination_number', 12);
+
+    expect((int) $this->teacher->fresh()->materials_pagination_number)->toBe(12);
+});
+
 test('index returns only own cards', function () {
     $otherTeacher = User::factory()->create([
         'school_id' => $this->school->id,
@@ -488,6 +510,38 @@ test('index returns only own cards', function () {
 
     expect($titles)->toContain('Eigene Karte')
         ->and($titles)->not->toContain('Fremde Karte');
+});
+
+test('index uses user specific materials pagination number', function () {
+    $this->teacher->update([
+        'materials_pagination_number' => 2,
+    ]);
+
+    foreach (range(1, 5) as $index) {
+        MaterialCard::factory()->create([
+            'school_id' => $this->school->id,
+            'user_id' => $this->teacher->id,
+            'title' => 'Eigene Karte ' . $index,
+            'status' => 'inbox',
+            'keywords' => [],
+        ]);
+    }
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $pageOne = $this->getJson('/api/admin/materials/cards?page=1');
+    $pageOne->assertStatus(200)
+        ->assertJsonPath('meta.per_page', 2)
+        ->assertJsonPath('meta.current_page', 1)
+        ->assertJsonPath('meta.last_page', 3);
+    expect(count($pageOne->json('data')))->toBe(2);
+
+    $pageThree = $this->getJson('/api/admin/materials/cards?page=3');
+    $pageThree->assertStatus(200)
+        ->assertJsonPath('meta.per_page', 2)
+        ->assertJsonPath('meta.current_page', 3)
+        ->assertJsonPath('meta.last_page', 3);
+    expect(count($pageThree->json('data')))->toBe(1);
 });
 
 test('owner protection blocks update from another teacher', function () {

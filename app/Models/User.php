@@ -155,6 +155,7 @@ class User extends Authenticatable
         'teaching_count_for_semester_2_date',
         'teaching_behaviour',
         'teaching_notifications',
+        'materials_pagination_number',
     ];
 
     // Protected fields that should NOT be mass assignable:
