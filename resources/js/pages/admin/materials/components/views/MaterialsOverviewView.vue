@@ -60,6 +60,60 @@
                         {{ subject }}
                     </v-chip>
                 </div>
+
+                <div v-if="hasActiveSubjectFilter" class="subject-dependent-filters mt-3">
+                    <div class="subject-dependent-filter">
+                        <div class="text-subtitle-2 mb-2">Thema filtern</div>
+
+                        <div class="d-flex flex-wrap ga-2">
+                            <v-chip
+                                size="small"
+                                :variant="hasActiveTopicFilter ? 'tonal' : 'flat'"
+                                :color="hasActiveTopicFilter ? undefined : 'primary'"
+                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                                @click="clearTopicFilter">
+                                Alle
+                            </v-chip>
+
+                            <v-chip
+                                v-for="topic in topicFilterOptions"
+                                :key="`topic-filter-${topic}`"
+                                size="small"
+                                color="primary"
+                                :variant="isTopicFilterActive(topic) ? 'flat' : 'tonal'"
+                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                                @click="toggleTopicFilter(topic)">
+                                {{ topic }}
+                            </v-chip>
+                        </div>
+                    </div>
+
+                    <div v-if="hasActiveTopicFilter" class="subject-dependent-filter">
+                        <div class="text-subtitle-2 mb-2">Bereich filtern</div>
+
+                        <div class="d-flex flex-wrap ga-2">
+                            <v-chip
+                                size="small"
+                                :variant="hasActiveUnitFilter ? 'tonal' : 'flat'"
+                                :color="hasActiveUnitFilter ? undefined : 'primary'"
+                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                                @click="clearUnitFilter">
+                                Alle
+                            </v-chip>
+
+                            <v-chip
+                                v-for="unit in unitFilterOptions"
+                                :key="`unit-filter-${unit}`"
+                                size="small"
+                                color="primary"
+                                :variant="isUnitFilterActive(unit) ? 'flat' : 'tonal'"
+                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                                @click="toggleUnitFilter(unit)">
+                                {{ unit }}
+                            </v-chip>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="filter-section">
@@ -855,6 +909,8 @@ export default {
             overviewViewMode: 'list',
             currentPage: 1,
             subjectFilter: '',
+            topicFilter: '',
+            unitFilter: '',
             typeFilter: '',
             statusFilter: '',
             typeManagerDialogOpen: false,
@@ -991,6 +1047,59 @@ export default {
         hasActiveSubjectFilter() {
             return String(this.subjectFilter || '').trim() !== ''
         },
+        topicFilterOptions() {
+            const selectedSubject = this.normalizeFilterText(this.subjectFilter)
+            if (selectedSubject === '') return []
+
+            const subjectNode = this.classificationTree.find((entry) =>
+                this.normalizeFilterText(entry?.name).toLocaleLowerCase() === selectedSubject.toLocaleLowerCase()
+            )
+            const topics = Array.isArray(subjectNode?.topics) ? subjectNode.topics : []
+
+            const options = topics
+                .map((entry) => this.normalizeFilterText(entry?.name))
+                .filter((value) => value !== '')
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+
+            const selectedTopic = this.normalizeFilterText(this.topicFilter)
+            if (selectedTopic && !options.some((option) => option.toLocaleLowerCase() === selectedTopic.toLocaleLowerCase())) {
+                options.unshift(selectedTopic)
+            }
+
+            return options
+        },
+        hasActiveTopicFilter() {
+            return this.normalizeFilterText(this.topicFilter) !== ''
+        },
+        unitFilterOptions() {
+            const selectedSubject = this.normalizeFilterText(this.subjectFilter)
+            const selectedTopic = this.normalizeFilterText(this.topicFilter)
+            if (selectedSubject === '' || selectedTopic === '') return []
+
+            const subjectNode = this.classificationTree.find((entry) =>
+                this.normalizeFilterText(entry?.name).toLocaleLowerCase() === selectedSubject.toLocaleLowerCase()
+            )
+            const topics = Array.isArray(subjectNode?.topics) ? subjectNode.topics : []
+            const topicNode = topics.find((entry) =>
+                this.normalizeFilterText(entry?.name).toLocaleLowerCase() === selectedTopic.toLocaleLowerCase()
+            )
+            const units = Array.isArray(topicNode?.units) ? topicNode.units : []
+
+            const options = units
+                .map((entry) => this.normalizeFilterText(entry?.name))
+                .filter((value) => value !== '')
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+
+            const selectedUnit = this.normalizeFilterText(this.unitFilter)
+            if (selectedUnit && !options.some((option) => option.toLocaleLowerCase() === selectedUnit.toLocaleLowerCase())) {
+                options.unshift(selectedUnit)
+            }
+
+            return options
+        },
+        hasActiveUnitFilter() {
+            return this.normalizeFilterText(this.unitFilter) !== ''
+        },
         typeFilterOptions() {
             const result = []
             const seen = new Set()
@@ -1074,6 +1183,14 @@ export default {
             await this.materialCardStore.loadConfig()
         }
         this.subjectFilter = String(this.materialCardStore?.filters?.subject || '').trim()
+        this.topicFilter = String(this.materialCardStore?.filters?.topic || '').trim()
+        this.unitFilter = String(this.materialCardStore?.filters?.unit || '').trim()
+        if (this.subjectFilter === '') {
+            this.topicFilter = ''
+            this.unitFilter = ''
+        } else if (this.topicFilter === '') {
+            this.unitFilter = ''
+        }
         this.typeFilter = String(this.materialCardStore?.filters?.type || '').trim()
         this.statusFilter = String(this.materialCardStore?.filters?.status || '').trim()
         await this.loadCards()
@@ -1143,10 +1260,14 @@ export default {
         async applySubjectFilter(value) {
             const subject = this.normalizeFilterText(value)
             this.subjectFilter = subject
+            this.topicFilter = ''
+            this.unitFilter = ''
             this.currentPage = 1
             this.materialCardStore.filters = {
                 ...(this.materialCardStore.filters || {}),
                 subject,
+                topic: '',
+                unit: '',
             }
             await this.loadCards(1)
         },
@@ -1160,6 +1281,64 @@ export default {
         },
         async clearSubjectFilter() {
             await this.applySubjectFilter('')
+        },
+        isTopicFilterActive(value) {
+            const selected = this.normalizeFilterText(this.topicFilter).toLocaleLowerCase()
+            const topic = this.normalizeFilterText(value).toLocaleLowerCase()
+            return selected !== '' && selected === topic
+        },
+        async applyTopicFilter(value) {
+            if (!this.hasActiveSubjectFilter) return
+
+            const topic = this.normalizeFilterText(value)
+            this.topicFilter = topic
+            this.unitFilter = ''
+            this.currentPage = 1
+            this.materialCardStore.filters = {
+                ...(this.materialCardStore.filters || {}),
+                topic,
+                unit: '',
+            }
+            await this.loadCards(1)
+        },
+        async toggleTopicFilter(value) {
+            if (this.isTopicFilterActive(value)) {
+                await this.clearTopicFilter()
+                return
+            }
+
+            await this.applyTopicFilter(value)
+        },
+        async clearTopicFilter() {
+            await this.applyTopicFilter('')
+        },
+        isUnitFilterActive(value) {
+            const selected = this.normalizeFilterText(this.unitFilter).toLocaleLowerCase()
+            const unit = this.normalizeFilterText(value).toLocaleLowerCase()
+            return selected !== '' && selected === unit
+        },
+        async applyUnitFilter(value) {
+            if (!this.hasActiveTopicFilter) return
+
+            const unit = this.normalizeFilterText(value)
+            this.unitFilter = unit
+            this.currentPage = 1
+            this.materialCardStore.filters = {
+                ...(this.materialCardStore.filters || {}),
+                unit,
+            }
+            await this.loadCards(1)
+        },
+        async toggleUnitFilter(value) {
+            if (this.isUnitFilterActive(value)) {
+                await this.clearUnitFilter()
+                return
+            }
+
+            await this.applyUnitFilter(value)
+        },
+        async clearUnitFilter() {
+            await this.applyUnitFilter('')
         },
         isTypeFilterActive(value) {
             const selected = this.normalizeFilterText(this.typeFilter).toLocaleLowerCase()
@@ -2416,6 +2595,17 @@ export default {
 }
 
 .filter-section {
+    min-width: 0;
+}
+
+.subject-dependent-filters {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    align-items: start;
+}
+
+.subject-dependent-filter {
     min-width: 0;
 }
 

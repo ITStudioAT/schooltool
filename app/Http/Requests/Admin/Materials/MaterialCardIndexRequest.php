@@ -22,6 +22,7 @@ class MaterialCardIndexRequest extends FormRequest
             'search' => ['nullable', 'string', 'max:255'],
             'status' => $this->statusRules(),
             'subject' => ['nullable', 'string', 'max:255'],
+            'topic' => ['nullable', 'string', 'max:255'],
             'area' => ['nullable', 'string', 'max:255'],
             'unit' => ['nullable', 'string', 'max:255'],
             'type' => ['nullable', 'string', 'max:255'],

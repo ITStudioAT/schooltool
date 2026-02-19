@@ -83,6 +83,16 @@ class MaterialService
             $query->whereHas('classifications.subject', fn ($subjectQuery) => $subjectQuery->where('name', $subject));
         }
 
+        $topic = trim((string) ($filters['topic'] ?? ''));
+        if ($topic !== '' && $hasClassificationTables) {
+            $query->whereHas('classifications.topic', fn ($topicQuery) => $topicQuery->where('name', $topic));
+        }
+
+        $unit = trim((string) ($filters['unit'] ?? ''));
+        if ($unit !== '' && $hasClassificationTables) {
+            $query->whereHas('classifications.unit', fn ($unitQuery) => $unitQuery->where('name', $unit));
+        }
+
         $type = trim((string) ($filters['type'] ?? ''));
         if ($type !== '') {
             $query->where('type', $type);

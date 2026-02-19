@@ -512,6 +512,67 @@ test('index returns only own cards', function () {
         ->and($titles)->not->toContain('Fremde Karte');
 });
 
+test('index can filter by subject topic and unit', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->postJson('/api/admin/materials/cards', [
+        'data' => [
+            'title' => 'Mathematik Brüche',
+            'classifications' => [
+                ['subject' => 'Mathematik', 'topic' => 'Algebra', 'unit' => 'Brüche'],
+            ],
+        ],
+    ])->assertStatus(200);
+
+    $this->postJson('/api/admin/materials/cards', [
+        'data' => [
+            'title' => 'Mathematik Gleichungen',
+            'classifications' => [
+                ['subject' => 'Mathematik', 'topic' => 'Algebra', 'unit' => 'Gleichungen'],
+            ],
+        ],
+    ])->assertStatus(200);
+
+    $this->postJson('/api/admin/materials/cards', [
+        'data' => [
+            'title' => 'Deutsch Grammatik',
+            'classifications' => [
+                ['subject' => 'Deutsch', 'topic' => 'Grammatik', 'unit' => 'Zeitformen'],
+            ],
+        ],
+    ])->assertStatus(200);
+
+    $subjectResponse = $this->getJson('/api/admin/materials/cards?' . http_build_query([
+        'subject' => 'Mathematik',
+    ]));
+    $subjectResponse->assertStatus(200);
+    $subjectTitles = collect($subjectResponse->json('data'))->pluck('title')->all();
+    expect($subjectTitles)->toContain('Mathematik Brüche')
+        ->and($subjectTitles)->toContain('Mathematik Gleichungen')
+        ->and($subjectTitles)->not->toContain('Deutsch Grammatik');
+
+    $topicResponse = $this->getJson('/api/admin/materials/cards?' . http_build_query([
+        'subject' => 'Mathematik',
+        'topic' => 'Algebra',
+    ]));
+    $topicResponse->assertStatus(200);
+    $topicTitles = collect($topicResponse->json('data'))->pluck('title')->all();
+    expect($topicTitles)->toContain('Mathematik Brüche')
+        ->and($topicTitles)->toContain('Mathematik Gleichungen')
+        ->and($topicTitles)->not->toContain('Deutsch Grammatik');
+
+    $unitResponse = $this->getJson('/api/admin/materials/cards?' . http_build_query([
+        'subject' => 'Mathematik',
+        'topic' => 'Algebra',
+        'unit' => 'Brüche',
+    ]));
+    $unitResponse->assertStatus(200);
+    $unitTitles = collect($unitResponse->json('data'))->pluck('title')->all();
+    expect($unitTitles)->toContain('Mathematik Brüche')
+        ->and($unitTitles)->not->toContain('Mathematik Gleichungen')
+        ->and($unitTitles)->not->toContain('Deutsch Grammatik');
+});
+
 test('index uses user specific materials pagination number', function () {
     $this->teacher->update([
         'materials_pagination_number' => 2,

@@ -12,6 +12,7 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             search: '',
             status: '',
             subject: '',
+            topic: '',
             area: '',
             unit: '',
             type: '',
