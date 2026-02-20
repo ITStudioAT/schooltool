@@ -20,9 +20,11 @@ class MaterialCardAttachmentFactory extends Factory
             'attachment_type' => fake()->randomElement([MaterialCardAttachment::TYPE_FILE, MaterialCardAttachment::TYPE_LINK]),
             'name' => fake()->words(2, true),
             'url' => fake()->optional()->url(),
+            'source_url' => fake()->optional()->url(),
             'file_path' => fake()->optional()->filePath(),
             'mime_type' => fake()->optional()->mimeType(),
             'size_bytes' => fake()->optional()->numberBetween(100, 1000000),
+            'downloaded_at' => fake()->optional()->dateTime(),
         ];
     }
 }

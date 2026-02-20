@@ -596,20 +596,54 @@
                                 </div>
                             </div>
 
+                            <div
+                                v-if="attachmentSourceUrl(row)"
+                                class="text-caption attachment-source-text source-link">
+                                Quelle:
+                                <a :href="attachmentSourceUrl(row)" target="_blank" rel="noopener noreferrer">
+                                    {{ preview(attachmentSourceUrl(row), 110) }}
+                                </a>
+                            </div>
+                            <div
+                                v-if="attachmentDownloadedAtLabel(row)"
+                                class="text-caption text-medium-emphasis attachment-source-text">
+                                Heruntergeladen: {{ attachmentDownloadedAtLabel(row) }}
+                            </div>
+
                             <div class="d-flex flex-column flex-md-row ga-2">
-                                <v-text-field
-                                    :model-value="row.name"
-                                    label="Titel"
-                                    variant="outlined"
-                                    density="comfortable"
-                                    hide-details="auto"
-                                    class="attachment-name-field flex-grow-1"
-                                    :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
-                                    @update:modelValue="updateAttachmentDraft(row.id, $event)"
-                                    @keyup.enter="saveAttachmentName(row)" />
+                                <div class="attachment-name-field flex-grow-1">
+                                    <v-text-field
+                                        v-if="isAttachmentNameEditing(row.id)"
+                                        :model-value="row.name"
+                                        label="Titel"
+                                        variant="outlined"
+                                        density="comfortable"
+                                        hide-details="auto"
+                                        :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
+                                        @update:modelValue="updateAttachmentDraft(row.id, $event)"
+                                        @keyup.enter="saveAttachmentName(row)" />
+                                    <div
+                                        v-else
+                                        class="attachment-name-readonly"
+                                        :title="row.name">
+                                        {{ row.name }}
+                                    </div>
+                                </div>
 
                                 <div class="attachment-manage-actions d-flex flex-wrap ga-2 justify-end">
                                     <v-btn
+                                        v-if="!isAttachmentNameEditing(row.id)"
+                                        size="small"
+                                        color="primary"
+                                        variant="tonal"
+                                        prepend-icon="mdi-pencil"
+                                        :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
+                                        @click="startAttachmentNameEdit(row.id)">
+                                        Ändern
+                                    </v-btn>
+
+                                    <v-btn
+                                        v-else
                                         size="small"
                                         color="primary"
                                         variant="tonal"
@@ -618,6 +652,18 @@
                                         :disabled="!canSaveAttachmentName(row) || isAttachmentDeleting(row.id)"
                                         @click="saveAttachmentName(row)">
                                         Speichern
+                                    </v-btn>
+
+                                    <v-btn
+                                        v-if="row.attachment_type === 'file' && (row.preview_url || row.download_url)"
+                                        size="small"
+                                        color="primary"
+                                        variant="tonal"
+                                        prepend-icon="mdi-eye-outline"
+                                        :loading="isPreviewingAttachment(row.id)"
+                                        :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
+                                        @click="previewAttachment(row)">
+                                        Vorschau
                                     </v-btn>
 
                                     <v-btn
@@ -754,9 +800,34 @@
                                         <div class="text-caption text-medium-emphasis">
                                             {{ attachmentTypeAndSizeLabel(attachment) }}
                                         </div>
+                                        <div
+                                            v-if="attachmentSourceUrl(attachment)"
+                                            class="text-caption attachment-source-text source-link">
+                                            Quelle:
+                                            <a :href="attachmentSourceUrl(attachment)" target="_blank" rel="noopener noreferrer">
+                                                {{ preview(attachmentSourceUrl(attachment), 110) }}
+                                            </a>
+                                        </div>
+                                        <div
+                                            v-if="attachmentDownloadedAtLabel(attachment)"
+                                            class="text-caption text-medium-emphasis attachment-source-text">
+                                            Heruntergeladen: {{ attachmentDownloadedAtLabel(attachment) }}
+                                        </div>
                                     </div>
 
                                     <div class="d-flex flex-wrap ga-2 justify-end">
+                                        <v-btn
+                                            v-if="attachment.attachment_type === 'file' && (attachment.preview_url || attachment.download_url)"
+                                            size="small"
+                                            color="primary"
+                                            variant="tonal"
+                                            prepend-icon="mdi-eye-outline"
+                                            :loading="isPreviewingAttachment(attachment.id)"
+                                            :disabled="isDeletingDetail"
+                                            @click="previewAttachment(attachment)">
+                                            Vorschau
+                                        </v-btn>
+
                                         <v-btn
                                             v-if="attachment.attachment_type === 'file' && attachment.download_url"
                                             size="small"
@@ -900,20 +971,54 @@
                                     </div>
                                 </div>
 
+                                <div
+                                    v-if="attachmentSourceUrl(row)"
+                                    class="text-caption attachment-source-text source-link">
+                                    Quelle:
+                                    <a :href="attachmentSourceUrl(row)" target="_blank" rel="noopener noreferrer">
+                                        {{ preview(attachmentSourceUrl(row), 110) }}
+                                    </a>
+                                </div>
+                                <div
+                                    v-if="attachmentDownloadedAtLabel(row)"
+                                    class="text-caption text-medium-emphasis attachment-source-text">
+                                    Heruntergeladen: {{ attachmentDownloadedAtLabel(row) }}
+                                </div>
+
                                 <div class="d-flex flex-column flex-md-row ga-2">
-                                    <v-text-field
-                                        :model-value="row.name"
-                                        label="Titel"
-                                        variant="outlined"
-                                        density="comfortable"
-                                        hide-details="auto"
-                                        class="attachment-name-field flex-grow-1"
-                                        :disabled="isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
-                                        @update:modelValue="updateAttachmentDraft(row.id, $event)"
-                                        @keyup.enter="saveAttachmentName(row)" />
+                                    <div class="attachment-name-field flex-grow-1">
+                                        <v-text-field
+                                            v-if="isAttachmentNameEditing(row.id)"
+                                            :model-value="row.name"
+                                            label="Titel"
+                                            variant="outlined"
+                                            density="comfortable"
+                                            hide-details="auto"
+                                            :disabled="isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
+                                            @update:modelValue="updateAttachmentDraft(row.id, $event)"
+                                            @keyup.enter="saveAttachmentName(row)" />
+                                        <div
+                                            v-else
+                                            class="attachment-name-readonly"
+                                            :title="row.name">
+                                            {{ row.name }}
+                                        </div>
+                                    </div>
 
                                     <div class="attachment-manage-actions d-flex flex-wrap ga-2 justify-end">
                                         <v-btn
+                                            v-if="!isAttachmentNameEditing(row.id)"
+                                            size="small"
+                                            color="primary"
+                                            variant="tonal"
+                                            prepend-icon="mdi-pencil"
+                                            :disabled="isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
+                                            @click="startAttachmentNameEdit(row.id)">
+                                            Ändern
+                                        </v-btn>
+
+                                        <v-btn
+                                            v-else
                                             size="small"
                                             color="primary"
                                             variant="tonal"
@@ -1013,6 +1118,7 @@ export default {
             editClassificationEditorVisible: false,
             editForm: createDefaultEditForm(),
             downloadingAttachmentIds: [],
+            previewingAttachmentIds: [],
             savingAttachmentIds: [],
             deletingAttachmentIds: [],
             detailDialogOpen: false,
@@ -1022,6 +1128,7 @@ export default {
             returnToDetailOnEditCancel: false,
             detailCardForEditReturn: null,
             attachmentDeleteArmedIds: [],
+            attachmentNameEditingIds: [],
             allListedAttachmentBytes: null,
             allListedAttachmentBytesLoading: false,
             allListedAttachmentBytesRequestId: 0,
@@ -1033,6 +1140,7 @@ export default {
                 .map((row) => Number(row?.id))
                 .filter((id) => Number.isFinite(id) && id > 0)
             this.resetAttachmentDeleteArmed(validIds)
+            this.resetAttachmentNameEditing(validIds)
         },
     },
     computed: {
@@ -2082,6 +2190,7 @@ export default {
             this.attachmentDialogCardId = Number(card?.id) || null
             this.attachmentRows = this.toAttachmentRows(card?.attachments)
             this.attachmentDeleteArmedIds = []
+            this.attachmentNameEditingIds = []
             this.editClassificationEditorVisible = false
             this.editDialogOpen = true
         },
@@ -2103,6 +2212,7 @@ export default {
             this.attachmentDialogCardId = null
             this.attachmentRows = []
             this.attachmentDeleteArmedIds = []
+            this.attachmentNameEditingIds = []
             this.returnToDetailOnEditCancel = false
             this.detailCardForEditReturn = null
 
@@ -2361,8 +2471,11 @@ export default {
                         attachment_type: type,
                         name,
                         savedName: name,
+                        preview_url: String(attachment?.preview_url || '').trim(),
                         download_url: String(attachment?.download_url || '').trim(),
                         url: String(attachment?.url || '').trim(),
+                        source_url: String(attachment?.source_url || '').trim(),
+                        downloaded_at: String(attachment?.downloaded_at || '').trim(),
                         file_path: String(attachment?.file_path || '').trim(),
                         mime_type: String(attachment?.mime_type || '').trim(),
                         size_bytes: Number(attachment?.size_bytes || 0),
@@ -2375,6 +2488,7 @@ export default {
             this.attachmentDialogCardTitle = String(card?.title || '').trim()
             this.attachmentRows = this.toAttachmentRows(card?.attachments)
             this.attachmentDeleteArmedIds = []
+            this.attachmentNameEditingIds = []
             this.isUploadingAttachment = false
             this.attachmentDialogOpen = true
         },
@@ -2385,6 +2499,7 @@ export default {
             this.attachmentDialogCardTitle = ''
             this.attachmentRows = []
             this.attachmentDeleteArmedIds = []
+            this.attachmentNameEditingIds = []
             this.isUploadingAttachment = false
             this.savingAttachmentIds = []
             this.deletingAttachmentIds = []
@@ -2585,9 +2700,19 @@ export default {
             const fallback = String(row?.file_path || '').trim() || 'Datei-Anhang'
             return sizeLabel ? `${fallback} • ${sizeLabel}` : fallback
         },
+        attachmentSourceUrl(attachment) {
+            const sourceUrl = String(attachment?.source_url || '').trim()
+            return this.normalizeUrl(sourceUrl)
+        },
+        attachmentDownloadedAtLabel(attachment) {
+            const value = String(attachment?.downloaded_at || '').trim()
+            if (!value) return ''
+            return this.formatDateTime(value)
+        },
         updateAttachmentDraft(attachmentId, value) {
             const id = Number(attachmentId)
             if (!Number.isFinite(id) || id <= 0) return
+            if (!this.isAttachmentNameEditing(id)) return
 
             this.attachmentRows = this.attachmentRows.map((row) => {
                 if (row.id !== id) return row
@@ -2609,6 +2734,27 @@ export default {
             const id = Number(attachmentId)
             if (!Number.isFinite(id) || id <= 0) return false
             return this.attachmentDeleteArmedIds.includes(id)
+        },
+        isAttachmentNameEditing(attachmentId) {
+            const id = Number(attachmentId)
+            if (!Number.isFinite(id) || id <= 0) return false
+            return this.attachmentNameEditingIds.includes(id)
+        },
+        markAttachmentNameEditing(attachmentId, isEditing) {
+            const id = Number(attachmentId)
+            if (!Number.isFinite(id) || id <= 0) return
+
+            if (isEditing) {
+                if (!this.attachmentNameEditingIds.includes(id)) {
+                    this.attachmentNameEditingIds = [...this.attachmentNameEditingIds, id]
+                }
+                return
+            }
+
+            this.attachmentNameEditingIds = this.attachmentNameEditingIds.filter((item) => item !== id)
+        },
+        startAttachmentNameEdit(attachmentId) {
+            this.markAttachmentNameEditing(attachmentId, true)
         },
         markAttachmentDeleteArmed(attachmentId, isArmed) {
             const id = Number(attachmentId)
@@ -2642,6 +2788,21 @@ export default {
             const validSet = new Set(ids)
             this.attachmentDeleteArmedIds = this.attachmentDeleteArmedIds.filter((id) => validSet.has(id))
         },
+        resetAttachmentNameEditing(validIds = []) {
+            const ids = Array.isArray(validIds)
+                ? validIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+                : []
+
+            if (ids.length === 0) {
+                if (this.attachmentNameEditingIds.length) {
+                    this.attachmentNameEditingIds = []
+                }
+                return
+            }
+
+            const validSet = new Set(ids)
+            this.attachmentNameEditingIds = this.attachmentNameEditingIds.filter((id) => validSet.has(id))
+        },
         markAttachmentSaving(attachmentId, isSaving) {
             const id = Number(attachmentId)
             if (!Number.isFinite(id) || id <= 0) return
@@ -2661,6 +2822,7 @@ export default {
 
             if (isDeleting) {
                 this.markAttachmentDeleteArmed(id, false)
+                this.markAttachmentNameEditing(id, false)
                 if (!this.deletingAttachmentIds.includes(id)) {
                     this.deletingAttachmentIds = [...this.deletingAttachmentIds, id]
                 }
@@ -2669,17 +2831,26 @@ export default {
 
             this.deletingAttachmentIds = this.deletingAttachmentIds.filter((item) => item !== id)
         },
-        canSaveAttachmentName(row) {
+        hasAttachmentNameChanged(row) {
             const name = this.normalizeAttachmentName(row?.name)
             const savedName = this.normalizeAttachmentName(row?.savedName)
-            return name !== '' && name !== savedName
+            return name !== savedName
+        },
+        canSaveAttachmentName(row) {
+            const name = this.normalizeAttachmentName(row?.name)
+            return name !== ''
         },
         async saveAttachmentName(row) {
             const id = Number(row?.id)
             const cardId = Number(this.attachmentDialogCardId)
             if (!Number.isFinite(id) || id <= 0 || !Number.isFinite(cardId) || cardId <= 0) return
             if (this.isAttachmentSaving(id) || this.isAttachmentDeleting(id)) return
+            if (!this.isAttachmentNameEditing(id)) return
             if (!this.canSaveAttachmentName(row)) return
+            if (!this.hasAttachmentNameChanged(row)) {
+                this.markAttachmentNameEditing(id, false)
+                return
+            }
 
             this.markAttachmentSaving(id, true)
 
@@ -2698,6 +2869,7 @@ export default {
                 })
 
                 this.applyAttachmentUpdateToCard(id, { name: nextName })
+                this.markAttachmentNameEditing(id, false)
             } finally {
                 this.markAttachmentSaving(id, false)
             }
@@ -2761,6 +2933,23 @@ export default {
         isDownloadingAttachment(attachmentId) {
             const id = Number(attachmentId)
             return this.downloadingAttachmentIds.includes(id)
+        },
+        isPreviewingAttachment(attachmentId) {
+            const id = Number(attachmentId)
+            return this.previewingAttachmentIds.includes(id)
+        },
+        markAttachmentPreviewing(attachmentId, isLoading) {
+            const id = Number(attachmentId)
+            if (!Number.isFinite(id) || id <= 0) return
+
+            if (isLoading) {
+                if (!this.previewingAttachmentIds.includes(id)) {
+                    this.previewingAttachmentIds = [...this.previewingAttachmentIds, id]
+                }
+                return
+            }
+
+            this.previewingAttachmentIds = this.previewingAttachmentIds.filter((item) => item !== id)
         },
         markAttachmentDownloading(attachmentId, isLoading) {
             const id = Number(attachmentId)
@@ -2832,6 +3021,67 @@ export default {
                 })
             } finally {
                 this.markAttachmentDownloading(id, false)
+            }
+        },
+        async previewAttachment(attachment) {
+            const id = Number(attachment?.id)
+            const previewUrl = String(attachment?.preview_url || attachment?.download_url || '').trim()
+            if (!Number.isFinite(id) || id <= 0 || !previewUrl) return
+            if (this.isPreviewingAttachment(id)) return
+
+            const previewWindow = window.open('about:blank', '_blank')
+            if (!previewWindow) {
+                const notification = useNotificationStore()
+                notification.notify({
+                    message: 'Pop-up blockiert. Bitte Pop-ups für Vorschau erlauben.',
+                    type: 'warning',
+                    timeout: 3000,
+                })
+                return
+            }
+
+            this.markAttachmentPreviewing(id, true)
+
+            try {
+                try {
+                    previewWindow.document.title = 'Vorschau wird geladen...'
+                    previewWindow.document.body.innerHTML = '<p style="font-family: sans-serif; padding: 16px;">Vorschau wird geladen...</p>'
+                } catch {
+                    // noop
+                }
+
+                const response = await axios.get(previewUrl, {
+                    responseType: 'blob',
+                })
+
+                const contentType = String(response?.headers?.['content-type'] || '').trim()
+                const blob = response?.data instanceof Blob
+                    ? response.data
+                    : new Blob([response?.data], {
+                        type: contentType || 'application/octet-stream',
+                    })
+
+                const objectUrl = URL.createObjectURL(blob)
+                previewWindow.location.replace(objectUrl)
+                window.setTimeout(() => {
+                    URL.revokeObjectURL(objectUrl)
+                }, 120000)
+            } catch (error) {
+                try {
+                    previewWindow.close()
+                } catch {
+                    // noop
+                }
+
+                const notification = useNotificationStore()
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Vorschau konnte nicht geladen werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+            } finally {
+                this.markAttachmentPreviewing(id, false)
             }
         },
         fileAttachments(card) {
@@ -3127,11 +3377,32 @@ export default {
     min-width: 220px;
 }
 
+.attachment-name-readonly {
+    min-height: 24px;
+    padding: 2px 0;
+    color: rgba(26, 43, 59, 0.92);
+    font-size: 0.95rem;
+    line-height: 1.4;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .attachment-manage-actions {
     min-width: 0;
 }
 
 .attachment-meta-text {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.attachment-source-text {
     min-width: 0;
     max-width: 100%;
     overflow: hidden;

@@ -17,6 +17,7 @@ use App\Http\Resources\Admin\Materials\MaterialCardResource;
 use App\Http\Resources\Admin\PaginateResource;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
+use App\Services\Materials\MaterialAttachmentPreviewService;
 use App\Services\Materials\MaterialService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
@@ -209,6 +210,23 @@ class MaterialController extends Controller
         $name = $material_card_attachment->name ?: basename($material_card_attachment->file_path);
 
         return response()->download(Storage::disk('local')->path($material_card_attachment->file_path), $name);
+    }
+
+    public function previewAttachment(
+        MaterialCardAttachment $material_card_attachment,
+        MaterialAttachmentPreviewService $previewService
+    ) {
+        $authUser = $this->authorizeForMaterials();
+        $material_card_attachment->loadMissing('materialCard');
+        $this->assertIsOwner($authUser->id, (int) $material_card_attachment->materialCard->user_id);
+
+        if ($material_card_attachment->attachment_type !== MaterialCardAttachment::TYPE_FILE || ! $material_card_attachment->file_path) {
+            abort(404, 'Datei nicht gefunden');
+        }
+
+        $downloadUrl = '/api/admin/materials/attachments/' . $material_card_attachment->id . '/download';
+
+        return $previewService->preview($material_card_attachment, $downloadUrl);
     }
 
     private function authorizeForMaterials()

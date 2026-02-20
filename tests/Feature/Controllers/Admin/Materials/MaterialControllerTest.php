@@ -1036,12 +1036,140 @@ test('adding file attachment stores file and allows download', function () {
 
     $uploadResponse->assertStatus(200);
     $attachmentId = $uploadResponse->json('id');
+    $uploadResponse->assertJsonPath('preview_url', '/api/admin/materials/attachments/' . $attachmentId . '/preview');
     $attachment = MaterialCardAttachment::findOrFail($attachmentId);
 
     Storage::disk('local')->assertExists($attachment->file_path);
 
     $this->get('/api/admin/materials/attachments/' . $attachment->id . '/download')
         ->assertStatus(200);
+
+    $previewResponse = $this->get('/api/admin/materials/attachments/' . $attachment->id . '/preview');
+    $previewResponse->assertStatus(200);
+    expect(strtolower((string) $previewResponse->headers->get('content-type')))->toContain('application/pdf');
+});
+
+test('excel attachment preview is rendered as html', function () {
+    Storage::fake('local');
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Excel Vorschau',
+        'keywords' => [],
+    ]);
+
+    $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $sheet = $spreadsheet->getActiveSheet();
+    $sheet->setCellValue('A1', 'Kategorie');
+    $sheet->setCellValue('B1', 'Wert');
+    $sheet->setCellValue('A2', 'Punkte');
+    $sheet->setCellValue('B2', 42);
+
+    $tmpFile = tempnam(sys_get_temp_dir(), 'materials-xlsx-');
+    expect($tmpFile)->toBeString();
+
+    \PhpOffice\PhpSpreadsheet\IOFactory::createWriter($spreadsheet, 'Xlsx')->save($tmpFile);
+    $xlsxContent = file_get_contents($tmpFile);
+    @unlink($tmpFile);
+    $spreadsheet->disconnectWorksheets();
+    unset($spreadsheet);
+
+    expect($xlsxContent)->toBeString();
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $uploadResponse = $this->post('/api/admin/materials/cards/' . $card->id . '/attachments/file', [
+        'file' => UploadedFile::fake()->createWithContent('auswertung.xlsx', (string) $xlsxContent),
+    ]);
+
+    $attachment = MaterialCardAttachment::findOrFail($uploadResponse->json('id'));
+    $response = $this->get('/api/admin/materials/attachments/' . $attachment->id . '/preview');
+
+    $response->assertStatus(200)
+        ->assertSee('Punkte')
+        ->assertSee('Kategorie');
+
+    expect(strtolower((string) $response->headers->get('content-type')))->toContain('text/html');
+});
+
+test('word attachment preview is rendered as html', function () {
+    Storage::fake('local');
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Word Vorschau',
+        'keywords' => [],
+    ]);
+
+    $document = new \PhpOffice\PhpWord\PhpWord();
+    $section = $document->addSection();
+    $section->addText('Word Vorschau Inhalt');
+
+    $tmpFile = tempnam(sys_get_temp_dir(), 'materials-docx-');
+    expect($tmpFile)->toBeString();
+
+    \PhpOffice\PhpWord\IOFactory::createWriter($document, 'Word2007')->save($tmpFile);
+    $docxContent = file_get_contents($tmpFile);
+    @unlink($tmpFile);
+
+    expect($docxContent)->toBeString();
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $uploadResponse = $this->post('/api/admin/materials/cards/' . $card->id . '/attachments/file', [
+        'file' => UploadedFile::fake()->createWithContent('text.docx', (string) $docxContent),
+    ]);
+
+    $attachment = MaterialCardAttachment::findOrFail($uploadResponse->json('id'));
+    $response = $this->get('/api/admin/materials/attachments/' . $attachment->id . '/preview');
+
+    $response->assertStatus(200)
+        ->assertSee('Word Vorschau Inhalt');
+
+    expect(strtolower((string) $response->headers->get('content-type')))->toContain('text/html');
+});
+
+test('powerpoint attachment preview is rendered as html', function () {
+    Storage::fake('local');
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'PowerPoint Vorschau',
+        'keywords' => [],
+    ]);
+
+    $presentation = new \PhpOffice\PhpPresentation\PhpPresentation();
+    $slide = $presentation->getActiveSlide();
+    $shape = new \PhpOffice\PhpPresentation\Shape\RichText();
+    $shape->setHeight(120)->setWidth(620)->setOffsetX(32)->setOffsetY(48);
+    $shape->createTextRun('PowerPoint Vorschau Inhalt');
+    $slide->addShape($shape);
+
+    $tmpFile = tempnam(sys_get_temp_dir(), 'materials-pptx-');
+    expect($tmpFile)->toBeString();
+
+    \PhpOffice\PhpPresentation\IOFactory::createWriter($presentation, 'PowerPoint2007')->save($tmpFile);
+    $pptxContent = file_get_contents($tmpFile);
+    @unlink($tmpFile);
+
+    expect($pptxContent)->toBeString();
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $uploadResponse = $this->post('/api/admin/materials/cards/' . $card->id . '/attachments/file', [
+        'file' => UploadedFile::fake()->createWithContent('folien.pptx', (string) $pptxContent),
+    ]);
+
+    $attachment = MaterialCardAttachment::findOrFail($uploadResponse->json('id'));
+    $response = $this->get('/api/admin/materials/attachments/' . $attachment->id . '/preview');
+
+    $response->assertStatus(200)
+        ->assertSee('PowerPoint Vorschau Inhalt');
+
+    expect(strtolower((string) $response->headers->get('content-type')))->toContain('text/html');
 });
 
 test('adding remote image attachment stores image file from url', function () {
@@ -1074,13 +1202,16 @@ test('adding remote image attachment stores image file from url', function () {
             'attachment_type' => 'file',
             'name' => 'Diagramm aus Web',
             'mime_type' => 'image/jpeg',
+            'source_url' => 'https://example.org/media/diagramm.jpg',
         ]);
 
     $attachmentId = $response->json('id');
     $attachment = MaterialCardAttachment::findOrFail($attachmentId);
 
     Storage::disk('local')->assertExists($attachment->file_path);
-    expect($attachment->url)->toBeNull();
+    expect($attachment->url)->toBeNull()
+        ->and($attachment->source_url)->toBe('https://example.org/media/diagramm.jpg')
+        ->and($attachment->downloaded_at)->not->toBeNull();
 });
 
 test('attachment rename updates stored attachment name', function () {

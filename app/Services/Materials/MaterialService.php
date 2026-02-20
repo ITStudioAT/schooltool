@@ -395,9 +395,11 @@ class MaterialService
             $attachment = $card->attachments()->create([
                 'attachment_type' => MaterialCardAttachment::TYPE_FILE,
                 'name' => $displayName,
+                'source_url' => $normalizedUrl,
                 'file_path' => $destinationPath,
                 'mime_type' => $mimeType,
                 'size_bytes' => $storedSizeBytes > 0 ? $storedSizeBytes : null,
+                'downloaded_at' => now(),
             ]);
 
             $this->keywordService->rebuild($card->fresh($this->cardRelations()));

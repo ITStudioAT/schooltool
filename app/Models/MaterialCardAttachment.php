@@ -18,9 +18,15 @@ class MaterialCardAttachment extends Model
         'attachment_type',
         'name',
         'url',
+        'source_url',
         'file_path',
         'mime_type',
         'size_bytes',
+        'downloaded_at',
+    ];
+
+    protected $casts = [
+        'downloaded_at' => 'datetime',
     ];
 
     public function materialCard(): BelongsTo
