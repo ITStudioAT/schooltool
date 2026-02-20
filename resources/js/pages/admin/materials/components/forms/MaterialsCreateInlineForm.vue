@@ -822,7 +822,6 @@ export default {
             return this.classificationTree
                 .map((subject) => this.normalizeText(subject?.name))
                 .filter((subject) => subject !== '')
-                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
         },
         assignedClassificationItems() {
             const rows = this.toClassificationRows(this.classifications)
@@ -1969,7 +1968,6 @@ ${bodyHtml}
             return topics
                 .map((topic) => this.normalizeText(topic?.name))
                 .filter((topic) => topic !== '')
-                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
         },
         unitOptionsFor(row) {
             const subjectNode = this.subjectNodeByName(row?.subject)
@@ -1978,7 +1976,6 @@ ${bodyHtml}
             return units
                 .map((unit) => this.normalizeText(unit?.name))
                 .filter((unit) => unit !== '')
-                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
         },
         loadClassificationDraft(index) {
             const rows = this.visibleClassificationRows

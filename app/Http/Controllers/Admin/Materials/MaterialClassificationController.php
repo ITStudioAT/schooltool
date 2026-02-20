@@ -13,6 +13,7 @@ use App\Models\MaterialSubject;
 use App\Models\MaterialTopic;
 use App\Models\MaterialUnit;
 use App\Services\Materials\MaterialService;
+use Illuminate\Http\Request;
 
 class MaterialClassificationController extends Controller
 {
@@ -60,6 +61,22 @@ class MaterialClassificationController extends Controller
     {
         $authUser = $this->authorizeForClassificationManagement();
         $service->deleteSubject($authUser, $material_subject);
+
+        return response()->noContent();
+    }
+
+    public function moveSubject(Request $request, MaterialSubject $material_subject, MaterialService $service)
+    {
+        $authUser = $this->authorizeForClassificationManagement();
+        $validated = $request->validate([
+            'data.direction' => ['required', 'string', 'in:up,down'],
+        ]);
+
+        $service->moveSubject(
+            $authUser,
+            $material_subject,
+            (string) ($validated['data']['direction'] ?? '')
+        );
 
         return response()->noContent();
     }
@@ -118,6 +135,22 @@ class MaterialClassificationController extends Controller
         return response()->noContent();
     }
 
+    public function moveTopic(Request $request, MaterialTopic $material_topic, MaterialService $service)
+    {
+        $authUser = $this->authorizeForClassificationManagement();
+        $validated = $request->validate([
+            'data.direction' => ['required', 'string', 'in:up,down'],
+        ]);
+
+        $service->moveTopic(
+            $authUser,
+            $material_topic,
+            (string) ($validated['data']['direction'] ?? '')
+        );
+
+        return response()->noContent();
+    }
+
     public function storeUnit(MaterialUnitStoreRequest $request, MaterialService $service)
     {
         $authUser = $this->authorizeForClassificationManagement();
@@ -168,6 +201,22 @@ class MaterialClassificationController extends Controller
     {
         $authUser = $this->authorizeForClassificationManagement();
         $service->deleteUnit($authUser, $material_unit);
+
+        return response()->noContent();
+    }
+
+    public function moveUnit(Request $request, MaterialUnit $material_unit, MaterialService $service)
+    {
+        $authUser = $this->authorizeForClassificationManagement();
+        $validated = $request->validate([
+            'data.direction' => ['required', 'string', 'in:up,down'],
+        ]);
+
+        $service->moveUnit(
+            $authUser,
+            $material_unit,
+            (string) ($validated['data']['direction'] ?? '')
+        );
 
         return response()->noContent();
     }

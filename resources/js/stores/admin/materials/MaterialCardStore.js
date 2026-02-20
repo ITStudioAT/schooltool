@@ -35,6 +35,11 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
         normalizeStatusColor(value) {
             return this.normalizeTypeColor(value)
         },
+        normalizeMoveDirection(value) {
+            const direction = String(value ?? '').trim().toLowerCase()
+            if (direction === 'up' || direction === 'down') return direction
+            return ''
+        },
 
         ensureConfigObject() {
             if (!this.config || typeof this.config !== 'object') {
@@ -140,17 +145,10 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                 }
             }
 
-            const sortByName = (a, b) =>
-                String(a?.name || '').localeCompare(String(b?.name || ''), undefined, { sensitivity: 'base' })
-
-            tree.sort(sortByName)
             for (const subjectNode of tree) {
                 if (Array.isArray(subjectNode.topics)) {
-                    subjectNode.topics.sort(sortByName)
                     for (const topicNode of subjectNode.topics) {
-                        if (Array.isArray(topicNode.units)) {
-                            topicNode.units.sort(sortByName)
-                        } else {
+                        if (!Array.isArray(topicNode.units)) {
                             topicNode.units = []
                         }
                     }
@@ -1623,6 +1621,174 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                 notification.notify({
                     status: error.response?.status,
                     message: error.response?.data?.message || 'Fehler beim Löschen der Einheit.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async moveSubject(subjectId, direction = 'up') {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const id = Number(subjectId)
+            const normalizedDirection = this.normalizeMoveDirection(direction)
+
+            if (!Number.isFinite(id) || id <= 0) {
+                notification.notify({
+                    message: 'Ungültiges Fach.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return false
+            }
+
+            if (!normalizedDirection) {
+                notification.notify({
+                    message: 'Ungültige Sortierrichtung.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return false
+            }
+
+            adminStore.is_loading++
+            try {
+                await axios.post('/api/admin/materials/subjects/' + id + '/move', {
+                    data: {
+                        direction: normalizedDirection,
+                    },
+                })
+                await this.loadConfig()
+                if (Array.isArray(this.cards) && this.cards.length > 0) {
+                    await this.indexAll()
+                }
+
+                notification.notify({
+                    message: 'Fach sortiert.',
+                    type: 'success',
+                    timeout: 1800,
+                })
+
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Sortieren des Fachs.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async moveTopic(topicId, direction = 'up') {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const id = Number(topicId)
+            const normalizedDirection = this.normalizeMoveDirection(direction)
+
+            if (!Number.isFinite(id) || id <= 0) {
+                notification.notify({
+                    message: 'Ungültiges Thema.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return false
+            }
+
+            if (!normalizedDirection) {
+                notification.notify({
+                    message: 'Ungültige Sortierrichtung.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return false
+            }
+
+            adminStore.is_loading++
+            try {
+                await axios.post('/api/admin/materials/topics/' + id + '/move', {
+                    data: {
+                        direction: normalizedDirection,
+                    },
+                })
+                await this.loadConfig()
+                if (Array.isArray(this.cards) && this.cards.length > 0) {
+                    await this.indexAll()
+                }
+
+                notification.notify({
+                    message: 'Thema sortiert.',
+                    type: 'success',
+                    timeout: 1800,
+                })
+
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Sortieren des Themas.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async moveUnit(unitId, direction = 'up') {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const id = Number(unitId)
+            const normalizedDirection = this.normalizeMoveDirection(direction)
+
+            if (!Number.isFinite(id) || id <= 0) {
+                notification.notify({
+                    message: 'Ungültige Einheit.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return false
+            }
+
+            if (!normalizedDirection) {
+                notification.notify({
+                    message: 'Ungültige Sortierrichtung.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return false
+            }
+
+            adminStore.is_loading++
+            try {
+                await axios.post('/api/admin/materials/units/' + id + '/move', {
+                    data: {
+                        direction: normalizedDirection,
+                    },
+                })
+                await this.loadConfig()
+                if (Array.isArray(this.cards) && this.cards.length > 0) {
+                    await this.indexAll()
+                }
+
+                notification.notify({
+                    message: 'Einheit sortiert.',
+                    type: 'success',
+                    timeout: 1800,
+                })
+
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Sortieren der Einheit.',
                     type: 'error',
                     timeout: 3000,
                 })

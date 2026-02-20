@@ -264,14 +264,26 @@
                             </div>
                             <ul class="subjects-tree-list">
                                 <li
-                                    v-for="subject in subjectTreeItems"
-                                    :key="`subject-tree-subject-${subject.name}`"
+                                    v-for="(subject, subjectIndex) in subjectTreeItems"
+                                    :key="`subject-tree-subject-${subject.id || subject.name}`"
                                     class="subjects-tree-item">
                                     <div class="subjects-tree-group" :style="subjectGroupStyle(subject)">
                                         <div class="subjects-tree-node subjects-tree-node--subject">
                                             <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
                                             <span>{{ subject.name }}</span>
                                             <div class="subjects-tree-node-actions">
+                                                <v-btn
+                                                    icon="mdi-chevron-up"
+                                                    size="x-small"
+                                                    variant="text"
+                                                    :disabled="isSavingSubjectCatalog || !canMoveSubjectUp(subject, subjectIndex)"
+                                                    @click="moveSubject(subject, 'up')" />
+                                                <v-btn
+                                                    icon="mdi-chevron-down"
+                                                    size="x-small"
+                                                    variant="text"
+                                                    :disabled="isSavingSubjectCatalog || !canMoveSubjectDown(subject, subjectIndex)"
+                                                    @click="moveSubject(subject, 'down')" />
                                                 <v-btn
                                                     icon="mdi-pencil"
                                                     size="x-small"
@@ -292,14 +304,26 @@
 
                                         <ul v-if="subject.id" class="subjects-tree-list subjects-tree-list--child">
                                             <li
-                                                v-for="topic in subject.topics"
-                                                :key="`subject-tree-topic-${subject.name}-${topic.name}`"
+                                                v-for="(topic, topicIndex) in subject.topics"
+                                                :key="topic.id || `subject-tree-topic-${subject.id || subject.name}-${topic.name}`"
                                                 class="subjects-tree-item subjects-tree-topic-group"
                                                 :style="topicGroupStyle(subject)">
                                                 <div class="subjects-tree-node subjects-tree-node--topic">
                                                     <v-icon size="14" icon="mdi-book-open-page-variant-outline" class="mr-2" />
                                                     <span>{{ topic.name }}</span>
                                                     <div class="subjects-tree-node-actions">
+                                                        <v-btn
+                                                            icon="mdi-chevron-up"
+                                                            size="x-small"
+                                                            variant="text"
+                                                            :disabled="isSavingSubjectCatalog || !canMoveTopicUp(subject, topic, topicIndex)"
+                                                            @click="moveTopic(topic, 'up')" />
+                                                        <v-btn
+                                                            icon="mdi-chevron-down"
+                                                            size="x-small"
+                                                            variant="text"
+                                                            :disabled="isSavingSubjectCatalog || !canMoveTopicDown(subject, topic, topicIndex)"
+                                                            @click="moveTopic(topic, 'down')" />
                                                         <v-btn
                                                             icon="mdi-pencil"
                                                             size="x-small"
@@ -320,13 +344,25 @@
 
                                                 <ul v-if="topic.id" class="subjects-tree-list subjects-tree-list--child">
                                                     <li
-                                                        v-for="unit in topic.units"
-                                                        :key="`subject-tree-unit-${subject.name}-${topic.name}-${unit.id || unit.name}`"
+                                                        v-for="(unit, unitIndex) in topic.units"
+                                                        :key="unit.id || `subject-tree-unit-${subject.id || subject.name}-${topic.id || topic.name}-${unit.name}`"
                                                         class="subjects-tree-item">
                                                         <div class="subjects-tree-node subjects-tree-node--unit">
                                                             <v-icon size="12" icon="mdi-chevron-right" class="mr-1" />
                                                             <span>{{ unit.name }}</span>
                                                             <div class="subjects-tree-node-actions">
+                                                                <v-btn
+                                                                    icon="mdi-chevron-up"
+                                                                    size="x-small"
+                                                                    variant="text"
+                                                                    :disabled="isSavingSubjectCatalog || !canMoveUnitUp(topic, unit, unitIndex)"
+                                                                    @click="moveUnit(unit, 'up')" />
+                                                                <v-btn
+                                                                    icon="mdi-chevron-down"
+                                                                    size="x-small"
+                                                                    variant="text"
+                                                                    :disabled="isSavingSubjectCatalog || !canMoveUnitDown(topic, unit, unitIndex)"
+                                                                    @click="moveUnit(unit, 'down')" />
                                                                 <v-btn
                                                                     icon="mdi-pencil"
                                                                     size="x-small"
@@ -1566,6 +1602,86 @@ export default {
                 parentLabel: '',
             }
             this.focusSubjectCatalogEditorInput()
+        },
+        canMoveSubjectUp(subject, subjectIndex) {
+            const subjectId = Number(subject?.id)
+            return Number.isFinite(subjectId) && subjectId > 0 && Number(subjectIndex) > 0
+        },
+        canMoveSubjectDown(subject, subjectIndex) {
+            const subjectId = Number(subject?.id)
+            const index = Number(subjectIndex)
+            const subjectCount = Array.isArray(this.subjectTreeItems) ? this.subjectTreeItems.length : 0
+            return Number.isFinite(subjectId) && subjectId > 0
+                && Number.isInteger(index)
+                && index >= 0
+                && index < subjectCount - 1
+        },
+        canMoveTopicUp(subject, topic, topicIndex) {
+            const topicId = Number(topic?.id)
+            const topics = Array.isArray(subject?.topics) ? subject.topics : []
+            return Number.isFinite(topicId) && topicId > 0
+                && topics.length > 1
+                && Number(topicIndex) > 0
+        },
+        canMoveTopicDown(subject, topic, topicIndex) {
+            const topicId = Number(topic?.id)
+            const index = Number(topicIndex)
+            const topics = Array.isArray(subject?.topics) ? subject.topics : []
+            return Number.isFinite(topicId) && topicId > 0
+                && topics.length > 1
+                && Number.isInteger(index)
+                && index >= 0
+                && index < topics.length - 1
+        },
+        canMoveUnitUp(topic, unit, unitIndex) {
+            const unitId = Number(unit?.id)
+            const units = Array.isArray(topic?.units) ? topic.units : []
+            return Number.isFinite(unitId) && unitId > 0
+                && units.length > 1
+                && Number(unitIndex) > 0
+        },
+        canMoveUnitDown(topic, unit, unitIndex) {
+            const unitId = Number(unit?.id)
+            const index = Number(unitIndex)
+            const units = Array.isArray(topic?.units) ? topic.units : []
+            return Number.isFinite(unitId) && unitId > 0
+                && units.length > 1
+                && Number.isInteger(index)
+                && index >= 0
+                && index < units.length - 1
+        },
+        async moveSubject(subject, direction) {
+            if (this.isSavingSubjectCatalog) return
+            const subjectId = Number(subject?.id)
+            const normalizedDirection = String(direction || '').toLowerCase()
+            if (!Number.isFinite(subjectId) || subjectId <= 0) return
+            if (!['up', 'down'].includes(normalizedDirection)) return
+
+            await this.withSubjectCatalogSaving(() =>
+                this.materialCardStore.moveSubject(subjectId, normalizedDirection)
+            )
+        },
+        async moveTopic(topic, direction) {
+            if (this.isSavingSubjectCatalog) return
+            const topicId = Number(topic?.id)
+            const normalizedDirection = String(direction || '').toLowerCase()
+            if (!Number.isFinite(topicId) || topicId <= 0) return
+            if (!['up', 'down'].includes(normalizedDirection)) return
+
+            await this.withSubjectCatalogSaving(() =>
+                this.materialCardStore.moveTopic(topicId, normalizedDirection)
+            )
+        },
+        async moveUnit(unit, direction) {
+            if (this.isSavingSubjectCatalog) return
+            const unitId = Number(unit?.id)
+            const normalizedDirection = String(direction || '').toLowerCase()
+            if (!Number.isFinite(unitId) || unitId <= 0) return
+            if (!['up', 'down'].includes(normalizedDirection)) return
+
+            await this.withSubjectCatalogSaving(() =>
+                this.materialCardStore.moveUnit(unitId, normalizedDirection)
+            )
         },
         cancelSubjectCatalogEditor() {
             if (this.isSavingSubjectCatalog) return

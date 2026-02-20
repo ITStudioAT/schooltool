@@ -1580,7 +1580,6 @@ export default {
             const options = this.classificationTree
                 .map((entry) => String(entry?.name || '').trim())
                 .filter((value) => value !== '')
-                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
 
             const selected = String(this.subjectFilter || '').trim()
             if (selected && !options.some((option) => option.toLocaleLowerCase() === selected.toLocaleLowerCase())) {
@@ -1604,7 +1603,6 @@ export default {
             const options = topics
                 .map((entry) => this.normalizeFilterText(entry?.name))
                 .filter((value) => value !== '')
-                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
 
             const selectedTopic = this.normalizeFilterText(this.topicFilter)
             if (selectedTopic && !options.some((option) => option.toLocaleLowerCase() === selectedTopic.toLocaleLowerCase())) {
@@ -1633,7 +1631,6 @@ export default {
             const options = units
                 .map((entry) => this.normalizeFilterText(entry?.name))
                 .filter((value) => value !== '')
-                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
 
             const selectedUnit = this.normalizeFilterText(this.unitFilter)
             if (selectedUnit && !options.some((option) => option.toLocaleLowerCase() === selectedUnit.toLocaleLowerCase())) {

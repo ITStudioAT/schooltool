@@ -13,6 +13,7 @@ class MaterialUnit extends Model
     protected $fillable = [
         'topic_id',
         'name',
+        'sort_order',
     ];
 
     public function topic(): BelongsTo
@@ -20,4 +21,3 @@ class MaterialUnit extends Model
         return $this->belongsTo(MaterialTopic::class, 'topic_id');
     }
 }
-

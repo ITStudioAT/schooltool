@@ -868,10 +868,7 @@ class MaterialService
             ]);
         }
 
-        return MaterialSubject::query()->firstOrCreate([
-            'user_id' => $user->id,
-            'name' => $normalized,
-        ]);
+        return $this->firstOrCreateSubject($user, $normalized);
     }
 
     public function updateSubject(User $user, MaterialSubject $subject, string $name): MaterialSubject
@@ -947,6 +944,39 @@ class MaterialService
         $subject->delete();
     }
 
+    public function moveSubject(User $user, MaterialSubject $subject, string $direction): bool
+    {
+        $this->assertSubjectBelongsToUser($user, $subject);
+
+        if (! $this->supportsClassificationSortOrder()) {
+            throw ValidationException::withMessages([
+                'data.direction' => 'Sortierung der Fachstruktur ist noch nicht verfügbar.',
+            ]);
+        }
+
+        $normalizedDirection = $this->normalizeMoveDirection($direction);
+        $orderedIds = MaterialSubject::query()
+            ->where('user_id', $user->id)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->values()
+            ->all();
+
+        $reorderedIds = $this->moveWithinOrderedIds($orderedIds, (int) $subject->id, $normalizedDirection);
+        if ($reorderedIds === $orderedIds) {
+            return false;
+        }
+
+        DB::transaction(function () use ($reorderedIds) {
+            $this->persistSubjectSortOrder($reorderedIds);
+        });
+
+        return true;
+    }
+
     public function createTopic(User $user, MaterialSubject $subject, string $name): MaterialTopic
     {
         if (! $this->supportsClassificationTables()) {
@@ -964,10 +994,7 @@ class MaterialService
             ]);
         }
 
-        return MaterialTopic::query()->firstOrCreate([
-            'subject_id' => $subject->id,
-            'name' => $normalized,
-        ]);
+        return $this->firstOrCreateTopic($subject, $normalized);
     }
 
     public function updateTopic(User $user, MaterialTopic $topic, string $name): MaterialTopic
@@ -1030,6 +1057,39 @@ class MaterialService
         $topic->delete();
     }
 
+    public function moveTopic(User $user, MaterialTopic $topic, string $direction): bool
+    {
+        $this->assertTopicBelongsToUser($user, $topic);
+
+        if (! $this->supportsClassificationSortOrder()) {
+            throw ValidationException::withMessages([
+                'data.direction' => 'Sortierung der Fachstruktur ist noch nicht verfügbar.',
+            ]);
+        }
+
+        $normalizedDirection = $this->normalizeMoveDirection($direction);
+        $orderedIds = MaterialTopic::query()
+            ->where('subject_id', $topic->subject_id)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->values()
+            ->all();
+
+        $reorderedIds = $this->moveWithinOrderedIds($orderedIds, (int) $topic->id, $normalizedDirection);
+        if ($reorderedIds === $orderedIds) {
+            return false;
+        }
+
+        DB::transaction(function () use ($reorderedIds) {
+            $this->persistTopicSortOrder($reorderedIds);
+        });
+
+        return true;
+    }
+
     public function createUnit(User $user, MaterialTopic $topic, string $name): MaterialUnit
     {
         if (! $this->supportsClassificationTables()) {
@@ -1047,10 +1107,7 @@ class MaterialService
             ]);
         }
 
-        return MaterialUnit::query()->firstOrCreate([
-            'topic_id' => $topic->id,
-            'name' => $normalized,
-        ]);
+        return $this->firstOrCreateUnit($topic, $normalized);
     }
 
     public function updateUnit(User $user, MaterialUnit $unit, string $name): MaterialUnit
@@ -1100,17 +1157,61 @@ class MaterialService
         $unit->delete();
     }
 
+    public function moveUnit(User $user, MaterialUnit $unit, string $direction): bool
+    {
+        $this->assertUnitBelongsToUser($user, $unit);
+
+        if (! $this->supportsClassificationSortOrder()) {
+            throw ValidationException::withMessages([
+                'data.direction' => 'Sortierung der Fachstruktur ist noch nicht verfügbar.',
+            ]);
+        }
+
+        $normalizedDirection = $this->normalizeMoveDirection($direction);
+        $orderedIds = MaterialUnit::query()
+            ->where('topic_id', $unit->topic_id)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->values()
+            ->all();
+
+        $reorderedIds = $this->moveWithinOrderedIds($orderedIds, (int) $unit->id, $normalizedDirection);
+        if ($reorderedIds === $orderedIds) {
+            return false;
+        }
+
+        DB::transaction(function () use ($reorderedIds) {
+            $this->persistUnitSortOrder($reorderedIds);
+        });
+
+        return true;
+    }
+
     private function classificationTreeForUser(User $user): array
     {
         if (! $this->supportsClassificationTables()) {
             return [];
         }
 
-        $subjects = MaterialSubject::query()
+        $subjectsQuery = MaterialSubject::query()
             ->where('user_id', $user->id)
-            ->with(['topics.units'])
-            ->orderBy('name')
-            ->get();
+            ->with(['topics.units']);
+
+        if ($this->supportsClassificationSortOrder()) {
+            $subjectsQuery
+                ->orderBy('sort_order')
+                ->orderBy('name')
+                ->orderBy('id');
+        } else {
+            $subjectsQuery
+                ->orderBy('name')
+                ->orderBy('id');
+        }
+
+        $subjects = $subjectsQuery->get();
 
         $subjectIds = $subjects->pluck('id')->map(fn ($id) => (int) $id)->filter(fn ($id) => $id > 0)->values();
         $topicIds = $subjects
@@ -1220,25 +1321,16 @@ class MaterialService
         $card->classifications()->delete();
 
         foreach ($rows as $row) {
-            $subject = MaterialSubject::firstOrCreate([
-                'user_id' => $user->id,
-                'name' => $row['subject'],
-            ]);
+            $subject = $this->firstOrCreateSubject($user, $row['subject']);
 
             $topic = null;
             $unit = null;
 
             if ($row['topic'] !== '') {
-                $topic = MaterialTopic::firstOrCreate([
-                    'subject_id' => $subject->id,
-                    'name' => $row['topic'],
-                ]);
+                $topic = $this->firstOrCreateTopic($subject, $row['topic']);
 
                 if ($row['unit'] !== '') {
-                    $unit = MaterialUnit::firstOrCreate([
-                        'topic_id' => $topic->id,
-                        'name' => $row['unit'],
-                    ]);
+                    $unit = $this->firstOrCreateUnit($topic, $row['unit']);
                 }
             }
 
@@ -1290,6 +1382,142 @@ class MaterialService
         }
 
         return $rows;
+    }
+
+    private function firstOrCreateSubject(User $user, string $name): MaterialSubject
+    {
+        $attributes = [
+            'user_id' => $user->id,
+            'name' => $name,
+        ];
+
+        if (! $this->supportsClassificationSortOrder()) {
+            return MaterialSubject::query()->firstOrCreate($attributes);
+        }
+
+        return MaterialSubject::query()->firstOrCreate(
+            $attributes,
+            ['sort_order' => $this->nextSubjectSortOrder($user)]
+        );
+    }
+
+    private function firstOrCreateTopic(MaterialSubject $subject, string $name): MaterialTopic
+    {
+        $attributes = [
+            'subject_id' => $subject->id,
+            'name' => $name,
+        ];
+
+        if (! $this->supportsClassificationSortOrder()) {
+            return MaterialTopic::query()->firstOrCreate($attributes);
+        }
+
+        return MaterialTopic::query()->firstOrCreate(
+            $attributes,
+            ['sort_order' => $this->nextTopicSortOrder((int) $subject->id)]
+        );
+    }
+
+    private function firstOrCreateUnit(MaterialTopic $topic, string $name): MaterialUnit
+    {
+        $attributes = [
+            'topic_id' => $topic->id,
+            'name' => $name,
+        ];
+
+        if (! $this->supportsClassificationSortOrder()) {
+            return MaterialUnit::query()->firstOrCreate($attributes);
+        }
+
+        return MaterialUnit::query()->firstOrCreate(
+            $attributes,
+            ['sort_order' => $this->nextUnitSortOrder((int) $topic->id)]
+        );
+    }
+
+    private function nextSubjectSortOrder(User $user): int
+    {
+        $max = (int) MaterialSubject::query()
+            ->where('user_id', $user->id)
+            ->max('sort_order');
+
+        return max(0, $max) + 1;
+    }
+
+    private function nextTopicSortOrder(int $subjectId): int
+    {
+        $max = (int) MaterialTopic::query()
+            ->where('subject_id', $subjectId)
+            ->max('sort_order');
+
+        return max(0, $max) + 1;
+    }
+
+    private function nextUnitSortOrder(int $topicId): int
+    {
+        $max = (int) MaterialUnit::query()
+            ->where('topic_id', $topicId)
+            ->max('sort_order');
+
+        return max(0, $max) + 1;
+    }
+
+    private function normalizeMoveDirection(mixed $direction): string
+    {
+        $value = mb_strtolower(trim((string) $direction));
+        if ($value !== 'up' && $value !== 'down') {
+            throw ValidationException::withMessages([
+                'data.direction' => 'Ungültige Sortierrichtung.',
+            ]);
+        }
+
+        return $value;
+    }
+
+    private function moveWithinOrderedIds(array $orderedIds, int $currentId, string $direction): array
+    {
+        $index = array_search($currentId, $orderedIds, true);
+        if ($index === false) {
+            return $orderedIds;
+        }
+
+        $targetIndex = $direction === 'up' ? $index - 1 : $index + 1;
+        if ($targetIndex < 0 || $targetIndex >= count($orderedIds)) {
+            return $orderedIds;
+        }
+
+        $targetId = $orderedIds[$targetIndex];
+        $orderedIds[$targetIndex] = $orderedIds[$index];
+        $orderedIds[$index] = $targetId;
+
+        return $orderedIds;
+    }
+
+    private function persistSubjectSortOrder(array $orderedIds): void
+    {
+        foreach ($orderedIds as $index => $id) {
+            MaterialSubject::query()
+                ->whereKey($id)
+                ->update(['sort_order' => $index + 1]);
+        }
+    }
+
+    private function persistTopicSortOrder(array $orderedIds): void
+    {
+        foreach ($orderedIds as $index => $id) {
+            MaterialTopic::query()
+                ->whereKey($id)
+                ->update(['sort_order' => $index + 1]);
+        }
+    }
+
+    private function persistUnitSortOrder(array $orderedIds): void
+    {
+        foreach ($orderedIds as $index => $id) {
+            MaterialUnit::query()
+                ->whereKey($id)
+                ->update(['sort_order' => $index + 1]);
+        }
     }
 
     private function assertSubjectBelongsToUser(User $user, MaterialSubject $subject): void
@@ -1879,6 +2107,14 @@ class MaterialService
             && Schema::hasTable('material_topics')
             && Schema::hasTable('material_units')
             && Schema::hasTable('material_card_classifications');
+    }
+
+    private function supportsClassificationSortOrder(): bool
+    {
+        return $this->supportsClassificationTables()
+            && Schema::hasColumn('material_subjects', 'sort_order')
+            && Schema::hasColumn('material_topics', 'sort_order')
+            && Schema::hasColumn('material_units', 'sort_order');
     }
 
     private function materialAttachmentDirectory(MaterialCard $card): string
