@@ -43,25 +43,32 @@
                 <div class="text-subtitle-2 mb-2">Fach filtern</div>
 
                 <div class="d-flex flex-wrap ga-2">
-                    <v-chip
-                        size="small"
-                        :variant="hasActiveSubjectFilter ? 'tonal' : 'flat'"
-                        :color="hasActiveSubjectFilter ? undefined : 'primary'"
-                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                        @click="clearSubjectFilter">
-                        Alle
-                    </v-chip>
+                    <v-badge class="filter-chip-badge" inline :content="badgeCountContent(subjectAllCount)">
+                        <v-chip
+                            size="small"
+                            :variant="hasActiveSubjectFilter ? 'tonal' : 'flat'"
+                            :color="hasActiveSubjectFilter ? undefined : 'primary'"
+                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                            @click="clearSubjectFilter">
+                            Alle
+                        </v-chip>
+                    </v-badge>
 
-                    <v-chip
+                    <v-badge
                         v-for="subject in subjectFilterOptions"
                         :key="`subject-filter-${subject}`"
-                        size="small"
-                        color="primary"
-                        :variant="isSubjectFilterActive(subject) ? 'flat' : 'tonal'"
-                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                        @click="toggleSubjectFilter(subject)">
-                        {{ subject }}
-                    </v-chip>
+                        class="filter-chip-badge"
+                        inline
+                        :content="badgeCountContent(subjectFilterCount(subject))">
+                        <v-chip
+                            size="small"
+                            color="primary"
+                            :variant="isSubjectFilterActive(subject) ? 'flat' : 'tonal'"
+                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                            @click="toggleSubjectFilter(subject)">
+                            {{ subject }}
+                        </v-chip>
+                    </v-badge>
                 </div>
 
                 <div v-if="hasActiveSubjectFilter" class="subject-dependent-filters mt-3">
@@ -69,25 +76,32 @@
                         <div class="text-subtitle-2 mb-2">Thema filtern</div>
 
                         <div class="d-flex flex-wrap ga-2">
-                            <v-chip
-                                size="small"
-                                :variant="hasActiveTopicFilter ? 'tonal' : 'flat'"
-                                :color="hasActiveTopicFilter ? undefined : 'primary'"
-                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                @click="clearTopicFilter">
-                                Alle
-                            </v-chip>
+                            <v-badge class="filter-chip-badge" inline :content="badgeCountContent(topicAllCount)">
+                                <v-chip
+                                    size="small"
+                                    :variant="hasActiveTopicFilter ? 'tonal' : 'flat'"
+                                    :color="hasActiveTopicFilter ? undefined : 'primary'"
+                                    :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                                    @click="clearTopicFilter">
+                                    Alle
+                                </v-chip>
+                            </v-badge>
 
-                            <v-chip
+                            <v-badge
                                 v-for="topic in topicFilterOptions"
                                 :key="`topic-filter-${topic}`"
-                                size="small"
-                                color="primary"
-                                :variant="isTopicFilterActive(topic) ? 'flat' : 'tonal'"
-                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                @click="toggleTopicFilter(topic)">
-                                {{ topic }}
-                            </v-chip>
+                                class="filter-chip-badge"
+                                inline
+                                :content="badgeCountContent(topicFilterCount(topic))">
+                                <v-chip
+                                    size="small"
+                                    color="primary"
+                                    :variant="isTopicFilterActive(topic) ? 'flat' : 'tonal'"
+                                    :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                                    @click="toggleTopicFilter(topic)">
+                                    {{ topic }}
+                                </v-chip>
+                            </v-badge>
                         </div>
                     </div>
 
@@ -95,25 +109,32 @@
                         <div class="text-subtitle-2 mb-2">Bereich filtern</div>
 
                         <div class="d-flex flex-wrap ga-2">
-                            <v-chip
-                                size="small"
-                                :variant="hasActiveUnitFilter ? 'tonal' : 'flat'"
-                                :color="hasActiveUnitFilter ? undefined : 'primary'"
-                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                @click="clearUnitFilter">
-                                Alle
-                            </v-chip>
+                            <v-badge class="filter-chip-badge" inline :content="badgeCountContent(unitAllCount)">
+                                <v-chip
+                                    size="small"
+                                    :variant="hasActiveUnitFilter ? 'tonal' : 'flat'"
+                                    :color="hasActiveUnitFilter ? undefined : 'primary'"
+                                    :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                                    @click="clearUnitFilter">
+                                    Alle
+                                </v-chip>
+                            </v-badge>
 
-                            <v-chip
+                            <v-badge
                                 v-for="unit in unitFilterOptions"
                                 :key="`unit-filter-${unit}`"
-                                size="small"
-                                color="primary"
-                                :variant="isUnitFilterActive(unit) ? 'flat' : 'tonal'"
-                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                @click="toggleUnitFilter(unit)">
-                                {{ unit }}
-                            </v-chip>
+                                class="filter-chip-badge"
+                                inline
+                                :content="badgeCountContent(unitFilterCount(unit))">
+                                <v-chip
+                                    size="small"
+                                    color="primary"
+                                    :variant="isUnitFilterActive(unit) ? 'flat' : 'tonal'"
+                                    :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                                    @click="toggleUnitFilter(unit)">
+                                    {{ unit }}
+                                </v-chip>
+                            </v-badge>
                         </div>
                     </div>
                 </div>
@@ -178,13 +199,31 @@
                 • Speicher: angezeigt {{ shownListedAttachmentSizeLabel }} / alle {{ allListedAttachmentSizeLabel }}
             </span>
         </v-alert>
+        <div class="d-flex flex-wrap align-center ga-2 mb-4">
+            <div class="text-caption text-medium-emphasis">Sortierung:</div>
+            <v-btn-toggle
+                :model-value="overviewSortMode"
+                mandatory
+                color="primary"
+                variant="tonal"
+                density="comfortable"
+                class="overview-sort-toggle"
+                @update:modelValue="setOverviewSortMode">
+                <v-btn value="date" prepend-icon="mdi-calendar-clock">
+                    Datum
+                </v-btn>
+                <v-btn value="name" prepend-icon="mdi-sort-alphabetical-ascending">
+                    Name
+                </v-btn>
+            </v-btn-toggle>
+        </div>
 
         <v-skeleton-loader v-if="isLoading && !hasCards" type="list-item-three-line@4" />
 
         <template v-else-if="hasCards">
             <v-row v-if="isCompactOverview" class="overview-grid ma-0">
                 <v-col
-                    v-for="card in cards"
+                    v-for="card in sortedCards"
                     :key="`grid-card-${card.id}`"
                     cols="12"
                     sm="6"
@@ -288,7 +327,7 @@
 
             <v-list v-else-if="isAlphabeticOverview" class="bg-transparent pa-0">
                 <v-list-item
-                    v-for="card in alphabeticCards"
+                    v-for="card in sortedCards"
                     :key="`alpha-card-${card.id}`"
                     class="overview-alpha-item mb-2 px-3 py-2"
                     rounded="lg"
@@ -356,7 +395,7 @@
 
             <v-list v-else class="bg-transparent pa-0">
             <v-list-item
-                v-for="card in cards"
+                v-for="card in sortedCards"
                 :key="card.id"
                 class="overview-item mb-3 px-4 py-3"
                 rounded="lg"
@@ -1108,6 +1147,7 @@ export default {
             isUploadingAttachment: false,
             csrfToken: null,
             overviewViewMode: 'list',
+            overviewSortMode: 'date',
             currentPage: 1,
             subjectFilter: '',
             topicFilter: '',
@@ -1132,6 +1172,11 @@ export default {
             allListedAttachmentBytes: null,
             allListedAttachmentBytesLoading: false,
             allListedAttachmentBytesRequestId: 0,
+            filterCountCards: [],
+            filterCountCardsLoaded: false,
+            filterCountCardsLoading: false,
+            filterCountCardsRequestId: 0,
+            filterCountSnapshotKey: '',
         }
     },
     watch: {
@@ -1172,26 +1217,43 @@ export default {
         hasCards() {
             return this.cards.length > 0
         },
+        sortedCards() {
+            const list = Array.isArray(this.cards) ? [...this.cards] : []
+            if (this.overviewSortMode === 'name') {
+                list.sort((a, b) => {
+                    const titleA = this.materialSortTitle(a)
+                    const titleB = this.materialSortTitle(b)
+                    const byTitle = titleA.localeCompare(titleB, 'de', { sensitivity: 'base' })
+                    if (byTitle !== 0) {
+                        return byTitle
+                    }
+
+                    const byUpdatedAt = this.cardUpdatedTimestamp(b) - this.cardUpdatedTimestamp(a)
+                    if (byUpdatedAt !== 0) {
+                        return byUpdatedAt
+                    }
+
+                    return Number(b?.id || 0) - Number(a?.id || 0)
+                })
+                return list
+            }
+
+            list.sort((a, b) => {
+                const byUpdatedAt = this.cardUpdatedTimestamp(b) - this.cardUpdatedTimestamp(a)
+                if (byUpdatedAt !== 0) {
+                    return byUpdatedAt
+                }
+
+                return Number(b?.id || 0) - Number(a?.id || 0)
+            })
+
+            return list
+        },
         isCompactOverview() {
             return this.overviewViewMode === 'grid'
         },
         isAlphabeticOverview() {
             return this.overviewViewMode === 'alpha'
-        },
-        alphabeticCards() {
-            const list = Array.isArray(this.cards) ? [...this.cards] : []
-            list.sort((a, b) => {
-                const titleA = this.materialSortTitle(a)
-                const titleB = this.materialSortTitle(b)
-                const byTitle = titleA.localeCompare(titleB, 'de', { sensitivity: 'base' })
-                if (byTitle !== 0) {
-                    return byTitle
-                }
-                const idA = Number(a?.id || 0)
-                const idB = Number(b?.id || 0)
-                return idA - idB
-            })
-            return list
         },
         currentMetaPage() {
             const value = Number(this.materialCardStore?.meta?.current_page || this.currentPage)
@@ -1418,6 +1480,148 @@ export default {
         hasActiveStatusFilter() {
             return this.normalizeFilterText(this.statusFilter) !== ''
         },
+        filterCountSourceCards() {
+            if (this.filterCountCardsLoaded && Array.isArray(this.filterCountCards)) {
+                return this.filterCountCards
+            }
+
+            return Array.isArray(this.cards) ? this.cards : []
+        },
+        subjectFilterCountMap() {
+            const result = {}
+            for (const subject of this.subjectFilterOptions) {
+                const key = this.normalizeFilterText(subject).toLocaleLowerCase()
+                if (!key || Object.prototype.hasOwnProperty.call(result, key)) continue
+
+                result[key] = this.countCardsForFilterSet({
+                    subject,
+                    topic: '',
+                    unit: '',
+                    type: this.typeFilter,
+                    status: this.statusFilter,
+                })
+            }
+            return result
+        },
+        subjectAllCount() {
+            return this.countCardsForFilterSet({
+                subject: '',
+                topic: '',
+                unit: '',
+                type: this.typeFilter,
+                status: this.statusFilter,
+            })
+        },
+        topicFilterCountMap() {
+            const result = {}
+            if (!this.hasActiveSubjectFilter) return result
+
+            for (const topic of this.topicFilterOptions) {
+                const key = this.normalizeFilterText(topic).toLocaleLowerCase()
+                if (!key || Object.prototype.hasOwnProperty.call(result, key)) continue
+
+                result[key] = this.countCardsForFilterSet({
+                    subject: this.subjectFilter,
+                    topic,
+                    unit: '',
+                    type: this.typeFilter,
+                    status: this.statusFilter,
+                })
+            }
+            return result
+        },
+        topicAllCount() {
+            if (!this.hasActiveSubjectFilter) return 0
+
+            return this.countCardsForFilterSet({
+                subject: this.subjectFilter,
+                topic: '',
+                unit: '',
+                type: this.typeFilter,
+                status: this.statusFilter,
+            })
+        },
+        unitFilterCountMap() {
+            const result = {}
+            if (!this.hasActiveTopicFilter) return result
+
+            for (const unit of this.unitFilterOptions) {
+                const key = this.normalizeFilterText(unit).toLocaleLowerCase()
+                if (!key || Object.prototype.hasOwnProperty.call(result, key)) continue
+
+                result[key] = this.countCardsForFilterSet({
+                    subject: this.subjectFilter,
+                    topic: this.topicFilter,
+                    unit,
+                    type: this.typeFilter,
+                    status: this.statusFilter,
+                })
+            }
+            return result
+        },
+        unitAllCount() {
+            if (!this.hasActiveTopicFilter) return 0
+
+            return this.countCardsForFilterSet({
+                subject: this.subjectFilter,
+                topic: this.topicFilter,
+                unit: '',
+                type: this.typeFilter,
+                status: this.statusFilter,
+            })
+        },
+        typeFilterCountMap() {
+            const result = {}
+            for (const option of this.typeFilterOptions) {
+                const value = this.normalizeFilterText(option?.value)
+                const key = value.toLocaleLowerCase()
+                if (!key || Object.prototype.hasOwnProperty.call(result, key)) continue
+
+                result[key] = this.countCardsForFilterSet({
+                    subject: this.subjectFilter,
+                    topic: this.topicFilter,
+                    unit: this.unitFilter,
+                    type: value,
+                    status: this.statusFilter,
+                })
+            }
+            return result
+        },
+        typeAllCount() {
+            return this.countCardsForFilterSet({
+                subject: this.subjectFilter,
+                topic: this.topicFilter,
+                unit: this.unitFilter,
+                type: '',
+                status: this.statusFilter,
+            })
+        },
+        statusFilterCountMap() {
+            const result = {}
+            for (const option of this.statusFilterOptions) {
+                const value = this.normalizeFilterText(option?.value)
+                const key = value.toLocaleLowerCase()
+                if (!key || Object.prototype.hasOwnProperty.call(result, key)) continue
+
+                result[key] = this.countCardsForFilterSet({
+                    subject: this.subjectFilter,
+                    topic: this.topicFilter,
+                    unit: this.unitFilter,
+                    type: this.typeFilter,
+                    status: value,
+                })
+            }
+            return result
+        },
+        statusAllCount() {
+            return this.countCardsForFilterSet({
+                subject: this.subjectFilter,
+                topic: this.topicFilter,
+                unit: this.unitFilter,
+                type: this.typeFilter,
+                status: '',
+            })
+        },
     },
     async beforeMount() {
         const metaToken = document?.head?.querySelector?.('meta[name="csrf-token"]')?.content
@@ -1428,6 +1632,13 @@ export default {
             this.overviewViewMode = allowedModes.includes(storedMode) ? storedMode : 'list'
         } catch {
             this.overviewViewMode = 'list'
+        }
+        try {
+            const storedSortMode = window?.localStorage?.getItem?.('materials.overview.sort')
+            const allowedSortModes = ['date', 'name']
+            this.overviewSortMode = allowedSortModes.includes(storedSortMode) ? storedSortMode : 'date'
+        } catch {
+            this.overviewSortMode = 'date'
         }
         try {
             const response = await axios.get('/api/admin/token')
@@ -1467,9 +1678,27 @@ export default {
                 // Falls localStorage nicht verfügbar ist, nur im aktuellen Zustand bleiben.
             }
         },
+        setOverviewSortMode(value) {
+            const nextSortMode = ['date', 'name'].includes(String(value)) ? String(value) : 'date'
+            if (nextSortMode === this.overviewSortMode) return
+            this.overviewSortMode = nextSortMode
+            try {
+                window?.localStorage?.setItem?.('materials.overview.sort', nextSortMode)
+            } catch {
+                // Falls localStorage nicht verfügbar ist, nur im aktuellen Zustand bleiben.
+            }
+        },
         materialSortTitle(card) {
             const title = String(card?.title || '').trim()
             return title !== '' ? title : 'Ohne Titel'
+        },
+        cardUpdatedTimestamp(card) {
+            const raw = String(card?.updated_at || '').trim()
+            if (!raw) return 0
+
+            const parsed = new Date(raw.replace(' ', 'T'))
+            const time = parsed.getTime()
+            return Number.isFinite(time) ? time : 0
         },
         alphabeticAssignmentLine(card) {
             const labels = this.classificationLabels(card)
@@ -1488,7 +1717,7 @@ export default {
 
             return `${first} (+${labels.length - 1})`
         },
-        async loadCards(page = null) {
+        async loadCards(page = null, options = {}) {
             if (this.isLoading) return
             let targetPage = Number(page ?? this.currentPage)
             if (!Number.isFinite(targetPage) || targetPage <= 0) {
@@ -1512,6 +1741,8 @@ export default {
                     currentPage = 1
                 }
                 this.currentPage = Math.max(1, Math.round(currentPage))
+                const forceFilterCountRefresh = options?.forceFilterCountRefresh === true
+                this.refreshFilterCountCards({ force: forceFilterCountRefresh })
                 this.refreshAllListedAttachmentBytes()
             }
             this.isLoading = false
@@ -1715,6 +1946,144 @@ export default {
         },
         async clearStatusFilter() {
             await this.applyStatusFilter('')
+        },
+        badgeCountContent(value) {
+            const count = Number(value)
+            if (!Number.isFinite(count) || count < 0) return '0'
+            return String(Math.round(count))
+        },
+        filterCountSnapshotKeyFor(filters = {}) {
+            const entries = Object.entries(filters || {})
+                .map(([key, value]) => [String(key), this.normalizeFilterText(value)])
+                .filter(([key, value]) => key !== '' && value !== '')
+                .sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }))
+
+            return entries.map(([key, value]) => `${key}:${value.toLocaleLowerCase()}`).join('|')
+        },
+        buildFilterCountSnapshotFilters() {
+            const source = { ...(this.materialCardStore?.filters || {}) }
+            const excluded = new Set(['subject', 'topic', 'unit', 'type', 'status', 'page'])
+            const result = {}
+
+            for (const [key, value] of Object.entries(source)) {
+                const filterKey = String(key || '').trim()
+                if (!filterKey || excluded.has(filterKey)) continue
+                const normalizedValue = this.normalizeFilterText(value)
+                if (!normalizedValue) continue
+                result[filterKey] = normalizedValue
+            }
+
+            return result
+        },
+        async refreshFilterCountCards({ force = false } = {}) {
+            const filters = this.buildFilterCountSnapshotFilters()
+            const snapshotKey = this.filterCountSnapshotKeyFor(filters)
+
+            if (!force && this.filterCountCardsLoaded && snapshotKey === this.filterCountSnapshotKey) {
+                return
+            }
+
+            const requestId = this.filterCountCardsRequestId + 1
+            this.filterCountCardsRequestId = requestId
+            this.filterCountCardsLoading = true
+
+            const snapshot = await this.materialCardStore.listAllCardsSnapshot(filters)
+            if (requestId !== this.filterCountCardsRequestId) return
+
+            if (Array.isArray(snapshot)) {
+                this.filterCountCards = snapshot
+                this.filterCountCardsLoaded = true
+                this.filterCountSnapshotKey = snapshotKey
+            }
+
+            this.filterCountCardsLoading = false
+        },
+        normalizeFilterSelection(filters = {}) {
+            const normalized = {
+                subject: this.normalizeFilterText(filters?.subject),
+                topic: this.normalizeFilterText(filters?.topic),
+                unit: this.normalizeFilterText(filters?.unit),
+                type: this.normalizeFilterText(filters?.type),
+                status: this.normalizeFilterText(filters?.status),
+            }
+
+            if (normalized.subject === '') {
+                normalized.topic = ''
+                normalized.unit = ''
+            } else if (normalized.topic === '') {
+                normalized.unit = ''
+            }
+
+            return normalized
+        },
+        normalizedCardClassifications(card) {
+            return this.normalizeClassifications(card?.classifications)
+        },
+        cardHasClassificationValue(card, field, value) {
+            const normalizedValue = this.normalizeFilterText(value).toLocaleLowerCase()
+            if (normalizedValue === '') return true
+
+            const rows = this.normalizedCardClassifications(card)
+            return rows.some((row) => this.normalizeFilterText(row?.[field]).toLocaleLowerCase() === normalizedValue)
+        },
+        cardMatchesTypeFilterValue(card, typeValue) {
+            const normalizedType = this.normalizeFilterText(typeValue).toLocaleLowerCase()
+            if (normalizedType === '') return true
+
+            const cardType = this.normalizeFilterText(card?.type).toLocaleLowerCase()
+            return cardType !== '' && cardType === normalizedType
+        },
+        cardMatchesStatusFilterValue(card, statusValue) {
+            const normalizedStatus = this.normalizeFilterText(statusValue).toLocaleLowerCase()
+            if (normalizedStatus === '') return true
+
+            const cardStatus = this.normalizeFilterText(card?.status).toLocaleLowerCase()
+            return cardStatus !== '' && cardStatus === normalizedStatus
+        },
+        cardMatchesFilterSet(card, normalizedFilters = null) {
+            const filters = normalizedFilters || this.normalizeFilterSelection({})
+
+            return this.cardHasClassificationValue(card, 'subject', filters.subject)
+                && this.cardHasClassificationValue(card, 'topic', filters.topic)
+                && this.cardHasClassificationValue(card, 'unit', filters.unit)
+                && this.cardMatchesTypeFilterValue(card, filters.type)
+                && this.cardMatchesStatusFilterValue(card, filters.status)
+        },
+        countCardsForFilterSet(filters = {}) {
+            const normalized = this.normalizeFilterSelection(filters)
+            const cards = Array.isArray(this.filterCountSourceCards) ? this.filterCountSourceCards : []
+            if (!Array.isArray(cards) || cards.length === 0) return 0
+
+            let count = 0
+            for (const card of cards) {
+                if (this.cardMatchesFilterSet(card, normalized)) {
+                    count += 1
+                }
+            }
+
+            return count
+        },
+        countFromMap(map, value) {
+            const key = this.normalizeFilterText(value).toLocaleLowerCase()
+            if (!key) return 0
+            const count = Number(map?.[key] ?? 0)
+            if (!Number.isFinite(count) || count < 0) return 0
+            return Math.round(count)
+        },
+        subjectFilterCount(value) {
+            return this.countFromMap(this.subjectFilterCountMap, value)
+        },
+        topicFilterCount(value) {
+            return this.countFromMap(this.topicFilterCountMap, value)
+        },
+        unitFilterCount(value) {
+            return this.countFromMap(this.unitFilterCountMap, value)
+        },
+        typeFilterCount(value) {
+            return this.countFromMap(this.typeFilterCountMap, value)
+        },
+        statusFilterCount(value) {
+            return this.countFromMap(this.statusFilterCountMap, value)
         },
         toNullable(value) {
             const text = String(value ?? '').trim()
@@ -2164,7 +2533,7 @@ export default {
 
             if (deleted) {
                 this.closeDetailDialog()
-                await this.loadCards()
+                await this.loadCards(null, { forceFilterCountRefresh: true })
             }
         },
         openEditDialog(card) {
@@ -2283,7 +2652,7 @@ export default {
 
             if (updated) {
                 await this.closeEditDialog(true)
-                await this.loadCards()
+                await this.loadCards(null, { forceFilterCountRefresh: true })
             }
         },
         normalizeClassifications(value) {
@@ -3177,6 +3546,18 @@ export default {
     min-width: 0;
 }
 
+.filter-chip-badge {
+    display: inline-flex;
+}
+
+.filter-chip-badge :deep(.v-badge__badge) {
+    top: -12px;
+    background: rgba(35, 61, 76, 0.16) !important;
+    color: rgba(35, 61, 76, 0.9) !important;
+    font-weight: 600;
+    box-shadow: none;
+}
+
 .overview-item {
     border: 1px solid rgba(40, 58, 80, 0.12);
     background-color: rgba(255, 255, 255, 0.72);
@@ -3221,6 +3602,10 @@ export default {
 }
 
 .overview-mode-toggle {
+    max-width: 100%;
+}
+
+.overview-sort-toggle {
     max-width: 100%;
 }
 
@@ -3435,6 +3820,14 @@ export default {
     }
 
     .overview-mode-toggle :deep(.v-btn) {
+        flex: 1 1 0;
+    }
+
+    .overview-sort-toggle {
+        width: 100%;
+    }
+
+    .overview-sort-toggle :deep(.v-btn) {
         flex: 1 1 0;
     }
 
