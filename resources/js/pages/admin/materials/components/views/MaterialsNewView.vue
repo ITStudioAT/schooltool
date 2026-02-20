@@ -3,21 +3,13 @@
         <v-row class="mb-6" align="center">
             <v-col cols="12">
                 <div class="text-h4 font-weight-bold mb-2">Neues Material</div>
-                <div class="text-subtitle-1 subline">Wähle eine Möglichkeit: Neues Material, Upload oder Zwischenablage.</div>
+                <div class="text-subtitle-1 subline">Wähle eine Möglichkeit: Neues Material.</div>
             </v-col>
         </v-row>
 
         <v-row v-if="!createFormOpen" dense>
             <v-col cols="12" md="4">
                 <MaterialsAddOption @add-material="openCreateForm" />
-            </v-col>
-
-            <v-col cols="12" md="4">
-                <MaterialsDropOption />
-            </v-col>
-
-            <v-col cols="12" md="4">
-                <MaterialsClipboardOption />
             </v-col>
         </v-row>
 
@@ -153,8 +145,6 @@
 import { useMaterialCardStore } from '@/stores/admin/materials/MaterialCardStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import MaterialsAddOption from '../options/MaterialsAddOption.vue'
-import MaterialsClipboardOption from '../options/MaterialsClipboardOption.vue'
-import MaterialsDropOption from '../options/MaterialsDropOption.vue'
 import MaterialsCreateInlineForm from '../forms/MaterialsCreateInlineForm.vue'
 import MaterialTypeManagerDialog from '../forms/MaterialTypeManagerDialog.vue'
 
@@ -163,8 +153,6 @@ export default {
     emits: ['menu-lock-change'],
     components: {
         MaterialsAddOption,
-        MaterialsClipboardOption,
-        MaterialsDropOption,
         MaterialsCreateInlineForm,
         MaterialTypeManagerDialog,
     },

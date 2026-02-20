@@ -140,57 +140,77 @@
                 </div>
             </div>
 
-            <div class="filter-section">
-                <div class="text-subtitle-2 mb-2">Materialtyp filtern</div>
-
-                <div class="d-flex flex-wrap ga-2">
-                    <v-chip
-                        size="small"
-                        :variant="hasActiveTypeFilter ? 'tonal' : 'flat'"
-                        :color="hasActiveTypeFilter ? undefined : 'primary'"
-                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                        @click="clearTypeFilter">
-                        Alle
-                    </v-chip>
-
-                    <v-chip
-                        v-for="typeOption in typeFilterOptions"
-                        :key="`type-filter-${typeOption.value}`"
-                        size="small"
-                        :color="typeColor(typeOption.value) || 'primary'"
-                        :variant="isTypeFilterActive(typeOption.value) ? 'flat' : 'tonal'"
-                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                        @click="toggleTypeFilter(typeOption.value)">
-                        {{ typeOption.label }}
-                    </v-chip>
-                </div>
+            <div class="d-flex justify-end mb-2">
+                <v-tooltip location="top">
+                    <template #activator="{ props }">
+                        <v-btn
+                            v-bind="props"
+                            :icon="showSecondaryFilters ? 'mdi-filter-variant-minus' : 'mdi-filter-variant-plus'"
+                            size="small"
+                            variant="text"
+                            color="primary"
+                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                            @click="toggleSecondaryFilters" />
+                    </template>
+                    <span>
+                        {{ showSecondaryFilters ? 'Materialtyp- und Statusfilter ausblenden' : 'Materialtyp- und Statusfilter einblenden' }}
+                    </span>
+                </v-tooltip>
             </div>
 
-            <div class="filter-section">
-                <div class="text-subtitle-2 mb-2">Status filtern</div>
+            <template v-if="showSecondaryFilters">
+                <div class="filter-section">
+                    <div class="text-subtitle-2 mb-2">Materialtyp filtern</div>
 
-                <div class="d-flex flex-wrap ga-2">
-                    <v-chip
-                        size="small"
-                        :variant="hasActiveStatusFilter ? 'tonal' : 'flat'"
-                        :color="hasActiveStatusFilter ? undefined : 'primary'"
-                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                        @click="clearStatusFilter">
-                        Alle
-                    </v-chip>
+                    <div class="d-flex flex-wrap ga-2">
+                        <v-chip
+                            size="small"
+                            :variant="hasActiveTypeFilter ? 'tonal' : 'flat'"
+                            :color="hasActiveTypeFilter ? undefined : 'primary'"
+                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                            @click="clearTypeFilter">
+                            Alle
+                        </v-chip>
 
-                    <v-chip
-                        v-for="statusOption in statusFilterOptions"
-                        :key="`status-filter-${statusOption.value}`"
-                        size="small"
-                        :color="statusColor(statusOption.value)"
-                        :variant="isStatusFilterActive(statusOption.value) ? 'flat' : 'tonal'"
-                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                        @click="toggleStatusFilter(statusOption.value)">
-                        {{ statusOption.label }}
-                    </v-chip>
+                        <v-chip
+                            v-for="typeOption in typeFilterOptions"
+                            :key="`type-filter-${typeOption.value}`"
+                            size="small"
+                            :color="typeColor(typeOption.value) || 'primary'"
+                            :variant="isTypeFilterActive(typeOption.value) ? 'flat' : 'tonal'"
+                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                            @click="toggleTypeFilter(typeOption.value)">
+                            {{ typeOption.label }}
+                        </v-chip>
+                    </div>
                 </div>
-            </div>
+
+                <div class="filter-section">
+                    <div class="text-subtitle-2 mb-2">Status filtern</div>
+
+                    <div class="d-flex flex-wrap ga-2">
+                        <v-chip
+                            size="small"
+                            :variant="hasActiveStatusFilter ? 'tonal' : 'flat'"
+                            :color="hasActiveStatusFilter ? undefined : 'primary'"
+                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                            @click="clearStatusFilter">
+                            Alle
+                        </v-chip>
+
+                        <v-chip
+                            v-for="statusOption in statusFilterOptions"
+                            :key="`status-filter-${statusOption.value}`"
+                            size="small"
+                            :color="statusColor(statusOption.value)"
+                            :variant="isStatusFilterActive(statusOption.value) ? 'flat' : 'tonal'"
+                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                            @click="toggleStatusFilter(statusOption.value)">
+                            {{ statusOption.label }}
+                        </v-chip>
+                    </div>
+                </div>
+            </template>
         </div>
 
         <v-alert type="info" variant="tonal" class="mb-4">
@@ -302,23 +322,29 @@
 
                         <v-card-actions class="px-3 pb-3 pt-0 overview-grid-actions">
                             <v-btn
+                                icon
                                 size="small"
+                                rounded="circle"
                                 color="primary"
                                 variant="tonal"
-                                prepend-icon="mdi-eye-outline"
+                                class="overview-grid-action-btn"
+                                :title="'Detail'"
                                 :disabled="isLoading || isDeletingId !== null || isSavingEdit"
                                 @click="openDetailDialog(card)">
-                                Detail
+                                <v-icon icon="mdi-eye-outline" />
                             </v-btn>
 
                             <v-btn
+                                icon
                                 size="small"
+                                rounded="circle"
                                 color="primary"
                                 variant="flat"
-                                prepend-icon="mdi-pencil-outline"
+                                class="overview-grid-action-btn"
+                                :title="'Bearbeiten'"
                                 :disabled="isLoading || isDeletingId !== null || isSavingEdit"
                                 @click="openEditDialog(card)">
-                                Bearbeiten
+                                <v-icon icon="mdi-pencil-outline" />
                             </v-btn>
                         </v-card-actions>
                     </v-card>
@@ -468,7 +494,7 @@
                             v-for="attachment in fileAttachments(card)"
                             :key="`file-attachment-${card.id}-${attachment.id}`"
                             size="small"
-                            variant="flat"
+                            variant="outlined"
                             color="primary"
                             prepend-icon="mdi-paperclip"
                             append-icon="mdi-download"
@@ -488,24 +514,22 @@
                 <template #append>
                     <div class="overview-actions d-flex flex-column align-end ga-2">
                         <v-btn
+                            icon="mdi-eye-outline"
                             size="small"
                             color="primary"
                             variant="tonal"
-                            prepend-icon="mdi-eye-outline"
+                            :title="'Detail'"
                             :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                            @click="openDetailDialog(card)">
-                            Detail
-                        </v-btn>
+                            @click="openDetailDialog(card)" />
 
                         <v-btn
+                            icon="mdi-pencil-outline"
                             size="small"
                             color="primary"
                             variant="flat"
-                            prepend-icon="mdi-pencil-outline"
+                            :title="'Bearbeiten'"
                             :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                            @click="openEditDialog(card)">
-                            Bearbeiten
-                        </v-btn>
+                            @click="openEditDialog(card)" />
                     </div>
                 </template>
             </v-list-item>
@@ -626,14 +650,23 @@
                         class="px-0 py-2">
                         <div class="attachment-manage-row d-flex flex-column ga-2 w-100">
                             <div class="d-flex flex-wrap align-center ga-2">
-                                <v-chip
-                                    size="x-small"
-                                    variant="tonal"
-                                    color="secondary"
-                                    class="link-copy-chip"
-                                    @click="copyAttachmentChipToClipboard(row)">
-                                    {{ attachmentTypeLabel(row) }}
-                                </v-chip>
+                                <v-tooltip location="top">
+                                    <template #activator="{ props }">
+                                        <v-chip
+                                            v-bind="props"
+                                            size="x-small"
+                                            variant="tonal"
+                                            color="secondary"
+                                            class="link-copy-chip"
+                                            @click="copyAttachmentChipToClipboard(row)">
+                                            {{ attachmentTypeLabel(row) }}
+                                        </v-chip>
+                                    </template>
+                                    <div class="d-flex align-center ga-1">
+                                        <v-icon icon="mdi-content-copy" size="14" />
+                                        <span>In Zwischenablage kopieren</span>
+                                    </div>
+                                </v-tooltip>
 
                                 <div class="text-caption text-medium-emphasis attachment-meta-text">
                                     {{ attachmentMeta(row) }}
@@ -668,26 +701,26 @@
                                         @keyup.enter="saveAttachmentName(row)" />
                                     <div
                                         v-else
-                                        class="attachment-name-readonly"
-                                        :title="row.name">
-                                        {{ row.name }}
+                                        class="attachment-name-readonly-row">
+                                        <div
+                                            class="attachment-name-readonly"
+                                            :title="row.name">
+                                            {{ row.name }}
+                                        </div>
+                                        <v-btn
+                                            icon="mdi-pencil"
+                                            size="x-small"
+                                            density="comfortable"
+                                            color="primary"
+                                            variant="text"
+                                            :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
+                                            @click="startAttachmentNameEdit(row.id)" />
                                     </div>
                                 </div>
 
                                 <div class="attachment-manage-actions d-flex flex-wrap ga-2 justify-end">
                                     <v-btn
-                                        v-if="!isAttachmentNameEditing(row.id)"
-                                        size="small"
-                                        color="primary"
-                                        variant="tonal"
-                                        prepend-icon="mdi-pencil"
-                                        :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
-                                        @click="startAttachmentNameEdit(row.id)">
-                                        Ändern
-                                    </v-btn>
-
-                                    <v-btn
-                                        v-else
+                                        v-if="isAttachmentNameEditing(row.id)"
                                         size="small"
                                         color="primary"
                                         variant="tonal"
@@ -700,83 +733,76 @@
 
                                     <v-btn
                                         v-if="isEditableTextAttachment(row)"
+                                        icon="mdi-text-box-edit-outline"
                                         size="small"
                                         color="primary"
                                         variant="tonal"
-                                        prepend-icon="mdi-text-box-edit-outline"
+                                        :title="'Text bearbeiten'"
                                         :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id) || textAttachmentEditorSaving"
-                                        @click="openTextAttachmentEditor(row)">
-                                        Text bearbeiten
-                                    </v-btn>
+                                        @click="openTextAttachmentEditor(row)" />
 
                                     <v-btn
                                         v-if="row.attachment_type === 'file' && (row.preview_url || row.download_url)"
+                                        icon="mdi-eye-outline"
                                         size="small"
                                         color="primary"
                                         variant="tonal"
-                                        prepend-icon="mdi-eye-outline"
+                                        :title="'Vorschau'"
                                         :loading="isPreviewingAttachment(row.id)"
                                         :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
-                                        @click="previewAttachment(row)">
-                                        Vorschau
-                                    </v-btn>
+                                        @click="previewAttachment(row)" />
 
                                     <v-btn
                                         v-if="row.attachment_type === 'file'"
+                                        icon="mdi-download"
                                         size="small"
                                         color="primary"
                                         variant="tonal"
-                                        prepend-icon="mdi-download"
+                                        :title="'Download'"
                                         :loading="isDownloadingAttachment(row.id)"
                                         :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
-                                        @click="downloadAttachment(row)">
-                                        Download
-                                    </v-btn>
+                                        @click="downloadAttachment(row)" />
 
                                     <v-btn
                                         v-if="isEditableTextAttachment(row)"
+                                        icon="mdi-file-word-outline"
                                         size="small"
                                         color="primary"
                                         variant="tonal"
-                                        prepend-icon="mdi-file-word-outline"
+                                        :title="'DOCX'"
                                         :loading="isDownloadingAttachment(row.id)"
                                         :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
-                                        @click="downloadAttachmentDocx(row)">
-                                        DOCX
-                                    </v-btn>
+                                        @click="downloadAttachmentDocx(row)" />
 
                                     <v-btn
                                         v-else-if="row.url"
+                                        icon="mdi-open-in-new"
                                         size="small"
                                         color="primary"
                                         variant="tonal"
-                                        prepend-icon="mdi-open-in-new"
+                                        :title="'Öffnen'"
                                         :href="row.url"
                                         target="_blank"
-                                        rel="noopener noreferrer">
-                                        Öffnen
-                                    </v-btn>
+                                        rel="noopener noreferrer" />
 
                                     <v-btn
+                                        :icon="isAttachmentDeleteArmed(row.id) ? 'mdi-delete' : 'mdi-delete-outline'"
                                         size="small"
                                         :color="isAttachmentDeleteArmed(row.id) ? 'error' : 'warning'"
                                         :variant="isAttachmentDeleteArmed(row.id) ? 'flat' : 'tonal'"
-                                        :prepend-icon="isAttachmentDeleteArmed(row.id) ? 'mdi-delete' : 'mdi-delete-outline'"
+                                        :title="isAttachmentDeleteArmed(row.id) ? 'Jetzt löschen' : 'Löschen'"
                                         :loading="isAttachmentDeleting(row.id)"
                                         :disabled="isAttachmentSaving(row.id)"
-                                        @click="removeAttachment(row)">
-                                        {{ isAttachmentDeleteArmed(row.id) ? 'Jetzt löschen' : 'Löschen' }}
-                                    </v-btn>
+                                        @click="removeAttachment(row)" />
                                     <v-btn
                                         v-if="isAttachmentDeleteArmed(row.id)"
+                                        icon="mdi-undo"
                                         size="small"
                                         color="success"
                                         variant="text"
-                                        prepend-icon="mdi-undo"
+                                        :title="'Widerrufen'"
                                         :disabled="isAttachmentDeleting(row.id) || isAttachmentSaving(row.id)"
-                                        @click="cancelAttachmentDelete(row.id)">
-                                        Widerrufen
-                                    </v-btn>
+                                        @click="cancelAttachmentDelete(row.id)" />
                                 </div>
                             </div>
                         </div>
@@ -865,14 +891,23 @@
                                             {{ attachmentDisplayName(attachment) }}
                                         </div>
                                         <div class="d-flex flex-wrap align-center ga-2">
-                                            <v-chip
-                                                size="x-small"
-                                                variant="tonal"
-                                                color="secondary"
-                                                class="link-copy-chip"
-                                                @click="copyAttachmentChipToClipboard(attachment)">
-                                                {{ attachmentTypeLabel(attachment) }}
-                                            </v-chip>
+                                            <v-tooltip location="top">
+                                                <template #activator="{ props }">
+                                                    <v-chip
+                                                        v-bind="props"
+                                                        size="x-small"
+                                                        variant="tonal"
+                                                        color="secondary"
+                                                        class="link-copy-chip"
+                                                        @click="copyAttachmentChipToClipboard(attachment)">
+                                                        {{ attachmentTypeLabel(attachment) }}
+                                                    </v-chip>
+                                                </template>
+                                                <div class="d-flex align-center ga-1">
+                                                    <v-icon icon="mdi-content-copy" size="14" />
+                                                    <span>In Zwischenablage kopieren</span>
+                                                </div>
+                                            </v-tooltip>
                                             <div class="text-caption text-medium-emphasis">
                                                 {{ attachmentSizeBytes(attachment) > 0 ? formatBytes(attachmentSizeBytes(attachment)) : '' }}
                                             </div>
@@ -893,53 +928,49 @@
                                     </div>
 
                                     <div class="d-flex flex-wrap ga-2 justify-end detail-attachment-actions">
-                                        <v-btn
-                                            v-if="attachment.attachment_type === 'file' && (attachment.preview_url || attachment.download_url)"
-                                            size="small"
-                                            color="primary"
-                                            variant="tonal"
-                                            prepend-icon="mdi-eye-outline"
-                                            :loading="isPreviewingAttachment(attachment.id)"
-                                            :disabled="isDeletingDetail"
-                                            @click="previewAttachment(attachment)">
-                                            Vorschau
-                                        </v-btn>
+                                    <v-btn
+                                        v-if="attachment.attachment_type === 'file' && (attachment.preview_url || attachment.download_url)"
+                                        icon="mdi-eye-outline"
+                                        size="small"
+                                        color="primary"
+                                        variant="tonal"
+                                        :title="'Vorschau'"
+                                        :loading="isPreviewingAttachment(attachment.id)"
+                                        :disabled="isDeletingDetail"
+                                        @click="previewAttachment(attachment)" />
 
-                                        <v-btn
-                                            v-if="attachment.attachment_type === 'file' && attachment.download_url"
-                                            size="small"
-                                            color="primary"
-                                            variant="tonal"
-                                            prepend-icon="mdi-download"
-                                            :loading="isDownloadingAttachment(attachment.id)"
-                                            :disabled="isDeletingDetail"
-                                            @click="downloadAttachment(attachment)">
-                                            Download
-                                        </v-btn>
+                                    <v-btn
+                                        v-if="attachment.attachment_type === 'file' && attachment.download_url"
+                                        icon="mdi-download"
+                                        size="small"
+                                        color="primary"
+                                        variant="tonal"
+                                        :title="'Download'"
+                                        :loading="isDownloadingAttachment(attachment.id)"
+                                        :disabled="isDeletingDetail"
+                                        @click="downloadAttachment(attachment)" />
 
                                         <v-btn
                                             v-if="isEditableTextAttachment(attachment)"
+                                            icon="mdi-file-word-outline"
                                             size="small"
                                             color="primary"
                                             variant="tonal"
-                                            prepend-icon="mdi-file-word-outline"
+                                            :title="'DOCX'"
                                             :loading="isDownloadingAttachment(attachment.id)"
                                             :disabled="isDeletingDetail"
-                                            @click="downloadAttachmentDocx(attachment)">
-                                            DOCX
-                                        </v-btn>
+                                            @click="downloadAttachmentDocx(attachment)" />
 
-                                        <v-btn
-                                            v-else-if="attachment.url"
-                                            size="small"
-                                            color="primary"
-                                            variant="tonal"
-                                            prepend-icon="mdi-open-in-new"
-                                            :href="attachment.url"
-                                            target="_blank"
-                                            rel="noopener noreferrer">
-                                            Öffnen
-                                        </v-btn>
+                                    <v-btn
+                                        v-else-if="attachment.url"
+                                        icon="mdi-open-in-new"
+                                        size="small"
+                                        color="primary"
+                                        variant="tonal"
+                                        :title="'Öffnen'"
+                                        :href="attachment.url"
+                                        target="_blank"
+                                        rel="noopener noreferrer" />
                                     </div>
                                 </div>
                             </v-list-item>
@@ -1051,14 +1082,23 @@
                             class="px-0 py-2">
                             <div class="attachment-manage-row d-flex flex-column ga-2 w-100">
                                 <div class="d-flex flex-wrap align-center ga-2">
-                                    <v-chip
-                                        size="x-small"
-                                        variant="tonal"
-                                        color="secondary"
-                                        class="link-copy-chip"
-                                        @click="copyAttachmentChipToClipboard(row)">
-                                        {{ attachmentTypeLabel(row) }}
-                                    </v-chip>
+                                    <v-tooltip location="top">
+                                        <template #activator="{ props }">
+                                            <v-chip
+                                                v-bind="props"
+                                                size="x-small"
+                                                variant="tonal"
+                                                color="secondary"
+                                                class="link-copy-chip"
+                                                @click="copyAttachmentChipToClipboard(row)">
+                                                {{ attachmentTypeLabel(row) }}
+                                            </v-chip>
+                                        </template>
+                                        <div class="d-flex align-center ga-1">
+                                            <v-icon icon="mdi-content-copy" size="14" />
+                                            <span>In Zwischenablage kopieren</span>
+                                        </div>
+                                    </v-tooltip>
 
                                     <div class="text-caption text-medium-emphasis attachment-meta-text">
                                         {{ attachmentMeta(row) }}
@@ -1093,26 +1133,26 @@
                                             @keyup.enter="saveAttachmentName(row)" />
                                         <div
                                             v-else
-                                            class="attachment-name-readonly"
-                                            :title="row.name">
-                                            {{ row.name }}
+                                            class="attachment-name-readonly-row">
+                                            <div
+                                                class="attachment-name-readonly"
+                                                :title="row.name">
+                                                {{ row.name }}
+                                            </div>
+                                            <v-btn
+                                                icon="mdi-pencil"
+                                                size="x-small"
+                                                density="comfortable"
+                                                color="primary"
+                                                variant="text"
+                                                :disabled="isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
+                                                @click="startAttachmentNameEdit(row.id)" />
                                         </div>
                                     </div>
 
                                     <div class="attachment-manage-actions d-flex flex-wrap ga-2 justify-end">
                                         <v-btn
-                                            v-if="!isAttachmentNameEditing(row.id)"
-                                            size="small"
-                                            color="primary"
-                                            variant="tonal"
-                                            prepend-icon="mdi-pencil"
-                                            :disabled="isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
-                                            @click="startAttachmentNameEdit(row.id)">
-                                            Ändern
-                                        </v-btn>
-
-                                        <v-btn
-                                            v-else
+                                            v-if="isAttachmentNameEditing(row.id)"
                                             size="small"
                                             color="primary"
                                             variant="tonal"
@@ -1125,47 +1165,76 @@
 
                                         <v-btn
                                             v-if="isEditableTextAttachment(row)"
+                                            icon="mdi-text-box-edit-outline"
                                             size="small"
                                             color="primary"
                                             variant="tonal"
-                                            prepend-icon="mdi-text-box-edit-outline"
+                                            :title="'Text bearbeiten'"
                                             :disabled="isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id) || textAttachmentEditorSaving"
-                                            @click="openTextAttachmentEditor(row)">
-                                            Text bearbeiten
-                                        </v-btn>
+                                            @click="openTextAttachmentEditor(row)" />
 
                                         <v-btn
                                             v-if="isEditableTextAttachment(row)"
+                                            icon="mdi-file-word-outline"
                                             size="small"
                                             color="primary"
                                             variant="tonal"
-                                            prepend-icon="mdi-file-word-outline"
+                                            :title="'DOCX'"
                                             :loading="isDownloadingAttachment(row.id)"
                                             :disabled="isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
-                                            @click="downloadAttachmentDocx(row)">
-                                            DOCX
-                                        </v-btn>
+                                            @click="downloadAttachmentDocx(row)" />
 
                                         <v-btn
+                                            v-if="row.attachment_type === 'file' && (row.preview_url || row.download_url)"
+                                            icon="mdi-eye-outline"
+                                            size="small"
+                                            color="primary"
+                                            variant="tonal"
+                                            :title="'Vorschau'"
+                                            :loading="isPreviewingAttachment(row.id)"
+                                            :disabled="isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
+                                            @click="previewAttachment(row)" />
+
+                                        <v-btn
+                                            v-if="row.attachment_type === 'file'"
+                                            icon="mdi-download"
+                                            size="small"
+                                            color="primary"
+                                            variant="tonal"
+                                            :title="'Download'"
+                                            :loading="isDownloadingAttachment(row.id)"
+                                            :disabled="isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
+                                            @click="downloadAttachment(row)" />
+
+                                        <v-btn
+                                            v-else-if="row.url"
+                                            icon="mdi-open-in-new"
+                                            size="small"
+                                            color="primary"
+                                            variant="tonal"
+                                            :title="'Öffnen'"
+                                            :href="row.url"
+                                            target="_blank"
+                                            rel="noopener noreferrer" />
+
+                                        <v-btn
+                                            :icon="isAttachmentDeleteArmed(row.id) ? 'mdi-delete' : 'mdi-delete-outline'"
                                             size="small"
                                             :color="isAttachmentDeleteArmed(row.id) ? 'error' : 'warning'"
                                             :variant="isAttachmentDeleteArmed(row.id) ? 'flat' : 'tonal'"
-                                            :prepend-icon="isAttachmentDeleteArmed(row.id) ? 'mdi-delete' : 'mdi-delete-outline'"
+                                            :title="isAttachmentDeleteArmed(row.id) ? 'Jetzt löschen' : 'Löschen'"
                                             :loading="isAttachmentDeleting(row.id)"
                                             :disabled="isSavingEdit || isAttachmentSaving(row.id)"
-                                            @click="removeAttachment(row)">
-                                            {{ isAttachmentDeleteArmed(row.id) ? 'Jetzt löschen' : 'Löschen' }}
-                                        </v-btn>
+                                            @click="removeAttachment(row)" />
                                         <v-btn
                                             v-if="isAttachmentDeleteArmed(row.id)"
+                                            icon="mdi-undo"
                                             size="small"
                                             color="success"
                                             variant="text"
-                                            prepend-icon="mdi-undo"
+                                            :title="'Widerrufen'"
                                             :disabled="isSavingEdit || isAttachmentDeleting(row.id) || isAttachmentSaving(row.id)"
-                                            @click="cancelAttachmentDelete(row.id)">
-                                            Widerrufen
-                                        </v-btn>
+                                            @click="cancelAttachmentDelete(row.id)" />
                                     </div>
                                 </div>
                             </div>
@@ -1287,6 +1356,7 @@ export default {
             csrfToken: null,
             overviewViewMode: 'list',
             overviewSortMode: 'date',
+            showSecondaryFilters: false,
             currentPage: 1,
             subjectFilter: '',
             topicFilter: '',
@@ -1794,6 +1864,12 @@ export default {
             this.overviewSortMode = 'date'
         }
         try {
+            const storedSecondaryFilters = window?.localStorage?.getItem?.('materials.overview.secondary_filters')
+            this.showSecondaryFilters = storedSecondaryFilters === '1'
+        } catch {
+            this.showSecondaryFilters = false
+        }
+        try {
             const response = await axios.get('/api/admin/token')
             const token = String(response?.data || '').trim()
             if (token) {
@@ -1837,6 +1913,14 @@ export default {
             this.overviewSortMode = nextSortMode
             try {
                 window?.localStorage?.setItem?.('materials.overview.sort', nextSortMode)
+            } catch {
+                // Falls localStorage nicht verfügbar ist, nur im aktuellen Zustand bleiben.
+            }
+        },
+        toggleSecondaryFilters() {
+            this.showSecondaryFilters = !this.showSecondaryFilters
+            try {
+                window?.localStorage?.setItem?.('materials.overview.secondary_filters', this.showSecondaryFilters ? '1' : '0')
             } catch {
                 // Falls localStorage nicht verfügbar ist, nur im aktuellen Zustand bleiben.
             }
@@ -4086,14 +4170,24 @@ ${content}
 }
 
 .overview-grid-actions {
-    display: grid;
-    grid-template-columns: 1fr;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
     gap: 8px;
     width: 100%;
 }
 
 .overview-grid-actions :deep(.v-btn) {
-    width: 100%;
+    width: auto;
+}
+
+.overview-grid-action-btn {
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    padding: 0 !important;
+    border-radius: 50% !important;
 }
 
 .overview-actions {
@@ -4165,12 +4259,16 @@ ${content}
 .classification-chip,
 .attachment-chip {
     max-width: min(100%, 360px);
+}
+
+.classification-chip {
     font-weight: 600;
 }
 
 .attachment-chip {
-    background-color: #6f87c1 !important;
-    color: #ffffff !important;
+    color: #6f87c1 !important;
+    border-color: #6f87c1 !important;
+    font-weight: 400;
 }
 
 .classification-chip :deep(.v-chip__content),
@@ -4210,6 +4308,24 @@ ${content}
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.attachment-name-readonly-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.attachment-name-readonly-row .attachment-name-readonly {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.attachment-name-readonly-row :deep(.v-btn) {
+    flex: 0 0 auto;
 }
 
 .attachment-manage-actions {
