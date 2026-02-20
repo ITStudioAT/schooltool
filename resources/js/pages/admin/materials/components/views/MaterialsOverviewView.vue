@@ -221,6 +221,7 @@
                                     v-if="card.attachments_count"
                                     size="x-small"
                                     variant="flat"
+                                    color="primary"
                                     prepend-icon="mdi-paperclip"
                                     class="attachments-count-chip attachments-count-chip-clickable"
                                     @click="openAttachmentManager(card)">
@@ -316,6 +317,7 @@
                             v-if="card.attachments_count"
                             size="small"
                             variant="flat"
+                            color="primary"
                             prepend-icon="mdi-paperclip"
                             class="attachments-count-chip attachments-count-chip-clickable"
                             @click="openAttachmentManager(card)">
@@ -395,18 +397,6 @@
                         </v-chip>
                     </div>
 
-                    <div class="d-flex flex-wrap ga-2 mt-2 mb-1">
-                        <v-chip
-                            v-if="card.attachments_count"
-                            size="small"
-                            variant="flat"
-                            prepend-icon="mdi-paperclip"
-                            class="attachments-count-chip attachments-count-chip-clickable"
-                            @click="openAttachmentManager(card)">
-                            {{ attachmentCountLabel(card) }}
-                        </v-chip>
-                    </div>
-
                     <div v-if="card.source_url" class="text-body-2 mb-1 source-link">
                         <a :href="card.source_url" target="_blank" rel="noopener noreferrer">{{ card.source_url }}</a>
                     </div>
@@ -419,6 +409,19 @@
                         {{ preview(card.notes, 320) }}
                     </div>
                 </v-list-item-subtitle>
+
+                <div class="d-flex flex-wrap ga-2 mt-2 mb-1 attachment-count-row">
+                    <v-chip
+                        v-if="card.attachments_count"
+                        size="small"
+                        variant="flat"
+                        color="primary"
+                        prepend-icon="mdi-paperclip"
+                        class="attachments-count-chip attachments-count-chip-clickable"
+                        @click="openAttachmentManager(card)">
+                        {{ attachmentCountLabel(card) }}
+                    </v-chip>
+                </div>
 
                 <div v-if="fileAttachments(card).length" class="attachment-block d-flex flex-column ga-2 mt-1 mb-2 pa-2">
                     <div class="attachment-chip-wrap d-flex flex-wrap ga-2">
@@ -3071,7 +3074,7 @@ export default {
 }
 
 .attachments-count-chip {
-    background-color: #1b4f82 !important;
+    background-color: #6f87c1 !important;
     color: #ffffff !important;
     font-weight: 700;
     max-width: 100%;
@@ -3079,6 +3082,10 @@ export default {
 
 .attachments-count-chip-clickable {
     cursor: pointer;
+}
+
+.attachment-count-row {
+    opacity: 1 !important;
 }
 
 .attachment-block {
@@ -3091,6 +3098,11 @@ export default {
 .attachment-chip {
     max-width: min(100%, 360px);
     font-weight: 600;
+}
+
+.attachment-chip {
+    background-color: #6f87c1 !important;
+    color: #ffffff !important;
 }
 
 .classification-chip :deep(.v-chip__content),
