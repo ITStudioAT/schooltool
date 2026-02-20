@@ -222,7 +222,7 @@
                 • Speicher: angezeigt {{ shownListedAttachmentSizeLabel }} / alle {{ allListedAttachmentSizeLabel }}
             </span>
         </v-alert>
-        <div class="d-flex flex-wrap align-center ga-2 mb-4">
+        <div v-if="!isSubjectsContentsOverview" class="d-flex flex-wrap align-center ga-2 mb-4">
             <div class="text-caption text-medium-emphasis">Sortierung:</div>
             <v-btn-toggle
                 :model-value="overviewSortMode"
@@ -244,6 +244,18 @@
         <v-skeleton-loader v-if="isLoading && !hasCards" type="list-item-three-line@4" />
 
         <template v-else-if="isSubjectsContentsOverview">
+            <div class="d-flex flex-wrap align-center ga-2 mb-3">
+                <v-btn
+                    size="small"
+                    color="primary"
+                    variant="outlined"
+                    prepend-icon="mdi-printer-outline"
+                    :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                    @click="openSubjectsOverviewScreen">
+                    Übersicht / Druck
+                </v-btn>
+            </div>
+
             <v-progress-linear
                 v-if="isLoadingSubjectsContentsOverview"
                 indeterminate
@@ -276,8 +288,35 @@
                                     v-for="material in subject.materials"
                                     :key="`overview-subjects-subject-material-${subject.id || subject.name}-${material.id}`"
                                     class="overview-subjects-material-item">
-                                    <v-icon size="14" icon="mdi-file-document-outline" />
-                                    <span>{{ material.title }}</span>
+                                    <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" />
+                                    <button
+                                        type="button"
+                                        class="overview-subjects-material-link"
+                                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                                        @click="openDetailDialog({ id: material.id })">
+                                        {{ material.title }}
+                                    </button>
+                                    <v-chip
+                                        v-if="material.typeLabel"
+                                        size="x-small"
+                                        variant="outlined"
+                                        :color="material.typeColor || 'primary'"
+                                        class="overview-subjects-material-type">
+                                        {{ material.typeLabel }}
+                                    </v-chip>
+                                    <span
+                                        v-if="material.attachmentsCount > 0"
+                                        class="overview-subjects-material-count">
+                                        <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
+                                        {{ material.attachmentsCount }}
+                                    </span>
+                                    <v-chip
+                                        size="x-small"
+                                        variant="tonal"
+                                        :color="statusColor(material.status)"
+                                        class="overview-subjects-material-status">
+                                        {{ statusLabel(material.status) }}
+                                    </v-chip>
                                 </li>
                             </ul>
 
@@ -297,8 +336,35 @@
                                             v-for="material in topic.materials"
                                             :key="`overview-subjects-topic-material-${topic.id || topic.name}-${material.id}`"
                                             class="overview-subjects-material-item">
-                                            <v-icon size="14" icon="mdi-file-document-outline" />
-                                            <span>{{ material.title }}</span>
+                                            <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" />
+                                            <button
+                                                type="button"
+                                                class="overview-subjects-material-link"
+                                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                                                @click="openDetailDialog({ id: material.id })">
+                                                {{ material.title }}
+                                            </button>
+                                            <v-chip
+                                                v-if="material.typeLabel"
+                                                size="x-small"
+                                                variant="outlined"
+                                                :color="material.typeColor || 'primary'"
+                                                class="overview-subjects-material-type">
+                                                {{ material.typeLabel }}
+                                            </v-chip>
+                                            <span
+                                                v-if="material.attachmentsCount > 0"
+                                                class="overview-subjects-material-count">
+                                                <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
+                                                {{ material.attachmentsCount }}
+                                            </span>
+                                            <v-chip
+                                                size="x-small"
+                                                variant="tonal"
+                                                :color="statusColor(material.status)"
+                                                class="overview-subjects-material-status">
+                                                {{ statusLabel(material.status) }}
+                                            </v-chip>
                                         </li>
                                     </ul>
 
@@ -317,8 +383,35 @@
                                                     v-for="material in unit.materials"
                                                     :key="`overview-subjects-unit-material-${unit.id || unit.name}-${material.id}`"
                                                     class="overview-subjects-material-item">
-                                                    <v-icon size="14" icon="mdi-file-document-outline" />
-                                                    <span>{{ material.title }}</span>
+                                                    <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" />
+                                                    <button
+                                                        type="button"
+                                                        class="overview-subjects-material-link"
+                                                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                                                        @click="openDetailDialog({ id: material.id })">
+                                                        {{ material.title }}
+                                                    </button>
+                                                    <v-chip
+                                                        v-if="material.typeLabel"
+                                                        size="x-small"
+                                                        variant="outlined"
+                                                        :color="material.typeColor || 'primary'"
+                                                        class="overview-subjects-material-type">
+                                                        {{ material.typeLabel }}
+                                                    </v-chip>
+                                                    <span
+                                                        v-if="material.attachmentsCount > 0"
+                                                        class="overview-subjects-material-count">
+                                                        <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
+                                                        {{ material.attachmentsCount }}
+                                                    </span>
+                                                    <v-chip
+                                                        size="x-small"
+                                                        variant="tonal"
+                                                        :color="statusColor(material.status)"
+                                                        class="overview-subjects-material-status">
+                                                        {{ statusLabel(material.status) }}
+                                                    </v-chip>
                                                 </li>
                                             </ul>
                                         </li>
@@ -2012,6 +2105,14 @@ export default {
                 this.loadSubjectsContentsOverview({ force: true })
             }
         },
+        openSubjectsOverviewScreen() {
+            this.$router.push({
+                path: '/admin/materials/subjects-overview',
+                query: {
+                    source: 'overview',
+                },
+            })
+        },
         setOverviewSortMode(value) {
             const nextSortMode = ['date', 'name'].includes(String(value)) ? String(value) : 'date'
             if (nextSortMode === this.overviewSortMode) return
@@ -2135,6 +2236,25 @@ export default {
                 })
                 .filter(Boolean)
         },
+        normalizeMaterialAttachmentCount(card) {
+            const countFromField = Number(card?.attachments_count)
+            if (Number.isFinite(countFromField) && countFromField > 0) {
+                return Math.round(countFromField)
+            }
+
+            const attachments = Array.isArray(card?.attachments) ? card.attachments : []
+            return attachments.length > 0 ? attachments.length : 0
+        },
+        normalizeMaterialTypeLabel(card) {
+            const rawType = this.normalizeFilterText(card?.type)
+            if (!rawType) return ''
+
+            const option = this.typeOptions.find((entry) =>
+                this.normalizeFilterText(entry?.value).toLocaleLowerCase() === rawType.toLocaleLowerCase()
+            )
+            const configuredLabel = this.normalizeFilterText(option?.label)
+            return configuredLabel || rawType
+        },
         buildSubjectsContentsOverviewItems(cards) {
             const cardList = Array.isArray(cards) ? cards : []
             const subjects = this.buildOverviewClassificationTreeItems().map((subject) => ({
@@ -2227,6 +2347,11 @@ export default {
                 const material = {
                     id: cardId,
                     title: this.materialSortTitle(card),
+                    icon: this.sourceIcon(card),
+                    typeLabel: this.normalizeMaterialTypeLabel(card),
+                    typeColor: this.typeColor(card?.type),
+                    status: String(card?.status || this.defaultStatusValue || '').trim(),
+                    attachmentsCount: this.normalizeMaterialAttachmentCount(card),
                 }
 
                 const rows = this.normalizeClassifications(card?.classifications)
@@ -4560,6 +4685,7 @@ ${content}
 }
 
 .overview-subjects-node--unit {
+    font-weight: 700;
     color: #3c5a6d;
     background: rgba(35, 61, 76, 0.03);
 }
@@ -4579,6 +4705,47 @@ ${content}
     color: rgba(35, 61, 76, 0.92);
     font-size: 0.92rem;
     line-height: 1.32;
+}
+
+.overview-subjects-material-link {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    margin: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.overview-subjects-material-link:disabled {
+    cursor: default;
+    opacity: 0.7;
+}
+
+.overview-subjects-material-link:not(:disabled):hover {
+    text-decoration: underline;
+}
+
+.overview-subjects-material-status {
+    margin-left: 2px;
+}
+
+.overview-subjects-material-type {
+    margin-left: 2px;
+}
+
+.overview-subjects-material-count {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: 999px;
+    border: 1px solid rgba(35, 61, 76, 0.2);
+    background: rgba(35, 61, 76, 0.06);
+    font-size: 0.74rem;
+    line-height: 1.2;
+    color: rgba(35, 61, 76, 0.85);
 }
 
 .overview-grid {

@@ -447,111 +447,6 @@
                         </div>
                     </template>
 
-                    <template v-else-if="selectedSubjectAction === 'subjects_contents'">
-                        <div class="text-body-2 text-medium-emphasis mb-3">
-                            Fachstruktur mit allen zugeordneten Materialien im Lesemodus.
-                        </div>
-
-                        <div class="d-flex flex-wrap align-center ga-2 mb-3">
-                            <v-btn
-                                size="small"
-                                color="primary"
-                                variant="flat"
-                                prepend-icon="mdi-refresh"
-                                :loading="isLoadingSubjectsContents"
-                                :disabled="isSavingSubjectCatalog"
-                                @click="loadSubjectsContents(true)">
-                                Aktualisieren
-                            </v-btn>
-                        </div>
-
-                        <v-progress-linear
-                            v-if="isLoadingSubjectsContents"
-                            indeterminate
-                            color="primary"
-                            rounded
-                            class="mb-3" />
-
-                        <v-alert
-                            v-else-if="!subjectsContentsItems.length"
-                            type="info"
-                            variant="tonal"
-                            class="mb-2">
-                            Keine Fachstruktur mit Materialien gefunden.
-                        </v-alert>
-
-                        <div v-else class="subjects-tree subjects-tree--readonly">
-                            <ul class="subjects-tree-list">
-                                <li
-                                    v-for="subject in subjectsContentsItems"
-                                    :key="`subjects-contents-subject-${subject.id || subject.name}`"
-                                    class="subjects-tree-item">
-                                    <div class="subjects-tree-group" :style="subjectGroupStyle(subject)">
-                                        <div class="subjects-tree-node subjects-tree-node--subject">
-                                            <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
-                                            <span>{{ subject.name }}</span>
-                                        </div>
-
-                                        <ul v-if="subject.materials.length" class="subjects-tree-material-list">
-                                            <li
-                                                v-for="material in subject.materials"
-                                                :key="`subjects-contents-subject-material-${subject.id || subject.name}-${material.id}`"
-                                                class="subjects-tree-material-item">
-                                                <v-icon size="14" icon="mdi-file-document-outline" />
-                                                <span>{{ material.title }}</span>
-                                            </li>
-                                        </ul>
-
-                                        <ul v-if="subject.topics.length" class="subjects-tree-list subjects-tree-list--child">
-                                            <li
-                                                v-for="topic in subject.topics"
-                                                :key="`subjects-contents-topic-${topic.id || `${subject.id || subject.name}-${topic.name}`}`"
-                                                class="subjects-tree-item subjects-tree-topic-group"
-                                                :style="topicGroupStyle(subject)">
-                                                <div class="subjects-tree-node subjects-tree-node--topic">
-                                                    <v-icon size="14" icon="mdi-book-open-page-variant-outline" class="mr-2" />
-                                                    <span>{{ topic.name }}</span>
-                                                </div>
-
-                                                <ul v-if="topic.materials.length" class="subjects-tree-material-list">
-                                                    <li
-                                                        v-for="material in topic.materials"
-                                                        :key="`subjects-contents-topic-material-${topic.id || topic.name}-${material.id}`"
-                                                        class="subjects-tree-material-item">
-                                                        <v-icon size="14" icon="mdi-file-document-outline" />
-                                                        <span>{{ material.title }}</span>
-                                                    </li>
-                                                </ul>
-
-                                                <ul v-if="topic.units.length" class="subjects-tree-list subjects-tree-list--child">
-                                                    <li
-                                                        v-for="unit in topic.units"
-                                                        :key="`subjects-contents-unit-${unit.id || `${topic.id || topic.name}-${unit.name}`}`"
-                                                        class="subjects-tree-item">
-                                                        <div class="subjects-tree-node subjects-tree-node--unit">
-                                                            <v-icon size="13" icon="mdi-circle-medium" class="mr-1" />
-                                                            <span>{{ unit.name }}</span>
-                                                        </div>
-
-                                                        <ul v-if="unit.materials.length" class="subjects-tree-material-list">
-                                                            <li
-                                                                v-for="material in unit.materials"
-                                                                :key="`subjects-contents-unit-material-${unit.id || unit.name}-${material.id}`"
-                                                                class="subjects-tree-material-item">
-                                                                <v-icon size="14" icon="mdi-file-document-outline" />
-                                                                <span>{{ material.title }}</span>
-                                                            </li>
-                                                        </ul>
-                                                    </li>
-                                                </ul>
-                                            </li>
-                                        </ul>
-                                    </div>
-                                </li>
-                            </ul>
-                        </div>
-                    </template>
-
                     <template v-else-if="selectedSubjectAction === 'subjects_groups'">
                         <div class="text-body-2 text-medium-emphasis mb-3">
                             Alle Fächer, Themen und Einheiten mit zugeordneten Materialien.
@@ -569,16 +464,6 @@
                                 @click="loadSubjectAssignments(true)">
                                 Aktualisieren
                             </v-btn>
-                            <v-btn
-                                size="small"
-                                color="primary"
-                                variant="outlined"
-                                prepend-icon="mdi-printer-outline"
-                                :disabled="isLoadingSubjectAssignments || isSavingSubjectAssignment"
-                                @click="openSubjectsOverviewScreen">
-                                Übersicht / Druck
-                            </v-btn>
-
                             <v-chip size="small" variant="tonal" color="primary" prepend-icon="mdi-graph-outline">
                                 Einträge mit Materialien: {{ subjectAssignmentGroups.length }}
                             </v-chip>
@@ -990,7 +875,6 @@ export default {
             ],
             subjectsMenuItems: [
                 { value: 'subjects_catalog', label: 'Fachkatalog', icon: 'mdi-book-open-variant-outline' },
-                { value: 'subjects_contents', label: 'Fächer/Inhalte', icon: 'mdi-file-tree-outline' },
                 { value: 'subjects_groups', label: 'Zuordnung', icon: 'mdi-account-group-outline' },
             ],
             fileSettingsForm: {
@@ -1034,8 +918,6 @@ export default {
             isLoadingSubjectAssignments: false,
             isSavingSubjectAssignment: false,
             subjectAssignmentGroups: [],
-            isLoadingSubjectsContents: false,
-            subjectsContentsItems: [],
             subjectAssignmentDialog: {
                 open: false,
                 mode: '',
@@ -1509,16 +1391,10 @@ export default {
             if (this.selectedSubjectAction === 'subjects_groups') {
                 this.loadSubjectAssignments()
             }
-            if (this.selectedSubjectAction === 'subjects_contents') {
-                this.loadSubjectsContents()
-            }
         },
         selectedSubjectAction(value) {
             if (value === 'subjects_groups') {
                 this.loadSubjectAssignments()
-            }
-            if (value === 'subjects_contents') {
-                this.loadSubjectsContents()
             }
         },
         initialSelectedAction: {
@@ -1719,116 +1595,6 @@ export default {
 
             return groups
         },
-        buildSubjectsContentsItems(cards) {
-            const cardList = Array.isArray(cards) ? cards : []
-            const subjects = this.subjectTreeItems.map((subject) => ({
-                ...subject,
-                materials: [],
-                _materialIds: new Set(),
-                topics: (Array.isArray(subject.topics) ? subject.topics : []).map((topic) => ({
-                    ...topic,
-                    materials: [],
-                    _materialIds: new Set(),
-                    units: (Array.isArray(topic.units) ? topic.units : []).map((unit) => ({
-                        ...unit,
-                        materials: [],
-                        _materialIds: new Set(),
-                    })),
-                })),
-            }))
-
-            const findSubjectByName = (name) => subjects.find(
-                (subject) => this.normalizeTreeName(subject?.name).toLocaleLowerCase() === name.toLocaleLowerCase()
-            ) || null
-            const findTopicByName = (subject, name) => {
-                const topics = Array.isArray(subject?.topics) ? subject.topics : []
-                return topics.find(
-                    (topic) => this.normalizeTreeName(topic?.name).toLocaleLowerCase() === name.toLocaleLowerCase()
-                ) || null
-            }
-            const findUnitByName = (topic, name) => {
-                const units = Array.isArray(topic?.units) ? topic.units : []
-                return units.find(
-                    (unit) => this.normalizeTreeName(unit?.name).toLocaleLowerCase() === name.toLocaleLowerCase()
-                ) || null
-            }
-            const pushMaterial = (node, material) => {
-                if (!node || !material) return
-                const id = Number(material.id)
-                if (!Number.isFinite(id) || id <= 0) return
-                if (node._materialIds.has(id)) return
-                node._materialIds.add(id)
-                node.materials.push(material)
-            }
-
-            for (const card of cardList) {
-                const cardId = Number(card?.id)
-                if (!Number.isFinite(cardId) || cardId <= 0) continue
-                const material = {
-                    id: cardId,
-                    title: this.normalizeTreeName(card?.title) || 'Ohne Titel',
-                }
-
-                const rows = this.normalizeClassificationRows(card?.classifications)
-                for (const row of rows) {
-                    const subjectName = this.normalizeTreeName(row?.subject)
-                    const topicName = this.normalizeTreeName(row?.topic)
-                    const unitName = this.normalizeTreeName(row?.unit)
-                    if (!subjectName) continue
-
-                    const subjectNode = findSubjectByName(subjectName)
-                    if (!subjectNode) continue
-
-                    if (!topicName) {
-                        pushMaterial(subjectNode, material)
-                        continue
-                    }
-
-                    const topicNode = findTopicByName(subjectNode, topicName)
-                    if (!topicNode) continue
-
-                    if (!unitName) {
-                        pushMaterial(topicNode, material)
-                        continue
-                    }
-
-                    const unitNode = findUnitByName(topicNode, unitName)
-                    if (!unitNode) continue
-                    pushMaterial(unitNode, material)
-                }
-            }
-
-            const sortByTitle = (a, b) => String(a?.title || '').localeCompare(String(b?.title || ''), undefined, { sensitivity: 'base' })
-            for (const subject of subjects) {
-                subject.materials.sort(sortByTitle)
-                for (const topic of subject.topics) {
-                    topic.materials.sort(sortByTitle)
-                    for (const unit of topic.units) {
-                        unit.materials.sort(sortByTitle)
-                        delete unit._materialIds
-                    }
-                    delete topic._materialIds
-                }
-                delete subject._materialIds
-            }
-
-            return subjects
-        },
-        async loadSubjectsContents(force = false) {
-            if (this.isLoadingSubjectsContents) return
-            if (!force && Array.isArray(this.subjectsContentsItems) && this.subjectsContentsItems.length > 0) {
-                return
-            }
-
-            this.isLoadingSubjectsContents = true
-            try {
-                await this.materialCardStore.loadConfig()
-                const cards = await this.materialCardStore.listAllCardsSnapshot({})
-                this.subjectsContentsItems = this.buildSubjectsContentsItems(cards)
-            } finally {
-                this.isLoadingSubjectsContents = false
-            }
-        },
         async loadSubjectAssignments(force = false) {
             if (this.isLoadingSubjectAssignments) return
             if (!force && Array.isArray(this.subjectAssignmentGroups) && this.subjectAssignmentGroups.length > 0) {
@@ -1843,9 +1609,6 @@ export default {
             } finally {
                 this.isLoadingSubjectAssignments = false
             }
-        },
-        openSubjectsOverviewScreen() {
-            this.$router.push('/admin/materials/subjects-overview')
         },
         canDeleteSubjectAssignment(material, group) {
             const card = material?.card
@@ -2678,10 +2441,6 @@ export default {
     padding: 14px;
 }
 
-.subjects-tree--readonly {
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0.68) 100%);
-}
-
 .subjects-tree-list {
     list-style: none;
     margin: 0;
@@ -2764,23 +2523,6 @@ export default {
     font-weight: 600;
     border: 1px dashed rgba(31, 79, 137, 0.35);
     background: rgba(31, 79, 137, 0.08);
-}
-
-.subjects-tree-material-list {
-    list-style: none;
-    margin: 6px 0 0 0;
-    padding: 0 0 0 30px;
-    display: grid;
-    gap: 4px;
-}
-
-.subjects-tree-material-item {
-    display: inline-flex;
-    align-items: flex-start;
-    gap: 6px;
-    color: rgba(35, 61, 76, 0.92);
-    font-size: 0.92rem;
-    line-height: 1.32;
 }
 
 .subjects-tree-node-actions {

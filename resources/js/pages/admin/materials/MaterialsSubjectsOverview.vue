@@ -72,7 +72,7 @@
                                     v-for="material in subject.materials"
                                     :key="`subject-material-${subject.id || subject.name}-${material.id}`"
                                     class="subjects-overview-material-item">
-                                    <v-icon size="14" icon="mdi-file-document-outline" class="subjects-overview-material-icon" />
+                                    <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" class="subjects-overview-material-icon" />
                                     <span class="subjects-overview-material-text">{{ material.title }}</span>
                                 </li>
                             </ul>
@@ -93,7 +93,7 @@
                                         v-for="material in topic.materials"
                                         :key="`topic-material-${topic.id || topic.name}-${material.id}`"
                                         class="subjects-overview-material-item">
-                                        <v-icon size="14" icon="mdi-file-document-outline" class="subjects-overview-material-icon" />
+                                        <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" class="subjects-overview-material-icon" />
                                         <span class="subjects-overview-material-text">{{ material.title }}</span>
                                     </li>
                                 </ul>
@@ -114,7 +114,7 @@
                                             v-for="material in unit.materials"
                                             :key="`unit-material-${unit.id || unit.name}-${material.id}`"
                                             class="subjects-overview-material-item">
-                                            <v-icon size="14" icon="mdi-file-document-outline" class="subjects-overview-material-icon" />
+                                            <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" class="subjects-overview-material-icon" />
                                             <span class="subjects-overview-material-text">{{ material.title }}</span>
                                         </li>
                                     </ul>
@@ -184,6 +184,38 @@ export default {
             }
 
             return result
+        },
+        materialTypeIcon(typeValue) {
+            const normalizedType = this.normalizeText(typeValue).toLocaleLowerCase()
+            if (!normalizedType) return ''
+
+            const options = Array.isArray(this.materialCardStore?.config?.type_values)
+                ? this.materialCardStore.config.type_values
+                : []
+
+            const option = options.find((entry) =>
+                this.normalizeText(entry?.value).toLocaleLowerCase() === normalizedType
+            )
+
+            return this.normalizeText(option?.icon)
+        },
+        materialIcon(card) {
+            const configuredIcon = this.materialTypeIcon(card?.type)
+            if (configuredIcon) return configuredIcon
+
+            const attachments = Array.isArray(card?.attachments) ? card.attachments : []
+            const hasFileAttachment = attachments.some((attachment) =>
+                this.normalizeText(attachment?.attachment_type).toLocaleLowerCase() === 'file'
+            )
+            if (hasFileAttachment) return 'mdi-file-upload-outline'
+
+            if (this.normalizeText(card?.source_url) !== '') return 'mdi-link-variant'
+
+            const hasTextContent = this.normalizeText(card?.source_text) !== '' || this.normalizeText(card?.notes) !== ''
+            if (hasTextContent) return 'mdi-note-text-outline'
+
+            if (attachments.length > 0) return 'mdi-paperclip'
+            return 'mdi-file-document-outline'
         },
         createSubjectNode(node = null) {
             const subjectName = this.normalizeText(node?.name)
@@ -331,6 +363,7 @@ export default {
                 const material = {
                     id: cardId,
                     title: this.normalizeText(card?.title) || 'Ohne Titel',
+                    icon: this.materialIcon(card),
                 }
 
                 const rows = this.normalizeClassificationRows(card?.classifications)
@@ -392,6 +425,17 @@ export default {
             }
         },
         goBack() {
+            const source = String(this.$route?.query?.source || '').trim().toLocaleLowerCase()
+            if (source === 'overview') {
+                this.$router.push({
+                    path: '/admin/materials',
+                    query: {
+                        main_action: 'overview',
+                    },
+                })
+                return
+            }
+
             this.$router.push({
                 path: '/admin/materials',
                 query: {
@@ -616,6 +660,7 @@ export default {
         width: 100% !important;
         max-width: 100% !important;
         display: block !important;
+        padding: 0 !important;
     }
 }
 </style>
