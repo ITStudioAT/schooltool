@@ -110,7 +110,7 @@
                     <v-col cols="12">
                         <v-text-field v-model="data.phone" label="Telefon" :rules="[maxLength(255)]" />
                     </v-col>
-                    <v-col>
+                    <v-col v-if="isCurrentUserSuperAdmin()">
                         <div class="text-body-1 font-weight-medium">Rollen:</div>
                         <div class="text-caption">
                             Hinweis: Bei der Vergabe von Rollen gibt es Einschränkungen. Zum Beispiel kann einem Benutzer, der im Anmeldetool registriert ist, der register_user
@@ -127,6 +127,9 @@
                                 color="success"
                                 dense />
                         </div>
+                    </v-col>
+                    <v-col v-else>
+                        <div class="text-caption">Rollen dürfen nur von <code>super_admin</code> vergeben werden.</div>
                     </v-col>
                 </v-row>
                 <v-row>
@@ -246,7 +249,11 @@ export default {
             this.is_valid = false
             await this.$refs.form.validate()
             if (!this.is_valid) return
-            this.enforceProtectedSuperAdminRole()
+            if (this.isCurrentUserSuperAdmin()) {
+                this.enforceProtectedSuperAdminRole(data)
+            } else {
+                delete data.roles
+            }
 
             if (data.id) {
                 if (!(await this.userStore.update(data))) return
@@ -262,10 +269,12 @@ export default {
 
         createUser() {
             this.data = { is_selectable: true }
-            this.data.roles = this.roles.map((role) => ({
-                ...role,
-            }))
-            this.enforceProtectedSuperAdminRole()
+            if (this.isCurrentUserSuperAdmin()) {
+                this.data.roles = this.roles.map((role) => ({
+                    ...role,
+                }))
+                this.enforceProtectedSuperAdminRole(this.data)
+            }
             this.action = 'create_user'
         },
 
@@ -285,29 +294,31 @@ export default {
             const user = this.users.find((s) => s.id === user_id)
             this.data = JSON.parse(JSON.stringify(user))
 
-            this.data.roles = this.roles.map((role) => ({
-                ...role,
-                checked: user.roles.includes(role.name),
-            }))
-            this.enforceProtectedSuperAdminRole()
+            if (this.isCurrentUserSuperAdmin()) {
+                this.data.roles = this.roles.map((role) => ({
+                    ...role,
+                    checked: user.roles.includes(role.name),
+                }))
+                this.enforceProtectedSuperAdminRole(this.data)
+            }
 
             this.action = 'edit_user'
         },
         isCurrentUserSuperAdmin() {
             return (this.config?.roles || []).includes('super_admin')
         },
-        isProtectedSuperAdminUser() {
-            return (this.data?.email || '').toString().trim().toLowerCase() === 'kron@naturwelt.at'
+        isProtectedSuperAdminUser(userData = this.data) {
+            return (userData?.email || '').toString().trim().toLowerCase() === 'kron@naturwelt.at'
         },
         isSuperAdminRoleLocked(role) {
             if (role?.name !== 'super_admin') return false
             if (!this.isCurrentUserSuperAdmin()) return true
             return this.isProtectedSuperAdminUser()
         },
-        enforceProtectedSuperAdminRole() {
-            if (!Array.isArray(this.data?.roles)) return
-            if (!this.isProtectedSuperAdminUser()) return
-            const superAdminRole = this.data.roles.find((role) => role.name === 'super_admin')
+        enforceProtectedSuperAdminRole(userData = this.data) {
+            if (!Array.isArray(userData?.roles)) return
+            if (!this.isProtectedSuperAdminUser(userData)) return
+            const superAdminRole = userData.roles.find((role) => role.name === 'super_admin')
             if (superAdminRole) {
                 superAdminRole.checked = true
             }

@@ -43,7 +43,7 @@
 
                             <v-btn prepend-icon="mdi-eye" flat tile class="text-caption"
                                 :color="show_user_roles ? 'accent' : 'secondary'"
-                                @click="show_user_roles = !show_user_roles" v-if="hasRole(['admin'])">Rollen</v-btn>
+                                @click="show_user_roles = !show_user_roles" v-if="hasRole(['super_admin'])">Rollen</v-btn>
 
                             <v-btn prepend-icon="mdi-plus" flat rounded="0" color="success" @click="add">Neu</v-btn>
                             <v-btn prepend-icon="mdi-gesture-tap" flat rounded="0" color="success"
@@ -52,7 +52,7 @@
                                 @click="sendVerificationEmail(selected_items)" v-if="selected_items.length > 0">V-E-Mail
                                 senden</v-btn>
                             <v-btn prepend-icon="mdi-relation-one-to-many" flat rounded="0" color="success"
-                                @click="showRoles" v-if="selected_items.length > 0 && hasRole(['admin'])">Rollen
+                                @click="showRoles" v-if="selected_items.length > 0 && hasRole(['super_admin'])">Rollen
                                 zuordnen</v-btn>
                             <v-btn :prepend-icon="selected_items.length == 1 ? 'mdi-delete' : 'mdi-delete-sweep'" flat
                                 rounded="0" color="error" v-if="selected_items.length > 0"

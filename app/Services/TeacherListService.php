@@ -15,12 +15,19 @@ class TeacherListService
 {
     public function create(int $schoolId, array $data): Teacher
     {
-        $shortExists = Teacher::where('school_id', $schoolId)
-            ->where('short', $data['short'])
-            ->exists();
+        $short = trim((string) ($data['short'] ?? ''));
+        if ($short !== '') {
+            $shortExists = Teacher::where('school_id', $schoolId)
+                ->where('short', $short)
+                ->exists();
 
-        if ($shortExists) {
-            abort(409, 'Das Kurzzeichen wird bereits verwendet');
+            if ($shortExists) {
+                abort(409, 'Das Kurzzeichen wird bereits verwendet');
+            }
+
+            $data['short'] = $short;
+        } else {
+            $data['short'] = null;
         }
 
         $emailExists = Teacher::where('school_id', $schoolId)
@@ -39,19 +46,22 @@ class TeacherListService
     public function update(int $schoolId, array $data): Teacher
     {
         $teacher = Teacher::findOrFail($data['id']);
+        $short = trim((string) ($data['short'] ?? ''));
 
         if ($teacher->school_id !== $schoolId) {
             abort(401, 'Diese Änderung kann nicht durchgeführt werden.');
         }
 
-        if ($data['short'] !== $teacher->short) {
-            $shortExists = Teacher::where('school_id', $schoolId)
-                ->whereNot('id', $data['id'])
-                ->where('short', $data['short'])
-                ->exists();
+        if ($short !== (string) ($teacher->short ?? '')) {
+            if ($short !== '') {
+                $shortExists = Teacher::where('school_id', $schoolId)
+                    ->whereNot('id', $data['id'])
+                    ->where('short', $short)
+                    ->exists();
 
-            if ($shortExists) {
-                abort(409, 'Das Kurzzeichen des Lehrers existiert bereits.');
+                if ($shortExists) {
+                    abort(409, 'Das Kurzzeichen des Lehrers existiert bereits.');
+                }
             }
         }
 
@@ -67,7 +77,7 @@ class TeacherListService
         }
 
         $teacher->update([
-            'short' => $data['short'],
+            'short' => $short !== '' ? $short : null,
             'last_name' => $data['last_name'],
             'first_name' => $data['first_name'],
             'email' => $data['email'],

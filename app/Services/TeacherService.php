@@ -9,12 +9,19 @@ class TeacherService
 {
     public function create(int $schoolId, array $data): User
     {
-        $shortExists = User::where('school_id', $schoolId)
-            ->where('short', $data['short'])
-            ->exists();
+        $short = trim((string) ($data['short'] ?? ''));
+        if ($short !== '') {
+            $shortExists = User::where('school_id', $schoolId)
+                ->where('short', $short)
+                ->exists();
 
-        if ($shortExists) {
-            abort(409, 'Das Kurzzeichen wird bereits verwendet');
+            if ($shortExists) {
+                abort(409, 'Das Kurzzeichen wird bereits verwendet');
+            }
+
+            $data['short'] = $short;
+        } else {
+            $data['short'] = null;
         }
 
         $emailExists = User::where('school_id', $schoolId)
@@ -43,6 +50,7 @@ class TeacherService
     {
         $schoolId = $authUser->school_id;
         $user = User::findOrFail($data['id']);
+        $short = trim((string) ($data['short'] ?? ''));
 
         if ($user->hasRole('super_admin') && $user->id !== $data['id']) {
             abort(401, 'Ein anderer Lehrer kann nicht gespeichert werden, wenn dieser Super-Admin ist.');
@@ -52,14 +60,16 @@ class TeacherService
             abort(401, 'Diese Änderung kann nicht durchgeführt werden.');
         }
 
-        if ($data['short'] !== $user->short) {
-            $shortExists = User::where('school_id', $schoolId)
-                ->whereNot('id', $data['id'])
-                ->where('short', $data['short'])
-                ->exists();
+        if ($short !== (string) ($user->short ?? '')) {
+            if ($short !== '') {
+                $shortExists = User::where('school_id', $schoolId)
+                    ->whereNot('id', $data['id'])
+                    ->where('short', $short)
+                    ->exists();
 
-            if ($shortExists) {
-                abort(409, 'Das Kurzzeichen des Lehrers existiert bereits.');
+                if ($shortExists) {
+                    abort(409, 'Das Kurzzeichen des Lehrers existiert bereits.');
+                }
             }
         }
 
@@ -75,7 +85,7 @@ class TeacherService
         }
 
         $user->update([
-            'short' => $data['short'],
+            'short' => $short !== '' ? $short : null,
             'last_name' => $data['last_name'],
             'first_name' => $data['first_name'],
             'email' => $data['email'],

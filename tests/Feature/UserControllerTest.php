@@ -403,6 +403,29 @@ test('admin cannot assign super_admin role via users20 update', function () {
     expect($target->fresh()->hasRole('super_admin'))->toBeFalse();
 });
 
+test('admin cannot assign regular roles via users20 update', function () {
+    $target = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'roleblock@test.com',
+        'last_name' => 'RoleBlock',
+    ]);
+
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $this->postJson('/api/admin/users20/update', [
+        'id' => $target->id,
+        'last_name' => 'RoleBlock',
+        'first_name' => $target->first_name,
+        'email' => $target->email,
+        'roles' => [
+            ['name' => 'teacher', 'checked' => true],
+        ],
+    ])->assertStatus(200);
+
+    expect($target->fresh()->hasRole('teacher'))->toBeFalse();
+});
+
 test('kron@naturwelt.at remains super_admin even when unchecked in users20 update', function () {
     $target = User::factory()->create([
         'school_id' => $this->school->id,
@@ -471,10 +494,10 @@ test('standard user can access index endpoint', function () {
 });
 
 // ============================================================================
-// saveUserRoles (admin only)
+// saveUserRoles (super admin only)
 // ============================================================================
 
-test('admin can save user roles', function () {
+test('super admin can save user roles', function () {
     $target = User::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
@@ -485,7 +508,7 @@ test('admin can save user roles', function () {
     $assignRole = Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
     $removeRole = Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
 
-    $this->actingAs($this->adminUser, 'sanctum');
+    $this->actingAs($this->superAdmin, 'sanctum');
 
     $this->postJson('/api/admin/users/save_user_roles', [
         'user_ids' => [$target->id],
@@ -499,7 +522,16 @@ test('admin can save user roles', function () {
     expect($target->fresh()->hasRole('register_admin'))->toBeFalse();
 });
 
-test('save user roles requires admin role', function () {
+test('admin cannot save user roles', function () {
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $this->postJson('/api/admin/users/save_user_roles', [
+        'user_ids' => [$this->standardUser->id],
+        'role_ids' => [],
+    ])->assertStatus(403);
+});
+
+test('save user roles requires super admin role', function () {
     $this->actingAs($this->standardUser, 'sanctum');
 
     $this->postJson('/api/admin/users/save_user_roles', [

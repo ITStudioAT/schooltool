@@ -35,63 +35,52 @@
                         </v-chip>
                     </div>
 
-                    <div class="text-h4 font-weight-bold mb-2">Fachkatalog Übersicht</div>
-                    <div class="text-body-2 mb-4 subjects-overview-subline">
-                        Alle Fächer, Themen und Einheiten mit zugeordneten Materialien.
-                        Stand: {{ generatedAtLabel }}
-                    </div>
+                    <div class="subjects-overview-screen-content">
+                        <div ref="screenHeaderBlock">
+                            <div class="text-h4 font-weight-bold mb-2">Fachkatalog Übersicht</div>
+                            <div class="text-body-2 mb-4 subjects-overview-subline">
+                                <div>Alle Fächer, Themen und Einheiten mit zugeordneten Materialien.</div>
+                                <div>Stand: {{ generatedAtLabel }}</div>
+                            </div>
+                            <div v-if="printUserLabel" class="mb-1 subjects-overview-userline">
+                                {{ printUserLabel }}
+                            </div>
+                            <div v-if="printSchoolLongName" class="mb-4 subjects-overview-schoolline">
+                                {{ printSchoolLongName }}
+                            </div>
+                        </div>
 
-                    <v-progress-linear
-                        v-if="isLoading"
-                        indeterminate
-                        color="primary"
-                        rounded
-                        class="mb-4" />
+                        <v-progress-linear
+                            v-if="isLoading"
+                            indeterminate
+                            color="primary"
+                            rounded
+                            class="mb-4" />
 
-                    <v-alert
-                        v-else-if="!subjects.length"
-                        type="info"
-                        variant="tonal">
-                        Keine Fachstruktur mit Materialien gefunden.
-                    </v-alert>
+                        <v-alert
+                            v-else-if="!subjects.length"
+                            type="info"
+                            variant="tonal">
+                            Keine Fachstruktur mit Materialien gefunden.
+                        </v-alert>
 
-                    <div v-else class="subjects-overview-print-root">
-                        <section
-                            v-for="subject in subjects"
-                            :key="`subjects-overview-subject-${subject.id || subject.name}`"
-                            class="subjects-overview-subject">
-                            <header class="subjects-overview-header subjects-overview-header--subject">
-                                <div class="d-flex align-center ga-2">
-                                    <v-icon size="18" icon="mdi-book-education-outline" />
-                                    <span class="text-subtitle-1 font-weight-bold">{{ subject.name }}</span>
-                                </div>
-                            </header>
-
-                            <ul v-if="subject.materials.length" class="subjects-overview-material-list mb-2">
-                                <li
-                                    v-for="material in subject.materials"
-                                    :key="`subject-material-${subject.id || subject.name}-${material.id}`"
-                                    class="subjects-overview-material-item">
-                                    <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" class="subjects-overview-material-icon" />
-                                    <span class="subjects-overview-material-text">{{ material.title }}</span>
-                                </li>
-                            </ul>
-
+                        <div v-else class="subjects-overview-print-root">
                             <section
-                                v-for="topic in subject.topics"
-                                :key="`subjects-overview-topic-${topic.id || `${subject.id || subject.name}-${topic.name}`}`"
-                                class="subjects-overview-topic">
-                                <header class="subjects-overview-header subjects-overview-header--topic">
+                                v-for="subject in subjects"
+                                :key="`subjects-overview-subject-${subject.id || subject.name}`"
+                                ref="screenSubjectSections"
+                                class="subjects-overview-subject">
+                                <header class="subjects-overview-header subjects-overview-header--subject">
                                     <div class="d-flex align-center ga-2">
-                                        <v-icon size="16" icon="mdi-book-open-page-variant-outline" />
-                                        <span class="text-body-1 font-weight-medium">{{ topic.name }}</span>
+                                        <v-icon size="18" icon="mdi-book-education-outline" />
+                                        <span class="text-subtitle-1 font-weight-bold">{{ subject.name }}</span>
                                     </div>
                                 </header>
 
-                                <ul v-if="topic.materials.length" class="subjects-overview-material-list mb-2">
+                                <ul v-if="subject.materials.length" class="subjects-overview-material-list mb-2">
                                     <li
-                                        v-for="material in topic.materials"
-                                        :key="`topic-material-${topic.id || topic.name}-${material.id}`"
+                                        v-for="material in subject.materials"
+                                        :key="`subject-material-${subject.id || subject.name}-${material.id}`"
                                         class="subjects-overview-material-item">
                                         <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" class="subjects-overview-material-icon" />
                                         <span class="subjects-overview-material-text">{{ material.title }}</span>
@@ -99,27 +88,140 @@
                                 </ul>
 
                                 <section
-                                    v-for="unit in topic.units"
-                                    :key="`subjects-overview-unit-${unit.id || `${topic.id || topic.name}-${unit.name}`}`"
-                                    class="subjects-overview-unit">
-                                    <header class="subjects-overview-header subjects-overview-header--unit">
+                                    v-for="topic in subject.topics"
+                                    :key="`subjects-overview-topic-${topic.id || `${subject.id || subject.name}-${topic.name}`}`"
+                                    class="subjects-overview-topic">
+                                    <header class="subjects-overview-header subjects-overview-header--topic">
                                         <div class="d-flex align-center ga-2">
-                                            <v-icon size="14" icon="mdi-circle-medium" />
-                                            <span class="text-body-1 font-weight-bold">{{ unit.name }}</span>
+                                            <v-icon size="16" icon="mdi-book-open-page-variant-outline" />
+                                            <span class="text-body-1 font-weight-medium">{{ topic.name }}</span>
                                         </div>
                                     </header>
 
-                                    <ul v-if="unit.materials.length" class="subjects-overview-material-list">
+                                    <ul v-if="topic.materials.length" class="subjects-overview-material-list mb-2">
                                         <li
-                                            v-for="material in unit.materials"
-                                            :key="`unit-material-${unit.id || unit.name}-${material.id}`"
+                                            v-for="material in topic.materials"
+                                            :key="`topic-material-${topic.id || topic.name}-${material.id}`"
                                             class="subjects-overview-material-item">
                                             <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" class="subjects-overview-material-icon" />
                                             <span class="subjects-overview-material-text">{{ material.title }}</span>
                                         </li>
                                     </ul>
+
+                                    <section
+                                        v-for="unit in topic.units"
+                                        :key="`subjects-overview-unit-${unit.id || `${topic.id || topic.name}-${unit.name}`}`"
+                                        class="subjects-overview-unit">
+                                        <header class="subjects-overview-header subjects-overview-header--unit">
+                                            <div class="d-flex align-center ga-2">
+                                                <v-icon size="14" icon="mdi-circle-medium" />
+                                                <span class="text-body-1 font-weight-bold">{{ unit.name }}</span>
+                                            </div>
+                                        </header>
+
+                                        <ul v-if="unit.materials.length" class="subjects-overview-material-list">
+                                            <li
+                                                v-for="material in unit.materials"
+                                                :key="`unit-material-${unit.id || unit.name}-${material.id}`"
+                                                class="subjects-overview-material-item">
+                                                <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" class="subjects-overview-material-icon" />
+                                                <span class="subjects-overview-material-text">{{ material.title }}</span>
+                                            </li>
+                                        </ul>
+                                    </section>
                                 </section>
                             </section>
+                        </div>
+                    </div>
+
+                    <div v-if="!isLoading && effectivePrintPages.length" class="subjects-overview-print-pages" aria-hidden="true">
+                        <section
+                            v-for="(pageSubjects, pageIndex) in effectivePrintPages"
+                            :key="`subjects-overview-print-page-${pageIndex}`"
+                            class="subjects-overview-print-page">
+                            <div v-if="pageIndex === 0" class="subjects-overview-print-header">
+                                <div class="text-h4 font-weight-bold mb-2">Fachkatalog Übersicht</div>
+                                <div class="text-body-2 mb-4 subjects-overview-subline">
+                                    <div>Alle Fächer, Themen und Einheiten mit zugeordneten Materialien.</div>
+                                    <div>Stand: {{ generatedAtLabel }}</div>
+                                </div>
+                                <div v-if="printUserLabel" class="mb-1 subjects-overview-userline">
+                                    {{ printUserLabel }}
+                                </div>
+                                <div v-if="printSchoolLongName" class="mb-4 subjects-overview-schoolline">
+                                    {{ printSchoolLongName }}
+                                </div>
+                            </div>
+
+                            <section
+                                v-for="subject in pageSubjects"
+                                :key="`subjects-overview-print-subject-${pageIndex}-${subject.id || subject.name}`"
+                                class="subjects-overview-subject">
+                                <header class="subjects-overview-header subjects-overview-header--subject">
+                                    <div class="d-flex align-center ga-2">
+                                        <v-icon size="18" icon="mdi-book-education-outline" />
+                                        <span class="text-subtitle-1 font-weight-bold">{{ subject.name }}</span>
+                                    </div>
+                                </header>
+
+                                <ul v-if="subject.materials.length" class="subjects-overview-material-list mb-2">
+                                    <li
+                                        v-for="material in subject.materials"
+                                        :key="`print-subject-material-${pageIndex}-${subject.id || subject.name}-${material.id}`"
+                                        class="subjects-overview-material-item">
+                                        <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" class="subjects-overview-material-icon" />
+                                        <span class="subjects-overview-material-text">{{ material.title }}</span>
+                                    </li>
+                                </ul>
+
+                                <section
+                                    v-for="topic in subject.topics"
+                                    :key="`subjects-overview-print-topic-${pageIndex}-${topic.id || `${subject.id || subject.name}-${topic.name}`}`"
+                                    class="subjects-overview-topic">
+                                    <header class="subjects-overview-header subjects-overview-header--topic">
+                                        <div class="d-flex align-center ga-2">
+                                            <v-icon size="16" icon="mdi-book-open-page-variant-outline" />
+                                            <span class="text-body-1 font-weight-medium">{{ topic.name }}</span>
+                                        </div>
+                                    </header>
+
+                                    <ul v-if="topic.materials.length" class="subjects-overview-material-list mb-2">
+                                        <li
+                                            v-for="material in topic.materials"
+                                            :key="`print-topic-material-${pageIndex}-${topic.id || topic.name}-${material.id}`"
+                                            class="subjects-overview-material-item">
+                                            <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" class="subjects-overview-material-icon" />
+                                            <span class="subjects-overview-material-text">{{ material.title }}</span>
+                                        </li>
+                                    </ul>
+
+                                    <section
+                                        v-for="unit in topic.units"
+                                        :key="`subjects-overview-print-unit-${pageIndex}-${unit.id || `${topic.id || topic.name}-${unit.name}`}`"
+                                        class="subjects-overview-unit">
+                                        <header class="subjects-overview-header subjects-overview-header--unit">
+                                            <div class="d-flex align-center ga-2">
+                                                <v-icon size="14" icon="mdi-circle-medium" />
+                                                <span class="text-body-1 font-weight-bold">{{ unit.name }}</span>
+                                            </div>
+                                        </header>
+
+                                        <ul v-if="unit.materials.length" class="subjects-overview-material-list">
+                                            <li
+                                                v-for="material in unit.materials"
+                                                :key="`print-unit-material-${pageIndex}-${unit.id || unit.name}-${material.id}`"
+                                                class="subjects-overview-material-item">
+                                                <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" class="subjects-overview-material-icon" />
+                                                <span class="subjects-overview-material-text">{{ material.title }}</span>
+                                            </li>
+                                        </ul>
+                                    </section>
+                                </section>
+                            </section>
+
+                            <div class="subjects-overview-print-page-footer">
+                                Seite {{ pageIndex + 1 }}/{{ effectivePrintPages.length }}
+                            </div>
                         </section>
                     </div>
                 </v-card>
@@ -129,6 +231,7 @@
 </template>
 
 <script>
+import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useMaterialCardStore } from '@/stores/admin/materials/MaterialCardStore'
 
 export default {
@@ -136,8 +239,11 @@ export default {
     data() {
         return {
             materialCardStore: null,
+            adminStore: null,
             isLoading: false,
             subjects: [],
+            printPages: [],
+            resizeTimerId: null,
             uniqueMaterialCount: 0,
             generatedAt: null,
         }
@@ -156,14 +262,192 @@ export default {
 
             return `${dateText}, ${timeText}`
         },
+        printUserLabel() {
+            const user = this.adminStore?.config?.user || {}
+            const short = this.normalizeText(user?.short)
+            const lastName = this.normalizeText(user?.last_name)
+            const firstName = this.normalizeText(user?.first_name)
+            const name = [lastName, firstName].filter((value) => value !== '').join(' ')
+            if (short && name) return `${short}, ${name}`
+            if (name) return name
+            return short
+        },
+        printSchoolLongName() {
+            const selectedSchool = this.adminStore?.config?.selected_school || {}
+            return this.normalizeText(selectedSchool?.long_name)
+        },
+        effectivePrintPages() {
+            if (Array.isArray(this.printPages) && this.printPages.length > 0) {
+                return this.printPages
+            }
+            if (Array.isArray(this.subjects) && this.subjects.length > 0) {
+                return [this.subjects]
+            }
+            return []
+        },
     },
     async beforeMount() {
+        this.adminStore = useAdminStore()
+        await this.adminStore.loadConfig()
         this.materialCardStore = useMaterialCardStore()
         await this.loadOverview()
+    },
+    async mounted() {
+        window.addEventListener('beforeprint', this.handleBeforePrint)
+        window.addEventListener('resize', this.handleWindowResize)
+        await this.$nextTick()
+        this.rebuildPrintPages()
+    },
+    beforeUnmount() {
+        window.removeEventListener('beforeprint', this.handleBeforePrint)
+        window.removeEventListener('resize', this.handleWindowResize)
+        if (this.resizeTimerId) {
+            window.clearTimeout(this.resizeTimerId)
+            this.resizeTimerId = null
+        }
     },
     methods: {
         normalizeText(value) {
             return String(value ?? '').trim()
+        },
+        normalizeFilterSelection(filters = {}) {
+            const normalized = {
+                search: this.normalizeText(filters?.search),
+                status: this.normalizeText(filters?.status),
+                subject: this.normalizeText(filters?.subject),
+                topic: this.normalizeText(filters?.topic),
+                unit: this.normalizeText(filters?.unit),
+                type: this.normalizeText(filters?.type),
+                area: this.normalizeText(filters?.area),
+            }
+
+            if (normalized.subject === '') {
+                normalized.topic = ''
+                normalized.unit = ''
+            } else if (normalized.topic === '') {
+                normalized.unit = ''
+            }
+
+            return normalized
+        },
+        buildRouteFilters() {
+            const query = this.$route?.query || {}
+            const normalized = this.normalizeFilterSelection(query)
+            const result = {}
+            for (const [key, value] of Object.entries(normalized)) {
+                const filterKey = this.normalizeText(key)
+                if (!filterKey || filterKey === 'page') continue
+                if (value === '') continue
+                result[filterKey] = value
+            }
+            return result
+        },
+        hasActiveFilterValues(filters = {}) {
+            for (const [key, value] of Object.entries(filters || {})) {
+                const filterKey = this.normalizeText(key)
+                if (!filterKey || filterKey === 'page') continue
+                if (this.normalizeText(value) !== '') return true
+            }
+            return false
+        },
+        rowMatchesClassificationFilters(row, filters = {}) {
+            const subjectFilter = this.normalizeText(filters?.subject).toLocaleLowerCase()
+            const topicFilter = this.normalizeText(filters?.topic).toLocaleLowerCase()
+            const unitFilter = this.normalizeText(filters?.unit).toLocaleLowerCase()
+
+            const subject = this.normalizeText(row?.subject).toLocaleLowerCase()
+            const topic = this.normalizeText(row?.topic).toLocaleLowerCase()
+            const unit = this.normalizeText(row?.unit).toLocaleLowerCase()
+
+            if (subjectFilter !== '' && subject !== subjectFilter) return false
+            if (topicFilter !== '' && topic !== topicFilter) return false
+            if (unitFilter !== '' && unit !== unitFilter) return false
+
+            return true
+        },
+        cmToPx(valueCm) {
+            const parsed = Number(valueCm)
+            if (!Number.isFinite(parsed)) return 0
+            return (parsed * 96) / 2.54
+        },
+        getPrintableContentHeightPx() {
+            const a4HeightCm = 29.7
+            const topMarginCm = 2
+            const bottomMarginCm = 2
+            const printSafetyCm = 1.4
+            return this.cmToPx(a4HeightCm - topMarginCm - bottomMarginCm - printSafetyCm)
+        },
+        getHeaderHeightPx() {
+            const headerEl = this.$refs.screenHeaderBlock
+            if (!headerEl || typeof headerEl.getBoundingClientRect !== 'function') return 0
+            return Math.ceil(headerEl.getBoundingClientRect().height)
+        },
+        getSubjectHeightsPx() {
+            const rawRefs = this.$refs.screenSubjectSections
+            const subjectEls = Array.isArray(rawRefs) ? rawRefs : (rawRefs ? [rawRefs] : [])
+            return subjectEls.map((element) => {
+                if (!element || typeof element.getBoundingClientRect !== 'function') return 0
+                return Math.ceil(element.getBoundingClientRect().height)
+            })
+        },
+        rebuildPrintPages() {
+            if (!Array.isArray(this.subjects) || this.subjects.length === 0) {
+                this.printPages = []
+                return
+            }
+
+            const subjectHeights = this.getSubjectHeightsPx()
+            if (subjectHeights.length !== this.subjects.length) {
+                this.printPages = [this.subjects]
+                return
+            }
+
+            const pageHeight = this.getPrintableContentHeightPx()
+            const footerHeight = this.cmToPx(0.8)
+            const subjectSpacing = 14
+            const firstPageHeader = this.getHeaderHeightPx()
+            const minimumFreeSpace = 120
+
+            const firstPageLimit = Math.max(minimumFreeSpace, pageHeight - firstPageHeader - footerHeight)
+            const nextPageLimit = Math.max(minimumFreeSpace, pageHeight - footerHeight)
+
+            const pages = []
+            let pageSubjects = []
+            let remainingHeight = firstPageLimit
+
+            this.subjects.forEach((subject, index) => {
+                const measuredHeight = Number(subjectHeights[index]) + subjectSpacing
+                const requiredHeight = Number.isFinite(measuredHeight) ? measuredHeight : 220
+
+                if (pageSubjects.length > 0 && requiredHeight > remainingHeight) {
+                    pages.push(pageSubjects)
+                    pageSubjects = []
+                    remainingHeight = nextPageLimit
+                }
+
+                pageSubjects.push(subject)
+                remainingHeight -= requiredHeight
+            })
+
+            if (pageSubjects.length > 0) {
+                pages.push(pageSubjects)
+            }
+
+            this.printPages = pages.length > 0 ? pages : [this.subjects]
+        },
+        handleWindowResize() {
+            if (this.resizeTimerId) {
+                window.clearTimeout(this.resizeTimerId)
+            }
+            this.resizeTimerId = window.setTimeout(() => {
+                this.resizeTimerId = null
+                this.rebuildPrintPages()
+            }, 120)
+        },
+        async handleBeforePrint() {
+            await this.$nextTick()
+            this.rebuildPrintPages()
+            await this.$nextTick()
         },
         normalizeClassificationRows(rows) {
             const list = Array.isArray(rows) ? rows : []
@@ -330,26 +614,29 @@ export default {
 
             return subjects
         },
-        buildSubjectsOverview(tree, cards) {
+        buildSubjectsOverview(tree, cards, filters = {}) {
             const subjects = []
             const subjectByKey = new Map()
             const treeItems = Array.isArray(tree) ? tree : []
             const cardItems = Array.isArray(cards) ? cards : []
+            const hasActiveFilters = this.hasActiveFilterValues(filters)
 
-            for (const subjectNode of treeItems) {
-                const subjectName = this.normalizeText(subjectNode?.name)
-                if (!subjectName) continue
-                const subject = this.ensureSubject(subjects, subjectByKey, subjectName, subjectNode)
-                const topicNodes = Array.isArray(subjectNode?.topics) ? subjectNode.topics : []
-                for (const topicNode of topicNodes) {
-                    const topicName = this.normalizeText(topicNode?.name)
-                    if (!topicName) continue
-                    const topic = this.ensureTopic(subject, topicName, topicNode)
-                    const unitNodes = Array.isArray(topicNode?.units) ? topicNode.units : []
-                    for (const unitNode of unitNodes) {
-                        const unitName = this.normalizeText(unitNode?.name)
-                        if (!unitName) continue
-                        this.ensureUnit(topic, unitName, unitNode)
+            if (!hasActiveFilters) {
+                for (const subjectNode of treeItems) {
+                    const subjectName = this.normalizeText(subjectNode?.name)
+                    if (!subjectName) continue
+                    const subject = this.ensureSubject(subjects, subjectByKey, subjectName, subjectNode)
+                    const topicNodes = Array.isArray(subjectNode?.topics) ? subjectNode.topics : []
+                    for (const topicNode of topicNodes) {
+                        const topicName = this.normalizeText(topicNode?.name)
+                        if (!topicName) continue
+                        const topic = this.ensureTopic(subject, topicName, topicNode)
+                        const unitNodes = Array.isArray(topicNode?.units) ? topicNode.units : []
+                        for (const unitNode of unitNodes) {
+                            const unitName = this.normalizeText(unitNode?.name)
+                            if (!unitName) continue
+                            this.ensureUnit(topic, unitName, unitNode)
+                        }
                     }
                 }
             }
@@ -358,7 +645,6 @@ export default {
             for (const card of cardItems) {
                 const cardId = Number(card?.id)
                 if (!Number.isFinite(cardId) || cardId <= 0) continue
-                uniqueCardIds.add(cardId)
 
                 const material = {
                     id: cardId,
@@ -366,13 +652,19 @@ export default {
                     icon: this.materialIcon(card),
                 }
 
-                const rows = this.normalizeClassificationRows(card?.classifications)
+                let rows = this.normalizeClassificationRows(card?.classifications)
+                if (hasActiveFilters) {
+                    rows = rows.filter((row) => this.rowMatchesClassificationFilters(row, filters))
+                }
+
+                let cardMapped = false
                 for (const row of rows) {
                     const subject = this.ensureSubject(subjects, subjectByKey, row.subject)
                     if (!subject) continue
 
                     if (!row.topic) {
                         this.pushMaterial(subject, material)
+                        cardMapped = true
                         continue
                     }
 
@@ -381,12 +673,18 @@ export default {
 
                     if (!row.unit) {
                         this.pushMaterial(topic, material)
+                        cardMapped = true
                         continue
                     }
 
                     const unit = this.ensureUnit(topic, row.unit)
                     if (!unit) continue
                     this.pushMaterial(unit, material)
+                    cardMapped = true
+                }
+
+                if (cardMapped) {
+                    uniqueCardIds.add(cardId)
                 }
             }
 
@@ -405,9 +703,11 @@ export default {
                     await this.materialCardStore.loadConfig()
                 }
 
-                const cards = await this.materialCardStore.listAllCardsSnapshot({})
+                const routeFilters = this.buildRouteFilters()
+                const cards = await this.materialCardStore.listAllCardsSnapshot(routeFilters)
                 if (!Array.isArray(cards)) {
                     this.subjects = []
+                    this.printPages = []
                     this.uniqueMaterialCount = 0
                     this.generatedAt = new Date()
                     return
@@ -416,10 +716,12 @@ export default {
                 const tree = Array.isArray(this.materialCardStore?.config?.classification_tree)
                     ? this.materialCardStore.config.classification_tree
                     : []
-                const result = this.buildSubjectsOverview(tree, cards)
+                const result = this.buildSubjectsOverview(tree, cards, routeFilters)
                 this.subjects = result.subjects
                 this.uniqueMaterialCount = result.uniqueMaterialCount
                 this.generatedAt = new Date()
+                await this.$nextTick()
+                this.rebuildPrintPages()
             } finally {
                 this.isLoading = false
             }
@@ -445,7 +747,8 @@ export default {
                 },
             })
         },
-        printPage() {
+        async printPage() {
+            await this.handleBeforePrint()
             window.print()
         },
     },
@@ -503,6 +806,18 @@ export default {
 
 .subjects-overview-subline {
     color: #000;
+}
+
+.subjects-overview-userline {
+    color: #000;
+    font-size: 1.05rem;
+    font-weight: 700;
+}
+
+.subjects-overview-schoolline {
+    color: #000;
+    font-size: 0.95rem;
+    font-weight: 400;
 }
 
 .subjects-overview-subject {
@@ -565,15 +880,31 @@ export default {
     line-height: 1.35;
 }
 
+.subjects-overview-print-pages {
+    display: none;
+}
+
+.subjects-overview-print-page {
+    display: block;
+}
+
+.subjects-overview-print-page-footer {
+    display: none;
+}
+
 @media print {
     .materials-page {
         background: #fff !important;
         padding: 0 !important;
+        min-height: 0 !important;
+        height: auto !important;
+        overflow: visible !important;
     }
 
     .materials-page::before,
     .materials-page::after,
-    .subjects-overview-toolbar {
+    .subjects-overview-toolbar,
+    .subjects-overview-screen-content {
         display: none !important;
     }
 
@@ -590,11 +921,42 @@ export default {
         background: #fff !important;
     }
 
+    .subjects-overview-print-pages {
+        display: block;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    .subjects-overview-print-page {
+        position: relative;
+        box-sizing: border-box;
+        height: calc(29.7cm - 4cm - 1.4cm);
+        padding-bottom: 1.2cm;
+        overflow: hidden;
+        margin: 0 !important;
+    }
+
+    .subjects-overview-print-page:not(:last-child) {
+        break-after: page;
+    }
+
+    .subjects-overview-print-page-footer {
+        display: block;
+        position: absolute;
+        right: 0;
+        left: 0;
+        bottom: 0.5cm;
+        text-align: right;
+        font-size: 10pt;
+        color: #000;
+    }
+
 }
 </style>
 
 <style>
 @page {
+    size: A4 portrait;
     margin: 2cm 2cm 2cm 4cm;
 }
 
@@ -603,13 +965,21 @@ export default {
     body {
         margin: 0 !important;
         padding: 0 !important;
+        min-height: 0 !important;
+        height: auto !important;
+        overflow: visible !important;
     }
 
     .v-application,
     .v-application__wrap,
-    .v-layout {
+    .v-layout,
+    .v-main,
+    .v-main__scroller {
         margin: 0 !important;
         padding: 0 !important;
+        min-height: 0 !important;
+        height: auto !important;
+        overflow: visible !important;
     }
 
     .v-navigation-drawer,

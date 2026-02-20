@@ -2106,11 +2106,21 @@ export default {
             }
         },
         openSubjectsOverviewScreen() {
+            const filters = this.buildSubjectsContentsOverviewFilters()
+            const query = {
+                source: 'overview',
+            }
+            for (const [key, value] of Object.entries(filters || {})) {
+                const filterKey = String(key || '').trim()
+                if (!filterKey || filterKey === 'page') continue
+                const normalizedValue = this.normalizeFilterText(value)
+                if (normalizedValue === '') continue
+                query[filterKey] = normalizedValue
+            }
+
             this.$router.push({
                 path: '/admin/materials/subjects-overview',
-                query: {
-                    source: 'overview',
-                },
+                query,
             })
         },
         setOverviewSortMode(value) {
@@ -2255,8 +2265,10 @@ export default {
             const configuredLabel = this.normalizeFilterText(option?.label)
             return configuredLabel || rawType
         },
-        buildSubjectsContentsOverviewItems(cards) {
+        buildSubjectsContentsOverviewItems(cards, filters = {}) {
             const cardList = Array.isArray(cards) ? cards : []
+            const normalizedFilters = this.normalizeFilterSelection(filters)
+            const hasActiveFilters = this.hasActiveFilterValues(filters)
             const subjects = this.buildOverviewClassificationTreeItems().map((subject) => ({
                 ...subject,
                 materials: [],
@@ -2343,6 +2355,7 @@ export default {
             for (const card of cardList) {
                 const cardId = Number(card?.id)
                 if (!Number.isFinite(cardId) || cardId <= 0) continue
+                if (hasActiveFilters && !this.cardMatchesFilterSet(card, normalizedFilters)) continue
 
                 const material = {
                     id: cardId,
@@ -2392,11 +2405,85 @@ export default {
                 delete subject._materialIds
             }
 
+            if (hasActiveFilters) {
+                const subjectFilter = this.normalizeFilterText(normalizedFilters?.subject).toLocaleLowerCase()
+                const topicFilter = this.normalizeFilterText(normalizedFilters?.topic).toLocaleLowerCase()
+                const unitFilter = this.normalizeFilterText(normalizedFilters?.unit).toLocaleLowerCase()
+
+                return subjects
+                    .map((subject) => {
+                        const subjectName = this.normalizeFilterText(subject?.name).toLocaleLowerCase()
+                        if (subjectFilter !== '' && subjectName !== subjectFilter) {
+                            return null
+                        }
+
+                        const nextTopics = (Array.isArray(subject?.topics) ? subject.topics : [])
+                            .map((topic) => {
+                                const topicName = this.normalizeFilterText(topic?.name).toLocaleLowerCase()
+                                if (topicFilter !== '' && topicName !== topicFilter) {
+                                    return null
+                                }
+
+                                const nextUnits = (Array.isArray(topic?.units) ? topic.units : [])
+                                    .filter((unit) => {
+                                        const unitName = this.normalizeFilterText(unit?.name).toLocaleLowerCase()
+                                        if (unitFilter !== '' && unitName !== unitFilter) {
+                                            return false
+                                        }
+                                        return Array.isArray(unit?.materials) && unit.materials.length > 0
+                                    })
+
+                                const topicHasMaterials = Array.isArray(topic?.materials) && topic.materials.length > 0
+                                if (!topicHasMaterials && nextUnits.length === 0) {
+                                    return null
+                                }
+
+                                return {
+                                    ...topic,
+                                    units: nextUnits,
+                                }
+                            })
+                            .filter(Boolean)
+
+                        const subjectHasMaterials = Array.isArray(subject?.materials) && subject.materials.length > 0
+                        if (!subjectHasMaterials && nextTopics.length === 0) {
+                            return null
+                        }
+
+                        return {
+                            ...subject,
+                            topics: nextTopics,
+                        }
+                    })
+                    .filter(Boolean)
+            }
+
             return subjects
         },
         buildSubjectsContentsOverviewSnapshotKey() {
-            const filters = { ...(this.materialCardStore?.filters || {}) }
+            const filters = this.buildSubjectsContentsOverviewFilters()
             return this.filterCountSnapshotKeyFor(filters)
+        },
+        buildSubjectsContentsOverviewFilters() {
+            const sourceFilters = { ...(this.materialCardStore?.filters || {}) }
+            const normalizedSelection = this.normalizeFilterSelection(sourceFilters)
+
+            return {
+                ...sourceFilters,
+                subject: normalizedSelection.subject,
+                topic: normalizedSelection.topic,
+                unit: normalizedSelection.unit,
+                type: normalizedSelection.type,
+                status: normalizedSelection.status,
+            }
+        },
+        hasActiveFilterValues(filters = {}) {
+            for (const [key, value] of Object.entries(filters || {})) {
+                const filterKey = String(key || '').trim()
+                if (!filterKey || filterKey === 'page') continue
+                if (this.normalizeFilterText(value) !== '') return true
+            }
+            return false
         },
         async loadSubjectsContentsOverview({ force = false } = {}) {
             if (this.isLoadingSubjectsContentsOverview) return
@@ -2411,12 +2498,12 @@ export default {
             this.isLoadingSubjectsContentsOverview = true
 
             try {
-                const filters = { ...(this.materialCardStore?.filters || {}) }
+                const filters = this.buildSubjectsContentsOverviewFilters()
                 const cards = await this.materialCardStore.listAllCardsSnapshot(filters)
                 if (requestId !== this.subjectsContentsOverviewRequestId) return
                 if (!Array.isArray(cards)) return
 
-                this.subjectsContentsOverviewItems = this.buildSubjectsContentsOverviewItems(cards)
+                this.subjectsContentsOverviewItems = this.buildSubjectsContentsOverviewItems(cards, filters)
                 this.subjectsContentsOverviewSnapshotKey = snapshotKey
             } finally {
                 if (requestId === this.subjectsContentsOverviewRequestId) {

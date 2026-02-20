@@ -30,6 +30,12 @@
                 @click="main_action = 'licences'"
                 v-if="['super_admin'].some((role) => config.roles.includes(role))" />
             <its-menu-button
+                subtitle="Rollen"
+                icon="mdi-badge-account-horizontal-outline"
+                :color="main_action == 'roles' ? 'primary' : 'secondary'"
+                @click="main_action = 'roles'"
+                v-if="['super_admin'].some((role) => config.roles.includes(role))" />
+            <its-menu-button
                 subtitle="Benutzer"
                 icon="mdi-account-multiple"
                 :color="main_action == 'users' ? 'primary' : 'secondary'"
@@ -48,6 +54,7 @@
             <Schools v-if="main_action == 'schools' && ['super_admin'].some((role) => config.roles.includes(role))" />
             <Schoolyears v-if="main_action == 'schoolyears' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
             <Licences v-if="main_action == 'licences' && ['super_admin'].some((role) => config.roles.includes(role))" />
+            <Roles v-if="main_action == 'roles' && ['super_admin'].some((role) => config.roles.includes(role))" />
             <Users v-if="main_action == 'users' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
             <Teachers v-if="main_action == 'teachers' && (config.roles.includes('super_admin') || config.roles.includes('admin'))" />
             <TeachersList v-if="main_action == 'teachers_list' && (config.roles.includes('super_admin') || config.roles.includes('admin'))" />
@@ -64,6 +71,7 @@ import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import Schools from './components/Schools.vue'
 import Schoolyears from './components/Schoolyears.vue'
 import Licences from './components/Licences.vue'
+import Roles from './components/Roles.vue'
 import Users from './components/Users.vue'
 import Teachers from './components/Teachers.vue'
 import TeachersList from './components/TeachersList.vue'
@@ -73,7 +81,7 @@ import ActiveSchool from './components/ActiveSchool.vue'
 import Log from './components/Log.vue'
 
 export default {
-    components: { ItsMenuButton, ItsGridBox, Schools, Schoolyears, ActiveSchool, Licences, Users, Log, Teachers, TeachersList },
+    components: { ItsMenuButton, ItsGridBox, Schools, Schoolyears, ActiveSchool, Licences, Roles, Users, Log, Teachers, TeachersList },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
