@@ -174,6 +174,9 @@
 
         <v-alert type="info" variant="tonal" class="mb-4">
             {{ displayedMaterials }}/{{ totalMaterials }} Material{{ totalMaterials === 1 ? '' : 'ien' }} angezeigt.
+            <span class="ml-2">
+                • Speicher: angezeigt {{ shownListedAttachmentSizeLabel }} / alle {{ allListedAttachmentSizeLabel }}
+            </span>
         </v-alert>
 
         <v-skeleton-loader v-if="isLoading && !hasCards" type="list-item-three-line@4" />
@@ -221,7 +224,7 @@
                                     prepend-icon="mdi-paperclip"
                                     class="attachments-count-chip attachments-count-chip-clickable"
                                     @click="openAttachmentManager(card)">
-                                    {{ card.attachments_count }}
+                                    {{ attachmentCountCompactLabel(card) }}
                                 </v-chip>
                             </div>
 
@@ -316,7 +319,7 @@
                             prepend-icon="mdi-paperclip"
                             class="attachments-count-chip attachments-count-chip-clickable"
                             @click="openAttachmentManager(card)">
-                            {{ card.attachments_count }}
+                            {{ attachmentCountCompactLabel(card) }}
                         </v-chip>
 
                         <v-chip size="small" :color="statusColor(card.status)" variant="flat" class="material-status-chip">
@@ -400,7 +403,7 @@
                             prepend-icon="mdi-paperclip"
                             class="attachments-count-chip attachments-count-chip-clickable"
                             @click="openAttachmentManager(card)">
-                            {{ card.attachments_count }} Anhang{{ card.attachments_count === 1 ? '' : 'e' }}
+                            {{ attachmentCountLabel(card) }}
                         </v-chip>
                     </div>
 
@@ -746,7 +749,7 @@
                                             {{ attachmentDisplayName(attachment) }}
                                         </div>
                                         <div class="text-caption text-medium-emphasis">
-                                            {{ attachmentTypeLabel(attachment) }}
+                                            {{ attachmentTypeAndSizeLabel(attachment) }}
                                         </div>
                                     </div>
 
@@ -1016,6 +1019,9 @@ export default {
             returnToDetailOnEditCancel: false,
             detailCardForEditReturn: null,
             attachmentDeleteArmedIds: [],
+            allListedAttachmentBytes: null,
+            allListedAttachmentBytesLoading: false,
+            allListedAttachmentBytesRequestId: 0,
         }
     },
     watch: {
@@ -1101,6 +1107,29 @@ export default {
         },
         displayedMaterials() {
             return this.cards.length
+        },
+        totalListedAttachmentBytes() {
+            const list = Array.isArray(this.cards) ? this.cards : []
+            return list.reduce((sum, card) => {
+                const attachments = Array.isArray(card?.attachments) ? card.attachments : []
+                const bytes = attachments.reduce((attachmentSum, attachment) => {
+                    return attachmentSum + this.attachmentSizeBytes(attachment)
+                }, 0)
+                return sum + bytes
+            }, 0)
+        },
+        shownListedAttachmentSizeLabel() {
+            return this.formatBytes(this.totalListedAttachmentBytes)
+        },
+        allListedAttachmentSizeLabel() {
+            if (this.allListedAttachmentBytesLoading && this.allListedAttachmentBytes === null) {
+                return '...'
+            }
+            const bytes = Number(this.allListedAttachmentBytes)
+            if (Number.isFinite(bytes) && bytes >= 0) {
+                return this.formatBytes(bytes)
+            }
+            return this.shownListedAttachmentSizeLabel
         },
         canSaveEdit() {
             return String(this.editForm.title || '').trim().length > 0
@@ -1372,8 +1401,50 @@ export default {
                     currentPage = 1
                 }
                 this.currentPage = Math.max(1, Math.round(currentPage))
+                this.refreshAllListedAttachmentBytes()
             }
             this.isLoading = false
+        },
+        calculateAttachmentBytesForCards(cards) {
+            const list = Array.isArray(cards) ? cards : []
+            return list.reduce((sum, card) => {
+                const attachments = Array.isArray(card?.attachments) ? card.attachments : []
+                const bytes = attachments.reduce((attachmentSum, attachment) => {
+                    return attachmentSum + this.attachmentSizeBytes(attachment)
+                }, 0)
+                return sum + bytes
+            }, 0)
+        },
+        async refreshAllListedAttachmentBytes() {
+            const shownBytes = this.totalListedAttachmentBytes
+            const totalMaterials = Number(this.totalMaterials)
+            const displayedMaterials = Number(this.displayedMaterials)
+            const requestId = this.allListedAttachmentBytesRequestId + 1
+            this.allListedAttachmentBytesRequestId = requestId
+
+            if (!Number.isFinite(totalMaterials) || totalMaterials <= 0) {
+                this.allListedAttachmentBytes = 0
+                this.allListedAttachmentBytesLoading = false
+                return
+            }
+
+            if (totalMaterials <= displayedMaterials) {
+                this.allListedAttachmentBytes = shownBytes
+                this.allListedAttachmentBytesLoading = false
+                return
+            }
+
+            this.allListedAttachmentBytesLoading = true
+            const filters = { ...(this.materialCardStore?.filters || {}) }
+            const snapshot = await this.materialCardStore.listAllCardsSnapshot(filters)
+            if (requestId !== this.allListedAttachmentBytesRequestId) return
+
+            if (Array.isArray(snapshot)) {
+                this.allListedAttachmentBytes = this.calculateAttachmentBytesForCards(snapshot)
+            } else {
+                this.allListedAttachmentBytes = null
+            }
+            this.allListedAttachmentBytesLoading = false
         },
         async goToFirstPage() {
             if (!this.hasPreviousPage) return
@@ -2467,17 +2538,49 @@ export default {
 
             return ext ? `${baseLabel} (${ext})` : baseLabel
         },
+        attachmentSizeBytes(attachment) {
+            const value = Number(attachment?.size_bytes || 0)
+            if (!Number.isFinite(value) || value <= 0) return 0
+            return Math.round(value)
+        },
+        formatBytes(bytes) {
+            const value = Number(bytes || 0)
+            if (!Number.isFinite(value) || value <= 0) return '0 B'
+
+            const units = ['B', 'KB', 'MB', 'GB', 'TB']
+            let size = value
+            let unitIndex = 0
+            while (size >= 1024 && unitIndex < units.length - 1) {
+                size /= 1024
+                unitIndex += 1
+            }
+
+            const rounded = size >= 100 || unitIndex === 0
+                ? Math.round(size)
+                : Math.round(size * 10) / 10
+            return `${rounded} ${units[unitIndex]}`
+        },
+        attachmentTypeAndSizeLabel(attachment) {
+            const typeLabel = this.attachmentTypeLabel(attachment)
+            const bytes = this.attachmentSizeBytes(attachment)
+            if (bytes <= 0) return typeLabel
+            return `${typeLabel} • ${this.formatBytes(bytes)}`
+        },
         attachmentMeta(row) {
             if (String(row?.attachment_type || '').trim() === 'link') {
                 return String(row?.url || '').trim() || 'Link-Anhang'
             }
 
+            const sizeLabel = this.attachmentSizeBytes(row) > 0 ? this.formatBytes(this.attachmentSizeBytes(row)) : ''
             const ext = this.attachmentExtension(row)
             if (ext) {
-                return `Dateiformat: ${ext.toUpperCase()}`
+                return sizeLabel
+                    ? `Dateiformat: ${ext.toUpperCase()} • ${sizeLabel}`
+                    : `Dateiformat: ${ext.toUpperCase()}`
             }
 
-            return String(row?.file_path || '').trim() || 'Datei-Anhang'
+            const fallback = String(row?.file_path || '').trim() || 'Datei-Anhang'
+            return sizeLabel ? `${fallback} • ${sizeLabel}` : fallback
         },
         updateAttachmentDraft(attachmentId, value) {
             const id = Number(attachmentId)
@@ -2735,6 +2838,27 @@ export default {
                 && String(attachment?.download_url || '').trim() !== ''
             )
         },
+        cardAttachmentTotalBytes(card) {
+            const attachments = Array.isArray(card?.attachments) ? card.attachments : []
+            return attachments.reduce((sum, attachment) => sum + this.attachmentSizeBytes(attachment), 0)
+        },
+        attachmentCountLabel(card) {
+            const count = Number(card?.attachments_count || 0)
+            if (!Number.isFinite(count) || count <= 0) return '0 Anhänge'
+
+            const sizeBytes = this.cardAttachmentTotalBytes(card)
+            const countLabel = count === 1 ? '1 Anhang' : `${count} Anhänge`
+            if (sizeBytes <= 0) return countLabel
+            return `${countLabel} • ${this.formatBytes(sizeBytes)}`
+        },
+        attachmentCountCompactLabel(card) {
+            const count = Number(card?.attachments_count || 0)
+            if (!Number.isFinite(count) || count <= 0) return '0'
+
+            const sizeBytes = this.cardAttachmentTotalBytes(card)
+            if (sizeBytes <= 0) return `${count}`
+            return `${count} • ${this.formatBytes(sizeBytes)}`
+        },
         attachmentDisplayName(attachment) {
             const name = String(attachment?.name || '').trim()
             if (name) return name
@@ -2750,8 +2874,11 @@ export default {
         attachmentChipLabel(attachment) {
             const name = this.attachmentDisplayName(attachment)
             const ext = this.attachmentExtension(attachment)
-            if (!ext) return name
-            return `${name} (${ext.toUpperCase()})`
+            const sizeLabel = this.attachmentSizeBytes(attachment) > 0
+                ? this.formatBytes(this.attachmentSizeBytes(attachment))
+                : ''
+            const nameWithType = ext ? `${name} (${ext.toUpperCase()})` : name
+            return sizeLabel ? `${nameWithType} • ${sizeLabel}` : nameWithType
         },
         preview(value, limit = 320) {
             const text = String(value || '').trim()
