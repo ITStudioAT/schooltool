@@ -267,12 +267,22 @@
                 <v-btn variant="tonal" color="primary" prepend-icon="mdi-link-plus" disabled>
                     Link hinzufügen
                 </v-btn>
+                <v-btn
+                    variant="tonal"
+                    color="primary"
+                    :prepend-icon="clipboardPasteArmed ? 'mdi-keyboard-outline' : 'mdi-clipboard-plus-outline'"
+                    :loading="isReadingClipboard"
+                    :disabled="isSaving || isReadingClipboard"
+                    @click="importAttachmentsFromClipboard">
+                    {{ clipboardPasteArmed ? 'Jetzt Strg+V' : 'Zwischenablage einfügen' }}
+                </v-btn>
             </div>
 
             <div
                 class="mt-3"
                 @dragover.capture="onAttachmentDragOver"
-                @drop.capture="onAttachmentDrop">
+                @drop.capture="onAttachmentDrop"
+                @paste.capture="onAttachmentPaste">
                 <file-pond
                     ref="pond"
                     name="file"
@@ -298,6 +308,42 @@
             <div class="text-caption text-medium-emphasis mt-1">
                 Du kannst auch einen Web-Link oder ein Web-Bild hierher ziehen.
             </div>
+            <div class="text-caption text-medium-emphasis mt-1">
+                Oder Inhalte per Zwischenablage einfuegen (Bild, Datei, Link).
+            </div>
+
+            <v-alert
+                v-if="clipboardImportStatus.message && !clipboardPasteArmed"
+                :type="clipboardImportStatus.type"
+                variant="tonal"
+                density="compact"
+                class="mt-2">
+                {{ clipboardImportStatus.message }}
+            </v-alert>
+
+            <v-alert
+                v-if="clipboardPasteArmed"
+                type="warning"
+                variant="flat"
+                icon="mdi-keyboard-outline"
+                class="mt-2">
+                Jetzt bitte <strong>STRG+V</strong> druecken.
+            </v-alert>
+
+            <v-textarea
+                v-if="clipboardPasteArmed"
+                ref="clipboardPasteField"
+                :model-value="clipboardPasteBuffer"
+                label="Jetzt Strg+V hier einfuegen"
+                variant="outlined"
+                density="comfortable"
+                rows="2"
+                auto-grow
+                hide-details="auto"
+                class="mt-2"
+                @update:modelValue="clipboardPasteBuffer = $event"
+                @paste.capture="onAttachmentPaste"
+                @keydown.esc="disarmClipboardPasteFallback" />
 
             <v-card
                 v-if="normalizedPendingAttachments.length"
@@ -465,6 +511,14 @@ export default {
             },
             classificationDraftDirty: false,
             pendingAttachmentDeleteArmedKeys: [],
+            isReadingClipboard: false,
+            clipboardPasteArmed: false,
+            clipboardPasteTimeoutId: null,
+            clipboardPasteBuffer: '',
+            clipboardImportStatus: {
+                type: 'info',
+                message: '',
+            },
         }
     },
     watch: {
@@ -532,6 +586,9 @@ export default {
         } catch {
             // Falls Token-Refresh fehlschlägt, wird der vorhandene Meta-Token verwendet.
         }
+    },
+    unmounted() {
+        this.disarmClipboardPasteFallback()
     },
     computed: {
         maxUploadSizeBytes() {
@@ -831,7 +888,13 @@ export default {
             const value = String(text || '')
             if (!value) return []
 
-            const matches = value.match(/https?:\/\/[^\s<>"')\]]+/gi) || []
+            const matches = []
+            const httpMatches = value.match(/https?:\/\/[^\s<>"')\]]+/gi) || []
+            matches.push(...httpMatches)
+
+            const bareMatches = value.match(/\b(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\s<>"')\]]*)?/gi) || []
+            matches.push(...bareMatches)
+
             return matches.map((entry) => String(entry || '').trim()).filter((entry) => entry !== '')
         },
         extractUrlsFromHtml(html) {
@@ -975,6 +1038,368 @@ export default {
                 this.emitPendingAttachments(rows)
             }
         },
+        fileExtensionForMime(mimeType) {
+            const normalized = this.normalizeText(mimeType).toLocaleLowerCase()
+            if (!normalized) return ''
+
+            const map = {
+                'image/png': 'png',
+                'image/jpeg': 'jpg',
+                'image/jpg': 'jpg',
+                'image/gif': 'gif',
+                'image/webp': 'webp',
+                'image/svg+xml': 'svg',
+                'image/bmp': 'bmp',
+                'image/tiff': 'tif',
+                'image/avif': 'avif',
+                'image/heic': 'heic',
+                'application/pdf': 'pdf',
+                'text/csv': 'csv',
+                'application/zip': 'zip',
+            }
+
+            if (map[normalized]) {
+                return map[normalized]
+            }
+
+            const suffix = normalized.split('/').pop() || ''
+            const cleaned = suffix.split('+')[0].replace(/[^a-z0-9]/gi, '').toLowerCase()
+            return cleaned || ''
+        },
+        parseClipboardUrls(textValue, htmlValue, uriListValue = '') {
+            const candidates = []
+            this.extractUrlsFromText(textValue).forEach((url) => candidates.push(url))
+            this.extractUrlsFromHtml(htmlValue).forEach((url) => candidates.push(url))
+            const uriList = String(uriListValue || '').trim()
+            if (uriList) {
+                uriList
+                    .split('\n')
+                    .map((line) => line.trim())
+                    .filter((line) => line !== '' && !line.startsWith('#'))
+                    .forEach((line) => candidates.push(line))
+            }
+
+            const result = []
+            const seen = new Set()
+
+            for (const candidate of candidates) {
+                const normalized = this.normalizeClipboardCandidateUrl(candidate)
+                if (!normalized) continue
+                const key = normalized.toLocaleLowerCase()
+                if (seen.has(key)) continue
+                seen.add(key)
+                result.push(normalized)
+            }
+
+            return result
+        },
+        normalizeClipboardCandidateUrl(value) {
+            const raw = this.normalizeText(value)
+            if (!raw) return ''
+
+            const direct = this.normalizeUrl(raw)
+            if (direct) return direct
+
+            if (/^www\./i.test(raw)) {
+                return this.normalizeUrl(`https://${raw}`)
+            }
+
+            if (/^(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s]*)?$/i.test(raw)) {
+                return this.normalizeUrl(`https://${raw}`)
+            }
+
+            return ''
+        },
+        clipboardPayloadFromData({ text = '', html = '', uriList = '', files = [] } = {}) {
+            return {
+                files: Array.isArray(files) ? files.filter((file) => file instanceof File) : [],
+                urls: this.parseClipboardUrls(text, html, uriList),
+            }
+        },
+        async readClipboardPayload() {
+            let text = ''
+            let html = ''
+            const files = []
+            let readTextFailed = false
+
+            if (navigator?.clipboard?.readText) {
+                try {
+                    text = await navigator.clipboard.readText()
+                } catch {
+                    readTextFailed = true
+                }
+            }
+
+            if (navigator?.clipboard?.read) {
+                try {
+                    const items = await navigator.clipboard.read()
+                    const now = Date.now()
+
+                    for (const item of items) {
+                        const types = Array.isArray(item?.types) ? item.types : []
+                        if (!text && types.includes('text/plain')) {
+                            const plainBlob = await item.getType('text/plain')
+                            text = await plainBlob.text()
+                        }
+                        if (!html && types.includes('text/html')) {
+                            const htmlBlob = await item.getType('text/html')
+                            html = await htmlBlob.text()
+                        }
+
+                        for (const type of types) {
+                            const normalizedType = this.normalizeText(type).toLocaleLowerCase()
+                            if (!normalizedType) continue
+                            if (normalizedType === 'text/plain' || normalizedType === 'text/html' || normalizedType === 'text/rtf') continue
+
+                            let blob = null
+                            try {
+                                blob = await item.getType(type)
+                            } catch {
+                                blob = null
+                            }
+                            if (!(blob instanceof Blob) || Number(blob.size) <= 0) continue
+
+                            const mime = this.normalizeText(blob.type || type).toLocaleLowerCase() || 'application/octet-stream'
+                            if (mime.startsWith('text/')) continue
+
+                            const ext = this.fileExtensionForMime(mime)
+                            const prefix = mime.startsWith('image/') ? 'zwischenablage-bild' : 'zwischenablage-datei'
+                            const fileName = `${prefix}-${now}-${files.length + 1}${ext ? `.${ext}` : ''}`
+                            files.push(new File([blob], fileName, { type: mime }))
+                        }
+                    }
+                } catch {
+                    // Fallback for browsers/contexts where ClipboardItem read is blocked.
+                    if (!text && navigator?.clipboard?.readText) {
+                        text = await navigator.clipboard.readText()
+                    }
+                }
+            } else if (!navigator?.clipboard?.readText) {
+                throw new Error('clipboard_api_not_supported')
+            }
+
+            if (!text && !html && files.length === 0 && readTextFailed) {
+                throw new Error('clipboard_read_failed')
+            }
+
+            return this.clipboardPayloadFromData({ text, html, files })
+        },
+        appendClipboardPayload(payload, source = 'clipboard') {
+            const normalizedPayload = payload && typeof payload === 'object' ? payload : {}
+            let rows = this.toPendingAttachments(this.pendingAttachments)
+
+            const files = Array.isArray(normalizedPayload.files) ? normalizedPayload.files : []
+            const hasImageFiles = files.some((file) => String(file?.type || '').toLocaleLowerCase().startsWith('image/'))
+            if (files.length > 0) {
+                rows = this.mergeUniqueFileAttachments(rows, files, source)
+            }
+
+            const urls = Array.isArray(normalizedPayload.urls) ? normalizedPayload.urls : []
+            if (urls.length > 0) {
+                const seenUrls = new Set(
+                    rows
+                        .filter((row) => row.attachmentType === 'link')
+                        .map((row) => this.normalizeUrl(row.url).toLocaleLowerCase())
+                        .filter((entry) => entry !== '')
+                )
+
+                for (const url of urls) {
+                    const normalizedUrl = this.normalizeUrl(url)
+                    if (!normalizedUrl) continue
+                    const isImageUrl = this.isLikelyImageUrl(normalizedUrl)
+                    const shouldStoreImageFromLink = isImageUrl && !hasImageFiles
+
+                    const key = normalizedUrl.toLocaleLowerCase()
+                    if (seenUrls.has(key)) continue
+                    seenUrls.add(key)
+                    rows.push({
+                        attachmentType: 'link',
+                        tempUpload: '',
+                        file: null,
+                        fileName: '',
+                        title: this.defaultLinkTitle(normalizedUrl),
+                        url: normalizedUrl,
+                        storeImageFile: shouldStoreImageFromLink,
+                        source,
+                        key: `link|${normalizedUrl}|${rows.length}`,
+                    })
+                }
+            }
+
+            this.emitPendingAttachments(rows)
+        },
+        mergeUniqueFileAttachments(existingAttachments, newFiles, source = 'manual') {
+            const list = this.toPendingAttachments(existingAttachments)
+            const getKey = (file) => `${file?.name || ''}|${file?.size || 0}|${file?.type || ''}|${file?.lastModified || 0}`
+            const seen = new Set(
+                list
+                    .filter((item) => item.file instanceof File)
+                    .map((item) => getKey(item.file))
+            )
+
+            for (const file of newFiles || []) {
+                if (!(file instanceof File)) continue
+                const key = getKey(file)
+                if (seen.has(key)) continue
+                seen.add(key)
+                list.push({
+                    attachmentType: 'file',
+                    tempUpload: '',
+                    file,
+                    fileName: this.normalizeText(file.name) || 'Datei',
+                    title: this.defaultAttachmentTitle(file.name),
+                    url: '',
+                    storeImageFile: false,
+                    source: this.normalizeText(source) || 'manual',
+                    key: `${key}|${seen.size}`,
+                })
+            }
+
+            return list
+        },
+        setClipboardImportStatus(type, message) {
+            this.clipboardImportStatus = {
+                type: ['success', 'info', 'warning', 'error'].includes(String(type)) ? String(type) : 'info',
+                message: this.normalizeText(message),
+            }
+        },
+        armClipboardPasteFallback(message = '') {
+            this.clipboardPasteArmed = true
+
+            if (typeof window !== 'undefined') {
+                window.addEventListener('paste', this.onGlobalClipboardPaste, true)
+            }
+
+            if (this.clipboardPasteTimeoutId) {
+                clearTimeout(this.clipboardPasteTimeoutId)
+                this.clipboardPasteTimeoutId = null
+            }
+
+            this.clipboardPasteTimeoutId = setTimeout(() => {
+                if (!this.clipboardPasteArmed) return
+                this.disarmClipboardPasteFallback()
+                this.setClipboardImportStatus('info', 'Zwischenablage-Bereitschaft beendet. Bei Bedarf erneut klicken.')
+            }, 15000)
+
+            const fallbackMessage = this.normalizeText(message)
+                || 'Direktes Lesen blockiert. Bitte jetzt Strg+V druecken.'
+            this.setClipboardImportStatus('warning', fallbackMessage)
+            this.focusClipboardPasteField()
+        },
+        disarmClipboardPasteFallback() {
+            this.clipboardPasteArmed = false
+            this.clipboardPasteBuffer = ''
+
+            if (typeof window !== 'undefined') {
+                window.removeEventListener('paste', this.onGlobalClipboardPaste, true)
+            }
+
+            if (this.clipboardPasteTimeoutId) {
+                clearTimeout(this.clipboardPasteTimeoutId)
+                this.clipboardPasteTimeoutId = null
+            }
+        },
+        focusClipboardPasteField() {
+            this.$nextTick(() => {
+                const field = this.$refs.clipboardPasteField
+                const textarea = field?.$el?.querySelector?.('textarea')
+                if (field && typeof field.focus === 'function') {
+                    field.focus()
+                }
+                if (textarea && typeof textarea.focus === 'function') {
+                    textarea.focus()
+                }
+            })
+        },
+        onGlobalClipboardPaste(event) {
+            if (!this.clipboardPasteArmed) return
+            const handled = this.onAttachmentPaste(event)
+            if (handled) {
+                this.disarmClipboardPasteFallback()
+            }
+        },
+        summarizeClipboardPayload(payload) {
+            const filesCount = Array.isArray(payload?.files) ? payload.files.length : 0
+            const linksCount = Array.isArray(payload?.urls) ? payload.urls.length : 0
+            const parts = []
+
+            if (filesCount > 0) {
+                parts.push(`${filesCount} Datei${filesCount === 1 ? '' : 'en/Bilder'}`)
+            }
+            if (linksCount > 0) {
+                parts.push(`${linksCount} Link${linksCount === 1 ? '' : 's'}`)
+            }
+            return parts.join(', ')
+        },
+        clipboardPayloadCounts(payload) {
+            return {
+                filesCount: Array.isArray(payload?.files) ? payload.files.length : 0,
+                linksCount: Array.isArray(payload?.urls) ? payload.urls.length : 0,
+            }
+        },
+        clipboardPayloadHasContent(payload) {
+            const { filesCount, linksCount } = this.clipboardPayloadCounts(payload)
+            return filesCount > 0 || linksCount > 0
+        },
+        async quickRetryClipboardRead(delayMs = 120) {
+            await new Promise((resolve) => {
+                setTimeout(resolve, Math.max(0, Number(delayMs) || 0))
+            })
+
+            try {
+                const payload = await this.readClipboardPayload()
+                return this.clipboardPayloadHasContent(payload) ? payload : null
+            } catch {
+                return null
+            }
+        },
+        async importAttachmentsFromClipboard() {
+            if (this.isSaving) return
+
+            // Reliable mode: one click arms paste capture, then user presses STRG+V.
+            if (!this.clipboardPasteArmed) {
+                this.armClipboardPasteFallback('Jetzt bitte STRG+V druecken.')
+                return
+            }
+
+            this.setClipboardImportStatus('warning', 'Jetzt bitte STRG+V druecken.')
+            this.focusClipboardPasteField()
+        },
+        onAttachmentPaste(event) {
+            const data = event?.clipboardData
+            if (!data) return false
+
+            const html = String(data.getData?.('text/html') || '')
+            const text = String(data.getData?.('text/plain') || '')
+            const uriList = String(data.getData?.('text/uri-list') || '')
+            const files = []
+
+            const items = Array.from(data.items || [])
+            for (const item of items) {
+                if (item?.kind !== 'file') continue
+                const file = item.getAsFile?.()
+                if (file instanceof File) {
+                    files.push(file)
+                }
+            }
+
+            const payload = this.clipboardPayloadFromData({ text, html, uriList, files })
+            const filesCount = Array.isArray(payload.files) ? payload.files.length : 0
+            const linksCount = Array.isArray(payload.urls) ? payload.urls.length : 0
+            if (filesCount === 0 && linksCount === 0) return false
+
+            if (typeof event.preventDefault === 'function') {
+                event.preventDefault()
+            }
+            if (typeof event.stopPropagation === 'function') {
+                event.stopPropagation()
+            }
+
+            this.appendClipboardPayload(payload, 'paste')
+            this.disarmClipboardPasteFallback()
+            this.setClipboardImportStatus('success', `Eingefuegt: ${this.summarizeClipboardPayload(payload)}.`)
+            return true
+        },
         normalizeColor(value) {
             const text = String(value ?? '').trim()
             if (!text) return ''
@@ -993,6 +1418,12 @@ export default {
             const lastDot = name.lastIndexOf('.')
             const withoutExtension = lastDot > 0 ? name.slice(0, lastDot) : name
             return this.normalizeText(withoutExtension || name) || 'Datei'
+        },
+        resolveLinkStoreImageFile(flagValue, linkUrl) {
+            if (typeof flagValue === 'boolean') {
+                return flagValue
+            }
+            return this.isLikelyImageUrl(linkUrl)
         },
         toPendingAttachments(value) {
             const input = Array.isArray(value) ? value : []
@@ -1014,7 +1445,7 @@ export default {
                         title: rawTitle || this.defaultLinkTitle(linkUrl),
                         fileName: '',
                         url: linkUrl,
-                        storeImageFile: item?.storeImageFile === true || this.isLikelyImageUrl(linkUrl),
+                        storeImageFile: this.resolveLinkStoreImageFile(item?.storeImageFile, linkUrl),
                         source: source || 'link',
                         key,
                     })
@@ -1081,7 +1512,7 @@ export default {
                     ),
                 url: this.normalizeUrl(row.url),
                 storeImageFile: this.normalizeText(row?.attachmentType).toLocaleLowerCase() === 'link'
-                    ? row?.storeImageFile === true || this.isLikelyImageUrl(row?.url)
+                    ? this.resolveLinkStoreImageFile(row?.storeImageFile, row?.url)
                     : false,
                 source: this.normalizeText(row.source),
                 key: String(

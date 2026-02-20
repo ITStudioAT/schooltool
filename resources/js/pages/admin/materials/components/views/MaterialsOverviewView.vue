@@ -831,9 +831,9 @@
                                 v-for="attachment in detailAttachments(detailDialogCard)"
                                 :key="`detail-attachment-${detailDialogCard.id}-${attachment.id}`"
                                 class="px-0 py-2">
-                                <div class="d-flex flex-column flex-md-row align-md-center ga-2 w-100">
-                                    <div class="flex-grow-1">
-                                        <div class="text-body-2 font-weight-medium">
+                                <div class="d-flex flex-column flex-md-row align-md-center ga-2 w-100 detail-attachment-row">
+                                    <div class="flex-grow-1 detail-attachment-content">
+                                        <div class="text-body-2 font-weight-medium detail-attachment-name">
                                             {{ attachmentDisplayName(attachment) }}
                                         </div>
                                         <div class="text-caption text-medium-emphasis">
@@ -854,7 +854,7 @@
                                         </div>
                                     </div>
 
-                                    <div class="d-flex flex-wrap ga-2 justify-end">
+                                    <div class="d-flex flex-wrap ga-2 justify-end detail-attachment-actions">
                                         <v-btn
                                             v-if="attachment.attachment_type === 'file' && (attachment.preview_url || attachment.download_url)"
                                             size="small"
@@ -2295,6 +2295,7 @@ export default {
 
                 if (changed) {
                     await this.refreshAttachmentDialogCard(cardId)
+                    this.refreshAllListedAttachmentBytes()
                 }
             } finally {
                 this.isUploadingAttachment = false
@@ -2946,6 +2947,7 @@ export default {
                 }
 
                 await this.refreshAttachmentDialogCard(cardId)
+                this.refreshAllListedAttachmentBytes()
             } finally {
                 this.isUploadingAttachment = false
                 const pond = this.$refs.attachmentPond
@@ -3261,6 +3263,7 @@ export default {
 
                 this.attachmentRows = this.attachmentRows.filter((item) => item.id !== id)
                 this.removeAttachmentFromCard(id)
+                this.refreshAllListedAttachmentBytes()
             } finally {
                 this.markAttachmentDeleting(id, false)
             }
@@ -3779,6 +3782,27 @@ export default {
     min-width: 0;
 }
 
+.detail-attachment-row {
+    min-width: 0;
+}
+
+.detail-attachment-content {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.detail-attachment-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.detail-attachment-actions {
+    flex: 0 0 auto;
+    align-self: flex-start;
+    max-width: 100%;
+}
+
 .attachment-meta-text {
     min-width: 0;
     max-width: 100%;
@@ -3885,6 +3909,11 @@ export default {
 
     .attachment-manage-actions :deep(.v-btn) {
         width: 100%;
+    }
+
+    .detail-attachment-actions {
+        width: 100%;
+        justify-content: flex-start;
     }
 
 }
