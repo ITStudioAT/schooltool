@@ -1,8 +1,10 @@
 <template>
     <v-card class="create-form-card pa-5 pa-md-6" rounded="xl" elevation="0">
-        <div class="d-flex align-start justify-space-between flex-wrap ga-2 mb-2">
+        <div class="d-flex align-start justify-space-between flex-wrap ga-2 mb-1">
             <div class="text-h6 font-weight-bold">{{ formTitle }}</div>
+        </div>
 
+        <div class="d-flex align-center justify-space-between flex-wrap ga-2 mb-2">
             <div class="d-flex align-center flex-wrap ga-2">
                 <v-menu location="bottom end">
                     <template #activator="{ props: statusMenuActivatorProps }">
@@ -66,6 +68,25 @@
                     </v-list>
                 </v-menu>
             </div>
+
+            <div class="d-flex align-center justify-end flex-wrap ga-2">
+                <v-btn
+                    size="small"
+                    variant="text"
+                    :disabled="isSaving"
+                    @click="$emit('cancel')">
+                    {{ cancelLabel }}
+                </v-btn>
+                <v-btn
+                    size="small"
+                    color="primary"
+                    variant="flat"
+                    :loading="isSaving"
+                    :disabled="!canSave || isSaving"
+                    @click="$emit('save')">
+                    {{ saveLabel }}
+                </v-btn>
+            </div>
         </div>
 
         <div class="text-body-2 form-subline mb-4">{{ formSubline }}</div>
@@ -95,19 +116,10 @@
             class="mt-3"
             @update:modelValue="$emit('update:description', $event)" />
 
-        <div class="mt-3">
-            <div class="d-flex align-center justify-space-between mb-2">
+        <div class="mt-2">
+            <div class="d-flex align-center justify-space-between mb-1">
                 <div class="text-subtitle-2">Fach / Thema / Bereich (optional)</div>
                 <div class="d-flex justify-end ga-2">
-                    <v-btn
-                        v-if="classificationEditorVisible"
-                        size="x-small"
-                        variant="text"
-                        color="primary"
-                        prepend-icon="mdi-arrow-left"
-                        @click="closeClassificationEditor">
-                        Zurück
-                    </v-btn>
                     <v-btn
                         icon="mdi-plus"
                         size="x-small"
@@ -120,7 +132,7 @@
             <v-card
                 variant="tonal"
                 color="primary"
-                class="pa-3 mb-3">
+                class="pa-2 mb-2">
                 <div v-if="assignedClassificationItems.length" class="d-flex flex-wrap ga-2">
                     <v-chip
                         v-for="item in assignedClassificationItems"
@@ -143,113 +155,104 @@
                         v-for="entry in editableClassificationRows"
                         :key="`classification-${entry.index}`"
                         dense
-                        class="classification-row mb-2"
+                        class="classification-row mb-1"
                         :class="{ 'classification-row-active': activeClassificationIndex === entry.index }">
-                        <template v-if="classificationToggleable">
-                            <v-col cols="12">
-                                <v-combobox
-                                    :model-value="entry.row.subject"
-                                    :items="subjectOptions"
-                                    label="Fach"
-                                    placeholder="Fach wählen oder neu"
+                        <v-col cols="12" class="py-1">
+                            <div class="classification-chip-label mb-0">Fach</div>
+                            <v-chip-group
+                                :model-value="normalizedClassificationDraft.subject"
+                                column
+                                selected-class="classification-option-chip--selected"
+                                @update:modelValue="updateClassificationDraftField('subject', $event)">
+                                <v-chip
+                                    value=""
+                                    size="small"
                                     variant="outlined"
-                                    density="comfortable"
-                                    clearable
-                                    hide-details="auto"
-                                    @update:modelValue="updateClassificationField(entry.index, 'subject', $event)" />
-                            </v-col>
-
-                            <v-col cols="12">
-                                <v-combobox
-                                    :model-value="entry.row.topic"
-                                    :items="topicOptionsFor(entry.row)"
-                                    label="Thema (optional)"
-                                    placeholder="Thema wählen oder neu"
+                                    filter>
+                                    Ohne Fach
+                                </v-chip>
+                                <v-chip
+                                    v-for="subject in subjectOptions"
+                                    :key="`classification-subject-${entry.index}-${subject}`"
+                                    :value="subject"
+                                    size="small"
                                     variant="outlined"
-                                    density="comfortable"
-                                    clearable
-                                    :disabled="!normalizeText(entry.row.subject)"
-                                    hide-details="auto"
-                                    @update:modelValue="updateClassificationField(entry.index, 'topic', $event)" />
-                            </v-col>
+                                    filter>
+                                    {{ subject }}
+                                </v-chip>
+                            </v-chip-group>
+                        </v-col>
 
-                            <v-col cols="12">
-                                <div class="d-flex align-start ga-2">
-                                    <v-combobox
-                                        class="flex-grow-1"
-                                        :model-value="entry.row.unit"
-                                        :items="unitOptionsFor(entry.row)"
-                                        label="Bereich (optional)"
-                                        placeholder="Bereich wählen oder neu"
-                                        variant="outlined"
-                                        density="comfortable"
-                                        clearable
-                                        :disabled="!normalizeText(entry.row.topic)"
-                                        hide-details="auto"
-                                        @update:modelValue="updateClassificationField(entry.index, 'unit', $event)" />
-
-                                    <v-btn
-                                        icon="mdi-close"
-                                        variant="text"
-                                        color="error"
-                                        class="mt-1"
-                                        :disabled="visibleClassificationRows.length <= 1"
-                                        @click="removeClassificationRow(entry.index)" />
-                                </div>
-                            </v-col>
-                        </template>
-
-                        <template v-else>
-                            <v-col cols="12" md="4">
-                                <v-combobox
-                                    :model-value="entry.row.subject"
-                                    :items="subjectOptions"
-                                    label="Fach"
-                                    placeholder="Fach wählen oder neu"
+                        <v-col cols="12" class="py-1">
+                            <div class="classification-chip-label mb-0">Thema</div>
+                            <v-chip-group
+                                :model-value="normalizedClassificationDraft.topic"
+                                column
+                                :disabled="!normalizeText(normalizedClassificationDraft.subject)"
+                                selected-class="classification-option-chip--selected"
+                                @update:modelValue="updateClassificationDraftField('topic', $event)">
+                                <v-chip
+                                    value=""
+                                    size="small"
                                     variant="outlined"
-                                    density="comfortable"
-                                    clearable
-                                    hide-details="auto"
-                                    @update:modelValue="updateClassificationField(entry.index, 'subject', $event)" />
-                            </v-col>
-
-                            <v-col cols="12" md="4">
-                                <v-combobox
-                                    :model-value="entry.row.topic"
-                                    :items="topicOptionsFor(entry.row)"
-                                    label="Thema (optional)"
-                                    placeholder="Thema wählen oder neu"
+                                    filter>
+                                    Ohne Thema
+                                </v-chip>
+                                <v-chip
+                                    v-for="topic in topicOptionsFor(normalizedClassificationDraft)"
+                                    :key="`classification-topic-${entry.index}-${topic}`"
+                                    :value="topic"
+                                    size="small"
                                     variant="outlined"
-                                    density="comfortable"
-                                    clearable
-                                    :disabled="!normalizeText(entry.row.subject)"
-                                    hide-details="auto"
-                                    @update:modelValue="updateClassificationField(entry.index, 'topic', $event)" />
-                            </v-col>
+                                    filter>
+                                    {{ topic }}
+                                </v-chip>
+                            </v-chip-group>
+                        </v-col>
 
-                            <v-col cols="10" md="3">
-                                <v-combobox
-                                    :model-value="entry.row.unit"
-                                    :items="unitOptionsFor(entry.row)"
-                                    label="Bereich (optional)"
-                                    placeholder="Bereich wählen oder neu"
+                        <v-col cols="12" class="py-1">
+                            <div class="classification-chip-label mb-0">Bereich</div>
+                            <v-chip-group
+                                :model-value="normalizedClassificationDraft.unit"
+                                column
+                                :disabled="!normalizeText(normalizedClassificationDraft.topic)"
+                                selected-class="classification-option-chip--selected"
+                                @update:modelValue="updateClassificationDraftField('unit', $event)">
+                                <v-chip
+                                    value=""
+                                    size="small"
                                     variant="outlined"
-                                    density="comfortable"
-                                    clearable
-                                    :disabled="!normalizeText(entry.row.topic)"
-                                    hide-details="auto"
-                                    @update:modelValue="updateClassificationField(entry.index, 'unit', $event)" />
-                            </v-col>
-
-                            <v-col cols="2" md="1" class="d-flex align-center justify-end">
+                                    filter>
+                                    Ohne Bereich
+                                </v-chip>
+                                <v-chip
+                                    v-for="unit in unitOptionsFor(normalizedClassificationDraft)"
+                                    :key="`classification-unit-${entry.index}-${unit}`"
+                                    :value="unit"
+                                    size="small"
+                                    variant="outlined"
+                                    filter>
+                                    {{ unit }}
+                                </v-chip>
+                            </v-chip-group>
+                            <div class="classification-action-row mt-2">
                                 <v-btn
                                     icon="mdi-close"
-                                    variant="text"
-                                    color="error"
-                                    :disabled="visibleClassificationRows.length <= 1"
-                                    @click="removeClassificationRow(entry.index)" />
-                            </v-col>
-                        </template>
+                                    size="small"
+                                    variant="flat"
+                                    color="warning"
+                                    class="classification-action-btn"
+                                    @click="closeClassificationEditor" />
+                                <v-btn
+                                    icon="mdi-check"
+                                    size="small"
+                                    variant="flat"
+                                    color="primary"
+                                    class="classification-action-btn"
+                                    :disabled="!canApplyClassificationDraft"
+                                    @click="applyClassificationDraft" />
+                            </div>
+                        </v-col>
                     </v-row>
                 </div>
             </transition>
@@ -327,12 +330,20 @@
                             @update:modelValue="updatePendingAttachmentTitle(index, $event)" />
 
                         <v-btn
-                            icon="mdi-close"
+                            :icon="isPendingAttachmentDeleteArmed(item.key) ? 'mdi-delete' : 'mdi-delete-outline'"
                             size="small"
                             variant="text"
-                            color="error"
+                            :color="isPendingAttachmentDeleteArmed(item.key) ? 'error' : 'warning'"
                             class="mt-1"
                             @click="removePendingAttachment(index)" />
+                        <v-btn
+                            v-if="isPendingAttachmentDeleteArmed(item.key)"
+                            icon="mdi-undo"
+                            size="small"
+                            variant="text"
+                            color="success"
+                            class="mt-1"
+                            @click="cancelPendingAttachmentDelete(item.key)" />
                     </div>
 
                     <div class="text-caption text-medium-emphasis mt-1 pending-source-text">
@@ -447,14 +458,45 @@ export default {
             activeClassificationIndex: null,
             newlyAddedClassificationIndex: null,
             csrfToken: null,
+            classificationDraft: {
+                subject: '',
+                topic: '',
+                unit: '',
+            },
+            classificationDraftDirty: false,
+            pendingAttachmentDeleteArmedKeys: [],
         }
     },
     watch: {
+        pendingAttachments: {
+            deep: true,
+            handler() {
+                const validKeys = this.normalizedPendingAttachments
+                    .map((item) => this.normalizeText(item?.key))
+                    .filter((key) => key !== '')
+                this.resetPendingAttachmentDeleteArmed(validKeys)
+            },
+        },
         classificationEditorVisible(nextValue) {
             if (!nextValue) {
                 this.activeClassificationIndex = null
                 this.newlyAddedClassificationIndex = null
+                this.classificationDraft = this.emptyClassificationRow()
+                this.classificationDraftDirty = false
+                return
             }
+
+            const rows = this.visibleClassificationRows
+            let index = Number.isInteger(this.activeClassificationIndex) ? this.activeClassificationIndex : 0
+            if (index < 0) index = 0
+            if (index >= rows.length) index = rows.length - 1
+            this.activeClassificationIndex = index
+            this.loadClassificationDraft(index)
+        },
+        activeClassificationIndex(nextValue) {
+            if (!this.classificationEditorVisible) return
+            if (!Number.isInteger(nextValue)) return
+            this.loadClassificationDraft(nextValue)
         },
         classifications: {
             deep: true,
@@ -469,6 +511,10 @@ export default {
                     this.newlyAddedClassificationIndex > maxIndex
                 ) {
                     this.newlyAddedClassificationIndex = null
+                }
+
+                if (this.classificationEditorVisible && !this.classificationDraftDirty) {
+                    this.loadClassificationDraft(this.activeClassificationIndex)
                 }
             },
         },
@@ -689,6 +735,47 @@ export default {
             }
 
             return result
+        },
+        normalizedClassificationDraft() {
+            const subject = this.normalizeText(this.classificationDraft?.subject)
+            const topic = this.normalizeText(this.classificationDraft?.topic)
+            let unit = this.normalizeText(this.classificationDraft?.unit)
+            if (!subject) {
+                return {
+                    subject: '',
+                    topic: '',
+                    unit: '',
+                }
+            }
+            if (!topic) {
+                unit = ''
+            }
+            return {
+                subject,
+                topic,
+                unit,
+            }
+        },
+        hasClassificationDraftChanges() {
+            const index = Number(this.activeClassificationIndex)
+            if (!Number.isInteger(index) || index < 0) return false
+
+            const rows = this.visibleClassificationRows
+            if (index >= rows.length) return false
+            const row = this.toClassificationRows([rows[index]])[0] || this.emptyClassificationRow()
+            const current = {
+                subject: this.normalizeText(row.subject),
+                topic: this.normalizeText(row.topic),
+                unit: this.normalizeText(row.topic) ? this.normalizeText(row.unit) : '',
+            }
+            const draft = this.normalizedClassificationDraft
+            return current.subject !== draft.subject
+                || current.topic !== draft.topic
+                || current.unit !== draft.unit
+        },
+        canApplyClassificationDraft() {
+            const index = Number(this.activeClassificationIndex)
+            return Number.isInteger(index) && index >= 0 && this.hasClassificationDraftChanges
         },
     },
     methods: {
@@ -1076,11 +1163,54 @@ export default {
 
             this.emitPendingAttachments(rows)
         },
+        isPendingAttachmentDeleteArmed(attachmentKey) {
+            const key = this.normalizeText(attachmentKey)
+            if (!key) return false
+            return this.pendingAttachmentDeleteArmedKeys.includes(key)
+        },
+        markPendingAttachmentDeleteArmed(attachmentKey, isArmed) {
+            const key = this.normalizeText(attachmentKey)
+            if (!key) return
+
+            if (isArmed) {
+                if (!this.pendingAttachmentDeleteArmedKeys.includes(key)) {
+                    this.pendingAttachmentDeleteArmedKeys = [...this.pendingAttachmentDeleteArmedKeys, key]
+                }
+                return
+            }
+
+            this.pendingAttachmentDeleteArmedKeys = this.pendingAttachmentDeleteArmedKeys.filter((item) => item !== key)
+        },
+        cancelPendingAttachmentDelete(attachmentKey) {
+            this.markPendingAttachmentDeleteArmed(attachmentKey, false)
+        },
+        resetPendingAttachmentDeleteArmed(validKeys = []) {
+            const normalizedKeys = Array.isArray(validKeys)
+                ? validKeys.map((key) => this.normalizeText(key)).filter((key) => key !== '')
+                : []
+
+            if (normalizedKeys.length === 0) {
+                if (this.pendingAttachmentDeleteArmedKeys.length) {
+                    this.pendingAttachmentDeleteArmedKeys = []
+                }
+                return
+            }
+
+            const keySet = new Set(normalizedKeys)
+            this.pendingAttachmentDeleteArmedKeys = this.pendingAttachmentDeleteArmedKeys.filter((key) => keySet.has(key))
+        },
         removePendingAttachment(index) {
             const rows = this.toPendingAttachments(this.pendingAttachments)
             if (index < 0 || index >= rows.length) return
 
             const removed = rows[index]
+            const key = this.normalizeText(removed?.key)
+            if (!this.isPendingAttachmentDeleteArmed(key)) {
+                this.markPendingAttachmentDeleteArmed(key, true)
+                return
+            }
+
+            this.markPendingAttachmentDeleteArmed(key, false)
             const tempUpload = this.normalizeText(removed?.tempUpload)
             rows.splice(index, 1)
             this.emitPendingAttachments(rows)
@@ -1160,6 +1290,81 @@ export default {
                 .map((unit) => this.normalizeText(unit?.name))
                 .filter((unit) => unit !== '')
                 .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+        },
+        loadClassificationDraft(index) {
+            const rows = this.visibleClassificationRows
+            let safeIndex = Number(index)
+            if (!Number.isInteger(safeIndex)) safeIndex = 0
+            if (safeIndex < 0) safeIndex = 0
+            if (safeIndex >= rows.length) safeIndex = rows.length - 1
+
+            const row = this.toClassificationRows([rows[safeIndex]])[0] || this.emptyClassificationRow()
+            const subject = this.normalizeText(row.subject)
+            const topic = this.normalizeText(row.topic)
+            const unit = topic ? this.normalizeText(row.unit) : ''
+
+            this.classificationDraft = {
+                subject,
+                topic,
+                unit,
+            }
+            this.classificationDraftDirty = false
+        },
+        updateClassificationDraftField(field, value) {
+            const key = String(field || '')
+            if (!['subject', 'topic', 'unit'].includes(key)) return
+
+            const nextValue = this.normalizeText(value)
+            const nextDraft = {
+                subject: this.normalizeText(this.classificationDraft.subject),
+                topic: this.normalizeText(this.classificationDraft.topic),
+                unit: this.normalizeText(this.classificationDraft.unit),
+            }
+
+            nextDraft[key] = nextValue
+
+            if (key === 'subject') {
+                if (!nextDraft.subject) {
+                    nextDraft.topic = ''
+                    nextDraft.unit = ''
+                } else {
+                    nextDraft.topic = ''
+                    nextDraft.unit = ''
+                }
+            }
+
+            if (key === 'topic') {
+                if (!nextDraft.topic) {
+                    nextDraft.unit = ''
+                } else {
+                    nextDraft.unit = ''
+                }
+            }
+
+            this.classificationDraft = nextDraft
+            this.classificationDraftDirty = true
+        },
+        applyClassificationDraft() {
+            const index = Number(this.activeClassificationIndex)
+            if (!Number.isInteger(index) || index < 0) return
+
+            const rows = this.toClassificationRows(this.classifications)
+            while (rows.length <= index) {
+                rows.push(this.emptyClassificationRow())
+            }
+
+            rows[index] = { ...this.normalizedClassificationDraft }
+
+            this.activeClassificationIndex = index
+            if (
+                this.newlyAddedClassificationIndex === index &&
+                !this.isClassificationRowEmpty(rows[index])
+            ) {
+                this.newlyAddedClassificationIndex = null
+            }
+
+            this.classificationDraftDirty = false
+            this.$emit('update:classifications', rows)
         },
         updateClassificationField(index, field, value) {
             const rows = this.toClassificationRows(this.classifications)
@@ -1317,11 +1522,35 @@ export default {
 .classification-row {
     border-radius: 12px;
     background: rgba(255, 255, 255, 0.6);
-    padding: 10px 10px 2px;
+    padding: 8px 10px 0;
 }
 
 .classification-row-active {
     border: 1px solid rgba(253, 128, 46, 0.45);
+}
+
+.classification-chip-label {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #2f4a5d;
+}
+
+.classification-option-chip--selected {
+    background: rgba(253, 128, 46, 0.16);
+    border-color: rgba(253, 128, 46, 0.85);
+    color: #233d4c;
+}
+
+.classification-action-row {
+    display: flex;
+    width: 100%;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.classification-action-btn {
+    min-width: 34px;
+    min-height: 34px;
 }
 
 .classification-fade-enter-active,

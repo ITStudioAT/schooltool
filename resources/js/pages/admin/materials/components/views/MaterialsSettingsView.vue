@@ -109,6 +109,7 @@
 
                 <div v-if="canManageFileSettings && isEditingFileSettings" class="d-flex flex-wrap align-start ga-2 mb-4">
                     <v-text-field
+                        ref="fileSettingsMaxUploadSizeField"
                         v-model="fileSettingsForm.maxUploadSizeMb"
                         type="number"
                         step="0.5"
@@ -163,6 +164,7 @@
 
                 <div v-if="canManageUserSettings && isEditingUserSettings" class="d-flex flex-wrap align-start ga-2">
                     <v-text-field
+                        ref="userSettingsPaginationField"
                         v-model="userSettingsForm.materialsPaginationNumber"
                         type="number"
                         step="1"
@@ -1682,10 +1684,37 @@ export default {
             }
             this.userSettingsForm.materialsPaginationNumber = String(Math.round(value))
         },
+        focusFileSettingsInput() {
+            this.$nextTick(() => {
+                const field = this.$refs.fileSettingsMaxUploadSizeField
+                if (field && typeof field.focus === 'function') {
+                    field.focus()
+                }
+                const input = field?.$el?.querySelector?.('input')
+                if (input && typeof input.focus === 'function') {
+                    input.focus()
+                    input.select?.()
+                }
+            })
+        },
+        focusUserSettingsInput() {
+            this.$nextTick(() => {
+                const field = this.$refs.userSettingsPaginationField
+                if (field && typeof field.focus === 'function') {
+                    field.focus()
+                }
+                const input = field?.$el?.querySelector?.('input')
+                if (input && typeof input.focus === 'function') {
+                    input.focus()
+                    input.select?.()
+                }
+            })
+        },
         startEditFileSettings() {
             if (!this.canManageFileSettings || this.isSavingFileSettings || this.isAnySettingsEditActive) return
             this.syncFileSettingsForm()
             this.isEditingFileSettings = true
+            this.focusFileSettingsInput()
         },
         cancelEditFileSettings() {
             if (this.isSavingFileSettings) return
@@ -1711,6 +1740,7 @@ export default {
             if (!this.canManageUserSettings || this.isSavingUserSettings || this.isAnySettingsEditActive) return
             this.syncUserSettingsForm()
             this.isEditingUserSettings = true
+            this.focusUserSettingsInput()
         },
         cancelEditUserSettings() {
             if (this.isSavingUserSettings) return

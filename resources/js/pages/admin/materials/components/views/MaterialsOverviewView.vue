@@ -21,6 +21,9 @@
                     <v-btn value="grid" prepend-icon="mdi-view-grid-outline">
                         Karten
                     </v-btn>
+                    <v-btn value="alpha" prepend-icon="mdi-sort-alphabetical-ascending">
+                        A-Z
+                    </v-btn>
                 </v-btn-toggle>
 
                 <v-btn
@@ -170,7 +173,7 @@
         </div>
 
         <v-alert type="info" variant="tonal" class="mb-4">
-            {{ totalMaterials }} Material{{ totalMaterials === 1 ? '' : 'ien' }} gespeichert.
+            {{ displayedMaterials }}/{{ totalMaterials }} Material{{ totalMaterials === 1 ? '' : 'ien' }} angezeigt.
         </v-alert>
 
         <v-skeleton-loader v-if="isLoading && !hasCards" type="list-item-three-line@4" />
@@ -278,6 +281,73 @@
                     </v-card>
                 </v-col>
             </v-row>
+
+            <v-list v-else-if="isAlphabeticOverview" class="bg-transparent pa-0">
+                <v-list-item
+                    v-for="card in alphabeticCards"
+                    :key="`alpha-card-${card.id}`"
+                    class="overview-alpha-item mb-2 px-3 py-2"
+                    rounded="lg"
+                    :style="cardBackgroundStyle(card)">
+                    <template #prepend>
+                        <v-avatar :color="statusColor(card.status)" variant="tonal" size="34" class="mr-3">
+                            <v-icon :icon="sourceIcon(card)" :color="statusColor(card.status)" />
+                        </v-avatar>
+                    </template>
+
+                    <div class="overview-alpha-line">
+                        <v-list-item-title class="overview-alpha-title">
+                            {{ card.title || 'Ohne Titel' }}
+                        </v-list-item-title>
+
+                        <v-chip
+                            v-if="card.type"
+                            size="small"
+                            variant="tonal"
+                            color="primary"
+                            class="material-type-chip">
+                            {{ card.type }}
+                        </v-chip>
+
+                        <v-chip
+                            v-if="card.attachments_count"
+                            size="small"
+                            variant="flat"
+                            prepend-icon="mdi-paperclip"
+                            class="attachments-count-chip attachments-count-chip-clickable"
+                            @click="openAttachmentManager(card)">
+                            {{ card.attachments_count }}
+                        </v-chip>
+
+                        <v-chip size="small" :color="statusColor(card.status)" variant="flat" class="material-status-chip">
+                            {{ statusLabel(card.status) }}
+                        </v-chip>
+                    </div>
+
+                    <v-list-item-subtitle class="overview-alpha-subtitle">
+                        {{ alphabeticAssignmentLine(card) }}
+                    </v-list-item-subtitle>
+
+                    <template #append>
+                        <div class="overview-alpha-actions">
+                            <v-btn
+                                icon="mdi-eye-outline"
+                                size="small"
+                                color="primary"
+                                variant="text"
+                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                                @click="openDetailDialog(card)" />
+                            <v-btn
+                                icon="mdi-pencil-outline"
+                                size="small"
+                                color="primary"
+                                variant="text"
+                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                                @click="openEditDialog(card)" />
+                        </div>
+                    </template>
+                </v-list-item>
+            </v-list>
 
             <v-list v-else class="bg-transparent pa-0">
             <v-list-item
@@ -570,13 +640,23 @@
 
                                     <v-btn
                                         size="small"
-                                        color="error"
-                                        variant="flat"
-                                        prepend-icon="mdi-delete"
+                                        :color="isAttachmentDeleteArmed(row.id) ? 'error' : 'warning'"
+                                        :variant="isAttachmentDeleteArmed(row.id) ? 'flat' : 'tonal'"
+                                        :prepend-icon="isAttachmentDeleteArmed(row.id) ? 'mdi-delete' : 'mdi-delete-outline'"
                                         :loading="isAttachmentDeleting(row.id)"
                                         :disabled="isAttachmentSaving(row.id)"
                                         @click="removeAttachment(row)">
-                                        Löschen
+                                        {{ isAttachmentDeleteArmed(row.id) ? 'Jetzt löschen' : 'Löschen' }}
+                                    </v-btn>
+                                    <v-btn
+                                        v-if="isAttachmentDeleteArmed(row.id)"
+                                        size="small"
+                                        color="success"
+                                        variant="text"
+                                        prepend-icon="mdi-undo"
+                                        :disabled="isAttachmentDeleting(row.id) || isAttachmentSaving(row.id)"
+                                        @click="cancelAttachmentDelete(row.id)">
+                                        Widerrufen
                                     </v-btn>
                                 </div>
                             </div>
@@ -840,13 +920,23 @@
 
                                         <v-btn
                                             size="small"
-                                            color="error"
-                                            variant="flat"
-                                            prepend-icon="mdi-delete"
+                                            :color="isAttachmentDeleteArmed(row.id) ? 'error' : 'warning'"
+                                            :variant="isAttachmentDeleteArmed(row.id) ? 'flat' : 'tonal'"
+                                            :prepend-icon="isAttachmentDeleteArmed(row.id) ? 'mdi-delete' : 'mdi-delete-outline'"
                                             :loading="isAttachmentDeleting(row.id)"
                                             :disabled="isSavingEdit || isAttachmentSaving(row.id)"
                                             @click="removeAttachment(row)">
-                                            Löschen
+                                            {{ isAttachmentDeleteArmed(row.id) ? 'Jetzt löschen' : 'Löschen' }}
+                                        </v-btn>
+                                        <v-btn
+                                            v-if="isAttachmentDeleteArmed(row.id)"
+                                            size="small"
+                                            color="success"
+                                            variant="text"
+                                            prepend-icon="mdi-undo"
+                                            :disabled="isSavingEdit || isAttachmentDeleting(row.id) || isAttachmentSaving(row.id)"
+                                            @click="cancelAttachmentDelete(row.id)">
+                                            Widerrufen
                                         </v-btn>
                                     </div>
                                 </div>
@@ -925,7 +1015,16 @@ export default {
             detailDeleteStep: 0,
             returnToDetailOnEditCancel: false,
             detailCardForEditReturn: null,
+            attachmentDeleteArmedIds: [],
         }
+    },
+    watch: {
+        attachmentRows() {
+            const validIds = this.attachmentRows
+                .map((row) => Number(row?.id))
+                .filter((id) => Number.isFinite(id) && id > 0)
+            this.resetAttachmentDeleteArmed(validIds)
+        },
     },
     computed: {
         cards() {
@@ -959,6 +1058,24 @@ export default {
         isCompactOverview() {
             return this.overviewViewMode === 'grid'
         },
+        isAlphabeticOverview() {
+            return this.overviewViewMode === 'alpha'
+        },
+        alphabeticCards() {
+            const list = Array.isArray(this.cards) ? [...this.cards] : []
+            list.sort((a, b) => {
+                const titleA = this.materialSortTitle(a)
+                const titleB = this.materialSortTitle(b)
+                const byTitle = titleA.localeCompare(titleB, 'de', { sensitivity: 'base' })
+                if (byTitle !== 0) {
+                    return byTitle
+                }
+                const idA = Number(a?.id || 0)
+                const idB = Number(b?.id || 0)
+                return idA - idB
+            })
+            return list
+        },
         currentMetaPage() {
             const value = Number(this.materialCardStore?.meta?.current_page || this.currentPage)
             if (!Number.isFinite(value) || value <= 0) return 1
@@ -980,6 +1097,9 @@ export default {
             if (Number.isFinite(total) && total > 0) {
                 return total
             }
+            return this.cards.length
+        },
+        displayedMaterials() {
             return this.cards.length
         },
         canSaveEdit() {
@@ -1164,7 +1284,8 @@ export default {
         this.csrfToken = String(metaToken || '').trim() || null
         try {
             const storedMode = window?.localStorage?.getItem?.('materials.overview.mode')
-            this.overviewViewMode = storedMode === 'grid' ? 'grid' : 'list'
+            const allowedModes = ['list', 'grid', 'alpha']
+            this.overviewViewMode = allowedModes.includes(storedMode) ? storedMode : 'list'
         } catch {
             this.overviewViewMode = 'list'
         }
@@ -1197,7 +1318,7 @@ export default {
     },
     methods: {
         setOverviewMode(value) {
-            const nextMode = value === 'grid' ? 'grid' : 'list'
+            const nextMode = ['list', 'grid', 'alpha'].includes(String(value)) ? String(value) : 'list'
             if (nextMode === this.overviewViewMode) return
             this.overviewViewMode = nextMode
             try {
@@ -1205,6 +1326,27 @@ export default {
             } catch {
                 // Falls localStorage nicht verfügbar ist, nur im aktuellen Zustand bleiben.
             }
+        },
+        materialSortTitle(card) {
+            const title = String(card?.title || '').trim()
+            return title !== '' ? title : 'Ohne Titel'
+        },
+        alphabeticAssignmentLine(card) {
+            const labels = this.classificationLabels(card)
+            if (!Array.isArray(labels) || labels.length === 0) {
+                return 'Ohne Zuordnung'
+            }
+
+            const first = String(labels[0] || '').trim()
+            if (!first) {
+                return 'Ohne Zuordnung'
+            }
+
+            if (labels.length === 1) {
+                return first
+            }
+
+            return `${first} (+${labels.length - 1})`
         },
         async loadCards(page = null) {
             if (this.isLoading) return
@@ -1865,6 +2007,7 @@ export default {
             }
             this.attachmentDialogCardId = Number(card?.id) || null
             this.attachmentRows = this.toAttachmentRows(card?.attachments)
+            this.attachmentDeleteArmedIds = []
             this.editClassificationEditorVisible = false
             this.editDialogOpen = true
         },
@@ -1885,6 +2028,7 @@ export default {
             this.editForm = createDefaultEditForm()
             this.attachmentDialogCardId = null
             this.attachmentRows = []
+            this.attachmentDeleteArmedIds = []
             this.returnToDetailOnEditCancel = false
             this.detailCardForEditReturn = null
 
@@ -2156,6 +2300,7 @@ export default {
             this.attachmentDialogCardId = Number(card?.id) || null
             this.attachmentDialogCardTitle = String(card?.title || '').trim()
             this.attachmentRows = this.toAttachmentRows(card?.attachments)
+            this.attachmentDeleteArmedIds = []
             this.isUploadingAttachment = false
             this.attachmentDialogOpen = true
         },
@@ -2165,6 +2310,7 @@ export default {
             this.attachmentDialogCardId = null
             this.attachmentDialogCardTitle = ''
             this.attachmentRows = []
+            this.attachmentDeleteArmedIds = []
             this.isUploadingAttachment = false
             this.savingAttachmentIds = []
             this.deletingAttachmentIds = []
@@ -2353,6 +2499,43 @@ export default {
             const id = Number(attachmentId)
             return this.deletingAttachmentIds.includes(id)
         },
+        isAttachmentDeleteArmed(attachmentId) {
+            const id = Number(attachmentId)
+            if (!Number.isFinite(id) || id <= 0) return false
+            return this.attachmentDeleteArmedIds.includes(id)
+        },
+        markAttachmentDeleteArmed(attachmentId, isArmed) {
+            const id = Number(attachmentId)
+            if (!Number.isFinite(id) || id <= 0) return
+
+            if (isArmed) {
+                if (!this.attachmentDeleteArmedIds.includes(id)) {
+                    this.attachmentDeleteArmedIds = [...this.attachmentDeleteArmedIds, id]
+                }
+                return
+            }
+
+            this.attachmentDeleteArmedIds = this.attachmentDeleteArmedIds.filter((item) => item !== id)
+        },
+        cancelAttachmentDelete(attachmentId) {
+            if (this.isAttachmentDeleting(attachmentId)) return
+            this.markAttachmentDeleteArmed(attachmentId, false)
+        },
+        resetAttachmentDeleteArmed(validIds = []) {
+            const ids = Array.isArray(validIds)
+                ? validIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+                : []
+
+            if (ids.length === 0) {
+                if (this.attachmentDeleteArmedIds.length) {
+                    this.attachmentDeleteArmedIds = []
+                }
+                return
+            }
+
+            const validSet = new Set(ids)
+            this.attachmentDeleteArmedIds = this.attachmentDeleteArmedIds.filter((id) => validSet.has(id))
+        },
         markAttachmentSaving(attachmentId, isSaving) {
             const id = Number(attachmentId)
             if (!Number.isFinite(id) || id <= 0) return
@@ -2371,6 +2554,7 @@ export default {
             if (!Number.isFinite(id) || id <= 0) return
 
             if (isDeleting) {
+                this.markAttachmentDeleteArmed(id, false)
                 if (!this.deletingAttachmentIds.includes(id)) {
                     this.deletingAttachmentIds = [...this.deletingAttachmentIds, id]
                 }
@@ -2417,6 +2601,10 @@ export default {
             const cardId = Number(this.attachmentDialogCardId)
             if (!Number.isFinite(id) || id <= 0 || !Number.isFinite(cardId) || cardId <= 0) return
             if (this.isAttachmentDeleting(id) || this.isAttachmentSaving(id)) return
+            if (!this.isAttachmentDeleteArmed(id)) {
+                this.markAttachmentDeleteArmed(id, true)
+                return
+            }
 
             this.markAttachmentDeleting(id, true)
 
@@ -2612,6 +2800,44 @@ export default {
 .overview-item {
     border: 1px solid rgba(40, 58, 80, 0.12);
     background-color: rgba(255, 255, 255, 0.72);
+}
+
+.overview-alpha-item {
+    border: 1px solid rgba(40, 58, 80, 0.12);
+    background-color: rgba(255, 255, 255, 0.72);
+}
+
+.overview-alpha-line {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+    min-width: 0;
+}
+
+.overview-alpha-title {
+    font-weight: 700;
+    flex: 0 1 auto;
+    max-width: min(100%, 460px);
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-right: 2px;
+}
+
+.overview-alpha-subtitle {
+    margin-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.overview-alpha-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
 }
 
 .overview-mode-toggle {
