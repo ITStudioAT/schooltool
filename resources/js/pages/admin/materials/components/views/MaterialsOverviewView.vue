@@ -24,6 +24,9 @@
                     <v-btn value="alpha" prepend-icon="mdi-sort-alphabetical-ascending">
                         A-Z
                     </v-btn>
+                    <v-btn value="subjects_contents" prepend-icon="mdi-file-tree-outline">
+                        Fächer/Inhalte
+                    </v-btn>
                 </v-btn-toggle>
 
                 <v-btn
@@ -239,6 +242,94 @@
         </div>
 
         <v-skeleton-loader v-if="isLoading && !hasCards" type="list-item-three-line@4" />
+
+        <template v-else-if="isSubjectsContentsOverview">
+            <v-progress-linear
+                v-if="isLoadingSubjectsContentsOverview"
+                indeterminate
+                color="primary"
+                rounded
+                class="mb-3" />
+
+            <v-alert
+                v-else-if="!subjectsContentsOverviewItems.length"
+                type="info"
+                variant="tonal"
+                class="mb-0">
+                Keine Fachstruktur mit Materialien gefunden.
+            </v-alert>
+
+            <div v-else class="overview-subjects-tree">
+                <ul class="overview-subjects-list">
+                    <li
+                        v-for="subject in subjectsContentsOverviewItems"
+                        :key="`overview-subjects-subject-${subject.id || subject.name}`"
+                        class="overview-subjects-item">
+                        <div class="overview-subjects-group" :style="subjectGroupStyle(subject)">
+                            <div class="overview-subjects-node overview-subjects-node--subject">
+                                <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
+                                <span>{{ subject.name }}</span>
+                            </div>
+
+                            <ul v-if="subject.materials.length" class="overview-subjects-material-list">
+                                <li
+                                    v-for="material in subject.materials"
+                                    :key="`overview-subjects-subject-material-${subject.id || subject.name}-${material.id}`"
+                                    class="overview-subjects-material-item">
+                                    <v-icon size="14" icon="mdi-file-document-outline" />
+                                    <span>{{ material.title }}</span>
+                                </li>
+                            </ul>
+
+                            <ul v-if="subject.topics.length" class="overview-subjects-list overview-subjects-list--child">
+                                <li
+                                    v-for="topic in subject.topics"
+                                    :key="`overview-subjects-topic-${topic.id || `${subject.id || subject.name}-${topic.name}`}`"
+                                    class="overview-subjects-item overview-subjects-topic-group"
+                                    :style="topicGroupStyle(subject)">
+                                    <div class="overview-subjects-node overview-subjects-node--topic">
+                                        <v-icon size="14" icon="mdi-book-open-page-variant-outline" class="mr-2" />
+                                        <span>{{ topic.name }}</span>
+                                    </div>
+
+                                    <ul v-if="topic.materials.length" class="overview-subjects-material-list">
+                                        <li
+                                            v-for="material in topic.materials"
+                                            :key="`overview-subjects-topic-material-${topic.id || topic.name}-${material.id}`"
+                                            class="overview-subjects-material-item">
+                                            <v-icon size="14" icon="mdi-file-document-outline" />
+                                            <span>{{ material.title }}</span>
+                                        </li>
+                                    </ul>
+
+                                    <ul v-if="topic.units.length" class="overview-subjects-list overview-subjects-list--child">
+                                        <li
+                                            v-for="unit in topic.units"
+                                            :key="`overview-subjects-unit-${unit.id || `${topic.id || topic.name}-${unit.name}`}`"
+                                            class="overview-subjects-item">
+                                            <div class="overview-subjects-node overview-subjects-node--unit">
+                                                <v-icon size="13" icon="mdi-circle-medium" class="mr-1" />
+                                                <span>{{ unit.name }}</span>
+                                            </div>
+
+                                            <ul v-if="unit.materials.length" class="overview-subjects-material-list">
+                                                <li
+                                                    v-for="material in unit.materials"
+                                                    :key="`overview-subjects-unit-material-${unit.id || unit.name}-${material.id}`"
+                                                    class="overview-subjects-material-item">
+                                                    <v-icon size="14" icon="mdi-file-document-outline" />
+                                                    <span>{{ material.title }}</span>
+                                                </li>
+                                            </ul>
+                                        </li>
+                                    </ul>
+                                </li>
+                            </ul>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+        </template>
 
         <template v-else-if="hasCards">
             <v-row v-if="isCompactOverview" class="overview-grid ma-0">
@@ -1356,6 +1447,10 @@ export default {
             csrfToken: null,
             overviewViewMode: 'list',
             overviewSortMode: 'date',
+            isLoadingSubjectsContentsOverview: false,
+            subjectsContentsOverviewItems: [],
+            subjectsContentsOverviewSnapshotKey: '',
+            subjectsContentsOverviewRequestId: 0,
             showSecondaryFilters: false,
             currentPage: 1,
             subjectFilter: '',
@@ -1470,6 +1565,9 @@ export default {
         },
         isAlphabeticOverview() {
             return this.overviewViewMode === 'alpha'
+        },
+        isSubjectsContentsOverview() {
+            return this.overviewViewMode === 'subjects_contents'
         },
         currentMetaPage() {
             const value = Number(this.materialCardStore?.meta?.current_page || this.currentPage)
@@ -1848,7 +1946,7 @@ export default {
         this.csrfToken = String(metaToken || '').trim() || null
         try {
             const storedMode = window?.localStorage?.getItem?.('materials.overview.mode')
-            const allowedModes = ['list', 'grid', 'alpha']
+            const allowedModes = ['list', 'grid', 'alpha', 'subjects_contents']
             this.overviewViewMode = allowedModes.includes(storedMode) ? storedMode : 'list'
         } catch {
             this.overviewViewMode = 'list'
@@ -1895,13 +1993,23 @@ export default {
     },
     methods: {
         setOverviewMode(value) {
-            const nextMode = ['list', 'grid', 'alpha'].includes(String(value)) ? String(value) : 'list'
-            if (nextMode === this.overviewViewMode) return
+            const nextMode = ['list', 'grid', 'alpha', 'subjects_contents'].includes(String(value))
+                ? String(value)
+                : 'list'
+            if (nextMode === this.overviewViewMode) {
+                if (nextMode === 'subjects_contents') {
+                    this.loadSubjectsContentsOverview({ force: true })
+                }
+                return
+            }
             this.overviewViewMode = nextMode
             try {
                 window?.localStorage?.setItem?.('materials.overview.mode', nextMode)
             } catch {
                 // Falls localStorage nicht verfügbar ist, nur im aktuellen Zustand bleiben.
+            }
+            if (nextMode === 'subjects_contents') {
+                this.loadSubjectsContentsOverview({ force: true })
             }
         },
         setOverviewSortMode(value) {
@@ -1978,8 +2086,218 @@ export default {
                 const forceFilterCountRefresh = options?.forceFilterCountRefresh === true
                 this.refreshFilterCountCards({ force: forceFilterCountRefresh })
                 this.refreshAllListedAttachmentBytes()
+                if (this.isSubjectsContentsOverview) {
+                    await this.loadSubjectsContentsOverview({ force: true })
+                }
             }
             this.isLoading = false
+        },
+        buildOverviewClassificationTreeItems() {
+            const tree = Array.isArray(this.classificationTree) ? this.classificationTree : []
+
+            return tree
+                .map((subjectNode) => {
+                    const subjectId = Number(subjectNode?.id)
+                    const subjectName = this.normalizeFilterText(subjectNode?.name)
+                    if (!subjectName) return null
+
+                    const topics = (Array.isArray(subjectNode?.topics) ? subjectNode.topics : [])
+                        .map((topicNode) => {
+                            const topicId = Number(topicNode?.id)
+                            const topicName = this.normalizeFilterText(topicNode?.name)
+                            if (!topicName) return null
+
+                            const units = (Array.isArray(topicNode?.units) ? topicNode.units : [])
+                                .map((unitNode) => {
+                                    const unitId = Number(unitNode?.id)
+                                    const unitName = this.normalizeFilterText(unitNode?.name)
+                                    if (!unitName) return null
+                                    return {
+                                        id: Number.isFinite(unitId) && unitId > 0 ? unitId : null,
+                                        name: unitName,
+                                    }
+                                })
+                                .filter(Boolean)
+
+                            return {
+                                id: Number.isFinite(topicId) && topicId > 0 ? topicId : null,
+                                name: topicName,
+                                units,
+                            }
+                        })
+                        .filter(Boolean)
+
+                    return {
+                        id: Number.isFinite(subjectId) && subjectId > 0 ? subjectId : null,
+                        name: subjectName,
+                        topics,
+                    }
+                })
+                .filter(Boolean)
+        },
+        buildSubjectsContentsOverviewItems(cards) {
+            const cardList = Array.isArray(cards) ? cards : []
+            const subjects = this.buildOverviewClassificationTreeItems().map((subject) => ({
+                ...subject,
+                materials: [],
+                _materialIds: new Set(),
+                topics: (Array.isArray(subject.topics) ? subject.topics : []).map((topic) => ({
+                    ...topic,
+                    materials: [],
+                    _materialIds: new Set(),
+                    units: (Array.isArray(topic.units) ? topic.units : []).map((unit) => ({
+                        ...unit,
+                        materials: [],
+                        _materialIds: new Set(),
+                    })),
+                })),
+            }))
+
+            const subjectMap = new Map(
+                subjects.map((subject) => [this.normalizeFilterText(subject?.name).toLocaleLowerCase(), subject])
+            )
+            const ensureSubject = (name) => {
+                const normalizedName = this.normalizeFilterText(name)
+                if (!normalizedName) return null
+                const key = normalizedName.toLocaleLowerCase()
+                const existing = subjectMap.get(key)
+                if (existing) return existing
+
+                const created = {
+                    id: null,
+                    name: normalizedName,
+                    materials: [],
+                    _materialIds: new Set(),
+                    topics: [],
+                }
+                subjects.push(created)
+                subjectMap.set(key, created)
+                return created
+            }
+            const ensureTopic = (subject, name) => {
+                const normalizedName = this.normalizeFilterText(name)
+                if (!subject || !normalizedName) return null
+                const topics = Array.isArray(subject.topics) ? subject.topics : []
+                const key = normalizedName.toLocaleLowerCase()
+                const existing = topics.find((topic) => this.normalizeFilterText(topic?.name).toLocaleLowerCase() === key)
+                if (existing) return existing
+
+                const created = {
+                    id: null,
+                    name: normalizedName,
+                    materials: [],
+                    _materialIds: new Set(),
+                    units: [],
+                }
+                topics.push(created)
+                subject.topics = topics
+                return created
+            }
+            const ensureUnit = (topic, name) => {
+                const normalizedName = this.normalizeFilterText(name)
+                if (!topic || !normalizedName) return null
+                const units = Array.isArray(topic.units) ? topic.units : []
+                const key = normalizedName.toLocaleLowerCase()
+                const existing = units.find((unit) => this.normalizeFilterText(unit?.name).toLocaleLowerCase() === key)
+                if (existing) return existing
+
+                const created = {
+                    id: null,
+                    name: normalizedName,
+                    materials: [],
+                    _materialIds: new Set(),
+                }
+                units.push(created)
+                topic.units = units
+                return created
+            }
+            const pushMaterial = (node, material) => {
+                if (!node || !material) return
+                const id = Number(material?.id)
+                if (!Number.isFinite(id) || id <= 0) return
+                if (node._materialIds.has(id)) return
+                node._materialIds.add(id)
+                node.materials.push(material)
+            }
+
+            for (const card of cardList) {
+                const cardId = Number(card?.id)
+                if (!Number.isFinite(cardId) || cardId <= 0) continue
+
+                const material = {
+                    id: cardId,
+                    title: this.materialSortTitle(card),
+                }
+
+                const rows = this.normalizeClassifications(card?.classifications)
+                for (const row of rows) {
+                    const subjectName = this.normalizeFilterText(row?.subject)
+                    const topicName = this.normalizeFilterText(row?.topic)
+                    const unitName = this.normalizeFilterText(row?.unit)
+                    if (!subjectName) continue
+
+                    const subjectNode = ensureSubject(subjectName)
+                    if (!topicName) {
+                        pushMaterial(subjectNode, material)
+                        continue
+                    }
+
+                    const topicNode = ensureTopic(subjectNode, topicName)
+                    if (!unitName) {
+                        pushMaterial(topicNode, material)
+                        continue
+                    }
+
+                    const unitNode = ensureUnit(topicNode, unitName)
+                    pushMaterial(unitNode, material)
+                }
+            }
+
+            const byTitle = (a, b) => String(a?.title || '').localeCompare(String(b?.title || ''), 'de', { sensitivity: 'base' })
+            for (const subject of subjects) {
+                subject.materials.sort(byTitle)
+                for (const topic of subject.topics) {
+                    topic.materials.sort(byTitle)
+                    for (const unit of topic.units) {
+                        unit.materials.sort(byTitle)
+                        delete unit._materialIds
+                    }
+                    delete topic._materialIds
+                }
+                delete subject._materialIds
+            }
+
+            return subjects
+        },
+        buildSubjectsContentsOverviewSnapshotKey() {
+            const filters = { ...(this.materialCardStore?.filters || {}) }
+            return this.filterCountSnapshotKeyFor(filters)
+        },
+        async loadSubjectsContentsOverview({ force = false } = {}) {
+            if (this.isLoadingSubjectsContentsOverview) return
+
+            const snapshotKey = this.buildSubjectsContentsOverviewSnapshotKey()
+            if (!force && snapshotKey === this.subjectsContentsOverviewSnapshotKey && this.subjectsContentsOverviewItems.length > 0) {
+                return
+            }
+
+            const requestId = this.subjectsContentsOverviewRequestId + 1
+            this.subjectsContentsOverviewRequestId = requestId
+            this.isLoadingSubjectsContentsOverview = true
+
+            try {
+                const filters = { ...(this.materialCardStore?.filters || {}) }
+                const cards = await this.materialCardStore.listAllCardsSnapshot(filters)
+                if (requestId !== this.subjectsContentsOverviewRequestId) return
+                if (!Array.isArray(cards)) return
+
+                this.subjectsContentsOverviewItems = this.buildSubjectsContentsOverviewItems(cards)
+                this.subjectsContentsOverviewSnapshotKey = snapshotKey
+            } finally {
+                if (requestId === this.subjectsContentsOverviewRequestId) {
+                    this.isLoadingSubjectsContentsOverview = false
+                }
+            }
         },
         calculateAttachmentBytesForCards(cards) {
             const list = Array.isArray(cards) ? cards : []
@@ -2040,6 +2358,49 @@ export default {
         },
         normalizeFilterText(value) {
             return String(value ?? '').trim().slice(0, 255)
+        },
+        stringHash(value) {
+            const input = String(value ?? '')
+            let hash = 0
+            for (let index = 0; index < input.length; index += 1) {
+                hash = ((hash << 5) - hash) + input.charCodeAt(index)
+                hash |= 0
+            }
+            return Math.abs(hash)
+        },
+        subjectColorSeed(subject) {
+            const subjectId = Number(subject?.id)
+            const subjectName = this.normalizeFilterText(subject?.name).toLocaleLowerCase()
+            return Number.isFinite(subjectId) && subjectId > 0
+                ? `subject-${subjectId}`
+                : `subject-${subjectName}`
+        },
+        subjectColorTokens(subject) {
+            const seed = this.subjectColorSeed(subject)
+            const variant = this.stringHash(seed) % 2
+            if (variant === 0) {
+                return {
+                    base: '#1f6f8b',
+                    soft: 'rgba(31, 111, 139, 0.14)',
+                }
+            }
+            return {
+                base: '#296f5d',
+                soft: 'rgba(41, 111, 93, 0.13)',
+            }
+        },
+        subjectGroupStyle(subject) {
+            const tokens = this.subjectColorTokens(subject)
+            return {
+                backgroundColor: tokens.soft,
+                borderColor: tokens.base,
+            }
+        },
+        topicGroupStyle(subject) {
+            const tokens = this.subjectColorTokens(subject)
+            return {
+                '--overview-topic-accent-color': tokens.base,
+            }
         },
         isSubjectFilterActive(value) {
             const selected = this.normalizeFilterText(this.subjectFilter).toLocaleLowerCase()
@@ -4121,6 +4482,103 @@ ${content}
 
 .overview-sort-toggle {
     max-width: 100%;
+}
+
+.overview-subjects-tree {
+    border: 1px solid rgba(35, 61, 76, 0.18);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.6) 100%);
+    padding: 14px;
+}
+
+.overview-subjects-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+}
+
+.overview-subjects-tree > .overview-subjects-list {
+    gap: 32px;
+}
+
+.overview-subjects-list--child {
+    margin-top: 6px;
+    margin-left: 34px;
+    padding-left: 20px;
+    border-left: 1px dashed rgba(35, 61, 76, 0.25);
+}
+
+.overview-subjects-group {
+    border: 1px solid rgba(35, 61, 76, 0.24);
+    border-radius: 12px;
+    padding: 10px 12px;
+}
+
+.overview-subjects-topic-group {
+    position: relative;
+    padding-left: 12px;
+    border-radius: 8px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.52) 0%, rgba(255, 255, 255, 0.24) 34%, transparent 62%);
+}
+
+.overview-subjects-topic-group::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 5px;
+    bottom: 5px;
+    width: 2px;
+    border-radius: 999px;
+    background: var(--overview-topic-accent-color, #1f6f8b);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.32);
+}
+
+.overview-subjects-topic-group + .overview-subjects-topic-group {
+    margin-top: 24px;
+}
+
+.overview-subjects-node {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 8px;
+}
+
+.overview-subjects-node--subject {
+    font-weight: 700;
+    background: rgba(35, 61, 76, 0.08);
+}
+
+.overview-subjects-node--topic {
+    font-weight: 600;
+    color: #2e4a5a;
+    background: rgba(35, 61, 76, 0.05);
+}
+
+.overview-subjects-node--unit {
+    color: #3c5a6d;
+    background: rgba(35, 61, 76, 0.03);
+}
+
+.overview-subjects-material-list {
+    list-style: none;
+    margin: 6px 0 0 0;
+    padding: 0 0 0 30px;
+    display: grid;
+    gap: 4px;
+}
+
+.overview-subjects-material-item {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 6px;
+    color: rgba(35, 61, 76, 0.92);
+    font-size: 0.92rem;
+    line-height: 1.32;
 }
 
 .overview-grid {

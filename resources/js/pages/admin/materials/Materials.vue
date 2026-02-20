@@ -5,7 +5,11 @@
             <v-col cols="12" lg="10" xl="9" class="mx-auto">
                 <MaterialsOverviewView v-if="main_action === 'overview'" />
                 <MaterialsNewView v-if="main_action === 'new_material'" @menu-lock-change="setMenuLocked" />
-                <MaterialsSettingsView v-if="main_action === 'settings'" @menu-lock-change="setMenuLocked" />
+                <MaterialsSettingsView
+                    v-if="main_action === 'settings'"
+                    :initial-selected-action="initialSettingsAction"
+                    :initial-selected-subject-action="initialSubjectAction"
+                    @menu-lock-change="setMenuLocked" />
             </v-col>
         </v-row>
     </v-container>
@@ -35,19 +39,44 @@ export default {
     },
     beforeMount() {
         this.adminStore = useAdminStore()
+        this.applyRouteSelection()
         this.setMenuLocked(false)
     },
     unmounted() {
         this.setMenuLocked(false)
     },
     watch: {
+        '$route.query': {
+            deep: true,
+            handler() {
+                this.applyRouteSelection()
+            },
+        },
         main_action(value) {
             if (value !== 'new_material' && value !== 'settings') {
                 this.setMenuLocked(false)
             }
         },
     },
+    computed: {
+        initialSettingsAction() {
+            const value = String(this.$route?.query?.settings_action || '').trim()
+            return value || null
+        },
+        initialSubjectAction() {
+            const value = String(this.$route?.query?.subject_action || '').trim()
+            return value || null
+        },
+    },
     methods: {
+        applyRouteSelection() {
+            if (this.$route?.path !== '/admin/materials') return
+            const queryValue = String(this.$route?.query?.main_action || '').trim()
+            const allowed = ['overview', 'new_material', 'settings']
+            if (allowed.includes(queryValue)) {
+                this.main_action = queryValue
+            }
+        },
         setMenuLocked(value) {
             const locked = !!value
             this.isMenuLocked = locked

@@ -19,6 +19,7 @@ import Tutoring from '@/pages/admin/tutoring/Tutoring.vue'
 
 import Teaching from '@/pages/admin/teaching/Teaching.vue'
 import Materials from '@/pages/admin/materials/Materials.vue'
+import MaterialsSubjectsOverview from '@/pages/admin/materials/MaterialsSubjectsOverview.vue'
 
 const routes = [
     { path: '/admin', component: Index },
@@ -37,6 +38,7 @@ const routes = [
     { path: '/admin/tutoring', component: Tutoring },
     { path: '/admin/teaching', component: Teaching },
     { path: '/admin/materials', component: Materials },
+    { path: '/admin/materials/subjects-overview', component: MaterialsSubjectsOverview },
 ]
 
 const router = createRouter({
