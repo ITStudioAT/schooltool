@@ -273,6 +273,13 @@
                                             <span>{{ subject.name }}</span>
                                             <div class="subjects-tree-node-actions">
                                                 <v-btn
+                                                    icon="mdi-file-tree-outline"
+                                                    size="x-small"
+                                                    variant="text"
+                                                    color="primary"
+                                                    :disabled="isSavingSubjectCatalog || !subject.id"
+                                                    @click="openReclassifyDialogForSubject(subject)" />
+                                                <v-btn
                                                     icon="mdi-chevron-up"
                                                     size="x-small"
                                                     variant="text"
@@ -313,6 +320,13 @@
                                                     <span>{{ topic.name }}</span>
                                                     <div class="subjects-tree-node-actions">
                                                         <v-btn
+                                                            icon="mdi-file-tree-outline"
+                                                            size="x-small"
+                                                            variant="text"
+                                                            color="primary"
+                                                            :disabled="isSavingSubjectCatalog || !topic.id"
+                                                            @click="openReclassifyDialogForTopic(subject, topic)" />
+                                                        <v-btn
                                                             icon="mdi-chevron-up"
                                                             size="x-small"
                                                             variant="text"
@@ -348,9 +362,16 @@
                                                         :key="unit.id || `subject-tree-unit-${subject.id || subject.name}-${topic.id || topic.name}-${unit.name}`"
                                                         class="subjects-tree-item">
                                                         <div class="subjects-tree-node subjects-tree-node--unit">
-                                                            <v-icon size="12" icon="mdi-chevron-right" class="mr-1" />
+                                                            <v-icon size="13" icon="mdi-circle-medium" class="mr-1" />
                                                             <span>{{ unit.name }}</span>
                                                             <div class="subjects-tree-node-actions">
+                                                                <v-btn
+                                                                    icon="mdi-file-tree-outline"
+                                                                    size="x-small"
+                                                                    variant="text"
+                                                                    color="primary"
+                                                                    :disabled="isSavingSubjectCatalog || !unit.id"
+                                                                    @click="openReclassifyDialogForUnit(subject, topic, unit)" />
                                                                 <v-btn
                                                                     icon="mdi-chevron-up"
                                                                     size="x-small"
@@ -566,6 +587,112 @@
             </v-card>
         </v-dialog>
 
+        <v-dialog v-model="reclassifyDialog.open" max-width="560" persistent>
+            <v-card rounded="xl">
+                <v-card-title class="text-h6 font-weight-bold">Eintrag verschieben</v-card-title>
+                <v-card-text class="pb-2">
+                    <div class="text-body-2 mb-2">
+                        <strong>{{ reclassifyDialog.sourceName || 'Eintrag' }}</strong>
+                    </div>
+                    <div class="text-body-2 text-medium-emphasis mb-4">
+                        {{ reclassifyDialogHint }}
+                    </div>
+
+                    <div v-if="reclassifyDialog.kind === 'topic'" class="mb-4">
+                        <div class="text-caption text-medium-emphasis mb-1">Zieltyp</div>
+                        <v-btn-toggle
+                            :model-value="reclassifyDialog.mode"
+                            color="primary"
+                            density="comfortable"
+                            mandatory
+                            variant="outlined"
+                            @update:modelValue="setReclassifyMode">
+                            <v-btn value="to_subject" size="small">Als Thema</v-btn>
+                            <v-btn value="to_unit" size="small">Als Einheit</v-btn>
+                            <v-btn value="to_new_subject" size="small">Als neues Fach</v-btn>
+                        </v-btn-toggle>
+                    </div>
+
+                    <div v-if="reclassifyDialog.kind === 'unit'" class="mb-4">
+                        <div class="text-caption text-medium-emphasis mb-1">Zieltyp</div>
+                        <v-btn-toggle
+                            :model-value="reclassifyDialog.mode"
+                            color="primary"
+                            density="comfortable"
+                            mandatory
+                            variant="outlined"
+                            @update:modelValue="setReclassifyMode">
+                            <v-btn value="to_topic" size="small">Als Einheit</v-btn>
+                            <v-btn value="to_new_topic" size="small">Als neues Thema</v-btn>
+                        </v-btn-toggle>
+                    </div>
+
+                    <v-select
+                        v-if="reclassifyUsesTargetSubject"
+                        v-model="reclassifyDialog.targetSubjectId"
+                        :items="reclassifyTargetSubjectItems"
+                        item-title="name"
+                        item-value="id"
+                        label="Zielfach"
+                        variant="outlined"
+                        density="comfortable"
+                        hide-details="auto"
+                        class="mb-3"
+                        :disabled="isSavingSubjectCatalog"
+                        @update:modelValue="onReclassifyTargetSubjectChange" />
+
+                    <v-text-field
+                        v-if="reclassifyNeedsNewSubjectName"
+                        v-model="reclassifyDialog.newSubjectName"
+                        label="Neues Fach"
+                        variant="outlined"
+                        density="comfortable"
+                        hide-details="auto"
+                        class="mb-3"
+                        :disabled="isSavingSubjectCatalog" />
+
+                    <v-text-field
+                        v-if="reclassifyNeedsNewTopicName"
+                        v-model="reclassifyDialog.newTopicName"
+                        label="Neues Thema"
+                        variant="outlined"
+                        density="comfortable"
+                        hide-details="auto"
+                        class="mb-3"
+                        :disabled="isSavingSubjectCatalog" />
+
+                    <v-select
+                        v-if="reclassifyNeedsTargetTopic"
+                        v-model="reclassifyDialog.targetTopicId"
+                        :items="reclassifyTargetTopicItems"
+                        item-title="name"
+                        item-value="id"
+                        label="Zielthema"
+                        variant="outlined"
+                        density="comfortable"
+                        hide-details="auto"
+                        :disabled="isSavingSubjectCatalog || !reclassifyDialog.targetSubjectId" />
+                </v-card-text>
+                <v-card-actions class="justify-end px-4 pb-4">
+                    <v-btn
+                        variant="text"
+                        :disabled="isSavingSubjectCatalog"
+                        @click="closeReclassifyDialog">
+                        Abbrechen
+                    </v-btn>
+                    <v-btn
+                        color="primary"
+                        variant="flat"
+                        prepend-icon="mdi-content-save-outline"
+                        :loading="isSavingSubjectCatalog"
+                        :disabled="isSavingSubjectCatalog || !canSaveReclassifyDialog"
+                        @click="saveReclassifyDialog">
+                        Verschieben
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
         <v-dialog v-model="subjectAssignmentDialog.open" max-width="640" persistent>
             <v-card rounded="xl">
                 <v-card-title class="text-h6 font-weight-bold">{{ subjectAssignmentDialogTitle }}</v-card-title>
@@ -765,6 +892,19 @@ export default {
                 kind: '',
                 id: null,
                 label: '',
+            },
+            reclassifyDialog: {
+                open: false,
+                kind: '',
+                mode: '',
+                sourceId: null,
+                sourceName: '',
+                sourceSubjectId: null,
+                sourceTopicId: null,
+                targetSubjectId: null,
+                targetTopicId: null,
+                newSubjectName: '',
+                newTopicName: '',
             },
             isLoadingSubjectAssignments: false,
             isSavingSubjectAssignment: false,
@@ -969,6 +1109,130 @@ export default {
         },
         canSaveSubjectCatalogEditor() {
             return this.normalizeTreeName(this.subjectCatalogEditor.name) !== ''
+        },
+        reclassifyUsesTargetSubject() {
+            if (this.reclassifyDialog.kind !== 'topic') return true
+            return this.reclassifyDialog.mode !== 'to_new_subject'
+        },
+        reclassifyNeedsNewSubjectName() {
+            return this.reclassifyDialog.kind === 'topic' && this.reclassifyDialog.mode === 'to_new_subject'
+        },
+        reclassifyNeedsNewTopicName() {
+            return this.reclassifyDialog.kind === 'unit' && this.reclassifyDialog.mode === 'to_new_topic'
+        },
+        reclassifyNeedsTargetTopic() {
+            if (this.reclassifyDialog.kind === 'unit') {
+                return this.reclassifyDialog.mode !== 'to_new_topic'
+            }
+            if (this.reclassifyDialog.kind === 'topic' && this.reclassifyDialog.mode === 'to_unit') return true
+            return false
+        },
+        reclassifyDialogHint() {
+            if (this.reclassifyDialog.kind === 'subject') {
+                return 'Das Fach wird als Thema im Zielfach angelegt.'
+            }
+            if (this.reclassifyDialog.kind === 'topic') {
+                if (this.reclassifyDialog.mode === 'to_new_subject') {
+                    return 'Das Thema wird als neues Fach angelegt. Einheiten werden dabei zu Themen.'
+                }
+                return this.reclassifyDialog.mode === 'to_unit'
+                    ? 'Das Thema wird als Einheit im Zielthema angelegt.'
+                    : 'Das Thema wird in ein anderes Fach verschoben.'
+            }
+            if (this.reclassifyDialog.kind === 'unit') {
+                return this.reclassifyDialog.mode === 'to_new_topic'
+                    ? 'Die Einheit wird als neues Thema angelegt.'
+                    : 'Die Einheit wird in ein anderes Thema verschoben.'
+            }
+            return ''
+        },
+        reclassifyTargetSubjectItems() {
+            const sourceKind = String(this.reclassifyDialog.kind || '')
+            const sourceSubjectId = Number(this.reclassifyDialog.sourceSubjectId)
+            const sourceId = Number(this.reclassifyDialog.sourceId)
+            const subjects = Array.isArray(this.subjectTreeItems) ? this.subjectTreeItems : []
+
+            return subjects
+                .filter((subject) => {
+                    const subjectId = Number(subject?.id)
+                    if (!Number.isFinite(subjectId) || subjectId <= 0) return false
+                    if (sourceKind === 'subject' && subjectId === sourceId) return false
+                    return true
+                })
+                .map((subject) => ({
+                    id: Number(subject.id),
+                    name: subject.name,
+                    _isCurrentSubject: sourceKind !== 'subject' && Number(subject.id) === sourceSubjectId,
+                }))
+        },
+        reclassifyTargetTopicItems() {
+            const subjectId = Number(this.reclassifyDialog.targetSubjectId)
+            if (!Number.isFinite(subjectId) || subjectId <= 0) return []
+
+            const subject = this.subjectTreeItems.find((entry) => Number(entry?.id) === subjectId)
+            const topics = Array.isArray(subject?.topics) ? subject.topics : []
+            const sourceKind = String(this.reclassifyDialog.kind || '')
+            const mode = String(this.reclassifyDialog.mode || '')
+            const sourceTopicId = sourceKind === 'unit'
+                ? Number(this.reclassifyDialog.sourceTopicId)
+                : Number(this.reclassifyDialog.sourceId)
+
+            return topics
+                .filter((topic) => {
+                    const topicId = Number(topic?.id)
+                    if (!Number.isFinite(topicId) || topicId <= 0) return false
+                    if (sourceKind === 'topic' && mode === 'to_unit' && topicId === sourceTopicId) return false
+                    if (sourceKind === 'unit' && mode === 'to_topic' && topicId === sourceTopicId) return false
+                    return true
+                })
+                .map((topic) => ({
+                    id: Number(topic.id),
+                    name: topic.name,
+                }))
+        },
+        canSaveReclassifyDialog() {
+            if (!this.reclassifyDialog.open) return false
+            const sourceId = Number(this.reclassifyDialog.sourceId)
+            const targetSubjectId = Number(this.reclassifyDialog.targetSubjectId)
+            const targetTopicId = Number(this.reclassifyDialog.targetTopicId)
+            const newSubjectName = this.normalizeTreeName(this.reclassifyDialog.newSubjectName)
+            const newTopicName = this.normalizeTreeName(this.reclassifyDialog.newTopicName)
+            const kind = String(this.reclassifyDialog.kind || '')
+            const mode = String(this.reclassifyDialog.mode || '')
+
+            if (!Number.isFinite(sourceId) || sourceId <= 0) return false
+
+            if (kind === 'subject') {
+                if (!Number.isFinite(targetSubjectId) || targetSubjectId <= 0) return false
+                return sourceId !== targetSubjectId
+            }
+
+            if (kind === 'topic') {
+                if (mode === 'to_new_subject') {
+                    return newSubjectName !== ''
+                }
+                if (mode === 'to_unit') {
+                    return Number.isFinite(targetTopicId) && targetTopicId > 0 && targetTopicId !== sourceId
+                }
+
+                if (mode === 'to_subject') {
+                    if (!Number.isFinite(targetSubjectId) || targetSubjectId <= 0) return false
+                    const sourceSubjectId = Number(this.reclassifyDialog.sourceSubjectId)
+                    return sourceSubjectId > 0 && sourceSubjectId !== targetSubjectId
+                }
+            }
+
+            if (kind === 'unit') {
+                if (mode === 'to_new_topic') {
+                    return Number.isFinite(targetSubjectId) && targetSubjectId > 0 && newTopicName !== ''
+                }
+                const sourceTopicId = Number(this.reclassifyDialog.sourceTopicId)
+                return Number.isFinite(targetTopicId) && targetTopicId > 0
+                    && sourceTopicId > 0
+                    && targetTopicId !== sourceTopicId
+            }
+
+            return false
         },
         subjectAssignmentDialogTitle() {
             if (this.subjectAssignmentDialog.mode === 'move') {
@@ -1682,6 +1946,153 @@ export default {
             await this.withSubjectCatalogSaving(() =>
                 this.materialCardStore.moveUnit(unitId, normalizedDirection)
             )
+        },
+        resetReclassifyDialog() {
+            this.reclassifyDialog = {
+                open: false,
+                kind: '',
+                mode: '',
+                sourceId: null,
+                sourceName: '',
+                sourceSubjectId: null,
+                sourceTopicId: null,
+                targetSubjectId: null,
+                targetTopicId: null,
+                newSubjectName: '',
+                newTopicName: '',
+            }
+        },
+        closeReclassifyDialog() {
+            if (this.isSavingSubjectCatalog) return
+            this.resetReclassifyDialog()
+        },
+        openReclassifyDialogForSubject(subject) {
+            const sourceId = Number(subject?.id)
+            if (!Number.isFinite(sourceId) || sourceId <= 0 || this.isSavingSubjectCatalog) return
+
+            const targetSubject = this.reclassifyTargetSubjectItems.find((entry) => Number(entry.id) !== sourceId)
+
+            this.reclassifyDialog = {
+                open: true,
+                kind: 'subject',
+                mode: 'to_topic',
+                sourceId,
+                sourceName: this.normalizeTreeName(subject?.name),
+                sourceSubjectId: sourceId,
+                sourceTopicId: null,
+                targetSubjectId: targetSubject?.id || null,
+                targetTopicId: null,
+                newSubjectName: '',
+                newTopicName: '',
+            }
+        },
+        openReclassifyDialogForTopic(subject, topic) {
+            const sourceId = Number(topic?.id)
+            const sourceSubjectId = Number(subject?.id)
+            if (!Number.isFinite(sourceId) || sourceId <= 0 || this.isSavingSubjectCatalog) return
+            if (!Number.isFinite(sourceSubjectId) || sourceSubjectId <= 0) return
+
+            const targetSubject = this.subjectTreeItems.find((entry) => Number(entry?.id) === sourceSubjectId)
+                || this.reclassifyTargetSubjectItems[0]
+
+            this.reclassifyDialog = {
+                open: true,
+                kind: 'topic',
+                mode: 'to_subject',
+                sourceId,
+                sourceName: this.normalizeTreeName(topic?.name),
+                sourceSubjectId,
+                sourceTopicId: sourceId,
+                targetSubjectId: targetSubject?.id || null,
+                targetTopicId: null,
+                newSubjectName: this.normalizeTreeName(topic?.name),
+                newTopicName: '',
+            }
+        },
+        openReclassifyDialogForUnit(subject, topic, unit) {
+            const sourceId = Number(unit?.id)
+            const sourceSubjectId = Number(subject?.id)
+            const sourceTopicId = Number(topic?.id)
+            if (!Number.isFinite(sourceId) || sourceId <= 0 || this.isSavingSubjectCatalog) return
+            if (!Number.isFinite(sourceSubjectId) || sourceSubjectId <= 0) return
+            if (!Number.isFinite(sourceTopicId) || sourceTopicId <= 0) return
+
+            this.reclassifyDialog = {
+                open: true,
+                kind: 'unit',
+                mode: 'to_topic',
+                sourceId,
+                sourceName: this.normalizeTreeName(unit?.name),
+                sourceSubjectId,
+                sourceTopicId,
+                targetSubjectId: sourceSubjectId,
+                targetTopicId: null,
+                newSubjectName: '',
+                newTopicName: this.normalizeTreeName(unit?.name),
+            }
+
+            const firstTopic = this.reclassifyTargetTopicItems[0]
+            this.reclassifyDialog.targetTopicId = firstTopic?.id || null
+        },
+        setReclassifyMode(mode) {
+            const normalizedMode = String(mode || '')
+            if (!['to_subject', 'to_unit', 'to_new_subject', 'to_topic', 'to_new_topic'].includes(normalizedMode)) return
+            this.reclassifyDialog.mode = normalizedMode
+            this.reclassifyDialog.targetTopicId = null
+            if (normalizedMode === 'to_unit' || (this.reclassifyDialog.kind === 'unit' && normalizedMode === 'to_topic')) {
+                const firstTopic = this.reclassifyTargetTopicItems[0]
+                this.reclassifyDialog.targetTopicId = firstTopic?.id || null
+                return
+            }
+            if (normalizedMode === 'to_new_subject' && !this.normalizeTreeName(this.reclassifyDialog.newSubjectName)) {
+                this.reclassifyDialog.newSubjectName = this.normalizeTreeName(this.reclassifyDialog.sourceName)
+                return
+            }
+            if (normalizedMode === 'to_new_topic' && !this.normalizeTreeName(this.reclassifyDialog.newTopicName)) {
+                this.reclassifyDialog.newTopicName = this.normalizeTreeName(this.reclassifyDialog.sourceName)
+            }
+        },
+        onReclassifyTargetSubjectChange() {
+            if (!this.reclassifyNeedsTargetTopic) return
+            const firstTopic = this.reclassifyTargetTopicItems[0]
+            this.reclassifyDialog.targetTopicId = firstTopic?.id || null
+        },
+        async saveReclassifyDialog() {
+            if (!this.canSaveReclassifyDialog || this.isSavingSubjectCatalog) return
+
+            const kind = String(this.reclassifyDialog.kind || '')
+            const mode = String(this.reclassifyDialog.mode || '')
+            const sourceId = Number(this.reclassifyDialog.sourceId)
+            const targetSubjectId = Number(this.reclassifyDialog.targetSubjectId)
+            const targetTopicId = Number(this.reclassifyDialog.targetTopicId)
+            const newSubjectName = this.normalizeTreeName(this.reclassifyDialog.newSubjectName).slice(0, 255)
+            const newTopicName = this.normalizeTreeName(this.reclassifyDialog.newTopicName).slice(0, 255)
+
+            const result = await this.withSubjectCatalogSaving(async () => {
+                if (kind === 'subject') {
+                    return this.materialCardStore.convertSubjectToTopic(sourceId, targetSubjectId)
+                }
+                if (kind === 'topic' && mode === 'to_subject') {
+                    return this.materialCardStore.moveTopicToSubject(sourceId, targetSubjectId)
+                }
+                if (kind === 'topic' && mode === 'to_new_subject') {
+                    return this.materialCardStore.convertTopicToSubject(sourceId, newSubjectName)
+                }
+                if (kind === 'topic' && mode === 'to_unit') {
+                    return this.materialCardStore.convertTopicToUnit(sourceId, targetTopicId)
+                }
+                if (kind === 'unit') {
+                    if (mode === 'to_new_topic') {
+                        return this.materialCardStore.convertUnitToTopic(sourceId, targetSubjectId, newTopicName)
+                    }
+                    return this.materialCardStore.moveUnitToTopic(sourceId, targetTopicId)
+                }
+                return null
+            })
+
+            if (result) {
+                this.resetReclassifyDialog()
+            }
         },
         cancelSubjectCatalogEditor() {
             if (this.isSavingSubjectCatalog) return

@@ -1190,6 +1190,354 @@ class MaterialService
         return true;
     }
 
+    public function convertSubjectToTopic(User $user, MaterialSubject $subject, MaterialSubject $targetSubject): MaterialTopic
+    {
+        $this->assertSubjectBelongsToUser($user, $subject);
+        $this->assertSubjectBelongsToUser($user, $targetSubject);
+
+        if ((int) $subject->id === (int) $targetSubject->id) {
+            throw ValidationException::withMessages([
+                'data.target_subject_id' => 'Bitte ein anderes Zielfach auswählen.',
+            ]);
+        }
+
+        $hasTopics = MaterialTopic::query()
+            ->where('subject_id', $subject->id)
+            ->exists();
+
+        if ($hasTopics) {
+            throw ValidationException::withMessages([
+                'data.target_subject_id' => 'Fach enthält noch Themen und kann nicht direkt als Thema verschoben werden.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($subject, $targetSubject) {
+            $duplicate = MaterialTopic::query()
+                ->where('subject_id', $targetSubject->id)
+                ->where('name', $subject->name)
+                ->exists();
+
+            if ($duplicate) {
+                throw ValidationException::withMessages([
+                    'data.target_subject_id' => 'Im Zielfach existiert bereits ein Thema mit diesem Namen.',
+                ]);
+            }
+
+            $topicData = [
+                'subject_id' => $targetSubject->id,
+                'name' => $subject->name,
+            ];
+            if ($this->supportsClassificationSortOrder()) {
+                $topicData['sort_order'] = $this->nextTopicSortOrder((int) $targetSubject->id);
+            }
+
+            $newTopic = MaterialTopic::query()->create($topicData);
+
+            MaterialCardClassification::query()
+                ->where('subject_id', $subject->id)
+                ->update([
+                    'subject_id' => $targetSubject->id,
+                    'topic_id' => $newTopic->id,
+                    'unit_id' => null,
+                ]);
+
+            $subject->delete();
+
+            return $newTopic->fresh();
+        });
+    }
+
+    public function moveTopicToSubject(User $user, MaterialTopic $topic, MaterialSubject $targetSubject): MaterialTopic
+    {
+        $this->assertTopicBelongsToUser($user, $topic);
+        $this->assertSubjectBelongsToUser($user, $targetSubject);
+
+        if ((int) $topic->subject_id === (int) $targetSubject->id) {
+            throw ValidationException::withMessages([
+                'data.target_subject_id' => 'Thema ist bereits in diesem Fach.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($topic, $targetSubject) {
+            $duplicate = MaterialTopic::query()
+                ->where('subject_id', $targetSubject->id)
+                ->where('name', $topic->name)
+                ->where('id', '<>', $topic->id)
+                ->exists();
+
+            if ($duplicate) {
+                throw ValidationException::withMessages([
+                    'data.target_subject_id' => 'Im Zielfach existiert bereits ein Thema mit diesem Namen.',
+                ]);
+            }
+
+            $updateData = [
+                'subject_id' => $targetSubject->id,
+            ];
+            if ($this->supportsClassificationSortOrder()) {
+                $updateData['sort_order'] = $this->nextTopicSortOrder((int) $targetSubject->id);
+            }
+
+            $topic->update($updateData);
+
+            MaterialCardClassification::query()
+                ->where('topic_id', $topic->id)
+                ->update([
+                    'subject_id' => $targetSubject->id,
+                ]);
+
+            return $topic->fresh();
+        });
+    }
+
+    public function convertTopicToSubject(User $user, MaterialTopic $topic, string $newSubjectName): MaterialSubject
+    {
+        $this->assertTopicBelongsToUser($user, $topic);
+
+        $normalizedName = $this->normalizeName($newSubjectName);
+        if ($normalizedName === '') {
+            throw ValidationException::withMessages([
+                'data.new_subject_name' => 'Bitte einen gültigen Fachnamen angeben.',
+            ]);
+        }
+
+        $subjectExists = MaterialSubject::query()
+            ->where('user_id', $user->id)
+            ->where('name', $normalizedName)
+            ->exists();
+
+        if ($subjectExists) {
+            throw ValidationException::withMessages([
+                'data.new_subject_name' => 'Dieses Fach existiert bereits.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($user, $topic, $normalizedName) {
+            $newSubjectData = [
+                'user_id' => $user->id,
+                'name' => $normalizedName,
+            ];
+            if ($this->supportsClassificationSortOrder()) {
+                $newSubjectData['sort_order'] = $this->nextSubjectSortOrder($user);
+            }
+
+            $newSubject = MaterialSubject::query()->create($newSubjectData);
+
+            $unitsQuery = MaterialUnit::query()
+                ->where('topic_id', $topic->id);
+            if ($this->supportsClassificationSortOrder()) {
+                $unitsQuery
+                    ->orderBy('sort_order')
+                    ->orderBy('name')
+                    ->orderBy('id');
+            } else {
+                $unitsQuery
+                    ->orderBy('name')
+                    ->orderBy('id');
+            }
+
+            $units = $unitsQuery->get();
+            $unitToTopicMap = [];
+            foreach ($units as $unit) {
+                $newTopicData = [
+                    'subject_id' => $newSubject->id,
+                    'name' => $unit->name,
+                ];
+                if ($this->supportsClassificationSortOrder()) {
+                    $newTopicData['sort_order'] = $this->nextTopicSortOrder((int) $newSubject->id);
+                }
+
+                $newTopic = MaterialTopic::query()->create($newTopicData);
+                $unitToTopicMap[(int) $unit->id] = (int) $newTopic->id;
+            }
+
+            MaterialCardClassification::query()
+                ->where('topic_id', $topic->id)
+                ->whereNull('unit_id')
+                ->update([
+                    'subject_id' => $newSubject->id,
+                    'topic_id' => null,
+                    'unit_id' => null,
+                ]);
+
+            foreach ($unitToTopicMap as $oldUnitId => $newTopicId) {
+                MaterialCardClassification::query()
+                    ->where('unit_id', $oldUnitId)
+                    ->update([
+                        'subject_id' => $newSubject->id,
+                        'topic_id' => $newTopicId,
+                        'unit_id' => null,
+                    ]);
+            }
+
+            if (count($unitToTopicMap) > 0) {
+                MaterialUnit::query()->whereIn('id', array_keys($unitToTopicMap))->delete();
+            }
+
+            $topic->delete();
+
+            return $newSubject->fresh();
+        });
+    }
+
+    public function convertTopicToUnit(User $user, MaterialTopic $topic, MaterialTopic $targetTopic): MaterialUnit
+    {
+        $this->assertTopicBelongsToUser($user, $topic);
+        $this->assertTopicBelongsToUser($user, $targetTopic);
+
+        if ((int) $topic->id === (int) $targetTopic->id) {
+            throw ValidationException::withMessages([
+                'data.target_topic_id' => 'Bitte ein anderes Zielthema auswählen.',
+            ]);
+        }
+
+        $hasUnits = MaterialUnit::query()
+            ->where('topic_id', $topic->id)
+            ->exists();
+
+        if ($hasUnits) {
+            throw ValidationException::withMessages([
+                'data.target_topic_id' => 'Thema enthält noch Einheiten und kann nicht direkt als Einheit verschoben werden.',
+            ]);
+        }
+
+        $targetTopic->loadMissing('subject');
+        $targetSubjectId = (int) ($targetTopic->subject_id ?: 0);
+
+        return DB::transaction(function () use ($topic, $targetTopic, $targetSubjectId) {
+            $duplicate = MaterialUnit::query()
+                ->where('topic_id', $targetTopic->id)
+                ->where('name', $topic->name)
+                ->exists();
+
+            if ($duplicate) {
+                throw ValidationException::withMessages([
+                    'data.target_topic_id' => 'Im Zielthema existiert bereits eine Einheit mit diesem Namen.',
+                ]);
+            }
+
+            $newUnitData = [
+                'topic_id' => $targetTopic->id,
+                'name' => $topic->name,
+            ];
+            if ($this->supportsClassificationSortOrder()) {
+                $newUnitData['sort_order'] = $this->nextUnitSortOrder((int) $targetTopic->id);
+            }
+
+            $newUnit = MaterialUnit::query()->create($newUnitData);
+
+            MaterialCardClassification::query()
+                ->where('topic_id', $topic->id)
+                ->update([
+                    'subject_id' => $targetSubjectId,
+                    'topic_id' => $targetTopic->id,
+                    'unit_id' => $newUnit->id,
+                ]);
+
+            $topic->delete();
+
+            return $newUnit->fresh();
+        });
+    }
+
+    public function moveUnitToTopic(User $user, MaterialUnit $unit, MaterialTopic $targetTopic): MaterialUnit
+    {
+        $this->assertUnitBelongsToUser($user, $unit);
+        $this->assertTopicBelongsToUser($user, $targetTopic);
+
+        if ((int) $unit->topic_id === (int) $targetTopic->id) {
+            throw ValidationException::withMessages([
+                'data.target_topic_id' => 'Einheit ist bereits in diesem Thema.',
+            ]);
+        }
+
+        $targetTopic->loadMissing('subject');
+        $targetSubjectId = (int) ($targetTopic->subject_id ?: 0);
+
+        return DB::transaction(function () use ($unit, $targetTopic, $targetSubjectId) {
+            $duplicate = MaterialUnit::query()
+                ->where('topic_id', $targetTopic->id)
+                ->where('name', $unit->name)
+                ->where('id', '<>', $unit->id)
+                ->exists();
+
+            if ($duplicate) {
+                throw ValidationException::withMessages([
+                    'data.target_topic_id' => 'Im Zielthema existiert bereits eine Einheit mit diesem Namen.',
+                ]);
+            }
+
+            $updateData = [
+                'topic_id' => $targetTopic->id,
+            ];
+            if ($this->supportsClassificationSortOrder()) {
+                $updateData['sort_order'] = $this->nextUnitSortOrder((int) $targetTopic->id);
+            }
+            $unit->update($updateData);
+
+            MaterialCardClassification::query()
+                ->where('unit_id', $unit->id)
+                ->update([
+                    'subject_id' => $targetSubjectId,
+                    'topic_id' => $targetTopic->id,
+                ]);
+
+            return $unit->fresh();
+        });
+    }
+
+    public function convertUnitToTopic(
+        User $user,
+        MaterialUnit $unit,
+        MaterialSubject $targetSubject,
+        string $newTopicName
+    ): MaterialTopic {
+        $this->assertUnitBelongsToUser($user, $unit);
+        $this->assertSubjectBelongsToUser($user, $targetSubject);
+
+        $normalizedName = $this->normalizeName($newTopicName);
+        if ($normalizedName === '') {
+            throw ValidationException::withMessages([
+                'data.new_topic_name' => 'Bitte einen gültigen Themennamen angeben.',
+            ]);
+        }
+
+        $topicExists = MaterialTopic::query()
+            ->where('subject_id', $targetSubject->id)
+            ->where('name', $normalizedName)
+            ->exists();
+
+        if ($topicExists) {
+            throw ValidationException::withMessages([
+                'data.new_topic_name' => 'Dieses Thema existiert im Zielfach bereits.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($unit, $targetSubject, $normalizedName) {
+            $newTopicData = [
+                'subject_id' => $targetSubject->id,
+                'name' => $normalizedName,
+            ];
+            if ($this->supportsClassificationSortOrder()) {
+                $newTopicData['sort_order'] = $this->nextTopicSortOrder((int) $targetSubject->id);
+            }
+
+            $newTopic = MaterialTopic::query()->create($newTopicData);
+
+            MaterialCardClassification::query()
+                ->where('unit_id', $unit->id)
+                ->update([
+                    'subject_id' => $targetSubject->id,
+                    'topic_id' => $newTopic->id,
+                    'unit_id' => null,
+                ]);
+
+            $unit->delete();
+
+            return $newTopic->fresh();
+        });
+    }
+
     private function classificationTreeForUser(User $user): array
     {
         if (! $this->supportsClassificationTables()) {

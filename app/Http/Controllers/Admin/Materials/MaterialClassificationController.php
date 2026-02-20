@@ -81,6 +81,26 @@ class MaterialClassificationController extends Controller
         return response()->noContent();
     }
 
+    public function convertSubjectToTopic(Request $request, MaterialSubject $material_subject, MaterialService $service)
+    {
+        $authUser = $this->authorizeForClassificationManagement();
+        $validated = $request->validate([
+            'data.target_subject_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $targetSubject = MaterialSubject::query()->findOrFail((int) ($validated['data']['target_subject_id'] ?? 0));
+
+        $topic = $service->convertSubjectToTopic($authUser, $material_subject, $targetSubject);
+
+        return response()->json([
+            'data' => [
+                'id' => $topic->id,
+                'name' => $topic->name,
+                'subject_id' => $topic->subject_id,
+            ],
+        ], 200);
+    }
+
     public function storeTopic(MaterialTopicStoreRequest $request, MaterialService $service)
     {
         $authUser = $this->authorizeForClassificationManagement();
@@ -151,6 +171,67 @@ class MaterialClassificationController extends Controller
         return response()->noContent();
     }
 
+    public function moveTopicToSubject(Request $request, MaterialTopic $material_topic, MaterialService $service)
+    {
+        $authUser = $this->authorizeForClassificationManagement();
+        $validated = $request->validate([
+            'data.target_subject_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $targetSubject = MaterialSubject::query()->findOrFail((int) ($validated['data']['target_subject_id'] ?? 0));
+
+        $topic = $service->moveTopicToSubject($authUser, $material_topic, $targetSubject);
+
+        return response()->json([
+            'data' => [
+                'id' => $topic->id,
+                'name' => $topic->name,
+                'subject_id' => $topic->subject_id,
+            ],
+        ], 200);
+    }
+
+    public function convertTopicToUnit(Request $request, MaterialTopic $material_topic, MaterialService $service)
+    {
+        $authUser = $this->authorizeForClassificationManagement();
+        $validated = $request->validate([
+            'data.target_topic_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $targetTopic = MaterialTopic::query()->findOrFail((int) ($validated['data']['target_topic_id'] ?? 0));
+
+        $unit = $service->convertTopicToUnit($authUser, $material_topic, $targetTopic);
+
+        return response()->json([
+            'data' => [
+                'id' => $unit->id,
+                'name' => $unit->name,
+                'topic_id' => $unit->topic_id,
+            ],
+        ], 200);
+    }
+
+    public function convertTopicToSubject(Request $request, MaterialTopic $material_topic, MaterialService $service)
+    {
+        $authUser = $this->authorizeForClassificationManagement();
+        $validated = $request->validate([
+            'data.new_subject_name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $subject = $service->convertTopicToSubject(
+            $authUser,
+            $material_topic,
+            (string) ($validated['data']['new_subject_name'] ?? '')
+        );
+
+        return response()->json([
+            'data' => [
+                'id' => $subject->id,
+                'name' => $subject->name,
+            ],
+        ], 200);
+    }
+
     public function storeUnit(MaterialUnitStoreRequest $request, MaterialService $service)
     {
         $authUser = $this->authorizeForClassificationManagement();
@@ -219,6 +300,52 @@ class MaterialClassificationController extends Controller
         );
 
         return response()->noContent();
+    }
+
+    public function moveUnitToTopic(Request $request, MaterialUnit $material_unit, MaterialService $service)
+    {
+        $authUser = $this->authorizeForClassificationManagement();
+        $validated = $request->validate([
+            'data.target_topic_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $targetTopic = MaterialTopic::query()->findOrFail((int) ($validated['data']['target_topic_id'] ?? 0));
+
+        $unit = $service->moveUnitToTopic($authUser, $material_unit, $targetTopic);
+
+        return response()->json([
+            'data' => [
+                'id' => $unit->id,
+                'name' => $unit->name,
+                'topic_id' => $unit->topic_id,
+            ],
+        ], 200);
+    }
+
+    public function convertUnitToTopic(Request $request, MaterialUnit $material_unit, MaterialService $service)
+    {
+        $authUser = $this->authorizeForClassificationManagement();
+        $validated = $request->validate([
+            'data.target_subject_id' => ['required', 'integer', 'min:1'],
+            'data.new_topic_name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $targetSubject = MaterialSubject::query()->findOrFail((int) ($validated['data']['target_subject_id'] ?? 0));
+
+        $topic = $service->convertUnitToTopic(
+            $authUser,
+            $material_unit,
+            $targetSubject,
+            (string) ($validated['data']['new_topic_name'] ?? '')
+        );
+
+        return response()->json([
+            'data' => [
+                'id' => $topic->id,
+                'name' => $topic->name,
+                'subject_id' => $topic->subject_id,
+            ],
+        ], 200);
     }
 
     private function authorizeForClassificationManagement()

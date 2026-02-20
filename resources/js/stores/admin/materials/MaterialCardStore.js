@@ -347,6 +347,7 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                 const response = await axios.post('/api/admin/materials/cards', { data })
                 this.selected_card = response.data
                 this.syncClassificationTreeFromCard(this.selected_card)
+                await this.loadConfig()
                 notification.notify({
                     message: 'Materialkarte gespeichert.',
                     type: 'success',
@@ -374,6 +375,7 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                 const response = await axios.post('/api/admin/materials/cards/quick_store', { data })
                 this.selected_card = response.data
                 this.syncClassificationTreeFromCard(this.selected_card)
+                await this.loadConfig()
                 notification.notify({
                     message: 'Materialkarte schnell gemerkt.',
                     type: 'success',
@@ -401,6 +403,7 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                 const response = await axios.put('/api/admin/materials/cards/' + id, { data })
                 this.selected_card = response.data
                 this.syncClassificationTreeFromCard(this.selected_card)
+                await this.loadConfig()
                 notification.notify({
                     message: 'Materialkarte aktualisiert.',
                     type: 'success',
@@ -427,6 +430,7 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             try {
                 await axios.delete('/api/admin/materials/cards/' + id)
                 this.selected_card = null
+                await this.loadConfig()
                 notification.notify({
                     message: 'Materialkarte gelöscht.',
                     type: 'success',
@@ -1793,6 +1797,296 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                     timeout: 3000,
                 })
                 return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async convertSubjectToTopic(subjectId, targetSubjectId) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const sourceId = Number(subjectId)
+            const targetId = Number(targetSubjectId)
+
+            if (!Number.isFinite(sourceId) || sourceId <= 0 || !Number.isFinite(targetId) || targetId <= 0) {
+                notification.notify({
+                    message: 'Ungültige Verschiebung.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            adminStore.is_loading++
+            try {
+                const response = await axios.post(`/api/admin/materials/subjects/${sourceId}/convert-to-topic`, {
+                    data: {
+                        target_subject_id: targetId,
+                    },
+                })
+
+                await this.loadConfig()
+                if (Array.isArray(this.cards) && this.cards.length > 0) {
+                    await this.indexAll()
+                }
+
+                notification.notify({
+                    message: 'Fach als Thema verschoben.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Verschieben des Fachs.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async moveTopicToSubject(topicId, targetSubjectId) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const sourceId = Number(topicId)
+            const targetId = Number(targetSubjectId)
+
+            if (!Number.isFinite(sourceId) || sourceId <= 0 || !Number.isFinite(targetId) || targetId <= 0) {
+                notification.notify({
+                    message: 'Ungültige Verschiebung.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            adminStore.is_loading++
+            try {
+                const response = await axios.post(`/api/admin/materials/topics/${sourceId}/move-to-subject`, {
+                    data: {
+                        target_subject_id: targetId,
+                    },
+                })
+
+                await this.loadConfig()
+                if (Array.isArray(this.cards) && this.cards.length > 0) {
+                    await this.indexAll()
+                }
+
+                notification.notify({
+                    message: 'Thema verschoben.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Verschieben des Themas.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async convertTopicToUnit(topicId, targetTopicId) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const sourceId = Number(topicId)
+            const targetId = Number(targetTopicId)
+
+            if (!Number.isFinite(sourceId) || sourceId <= 0 || !Number.isFinite(targetId) || targetId <= 0) {
+                notification.notify({
+                    message: 'Ungültige Verschiebung.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            adminStore.is_loading++
+            try {
+                const response = await axios.post(`/api/admin/materials/topics/${sourceId}/convert-to-unit`, {
+                    data: {
+                        target_topic_id: targetId,
+                    },
+                })
+
+                await this.loadConfig()
+                if (Array.isArray(this.cards) && this.cards.length > 0) {
+                    await this.indexAll()
+                }
+
+                notification.notify({
+                    message: 'Thema als Einheit verschoben.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Verschieben des Themas als Einheit.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async convertTopicToSubject(topicId, newSubjectName) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const sourceId = Number(topicId)
+            const normalizedName = String(newSubjectName ?? '').trim().slice(0, 255)
+
+            if (!Number.isFinite(sourceId) || sourceId <= 0 || !normalizedName) {
+                notification.notify({
+                    message: 'Ungültige Verschiebung.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            adminStore.is_loading++
+            try {
+                const response = await axios.post(`/api/admin/materials/topics/${sourceId}/convert-to-subject`, {
+                    data: {
+                        new_subject_name: normalizedName,
+                    },
+                })
+
+                await this.loadConfig()
+                if (Array.isArray(this.cards) && this.cards.length > 0) {
+                    await this.indexAll()
+                }
+
+                notification.notify({
+                    message: 'Thema als neues Fach angelegt.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Anlegen des neuen Fachs.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async moveUnitToTopic(unitId, targetTopicId) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const sourceId = Number(unitId)
+            const targetId = Number(targetTopicId)
+
+            if (!Number.isFinite(sourceId) || sourceId <= 0 || !Number.isFinite(targetId) || targetId <= 0) {
+                notification.notify({
+                    message: 'Ungültige Verschiebung.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            adminStore.is_loading++
+            try {
+                const response = await axios.post(`/api/admin/materials/units/${sourceId}/move-to-topic`, {
+                    data: {
+                        target_topic_id: targetId,
+                    },
+                })
+
+                await this.loadConfig()
+                if (Array.isArray(this.cards) && this.cards.length > 0) {
+                    await this.indexAll()
+                }
+
+                notification.notify({
+                    message: 'Einheit verschoben.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Verschieben der Einheit.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async convertUnitToTopic(unitId, targetSubjectId, newTopicName) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const sourceId = Number(unitId)
+            const subjectId = Number(targetSubjectId)
+            const normalizedName = String(newTopicName ?? '').trim().slice(0, 255)
+
+            if (!Number.isFinite(sourceId) || sourceId <= 0 || !Number.isFinite(subjectId) || subjectId <= 0 || !normalizedName) {
+                notification.notify({
+                    message: 'Ungültige Verschiebung.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            adminStore.is_loading++
+            try {
+                const response = await axios.post(`/api/admin/materials/units/${sourceId}/convert-to-topic`, {
+                    data: {
+                        target_subject_id: subjectId,
+                        new_topic_name: normalizedName,
+                    },
+                })
+
+                await this.loadConfig()
+                if (Array.isArray(this.cards) && this.cards.length > 0) {
+                    await this.indexAll()
+                }
+
+                notification.notify({
+                    message: 'Einheit als neues Thema angelegt.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Anlegen des neuen Themas.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
             } finally {
                 adminStore.is_loading--
             }
