@@ -77,6 +77,9 @@ class UserController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
         $validated = $request->validated();
+        if (! $auth_user->hasRole('super_admin')) {
+            unset($validated['roles']);
+        }
 
         $user = $service->update($validated, $auth_user);
         return response()->json(new UserResource($user), 200);
@@ -89,6 +92,9 @@ class UserController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
         $validated = $request->validated();
+        if (! $auth_user->hasRole('super_admin')) {
+            unset($validated['roles']);
+        }
 
         $user = $service->store($auth_user->school_id, $validated);
         return response()->json(new UserResource($user), 200);
@@ -495,7 +501,7 @@ class UserController extends Controller
 
     public function saveUserRoles(SaveUserRolesRequest $request)
     {
-        if (! $user = $this->userHasRole(['admin'])) {
+        if (! $user = $this->userHasRole(['super_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
