@@ -168,9 +168,12 @@ class MaterialService
 
     public function addFileAttachment(MaterialCard $card, UploadedFile $file, ?string $name = null): MaterialCardAttachment
     {
+        $detectedMimeType = $this->normalizeMimeType((string) ($file->getMimeType() ?: $file->getClientMimeType() ?: ''));
+        $originalFileName = (string) $file->getClientOriginalName();
+
         $path = $file->storeAs(
             $this->materialAttachmentDirectory($card),
-            $this->materialAttachmentStoredFileNameFromOriginalName((string) $file->getClientOriginalName()),
+            $this->materialAttachmentStoredFileNameFromOriginalName($originalFileName),
             'local'
         );
 
@@ -182,14 +185,18 @@ class MaterialService
 
         $displayName = $this->normalizeOptionalName($name);
         if ($displayName === null) {
-            $displayName = mb_substr((string) $file->getClientOriginalName(), 0, 255);
+            $displayName = mb_substr($originalFileName, 0, 255);
+        }
+
+        if ($this->isHtmlAttachmentFile($detectedMimeType, $originalFileName)) {
+            $displayName = $this->ensureHtmlAttachmentNameExtension($displayName);
         }
 
         $attachment = $card->attachments()->create([
             'attachment_type' => MaterialCardAttachment::TYPE_FILE,
             'name' => $displayName,
             'file_path' => $path,
-            'mime_type' => $file->getMimeType() ?: $file->getClientMimeType(),
+            'mime_type' => $detectedMimeType,
             'size_bytes' => $file->getSize(),
         ]);
 
@@ -239,13 +246,17 @@ class MaterialService
         }
 
         $mimeType = Storage::disk('local')->mimeType($destinationPath);
+        $normalizedMimeType = $this->normalizeMimeType((string) ($mimeType ?? ''));
+        if ($this->isHtmlAttachmentFile($normalizedMimeType, $tempFileName)) {
+            $displayName = $this->ensureHtmlAttachmentNameExtension($displayName);
+        }
         $finalSizeBytes = (int) (Storage::disk('local')->size($destinationPath) ?: $sizeBytes);
 
         $attachment = $card->attachments()->create([
             'attachment_type' => MaterialCardAttachment::TYPE_FILE,
             'name' => $displayName,
             'file_path' => $destinationPath,
-            'mime_type' => is_string($mimeType) ? $mimeType : null,
+            'mime_type' => $normalizedMimeType !== '' ? $normalizedMimeType : null,
             'size_bytes' => $finalSizeBytes > 0 ? $finalSizeBytes : null,
         ]);
 
@@ -436,6 +447,53 @@ class MaterialService
 
         $attachment->update([
             'name' => $normalizedName,
+        ]);
+
+        $card = $attachment->materialCard()->first();
+        if ($card) {
+            $this->keywordService->rebuild($card->fresh($this->cardRelations()));
+        }
+
+        return $attachment->fresh();
+    }
+
+    public function readEditableTextAttachmentContent(MaterialCardAttachment $attachment): string
+    {
+        $this->assertEditableTextAttachment($attachment);
+
+        return (string) Storage::disk('local')->get($attachment->file_path);
+    }
+
+    public function updateEditableTextAttachmentContent(
+        MaterialCardAttachment $attachment,
+        string $contentHtml,
+        ?string $name = null
+    ): MaterialCardAttachment
+    {
+        $this->assertEditableTextAttachment($attachment);
+
+        $normalizedHtml = trim($contentHtml);
+        if ($normalizedHtml === '') {
+            throw ValidationException::withMessages([
+                'data.content_html' => 'Bitte einen Textinhalt angeben.',
+            ]);
+        }
+
+        $stored = Storage::disk('local')->put($attachment->file_path, $normalizedHtml);
+        if (! $stored) {
+            throw ValidationException::withMessages([
+                'data.content_html' => 'Text konnte nicht gespeichert werden.',
+            ]);
+        }
+
+        $sizeBytes = (int) (Storage::disk('local')->size($attachment->file_path) ?: strlen($normalizedHtml));
+        $normalizedName = $this->normalizeOptionalName($name ?? $attachment->name ?? null);
+        $normalizedName = $this->ensureHtmlAttachmentNameExtension($normalizedName);
+
+        $attachment->update([
+            'name' => $normalizedName,
+            'mime_type' => 'text/html',
+            'size_bytes' => $sizeBytes > 0 ? $sizeBytes : null,
         ]);
 
         $card = $attachment->materialCard()->first();
@@ -1275,6 +1333,58 @@ class MaterialService
     {
         $text = $this->normalizeName($value);
         return $text === '' ? null : $text;
+    }
+
+    private function assertEditableTextAttachment(MaterialCardAttachment $attachment): void
+    {
+        if ($attachment->attachment_type !== MaterialCardAttachment::TYPE_FILE) {
+            throw ValidationException::withMessages([
+                'data.content_html' => 'Nur Datei-Anhänge können bearbeitet werden.',
+            ]);
+        }
+
+        $filePath = trim((string) ($attachment->file_path ?? ''));
+        if ($filePath === '' || ! Storage::disk('local')->exists($filePath)) {
+            throw ValidationException::withMessages([
+                'data.content_html' => 'Datei wurde nicht gefunden.',
+            ]);
+        }
+
+        $mimeType = strtolower(trim((string) ($attachment->mime_type ?? '')));
+        $extension = strtolower((string) pathinfo((string) ($attachment->name ?: $filePath), PATHINFO_EXTENSION));
+        $isHtmlMime = $mimeType === 'text/html' || $mimeType === 'application/xhtml+xml';
+        $isHtmlExtension = $extension === 'html' || $extension === 'htm';
+
+        if (! $isHtmlMime && ! $isHtmlExtension) {
+            throw ValidationException::withMessages([
+                'data.content_html' => 'Dieser Anhangstyp kann nicht als Text bearbeitet werden.',
+            ]);
+        }
+    }
+
+    private function ensureHtmlAttachmentNameExtension(?string $name): string
+    {
+        $normalized = trim((string) ($name ?? ''));
+        if ($normalized === '') {
+            return 'Text.html';
+        }
+
+        if (preg_match('/\.(html?|HTML?)$/', $normalized)) {
+            return mb_substr($normalized, 0, 255);
+        }
+
+        return mb_substr($normalized . '.html', 0, 255);
+    }
+
+    private function isHtmlAttachmentFile(string $mimeType, string $fileName): bool
+    {
+        $normalizedMimeType = strtolower(trim($mimeType));
+        if ($normalizedMimeType === 'text/html' || $normalizedMimeType === 'application/xhtml+xml') {
+            return true;
+        }
+
+        $extension = strtolower((string) pathinfo((string) $fileName, PATHINFO_EXTENSION));
+        return $extension === 'html' || $extension === 'htm';
     }
 
     private function defaultStatusValueForUser(User $user): string

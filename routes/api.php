@@ -240,9 +240,12 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/materials/cards/{material_card}/attachments/file', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'storeFileAttachment']);
         Route::post('/admin/materials/cards/{material_card}/attachments/file-temp', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'storeTempFileAttachment']);
         Route::patch('/admin/materials/attachments/{material_card_attachment}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'updateAttachment']);
+        Route::get('/admin/materials/attachments/{material_card_attachment}/text-content', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'textAttachmentContent']);
+        Route::patch('/admin/materials/attachments/{material_card_attachment}/text-content', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'updateTextAttachmentContent']);
         Route::delete('/admin/materials/attachments/{material_card_attachment}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'destroyAttachment']);
         Route::get('/admin/materials/attachments/{material_card_attachment}/preview', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'previewAttachment']);
         Route::get('/admin/materials/attachments/{material_card_attachment}/download', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'downloadAttachment']);
+        Route::get('/admin/materials/attachments/{material_card_attachment}/download-docx', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'downloadAttachmentDocx']);
         Route::post('/admin/materials/uploads/chunk', [\App\Http\Controllers\Admin\Materials\MaterialChunkUploadController::class, 'upload']);
         Route::patch('/admin/materials/uploads/chunk', [\App\Http\Controllers\Admin\Materials\MaterialChunkUploadController::class, 'uploadNext']);
         Route::delete('/admin/materials/uploads/chunk/{upload_id}', [\App\Http\Controllers\Admin\Materials\MaterialChunkUploadController::class, 'destroy']);

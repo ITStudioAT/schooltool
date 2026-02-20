@@ -261,11 +261,13 @@
         <div class="mt-3">
             <div class="text-subtitle-2 mb-2">Inhalt hinzufügen</div>
             <div class="d-flex flex-wrap ga-2">
-                <v-btn variant="tonal" color="primary" prepend-icon="mdi-text-box-plus-outline" disabled>
-                    Text hinzufügen
-                </v-btn>
-                <v-btn variant="tonal" color="primary" prepend-icon="mdi-link-plus" disabled>
-                    Link hinzufügen
+                <v-btn
+                    variant="tonal"
+                    color="primary"
+                    prepend-icon="mdi-text-box-plus-outline"
+                    :disabled="isSaving"
+                    @click="openTextAttachmentDialog">
+                    Text hinzufuegen
                 </v-btn>
                 <v-btn
                     variant="tonal"
@@ -401,6 +403,56 @@
             </v-card>
         </div>
 
+        <v-dialog v-model="textAttachmentDialogOpen" max-width="860" persistent>
+            <v-card>
+                <v-card-title class="d-flex align-center justify-space-between">
+                    <span>Text als Anhang</span>
+                    <v-btn icon="mdi-close" variant="text" :disabled="isSaving" @click="closeTextAttachmentDialog" />
+                </v-card-title>
+
+                <v-card-text>
+                    <v-text-field
+                        v-model="textAttachmentDraftTitle"
+                        label="Dateiname/Titel"
+                        variant="outlined"
+                        density="comfortable"
+                        hide-details="auto"
+                        class="mb-3"
+                        :disabled="isSaving" />
+
+                    <ItsRichTextEditor v-model="textAttachmentDraftContent" />
+
+                    <div class="text-caption text-medium-emphasis mt-2">
+                        Der Inhalt wird als HTML-Datei gespeichert und beim Speichern des Materials als Anhang uebernommen.
+                    </div>
+
+                    <v-alert
+                        v-if="textAttachmentDialogError"
+                        type="warning"
+                        variant="tonal"
+                        density="compact"
+                        class="mt-3">
+                        {{ textAttachmentDialogError }}
+                    </v-alert>
+                </v-card-text>
+
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" :disabled="isSaving" @click="closeTextAttachmentDialog">
+                        Abbrechen
+                    </v-btn>
+                    <v-btn
+                        color="primary"
+                        variant="flat"
+                        prepend-icon="mdi-content-save-outline"
+                        :disabled="isSaving || !canAddTextAttachment"
+                        @click="appendTextAttachment">
+                        Als Anhang uebernehmen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
         <slot name="extra-content" />
 
         <div class="d-flex flex-wrap justify-end ga-2 mt-5">
@@ -414,6 +466,7 @@
 import vueFilePond from 'vue-filepond/dist/vue-filepond.js'
 import 'filepond/dist/filepond.min.css'
 import FilePondPluginFileValidateType from 'filepond-plugin-file-validate-type'
+import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 
 const FilePond = vueFilePond(FilePondPluginFileValidateType)
 
@@ -421,6 +474,7 @@ export default {
     name: 'MaterialsCreateInlineForm',
     components: {
         FilePond,
+        ItsRichTextEditor,
     },
     props: {
         title: {
@@ -521,6 +575,10 @@ export default {
                 type: 'info',
                 message: '',
             },
+            textAttachmentDialogOpen: false,
+            textAttachmentDraftTitle: '',
+            textAttachmentDraftContent: '',
+            textAttachmentDialogError: '',
         }
     },
     watch: {
@@ -627,6 +685,11 @@ export default {
         },
         canSave() {
             return String(this.title || '').trim().length > 0
+        },
+        canAddTextAttachment() {
+            const title = this.normalizeText(this.textAttachmentDraftTitle)
+            if (!title) return false
+            return this.extractPlainTextFromHtml(this.textAttachmentDraftContent) !== ''
         },
         normalizedStatusOptions() {
             const fallback = [
@@ -885,6 +948,145 @@ export default {
             } catch {
                 return 'Link'
             }
+        },
+        defaultTextAttachmentTitle() {
+            const now = new Date()
+            const stamp = new Intl.DateTimeFormat('de-AT', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+            }).format(now)
+            return `Text ${stamp}`
+        },
+        openTextAttachmentDialog() {
+            if (this.isSaving) return
+            if (!this.normalizeText(this.textAttachmentDraftTitle)) {
+                this.textAttachmentDraftTitle = this.ensureHtmlAttachmentName(this.defaultTextAttachmentTitle())
+            }
+            this.textAttachmentDialogError = ''
+            this.textAttachmentDialogOpen = true
+        },
+        closeTextAttachmentDialog() {
+            this.textAttachmentDialogOpen = false
+            this.textAttachmentDialogError = ''
+            this.textAttachmentDraftTitle = ''
+            this.textAttachmentDraftContent = ''
+        },
+        escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/\"/g, '&quot;')
+                .replace(/'/g, '&#39;')
+        },
+        extractPlainTextFromHtml(value) {
+            const html = String(value || '').trim()
+            if (!html) return ''
+
+            if (typeof DOMParser !== 'undefined') {
+                try {
+                    const doc = new DOMParser().parseFromString(html, 'text/html')
+                    const text = String(doc?.body?.textContent || '').replace(/\s+/g, ' ').trim()
+                    if (text) return text
+                } catch {
+                    // Fallback below.
+                }
+            }
+
+            return html
+                .replace(/<[^>]*>/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim()
+        },
+        sanitizeFileNameSegment(value) {
+            return String(value || '')
+                .trim()
+                .replace(/[<>:"/\\|?*\u0000-\u001F]/g, ' ')
+                .replace(/\s+/g, ' ')
+                .replace(/[. ]+$/g, '')
+                .slice(0, 120)
+        },
+        ensureHtmlAttachmentName(value) {
+            const normalized = this.normalizeText(value) || 'Text'
+            return /\.(html?|HTML?)$/.test(normalized)
+                ? normalized
+                : `${normalized}.html`
+        },
+        buildTextAttachmentDocumentHtml(title, editorHtml) {
+            const safeTitle = this.escapeHtml(title)
+            const bodyHtml = String(editorHtml || '').trim()
+            return `<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${safeTitle}</title>
+<style>
+body { font-family: Arial, sans-serif; line-height: 1.55; color: #1a2b3b; margin: 14px; }
+p { margin: 0 0 0.65rem 0; }
+ul, ol { margin: 0.45rem 0 0.75rem 0; padding-inline-start: 1.4rem; }
+li { margin: 0.2rem 0; }
+blockquote {
+  margin: 0.75rem 0;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid #fd802e;
+  background: rgba(253, 128, 46, 0.10);
+  border-radius: 0 6px 6px 0;
+}
+pre {
+  background: #f5f7fb;
+  border: 1px solid #d9e1f3;
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow: auto;
+}
+code {
+  background: #f5f7fb;
+  border: 1px solid #d9e1f3;
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+</style>
+</head>
+<body>
+${bodyHtml}
+</body>
+</html>`
+        },
+        appendTextAttachment() {
+            const rawTitle = this.normalizeText(this.textAttachmentDraftTitle) || this.defaultTextAttachmentTitle()
+            const title = this.ensureHtmlAttachmentName(rawTitle)
+            const content = String(this.textAttachmentDraftContent || '').trim()
+            const plainText = this.extractPlainTextFromHtml(content)
+
+            if (!plainText) {
+                this.textAttachmentDialogError = 'Bitte zuerst Text eingeben.'
+                return
+            }
+
+            const baseName = this.sanitizeFileNameSegment(title) || `text-${Date.now()}.html`
+            const fileName = /\.(html?|HTML?)$/.test(baseName) ? baseName : `${baseName}.html`
+            const documentHtml = this.buildTextAttachmentDocumentHtml(title, content)
+            const file = new File([documentHtml], fileName, { type: 'text/html' })
+
+            const rows = this.toPendingAttachments(this.pendingAttachments)
+            rows.push({
+                attachmentType: 'file',
+                tempUpload: '',
+                file,
+                fileName,
+                title,
+                url: '',
+                storeImageFile: false,
+                source: 'text-editor',
+                key: `text|${Date.now()}|${rows.length}`,
+            })
+            this.emitPendingAttachments(rows)
+            this.setClipboardImportStatus('success', 'Text wurde als Anhang hinzugefuegt.')
+            this.closeTextAttachmentDialog()
         },
         extractUrlsFromText(text) {
             const value = String(text || '')

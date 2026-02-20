@@ -114,6 +114,10 @@ class MaterialAttachmentPreviewService
             }
         }
 
+        if ($this->isHtmlDocument($extension, $mimeType)) {
+            return $this->htmlFilePreviewResponse($absolutePath, $fileName, $downloadUrl);
+        }
+
         if ($this->isTextLike($extension, $mimeType)) {
             return $this->textPreviewResponse($absolutePath, $fileName, $downloadUrl);
         }
@@ -284,6 +288,36 @@ class MaterialAttachmentPreviewService
         return $this->shellHtmlResponse($fileName, $messageHtml, $downloadUrl);
     }
 
+    private function htmlFilePreviewResponse(string $absolutePath, string $fileName, string $downloadUrl = ''): Response
+    {
+        $raw = @file_get_contents($absolutePath);
+        $content = is_string($raw) ? $raw : '';
+
+        if ($content === '') {
+            return $this->messageResponse(
+                $fileName,
+                'HTML-Vorschau konnte nicht geladen werden.',
+                $downloadUrl
+            );
+        }
+
+        if (! mb_check_encoding($content, 'UTF-8')) {
+            $content = mb_convert_encoding($content, 'UTF-8', 'UTF-8,ISO-8859-1,Windows-1252');
+        }
+
+        $normalized = $this->normalizeGeneratedHtml($content, $fileName);
+        $bodyHtml = $this->extractHtmlBody($normalized);
+        if (trim($bodyHtml) === '') {
+            $bodyHtml = '<p>HTML-Inhalt konnte nicht dargestellt werden.</p>';
+        }
+
+        return $this->shellHtmlResponse(
+            $fileName,
+            '<div class="rich-html-preview">' . $bodyHtml . '</div>',
+            $downloadUrl
+        );
+    }
+
     private function shellHtmlResponse(string $fileName, string $bodyHtml, string $downloadUrl = ''): Response
     {
         $safeTitle = $this->escapeHtml($fileName);
@@ -311,6 +345,30 @@ class MaterialAttachmentPreviewService
                     .preview-hint { margin: 0 0 10px 0; color: #8a5a00; font-size: 14px; }
                     .text-preview-wrap { max-width: 100%; }
                     .text-preview { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: Consolas, Menlo, monospace; font-size: 14px; line-height: 1.5; }
+                    .rich-html-preview { max-width: 100%; line-height: 1.6; }
+                    .rich-html-preview p { margin: 0 0 0.65rem 0; }
+                    .rich-html-preview ul, .rich-html-preview ol { margin: 0.45rem 0 0.75rem 0; padding-inline-start: 1.4rem; }
+                    .rich-html-preview li { margin: 0.2rem 0; }
+                    .rich-html-preview blockquote {
+                        margin: 0.75rem 0;
+                        padding: 0.5rem 0.75rem;
+                        border-left: 3px solid #fd802e;
+                        background: rgba(253, 128, 46, 0.10);
+                        border-radius: 0 6px 6px 0;
+                    }
+                    .rich-html-preview pre {
+                        background: #f5f7fb;
+                        border: 1px solid #d9e1f3;
+                        border-radius: 8px;
+                        padding: 10px 12px;
+                        overflow: auto;
+                    }
+                    .rich-html-preview code {
+                        background: #f5f7fb;
+                        border: 1px solid #d9e1f3;
+                        border-radius: 4px;
+                        padding: 1px 4px;
+                    }
                 </style>
             </head>
             <body>
@@ -361,6 +419,7 @@ class MaterialAttachmentPreviewService
 
         if (! preg_match('/<html/i', $document)) {
             $safeTitle = $this->escapeHtml($fileName);
+            $styles = $this->defaultRichTextPreviewStyles();
             $document = <<<HTML
                 <!doctype html>
                 <html lang="de">
@@ -368,6 +427,7 @@ class MaterialAttachmentPreviewService
                     <meta charset="utf-8">
                     <meta name="viewport" content="width=device-width, initial-scale=1">
                     <title>Vorschau: {$safeTitle}</title>
+                    {$styles}
                 </head>
                 <body>{$document}</body>
                 </html>
@@ -375,6 +435,8 @@ class MaterialAttachmentPreviewService
         } elseif (! preg_match('/<meta[^>]+charset=/i', $document)) {
             $document = preg_replace('/<head([^>]*)>/i', '<head$1><meta charset="utf-8">', $document, 1) ?? $document;
         }
+
+        $document = $this->injectDefaultRichTextStyles($document);
 
         return $document;
     }
@@ -389,9 +451,77 @@ class MaterialAttachmentPreviewService
         return $clean;
     }
 
+    private function extractHtmlBody(string $document): string
+    {
+        $match = [];
+        if (preg_match('/<body[^>]*>([\s\S]*)<\/body>/i', $document, $match)) {
+            return trim((string) ($match[1] ?? ''));
+        }
+
+        return trim($document);
+    }
+
     private function escapeHtml(string $value): string
     {
         return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+
+    private function injectDefaultRichTextStyles(string $document): string
+    {
+        if (preg_match('/<style[^>]+id="materials-richtext-preview-style"/i', $document)) {
+            return $document;
+        }
+
+        $styles = $this->defaultRichTextPreviewStyles();
+        if (preg_match('/<\/head>/i', $document)) {
+            return preg_replace('/<\/head>/i', $styles . '</head>', $document, 1) ?? $document;
+        }
+
+        if (preg_match('/<head[^>]*>/i', $document)) {
+            return preg_replace('/<head([^>]*)>/i', '<head$1>' . $styles, $document, 1) ?? $document;
+        }
+
+        return $document;
+    }
+
+    private function defaultRichTextPreviewStyles(): string
+    {
+        return <<<HTML
+            <style id="materials-richtext-preview-style">
+                body {
+                    font-family: Arial, sans-serif;
+                    line-height: 1.55;
+                    color: #1a2b3b;
+                    margin: 14px;
+                }
+                p { margin: 0 0 0.65rem 0; }
+                ul, ol {
+                    margin: 0.45rem 0 0.7rem 0;
+                    padding-inline-start: 1.35rem;
+                }
+                li { margin: 0.2rem 0; }
+                blockquote {
+                    margin: 0.75rem 0;
+                    padding: 0.5rem 0.75rem;
+                    border-left: 3px solid #fd802e;
+                    background: rgba(253, 128, 46, 0.10);
+                    border-radius: 0 6px 6px 0;
+                }
+                pre {
+                    background: #f5f7fb;
+                    border: 1px solid #d9e1f3;
+                    border-radius: 8px;
+                    padding: 10px 12px;
+                    overflow: auto;
+                }
+                code {
+                    background: #f5f7fb;
+                    border: 1px solid #d9e1f3;
+                    border-radius: 4px;
+                    padding: 1px 4px;
+                }
+            </style>
+        HTML;
     }
 
     private function displayName(MaterialCardAttachment $attachment): string
@@ -573,6 +703,15 @@ class MaterialAttachmentPreviewService
             'application/json',
             'application/xml',
         ], true);
+    }
+
+    private function isHtmlDocument(string $extension, string $mimeType): bool
+    {
+        if (in_array($extension, ['html', 'htm'], true)) {
+            return true;
+        }
+
+        return $mimeType === 'text/html' || $mimeType === 'application/xhtml+xml';
     }
 
     /**

@@ -699,6 +699,17 @@
                                     </v-btn>
 
                                     <v-btn
+                                        v-if="isEditableTextAttachment(row)"
+                                        size="small"
+                                        color="primary"
+                                        variant="tonal"
+                                        prepend-icon="mdi-text-box-edit-outline"
+                                        :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id) || textAttachmentEditorSaving"
+                                        @click="openTextAttachmentEditor(row)">
+                                        Text bearbeiten
+                                    </v-btn>
+
+                                    <v-btn
                                         v-if="row.attachment_type === 'file' && (row.preview_url || row.download_url)"
                                         size="small"
                                         color="primary"
@@ -720,6 +731,18 @@
                                         :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
                                         @click="downloadAttachment(row)">
                                         Download
+                                    </v-btn>
+
+                                    <v-btn
+                                        v-if="isEditableTextAttachment(row)"
+                                        size="small"
+                                        color="primary"
+                                        variant="tonal"
+                                        prepend-icon="mdi-file-word-outline"
+                                        :loading="isDownloadingAttachment(row.id)"
+                                        :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
+                                        @click="downloadAttachmentDocx(row)">
+                                        DOCX
                                     </v-btn>
 
                                     <v-btn
@@ -892,6 +915,18 @@
                                             :disabled="isDeletingDetail"
                                             @click="downloadAttachment(attachment)">
                                             Download
+                                        </v-btn>
+
+                                        <v-btn
+                                            v-if="isEditableTextAttachment(attachment)"
+                                            size="small"
+                                            color="primary"
+                                            variant="tonal"
+                                            prepend-icon="mdi-file-word-outline"
+                                            :loading="isDownloadingAttachment(attachment.id)"
+                                            :disabled="isDeletingDetail"
+                                            @click="downloadAttachmentDocx(attachment)">
+                                            DOCX
                                         </v-btn>
 
                                         <v-btn
@@ -1083,9 +1118,32 @@
                                             variant="tonal"
                                             prepend-icon="mdi-content-save"
                                             :loading="isAttachmentSaving(row.id)"
-                                            :disabled="isSavingEdit || !canSaveAttachmentName(row) || isAttachmentDeleting(row.id)"
-                                            @click="saveAttachmentName(row)">
+                                        :disabled="isSavingEdit || !canSaveAttachmentName(row) || isAttachmentDeleting(row.id)"
+                                        @click="saveAttachmentName(row)">
                                             Speichern
+                                        </v-btn>
+
+                                        <v-btn
+                                            v-if="isEditableTextAttachment(row)"
+                                            size="small"
+                                            color="primary"
+                                            variant="tonal"
+                                            prepend-icon="mdi-text-box-edit-outline"
+                                            :disabled="isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id) || textAttachmentEditorSaving"
+                                            @click="openTextAttachmentEditor(row)">
+                                            Text bearbeiten
+                                        </v-btn>
+
+                                        <v-btn
+                                            v-if="isEditableTextAttachment(row)"
+                                            size="small"
+                                            color="primary"
+                                            variant="tonal"
+                                            prepend-icon="mdi-file-word-outline"
+                                            :loading="isDownloadingAttachment(row.id)"
+                                            :disabled="isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
+                                            @click="downloadAttachmentDocx(row)">
+                                            DOCX
                                         </v-btn>
 
                                         <v-btn
@@ -1118,6 +1176,65 @@
         </MaterialsCreateInlineForm>
     </v-dialog>
 
+    <v-dialog v-model="textAttachmentEditorOpen" max-width="920" persistent>
+        <v-card rounded="xl">
+            <v-card-title class="d-flex align-center ga-2">
+                <span class="text-h6">Text-Anhang bearbeiten</span>
+                <v-spacer />
+                <v-btn
+                    icon="mdi-close"
+                    variant="text"
+                    :disabled="textAttachmentEditorSaving"
+                    @click="closeTextAttachmentEditor" />
+            </v-card-title>
+
+            <v-card-text>
+                <v-skeleton-loader v-if="textAttachmentEditorLoading" type="article" />
+
+                <template v-else>
+                    <v-text-field
+                        v-model="textAttachmentEditorTitle"
+                        label="Dokumenttitel"
+                        variant="outlined"
+                        density="comfortable"
+                        hide-details="auto"
+                        class="mb-3"
+                        :disabled="textAttachmentEditorSaving" />
+
+                    <ItsRichTextEditor v-model="textAttachmentEditorBodyHtml" />
+
+                    <v-alert
+                        v-if="textAttachmentEditorError"
+                        type="warning"
+                        variant="tonal"
+                        density="compact"
+                        class="mt-3">
+                        {{ textAttachmentEditorError }}
+                    </v-alert>
+                </template>
+            </v-card-text>
+
+            <v-card-actions class="px-6 pb-5">
+                <v-spacer />
+                <v-btn
+                    variant="text"
+                    :disabled="textAttachmentEditorSaving"
+                    @click="closeTextAttachmentEditor">
+                    Abbrechen
+                </v-btn>
+                <v-btn
+                    color="primary"
+                    variant="flat"
+                    prepend-icon="mdi-content-save-outline"
+                    :loading="textAttachmentEditorSaving"
+                    :disabled="textAttachmentEditorLoading || !canSaveTextAttachmentEditor"
+                    @click="saveTextAttachmentEditor">
+                    Speichern
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
+
     <MaterialTypeManagerDialog v-model="typeManagerDialogOpen" />
 </template>
 
@@ -1127,6 +1244,7 @@ import 'filepond/dist/filepond.min.css'
 import FilePondPluginFileValidateType from 'filepond-plugin-file-validate-type'
 import { useMaterialCardStore } from '@/stores/admin/materials/MaterialCardStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
+import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 import MaterialsCreateInlineForm from '../forms/MaterialsCreateInlineForm.vue'
 import MaterialTypeManagerDialog from '../forms/MaterialTypeManagerDialog.vue'
 
@@ -1150,6 +1268,7 @@ export default {
     name: 'MaterialsOverviewView',
     components: {
         FilePond,
+        ItsRichTextEditor,
         MaterialsCreateInlineForm,
         MaterialTypeManagerDialog,
     },
@@ -1197,6 +1316,13 @@ export default {
             filterCountCardsLoading: false,
             filterCountCardsRequestId: 0,
             filterCountSnapshotKey: '',
+            textAttachmentEditorOpen: false,
+            textAttachmentEditorLoading: false,
+            textAttachmentEditorSaving: false,
+            textAttachmentEditorAttachmentId: null,
+            textAttachmentEditorTitle: '',
+            textAttachmentEditorBodyHtml: '',
+            textAttachmentEditorError: '',
         }
     },
     watch: {
@@ -1343,6 +1469,10 @@ export default {
             const rounded = Math.round(mb * 100) / 100
             return `${rounded} MB`
         },
+        canSaveTextAttachmentEditor() {
+            if (this.textAttachmentEditorLoading || this.textAttachmentEditorSaving) return false
+            return this.editorHtmlHasVisibleText(this.textAttachmentEditorBodyHtml)
+        },
         attachmentPondServerConfig() {
             return {
                 process: {
@@ -1366,7 +1496,10 @@ export default {
             }
         },
         attachmentDialogBusy() {
-            return this.savingAttachmentIds.length > 0 || this.deletingAttachmentIds.length > 0 || this.isUploadingAttachment
+            return this.savingAttachmentIds.length > 0
+                || this.deletingAttachmentIds.length > 0
+                || this.isUploadingAttachment
+                || this.textAttachmentEditorSaving
         },
         isDeletingDetail() {
             const id = Number(this.detailDialogCard?.id)
@@ -2588,6 +2721,7 @@ export default {
             if (this.isSavingEdit) return
 
             await this.cleanupPendingTempUploads(this.editForm.pendingAttachments)
+            this.closeTextAttachmentEditor()
 
             const shouldRestoreDetail = restoreDetail
                 && this.returnToDetailOnEditCancel
@@ -2873,6 +3007,184 @@ export default {
                 })
                 .filter(Boolean)
         },
+        isEditableTextAttachment(row) {
+            if (String(row?.attachment_type || '').trim().toLocaleLowerCase() !== 'file') return false
+
+            const ext = this.attachmentExtension(row)
+            const mimeType = String(row?.mime_type || '').trim().toLocaleLowerCase()
+            return ext === 'html' || ext === 'htm' || mimeType === 'text/html' || mimeType === 'application/xhtml+xml'
+        },
+        escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/\"/g, '&quot;')
+                .replace(/'/g, '&#39;')
+        },
+        editorHtmlHasVisibleText(value) {
+            const raw = String(value || '').trim()
+            if (!raw) return false
+
+            if (typeof DOMParser !== 'undefined') {
+                try {
+                    const doc = new DOMParser().parseFromString(raw, 'text/html')
+                    const text = String(doc?.body?.textContent || '')
+                        .replace(/\u00a0/g, ' ')
+                        .replace(/\s+/g, ' ')
+                        .trim()
+                    if (text !== '') return true
+                } catch {
+                    // Fallback below.
+                }
+            }
+
+            const plain = raw
+                .replace(/<[^>]*>/g, ' ')
+                .replace(/&nbsp;/gi, ' ')
+                .replace(/\s+/g, ' ')
+                .trim()
+            return plain !== ''
+        },
+        extractEditorBodyFromDocumentHtml(value) {
+            const raw = String(value || '').trim()
+            if (!raw) return ''
+
+            if (typeof DOMParser !== 'undefined') {
+                try {
+                    const doc = new DOMParser().parseFromString(raw, 'text/html')
+                    const bodyHtml = String(doc?.body?.innerHTML || '').trim()
+                    if (bodyHtml !== '') return bodyHtml
+                } catch {
+                    // Fallback below.
+                }
+            }
+
+            return raw
+        },
+        buildTextAttachmentDocumentHtml(title, bodyHtml) {
+            const safeTitle = this.escapeHtml(title || 'Text')
+            const content = String(bodyHtml || '').trim() || '<p></p>'
+            return `<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${safeTitle}</title>
+<style>
+body { font-family: Arial, sans-serif; line-height: 1.55; color: #1a2b3b; margin: 14px; }
+p { margin: 0 0 0.65rem 0; }
+ul, ol { margin: 0.45rem 0 0.75rem 0; padding-inline-start: 1.4rem; }
+li { margin: 0.2rem 0; }
+blockquote {
+  margin: 0.75rem 0;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid #fd802e;
+  background: rgba(253, 128, 46, 0.10);
+  border-radius: 0 6px 6px 0;
+}
+pre {
+  background: #f5f7fb;
+  border: 1px solid #d9e1f3;
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow: auto;
+}
+code {
+  background: #f5f7fb;
+  border: 1px solid #d9e1f3;
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+</style>
+</head>
+<body>
+${content}
+</body>
+</html>`
+        },
+        ensureHtmlAttachmentName(value) {
+            const normalized = this.normalizeAttachmentName(value) || 'Text'
+            return /\.(html?|HTML?)$/.test(normalized)
+                ? normalized
+                : `${normalized}.html`
+        },
+        async openTextAttachmentEditor(row) {
+            const id = Number(row?.id)
+            if (!Number.isFinite(id) || id <= 0) return
+            if (!this.isEditableTextAttachment(row)) return
+            if (this.textAttachmentEditorSaving) return
+
+            this.textAttachmentEditorOpen = true
+            this.textAttachmentEditorLoading = true
+            this.textAttachmentEditorError = ''
+            this.textAttachmentEditorAttachmentId = id
+            this.textAttachmentEditorTitle = this.ensureHtmlAttachmentName(this.normalizeAttachmentName(row?.name) || 'Text')
+            this.textAttachmentEditorBodyHtml = ''
+
+            try {
+                const payload = await this.materialCardStore.fetchTextAttachmentContent(id)
+                if (!payload) {
+                    this.textAttachmentEditorError = 'Text-Anhang konnte nicht geladen werden.'
+                    return
+                }
+
+                const loadedTitle = this.normalizeAttachmentName(payload?.name)
+                if (loadedTitle) {
+                    this.textAttachmentEditorTitle = this.ensureHtmlAttachmentName(loadedTitle)
+                }
+
+                const loadedHtml = String(payload?.content_html || '')
+                const bodyHtml = this.extractEditorBodyFromDocumentHtml(loadedHtml)
+                this.textAttachmentEditorBodyHtml = bodyHtml || '<p></p>'
+            } finally {
+                this.textAttachmentEditorLoading = false
+            }
+        },
+        closeTextAttachmentEditor(force = false) {
+            if (this.textAttachmentEditorSaving && !force) return
+
+            this.textAttachmentEditorOpen = false
+            this.textAttachmentEditorLoading = false
+            this.textAttachmentEditorAttachmentId = null
+            this.textAttachmentEditorTitle = ''
+            this.textAttachmentEditorBodyHtml = ''
+            this.textAttachmentEditorError = ''
+        },
+        async saveTextAttachmentEditor() {
+            const attachmentId = Number(this.textAttachmentEditorAttachmentId)
+            const cardId = Number(this.attachmentDialogCardId)
+            if (!Number.isFinite(attachmentId) || attachmentId <= 0) return
+            if (!Number.isFinite(cardId) || cardId <= 0) return
+            if (this.textAttachmentEditorSaving || this.textAttachmentEditorLoading) return
+
+            if (!this.editorHtmlHasVisibleText(this.textAttachmentEditorBodyHtml)) {
+                this.textAttachmentEditorError = 'Bitte zuerst Text eingeben.'
+                return
+            }
+
+            const title = this.ensureHtmlAttachmentName(this.textAttachmentEditorTitle)
+            const documentHtml = this.buildTextAttachmentDocumentHtml(title, this.textAttachmentEditorBodyHtml)
+
+            this.textAttachmentEditorSaving = true
+            this.textAttachmentEditorError = ''
+
+            try {
+                const updated = await this.materialCardStore.updateTextAttachmentContent(
+                    attachmentId,
+                    cardId,
+                    documentHtml,
+                    title
+                )
+                if (!updated) return
+
+                await this.refreshAttachmentDialogCard(cardId)
+                this.refreshAllListedAttachmentBytes()
+                this.closeTextAttachmentEditor(true)
+            } finally {
+                this.textAttachmentEditorSaving = false
+            }
+        },
         openAttachmentManager(card) {
             this.attachmentDialogCardId = Number(card?.id) || null
             this.attachmentDialogCardTitle = String(card?.title || '').trim()
@@ -2885,6 +3197,7 @@ export default {
         closeAttachmentManager() {
             if (this.attachmentDialogBusy) return
             this.attachmentDialogOpen = false
+            this.closeTextAttachmentEditor()
             this.attachmentDialogCardId = null
             this.attachmentDialogCardTitle = ''
             this.attachmentRows = []
@@ -3465,6 +3778,46 @@ export default {
                 notification.notify({
                     status: error.response?.status,
                     message: error.response?.data?.message || 'Datei konnte nicht heruntergeladen werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+            } finally {
+                this.markAttachmentDownloading(id, false)
+            }
+        },
+        async downloadAttachmentDocx(attachment) {
+            const id = Number(attachment?.id)
+            if (!Number.isFinite(id) || id <= 0) return
+            if (this.isDownloadingAttachment(id)) return
+
+            const downloadUrl = `/api/admin/materials/attachments/${id}/download-docx`
+            this.markAttachmentDownloading(id, true)
+
+            try {
+                const response = await axios.get(downloadUrl, {
+                    responseType: 'blob',
+                })
+
+                const disposition = response?.headers?.['content-disposition']
+                const serverFileName = this.filenameFromContentDisposition(disposition)
+                const attachmentName = this.attachmentDisplayName(attachment).replace(/\.(html?|HTML?)$/, '')
+                const fallbackName = `${attachmentName || 'Text'}.docx`
+                const fileName = this.normalizeDownloadFileName(serverFileName || fallbackName)
+
+                const blob = response?.data instanceof Blob ? response.data : new Blob([response?.data])
+                const objectUrl = URL.createObjectURL(blob)
+                const link = document.createElement('a')
+                link.href = objectUrl
+                link.download = fileName
+                document.body.appendChild(link)
+                link.click()
+                link.remove()
+                URL.revokeObjectURL(objectUrl)
+            } catch (error) {
+                const notification = useNotificationStore()
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'DOCX konnte nicht heruntergeladen werden.',
                     type: 'error',
                     timeout: 3000,
                 })

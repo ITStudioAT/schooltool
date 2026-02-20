@@ -711,6 +711,95 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             }
         },
 
+        async fetchTextAttachmentContent(attachmentId) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const id = Number(attachmentId)
+
+            if (!Number.isFinite(id) || id <= 0) {
+                notification.notify({
+                    message: 'Ungültiger Anhang.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            adminStore.is_loading++
+            try {
+                const response = await axios.get('/api/admin/materials/attachments/' + id + '/text-content')
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Text-Anhang konnte nicht geladen werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async updateTextAttachmentContent(attachmentId, cardId, contentHtml, name = '') {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const id = Number(attachmentId)
+            const normalizedContent = String(contentHtml ?? '').trim()
+            const normalizedName = String(name ?? '').trim().slice(0, 255)
+
+            if (!Number.isFinite(id) || id <= 0) {
+                notification.notify({
+                    message: 'Ungültiger Anhang.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            if (!normalizedContent) {
+                notification.notify({
+                    message: 'Bitte Textinhalt eingeben.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            adminStore.is_loading++
+            try {
+                const response = await axios.patch('/api/admin/materials/attachments/' + id + '/text-content', {
+                    data: {
+                        content_html: normalizedContent,
+                        name: normalizedName || null,
+                    },
+                })
+
+                notification.notify({
+                    message: 'Text-Anhang aktualisiert.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                if (cardId) {
+                    await this.show(cardId)
+                }
+
+                return response?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Text-Anhang konnte nicht gespeichert werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
         async importDefaultTypes(types) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
