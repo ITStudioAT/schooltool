@@ -360,7 +360,9 @@
                             size="x-small"
                             variant="tonal"
                             :color="item.attachmentType === 'link' ? 'secondary' : 'primary'"
-                            :prepend-icon="item.attachmentType === 'link' ? 'mdi-link-variant' : 'mdi-paperclip'">
+                            :prepend-icon="item.attachmentType === 'link' ? 'mdi-link-variant' : 'mdi-paperclip'"
+                            class="link-copy-chip"
+                            @click="copyPendingAttachmentChip(item)">
                             {{ item.attachmentType === 'link' ? 'Link' : 'Datei' }}
                         </v-chip>
                     </div>
@@ -1189,7 +1191,7 @@ export default {
             let rows = this.toPendingAttachments(this.pendingAttachments)
 
             const files = Array.isArray(normalizedPayload.files) ? normalizedPayload.files : []
-            const hasImageFiles = files.some((file) => String(file?.type || '').toLocaleLowerCase().startsWith('image/'))
+            const hasPastedFiles = files.length > 0
             if (files.length > 0) {
                 rows = this.mergeUniqueFileAttachments(rows, files, source)
             }
@@ -1207,7 +1209,7 @@ export default {
                     const normalizedUrl = this.normalizeUrl(url)
                     if (!normalizedUrl) continue
                     const isImageUrl = this.isLikelyImageUrl(normalizedUrl)
-                    const shouldStoreImageFromLink = isImageUrl && !hasImageFiles
+                    const shouldStoreImageFromLink = isImageUrl && !hasPastedFiles
 
                     const key = normalizedUrl.toLocaleLowerCase()
                     if (seenUrls.has(key)) continue
@@ -1577,6 +1579,60 @@ export default {
         onProcessFileError(error) {
             const message = String(error?.main || error?.body || error?.message || '').trim()
             this.$emit('upload-error', message || 'Datei konnte nicht hochgeladen werden.')
+        },
+        async copyTextToClipboard(value) {
+            const text = this.normalizeText(value)
+            if (!text) return false
+
+            if (navigator?.clipboard?.writeText) {
+                try {
+                    await navigator.clipboard.writeText(text)
+                    return true
+                } catch {
+                    // Fallback below.
+                }
+            }
+
+            try {
+                const textarea = document.createElement('textarea')
+                textarea.value = text
+                textarea.setAttribute('readonly', '')
+                textarea.style.position = 'fixed'
+                textarea.style.left = '-9999px'
+                document.body.appendChild(textarea)
+                textarea.select()
+                textarea.setSelectionRange(0, text.length)
+                const copied = document.execCommand('copy')
+                document.body.removeChild(textarea)
+                return copied
+            } catch {
+                return false
+            }
+        },
+        async copyPendingAttachmentChip(item) {
+            const isLink = this.normalizeText(item?.attachmentType).toLocaleLowerCase() === 'link'
+            const valueToCopy = isLink
+                ? this.normalizeUrl(item?.url)
+                : this.normalizeText(item?.fileName) || this.normalizeText(item?.title)
+            if (!valueToCopy) return
+
+            const copied = await this.copyTextToClipboard(valueToCopy)
+            if (copied) {
+                this.setClipboardImportStatus(
+                    'success',
+                    isLink
+                        ? 'Link wurde in die Zwischenablage kopiert.'
+                        : 'Dateiname wurde in die Zwischenablage kopiert.'
+                )
+                return
+            }
+
+            this.setClipboardImportStatus(
+                'warning',
+                isLink
+                    ? 'Link konnte nicht kopiert werden.'
+                    : 'Dateiname konnte nicht kopiert werden.'
+            )
         },
         updatePendingAttachmentTitle(index, value) {
             const rows = this.toPendingAttachments(this.pendingAttachments)
@@ -1948,6 +2004,10 @@ export default {
 .pending-source-text {
     white-space: pre-wrap;
     word-break: break-word;
+}
+
+.link-copy-chip {
+    cursor: pointer;
 }
 
 .classification-row {

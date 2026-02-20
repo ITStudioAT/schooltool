@@ -626,7 +626,12 @@
                         class="px-0 py-2">
                         <div class="attachment-manage-row d-flex flex-column ga-2 w-100">
                             <div class="d-flex flex-wrap align-center ga-2">
-                                <v-chip size="x-small" variant="tonal" color="secondary">
+                                <v-chip
+                                    size="x-small"
+                                    variant="tonal"
+                                    color="secondary"
+                                    class="link-copy-chip"
+                                    @click="copyAttachmentChipToClipboard(row)">
                                     {{ attachmentTypeLabel(row) }}
                                 </v-chip>
 
@@ -836,8 +841,18 @@
                                         <div class="text-body-2 font-weight-medium detail-attachment-name">
                                             {{ attachmentDisplayName(attachment) }}
                                         </div>
-                                        <div class="text-caption text-medium-emphasis">
-                                            {{ attachmentTypeAndSizeLabel(attachment) }}
+                                        <div class="d-flex flex-wrap align-center ga-2">
+                                            <v-chip
+                                                size="x-small"
+                                                variant="tonal"
+                                                color="secondary"
+                                                class="link-copy-chip"
+                                                @click="copyAttachmentChipToClipboard(attachment)">
+                                                {{ attachmentTypeLabel(attachment) }}
+                                            </v-chip>
+                                            <div class="text-caption text-medium-emphasis">
+                                                {{ attachmentSizeBytes(attachment) > 0 ? formatBytes(attachmentSizeBytes(attachment)) : '' }}
+                                            </div>
                                         </div>
                                         <div
                                             v-if="attachmentSourceUrl(attachment)"
@@ -1001,7 +1016,12 @@
                             class="px-0 py-2">
                             <div class="attachment-manage-row d-flex flex-column ga-2 w-100">
                                 <div class="d-flex flex-wrap align-center ga-2">
-                                    <v-chip size="x-small" variant="tonal" color="secondary">
+                                    <v-chip
+                                        size="x-small"
+                                        variant="tonal"
+                                        color="secondary"
+                                        class="link-copy-chip"
+                                        @click="copyAttachmentChipToClipboard(row)">
                                         {{ attachmentTypeLabel(row) }}
                                     </v-chip>
 
@@ -3302,6 +3322,63 @@ export default {
             card.attachments = nextAttachments
             card.attachments_count = nextAttachments.length
         },
+        async copyTextToClipboard(value) {
+            const text = String(value || '').trim()
+            if (!text) return false
+
+            if (navigator?.clipboard?.writeText) {
+                try {
+                    await navigator.clipboard.writeText(text)
+                    return true
+                } catch {
+                    // Fallback below.
+                }
+            }
+
+            try {
+                const textarea = document.createElement('textarea')
+                textarea.value = text
+                textarea.setAttribute('readonly', '')
+                textarea.style.position = 'fixed'
+                textarea.style.left = '-9999px'
+                document.body.appendChild(textarea)
+                textarea.select()
+                textarea.setSelectionRange(0, text.length)
+                const copied = document.execCommand('copy')
+                document.body.removeChild(textarea)
+                return copied
+            } catch {
+                return false
+            }
+        },
+        async copyAttachmentChipToClipboard(row) {
+            const isLink = String(row?.attachment_type || '').trim().toLocaleLowerCase() === 'link'
+            const valueToCopy = isLink
+                ? this.normalizeUrl(row?.url)
+                : this.normalizeAttachmentName(row?.name) || this.attachmentDisplayName(row)
+            if (!valueToCopy) return
+
+            const notification = useNotificationStore()
+            const copied = await this.copyTextToClipboard(valueToCopy)
+            if (copied) {
+                notification.notify({
+                    message: isLink
+                        ? 'Link wurde in die Zwischenablage kopiert.'
+                        : 'Dateiname wurde in die Zwischenablage kopiert.',
+                    type: 'success',
+                    timeout: 2200,
+                })
+                return
+            }
+
+            notification.notify({
+                message: isLink
+                    ? 'Link konnte nicht kopiert werden.'
+                    : 'Dateiname konnte nicht kopiert werden.',
+                type: 'warning',
+                timeout: 2800,
+            })
+        },
         isDownloadingAttachment(attachmentId) {
             const id = Number(attachmentId)
             return this.downloadingAttachmentIds.includes(id)
@@ -3752,6 +3829,10 @@ export default {
 
 .attachment-chip-wrap {
     min-width: 0;
+}
+
+.link-copy-chip {
+    cursor: pointer;
 }
 
 .attachment-manage-row {
