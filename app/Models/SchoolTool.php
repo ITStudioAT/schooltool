@@ -39,6 +39,7 @@ class SchoolTool extends Model
         'tutoring_confirmer_email',
         'tutoring_max_offers_per_student',
         'may_visible_for_other_schools',
+        'material_max_file_upload_size',
         'health_at',
         'import_166_at',
     ];
@@ -48,5 +49,6 @@ class SchoolTool extends Model
         'import_166_at' => 'datetime',
         'tutoring_student_must_be_confirmed' => 'boolean',
         'may_visible_for_other_schools' => 'boolean',
+        'material_max_file_upload_size' => 'integer',
     ];
 }

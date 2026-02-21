@@ -36,6 +36,12 @@
                 @click="main_action = 'roles'"
                 v-if="['super_admin'].some((role) => config.roles.includes(role))" />
             <its-menu-button
+                subtitle="Rollen"
+                icon="mdi-badge-account-horizontal-outline"
+                :color="main_action == 'roles' ? 'primary' : 'secondary'"
+                @click="main_action = 'roles'"
+                v-if="['super_admin'].some((role) => config.roles.includes(role))" />
+            <its-menu-button
                 subtitle="Benutzer"
                 icon="mdi-account-multiple"
                 :color="main_action == 'users' ? 'primary' : 'secondary'"

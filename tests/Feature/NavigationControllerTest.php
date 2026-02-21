@@ -27,6 +27,8 @@ beforeEach(function () {
     Role::firstOrCreate(['name' => 'register_user', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'tutoring_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'teaching_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'materials_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
     
     // Create test users
@@ -62,6 +64,28 @@ beforeEach(function () {
         'is_active' => true,
     ]);
     $this->registerAdmin->assignRole('register_admin');
+
+    $this->teachingAdmin = User::factory()->create([
+        'first_name' => 'Teaching',
+        'last_name' => 'Admin',
+        'email' => 'teachingadmin@example.com',
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'confirmed_at' => now(),
+        'is_active' => true,
+    ]);
+    $this->teachingAdmin->assignRole('teaching_admin');
+
+    $this->materialsAdmin = User::factory()->create([
+        'first_name' => 'Materials',
+        'last_name' => 'Admin',
+        'email' => 'materialsadmin@example.com',
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'confirmed_at' => now(),
+        'is_active' => true,
+    ]);
+    $this->materialsAdmin->assignRole('materials_admin');
     
     $this->registerUser = User::factory()->create([
         'first_name' => 'Register',
@@ -132,6 +156,24 @@ test('profile menu returns menu for tutoring admin', function () {
     $tutoringAdmin->assignRole('tutoring_admin');
 
     $this->actingAs($tutoringAdmin);
+
+    $response = $this->getJson('/api/admin/navigation/profile_menu');
+
+    $response->assertStatus(200)
+        ->assertJsonStructure(['menu']);
+});
+
+test('profile menu returns menu for teaching admin', function () {
+    $this->actingAs($this->teachingAdmin);
+
+    $response = $this->getJson('/api/admin/navigation/profile_menu');
+
+    $response->assertStatus(200)
+        ->assertJsonStructure(['menu']);
+});
+
+test('profile menu returns menu for materials admin', function () {
+    $this->actingAs($this->materialsAdmin);
 
     $response = $this->getJson('/api/admin/navigation/profile_menu');
 
@@ -259,6 +301,30 @@ test('user menu returns menu and selection for register admin', function () {
     
     $response = $this->getJson('/api/admin/navigation/user_menu');
     
+    $response->assertStatus(200)
+        ->assertJsonStructure([
+            'menu',
+            'selection'
+        ]);
+});
+
+test('user menu returns menu and selection for teaching admin', function () {
+    $this->actingAs($this->teachingAdmin);
+
+    $response = $this->getJson('/api/admin/navigation/user_menu');
+
+    $response->assertStatus(200)
+        ->assertJsonStructure([
+            'menu',
+            'selection'
+        ]);
+});
+
+test('user menu returns menu and selection for materials admin', function () {
+    $this->actingAs($this->materialsAdmin);
+
+    $response = $this->getJson('/api/admin/navigation/user_menu');
+
     $response->assertStatus(200)
         ->assertJsonStructure([
             'menu',
@@ -532,4 +598,3 @@ test('user menu color coding is consistent', function () {
         expect($item['color'])->toBe('secondary');
     }
 });
-

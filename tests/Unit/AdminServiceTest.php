@@ -960,6 +960,52 @@ describe('checkLogin', function () {
 
         expect($result)->toBeArray();
     });
+
+    it('accepts teaching_admin role for login', function () {
+        $school = School::factory()->create();
+        $role = Role::firstOrCreate(['name' => 'teaching_admin', 'guard_name' => 'web']);
+        $user = User::factory()->create([
+            'email' => 'test@example.com',
+            'school_id' => $school->id,
+            'password' => Hash::make('password123'),
+            'confirmed_at' => now(),
+            'is_active' => 1,
+        ]);
+        $user->assignRole($role);
+
+        $data = [
+            'email' => 'test@example.com',
+            'school' => ['id' => $school->id],
+            'password' => 'password123',
+        ];
+
+        $result = $this->service->checkLogin($data);
+
+        expect($result)->toBeArray();
+    });
+
+    it('accepts materials_admin role for login', function () {
+        $school = School::factory()->create();
+        $role = Role::firstOrCreate(['name' => 'materials_admin', 'guard_name' => 'web']);
+        $user = User::factory()->create([
+            'email' => 'test@example.com',
+            'school_id' => $school->id,
+            'password' => Hash::make('password123'),
+            'confirmed_at' => now(),
+            'is_active' => 1,
+        ]);
+        $user->assignRole($role);
+
+        $data = [
+            'email' => 'test@example.com',
+            'school' => ['id' => $school->id],
+            'password' => 'password123',
+        ];
+
+        $result = $this->service->checkLogin($data);
+
+        expect($result)->toBeArray();
+    });
 });
 
 describe('checkUserLogin', function () {
@@ -1140,6 +1186,54 @@ describe('checkUserLogin', function () {
     it('accepts admin role for user login', function () {
         $school = School::factory()->create();
         $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+        $user = User::factory()->create([
+            'email' => 'test@example.com',
+            'school_id' => $school->id,
+            'password' => Hash::make('password123'),
+            'confirmed_at' => now(),
+            'is_active' => 1,
+        ]);
+        $user->assignRole($role);
+
+        $data = [
+            'email' => 'test@example.com',
+            'school_id' => $school->id,
+            'password' => 'password123',
+            'step' => 'LOGIN_ENTER_PASSWORD',
+        ];
+
+        $result = $this->service->checkUserLogin($data);
+
+        expect($result)->toBeInstanceOf(User::class);
+    });
+
+    it('accepts teaching_admin role for user login', function () {
+        $school = School::factory()->create();
+        $role = Role::firstOrCreate(['name' => 'teaching_admin', 'guard_name' => 'web']);
+        $user = User::factory()->create([
+            'email' => 'test@example.com',
+            'school_id' => $school->id,
+            'password' => Hash::make('password123'),
+            'confirmed_at' => now(),
+            'is_active' => 1,
+        ]);
+        $user->assignRole($role);
+
+        $data = [
+            'email' => 'test@example.com',
+            'school_id' => $school->id,
+            'password' => 'password123',
+            'step' => 'LOGIN_ENTER_PASSWORD',
+        ];
+
+        $result = $this->service->checkUserLogin($data);
+
+        expect($result)->toBeInstanceOf(User::class);
+    });
+
+    it('accepts materials_admin role for user login', function () {
+        $school = School::factory()->create();
+        $role = Role::firstOrCreate(['name' => 'materials_admin', 'guard_name' => 'web']);
         $user = User::factory()->create([
             'email' => 'test@example.com',
             'school_id' => $school->id,

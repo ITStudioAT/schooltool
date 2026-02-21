@@ -28,6 +28,7 @@ beforeEach(function () {
     Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'tutoring_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'teaching_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'materials_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
 
     // Set environment variables for super admin creation

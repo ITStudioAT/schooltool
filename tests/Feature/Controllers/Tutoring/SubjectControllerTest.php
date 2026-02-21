@@ -215,6 +215,10 @@ describe('index', function () {
             'valid_until' => now()->addYear()->toDateString(),
         ]);
 
+        $newSchool->licences()->attach($this->tutoringLicence->id, [
+            'valid_until' => now()->addYear()->toDateString(),
+        ]);
+
         $newUser = User::factory()->create([
             'school_id' => $newSchool->id,
         ]);

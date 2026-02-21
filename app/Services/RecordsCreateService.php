@@ -44,6 +44,22 @@ class RecordsCreateService
                 'price_per_year' => 200,
             ]
         );
+
+        Licence::firstOrCreate(
+            ['name' => 'Lehrertool'],
+            [
+                'long_name' => 'Tool zum Verwalten von Unterricht',
+                'price_per_year' => 200,
+            ]
+        );
+
+        Licence::firstOrCreate(
+            ['name' => 'Materialientool'],
+            [
+                'long_name' => 'Tool zum Verwalten von Unterrichtsmaterialien',
+                'price_per_year' => 200,
+            ]
+        );
     }
 
     private function firstOrCreateSchool(): School

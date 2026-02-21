@@ -108,7 +108,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     /* SANCTUM - user */
-    Route::middleware(['auth:sanctum', 'api-allowed:user,admin,register_admin,tutoring_admin,teacher'])->group(function () {
+    Route::middleware(['auth:sanctum', 'api-allowed:user,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,teacher'])->group(function () {
         Route::put('/admin/users/update_profile/{user}',  [UserController::class, 'updateProfile']);
         Route::post('/admin/users/update_with_code',  [UserController::class, 'updateWithCode']);
         Route::post('/admin/users/save_password',  [UserController::class, 'savePassword']);
@@ -212,8 +212,69 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/teaching/course_behaviour_entries', \App\Http\Controllers\Admin\Teaching\CourseBehaviourEntryController::class)->only(['index', 'store', 'update', 'destroy']);
     });
 
-    /* SANCTUM - admin, register_admin, tutoring_admin, teacher */
-    Route::middleware(['auth:sanctum', 'api-allowed:admin,register_admin,tutoring_admin,teacher'])->group(function () {
+    /* SANCTUM - admin, teaching_admin, materials_admin, teacher */
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,teaching_admin,materials_admin,teacher'])->group(function () {
+        Route::get('/admin/materials/config', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'config']);
+        Route::post('/admin/materials/subjects', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'storeSubject']);
+        Route::put('/admin/materials/subjects/{material_subject}', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'updateSubject']);
+        Route::delete('/admin/materials/subjects/{material_subject}', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'destroySubject']);
+        Route::post('/admin/materials/subjects/{material_subject}/move', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'moveSubject']);
+        Route::post('/admin/materials/subjects/{material_subject}/convert-to-topic', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'convertSubjectToTopic']);
+        Route::post('/admin/materials/topics', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'storeTopic']);
+        Route::put('/admin/materials/topics/{material_topic}', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'updateTopic']);
+        Route::delete('/admin/materials/topics/{material_topic}', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'destroyTopic']);
+        Route::post('/admin/materials/topics/{material_topic}/move', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'moveTopic']);
+        Route::post('/admin/materials/topics/{material_topic}/move-to-subject', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'moveTopicToSubject']);
+        Route::post('/admin/materials/topics/{material_topic}/convert-to-subject', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'convertTopicToSubject']);
+        Route::post('/admin/materials/topics/{material_topic}/convert-to-unit', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'convertTopicToUnit']);
+        Route::post('/admin/materials/units', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'storeUnit']);
+        Route::put('/admin/materials/units/{material_unit}', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'updateUnit']);
+        Route::delete('/admin/materials/units/{material_unit}', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'destroyUnit']);
+        Route::post('/admin/materials/units/{material_unit}/move', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'moveUnit']);
+        Route::post('/admin/materials/units/{material_unit}/move-to-topic', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'moveUnitToTopic']);
+        Route::post('/admin/materials/units/{material_unit}/convert-to-topic', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'convertUnitToTopic']);
+        Route::put('/admin/materials/user-settings', [\App\Http\Controllers\Admin\Materials\MaterialUserSettingsController::class, 'update']);
+        Route::get('/admin/materials/cards', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'index']);
+        Route::post('/admin/materials/cards', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'store']);
+        Route::post('/admin/materials/cards/quick_store', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'quickStore']);
+        Route::get('/admin/materials/cards/{material_card}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'show']);
+        Route::put('/admin/materials/cards/{material_card}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'update']);
+        Route::delete('/admin/materials/cards/{material_card}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'destroy']);
+        Route::post('/admin/materials/cards/{material_card}/attachments/link', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'storeLinkAttachment']);
+        Route::post('/admin/materials/cards/{material_card}/attachments/image-url', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'storeRemoteImageAttachment']);
+        Route::post('/admin/materials/cards/{material_card}/attachments/file', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'storeFileAttachment']);
+        Route::post('/admin/materials/cards/{material_card}/attachments/file-temp', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'storeTempFileAttachment']);
+        Route::patch('/admin/materials/attachments/{material_card_attachment}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'updateAttachment']);
+        Route::get('/admin/materials/attachments/{material_card_attachment}/text-content', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'textAttachmentContent']);
+        Route::patch('/admin/materials/attachments/{material_card_attachment}/text-content', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'updateTextAttachmentContent']);
+        Route::delete('/admin/materials/attachments/{material_card_attachment}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'destroyAttachment']);
+        Route::get('/admin/materials/attachments/{material_card_attachment}/preview', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'previewAttachment']);
+        Route::get('/admin/materials/attachments/{material_card_attachment}/download', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'downloadAttachment']);
+        Route::get('/admin/materials/attachments/{material_card_attachment}/download-docx', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'downloadAttachmentDocx']);
+        Route::post('/admin/materials/uploads/chunk', [\App\Http\Controllers\Admin\Materials\MaterialChunkUploadController::class, 'upload']);
+        Route::patch('/admin/materials/uploads/chunk', [\App\Http\Controllers\Admin\Materials\MaterialChunkUploadController::class, 'uploadNext']);
+        Route::delete('/admin/materials/uploads/chunk/{upload_id}', [\App\Http\Controllers\Admin\Materials\MaterialChunkUploadController::class, 'destroy']);
+    });
+
+    /* SANCTUM - admin, teaching_admin, materials_admin, teacher */
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,teaching_admin,materials_admin,teacher'])->group(function () {
+        Route::get('/admin/materials/types', [\App\Http\Controllers\Admin\Materials\MaterialTypeController::class, 'index']);
+        Route::post('/admin/materials/types', [\App\Http\Controllers\Admin\Materials\MaterialTypeController::class, 'store']);
+        Route::put('/admin/materials/types/{material_type}', [\App\Http\Controllers\Admin\Materials\MaterialTypeController::class, 'update']);
+        Route::delete('/admin/materials/types/{material_type}', [\App\Http\Controllers\Admin\Materials\MaterialTypeController::class, 'destroy']);
+    });
+
+    /* SANCTUM - admin */
+    Route::middleware(['auth:sanctum', 'api-allowed:admin'])->group(function () {
+        Route::get('/admin/materials/statuses', [\App\Http\Controllers\Admin\Materials\MaterialStatusController::class, 'index']);
+        Route::post('/admin/materials/statuses', [\App\Http\Controllers\Admin\Materials\MaterialStatusController::class, 'store']);
+        Route::put('/admin/materials/statuses/{material_status}', [\App\Http\Controllers\Admin\Materials\MaterialStatusController::class, 'update']);
+        Route::delete('/admin/materials/statuses/{material_status}', [\App\Http\Controllers\Admin\Materials\MaterialStatusController::class, 'destroy']);
+        Route::put('/admin/materials/file-settings', [\App\Http\Controllers\Admin\Materials\MaterialFileSettingsController::class, 'update']);
+    });
+
+    /* SANCTUM - admin, register_admin, tutoring_admin, teaching_admin, materials_admin, teacher */
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,register_admin,tutoring_admin,teaching_admin,materials_admin,teacher'])->group(function () {
 
         // Tutoring, Offers
         Route::apiResource('/admin/tutoring/offers', \App\Http\Controllers\Admin\Tutoring\OfferController::class)->names('admin.tutoring.offers')->middleware('tool-licensed:Nachhilfetool');

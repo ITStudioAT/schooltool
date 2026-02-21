@@ -34,6 +34,7 @@ namespace Tests\Feature\Console {
             'lunch_admin',
             'lunch_user',
             'teaching_admin',
+            'materials_admin',
             'student',
         ])->once();
         $install->shouldReceive('findOrCreateFolders')->once();

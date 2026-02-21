@@ -10,18 +10,14 @@
             </v-toolbar>
             <v-list>
                 <template v-for="(item, i) in config.menu" :key="i">
-                    <v-list-item
-                        v-if="item.to"
-                        :exact="false"
-                        :title="item.title"
-                        :prepend-icon="item.icon"
-                        :to="item.to"
-                        :disabled="!item.is_active">
+                    <!-- route item -->
+                    <v-list-item v-if="item.to" :exact="false" :title="item.title" :prepend-icon="item.icon" :to="item.to" :disabled="is_navigation_locked || !item.is_active">
                         <template v-if="item.status_icon" #append>
                             <v-icon :icon="item.status_icon" :color="item.status_color || 'warning'" :title="item.status_title || ''" size="small" />
                         </template>
                     </v-list-item>
-                    <v-list-item v-else-if="item.click" :exact="false" :title="item.title" :prepend-icon="item.icon" @click="callItemClick(item)" />
+                    <!-- click item -->
+                    <v-list-item v-else-if="item.click" :exact="false" :title="item.title" :prepend-icon="item.icon" :disabled="is_navigation_locked" @click="callItemClick(item)" />
                 </template>
             </v-list>
         </v-navigation-drawer>
@@ -87,12 +83,12 @@ export default {
     data() {
         return {
             adminStore: null,
-            admins: ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teacher', 'lunch_admin'],
+            admins: ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'teacher', 'lunch_admin'],
         }
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, ['config', 'is_loading', 'show_navigation_drawer', 'load_config']),
+        ...mapWritableState(useAdminStore, ['config', 'is_loading', 'show_navigation_drawer', 'is_navigation_locked', 'load_config']),
         isImpersonating() {
             return !!this.config?.impersonation?.is_impersonating
         },

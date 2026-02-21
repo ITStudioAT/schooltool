@@ -5,6 +5,7 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 
 use App\Models\Import116;
+use App\Models\MaterialCard;
 use App\Models\Register;
 use App\Models\RegisterDateBooking;
 use App\Models\School;
@@ -156,6 +157,7 @@ class User extends Authenticatable
         'teaching_count_for_semester_2_date',
         'teaching_behaviour',
         'teaching_notifications',
+        'materials_pagination_number',
     ];
 
     // Protected fields that should NOT be mass assignable:
@@ -241,6 +243,11 @@ class User extends Authenticatable
     public function teachingSchemas(): HasMany
     {
         return $this->hasMany(TeachingSchema::class);
+    }
+
+    public function materialCards(): HasMany
+    {
+        return $this->hasMany(MaterialCard::class);
     }
 
     public function shouldDelete(): bool

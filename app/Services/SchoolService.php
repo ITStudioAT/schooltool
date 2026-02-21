@@ -203,22 +203,39 @@ class SchoolService
         $school = School::find($id);
 
         if ($school) {
-
             // Logo löschen, falls vorhanden
             if ($school->logo) {
                 Storage::disk('public')->delete("images/{$school->logo}");
             }
 
-            File::deleteDirectory(storage_path('app/private/' . $school->id));
-
             // Schule löschen
+            $this->deleteSchoolPrivateStorageArtifacts((int) $school->id);
             $school->delete();
         }
 
-        // Storage-Pfad löschen, falls vorhanden
-        Storage::deleteDirectory("{$id}");
-
         return true;
+    }
+
+    private function deleteSchoolPrivateStorageArtifacts(int $schoolId): void
+    {
+        // Keep storage cleanup idempotent and defensive to avoid deletion aborts on partial filesystem errors.
+        $paths = [
+            (string) $schoolId,
+            "materials/schools/{$schoolId}",
+            "materials/temp/{$schoolId}",
+        ];
+
+        foreach ($paths as $relativePath) {
+            try {
+                Storage::disk('local')->deleteDirectory($relativePath);
+            } catch (\Throwable $e) {
+                // Ignore disk-level cleanup errors and continue with direct filesystem fallback below.
+            }
+        }
+
+        File::deleteDirectory(storage_path("app/private/{$schoolId}"));
+        File::deleteDirectory(storage_path("app/private/materials/schools/{$schoolId}"));
+        File::deleteDirectory(storage_path("app/private/materials/temp/{$schoolId}"));
     }
 
     public function schoolInfos($school_id)
@@ -228,7 +245,7 @@ class SchoolService
             'licences' => LicenceResource::collection($licences)
         ];
 
-        $roles = ['admin', 'register_admin', 'super_admin', 'tutoring_admin', 'teaching_admin'];
+        $roles = ['admin', 'register_admin', 'super_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin'];
         $users = User::where('school_id', $school_id)
             ->role($roles)
             ->orderBy('last_name')
