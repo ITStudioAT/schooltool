@@ -136,5 +136,38 @@ export const useLicenceStore = defineStore('AdminLicenceStore', {
                 adminStore.is_loading--
             }
         },
+
+        async saveLicenceModel(licenceId, licence_model) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.put(`/api/admin/licences/${licenceId}/save_licence_model`, { licence_model })
+                this.saved_licence = response.data
+
+                const index = this.licences.findIndex((s) => s.id === this.saved_licence.id)
+                if (index !== -1) {
+                    this.licences.splice(index, 1, this.saved_licence)
+                }
+
+                notification.notify({
+                    message: 'Lizenzmodell wurde gespeichert.',
+                    type: 'success',
+                    timeout: 3000,
+                })
+
+                return this.saved_licence
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.timeout,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
     },
 })

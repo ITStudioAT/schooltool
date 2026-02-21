@@ -676,3 +676,55 @@ test('licence model attributes are correctly set', function () {
         ->and($licence->price_per_year)->toBe(999);
 });
 
+test('super admin can save licence model template', function () {
+    $this->actingAs($this->superAdmin);
+
+    Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
+
+    $licence = Licence::create([
+        'name' => 'template_test',
+        'long_name' => 'Template Test',
+    ]);
+
+    $payload = [
+        'licence_model' => [
+            'school_licence_required' => true,
+            'affected_roles' => ['admin', 'register_admin'],
+            'user_licence_required_by_role' => [
+                'admin' => true,
+                'register_admin' => false,
+            ],
+        ],
+    ];
+
+    $response = $this->putJson("/api/admin/licences/{$licence->id}/save_licence_model", $payload);
+
+    $response->assertStatus(200)
+        ->assertJsonPath('licence_model.school_licence_required', true)
+        ->assertJsonPath('licence_model.affected_roles.0', 'admin')
+        ->assertJsonPath('licence_model.user_licence_required_by_role.admin', true)
+        ->assertJsonPath('licence_model.user_licence_required_by_role.register_admin', false);
+
+    $this->assertDatabaseHas('licences', [
+        'id' => $licence->id,
+    ]);
+});
+
+test('save licence model requires super admin', function () {
+    $this->actingAs($this->admin);
+
+    $licence = Licence::create([
+        'name' => 'template_permission_test',
+        'long_name' => 'Template Permission Test',
+    ]);
+
+    $response = $this->putJson("/api/admin/licences/{$licence->id}/save_licence_model", [
+        'licence_model' => [
+            'school_licence_required' => true,
+            'affected_roles' => ['admin'],
+            'user_licence_required_by_role' => ['admin' => true],
+        ],
+    ]);
+
+    $response->assertStatus(403);
+});

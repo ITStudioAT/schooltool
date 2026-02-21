@@ -233,6 +233,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/licences', \App\Http\Controllers\Admin\LicenceController::class);
         Route::post('/admin/licences/load_licences', [\App\Http\Controllers\Admin\LicenceController::class, 'loadLicences']);
         Route::post('/admin/licences/delete_licences', [\App\Http\Controllers\Admin\LicenceController::class, 'deleteLicences']);
+        Route::put('/admin/licences/{licence}/save_licence_model', [\App\Http\Controllers\Admin\LicenceController::class, 'saveLicenceModel']);
 
         //schools
         Route::apiResource('/admin/schools', \App\Http\Controllers\Admin\SchoolController::class);

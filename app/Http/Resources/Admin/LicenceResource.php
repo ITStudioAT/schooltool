@@ -21,6 +21,7 @@ class LicenceResource extends JsonResource
             'valid_until' => $this->pivot?->valid_until,
             'price_per_year' => $this->price_per_year,
             'school_licence_id' => $this->pivot?->id,
+            'licence_model' => $this->pivot?->licence_model ?? $this->licence_model,
             'is_selectable' => $this->is_selectable ? true : false,
         ];
     }

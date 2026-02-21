@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\LicenceDeleteLicencesRequest;
 use App\Http\Requests\Admin\LicenceIndexRequest;
+use App\Http\Requests\Admin\LicenceSaveModelRequest;
 use App\Http\Requests\Admin\LicenceStoreRequest;
 use App\Http\Requests\Admin\LicenceUpdateRequest;
 use App\Http\Resources\Admin\LicenceResource;
@@ -78,6 +79,18 @@ class LicenceController extends Controller
         $validated = $request->validated();
 
         $licence->update($validated);
+
+        return response()->json(new LicenceResource($licence), 200);
+    }
+
+    public function saveLicenceModel(LicenceSaveModelRequest $request, Licence $licence, LicenceService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validated();
+        $licence = $service->saveLicenceModel($licence, $validated['licence_model']);
 
         return response()->json(new LicenceResource($licence), 200);
     }

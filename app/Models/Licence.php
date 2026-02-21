@@ -37,6 +37,11 @@ class Licence extends Model
         'long_name',
         'price_per_year',
         'is_selectable',
+        'licence_model',
+    ];
+
+    protected $casts = [
+        'licence_model' => 'array',
     ];
 
     public function schools(): BelongsToMany

@@ -344,6 +344,36 @@ test('super admin can add licence to selected school', function () {
         ]);
 });
 
+test('adding licence assigns template licence model to school licence', function () {
+    $licence = Licence::create([
+        'name' => 'modelled',
+        'long_name' => 'Modelled Licence',
+        'licence_model' => [
+            'school_licence_required' => true,
+            'affected_roles' => ['admin'],
+            'user_licence_required_by_role' => ['admin' => true],
+        ],
+    ]);
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $this->postJson('/api/admin/schools/add_licence', [
+        'data' => [
+            'licence_id' => $licence->id,
+            'valid_until' => now()->addYear()->toDateString(),
+        ],
+    ])->assertStatus(200);
+
+    $schoolLicence = SchoolLicence::where('school_id', $this->school->id)
+        ->where('licence_id', $licence->id)
+        ->first();
+
+    expect($schoolLicence)->not->toBeNull()
+        ->and($schoolLicence->licence_model['school_licence_required'] ?? null)->toBeTrue()
+        ->and($schoolLicence->licence_model['affected_roles'] ?? [])->toBe(['admin'])
+        ->and($schoolLicence->licence_model['user_licence_required_by_role']['admin'] ?? null)->toBeTrue();
+});
+
 test('super admin can delete school licence', function () {
     $licence = Licence::create([
         'name' => 'removable',

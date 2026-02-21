@@ -27,7 +27,7 @@
                 subtitle="Lizenzen"
                 icon="mdi-card-account-details"
                 :color="main_action == 'licences' ? 'primary' : 'secondary'"
-                @click="main_action = 'licences'"
+                @click="openLicencesOverview"
                 v-if="['super_admin'].some((role) => config.roles.includes(role))" />
             <its-menu-button
                 subtitle="Rollen"
@@ -49,11 +49,24 @@
                 v-if="['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
             <its-menu-button subtitle="Horizon" icon="mdi-horizontal-rotate-clockwise" color="secondary" @click="moveToHorizon" />
         </v-card>
+        <v-card
+            tile
+            flat
+            color="transparent"
+            class="d-flex flex-row flex-wrap ga-2 w-100 mb-2"
+            :disabled="action != ''"
+            v-if="main_action == 'licences' && ['super_admin'].some((role) => config.roles.includes(role))">
+            <its-menu-button
+                subtitle="Überblick"
+                icon="mdi-home"
+                :color="licences_action == 'overview' ? 'primary' : 'secondary'"
+                @click="licences_action = 'overview'" />
+        </v-card>
         <v-row class="w-100" dense>
             <ActiveSchool v-if="main_action == '' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
             <Schools v-if="main_action == 'schools' && ['super_admin'].some((role) => config.roles.includes(role))" />
             <Schoolyears v-if="main_action == 'schoolyears' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
-            <Licences v-if="main_action == 'licences' && ['super_admin'].some((role) => config.roles.includes(role))" />
+            <Licences v-if="main_action == 'licences' && licences_action == 'overview' && ['super_admin'].some((role) => config.roles.includes(role))" />
             <Roles v-if="main_action == 'roles' && ['super_admin'].some((role) => config.roles.includes(role))" />
             <Users v-if="main_action == 'users' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
             <Teachers v-if="main_action == 'teachers' && (config.roles.includes('super_admin') || config.roles.includes('admin'))" />
@@ -94,6 +107,7 @@ export default {
     data() {
         return {
             adminStore: null,
+            licences_action: 'overview',
         }
     },
 
@@ -102,6 +116,10 @@ export default {
     },
 
     methods: {
+        openLicencesOverview() {
+            this.main_action = 'licences'
+            this.licences_action = 'overview'
+        },
         moveToHorizon() {
             window.open('/horizon', '_blank')
         },

@@ -6,7 +6,6 @@ use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolLicence;
 use Carbon\Carbon;
-use Spatie\Permission\Models\Role;
 
 class LicenceService
 {
@@ -41,11 +40,28 @@ class LicenceService
 
     public function schoolAddLicence($school, $data): SchoolLicence
     {
-        $school_licence = SchoolLicence::updateOrCreate([
+        $licence = Licence::findOrFail((int) $data['licence_id']);
+        $templateModel = $this->normalizeLicenceModel($licence->licence_model);
+
+        $school_licence = SchoolLicence::where('school_id', $school['id'])
+            ->where('licence_id', (int) $data['licence_id'])
+            ->first();
+
+        if ($school_licence) {
+            $school_licence->valid_until = $data['valid_until'];
+            if ($school_licence->licence_model === null) {
+                $school_licence->licence_model = $templateModel;
+            }
+            $school_licence->save();
+
+            return $school_licence;
+        }
+
+        $school_licence = SchoolLicence::create([
             'school_id' => $school['id'],
-            'licence_id' => $data['licence_id'],
-        ], [
+            'licence_id' => (int) $data['licence_id'],
             'valid_until' => $data['valid_until'],
+            'licence_model' => $templateModel,
         ]);
 
         return $school_licence;
@@ -71,5 +87,81 @@ class LicenceService
         if (Carbon::parse($school_licence->valid_until)->isPast()) return ['status' => 'error', 'msg' => 'Die Lizenz für die App ist abgelaufen.'];
 
         return ['status' => 'ok', 'redirect' => '&licence=' . $licence_load];
+    }
+
+    public function saveLicenceModel(Licence $licence, array $licenceModel): Licence
+    {
+        $licence->licence_model = $this->normalizeLicenceModel($licenceModel);
+        $licence->save();
+
+        return $licence;
+    }
+
+    public function normalizeLicenceModel($licenceModel): array
+    {
+        $default = $this->defaultLicenceModel();
+
+        if (!is_array($licenceModel)) {
+            return $default;
+        }
+
+        $schoolLicenceRequired = $this->toBool($licenceModel['school_licence_required'] ?? $default['school_licence_required'], true);
+
+        $affectedRolesRaw = $licenceModel['affected_roles'] ?? [];
+        $affectedRoles = [];
+        if (is_array($affectedRolesRaw)) {
+            foreach ($affectedRolesRaw as $role) {
+                if (!is_string($role)) {
+                    continue;
+                }
+                $role = trim($role);
+                if ($role === '' || in_array($role, $affectedRoles, true)) {
+                    continue;
+                }
+                $affectedRoles[] = $role;
+            }
+        }
+
+        $roleRequirementsRaw = $licenceModel['user_licence_required_by_role'] ?? [];
+        $roleRequirementsRaw = is_array($roleRequirementsRaw) ? $roleRequirementsRaw : [];
+        $roleRequirements = [];
+
+        foreach ($affectedRoles as $roleName) {
+            $roleRequirements[$roleName] = $this->toBool($roleRequirementsRaw[$roleName] ?? false, false);
+        }
+
+        return [
+            'school_licence_required' => $schoolLicenceRequired,
+            'affected_roles' => $affectedRoles,
+            'user_licence_required_by_role' => $roleRequirements,
+        ];
+    }
+
+    private function defaultLicenceModel(): array
+    {
+        return [
+            'school_licence_required' => true,
+            'affected_roles' => [],
+            'user_licence_required_by_role' => [],
+        ];
+    }
+
+    private function toBool($value, bool $default): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_numeric($value)) {
+            return (bool) ((int) $value);
+        }
+
+        if (is_string($value)) {
+            $normalized = strtolower(trim($value));
+            if (in_array($normalized, ['1', 'true', 'yes', 'ja'], true)) return true;
+            if (in_array($normalized, ['0', 'false', 'no', 'nein'], true)) return false;
+        }
+
+        return $default;
     }
 }
