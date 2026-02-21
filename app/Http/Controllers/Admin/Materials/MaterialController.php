@@ -241,13 +241,13 @@ class MaterialController extends Controller
             abort(404, 'Datei nicht gefunden');
         }
 
-        if (! Storage::disk('local')->exists($material_card_attachment->file_path)) {
+        if (! Storage::exists($material_card_attachment->file_path)) {
             abort(404, 'Datei nicht gefunden');
         }
 
         $name = $material_card_attachment->name ?: basename($material_card_attachment->file_path);
         if ($this->isHtmlAttachment($material_card_attachment)) {
-            $rawHtml = (string) Storage::disk('local')->get($material_card_attachment->file_path);
+            $rawHtml = (string) Storage::get($material_card_attachment->file_path);
             $styledHtml = $this->ensureRichTextStylesForHtmlDownload($rawHtml, $name);
 
             return response()->streamDownload(
@@ -263,7 +263,22 @@ class MaterialController extends Controller
             );
         }
 
-        return response()->download(Storage::disk('local')->path($material_card_attachment->file_path), $name);
+        $filePath = $material_card_attachment->file_path;
+        return response()->streamDownload(
+            static function () use ($filePath): void {
+                $stream = Storage::readStream($filePath);
+                if ($stream) {
+                    fpassthru($stream);
+                    fclose($stream);
+                }
+            },
+            $name,
+            [
+                'Content-Type' => Storage::mimeType($filePath) ?: 'application/octet-stream',
+                'Cache-Control' => 'private, no-store, max-age=0',
+                'X-Content-Type-Options' => 'nosniff',
+            ]
+        );
     }
 
     public function downloadAttachmentDocx(MaterialCardAttachment $material_card_attachment)
@@ -277,12 +292,12 @@ class MaterialController extends Controller
         }
 
         $relativePath = (string) ($material_card_attachment->file_path ?? '');
-        if ($relativePath === '' || ! Storage::disk('local')->exists($relativePath)) {
+        if ($relativePath === '' || ! Storage::exists($relativePath)) {
             abort(404, 'Datei nicht gefunden');
         }
 
         $name = $material_card_attachment->name ?: basename($relativePath);
-        $rawHtml = (string) Storage::disk('local')->get($relativePath);
+        $rawHtml = (string) Storage::get($relativePath);
         $styledHtml = $this->ensureRichTextStylesForHtmlDownload($rawHtml, $name);
         $bodyHtml = $this->extractHtmlBody($styledHtml);
         $normalizedBodyHtml = $this->normalizeHtmlFragmentForDocx($bodyHtml);

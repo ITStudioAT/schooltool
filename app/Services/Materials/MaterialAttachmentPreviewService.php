@@ -63,12 +63,13 @@ class MaterialAttachmentPreviewService
             abort(404, 'Datei nicht gefunden');
         }
 
-        $disk = Storage::disk('local');
+        $disk = Storage::disk(config('filesystems.default'));
         if (! $disk->exists($relativePath)) {
             abort(404, 'Datei nicht gefunden');
         }
 
-        $absolutePath = $disk->path($relativePath);
+        ['path' => $absolutePath, 'is_temp' => $isTempFile] = $this->resolveLocalPath($disk, $relativePath);
+
         $fileName = $this->displayName($attachment);
         $extension = $this->fileExtension($attachment);
         $mimeType = $this->normalizeMimeType((string) ($attachment->mime_type ?? $disk->mimeType($relativePath) ?? ''));
@@ -80,6 +81,10 @@ class MaterialAttachmentPreviewService
             || $this->isTextLike($extension, $mimeType);
 
         if ($usesRenderer && $maxRenderableBytes > 0 && $sizeBytes > $maxRenderableBytes) {
+            if ($isTempFile) {
+                @unlink($absolutePath);
+            }
+
             return $this->messageResponse(
                 $fileName,
                 'Die Datei ist für eine Browser-Vorschau zu groß. Bitte direkt herunterladen.',
@@ -90,6 +95,10 @@ class MaterialAttachmentPreviewService
         if ($this->isSpreadsheet($extension, $mimeType)) {
             try {
                 $html = $this->renderSpreadsheetHtml($absolutePath, $extension);
+                if ($isTempFile) {
+                    @unlink($absolutePath);
+                }
+
                 return $this->htmlDocumentResponse($html, $fileName);
             } catch (\Throwable) {
                 // Fallback auf nachgelagerte Strategien.
@@ -99,6 +108,10 @@ class MaterialAttachmentPreviewService
         if ($this->isWordDocument($extension, $mimeType)) {
             try {
                 $html = $this->renderWordHtml($absolutePath, $extension);
+                if ($isTempFile) {
+                    @unlink($absolutePath);
+                }
+
                 return $this->htmlDocumentResponse($html, $fileName);
             } catch (\Throwable) {
                 // Fallback auf nachgelagerte Strategien.
@@ -108,6 +121,10 @@ class MaterialAttachmentPreviewService
         if ($this->isPresentation($extension, $mimeType)) {
             try {
                 $html = $this->renderPresentationHtml($absolutePath);
+                if ($isTempFile) {
+                    @unlink($absolutePath);
+                }
+
                 return $this->htmlDocumentResponse($html, $fileName);
             } catch (\Throwable) {
                 // Fallback auf nachgelagerte Strategien.
@@ -115,19 +132,33 @@ class MaterialAttachmentPreviewService
         }
 
         if ($this->isHtmlDocument($extension, $mimeType)) {
-            return $this->htmlFilePreviewResponse($absolutePath, $fileName, $downloadUrl);
+            $response = $this->htmlFilePreviewResponse($absolutePath, $fileName, $downloadUrl);
+            if ($isTempFile) {
+                @unlink($absolutePath);
+            }
+
+            return $response;
         }
 
         if ($this->isTextLike($extension, $mimeType)) {
-            return $this->textPreviewResponse($absolutePath, $fileName, $downloadUrl);
+            $response = $this->textPreviewResponse($absolutePath, $fileName, $downloadUrl);
+            if ($isTempFile) {
+                @unlink($absolutePath);
+            }
+
+            return $response;
         }
 
         if ($this->isInlineMedia($extension, $mimeType)) {
             $inlineMime = $this->inlineMimeType($extension, $mimeType);
-            return $this->inlineFileResponse($absolutePath, $inlineMime, $fileName);
+            return $this->inlineFileResponse($absolutePath, $inlineMime, $fileName, $isTempFile);
         }
 
         $pdfPreviewPath = $this->tryLibreOfficePdfPreview($absolutePath);
+        if ($isTempFile) {
+            @unlink($absolutePath);
+        }
+
         if (is_string($pdfPreviewPath) && $pdfPreviewPath !== '') {
             $previewName = $this->replaceExtensionWithPdf($fileName);
             return $this->inlineFileResponse($pdfPreviewPath, 'application/pdf', $previewName, true);
@@ -146,6 +177,32 @@ class MaterialAttachmentPreviewService
             'Für dieses Dateiformat ist derzeit keine direkte Vorschau verfügbar.',
             $downloadUrl
         );
+    }
+
+    /**
+     * @return array{path: string, is_temp: bool}
+     */
+    private function resolveLocalPath(\Illuminate\Contracts\Filesystem\Filesystem $disk, string $relativePath): array
+    {
+        if (config('filesystems.default') === 'local') {
+            return ['path' => Storage::disk('local')->path($relativePath), 'is_temp' => false];
+        }
+
+        $content = $disk->get($relativePath);
+        if ($content === null) {
+            abort(404, 'Datei nicht gefunden');
+        }
+
+        $ext = pathinfo($relativePath, PATHINFO_EXTENSION);
+        $tempPath = tempnam(sys_get_temp_dir(), 'st_prev_');
+        if ($ext !== '' && is_string($tempPath)) {
+            @rename($tempPath, $tempPath . '.' . $ext);
+            $tempPath .= '.' . $ext;
+        }
+
+        file_put_contents($tempPath, $content);
+
+        return ['path' => $tempPath, 'is_temp' => true];
     }
 
     private function renderSpreadsheetHtml(string $absolutePath, string $extension): string

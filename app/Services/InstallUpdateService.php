@@ -82,6 +82,69 @@ class InstallUpdateService
         }
     }
 
+    public function pruneOrphanPrivateSchoolFolders(bool $delete = true): array
+    {
+        $schoolIds = School::query()->pluck('id')->map(fn($id) => (string) $id)->all();
+        $schoolIdLookup = array_fill_keys($schoolIds, true);
+        $orphanPaths = [];
+
+        foreach (Storage::disk('local')->directories() as $directory) {
+            $directoryName = basename($directory);
+            if ($this->isOrphanSchoolScopedDirectory($directoryName, $schoolIdLookup)) {
+                $orphanPaths[] = $directory;
+            }
+        }
+
+        foreach (['materials/schools', 'materials/temp'] as $basePath) {
+            if (!Storage::disk('local')->directoryExists($basePath)) {
+                continue;
+            }
+
+            foreach (Storage::disk('local')->directories($basePath) as $directory) {
+                $directoryName = basename($directory);
+                if ($this->isOrphanSchoolScopedDirectory($directoryName, $schoolIdLookup)) {
+                    $orphanPaths[] = $directory;
+                }
+            }
+        }
+
+        $orphanPaths = array_values(array_unique($orphanPaths));
+        sort($orphanPaths);
+
+        if (! $delete) {
+            return [
+                'school_ids' => array_values($schoolIds),
+                'orphans' => $orphanPaths,
+                'deleted' => [],
+                'failed' => [],
+            ];
+        }
+
+        $deletedPaths = [];
+        $failedPaths = [];
+
+        foreach ($orphanPaths as $orphanPath) {
+            try {
+                Storage::disk('local')->deleteDirectory($orphanPath);
+            } catch (\Throwable $e) {
+                // Ignore and verify existence below.
+            }
+
+            if (!Storage::disk('local')->directoryExists($orphanPath)) {
+                $deletedPaths[] = $orphanPath;
+            } else {
+                $failedPaths[] = $orphanPath;
+            }
+        }
+
+        return [
+            'school_ids' => array_values($schoolIds),
+            'orphans' => $orphanPaths,
+            'deleted' => $deletedPaths,
+            'failed' => $failedPaths,
+        ];
+    }
+
     private function createOrCleanDirectory($path)
     {
         if (!Storage::directoryExists($path)) {
@@ -95,5 +158,10 @@ class InstallUpdateService
                 Storage::deleteDirectory($directory); // delete subfolders
             }
         }
+    }
+
+    private function isOrphanSchoolScopedDirectory(string $directoryName, array $schoolIdLookup): bool
+    {
+        return ctype_digit($directoryName) && !array_key_exists($directoryName, $schoolIdLookup);
     }
 }

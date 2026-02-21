@@ -159,7 +159,7 @@ class MaterialService
 
         foreach ($card->attachments as $attachment) {
             if ($attachment->attachment_type === MaterialCardAttachment::TYPE_FILE && $attachment->file_path) {
-                Storage::disk('local')->delete($attachment->file_path);
+                Storage::delete($attachment->file_path);
             }
         }
 
@@ -174,7 +174,7 @@ class MaterialService
         $path = $file->storeAs(
             $this->materialAttachmentDirectory($card),
             $this->materialAttachmentStoredFileNameFromOriginalName($originalFileName),
-            'local'
+            config('filesystems.default')
         );
 
         if ($path === false) {
@@ -233,7 +233,14 @@ class MaterialService
         $destinationPath = $this->materialAttachmentDirectory($card)
             . '/' . $this->materialAttachmentStoredFileNameFromOriginalName($tempFileName);
 
-        $moved = Storage::disk('local')->move($tempPath, $destinationPath);
+        $stream = Storage::disk('local')->readStream($tempPath);
+        $moved = $stream !== false && Storage::put($destinationPath, $stream);
+        if (is_resource($stream)) {
+            fclose($stream);
+        }
+
+        Storage::disk('local')->delete($tempPath);
+
         if (! $moved) {
             throw ValidationException::withMessages([
                 'data.upload_id' => 'Upload konnte nicht übernommen werden.',
@@ -245,12 +252,12 @@ class MaterialService
             $displayName = $this->defaultAttachmentNameFromTempFileName($tempFileName);
         }
 
-        $mimeType = Storage::disk('local')->mimeType($destinationPath);
+        $mimeType = Storage::mimeType($destinationPath);
         $normalizedMimeType = $this->normalizeMimeType((string) ($mimeType ?? ''));
         if ($this->isHtmlAttachmentFile($normalizedMimeType, $tempFileName)) {
             $displayName = $this->ensureHtmlAttachmentNameExtension($displayName);
         }
-        $finalSizeBytes = (int) (Storage::disk('local')->size($destinationPath) ?: $sizeBytes);
+        $finalSizeBytes = (int) (Storage::size($destinationPath) ?: $sizeBytes);
 
         $attachment = $card->attachments()->create([
             'attachment_type' => MaterialCardAttachment::TYPE_FILE,
@@ -385,7 +392,7 @@ class MaterialService
             }
 
             try {
-                $stored = Storage::disk('local')->put($destinationPath, $stream);
+                $stored = Storage::put($destinationPath, $stream);
             } finally {
                 fclose($stream);
             }
@@ -401,7 +408,7 @@ class MaterialService
                 $displayName = mb_substr($originalName, 0, 255);
             }
 
-            $storedSizeBytes = (int) (Storage::disk('local')->size($destinationPath) ?: $sizeBytes);
+            $storedSizeBytes = (int) (Storage::size($destinationPath) ?: $sizeBytes);
 
             $attachment = $card->attachments()->create([
                 'attachment_type' => MaterialCardAttachment::TYPE_FILE,
@@ -426,7 +433,7 @@ class MaterialService
         $card = $attachment->materialCard()->first();
 
         if ($attachment->attachment_type === MaterialCardAttachment::TYPE_FILE && $attachment->file_path) {
-            Storage::disk('local')->delete($attachment->file_path);
+            Storage::delete($attachment->file_path);
         }
 
         $attachment->delete();
@@ -479,14 +486,14 @@ class MaterialService
             ]);
         }
 
-        $stored = Storage::disk('local')->put($attachment->file_path, $normalizedHtml);
+        $stored = Storage::put($attachment->file_path, $normalizedHtml);
         if (! $stored) {
             throw ValidationException::withMessages([
                 'data.content_html' => 'Text konnte nicht gespeichert werden.',
             ]);
         }
 
-        $sizeBytes = (int) (Storage::disk('local')->size($attachment->file_path) ?: strlen($normalizedHtml));
+        $sizeBytes = (int) (Storage::size($attachment->file_path) ?: strlen($normalizedHtml));
         $normalizedName = $this->normalizeOptionalName($name ?? $attachment->name ?? null);
         $normalizedName = $this->ensureHtmlAttachmentNameExtension($normalizedName);
 

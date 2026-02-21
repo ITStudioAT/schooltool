@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(find:*)",
-      "Bash(npm run test:ui:*)"
+      "Bash(npm run test:ui:*)",
+      "Bash(composer update:*)"
     ]
   }
 }

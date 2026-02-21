@@ -62,18 +62,18 @@ class SchoolService
                 'tutoring_confirmer_email' => '',
             ]);
 
-            // Folder für Logo etc anlegen
+            // Folder für Logo etc anlegen (immer lokal, da Teaching-Uploads direkt auf lokales Dateisystem schreiben)
             $hlp_path = $school->id . '/temp';
-            if (!Storage::directoryExists($hlp_path)) {
-                Storage::makeDirectory($hlp_path);
+            if (!Storage::disk('local')->directoryExists($hlp_path)) {
+                Storage::disk('local')->makeDirectory($hlp_path);
             }
             $hlp_path = $school->id . '/excel';
-            if (!Storage::directoryExists($hlp_path)) {
-                Storage::makeDirectory($hlp_path);
+            if (!Storage::disk('local')->directoryExists($hlp_path)) {
+                Storage::disk('local')->makeDirectory($hlp_path);
             }
             $hlp_path = $school->id . '/pdf';
-            if (!Storage::directoryExists($hlp_path)) {
-                Storage::makeDirectory($hlp_path);
+            if (!Storage::disk('local')->directoryExists($hlp_path)) {
+                Storage::disk('local')->makeDirectory($hlp_path);
             }
 
             // Logo verschieben

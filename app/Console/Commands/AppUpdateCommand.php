@@ -45,6 +45,11 @@ class AppUpdateCommand extends Command
         $this->info('▶ FOLDERS');
         $service->findOrCreateFolders();
         $this->info('✅ Folders checked');
+        $cleanup = $service->pruneOrphanPrivateSchoolFolders();
+        $this->info('✅ Orphan school folders cleaned: ' . count($cleanup['deleted']));
+        if (! empty($cleanup['failed'])) {
+            $this->warn('⚠️ Failed to delete orphan school folders: ' . count($cleanup['failed']));
+        }
         $this->line(str_repeat('.', 50));
 
         // ✅ DEV-Debugbar

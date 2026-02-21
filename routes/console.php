@@ -16,3 +16,8 @@ Schedule::job(new HealthJob)
     ->everyMinute()
     ->onOneServer()
     ->withoutOverlapping();
+
+Schedule::command('private:prune-orphan-school-folders')
+    ->dailyAt('03:00')
+    ->onOneServer()
+    ->withoutOverlapping();
