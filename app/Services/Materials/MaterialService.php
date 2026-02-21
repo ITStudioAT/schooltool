@@ -921,16 +921,15 @@ class MaterialService
                 ->filter(fn ($id) => $id > 0)
                 ->values();
 
-        $inUse = MaterialCardClassification::query()
-            ->where(function ($query) use ($subject, $topicIds, $unitIds) {
-                $query->where('subject_id', $subject->id);
-
+        $inUse = (! $topicIds->isEmpty() || ! $unitIds->isEmpty()) && MaterialCardClassification::query()
+            ->where(function ($query) use ($topicIds, $unitIds) {
                 if (! $topicIds->isEmpty()) {
-                    $query->orWhereIn('topic_id', $topicIds->all());
+                    $query->whereIn('topic_id', $topicIds->all());
                 }
 
                 if (! $unitIds->isEmpty()) {
-                    $query->orWhereIn('unit_id', $unitIds->all());
+                    $method = $topicIds->isEmpty() ? 'whereIn' : 'orWhereIn';
+                    $query->{$method}('unit_id', $unitIds->all());
                 }
             })
             ->exists();
@@ -1038,14 +1037,8 @@ class MaterialService
             ->filter(fn ($id) => $id > 0)
             ->values();
 
-        $inUse = MaterialCardClassification::query()
-            ->where(function ($query) use ($topic, $unitIds) {
-                $query->where('topic_id', $topic->id);
-
-                if (! $unitIds->isEmpty()) {
-                    $query->orWhereIn('unit_id', $unitIds->all());
-                }
-            })
+        $inUse = ! $unitIds->isEmpty() && MaterialCardClassification::query()
+            ->whereIn('unit_id', $unitIds->all())
             ->exists();
 
         if ($inUse) {
@@ -1625,10 +1618,8 @@ class MaterialService
                 ->map(fn ($id) => (int) $id)
                 ->filter(fn ($id) => $id > 0);
 
-            $subjectHasLowerLevelUsage = $subjectTopicIds->contains(fn ($id) => isset($usedTopicIds[$id]))
+            $subjectHasUsage = $subjectTopicIds->contains(fn ($id) => isset($usedTopicIds[$id]))
                 || $subjectUnitIds->contains(fn ($id) => isset($usedUnitIds[$id]));
-            $subjectHasDirectUsage = isset($usedSubjectIds[(int) $subject->id]);
-            $subjectHasUsage = $subjectHasDirectUsage || $subjectHasLowerLevelUsage;
 
             return [
                 'id' => $subject->id,
@@ -1640,9 +1631,7 @@ class MaterialService
                         ->map(fn ($id) => (int) $id)
                         ->filter(fn ($id) => $id > 0);
 
-                    $topicHasDirectUsage = isset($usedTopicIds[(int) $topic->id]);
-                    $topicHasUnitUsage = $topicUnitIds->contains(fn ($id) => isset($usedUnitIds[$id]));
-                    $topicHasUsage = $topicHasDirectUsage || $topicHasUnitUsage;
+                    $topicHasUsage = $topicUnitIds->contains(fn ($id) => isset($usedUnitIds[$id]));
 
                     return [
                         'id' => $topic->id,

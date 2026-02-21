@@ -9,6 +9,7 @@
  * - logout (logout tutoring user)
  */
 
+use App\Models\Licence;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
@@ -26,6 +27,14 @@ beforeEach(function () {
 
     $this->school = School::factory()->create();
     $this->schoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+
+    $tutoringLicence = Licence::firstOrCreate(
+        ['name' => 'Nachhilfetool'],
+        ['long_name' => 'Nachhilfetool', 'is_selectable' => true]
+    );
+    $this->school->licences()->attach($tutoringLicence->id, [
+        'valid_until' => now()->addYear()->toDateString(),
+    ]);
 
     Role::firstOrCreate(['name' => 'tutoring_user', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);

@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Licence;
 use App\Models\School;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -19,6 +20,14 @@ beforeEach(function () {
     $this->school = School::factory()->create([
         'short_name' => 'TestSchool',
         'long_name' => 'Test School Name',
+    ]);
+
+    $tutoringLicence = Licence::firstOrCreate(
+        ['name' => 'Nachhilfetool'],
+        ['long_name' => 'Nachhilfetool', 'is_selectable' => true]
+    );
+    $this->school->licences()->attach($tutoringLicence->id, [
+        'valid_until' => now()->addYear()->toDateString(),
     ]);
 
     // Create test user with tutoring_user role

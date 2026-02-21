@@ -4,6 +4,7 @@
  * Tutoring SubjectController Tests
  */
 
+use App\Models\Licence;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\TutoringSubject;
@@ -18,6 +19,14 @@ beforeEach(function () {
     $this->schoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
 
     $this->otherSchool = School::factory()->create();
+
+    $tutoringLicence = Licence::firstOrCreate(
+        ['name' => 'Nachhilfetool'],
+        ['long_name' => 'Nachhilfetool', 'is_selectable' => true]
+    );
+    $this->school->licences()->attach($tutoringLicence->id, [
+        'valid_until' => now()->addYear()->toDateString(),
+    ]);
 
     Role::firstOrCreate(['name' => 'tutoring_user', 'guard_name' => 'web']);
 

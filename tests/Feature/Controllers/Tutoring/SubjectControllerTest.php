@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Licence;
 use App\Models\School;
 use App\Models\TutoringSubject;
 use App\Models\User;
@@ -23,6 +24,17 @@ beforeEach(function () {
     $this->otherSchool = School::factory()->create([
         'short_name' => 'OtherSchool',
         'long_name' => 'Other School Name',
+    ]);
+
+    $this->tutoringLicence = Licence::firstOrCreate(
+        ['name' => 'Nachhilfetool'],
+        ['long_name' => 'Nachhilfetool', 'is_selectable' => true]
+    );
+    $this->school->licences()->attach($this->tutoringLicence->id, [
+        'valid_until' => now()->addYear()->toDateString(),
+    ]);
+    $this->otherSchool->licences()->attach($this->tutoringLicence->id, [
+        'valid_until' => now()->addYear()->toDateString(),
     ]);
 
     // Create test subjects for main school
@@ -198,6 +210,10 @@ describe('index', function () {
         $newSchool = School::factory()->create([
             'short_name' => 'EmptySchool',
             'long_name' => 'Empty School',
+        ]);
+
+        $newSchool->licences()->attach($this->tutoringLicence->id, [
+            'valid_until' => now()->addYear()->toDateString(),
         ]);
 
         $newUser = User::factory()->create([

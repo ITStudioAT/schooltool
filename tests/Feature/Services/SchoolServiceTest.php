@@ -24,6 +24,7 @@ beforeEach(function () {
     Role::firstOrCreate(['name' => 'register_admin']);
     Role::firstOrCreate(['name' => 'tutoring_admin']);
     Role::firstOrCreate(['name' => 'teaching_admin']);
+    Role::firstOrCreate(['name' => 'materials_admin']);
     Role::firstOrCreate(['name' => 'teacher']);
 
     // Create a dummy school and user with ID 1 to ensure they are protected from deletion
