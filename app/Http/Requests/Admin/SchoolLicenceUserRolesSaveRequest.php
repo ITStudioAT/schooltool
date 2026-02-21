@@ -5,7 +5,7 @@ namespace App\Http\Requests\Admin;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 
-class SchoolAddLicenceRequest extends FormRequest
+class SchoolLicenceUserRolesSaveRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -23,9 +23,10 @@ class SchoolAddLicenceRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'data.school_id' => ['nullable', 'integer', 'exists:schools,id'],
-            'data.licence_id' => ['required', 'integer', 'exists:licences,id'],
-            'data.valid_until' => ['nullable', 'date'],
+            'roles' => ['required', 'array'],
+            'roles.*.name' => ['required', 'string', 'max:255'],
+            'roles.*.assigned' => ['required', 'boolean'],
+            'roles.*.valid_until' => ['nullable', 'date'],
         ];
     }
 }

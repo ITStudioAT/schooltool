@@ -42,6 +42,12 @@
                 @click="main_action = 'users'"
                 v-if="['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
             <its-menu-button
+                subtitle="Lehrer"
+                icon="mdi-school"
+                :color="main_action == 'teachers_overview' ? 'primary' : 'secondary'"
+                @click="main_action = 'teachers_overview'"
+                v-if="['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
+            <its-menu-button
                 subtitle="Log"
                 icon="mdi-file-document"
                 :color="main_action == 'log' ? 'primary' : 'secondary'"
@@ -57,18 +63,25 @@
             :disabled="action != ''"
             v-if="main_action == 'licences' && ['super_admin'].some((role) => config.roles.includes(role))">
             <its-menu-button
-                subtitle="Überblick"
+                subtitle="Alle Lizenzen"
                 icon="mdi-home"
                 :color="licences_action == 'overview' ? 'primary' : 'secondary'"
                 @click="licences_action = 'overview'" />
+            <its-menu-button
+                subtitle="Lizenzvergaben"
+                icon="mdi-card-account-details-outline"
+                :color="licences_action == 'schools' ? 'primary' : 'secondary'"
+                @click="licences_action = 'schools'" />
         </v-card>
         <v-row class="w-100" dense>
             <ActiveSchool v-if="main_action == '' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
             <Schools v-if="main_action == 'schools' && ['super_admin'].some((role) => config.roles.includes(role))" />
             <Schoolyears v-if="main_action == 'schoolyears' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
             <Licences v-if="main_action == 'licences' && licences_action == 'overview' && ['super_admin'].some((role) => config.roles.includes(role))" />
+            <LicenceSchools v-if="main_action == 'licences' && licences_action == 'schools' && ['super_admin'].some((role) => config.roles.includes(role))" />
             <Roles v-if="main_action == 'roles' && ['super_admin'].some((role) => config.roles.includes(role))" />
             <Users v-if="main_action == 'users' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
+            <TeacherOverview v-if="main_action == 'teachers_overview' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
             <Teachers v-if="main_action == 'teachers' && (config.roles.includes('super_admin') || config.roles.includes('admin'))" />
             <TeachersList v-if="main_action == 'teachers_list' && (config.roles.includes('super_admin') || config.roles.includes('admin'))" />
             <Log v-if="main_action == 'log' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
@@ -84,8 +97,10 @@ import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import Schools from './components/Schools.vue'
 import Schoolyears from './components/Schoolyears.vue'
 import Licences from './components/Licences.vue'
+import LicenceSchools from './components/LicenceSchools.vue'
 import Roles from './components/Roles.vue'
 import Users from './components/Users.vue'
+import TeacherOverview from './components/TeacherOverview.vue'
 import Teachers from './components/Teachers.vue'
 import TeachersList from './components/TeachersList.vue'
 
@@ -94,7 +109,7 @@ import ActiveSchool from './components/ActiveSchool.vue'
 import Log from './components/Log.vue'
 
 export default {
-    components: { ItsMenuButton, ItsGridBox, Schools, Schoolyears, ActiveSchool, Licences, Roles, Users, Log, Teachers, TeachersList },
+    components: { ItsMenuButton, ItsGridBox, Schools, Schoolyears, ActiveSchool, Licences, LicenceSchools, Roles, Users, TeacherOverview, Log, Teachers, TeachersList },
 
     async beforeMount() {
         this.adminStore = useAdminStore()

@@ -245,6 +245,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/schools/load_school_infos',  [\App\Http\Controllers\Admin\SchoolController::class, 'loadSchoolInfos']);
         Route::post('/admin/schools/add_licence',  [\App\Http\Controllers\Admin\SchoolController::class, 'addLicence']);
         Route::post('/admin/schools/delete_licence',  [\App\Http\Controllers\Admin\SchoolController::class, 'deleteLicence']);
+        Route::put('/admin/school_licences/{school_licence}/save_licence_model',  [\App\Http\Controllers\Admin\SchoolController::class, 'saveSchoolLicenceModel']);
+        Route::get('/admin/school_licences/{school_licence}/users',  [\App\Http\Controllers\Admin\SchoolController::class, 'loadSchoolLicenceUsers']);
+        Route::get('/admin/school_licences/{school_licence}/users/{user}/roles',  [\App\Http\Controllers\Admin\SchoolController::class, 'loadSchoolLicenceUserRoles']);
+        Route::put('/admin/school_licences/{school_licence}/users/{user}/roles',  [\App\Http\Controllers\Admin\SchoolController::class, 'saveSchoolLicenceUserRoles']);
         Route::post('/admin/schools/add_admin',  [\App\Http\Controllers\Admin\SchoolController::class, 'addAdmin']);
         Route::post('/admin/schools/delete_admin',  [\App\Http\Controllers\Admin\SchoolController::class, 'deleteAdmin']);
 

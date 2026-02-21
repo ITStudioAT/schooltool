@@ -24,11 +24,36 @@
                             color="success-lighten-2">
                             <v-list-item v-for="item in licences" :key="item.id" :value="item.id">
                                 <template v-slot:title>
-                                    <div class="d-flex flex-row align-center justify-space-between">
+                                    <div class="d-flex flex-column ga-2 py-1">
                                         <div>
                                             <div class="text-body-1">
                                                 {{ item.name }}
                                             </div>
+                                        </div>
+                                        <div class="d-flex flex-row flex-wrap align-center ga-2 text-caption">
+                                            <v-chip size="small" variant="outlined">
+                                                Schullizenz nötig: {{ licenceModelFor(item).school_licence_required ? 'JA' : 'NEIN' }}
+                                            </v-chip>
+                                            <v-chip
+                                                size="small"
+                                                :color="isAnyUserLicenceRequired(licenceModelFor(item)) ? 'warning' : undefined"
+                                                variant="outlined">
+                                                Eigene Userlizenz: {{ isAnyUserLicenceRequired(licenceModelFor(item)) ? 'JA' : 'NEIN' }}
+                                            </v-chip>
+                                        </div>
+                                        <div class="d-flex flex-row flex-wrap align-center ga-2 text-caption">
+                                            <span class="text-medium-emphasis">Rollen:</span>
+                                            <template v-if="sortedAffectedRoles(licenceModelFor(item)).length >= 1">
+                                                <v-chip
+                                                    v-for="roleName in sortedAffectedRoles(licenceModelFor(item))"
+                                                    :key="`licence-overview-role-${item.id}-${roleName}`"
+                                                    size="x-small"
+                                                    :color="isRoleUserLicenceRequired(licenceModelFor(item), roleName) ? 'warning' : undefined"
+                                                    :variant="isRoleUserLicenceRequired(licenceModelFor(item), roleName) ? 'flat' : 'outlined'">
+                                                    {{ roleName }}
+                                                </v-chip>
+                                            </template>
+                                            <span v-else class="text-medium-emphasis">-</span>
                                         </div>
                                     </div>
                                 </template>
@@ -347,11 +372,33 @@ export default {
             if (typeof value !== 'boolean') return
             this.currentLicenceModel.user_licence_required_by_role[roleName] = value
         },
+        licenceModelFor(licence) {
+            return this.normalizeLicenceModel(licence?.licence_model || null)
+        },
+        isAnyUserLicenceRequired(licenceModel) {
+            const map = licenceModel?.user_licence_required_by_role || {}
+            return Object.values(map).some((value) => !!value)
+        },
+        isRoleUserLicenceRequired(licenceModel, roleName) {
+            return !!licenceModel?.user_licence_required_by_role?.[roleName]
+        },
+        sortedAffectedRoles(licenceModel) {
+            const roles = Array.isArray(licenceModel?.affected_roles) ? [...licenceModel.affected_roles] : []
+            return roles.sort((a, b) => String(a).localeCompare(String(b), 'de'))
+        },
         normalizeLicenceModel(licenceModel) {
             const fallback = {
                 school_licence_required: true,
                 affected_roles: [],
                 user_licence_required_by_role: {},
+            }
+
+            if (typeof licenceModel === 'string') {
+                try {
+                    licenceModel = JSON.parse(licenceModel)
+                } catch (_) {
+                    return fallback
+                }
             }
 
             if (!licenceModel || typeof licenceModel !== 'object') return fallback

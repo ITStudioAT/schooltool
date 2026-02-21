@@ -199,7 +199,7 @@ export default {
         },
 
         abortReturn() {
-            this.main_action = ''
+            this.main_action = 'teachers_overview'
         },
 
         selectAll() {

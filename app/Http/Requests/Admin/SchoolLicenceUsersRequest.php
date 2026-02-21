@@ -5,7 +5,7 @@ namespace App\Http\Requests\Admin;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 
-class SchoolIndexRequest extends FormRequest
+class SchoolLicenceUsersRequest extends FormRequest
 {
     protected function prepareForValidation(): void
     {
@@ -44,9 +44,11 @@ class SchoolIndexRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'search_string' => 'nullable|string|max:255',
-            'page' => 'nullable|integer',
-            'expired_only' => 'nullable|boolean',
+            'search_string' => ['nullable', 'string', 'max:255'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'role_names' => ['nullable', 'array'],
+            'role_names.*' => ['string', 'max:255'],
+            'expired_only' => ['nullable', 'boolean'],
         ];
     }
 }

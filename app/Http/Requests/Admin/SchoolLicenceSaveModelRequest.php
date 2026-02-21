@@ -5,7 +5,7 @@ namespace App\Http\Requests\Admin;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 
-class SchoolAddLicenceRequest extends FormRequest
+class SchoolLicenceSaveModelRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -23,9 +23,13 @@ class SchoolAddLicenceRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'data.school_id' => ['nullable', 'integer', 'exists:schools,id'],
-            'data.licence_id' => ['required', 'integer', 'exists:licences,id'],
-            'data.valid_until' => ['nullable', 'date'],
+            'licence_model' => ['required', 'array'],
+            'licence_model.school_licence_required' => ['required', 'boolean'],
+            'licence_model.affected_roles' => ['required', 'array'],
+            'licence_model.affected_roles.*' => ['required', 'string', 'max:255', 'exists:roles,name', 'distinct'],
+            'licence_model.user_licence_required_by_role' => ['required', 'array'],
+            'licence_model.user_licence_required_by_role.*' => ['boolean'],
         ];
     }
 }
+

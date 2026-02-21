@@ -7,12 +7,20 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
         schools: [],
         selected_schools: [],
         search_string: '',
+        expired_only: false,
         meta: [],
         data: {},
         saved_school: null,
         answer: null,
         switchable_schools: [],
         school_licences: [],
+        school_licence_users: [],
+        school_licence_users_meta: [],
+        school_licence_users_roles: [],
+        school_licence_users_active_role_filters: [],
+        school_licence_users_role_statuses: {},
+        school_licence_user_role_details: [],
+        school_licence_user_role_details_valid_until: null,
         school_admins: [],
         teachers: [],
     }),
@@ -23,8 +31,9 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
             const adminStore = useAdminStore()
             adminStore.is_loading++
             const search_string = this.search_string
+            const expired_only = this.expired_only ? 1 : 0
             try {
-                const response = await axios.get(`/api/admin/schools`, { params: { search_string, page } })
+                const response = await axios.get(`/api/admin/schools`, { params: { search_string, page, expired_only } })
                 this.schools = response.data.data
                 this.meta = response.data.meta
                 return true
@@ -243,6 +252,118 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
                 const response = await axios.post(`/api/admin/schools/delete_licence`, { school_licence_id })
                 this.school_licences = response.data
                 return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.timeout,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async saveSchoolLicenceModel(school_licence_id, licence_model) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.put(`/api/admin/school_licences/${school_licence_id}/save_licence_model`, { licence_model })
+                this.school_licences = response.data
+
+                notification.notify({
+                    message: 'Schul-Lizenzmodell wurde gespeichert.',
+                    type: 'success',
+                    timeout: 3000,
+                })
+
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.timeout,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async loadSchoolLicenceUsers(school_licence_id, page = null, search_string = null, role_names = [], expired_only = false) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.get(`/api/admin/school_licences/${school_licence_id}/users`, {
+                    params: { page, search_string, role_names, expired_only: expired_only ? 1 : 0 },
+                })
+                this.school_licence_users = response.data.data || []
+                this.school_licence_users_meta = response.data.meta || []
+                this.school_licence_users_roles = response.data.roles || []
+                this.school_licence_users_active_role_filters = response.data.active_role_filters || []
+                this.school_licence_users_role_statuses = response.data.role_statuses_by_user || {}
+
+                return true
+            } catch (error) {
+                this.school_licence_users = []
+                this.school_licence_users_meta = []
+                this.school_licence_users_roles = []
+                this.school_licence_users_active_role_filters = []
+                this.school_licence_users_role_statuses = {}
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.timeout,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async loadSchoolLicenceUserRoles(school_licence_id, user_id) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.get(`/api/admin/school_licences/${school_licence_id}/users/${user_id}/roles`)
+                this.school_licence_user_role_details = response.data.roles || []
+                this.school_licence_user_role_details_valid_until = response.data.school_licence_valid_until || null
+                return response.data
+            } catch (error) {
+                this.school_licence_user_role_details = []
+                this.school_licence_user_role_details_valid_until = null
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.timeout,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async saveSchoolLicenceUserRoles(school_licence_id, user_id, roles) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.put(`/api/admin/school_licences/${school_licence_id}/users/${user_id}/roles`, { roles })
+                this.school_licence_user_role_details = response.data.roles || []
+                this.school_licence_user_role_details_valid_until = response.data.school_licence_valid_until || null
+                notification.notify({
+                    message: 'Benutzerlizenzen wurden gespeichert.',
+                    type: 'success',
+                    timeout: 3000,
+                })
+                return response.data
             } catch (error) {
                 notification.notify({
                     status: error.response.status,

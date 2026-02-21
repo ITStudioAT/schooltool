@@ -34,10 +34,12 @@ class SchoolLicence extends Model
         'licence_id',
         'valid_until',
         'licence_model',
+        'user_licence_assignments',
     ];
 
     protected $casts = [
         'licence_model' => 'array',
+        'user_licence_assignments' => 'array',
     ];
 
     public function licence()

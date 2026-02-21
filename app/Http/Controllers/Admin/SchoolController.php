@@ -9,6 +9,9 @@ use App\Http\Requests\Admin\SchoolDeleteAdminRequest;
 use App\Http\Requests\Admin\SchoolDeleteLicenceRequest;
 use App\Http\Requests\Admin\SchoolDeleteSchoolsRequest;
 use App\Http\Requests\Admin\SchoolIndexRequest;
+use App\Http\Requests\Admin\SchoolLicenceSaveModelRequest;
+use App\Http\Requests\Admin\SchoolLicenceUserRolesSaveRequest;
+use App\Http\Requests\Admin\SchoolLicenceUsersRequest;
 use App\Http\Requests\Admin\SchoolLoadSchoolLicencesRequest;
 use App\Http\Requests\Admin\SchoolStoreRequest;
 use App\Http\Requests\Admin\SchoolSwitchSchoolRequest;
@@ -19,9 +22,11 @@ use App\Http\Resources\Admin\SchoolResource;
 use App\Http\Resources\Admin\UserResource;
 use App\Models\School;
 use App\Models\SchoolLicence;
+use App\Models\User;
 use App\Services\FileUploadService;
 use App\Services\LicenceService;
 use App\Services\SchoolService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Cache;
@@ -42,14 +47,28 @@ class SchoolController extends Controller
 
         $validated = $request->validated();
         $search_string = $validated['search_string'] ?? null;
+        $expiredOnly = (bool) ($validated['expired_only'] ?? false);
 
 
         $schools = School::query()
+            ->with(['licences' => function ($query) {
+                $query->orderBy('name');
+            }])
+            ->when($expiredOnly, function ($query) {
+                $query->whereHas('licences', function ($licenceQuery) {
+                    $licenceQuery->whereNotNull('school_licences.valid_until')
+                        ->whereDate('school_licences.valid_until', '<', now()->toDateString());
+                });
+            })
             ->when($search_string, function ($query, $search_string) {
                 $query->where(function ($q) use ($search_string) {
                     $q->where('long_name', 'like', "%{$search_string}%")
                         ->orWhere('short_name', 'like', "%{$search_string}%")
-                        ->orWhere('email', 'like', "%{$search_string}%");
+                        ->orWhere('email', 'like', "%{$search_string}%")
+                        ->orWhereHas('licences', function ($licenceQuery) use ($search_string) {
+                            $licenceQuery->where('name', 'like', "%{$search_string}%")
+                                ->orWhere('long_name', 'like', "%{$search_string}%");
+                        });
                 });
             })
             ->orderBy('long_name')
@@ -208,10 +227,15 @@ class SchoolController extends Controller
         }
 
         $validated = $request->validated();
+        $schoolId = (int) ($validated['data']['school_id'] ?? ($auth_user->selectedSchool?->id ?? 0));
+        if ($schoolId <= 0) {
+            abort(422, 'Keine Schule ausgewählt.');
+        }
 
+        $school = School::findOrFail($schoolId);
 
-        $school_licence = $service->schoolAddLicence($auth_user->selectedSchool, $validated['data']);
-        $licences = School::find($school_licence->school_id)->licences;
+        $school_licence = $service->schoolAddLicence($school, $validated['data']);
+        $licences = School::findOrFail($school_licence->school_id)->licences;
         return response()->json(LicenceResource::collection($licences), 200);
     }
 
@@ -228,6 +252,299 @@ class SchoolController extends Controller
 
         $licences = School::find($school_id)->licences;
         return response()->json(LicenceResource::collection($licences), 200);
+    }
+
+    public function saveSchoolLicenceModel(SchoolLicenceSaveModelRequest $request, SchoolLicence $school_licence, LicenceService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validated();
+
+        $school_licence->licence_model = $service->normalizeLicenceModel($validated['licence_model']);
+        $school_licence->save();
+
+        $licences = School::findOrFail($school_licence->school_id)->licences;
+        return response()->json(LicenceResource::collection($licences), 200);
+    }
+
+    public function loadSchoolLicenceUsers(SchoolLicenceUsersRequest $request, SchoolLicence $school_licence, LicenceService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validated();
+        $search_string = $validated['search_string'] ?? null;
+        $expiredOnly = (bool) ($validated['expired_only'] ?? false);
+
+        $licenceModel = $service->normalizeLicenceModel($school_licence->licence_model);
+
+        $licenceModelRoles = collect($licenceModel['user_licence_required_by_role'] ?? [])
+            ->filter(fn($isRequired) => (bool) $isRequired)
+            ->keys()
+            ->map(fn($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $selectedRoles = collect($validated['role_names'] ?? [])
+            ->map(fn($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $activeRoleFilters = collect($selectedRoles)
+            ->filter(fn($roleName) => in_array($roleName, $licenceModelRoles, true))
+            ->values()
+            ->all();
+
+        $shouldApplyRoleFilter = ! empty($activeRoleFilters);
+        $assignments = is_array($school_licence->user_licence_assignments) ? $school_licence->user_licence_assignments : [];
+
+        $usersQuery = User::query()
+            ->with('roles')
+            ->where('school_id', $school_licence->school_id)
+            ->when($search_string, function ($query, $search_string) {
+                $query->where(function ($q) use ($search_string) {
+                    $q->where('last_name', 'like', "%{$search_string}%")
+                        ->orWhere('first_name', 'like', "%{$search_string}%")
+                        ->orWhere('email', 'like', "%{$search_string}%");
+                });
+            })
+            ->when($shouldApplyRoleFilter, fn($query) => $query->whereHas('roles', fn($roleQuery) => $roleQuery->whereIn('name', $activeRoleFilters)));
+
+        if ($expiredOnly) {
+            if (empty($licenceModelRoles)) {
+                $usersQuery->whereRaw('1=0');
+            } elseif (! $this->isDateActive($school_licence->valid_until)) {
+                $usersQuery->whereHas('roles', fn($roleQuery) => $roleQuery->whereIn('name', $licenceModelRoles));
+            } else {
+                $outdatedUserIds = collect($assignments)
+                    ->filter(fn($userAssignments) => is_array($userAssignments))
+                    ->filter(function (array $userAssignments) use ($licenceModelRoles) {
+                        foreach ($licenceModelRoles as $roleName) {
+                            $rawValidUntil = $userAssignments[$roleName] ?? null;
+                            if (! is_string($rawValidUntil) || trim($rawValidUntil) === '') {
+                                continue;
+                            }
+
+                            $validUntil = trim($rawValidUntil);
+                            if (! $this->isDateActive($validUntil)) {
+                                return true;
+                            }
+                        }
+
+                        return false;
+                    })
+                    ->keys()
+                    ->map(fn($userId) => (int) $userId)
+                    ->filter(fn($userId) => $userId > 0)
+                    ->values()
+                    ->all();
+
+                if (empty($outdatedUserIds)) {
+                    $usersQuery->whereRaw('1=0');
+                } else {
+                    $usersQuery
+                        ->whereIn('id', $outdatedUserIds)
+                        ->whereHas('roles', fn($roleQuery) => $roleQuery->whereIn('name', $licenceModelRoles));
+                }
+            }
+        }
+
+        $users = $usersQuery
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->paginate(config('schooltool.pagination'));
+
+        $roleStatusesByUser = $users->getCollection()
+            ->mapWithKeys(function (User $user) use ($licenceModelRoles, $assignments, $school_licence) {
+                $userAssignments = isset($assignments[(string) $user->id]) && is_array($assignments[(string) $user->id])
+                    ? $assignments[(string) $user->id]
+                    : [];
+
+                $userRoleNames = $user->roles
+                    ->pluck('name')
+                    ->map(fn($roleName) => is_string($roleName) ? trim($roleName) : '')
+                    ->filter()
+                    ->values()
+                    ->all();
+                $userRoleLookup = array_flip($userRoleNames);
+
+                $statuses = [];
+                foreach ($licenceModelRoles as $roleName) {
+                    if (! isset($userRoleLookup[$roleName])) {
+                        continue;
+                    }
+
+                    $rawRoleValidUntil = $userAssignments[$roleName] ?? null;
+                    $roleValidUntil = is_string($rawRoleValidUntil) && trim($rawRoleValidUntil) !== ''
+                        ? trim($rawRoleValidUntil)
+                        : null;
+
+                    $statuses[$roleName] = [
+                        'valid_until' => $roleValidUntil,
+                        'is_active' => $this->isUserRoleAssignmentActive($school_licence->valid_until, $roleValidUntil),
+                    ];
+                }
+
+                return [
+                    (string) $user->id => $statuses,
+                ];
+            })
+            ->all();
+
+        return response()->json([
+            'data' => UserResource::collection($users),
+            'meta' => new PaginateResource($users),
+            'roles' => $licenceModelRoles,
+            'active_role_filters' => $activeRoleFilters,
+            'role_statuses_by_user' => $roleStatusesByUser,
+        ], 200);
+    }
+
+    public function loadSchoolLicenceUserRoles(SchoolLicence $school_licence, User $user, LicenceService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        if ((int) $user->school_id !== (int) $school_licence->school_id) {
+            abort(422, 'Benutzer gehört nicht zur Schule der Lizenz.');
+        }
+
+        return response()->json(
+            $this->schoolLicenceUserRolesPayload($school_licence, $user, $service),
+            200
+        );
+    }
+
+    public function saveSchoolLicenceUserRoles(
+        SchoolLicenceUserRolesSaveRequest $request,
+        SchoolLicence $school_licence,
+        User $user,
+        LicenceService $service
+    ) {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        if ((int) $user->school_id !== (int) $school_licence->school_id) {
+            abort(422, 'Benutzer gehört nicht zur Schule der Lizenz.');
+        }
+
+        $validated = $request->validated();
+
+        $licenceModel = $service->normalizeLicenceModel($school_licence->licence_model);
+        $roleNames = collect($licenceModel['user_licence_required_by_role'] ?? [])
+            ->filter(fn($isRequired) => (bool) $isRequired)
+            ->keys()
+            ->map(fn($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $incomingByRole = collect($validated['roles'])
+            ->filter(fn($entry) => is_array($entry) && isset($entry['name']))
+            ->keyBy(fn($entry) => (string) $entry['name']);
+
+        $assignments = is_array($school_licence->user_licence_assignments) ? $school_licence->user_licence_assignments : [];
+        $userKey = (string) $user->id;
+        $updatedUserAssignments = [];
+
+        foreach ($roleNames as $roleName) {
+            $entry = $incomingByRole->get($roleName);
+            $assigned = (bool) ($entry['assigned'] ?? false);
+            $validUntil = $assigned ? ($entry['valid_until'] ?? null) : null;
+
+            if ($assigned) {
+                if (! $user->hasRole($roleName)) {
+                    $user->assignRole($roleName);
+                }
+                $updatedUserAssignments[$roleName] = $validUntil;
+                continue;
+            }
+
+            if ($user->hasRole($roleName)) {
+                $user->removeRole($roleName);
+            }
+        }
+
+        if (empty($updatedUserAssignments)) {
+            unset($assignments[$userKey]);
+        } else {
+            $assignments[$userKey] = $updatedUserAssignments;
+        }
+
+        $school_licence->user_licence_assignments = $assignments;
+        $school_licence->save();
+
+        return response()->json(
+            $this->schoolLicenceUserRolesPayload($school_licence->fresh(), $user->fresh('roles'), $service),
+            200
+        );
+    }
+
+    private function schoolLicenceUserRolesPayload(SchoolLicence $school_licence, User $user, LicenceService $service): array
+    {
+        $licenceModel = $service->normalizeLicenceModel($school_licence->licence_model);
+        $roleNames = collect($licenceModel['user_licence_required_by_role'] ?? [])
+            ->filter(fn($isRequired) => (bool) $isRequired)
+            ->keys()
+            ->map(fn($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $assignments = is_array($school_licence->user_licence_assignments) ? $school_licence->user_licence_assignments : [];
+        $userAssignments = isset($assignments[(string) $user->id]) && is_array($assignments[(string) $user->id])
+            ? $assignments[(string) $user->id]
+            : [];
+
+        $roles = collect($roleNames)
+            ->map(function ($roleName) use ($user, $userAssignments) {
+                return [
+                    'name' => $roleName,
+                    'assigned' => $user->hasRole($roleName),
+                    'valid_until' => isset($userAssignments[$roleName]) ? $userAssignments[$roleName] : null,
+                ];
+            })
+            ->values()
+            ->all();
+
+        return [
+            'user' => new UserResource($user->loadMissing('roles')),
+            'school_licence_valid_until' => $school_licence->valid_until,
+            'roles' => $roles,
+        ];
+    }
+
+    private function isUserRoleAssignmentActive(?string $schoolLicenceValidUntil, ?string $userRoleValidUntil): bool
+    {
+        if (! $this->isDateActive($schoolLicenceValidUntil)) {
+            return false;
+        }
+
+        return $this->isDateActive($userRoleValidUntil);
+    }
+
+    private function isDateActive(?string $validUntil): bool
+    {
+        if (! is_string($validUntil) || trim($validUntil) === '') {
+            return true;
+        }
+
+        try {
+            return Carbon::parse($validUntil)->startOfDay()->greaterThanOrEqualTo(now()->startOfDay());
+        } catch (\Throwable $exception) {
+            return false;
+        }
     }
 
     public function addAdmin(SchoolAddAdminRequest $request, SchoolService $service)

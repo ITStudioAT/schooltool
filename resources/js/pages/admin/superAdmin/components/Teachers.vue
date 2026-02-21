@@ -174,7 +174,7 @@ export default {
     methods: {
         async abortReturn() {
             await this.teacherStore.index()
-            this.main_action = ''
+            this.main_action = 'teachers_overview'
         },
 
         async saveTeacher(data) {

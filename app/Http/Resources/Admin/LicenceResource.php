@@ -14,6 +14,12 @@ class LicenceResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $licenceModel = $this->pivot?->licence_model ?? $this->licence_model;
+        if (is_string($licenceModel)) {
+            $decoded = json_decode($licenceModel, true);
+            $licenceModel = json_last_error() === JSON_ERROR_NONE ? $decoded : null;
+        }
+
         return [
             'id' => $this->id,
             'name' => $this->name,
@@ -21,7 +27,7 @@ class LicenceResource extends JsonResource
             'valid_until' => $this->pivot?->valid_until,
             'price_per_year' => $this->price_per_year,
             'school_licence_id' => $this->pivot?->id,
-            'licence_model' => $this->pivot?->licence_model ?? $this->licence_model,
+            'licence_model' => $licenceModel,
             'is_selectable' => $this->is_selectable ? true : false,
         ];
     }
