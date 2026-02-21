@@ -19,6 +19,11 @@ export const useHomepageStore = defineStore('HomepageStore', {
             selected_licence_id: null,
             schools: [],
             selected_school: null,
+            impersonation: {
+                is_impersonating: false,
+                impersonator: null,
+                current_user: null,
+            },
         }
     },
 
@@ -79,10 +84,77 @@ export const useHomepageStore = defineStore('HomepageStore', {
             this.is_loading++
             try {
                 this.response = await axios.post('/api/homepage/logout', {})
+                this.impersonation = {
+                    is_impersonating: false,
+                    impersonator: null,
+                    current_user: null,
+                }
             } catch (error) {
                 notification.notify({
                     status: error.response.status,
                     message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                this.is_loading--
+            }
+        },
+
+        async loadImpersonationStatus() {
+            const notification = useNotificationStore()
+            this.is_loading++
+
+            try {
+                const response = await axios.get('/api/admin/impersonation/status')
+                this.impersonation = {
+                    is_impersonating: !!response.data?.is_impersonating,
+                    impersonator: response.data?.impersonator || null,
+                    current_user: response.data?.current_user || null,
+                }
+                return this.impersonation
+            } catch (error) {
+                if (error.response?.status === 401) {
+                    this.impersonation = {
+                        is_impersonating: false,
+                        impersonator: null,
+                        current_user: null,
+                    }
+                    return this.impersonation
+                }
+                notification.notify({
+                    status: error.response?.status || 500,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                this.is_loading--
+            }
+        },
+
+        async stopImpersonation() {
+            const notification = useNotificationStore()
+            this.is_loading++
+            try {
+                await axios.post('/api/admin/impersonation/stop')
+                this.impersonation = {
+                    is_impersonating: false,
+                    impersonator: null,
+                    current_user: null,
+                }
+                notification.notify({
+                    message: 'Benutzer-Übernahme beendet.',
+                    type: 'success',
+                    timeout: 3000,
+                })
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status || 500,
+                    message: error.response?.data?.message || 'Fehler passiert.',
                     type: 'error',
                     timeout: 3000,
                 })

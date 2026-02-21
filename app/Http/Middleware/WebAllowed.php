@@ -7,6 +7,7 @@ use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Lab404\Impersonate\Services\ImpersonateManager;
 use Symfony\Component\HttpFoundation\Response;
 
 class WebAllowed
@@ -40,6 +41,12 @@ class WebAllowed
 
             if (! $user = Auth::user()) {
                 return redirect('/admin/login');
+            }
+
+            /** @var ImpersonateManager $impersonateManager */
+            $impersonateManager = app(ImpersonateManager::class);
+            if ($impersonateManager->isImpersonating()) {
+                return $next($request);
             }
 
             if (! $this->userHasRole($allowed_roles)) {

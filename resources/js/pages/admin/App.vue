@@ -3,7 +3,7 @@
         <v-navigation-drawer
             v-model="show_navigation_drawer"
             color="primary"
-            v-if="config && config.is_auth && config.roles.some((item) => admins.includes(item)) && $route.path != '/admin/login'">
+            v-if="isAdminShellVisible">
             <v-toolbar color="appbar">
                 <v-toolbar-title>
                     <img :src="'/storage/images/' + config?.logo" alt="Logo" class="logo" height="24" />
@@ -25,7 +25,7 @@
             </v-list>
         </v-navigation-drawer>
 
-        <v-app-bar flat color="primary" v-if="config && config.is_auth && config.roles.some((item) => admins.includes(item)) && $route.path != '/admin/login'">
+        <v-app-bar flat color="primary" v-if="isAdminShellVisible">
             <template #prepend>
                 <v-btn icon="mdi-menu-open" v-if="!show_navigation_drawer" @click="show_navigation_drawer = true" />
                 <img
@@ -41,6 +41,17 @@
         </v-app-bar>
 
         <v-main class="bg-background" v-if="config">
+            <v-alert type="warning" variant="tonal" class="ma-2" v-if="isImpersonating">
+                <div class="d-flex flex-row flex-wrap align-center justify-space-between ga-2">
+                    <div>
+                        Benutzer-Übernahme aktiv:
+                        <strong>{{ currentImpersonatedUserLabel }}</strong>
+                    </div>
+                    <v-btn color="warning" flat tile @click="stopImpersonationAndReturn">
+                        Zurück zu {{ impersonatorLabel }}
+                    </v-btn>
+                </div>
+            </v-alert>
             <router-view></router-view>
             <its-notification />
             <v-overlay :model-value="is_loading > 0" class="align-center justify-center" contained opacity="0.1">
@@ -89,6 +100,26 @@ export default {
     computed: {
         // these will become this.config, this.is_loading, ...
         ...mapWritableState(useAdminStore, ['config', 'is_loading', 'show_navigation_drawer', 'load_config']),
+        isImpersonating() {
+            return !!this.config?.impersonation?.is_impersonating
+        },
+        isAdminShellVisible() {
+            if (!this.config?.is_auth) return false
+            if (this.$route.path === '/admin/login') return false
+            const roles = this.config?.roles || []
+            return roles.some((item) => this.admins.includes(item)) || this.isImpersonating
+        },
+        impersonatorLabel() {
+            const impersonator = this.config?.impersonation?.impersonator
+            if (!impersonator) return 'meinem Benutzer'
+            const name = `${impersonator.last_name || ''} ${impersonator.first_name || ''}`.trim()
+            return name || impersonator.email || 'meinem Benutzer'
+        },
+        currentImpersonatedUserLabel() {
+            const user = this.config?.user || {}
+            const name = `${user.last_name || ''} ${user.first_name || ''}`.trim()
+            return name || user.email || 'Benutzer'
+        },
     },
 
     async beforeMount() {
@@ -110,6 +141,11 @@ export default {
             //await this.adminStore.loadConfig()
             await this.$nextTick()
             this.$router.replace('/admin/login')
+        },
+        async stopImpersonationAndReturn() {
+            if (!(await this.adminStore.stopImpersonation())) return
+            await this.$nextTick()
+            this.$router.replace('/admin/super_admin')
         },
 
         callItemClick(item) {

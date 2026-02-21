@@ -20,6 +20,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
+use Lab404\Impersonate\Models\Impersonate as ImpersonateTrait;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 
@@ -127,6 +128,7 @@ class User extends Authenticatable
     use UserTrait;
     use HasApiTokens;
     use HasRoles;
+    use ImpersonateTrait;
 
     /**
      * The attributes that are mass assignable.
@@ -316,5 +318,15 @@ class User extends Authenticatable
         if (RegisterDateBooking::where('user_id', $this->id)->count() > 0) return true;
         if (TutoringOffer::where('user_id', $this->id)->count() > 0) return true;
         return false;
+    }
+
+    public function canImpersonate(): bool
+    {
+        return $this->hasRole('super_admin');
+    }
+
+    public function canBeImpersonated(): bool
+    {
+        return true;
     }
 }

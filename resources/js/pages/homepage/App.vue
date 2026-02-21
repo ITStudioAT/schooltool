@@ -2,6 +2,17 @@
     <v-app>
         <v-layout>
             <v-main>
+                <v-alert type="warning" variant="tonal" class="ma-2" v-if="isImpersonating">
+                    <div class="d-flex flex-row flex-wrap align-center justify-space-between ga-2">
+                        <div>
+                            Benutzer-Übernahme aktiv:
+                            <strong>{{ currentImpersonatedUserLabel }}</strong>
+                        </div>
+                        <v-btn color="warning" flat tile @click="stopImpersonationAndReturn">
+                            Zurück zu {{ impersonatorLabel }}
+                        </v-btn>
+                    </div>
+                </v-alert>
                 <router-view />
                 <ItsNotification />
                 <v-overlay :model-value="is_loading > 0" class="align-center justify-center" contained opacity="0.1">
@@ -36,6 +47,7 @@ export default {
     components: {},
     async beforeMount() {
         this.homepageStore = useHomepageStore()
+        await this.homepageStore.loadImpersonationStatus()
     },
     unmounted() {},
     data() {
@@ -44,9 +56,28 @@ export default {
         }
     },
     computed: {
-        ...mapWritableState(useHomepageStore, ['config', 'error', 'school', 'licence', 'is_loading']),
+        ...mapWritableState(useHomepageStore, ['config', 'error', 'school', 'licence', 'is_loading', 'impersonation']),
+        isImpersonating() {
+            return !!this.impersonation?.is_impersonating
+        },
+        impersonatorLabel() {
+            const impersonator = this.impersonation?.impersonator
+            if (!impersonator) return 'meinem Benutzer'
+            const name = `${impersonator.last_name || ''} ${impersonator.first_name || ''}`.trim()
+            return name || impersonator.email || 'meinem Benutzer'
+        },
+        currentImpersonatedUserLabel() {
+            const user = this.impersonation?.current_user || this.config?.auth?.user || this.config?.user || null
+            if (!user) return 'Benutzer'
+            const name = `${user.last_name || ''} ${user.first_name || ''}`.trim()
+            return name || user.email || 'Benutzer'
+        },
     },
     methods: {
+        async stopImpersonationAndReturn() {
+            if (!(await this.homepageStore.stopImpersonation())) return
+            window.location.href = '/admin/super_admin'
+        },
         openCookiePrefs() {
             if (typeof window.showHideToggleCookiePreferencesModal === 'function') {
                 window.showHideToggleCookiePreferencesModal()

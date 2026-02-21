@@ -105,6 +105,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
         // users
         Route::apiResource('/admin/users', UserController::class)->names('admin.users');
+        Route::get('/admin/impersonation/status', [\App\Http\Controllers\Admin\ImpersonationController::class, 'status']);
+        Route::post('/admin/impersonation/stop', [\App\Http\Controllers\Admin\ImpersonationController::class, 'stop']);
 
         Route::get('/admin/test-queue', [App\Http\Controllers\Admin\HealthController::class, 'testQueue']);
         Route::get('/admin/test-queue/check', [App\Http\Controllers\Admin\HealthController::class, 'checkQueueStatus']);
@@ -316,6 +318,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     /* SANCTUM - super_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:super_admin'])->group(function () {
         Route::post('/admin/delete_log',  [\App\Http\Controllers\Admin\LogController::class, 'deleteLog']);
+        Route::get('/admin/impersonation/schools', [\App\Http\Controllers\Admin\ImpersonationController::class, 'schools']);
+        Route::get('/admin/impersonation/users', [\App\Http\Controllers\Admin\ImpersonationController::class, 'users']);
+        Route::post('/admin/impersonation/start', [\App\Http\Controllers\Admin\ImpersonationController::class, 'start']);
     });
 
     /* SANCTUM - super_admin, admin */

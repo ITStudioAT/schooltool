@@ -29,6 +29,9 @@ export const useAdminStore = defineStore('AdminAdminStore', {
         echo: null,
         pusher_count: 0,
         schools: null,
+        impersonatable_schools: [],
+        impersonatable_users: [],
+        impersonatable_users_meta: [],
     }),
 
     actions: {
@@ -126,6 +129,103 @@ export const useAdminStore = defineStore('AdminAdminStore', {
                 notification.notify({
                     status: error.response.status,
                     message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.config?.timeout,
+                })
+                return false
+            } finally {
+                this.is_loading--
+            }
+        },
+
+        async loadImpersonatableSchools() {
+            const notification = useNotificationStore()
+            this.is_loading++
+            try {
+                const response = await axios.get('/api/admin/impersonation/schools')
+                this.impersonatable_schools = response.data?.data || []
+                return this.impersonatable_schools
+            } catch (error) {
+                this.impersonatable_schools = []
+                notification.notify({
+                    status: error.response?.status || 500,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.config?.timeout,
+                })
+                return false
+            } finally {
+                this.is_loading--
+            }
+        },
+
+        async loadImpersonatableUsers(search_string = '', school_id = null, page = null) {
+            const notification = useNotificationStore()
+            this.is_loading++
+            try {
+                const params = { search_string }
+                if (school_id) params.school_id = school_id
+                if (page) params.page = page
+                const response = await axios.get('/api/admin/impersonation/users', { params })
+                this.impersonatable_users = response.data?.data || []
+                this.impersonatable_users_meta = response.data?.meta || []
+                return this.impersonatable_users
+            } catch (error) {
+                this.impersonatable_users = []
+                this.impersonatable_users_meta = []
+                notification.notify({
+                    status: error.response?.status || 500,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.config?.timeout,
+                })
+                return false
+            } finally {
+                this.is_loading--
+            }
+        },
+
+        async startImpersonation(user_id) {
+            const notification = useNotificationStore()
+            this.is_loading++
+            try {
+                await axios.post('/api/admin/impersonation/start', { user_id })
+                await this.loadConfig()
+                notification.notify({
+                    message: 'Benutzer-Übernahme gestartet.',
+                    type: 'success',
+                    timeout: 3000,
+                })
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status || 500,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.config?.timeout,
+                })
+                return false
+            } finally {
+                this.is_loading--
+            }
+        },
+
+        async stopImpersonation() {
+            const notification = useNotificationStore()
+            this.is_loading++
+            try {
+                await axios.post('/api/admin/impersonation/stop')
+                await this.loadConfig()
+                notification.notify({
+                    message: 'Benutzer-Übernahme beendet.',
+                    type: 'success',
+                    timeout: 3000,
+                })
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status || 500,
+                    message: error.response?.data?.message || 'Fehler passiert.',
                     type: 'error',
                     timeout: this.config?.timeout,
                 })

@@ -48,6 +48,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
+use Lab404\Impersonate\Services\ImpersonateManager;
 
 class AdminController extends Controller
 {
@@ -73,6 +74,16 @@ class AdminController extends Controller
         /** @var \App\Models\User|null $user */
         $user = Auth::check() ? Auth::user() : null;
 
+        /** @var ImpersonateManager $impersonateManager */
+        $impersonateManager = app(ImpersonateManager::class);
+        $isImpersonating = $user ? $impersonateManager->isImpersonating() : false;
+        $impersonator = null;
+        if ($isImpersonating) {
+            $impersonatorId = $impersonateManager->getImpersonatorId();
+            if ($impersonatorId) {
+                $impersonator = User::find($impersonatorId);
+            }
+        }
 
         $lastImport116At = null;
         if ($user) {
@@ -99,6 +110,15 @@ class AdminController extends Controller
             ])) : null,
             'menu' => $user ? $navigationService->dashboardMenu() : [],
             'roles' => $user ? $user->getRoleNames() : [],
+            'impersonation' => [
+                'is_impersonating' => $isImpersonating,
+                'impersonator' => $impersonator ? [
+                    'id' => $impersonator->id,
+                    'last_name' => $impersonator->last_name,
+                    'first_name' => $impersonator->first_name,
+                    'email' => $impersonator->email,
+                ] : null,
+            ],
             'teaching' => [
                 'last_import_116_at' => $lastImport116At,
             ],
