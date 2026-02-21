@@ -19,6 +19,7 @@
 
 use App\Models\Licence;
 use App\Models\School;
+use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\TutoringOffer;
@@ -456,6 +457,40 @@ describe('loadOffers', function () {
         $data = $response->json('data');
         expect($data)->toHaveCount(1);
         expect($data[0]['title'])->toBe('Valid Offer');
+    });
+
+    test('it blocks access when school licence is expired and required', function () {
+        $schoolLicence = SchoolLicence::where('school_id', $this->school->id)
+            ->where('licence_id', $this->tutoringLicence->id)
+            ->firstOrFail();
+        $schoolLicence->valid_until = now()->subDay()->toDateString();
+        $schoolLicence->licence_model = [
+            'school_licence_required' => true,
+            'affected_roles' => [],
+            'user_licence_required_by_role' => [],
+        ];
+        $schoolLicence->save();
+
+        $response = $this->getJson('/api/homepage/tutoring/load_offers?school_name=TEST');
+
+        $response->assertStatus(403);
+    });
+
+    test('it allows access when school licence is expired but not required', function () {
+        $schoolLicence = SchoolLicence::where('school_id', $this->school->id)
+            ->where('licence_id', $this->tutoringLicence->id)
+            ->firstOrFail();
+        $schoolLicence->valid_until = now()->subDay()->toDateString();
+        $schoolLicence->licence_model = [
+            'school_licence_required' => false,
+            'affected_roles' => [],
+            'user_licence_required_by_role' => [],
+        ];
+        $schoolLicence->save();
+
+        $response = $this->getJson('/api/homepage/tutoring/load_offers?school_name=TEST');
+
+        $response->assertStatus(200);
     });
 });
 

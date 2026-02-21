@@ -10,6 +10,7 @@
  * - School and schoolyear isolation
  */
 
+use App\Models\Licence;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
@@ -36,6 +37,14 @@ beforeEach(function () {
     $this->school = School::factory()->create([
         'short_name' => 'STU',
         'long_name' => 'Student Test School',
+    ]);
+
+    $teachingLicence = Licence::firstOrCreate(
+        ['name' => 'Lehrertool'],
+        ['long_name' => 'Lehrertool', 'is_selectable' => true]
+    );
+    $this->school->licences()->attach($teachingLicence->id, [
+        'valid_until' => now()->addYear()->toDateString(),
     ]);
 
     $this->schoolyear = Schoolyear::factory()->create([

@@ -56,7 +56,20 @@ class SchoolController extends Controller
             }])
             ->when($expiredOnly, function ($query) {
                 $query->whereHas('licences', function ($licenceQuery) {
-                    $licenceQuery->whereNotNull('school_licences.valid_until')
+                    $licenceQuery->where(function ($requiredQuery) {
+                        $requiredQuery
+                            ->where('school_licences.licence_model->school_licence_required', true)
+                            ->orWhere(function ($fallbackTemplateQuery) {
+                                $fallbackTemplateQuery
+                                    ->whereNull('school_licences.licence_model->school_licence_required')
+                                    ->where(function ($templateRequiredQuery) {
+                                        $templateRequiredQuery
+                                            ->whereNull('licences.licence_model->school_licence_required')
+                                            ->orWhere('licences.licence_model->school_licence_required', true);
+                                    });
+                            });
+                    })
+                        ->whereNotNull('school_licences.valid_until')
                         ->whereDate('school_licences.valid_until', '<', now()->toDateString());
                 });
             })
@@ -280,6 +293,7 @@ class SchoolController extends Controller
         $expiredOnly = (bool) ($validated['expired_only'] ?? false);
 
         $licenceModel = $service->normalizeLicenceModel($school_licence->licence_model);
+        $schoolLicenceRequired = (bool) ($licenceModel['school_licence_required'] ?? true);
 
         $licenceModelRoles = collect($licenceModel['user_licence_required_by_role'] ?? [])
             ->filter(fn($isRequired) => (bool) $isRequired)
@@ -320,7 +334,7 @@ class SchoolController extends Controller
         if ($expiredOnly) {
             if (empty($licenceModelRoles)) {
                 $usersQuery->whereRaw('1=0');
-            } elseif (! $this->isDateActive($school_licence->valid_until)) {
+            } elseif ($schoolLicenceRequired && ! $this->isDateActive($school_licence->valid_until)) {
                 $usersQuery->whereHas('roles', fn($roleQuery) => $roleQuery->whereIn('name', $licenceModelRoles));
             } else {
                 $outdatedUserIds = collect($assignments)
@@ -362,7 +376,7 @@ class SchoolController extends Controller
             ->paginate(config('schooltool.pagination'));
 
         $roleStatusesByUser = $users->getCollection()
-            ->mapWithKeys(function (User $user) use ($licenceModelRoles, $assignments, $school_licence) {
+            ->mapWithKeys(function (User $user) use ($licenceModelRoles, $assignments, $school_licence, $schoolLicenceRequired) {
                 $userAssignments = isset($assignments[(string) $user->id]) && is_array($assignments[(string) $user->id])
                     ? $assignments[(string) $user->id]
                     : [];
@@ -388,7 +402,7 @@ class SchoolController extends Controller
 
                     $statuses[$roleName] = [
                         'valid_until' => $roleValidUntil,
-                        'is_active' => $this->isUserRoleAssignmentActive($school_licence->valid_until, $roleValidUntil),
+                        'is_active' => $this->isUserRoleAssignmentActive($schoolLicenceRequired, $school_licence->valid_until, $roleValidUntil),
                     ];
                 }
 
@@ -525,9 +539,9 @@ class SchoolController extends Controller
         ];
     }
 
-    private function isUserRoleAssignmentActive(?string $schoolLicenceValidUntil, ?string $userRoleValidUntil): bool
+    private function isUserRoleAssignmentActive(bool $schoolLicenceRequired, ?string $schoolLicenceValidUntil, ?string $userRoleValidUntil): bool
     {
-        if (! $this->isDateActive($schoolLicenceValidUntil)) {
+        if ($schoolLicenceRequired && ! $this->isDateActive($schoolLicenceValidUntil)) {
             return false;
         }
 

@@ -10,6 +10,7 @@
  * Endpoints require admin, tutoring_admin, or register_admin roles
  */
 
+use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
@@ -22,6 +23,14 @@ uses(RefreshDatabase::class);
 beforeEach(function () {
     $this->school = School::factory()->create();
     $this->schoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+
+    $this->tutoringLicence = Licence::firstOrCreate(
+        ['name' => 'Nachhilfetool'],
+        ['long_name' => 'Nachhilfetool', 'is_selectable' => true]
+    );
+    $this->school->licences()->attach($this->tutoringLicence->id, [
+        'valid_until' => now()->addYear()->toDateString(),
+    ]);
 
     // Create roles
     Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
@@ -117,6 +126,9 @@ describe('loadConfig', function () {
 
     test('load config returns school tool of authenticated users school', function () {
         $otherSchool = School::factory()->create();
+        $otherSchool->licences()->attach($this->tutoringLicence->id, [
+            'valid_until' => now()->addYear()->toDateString(),
+        ]);
         $otherSchoolyear = Schoolyear::factory()->create(['school_id' => $otherSchool->id]);
         $otherSchoolTool = SchoolTool::create([
             'school_id' => $otherSchool->id,

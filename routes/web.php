@@ -34,6 +34,18 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
 
 
     /* restliche admin-Routen */
+    Route::get('/admin/register_system/{any?}', function () {
+        return view('spa::admin');
+    })->where('any', '.*')->middleware(['auth:sanctum', 'web-allowed:admin,register_admin,tutoring_admin,teacher,lunch_admin', 'tool-licensed:Anmeldetool,auth']);
+
+    Route::get('/admin/tutoring/{any?}', function () {
+        return view('spa::admin');
+    })->where('any', '.*')->middleware(['auth:sanctum', 'web-allowed:admin,register_admin,tutoring_admin,teacher,lunch_admin', 'tool-licensed:Nachhilfetool,auth']);
+
+    Route::get('/admin/teaching/{any?}', function () {
+        return view('spa::admin');
+    })->where('any', '.*')->middleware(['auth:sanctum', 'web-allowed:admin,register_admin,tutoring_admin,teacher,lunch_admin', 'tool-licensed:Lehrertool,auth']);
+
     Route::get('/admin/{any?}', function () {
         return view('spa::admin');
     })->where('any', '.*')->middleware(['auth:sanctum', 'web-allowed:admin,register_admin,tutoring_admin,teacher,lunch_admin']);
@@ -46,11 +58,11 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
 
     Route::get('/homepage/register/', function () {
         return view('homepage');
-    });
+    })->middleware('tool-licensed:Anmeldetool');
 
     Route::get('/homepage/register2/', function () {
         return view('homepage');
-    });
+    })->middleware('tool-licensed:Anmeldetool');
 
     if (config('schooltool.tutoring_active') === true) {
 
@@ -59,7 +71,7 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         Route::prefix('homepage')->group(function () {
 
             Route::get('tutoring_response', fn() => view('homepage'));
-            Route::get('tutoring_overview', fn() => view('homepage'));
+            Route::get('tutoring_overview', fn() => view('homepage'))->middleware('tool-licensed:Nachhilfetool');
             Route::get('tutoring', fn() => view('homepage'))->middleware(['auth:sanctum', 'tool-licensed:Nachhilfetool']);
         });
 

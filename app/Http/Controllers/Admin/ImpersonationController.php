@@ -21,17 +21,20 @@ class ImpersonationController extends Controller
             return response()->json([
                 'is_impersonating' => false,
                 'impersonator' => null,
+                'current_user' => null,
             ], 200);
         }
 
         $isImpersonating = $manager->isImpersonating();
         $impersonator = null;
+        $currentUser = Auth::user()?->loadMissing('selectedSchool:id,long_name,short_name');
 
         if ($isImpersonating) {
             $impersonatorId = $manager->getImpersonatorId();
             if ($impersonatorId) {
                 $impersonator = User::query()
-                    ->select(['id', 'last_name', 'first_name', 'email'])
+                    ->with('selectedSchool:id,long_name,short_name')
+                    ->select(['id', 'school_id', 'last_name', 'first_name', 'email'])
                     ->find($impersonatorId);
             }
         }
@@ -43,12 +46,16 @@ class ImpersonationController extends Controller
                 'last_name' => $impersonator->last_name,
                 'first_name' => $impersonator->first_name,
                 'email' => $impersonator->email,
+                'school_id' => $impersonator->school_id,
+                'school_name' => trim((string) ($impersonator->selectedSchool?->long_name ?: $impersonator->selectedSchool?->short_name)),
             ] : null,
-            'current_user' => Auth::user() ? [
-                'id' => Auth::id(),
-                'last_name' => Auth::user()->last_name,
-                'first_name' => Auth::user()->first_name,
-                'email' => Auth::user()->email,
+            'current_user' => $currentUser ? [
+                'id' => $currentUser->id,
+                'last_name' => $currentUser->last_name,
+                'first_name' => $currentUser->first_name,
+                'email' => $currentUser->email,
+                'school_id' => $currentUser->school_id,
+                'school_name' => trim((string) ($currentUser->selectedSchool?->long_name ?: $currentUser->selectedSchool?->short_name)),
             ] : null,
         ], 200);
     }

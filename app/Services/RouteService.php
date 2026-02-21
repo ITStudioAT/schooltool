@@ -22,10 +22,52 @@ class RouteService
 
         if (is_null($roles)) return RouteResult::NOT_FOUND;
         if (empty($roles)) return RouteResult::ALLOWED;
-        if ($user && ($user->hasAnyRole($roles) || $user->hasRole('super_admin'))) return RouteResult::ALLOWED;
-        if ($user) return RouteResult::NOT_ALLOWED;
+        if (! $user) return RouteResult::NOT_EXISTS;
+        if (! ($user->hasAnyRole($roles) || $user->hasRole('super_admin'))) return RouteResult::NOT_ALLOWED;
 
-        return RouteResult::NOT_EXISTS;
+        $requiredLicence = $this->requiredLicenceForPath($fullPath);
+        if (! $requiredLicence) {
+            return RouteResult::ALLOWED;
+        }
+
+        $configFlag = $this->configFlagForLicence($requiredLicence);
+        if ($configFlag && ! config($configFlag, false)) {
+            return RouteResult::NOT_ALLOWED;
+        }
+
+        $licenceStatus = app(LicenceService::class)->licenceStatus($user->selectedSchool, $requiredLicence);
+        if ($licenceStatus !== 'active') {
+            return RouteResult::NOT_ALLOWED;
+        }
+
+        return RouteResult::ALLOWED;
+    }
+
+    private function requiredLicenceForPath(string $fullPath): ?string
+    {
+        if (str_starts_with($fullPath, '/admin/register_system')) {
+            return 'Anmeldetool';
+        }
+
+        if (str_starts_with($fullPath, '/admin/tutoring')) {
+            return 'Nachhilfetool';
+        }
+
+        if (str_starts_with($fullPath, '/admin/teaching')) {
+            return 'Lehrertool';
+        }
+
+        return null;
+    }
+
+    private function configFlagForLicence(string $licenceName): ?string
+    {
+        return match ($licenceName) {
+            'Anmeldetool' => 'schooltool.register_active',
+            'Nachhilfetool' => 'schooltool.tutoring_active',
+            'Lehrertool' => 'schooltool.teaching_active',
+            default => null,
+        };
     }
 
     protected function matchRouteRoles(string $path, array $roleMap): ?array

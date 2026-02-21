@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Licence;
 use App\Models\School;
 use App\Models\TutoringOffer;
 use App\Models\TutoringSubject;
@@ -25,6 +26,14 @@ beforeEach(function () {
     $this->otherSchool = School::factory()->create([
         'short_name' => 'OtherSchool',
         'long_name' => 'Other School',
+    ]);
+
+    $tutoringLicence = Licence::firstOrCreate(
+        ['name' => 'Nachhilfetool'],
+        ['long_name' => 'Nachhilfetool', 'is_selectable' => true]
+    );
+    $this->school->licences()->attach($tutoringLicence->id, [
+        'valid_until' => now()->addYear()->toDateString(),
     ]);
 
     // Create admin user

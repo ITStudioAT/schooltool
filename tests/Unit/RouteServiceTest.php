@@ -1,6 +1,9 @@
 <?php
 
 use App\Enums\RouteResult;
+use App\Models\Licence;
+use App\Models\School;
+use App\Models\SchoolLicence;
 use App\Models\User;
 use App\Services\RouteService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -204,10 +207,86 @@ describe('checkWebRoles', function () {
         it('does not match wildcard when user lacks role', function () {
             $user = User::factory()->create();
             $user->assignRole('student');
-            
+
             $result = $this->service->checkWebRoles($user, '/test/prefix/something');
-            
+
             expect($result)->toBe(RouteResult::NOT_ALLOWED);
+        });
+    });
+
+    describe('licence checks for admin modules', function () {
+        it('denies register module route when school licence is missing', function () {
+            $school = School::factory()->create();
+            $user = User::factory()->create(['school_id' => $school->id]);
+            $user->assignRole('admin');
+
+            config(['schooltool.register_active' => true]);
+
+            $result = $this->service->checkWebRoles($user, '/admin/register_system');
+
+            expect($result)->toBe(RouteResult::NOT_ALLOWED);
+        });
+
+        it('allows register module route when school licence is active', function () {
+            $school = School::factory()->create();
+            $user = User::factory()->create(['school_id' => $school->id]);
+            $user->assignRole('admin');
+
+            $licence = Licence::create(['name' => 'Anmeldetool', 'long_name' => 'Anmeldetool']);
+            SchoolLicence::create([
+                'school_id' => $school->id,
+                'licence_id' => $licence->id,
+                'valid_until' => now()->addDay(),
+            ]);
+
+            config(['schooltool.register_active' => true]);
+
+            $result = $this->service->checkWebRoles($user, '/admin/register_system');
+
+            expect($result)->toBe(RouteResult::ALLOWED);
+        });
+
+        it('denies teaching module route when school licence is expired', function () {
+            $school = School::factory()->create();
+            $user = User::factory()->create(['school_id' => $school->id]);
+            $user->assignRole('teacher');
+
+            $licence = Licence::create(['name' => 'Lehrertool', 'long_name' => 'Lehrertool']);
+            SchoolLicence::create([
+                'school_id' => $school->id,
+                'licence_id' => $licence->id,
+                'valid_until' => now()->subDay(),
+            ]);
+
+            config(['schooltool.teaching_active' => true]);
+
+            $result = $this->service->checkWebRoles($user, '/admin/teaching');
+
+            expect($result)->toBe(RouteResult::NOT_ALLOWED);
+        });
+
+        it('allows teaching module route when expired school licence is not required by model', function () {
+            $school = School::factory()->create();
+            $user = User::factory()->create(['school_id' => $school->id]);
+            $user->assignRole('teacher');
+
+            $licence = Licence::create(['name' => 'Lehrertool', 'long_name' => 'Lehrertool']);
+            SchoolLicence::create([
+                'school_id' => $school->id,
+                'licence_id' => $licence->id,
+                'valid_until' => now()->subDay(),
+                'licence_model' => [
+                    'school_licence_required' => false,
+                    'affected_roles' => [],
+                    'user_licence_required_by_role' => [],
+                ],
+            ]);
+
+            config(['schooltool.teaching_active' => true]);
+
+            $result = $this->service->checkWebRoles($user, '/admin/teaching');
+
+            expect($result)->toBe(RouteResult::ALLOWED);
         });
     });
 });

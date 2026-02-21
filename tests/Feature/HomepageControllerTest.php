@@ -12,6 +12,7 @@
 
 use App\Models\Licence;
 use App\Models\School;
+use App\Models\SchoolLicence;
 use App\Models\Schoolyear;
 use App\Models\User;
 use App\Services\HomepageRoutingService;
@@ -31,7 +32,9 @@ beforeEach(function () {
     $this->schoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
 
     $this->licence = Licence::create(['name' => 'Anmeldetool']);
-    $this->school->licences()->attach($this->licence->id);
+    $this->school->licences()->attach($this->licence->id, [
+        'valid_until' => now()->addYear()->toDateString(),
+    ]);
 
     Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
 });
@@ -57,8 +60,13 @@ describe('loadSchoolsForTool', function () {
     });
 
     test('load schools for tool with multiple schools', function () {
-        $school2 = School::factory()->create(['short_name' => 'SCH2']);
-        $school2->licences()->attach($this->licence->id);
+        $school2 = School::factory()->create([
+            'short_name' => 'SCH2',
+            'is_selectable' => true,
+        ]);
+        $school2->licences()->attach($this->licence->id, [
+            'valid_until' => now()->addYear()->toDateString(),
+        ]);
 
         $response = $this->getJson('/api/homepage/load_schools_for_tool?tool=Anmeldetool');
 
@@ -84,6 +92,29 @@ describe('loadSchoolsForTool', function () {
 
         $response->assertStatus(422)
             ->assertJsonValidationErrors(['tool']);
+    });
+
+    test('load schools for tool treats expired school licence as active when not required', function () {
+        $schoolLicence = SchoolLicence::where('school_id', $this->school->id)
+            ->where('licence_id', $this->licence->id)
+            ->firstOrFail();
+
+        $schoolLicence->valid_until = now()->subDay()->toDateString();
+        $schoolLicence->licence_model = [
+            'school_licence_required' => false,
+            'affected_roles' => [],
+            'user_licence_required_by_role' => [],
+        ];
+        $schoolLicence->save();
+
+        $response = $this->getJson('/api/homepage/load_schools_for_tool?tool=Anmeldetool');
+
+        $response->assertStatus(200)
+            ->assertJsonPath('status', 'active');
+
+        $schools = $response->json('schools');
+        expect($schools)->toHaveCount(1)
+            ->and($schools[0]['short_name'])->toBe('TEST');
     });
 });
 
@@ -209,6 +240,25 @@ describe('config', function () {
                 'teaching_active' => true,
                 'tutoring_active' => false,
             ]);
+    });
+
+    test('config keeps tool status active when school licence is expired but not required', function () {
+        $schoolLicence = SchoolLicence::where('school_id', $this->school->id)
+            ->where('licence_id', $this->licence->id)
+            ->firstOrFail();
+
+        $schoolLicence->valid_until = now()->subDay()->toDateString();
+        $schoolLicence->licence_model = [
+            'school_licence_required' => false,
+            'affected_roles' => [],
+            'user_licence_required_by_role' => [],
+        ];
+        $schoolLicence->save();
+
+        $response = $this->getJson('/api/homepage/config');
+
+        $response->assertStatus(200)
+            ->assertJsonPath('tool_licence_statuses.Anmeldetool', 'active');
     });
 });
 

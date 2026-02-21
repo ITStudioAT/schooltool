@@ -11,6 +11,7 @@
  */
 
 use App\Models\Import116;
+use App\Models\Licence;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
@@ -40,6 +41,14 @@ beforeEach(function () {
 
     $this->schoolyear = Schoolyear::factory()->create([
         'school_id' => $this->school->id,
+    ]);
+
+    $teachingLicence = Licence::firstOrCreate(
+        ['name' => 'Lehrertool'],
+        ['long_name' => 'Lehrertool', 'is_selectable' => true]
+    );
+    $this->school->licences()->attach($teachingLicence->id, [
+        'valid_until' => now()->addYear()->toDateString(),
     ]);
 
     // Create test users with different roles

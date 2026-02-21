@@ -6,6 +6,7 @@ use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolLicence;
 use Carbon\Carbon;
+use Illuminate\Support\Collection;
 
 class LicenceService
 {
@@ -19,23 +20,160 @@ class LicenceService
     // $school: School-Objekt
     // $app: String mit dem App-Namen
     {
+        return $this->licenceStatus($school, $app) === 'active';
+    }
 
-        // Checken, ob Schule existiert
-        if (!$school) return false;
-
-        // Checken, ob es die Lizenz für die App überhaupt gibt
-        if (!$licence = Licence::where('name', $app)->first()) return false;
-
-        // Checken, ob es die Lizenz für die Schule gibt gibt
-        if (!$schoolLicence = $school->licences()->where('licence_id', $licence->id)->first()) return false;
-
-        if ($schoolLicence->pivot->valid_until === null) {
-            return true; // Unendlich gültig
+    public function licenceStatus($school, $app): string
+    {
+        if (! $school) {
+            return 'missing';
         }
 
+        $licence = Licence::where('name', $app)->first();
+        if (! $licence) {
+            return 'missing';
+        }
 
-        // Schritt 4: Datum vergleichen
-        return $schoolLicence->pivot->valid_until >= Carbon::today()->toDateString();
+        $schoolLicence = SchoolLicence::where('school_id', $school->id)
+            ->where('licence_id', $licence->id)
+            ->first();
+
+        if (! $schoolLicence) {
+            return 'missing';
+        }
+
+        return $this->schoolLicenceStatus($schoolLicence, $licence);
+    }
+
+    public function schoolLicenceStatus(?SchoolLicence $schoolLicence, ?Licence $licence = null): string
+    {
+        if (! $schoolLicence) {
+            return 'missing';
+        }
+
+        $licenceModel = $this->effectiveSchoolLicenceModel($schoolLicence, $licence);
+        $schoolLicenceRequired = $this->toBool($licenceModel['school_licence_required'] ?? true, true);
+        if (! $schoolLicenceRequired) {
+            return 'active';
+        }
+
+        if ($schoolLicence->valid_until === null) {
+            return 'active';
+        }
+
+        try {
+            $validUntil = Carbon::parse($schoolLicence->valid_until)->toDateString();
+        } catch (\Throwable $e) {
+            // Fail closed on malformed dates for security-sensitive checks.
+            return 'expired';
+        }
+
+        return $validUntil >= Carbon::today()->toDateString() ? 'active' : 'expired';
+    }
+
+    public function selectableSchoolLicenceOverview(string $app): array
+    {
+        $licence = Licence::where('name', $app)->first();
+        $schools = School::selectables()->get();
+
+        if (! $licence) {
+            return [
+                'licence' => null,
+                'schools' => $schools,
+                'active_schools' => collect(),
+                'status_by_school_id' => collect(),
+                'overall_status' => 'missing',
+            ];
+        }
+
+        $schoolIds = $schools->pluck('id');
+
+        $schoolLicences = $schoolIds->isEmpty()
+            ? collect()
+            : SchoolLicence::query()
+                ->where('licence_id', $licence->id)
+                ->whereIn('school_id', $schoolIds)
+                ->get()
+                ->keyBy('school_id');
+
+        $statusBySchoolId = $schools->mapWithKeys(function (School $school) use ($schoolLicences, $licence) {
+            /** @var SchoolLicence|null $schoolLicence */
+            $schoolLicence = $schoolLicences->get($school->id);
+
+            return [$school->id => $this->schoolLicenceStatus($schoolLicence, $licence)];
+        });
+
+        $activeSchools = $schools
+            ->filter(fn(School $school) => $statusBySchoolId->get($school->id) === 'active')
+            ->values();
+
+        $hasAnySchoolWithLicence = $statusBySchoolId
+            ->contains(fn(string $status) => $status !== 'missing');
+
+        $overallStatus = 'missing';
+        if ($activeSchools->isNotEmpty()) {
+            $overallStatus = 'active';
+        } elseif ($hasAnySchoolWithLicence) {
+            $overallStatus = 'expired';
+        }
+
+        return [
+            'licence' => $licence,
+            'schools' => $schools,
+            'active_schools' => $activeSchools,
+            'status_by_school_id' => $statusBySchoolId,
+            'overall_status' => $overallStatus,
+        ];
+    }
+
+    public function selectableSchoolsForTool(string $app): array
+    {
+        $overview = $this->selectableSchoolLicenceOverview($app);
+        $licence = $overview['licence'];
+
+        $schools = collect();
+        if ($licence && $overview['active_schools']->isNotEmpty()) {
+            $activeSchoolIds = $overview['active_schools']->pluck('id');
+
+            $schools = School::selectables()
+                ->whereIn('id', $activeSchoolIds)
+                ->with(['licences' => function ($query) use ($licence) {
+                    $query->where('licences.id', $licence->id);
+                }])
+                ->get();
+        }
+
+        return [
+            'licence' => $licence,
+            'schools' => $schools,
+            'status' => $overview['overall_status'],
+        ];
+    }
+
+    public function selectableActiveLicencesForSchool(School $school): Collection
+    {
+        $schoolLicences = SchoolLicence::query()
+            ->where('school_id', $school->id)
+            ->with('licence')
+            ->get();
+
+        return $schoolLicences
+            ->filter(function (SchoolLicence $schoolLicence) {
+                $licence = $schoolLicence->licence;
+                if (! $licence || ! ((bool) $licence->is_selectable)) {
+                    return false;
+                }
+
+                return $this->schoolLicenceStatus($schoolLicence, $licence) === 'active';
+            })
+            ->map(function (SchoolLicence $schoolLicence) {
+                $licence = $schoolLicence->licence;
+                $licence->setRelation('pivot', $schoolLicence);
+
+                return $licence;
+            })
+            ->sortBy('long_name')
+            ->values();
     }
 
     public function schoolAddLicence($school, $data): SchoolLicence
@@ -84,7 +222,9 @@ class LicenceService
         $school_licence = SchoolLicence::where('school_id', $school->id)->where('licence_id', $licence->id)->first();
         if (!$school_licence) return ['status' => 'error', 'msg' => 'Die Schule hat für die App keine Lizenz.'];
 
-        if (Carbon::parse($school_licence->valid_until)->isPast()) return ['status' => 'error', 'msg' => 'Die Lizenz für die App ist abgelaufen.'];
+        if ($this->licenceStatus($school, $licence_load) !== 'active') {
+            return ['status' => 'error', 'msg' => 'Die Lizenz für die App ist abgelaufen.'];
+        }
 
         return ['status' => 'ok', 'redirect' => '&licence=' . $licence_load];
     }
@@ -144,6 +284,19 @@ class LicenceService
             'affected_roles' => [],
             'user_licence_required_by_role' => [],
         ];
+    }
+
+    private function effectiveSchoolLicenceModel(SchoolLicence $schoolLicence, ?Licence $licence = null): array
+    {
+        if (is_array($schoolLicence->licence_model)) {
+            return $this->normalizeLicenceModel($schoolLicence->licence_model);
+        }
+
+        if ($licence && is_array($licence->licence_model)) {
+            return $this->normalizeLicenceModel($licence->licence_model);
+        }
+
+        return $this->defaultLicenceModel();
     }
 
     private function toBool($value, bool $default): bool

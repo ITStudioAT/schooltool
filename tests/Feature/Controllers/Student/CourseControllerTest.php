@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
@@ -21,6 +22,13 @@ beforeEach(function () {
     });
 
     $this->school = School::factory()->create();
+    $teachingLicence = Licence::firstOrCreate(
+        ['name' => 'Lehrertool'],
+        ['long_name' => 'Lehrertool', 'is_selectable' => true]
+    );
+    $this->school->licences()->attach($teachingLicence->id, [
+        'valid_until' => now()->addYear()->toDateString(),
+    ]);
     $this->activeSchoolyear = Schoolyear::factory()->create([
         'school_id' => $this->school->id,
     ]);

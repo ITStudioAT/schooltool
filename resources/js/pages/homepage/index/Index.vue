@@ -30,7 +30,7 @@
 
                     <div class="tools-grid">
                         <!-- Anmeldetool Card -->
-                        <div class="tool-card card-register" @click="loadSchoolsForTool('Anmeldetool')" v-if="canShowRegister">
+                        <div class="tool-card card-register" :class="{ 'card-disabled': registerStatus === 'expired' }" @click="registerStatus === 'active' && loadSchoolsForTool('Anmeldetool')" v-if="canShowRegister">
                             <div class="card-glow"></div>
                             <div class="card-content">
                                 <div class="card-icon">
@@ -42,11 +42,15 @@
                                     <span class="action-text">Starten</span>
                                     <v-icon size="20">mdi-arrow-right</v-icon>
                                 </div>
+                                <div class="card-badge" v-if="registerStatus === 'expired'">
+                                    <v-icon size="16">mdi-clock-alert-outline</v-icon>
+                                    <span>Lizenz abgelaufen</span>
+                                </div>
                             </div>
                         </div>
 
                         <!-- Nachhilfetool Card -->
-                        <div class="tool-card card-tutoring" @click="loadSchoolsForTool('Nachhilfetool')" v-if="canShowTutoring">
+                        <div class="tool-card card-tutoring" :class="{ 'card-disabled': tutoringStatus === 'expired' }" @click="tutoringStatus === 'active' && loadSchoolsForTool('Nachhilfetool')" v-if="canShowTutoring">
                             <div class="card-glow"></div>
                             <div class="card-content">
                                 <div class="card-icon">
@@ -58,11 +62,15 @@
                                     <span class="action-text">Starten</span>
                                     <v-icon size="20">mdi-arrow-right</v-icon>
                                 </div>
+                                <div class="card-badge" v-if="tutoringStatus === 'expired'">
+                                    <v-icon size="16">mdi-clock-alert-outline</v-icon>
+                                    <span>Lizenz abgelaufen</span>
+                                </div>
                             </div>
                         </div>
 
                         <!-- Unterricht Card -->
-                        <div class="tool-card card-lernportal" @click="openUnterricht()" v-if="canShowTeaching">
+                        <div class="tool-card card-lernportal" :class="{ 'card-disabled': teachingStatus === 'expired' }" @click="openUnterricht()" v-if="canShowTeaching">
                             <div class="card-glow"></div>
                             <div class="card-content">
                                 <div class="card-icon">
@@ -73,6 +81,10 @@
                                 <div class="card-action">
                                     <span class="action-text">Starten</span>
                                     <v-icon size="20">mdi-arrow-right</v-icon>
+                                </div>
+                                <div class="card-badge" v-if="teachingStatus === 'expired'">
+                                    <v-icon size="16">mdi-clock-alert-outline</v-icon>
+                                    <span>Lizenz abgelaufen</span>
                                 </div>
                             </div>
                         </div>
@@ -219,14 +231,26 @@ export default {
 
     computed: {
         ...mapWritableState(useHomepageStore, ['config', 'is_loading', 'schools', 'licence', 'selected_school', 'selected_school_id']),
+        toolStatuses() {
+            return this.config?.tool_licence_statuses || {}
+        },
+        registerStatus() {
+            return this.toolStatuses['Anmeldetool'] || 'missing'
+        },
+        tutoringStatus() {
+            return this.toolStatuses['Nachhilfetool'] || 'missing'
+        },
+        teachingStatus() {
+            return this.toolStatuses['Lehrertool'] || 'missing'
+        },
         canShowRegister() {
-            return Boolean(this.config?.register_active ?? true)
+            return Boolean(this.config?.register_active ?? true) && this.registerStatus !== 'missing'
         },
         canShowTutoring() {
-            return Boolean(this.config?.tutoring_active)
+            return Boolean(this.config?.tutoring_active) && this.tutoringStatus !== 'missing'
         },
         canShowTeaching() {
-            return Boolean(this.config?.teaching_active)
+            return Boolean(this.config?.teaching_active) && this.teachingStatus !== 'missing'
         },
     },
 
@@ -244,7 +268,7 @@ export default {
             alert('1')
         },
         openUnterricht() {
-            if (!this.canShowTeaching) return
+            if (!this.canShowTeaching || this.teachingStatus !== 'active') return
             this.$router.push('/homepage/student')
         },
         moveTo(licence, school) {

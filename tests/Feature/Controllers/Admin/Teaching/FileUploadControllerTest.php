@@ -13,6 +13,7 @@
  */
 
 use App\Jobs\Teaching\Import116Job;
+use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
@@ -42,6 +43,14 @@ beforeEach(function () {
     $this->school = School::factory()->create([
         'short_name' => 'UPLOAD',
         'long_name' => 'Upload Test School',
+    ]);
+
+    $teachingLicence = Licence::firstOrCreate(
+        ['name' => 'Lehrertool'],
+        ['long_name' => 'Lehrertool', 'is_selectable' => true]
+    );
+    $this->school->licences()->attach($teachingLicence->id, [
+        'valid_until' => now()->addYear()->toDateString(),
     ]);
 
     $this->schoolyear = Schoolyear::factory()->create([

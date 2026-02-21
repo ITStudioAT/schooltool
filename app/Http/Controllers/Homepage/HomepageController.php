@@ -61,28 +61,22 @@ class HomepageController extends Controller
     public function loadSchoolsForTool(HomepageLoadSchoolsForToolRequest $request)
     {
         $validated = $request->validated();
-        $licence = Licence::where('name', $validated['tool'])->first();
+        $licenceService = app(LicenceService::class);
+        $toolData = $licenceService->selectableSchoolsForTool($validated['tool']);
+        $licence = $toolData['licence'];
 
         if (!$licence) {
             return response()->json([
                 'licence' => null,
                 'schools' => [],
+                'status' => 'missing',
             ], 200);
         }
 
-        $schools = School::selectables()
-            ->whereHas('licences', function ($q) use ($licence) {
-                $q->where('licences.id', $licence->id)
-                    ->where(function ($subQ) {
-                        $subQ->whereNull('school_licences.valid_until')
-                            ->orWhereDate('school_licences.valid_until', '>=', now()->toDateString());
-                    });
-            })
-            ->get();
-
         $data = [
             'licence' => new LicenceResource($licence),
-            'schools' => SchoolResource::collection($schools),
+            'schools' => SchoolResource::collection($toolData['schools']),
+            'status' => $toolData['status'],
         ];
 
         return response()->json($data, 200);
@@ -107,15 +101,15 @@ class HomepageController extends Controller
 
         // Wenn es eine Schule gibt, die gültige Lizenzen holen
         if ($isSchoolValid) {
-            $schoolLicences = $school->selectableValidLicences()->get();
+            $schoolLicences = $licenceService->selectableActiveLicencesForSchool($school);
         } else {
             if (count($schools) == 1) {
                 $school = $schools->first();
                 $isSchoolValid = true;
-                $schoolLicences = $school->selectableValidLicences()->get();
+                $schoolLicences = $licenceService->selectableActiveLicencesForSchool($school);
                 $isLicenceValid = $licenceService->isLicenceValid($school, $app);
             } else {
-                $schoolLicences = [];
+                $schoolLicences = collect();
             }
         }
 
@@ -145,9 +139,19 @@ class HomepageController extends Controller
             'register_active' => config('schooltool.register_active', true),
             'tutoring_active' => config('schooltool.tutoring_active', false),
             'teaching_active' => config('schooltool.teaching_active', false),
+            'tool_licence_statuses' => [
+                'Anmeldetool' => $this->toolLicenceStatus('Anmeldetool', $licenceService),
+                'Nachhilfetool' => $this->toolLicenceStatus('Nachhilfetool', $licenceService),
+                'Lehrertool' => $this->toolLicenceStatus('Lehrertool', $licenceService),
+            ],
         ];
 
         return response()->json($data, 200);
+    }
+
+    private function toolLicenceStatus(string $toolName, LicenceService $licenceService): string
+    {
+        return $licenceService->selectableSchoolLicenceOverview($toolName)['overall_status'];
     }
 
     public function logout()

@@ -45,7 +45,8 @@
                                         </div>
                                         <div class="d-flex flex-row align-center ga-2">
                                             <div>
-                                                <span v-if="isLicenceActive(licence)">{{ licence.valid_until || 'unbegrenzt' }}</span>
+                                                <span v-if="isSchoolLicenceNotNeeded(licence)">nicht erforderlich</span>
+                                                <span v-else-if="isLicenceActive(licence)">{{ licence.valid_until || 'unbegrenzt' }}</span>
                                                 <span v-else>{{ licence.valid_until }} (abgelaufen)</span>
                                             </div>
                                         </div>
@@ -190,10 +191,51 @@ export default {
             const day = String(date.getDate()).padStart(2, '0')
             return `${year}-${month}-${day}`
         },
+        isSchoolLicenceNotNeeded(licence) {
+            const model = this.normalizeLicenceModel(licence?.licence_model || null)
+            return model.school_licence_required === false
+        },
         isLicenceActive(licence) {
+            if (this.isSchoolLicenceNotNeeded(licence)) return true
             const validUntil = licence?.valid_until
             if (!validUntil) return true
             return String(validUntil) >= this.localDateKey()
+        },
+        normalizeLicenceModel(licenceModel) {
+            const fallback = {
+                school_licence_required: true,
+                affected_roles: [],
+                user_licence_required_by_role: {},
+            }
+
+            if (typeof licenceModel === 'string') {
+                try {
+                    licenceModel = JSON.parse(licenceModel)
+                } catch (_) {
+                    return fallback
+                }
+            }
+
+            if (!licenceModel || typeof licenceModel !== 'object') return fallback
+
+            return {
+                school_licence_required: this.toBool(licenceModel.school_licence_required, true),
+                affected_roles: Array.isArray(licenceModel.affected_roles) ? licenceModel.affected_roles : [],
+                user_licence_required_by_role:
+                    licenceModel.user_licence_required_by_role && typeof licenceModel.user_licence_required_by_role === 'object'
+                        ? licenceModel.user_licence_required_by_role
+                        : {},
+            }
+        },
+        toBool(value, fallback = false) {
+            if (typeof value === 'boolean') return value
+            if (typeof value === 'number') return value === 1
+            if (typeof value === 'string') {
+                const normalized = value.trim().toLowerCase()
+                if (['1', 'true', 'yes', 'ja'].includes(normalized)) return true
+                if (['0', 'false', 'no', 'nein'].includes(normalized)) return false
+            }
+            return fallback
         },
     },
 }

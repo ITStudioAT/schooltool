@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\School;
 use App\Services\LicenceService;
 use Closure;
 use Illuminate\Http\Request;
@@ -10,27 +11,72 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ToolLicensed
 {
-    public function handle(Request $request, Closure $next, string $licenceName): Response
+    public function handle(Request $request, Closure $next, string $licenceName, string $schoolSource = 'auto'): Response
     {
-        $user = Auth::user();
-        $school = $user?->selectedSchool;
+        $licenceService = app(LicenceService::class);
 
         $configFlag = $this->configFlagForLicence($licenceName);
         if ($configFlag && !config($configFlag, false)) {
-            return $this->deny($request);
+            return $this->deny($request, 'missing');
         }
 
-        if (!$school || !app(LicenceService::class)->isLicenceValid($school, $licenceName)) {
-            return $this->deny($request);
+        $school = $this->resolveSchool($request, $schoolSource);
+        $status = $licenceService->licenceStatus($school, $licenceName);
+        if ($status !== 'active') {
+            return $this->deny($request, $status);
         }
 
         return $next($request);
     }
 
-    private function deny(Request $request): Response
+    private function resolveSchool(Request $request, string $schoolSource): ?School
     {
+        $user = Auth::user();
+
+        if ($schoolSource === 'auth') {
+            return $user?->selectedSchool;
+        }
+
+        if ($user?->selectedSchool) {
+            return $user->selectedSchool;
+        }
+
+        $schoolId = $request->input('school_id') ?? $request->input('data.school_id');
+        if ($schoolId) {
+            $school = School::find((int) $schoolId);
+            if ($school) {
+                return $school;
+            }
+        }
+
+        $shortName = $request->query('school')
+            ?? $request->input('school')
+            ?? $request->input('school_name')
+            ?? $request->input('data.school_name');
+
+        if (is_string($shortName) && trim($shortName) !== '') {
+            $school = School::where('short_name', trim($shortName))->first();
+            if ($school) {
+                return $school;
+            }
+        }
+
+        return null;
+    }
+
+    private function deny(Request $request, string $status): Response
+    {
+        $message = match ($status) {
+            'expired' => 'Lizenz abgelaufen.',
+            default => 'Lizenz nicht vorhanden.',
+        };
+
         if ($request->expectsJson() || $request->is('api/*')) {
-            abort(403, 'Lizenz fehlt oder ist abgelaufen.');
+            abort(403, $message);
+        }
+
+        if ($request->is('homepage/*')) {
+            return redirect('/homepage/error?msg=' . urlencode($message));
         }
 
         return redirect('/');

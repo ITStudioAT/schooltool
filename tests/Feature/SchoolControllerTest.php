@@ -168,6 +168,104 @@ test('super admin can filter schools with at least one expired school licence', 
         ->and($names)->not->toContain('Active School');
 });
 
+test('expired schools filter ignores expired licences when school licence is not required', function () {
+    $ignoredSchool = School::factory()->create([
+        'long_name' => 'Ignored Expired School',
+        'short_name' => 'IGN',
+        'email' => 'ignored-expired@example.com',
+    ]);
+    $requiredSchool = School::factory()->create([
+        'long_name' => 'Required Expired School',
+        'short_name' => 'REQ',
+        'email' => 'required-expired@example.com',
+    ]);
+
+    $notRequiredLicence = Licence::create([
+        'name' => 'not-required-expired-licence',
+        'long_name' => 'Not Required Expired Licence',
+    ]);
+    $requiredLicence = Licence::create([
+        'name' => 'required-expired-licence',
+        'long_name' => 'Required Expired Licence',
+    ]);
+
+    $ignoredSchool->licences()->attach($notRequiredLicence->id, [
+        'valid_until' => now()->subDay()->toDateString(),
+        'licence_model' => json_encode([
+            'school_licence_required' => false,
+            'affected_roles' => [],
+            'user_licence_required_by_role' => [],
+        ]),
+    ]);
+    $requiredSchool->licences()->attach($requiredLicence->id, [
+        'valid_until' => now()->subDay()->toDateString(),
+        'licence_model' => json_encode([
+            'school_licence_required' => true,
+            'affected_roles' => [],
+            'user_licence_required_by_role' => [],
+        ]),
+    ]);
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $response = $this->getJson('/api/admin/schools?expired_only=1');
+    $response->assertStatus(200);
+
+    $names = collect($response->json('data'))->pluck('long_name')->all();
+    expect($names)->toContain('Required Expired School')
+        ->and($names)->not->toContain('Ignored Expired School');
+});
+
+test('expired schools filter respects template model when school licence model is missing', function () {
+    $ignoredSchool = School::factory()->create([
+        'long_name' => 'Template Ignored School',
+        'short_name' => 'TIGN',
+        'email' => 'template-ignored@example.com',
+    ]);
+    $requiredSchool = School::factory()->create([
+        'long_name' => 'Template Required School',
+        'short_name' => 'TREQ',
+        'email' => 'template-required@example.com',
+    ]);
+
+    $notRequiredTemplateLicence = Licence::create([
+        'name' => 'template-not-required-expired-licence',
+        'long_name' => 'Template Not Required Expired Licence',
+        'licence_model' => [
+            'school_licence_required' => false,
+            'affected_roles' => [],
+            'user_licence_required_by_role' => [],
+        ],
+    ]);
+    $requiredTemplateLicence = Licence::create([
+        'name' => 'template-required-expired-licence',
+        'long_name' => 'Template Required Expired Licence',
+        'licence_model' => [
+            'school_licence_required' => true,
+            'affected_roles' => [],
+            'user_licence_required_by_role' => [],
+        ],
+    ]);
+
+    $ignoredSchool->licences()->attach($notRequiredTemplateLicence->id, [
+        'valid_until' => now()->subDay()->toDateString(),
+        'licence_model' => null,
+    ]);
+    $requiredSchool->licences()->attach($requiredTemplateLicence->id, [
+        'valid_until' => now()->subDay()->toDateString(),
+        'licence_model' => null,
+    ]);
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $response = $this->getJson('/api/admin/schools?expired_only=1');
+    $response->assertStatus(200);
+
+    $names = collect($response->json('data'))->pluck('long_name')->all();
+    expect($names)->toContain('Template Required School')
+        ->and($names)->not->toContain('Template Ignored School');
+});
+
 test('non super admin receives 403 on listing schools', function () {
     $this->actingAs($this->adminUser, 'sanctum');
 
@@ -659,6 +757,49 @@ test('school licence users response marks outdated user role licences', function
         ->assertJsonPath("role_statuses_by_user.{$user->id}.teacher.is_active", false);
 });
 
+test('school licence users response ignores expired school licence when school licence is not required', function () {
+    Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+
+    $licence = Licence::create([
+        'name' => 'users_role_status_school_not_required',
+        'long_name' => 'Users Role Status School Not Required',
+    ]);
+
+    $schoolLicence = SchoolLicence::create([
+        'school_id' => $this->school->id,
+        'licence_id' => $licence->id,
+        'valid_until' => now()->subDay()->toDateString(),
+        'licence_model' => [
+            'school_licence_required' => false,
+            'affected_roles' => ['teacher'],
+            'user_licence_required_by_role' => [
+                'teacher' => true,
+            ],
+        ],
+        'user_licence_assignments' => [],
+    ]);
+
+    $user = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $user->assignRole('teacher');
+
+    $schoolLicence->user_licence_assignments = [
+        (string) $user->id => [
+            'teacher' => now()->addDay()->toDateString(),
+        ],
+    ];
+    $schoolLicence->save();
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $response = $this->getJson("/api/admin/school_licences/{$schoolLicence->id}/users");
+
+    $response->assertStatus(200)
+        ->assertJsonPath("role_statuses_by_user.{$user->id}.teacher.is_active", true);
+});
+
 test('super admin can filter school licence users by expired user licences', function () {
     Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
 
@@ -673,6 +814,60 @@ test('super admin can filter school licence users by expired user licences', fun
         'valid_until' => now()->addMonth()->toDateString(),
         'licence_model' => [
             'school_licence_required' => true,
+            'affected_roles' => ['teacher'],
+            'user_licence_required_by_role' => [
+                'teacher' => true,
+            ],
+        ],
+        'user_licence_assignments' => [],
+    ]);
+
+    $outdatedUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $outdatedUser->assignRole('teacher');
+
+    $activeUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $activeUser->assignRole('teacher');
+
+    $schoolLicence->user_licence_assignments = [
+        (string) $outdatedUser->id => [
+            'teacher' => now()->subDay()->toDateString(),
+        ],
+        (string) $activeUser->id => [
+            'teacher' => now()->addDay()->toDateString(),
+        ],
+    ];
+    $schoolLicence->save();
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $response = $this->getJson("/api/admin/school_licences/{$schoolLicence->id}/users?expired_only=1");
+    $response->assertStatus(200);
+
+    $ids = collect($response->json('data'))->pluck('id')->all();
+    expect($ids)->toContain($outdatedUser->id)
+        ->and($ids)->not->toContain($activeUser->id);
+});
+
+test('expired user licences filter ignores expired school licence when school licence is not required', function () {
+    Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+
+    $licence = Licence::create([
+        'name' => 'users_filter_expired_only_school_not_required',
+        'long_name' => 'Users Filter Expired Only School Not Required',
+    ]);
+
+    $schoolLicence = SchoolLicence::create([
+        'school_id' => $this->school->id,
+        'licence_id' => $licence->id,
+        'valid_until' => now()->subDay()->toDateString(),
+        'licence_model' => [
+            'school_licence_required' => false,
             'affected_roles' => ['teacher'],
             'user_licence_required_by_role' => [
                 'teacher' => true,

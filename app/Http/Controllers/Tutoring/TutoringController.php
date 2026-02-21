@@ -13,9 +13,9 @@ use App\Http\Requests\Tutoring\LoginWithPasswordRequest;
 use App\Http\Resources\Homepage\SchoolWithLicenceRecource;
 use App\Http\Resources\Homepage\UserResource;
 use App\Http\Resources\Tutoring\SchoolToolResource;
-use App\Models\School;
 use App\Models\User;
 use App\Services\Import116Service;
+use App\Services\LicenceService;
 use App\Services\TutoringService;
 use Barryvdh\Debugbar\Facades\Debugbar;
 use Illuminate\Http\Request;
@@ -24,17 +24,9 @@ use Illuminate\Support\Facades\Log;
 
 class TutoringController extends Controller
 {
-    public function config()
+    public function config(LicenceService $licenceService)
     {
-        $licenceName = 'Nachhilfetool';
-
-        $schools = School::where('is_selectable', 1)->whereHas('licences', function ($query) use ($licenceName) {
-            $query->where('name', $licenceName)
-                ->where('school_licences.valid_until', '>=', now());
-        })->with(['licences' => function ($query) use ($licenceName) {
-            $query->where('name', $licenceName)
-                ->where('school_licences.valid_until', '>=', now());
-        }])->get();
+        $schools = $licenceService->selectableSchoolsForTool('Nachhilfetool')['schools'];
 
         $data = [
             'schools' => SchoolWithLicenceRecource::collection($schools),
@@ -140,6 +132,7 @@ class TutoringController extends Controller
     {
         $validated = $request->validated();
         $user = User::findOrFail($validated['user_id']);
+        $this->ensureTutoringLicenceForSchool($user->selectedSchool);
 
         if ($service->confirmUser($validated['user_id'], $validated['token'])) {
 
@@ -153,6 +146,7 @@ class TutoringController extends Controller
     {
         $validated = $request->validated();
         $user = User::findOrFail($validated['user_id']);
+        $this->ensureTutoringLicenceForSchool($user->selectedSchool);
 
         if ($service->refuseUser($validated['user_id'], $validated['token'])) {
 
@@ -197,5 +191,15 @@ class TutoringController extends Controller
         $data = $service->loginWithPassword($data);
 
         return response()->json($data, 200);
+    }
+
+    private function ensureTutoringLicenceForSchool($school): void
+    {
+        $status = app(LicenceService::class)->licenceStatus($school, 'Nachhilfetool');
+        if ($status === 'active') {
+            return;
+        }
+
+        abort(403, $status === 'expired' ? 'Lizenz abgelaufen.' : 'Lizenz nicht vorhanden.');
     }
 }

@@ -17,6 +17,7 @@
 
 use App\Models\Licence;
 use App\Models\School;
+use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\User;
@@ -124,6 +125,28 @@ describe('config', function () {
         $schoolShortNames = array_column($schools, 'short_name');
 
         expect($schoolShortNames)->not->toContain('HIDDEN');
+    });
+
+    test('config includes school when expired licence is not required by model', function () {
+        $schoolLicence = SchoolLicence::where('school_id', $this->school->id)
+            ->where('licence_id', $this->tutoringLicence->id)
+            ->firstOrFail();
+
+        $schoolLicence->valid_until = now()->subDay()->toDateString();
+        $schoolLicence->licence_model = [
+            'school_licence_required' => false,
+            'affected_roles' => [],
+            'user_licence_required_by_role' => [],
+        ];
+        $schoolLicence->save();
+
+        $response = $this->getJson('/api/homepage/tutoring/config');
+
+        $response->assertStatus(200);
+
+        $schools = $response->json('schools');
+        $schoolShortNames = array_column($schools, 'short_name');
+        expect($schoolShortNames)->toContain('TEST');
     });
 });
 
@@ -248,11 +271,13 @@ describe('createUser', function () {
 
     test('create user validates required fields', function () {
         $response = $this->postJson('/api/homepage/tutoring/create_user', [
-            'data' => [],
+            'data' => [
+                'school_id' => $this->school->id,
+            ],
         ]);
 
         $response->assertStatus(422)
-            ->assertJsonValidationErrors(['data.email', 'data.school_id', 'data.last_name']);
+            ->assertJsonValidationErrors(['data.email', 'data.last_name', 'data.schoolclass', 'data.sex']);
     });
 });
 
@@ -315,6 +340,60 @@ describe('confirmUser', function () {
         $response->assertStatus(302)
             ->assertRedirect()
             ->assertRedirectContains('nicht best');
+    });
+
+    test('confirm user is blocked when tutoring school licence is expired and required', function () {
+        $validUuid = '550e8400-e29b-41d4-a716-446655440000';
+
+        $schoolLicence = SchoolLicence::where('school_id', $this->school->id)
+            ->where('licence_id', $this->tutoringLicence->id)
+            ->firstOrFail();
+        $schoolLicence->valid_until = now()->subDay()->toDateString();
+        $schoolLicence->licence_model = [
+            'school_licence_required' => true,
+            'affected_roles' => [],
+            'user_licence_required_by_role' => [],
+        ];
+        $schoolLicence->save();
+
+        $user = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'token_2fa_2' => $validUuid,
+            'confirmed_at' => null,
+        ]);
+
+        $response = $this->get('/homepage/tutoring/confirm-user?user_id=' . $user->id . '&token=' . $validUuid);
+
+        $response->assertStatus(403);
+    });
+
+    test('confirm user remains allowed when tutoring school licence is expired but not required', function () {
+        $validUuid = '550e8400-e29b-41d4-a716-446655440000';
+
+        $schoolLicence = SchoolLicence::where('school_id', $this->school->id)
+            ->where('licence_id', $this->tutoringLicence->id)
+            ->firstOrFail();
+        $schoolLicence->valid_until = now()->subDay()->toDateString();
+        $schoolLicence->licence_model = [
+            'school_licence_required' => false,
+            'affected_roles' => [],
+            'user_licence_required_by_role' => [],
+        ];
+        $schoolLicence->save();
+
+        $user = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'token_2fa_2' => $validUuid,
+            'confirmed_at' => null,
+        ]);
+
+        $response = $this->get('/homepage/tutoring/confirm-user?user_id=' . $user->id . '&token=' . $validUuid);
+
+        $response->assertStatus(302)
+            ->assertRedirect()
+            ->assertRedirectContains('erfolgreich bestätigt');
     });
 });
 
@@ -446,4 +525,3 @@ describe('loginWithToken', function () {
             ->assertJson(['status' => 'RETRY_LOGIN_WITH_TOKEN']);
     });
 });
-

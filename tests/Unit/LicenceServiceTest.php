@@ -171,6 +171,52 @@ describe('isLicenceValid', function () {
     });
 });
 
+describe('licenceStatus with school_licence_required', function () {
+    it('returns active when school licence is expired but not required in school model', function () {
+        $school = School::factory()->create();
+        $licence = Licence::create(['name' => 'app1', 'long_name' => 'Application 1']);
+
+        SchoolLicence::create([
+            'school_id' => $school->id,
+            'licence_id' => $licence->id,
+            'valid_until' => now()->subDay(),
+            'licence_model' => [
+                'school_licence_required' => false,
+                'affected_roles' => [],
+                'user_licence_required_by_role' => [],
+            ],
+        ]);
+
+        $result = $this->service->licenceStatus($school, 'app1');
+
+        expect($result)->toBe('active');
+    });
+
+    it('uses template model when school licence model is null', function () {
+        $school = School::factory()->create();
+        $licence = Licence::create([
+            'name' => 'app1',
+            'long_name' => 'Application 1',
+            'licence_model' => [
+                'school_licence_required' => false,
+                'affected_roles' => [],
+                'user_licence_required_by_role' => [],
+            ],
+        ]);
+
+        SchoolLicence::create([
+            'school_id' => $school->id,
+            'licence_id' => $licence->id,
+            'valid_until' => now()->subDay(),
+            'licence_model' => null,
+        ]);
+
+        $result = $this->service->licenceStatus($school, 'app1');
+
+        expect($result)->toBe('active');
+    });
+});
+
 describe('schoolAddLicence', function () {
     it('creates a new school licence when it does not exist', function () {
         $school = School::factory()->create();
@@ -324,11 +370,10 @@ describe('checkLicence', function () {
             ->and($result['redirect'])->toBe('&licence=app1');
     });
 
-    it('returns error when licence has no expiration date set', function () {
+    it('returns success when licence has no expiration date set', function () {
         $school = School::factory()->create();
         $licence = Licence::create(['name' => 'app1', 'long_name' => 'Application 1']);
-        
-        // Note: checkLicence uses Carbon::parse() which treats null as "now" in the past
+
         SchoolLicence::create([
             'school_id' => $school->id,
             'licence_id' => $licence->id,
@@ -337,8 +382,8 @@ describe('checkLicence', function () {
 
         $result = $this->service->checkLicence($school, 'app1');
 
-        expect($result['status'])->toBe('error')
-            ->and($result['msg'])->toBe('Die Lizenz für die App ist abgelaufen.');
+        expect($result['status'])->toBe('ok')
+            ->and($result['redirect'])->toBe('&licence=app1');
     });
 
     it('returns error when licence does not exist', function () {
@@ -376,7 +421,7 @@ describe('checkLicence', function () {
             ->and($result['msg'])->toBe('Die Lizenz für die App ist abgelaufen.');
     });
 
-    it('returns error when licence expires today', function () {
+    it('returns success when licence expires today', function () {
         $school = School::factory()->create();
         $licence = Licence::create(['name' => 'app1', 'long_name' => 'Application 1']);
         
@@ -388,8 +433,8 @@ describe('checkLicence', function () {
 
         $result = $this->service->checkLicence($school, 'app1');
 
-        expect($result['status'])->toBe('error')
-            ->and($result['msg'])->toBe('Die Lizenz für die App ist abgelaufen.');
+        expect($result['status'])->toBe('ok')
+            ->and($result['redirect'])->toBe('&licence=app1');
     });
 
     it('includes licence name in redirect parameter', function () {

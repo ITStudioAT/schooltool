@@ -325,13 +325,11 @@ describe('checkRoute with null valid_until', function () {
             'valid_until' => null,
         ]);
         
-        // Note: The checkLicence method in LicenceService doesn't properly handle null valid_until
-        // It attempts to parse null with Carbon::parse() which causes issues
-        // This test documents the current behavior
         $result = $this->service->checkRoute('TEST', 'unlimited-app');
         
         expect($result)->toBeArray()
-            ->and($result['status'])->toBe('error');
+            ->and($result['status'])->toBe('ok')
+            ->and($result['redirect'])->toBe('/homepage/?school=TEST&licence=unlimited-app');
     });
 });
 

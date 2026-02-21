@@ -1,6 +1,9 @@
 <?php
 
 use App\Models\User;
+use App\Models\Licence;
+use App\Models\School;
+use App\Models\SchoolLicence;
 use App\Services\AdminNavigationService;
 use App\Services\UserService;
 use Illuminate\Support\Facades\Auth;
@@ -12,6 +15,31 @@ uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
     $this->service = new AdminNavigationService();
+    $this->attachActiveLicences = function (User $user, array $licenceNames): void {
+        $school = $user->school_id ? School::find($user->school_id) : null;
+        if (! $school) {
+            $school = School::factory()->create();
+            $user->school_id = $school->id;
+            $user->save();
+        }
+
+        foreach ($licenceNames as $licenceName) {
+            $licence = Licence::firstOrCreate(
+                ['name' => $licenceName],
+                ['long_name' => $licenceName]
+            );
+
+            SchoolLicence::firstOrCreate(
+                [
+                    'school_id' => $school->id,
+                    'licence_id' => $licence->id,
+                ],
+                [
+                    'valid_until' => now()->addMonth(),
+                ]
+            );
+        }
+    };
 });
 
 describe('dashboardMenu', function () {
@@ -89,6 +117,7 @@ describe('dashboardMenu', function () {
 
         Auth::shouldReceive('check')->andReturn(true);
         Auth::shouldReceive('user')->andReturn($user);
+        ($this->attachActiveLicences)($user, ['Anmeldetool', 'Nachhilfetool', 'Lehrertool']);
 
         $result = $this->service->dashboardMenu();
 
@@ -110,6 +139,7 @@ describe('dashboardMenu', function () {
 
         Auth::shouldReceive('check')->andReturn(true);
         Auth::shouldReceive('user')->andReturn($user);
+        ($this->attachActiveLicences)($user, ['Anmeldetool', 'Nachhilfetool', 'Lehrertool']);
 
         $result = $this->service->dashboardMenu();
 
@@ -129,6 +159,7 @@ describe('dashboardMenu', function () {
 
         Auth::shouldReceive('check')->andReturn(true);
         Auth::shouldReceive('user')->andReturn($user);
+        ($this->attachActiveLicences)($user, ['Anmeldetool', 'Nachhilfetool', 'Lehrertool']);
 
         $result = $this->service->dashboardMenu();
 
@@ -150,6 +181,7 @@ describe('dashboardMenu', function () {
 
         Auth::shouldReceive('check')->andReturn(true);
         Auth::shouldReceive('user')->andReturn($user);
+        ($this->attachActiveLicences)($user, ['Anmeldetool', 'Nachhilfetool', 'Lehrertool']);
 
         $result = $this->service->dashboardMenu();
 
@@ -160,11 +192,50 @@ describe('dashboardMenu', function () {
             ->toContain('Home', 'Super-Admin', 'Anmeldetool', 'Nachhilfe', 'Unterricht', 'Role Multi', 'Abmelden');
     });
 
+    it('keeps module active when expired school licence is not required by model', function () {
+        config(['schooltool.teaching_active' => true]);
+
+        $school = School::factory()->create();
+        $user = User::factory()->create([
+            'school_id' => $school->id,
+            'first_name' => 'Model',
+            'last_name' => 'Aware',
+        ]);
+        $user->assignRole(Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']));
+
+        $licence = Licence::create([
+            'name' => 'Lehrertool',
+            'long_name' => 'Lehrertool',
+        ]);
+
+        SchoolLicence::create([
+            'school_id' => $school->id,
+            'licence_id' => $licence->id,
+            'valid_until' => now()->subDay(),
+            'licence_model' => [
+                'school_licence_required' => false,
+                'affected_roles' => [],
+                'user_licence_required_by_role' => [],
+            ],
+        ]);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+        $item = collect($result)->firstWhere('title', 'Unterricht');
+
+        expect($item)
+            ->not->toBeNull()
+            ->and($item['is_active'])->toBeTrue();
+    });
+
     it('ensures Home is always first menu item', function () {
         $user = User::factory()->create();
 
         Auth::shouldReceive('check')->andReturn(true);
         Auth::shouldReceive('user')->andReturn($user);
+        ($this->attachActiveLicences)($user, ['Anmeldetool']);
 
         $result = $this->service->dashboardMenu();
 
@@ -510,6 +581,7 @@ describe('HasRoleTrait integration', function () {
 
         Auth::shouldReceive('check')->andReturn(true);
         Auth::shouldReceive('user')->andReturn($user);
+        ($this->attachActiveLicences)($user, ['Anmeldetool']);
 
         $result = $this->service->dashboardMenu();
 
@@ -562,4 +634,3 @@ describe('menu item consistency', function () {
         }
     });
 });
-

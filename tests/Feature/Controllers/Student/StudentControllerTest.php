@@ -2,6 +2,7 @@
 
 use App\Models\Licence;
 use App\Models\School;
+use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\User;
@@ -93,6 +94,27 @@ test('config returns only selectable schools with valid Lehrertool licence', fun
         ->not->toContain($schoolNotSelectable->id);
 });
 
+test('config keeps school selectable when expired licence is not required by model', function () {
+    $licence = Licence::where('name', 'Lehrertool')->firstOrFail();
+    $schoolLicence = SchoolLicence::where('school_id', $this->school->id)
+        ->where('licence_id', $licence->id)
+        ->firstOrFail();
+
+    $schoolLicence->valid_until = now()->subDay()->toDateString();
+    $schoolLicence->licence_model = [
+        'school_licence_required' => false,
+        'affected_roles' => [],
+        'user_licence_required_by_role' => [],
+    ];
+    $schoolLicence->save();
+
+    $response = $this->getJson('/api/homepage/student/config');
+
+    $response->assertOk();
+    $schools = $response->json('schools');
+    expect(collect($schools)->pluck('id'))->toContain($this->school->id);
+});
+
 test('login step email returns enter_password for existing student', function () {
     $response = $this->postJson('/api/homepage/student/login_step_email', [
         'type' => 'login_with_password',
@@ -135,17 +157,19 @@ test('login step password returns password_not_valid for wrong password', functi
 });
 
 test('user endpoint returns user only for authenticated students', function () {
-    $this->getJson('/api/homepage/student/user')
+    $url = '/api/homepage/student/user?school_id=' . $this->school->id;
+
+    $this->getJson($url)
         ->assertOk()
         ->assertJsonPath('user', null);
 
     $this->actingAs($this->teacher)
-        ->getJson('/api/homepage/student/user')
+        ->getJson($url)
         ->assertOk()
         ->assertJsonPath('user', null);
 
     $this->actingAs($this->student)
-        ->getJson('/api/homepage/student/user')
+        ->getJson($url)
         ->assertOk()
         ->assertJsonPath('user.id', $this->student->id);
 });

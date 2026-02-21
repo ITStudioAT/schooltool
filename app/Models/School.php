@@ -95,11 +95,32 @@ class School extends Model
 
     public function selectableValidLicences()
     {
+        $today = now()->toDateString();
+
         return $this->licences()
             ->where('licences.is_selectable', true)
-            ->where(function ($q) {
-                $q->whereNull('school_licences.valid_until')
-                    ->orWhereDate('school_licences.valid_until', '>=', now()->toDateString());
+            ->where(function ($q) use ($today) {
+                $q->where(function ($requiredQuery) use ($today) {
+                    $requiredQuery
+                        ->where(function ($requiresSchoolLicence) {
+                            $requiresSchoolLicence
+                                ->whereNull('school_licences.licence_model->school_licence_required')
+                                ->orWhere('school_licences.licence_model->school_licence_required', true);
+                        })
+                        ->where(function ($validDateQuery) use ($today) {
+                            $validDateQuery
+                                ->whereNull('school_licences.valid_until')
+                                ->orWhereDate('school_licences.valid_until', '>=', $today);
+                        });
+                })->orWhere(function ($notRequiredQuery) {
+                    $notRequiredQuery
+                        ->where('school_licences.licence_model->school_licence_required', false)
+                        ->orWhere(function ($fallbackTemplateQuery) {
+                            $fallbackTemplateQuery
+                                ->whereNull('school_licences.licence_model->school_licence_required')
+                                ->where('licences.licence_model->school_licence_required', false);
+                        });
+                });
             })
             ->orderBy('licences.long_name');
     }

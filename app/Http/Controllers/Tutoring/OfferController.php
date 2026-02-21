@@ -21,6 +21,7 @@ use App\Models\SchoolTool;
 use App\Models\TutoringOffer;
 use App\Models\TutoringOfferRequest;
 use App\Services\AuthService;
+use App\Services\LicenceService;
 use App\Services\TutoringOfferService;
 use App\Services\UserService;
 use Barryvdh\Debugbar\Facades\Debugbar;
@@ -88,6 +89,7 @@ class OfferController extends Controller
         }
 
         if (!$school) abort(422, 'Keine Schule ausgewählt');
+        $this->ensureTutoringLicenceForSchool($school);
 
         if ($auth_user) {
             // ANZEIGEN FÜR EINEN EINGELOGGTEN USER
@@ -329,6 +331,9 @@ class OfferController extends Controller
             }
         }
 
+        if ($school) {
+            $this->ensureTutoringLicenceForSchool($school);
+        }
 
 
         $data = [
@@ -346,6 +351,13 @@ class OfferController extends Controller
         ]);
 
         $offer = TutoringOffer::find($validated['offer_id']);
+        if (! $offer) {
+            abort(404, 'Angebot nicht gefunden');
+        }
+
+        $school = School::find($offer->school_id);
+        $this->ensureTutoringLicenceForSchool($school);
+
         $ip = request()->ip();
         $now = now()->timestamp;
         $oneHourAgo = now()->subHour()->timestamp;
@@ -388,6 +400,8 @@ class OfferController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
+        $this->ensureTutoringLicenceForSchool($auth_user->selectedSchool);
+
         $validated = $request->validated();
         $auth_user->tutoring_filter = $validated;
         $auth_user->save();
@@ -400,6 +414,9 @@ class OfferController extends Controller
     public function offerConfirmRefuse(OfferConfirmRefuseRequest $request, TutoringOfferService $service)
     {
         $validated = $request->validated();
+        $offer = TutoringOffer::findOrFail($validated['offer_id']);
+        $school = School::find($offer->school_id);
+        $this->ensureTutoringLicenceForSchool($school);
 
         // Agebot bestätigen oder ablehnen
         $service->offerConfirmRefuse($validated);
@@ -407,7 +424,6 @@ class OfferController extends Controller
         // Bestätigungs-/Ablehnungs-E-Mail senden
         $service->sendConfirmRefuseEmail($validated['action'], $validated['offer_id']);
 
-        $offer = TutoringOffer::findOrFail($validated['offer_id']);
         $user = $offer->user;
 
         if ($validated['action'] == 'confirm') {
@@ -441,5 +457,15 @@ class OfferController extends Controller
         }
 
         return response()->json($data, 200);
+    }
+
+    private function ensureTutoringLicenceForSchool(?School $school): void
+    {
+        $status = app(LicenceService::class)->licenceStatus($school, 'Nachhilfetool');
+        if ($status === 'active') {
+            return;
+        }
+
+        abort(403, $status === 'expired' ? 'Lizenz abgelaufen.' : 'Lizenz nicht vorhanden.');
     }
 }

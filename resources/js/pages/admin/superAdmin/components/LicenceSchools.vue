@@ -41,7 +41,8 @@
                                                     v-for="licence in sortedLicences(item.licences)"
                                                     :key="`licence-assignment-${item.id}-${licence.id}`"
                                                     size="x-small"
-                                                    variant="outlined">
+                                                    :color="isSchoolLicenceNotNeeded(licence) ? 'success' : undefined"
+                                                    :variant="isSchoolLicenceNotNeeded(licence) ? 'flat' : 'outlined'">
                                                     <v-avatar size="14" :color="isLicenceActive(licence) ? 'success' : 'error'" class="mr-1">
                                                         <v-icon size="10" color="white" :icon="isLicenceActive(licence) ? 'mdi-check' : 'mdi-close'" />
                                                     </v-avatar>
@@ -99,7 +100,7 @@
                                             <v-avatar size="16" :color="isLicenceActive(licence) ? 'success' : 'error'">
                                                 <v-icon size="11" color="white" :icon="isLicenceActive(licence) ? 'mdi-check' : 'mdi-close'" />
                                             </v-avatar>
-                                            <div class="text-body-1">{{ licence.name }}</div>
+                                            <div class="text-body-1" :class="{ 'text-success': isSchoolLicenceNotNeeded(licence) }">{{ licence.name }}</div>
                                             <v-btn
                                                 size="x-small"
                                                 icon="mdi-pencil"
@@ -366,8 +367,13 @@
     <v-col cols="12" md="6" xl="4" v-if="selectedUserLicenceUser">
         <its-grid-box color="primary" :title="`Benutzer: ${selectedUserLicenceUser.last_name} ${selectedUserLicenceUser.first_name}`" class="w-100">
             <v-card variant="outlined" class="pa-4 mb-4">
-                <div class="text-subtitle-1 mb-3">Schullizenz gültig bis</div>
-                <div class="text-body-1">{{ selectedUserLicenceValidUntilLabel }}</div>
+                <template v-if="isSchoolLicenceNotNeeded(selectedUserLicencesSource)">
+                    <div class="text-subtitle-1">Schullizenz nicht erforderlich</div>
+                </template>
+                <template v-else>
+                    <div class="text-subtitle-1 mb-3">Schullizenz gültig bis</div>
+                    <div class="text-body-1">{{ selectedUserLicenceValidUntilLabel }}</div>
+                </template>
             </v-card>
 
             <v-card variant="outlined" class="pa-4 mb-4">
@@ -707,7 +713,15 @@ export default {
             const day = String(date.getDate()).padStart(2, '0')
             return `${year}-${month}-${day}`
         },
+        isSchoolLicenceNotNeeded(licence) {
+            if (licence?.school_licence_required === false) return true
+
+            const model = this.normalizeLicenceModel(licence?.licence_model || null)
+            return model.school_licence_required === false
+        },
         isLicenceActive(licence) {
+            if (this.isSchoolLicenceNotNeeded(licence)) return true
+
             const validUntil = licence?.valid_until
             if (!validUntil) return true
             const normalized = validUntil instanceof Date ? this.toDateString(validUntil) : String(validUntil).slice(0, 10)
@@ -1009,14 +1023,24 @@ export default {
                     : {}
             const user_licence_required_by_role = {}
             for (const roleName of affected_roles) {
-                user_licence_required_by_role[roleName] = !!rawMap[roleName]
+                user_licence_required_by_role[roleName] = this.toBool(rawMap[roleName], false)
             }
 
             return {
-                school_licence_required: typeof licenceModel.school_licence_required === 'boolean' ? licenceModel.school_licence_required : true,
+                school_licence_required: this.toBool(licenceModel.school_licence_required, true),
                 affected_roles,
                 user_licence_required_by_role,
             }
+        },
+        toBool(value, fallback = false) {
+            if (typeof value === 'boolean') return value
+            if (typeof value === 'number') return value === 1
+            if (typeof value === 'string') {
+                const normalized = value.trim().toLowerCase()
+                if (['1', 'true', 'yes', 'ja'].includes(normalized)) return true
+                if (['0', 'false', 'no', 'nein'].includes(normalized)) return false
+            }
+            return fallback
         },
     },
 }

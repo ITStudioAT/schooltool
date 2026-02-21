@@ -1,9 +1,6 @@
 <template>
     <v-app>
-        <v-navigation-drawer
-            v-model="show_navigation_drawer"
-            color="primary"
-            v-if="isAdminShellVisible">
+        <v-navigation-drawer v-model="show_navigation_drawer" color="primary" v-if="isAdminShellVisible">
             <v-toolbar color="appbar">
                 <v-toolbar-title>
                     <img :src="'/storage/images/' + config?.logo" alt="Logo" class="logo" height="24" />
@@ -13,13 +10,17 @@
             </v-toolbar>
             <v-list>
                 <template v-for="(item, i) in config.menu" :key="i">
-                    <!-- route item -->
-                    <v-list-item v-if="item.to" :exact="false" :title="item.title" :prepend-icon="item.icon" :to="item.to" :disabled="!item.is_active">
+                    <v-list-item
+                        v-if="item.to"
+                        :exact="false"
+                        :title="item.title"
+                        :prepend-icon="item.icon"
+                        :to="item.to"
+                        :disabled="!item.is_active">
                         <template v-if="item.status_icon" #append>
                             <v-icon :icon="item.status_icon" :color="item.status_color || 'warning'" :title="item.status_title || ''" size="small" />
                         </template>
                     </v-list-item>
-                    <!-- click item -->
                     <v-list-item v-else-if="item.click" :exact="false" :title="item.title" :prepend-icon="item.icon" @click="callItemClick(item)" />
                 </template>
             </v-list>
@@ -46,23 +47,16 @@
                     <div>
                         Benutzer-Übernahme aktiv:
                         <strong>{{ currentImpersonatedUserLabel }}</strong>
+                        <div class="text-caption mt-1">
+                            Ursprünglicher Benutzer: <strong>{{ impersonatorLabel }}</strong>. Mit "Zurück" wechseln Sie zu diesem Benutzer.
+                        </div>
                     </div>
-                    <v-btn color="warning" flat tile @click="stopImpersonationAndReturn">
-                        Zurück zu {{ impersonatorLabel }}
-                    </v-btn>
+                    <v-btn color="warning" flat tile @click="stopImpersonationAndReturn">Zurück</v-btn>
                 </div>
             </v-alert>
             <router-view></router-view>
             <its-notification />
             <v-overlay :model-value="is_loading > 0" class="align-center justify-center" contained opacity="0.1">
-                <!-- <v-progress-circular indeterminate size="70" width="7" /> -->
-                <!--
-                    <v-progress-circular indeterminate size="small" />
-                    -->
-                <!--
-                    <v-progress-linear indeterminate stream buffer-value="0" color="primary" />
-                    -->
-
                 <div class="loading-squares">
                     <span></span>
                     <span></span>
@@ -98,7 +92,6 @@ export default {
     },
 
     computed: {
-        // these will become this.config, this.is_loading, ...
         ...mapWritableState(useAdminStore, ['config', 'is_loading', 'show_navigation_drawer', 'load_config']),
         isImpersonating() {
             return !!this.config?.impersonation?.is_impersonating
@@ -113,19 +106,25 @@ export default {
             const impersonator = this.config?.impersonation?.impersonator
             if (!impersonator) return 'meinem Benutzer'
             const name = `${impersonator.last_name || ''} ${impersonator.first_name || ''}`.trim()
-            return name || impersonator.email || 'meinem Benutzer'
+            const displayName = name || impersonator.email || 'meinem Benutzer'
+            const email = impersonator.email ? String(impersonator.email).trim() : ''
+            const schoolName = impersonator.school_name || ''
+            const detailParts = [email, schoolName].filter((item) => !!String(item || '').trim())
+            return detailParts.length >= 1 ? `${displayName} (${detailParts.join(' | ')})` : displayName
         },
         currentImpersonatedUserLabel() {
             const user = this.config?.user || {}
             const name = `${user.last_name || ''} ${user.first_name || ''}`.trim()
-            return name || user.email || 'Benutzer'
+            const displayName = name || user.email || 'Benutzer'
+            const email = user.email ? String(user.email).trim() : ''
+            const schoolName = this.config?.selected_school?.long_name || this.config?.selected_school?.short_name || ''
+            const detailParts = [email, schoolName].filter((item) => !!String(item || '').trim())
+            return detailParts.length >= 1 ? `${displayName} (${detailParts.join(' | ')})` : displayName
         },
     },
 
     async beforeMount() {
         await axios.get('/sanctum/csrf-cookie')
-
-        // get pinia store and keep it on this
         this.adminStore = useAdminStore()
         this.adminStore.is_loading++
         this.adminStore.initialize(this.$router)
@@ -135,10 +134,7 @@ export default {
 
     methods: {
         async logout() {
-            // whatever your backend sequence is
-            // this.$router.push('/admin')
             await this.adminStore.executeLogout()
-            //await this.adminStore.loadConfig()
             await this.$nextTick()
             this.$router.replace('/admin/login')
         },
@@ -147,9 +143,7 @@ export default {
             await this.$nextTick()
             this.$router.replace('/admin/super_admin')
         },
-
         callItemClick(item) {
-            // item.click should be a string like "logout"
             const fnName = item.click
             if (fnName && typeof this[fnName] === 'function') {
                 this[fnName]()
@@ -160,6 +154,7 @@ export default {
     },
 }
 </script>
+
 <style>
 .loading-squares {
     display: flex;
@@ -171,15 +166,15 @@ export default {
     animation: pulse 1.4s infinite ease-in-out both;
 }
 .loading-squares span:nth-child(1) {
-    background: #f39200; /* rot */
+    background: #f39200;
     animation-delay: -0.32s;
 }
 .loading-squares span:nth-child(2) {
-    background: #3aaa35; /* grün */
+    background: #3aaa35;
     animation-delay: -0.16s;
 }
 .loading-squares span:nth-child(3) {
-    background: #37474f; /* blau */
+    background: #37474f;
     animation-delay: 0s;
 }
 

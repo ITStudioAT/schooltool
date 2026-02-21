@@ -44,8 +44,13 @@ test('super admin can impersonate and leave impersonation', function () {
         ->assertStatus(200)
         ->json();
 
+    $superAdminFromDb = User::with('selectedSchool')->findOrFail($this->superAdmin->id);
+    $superAdminSchoolName = trim((string) ($superAdminFromDb->selectedSchool?->long_name ?: $superAdminFromDb->selectedSchool?->short_name));
+
     expect((bool) data_get($configDuring, 'impersonation.is_impersonating'))->toBeTrue()
-        ->and((int) data_get($configDuring, 'impersonation.impersonator.id'))->toBe((int) $this->superAdmin->id);
+        ->and((int) data_get($configDuring, 'impersonation.impersonator.id'))->toBe((int) $this->superAdmin->id)
+        ->and((string) data_get($configDuring, 'impersonation.impersonator.email'))->toBe((string) $this->superAdmin->email)
+        ->and((string) data_get($configDuring, 'impersonation.impersonator.school_name'))->toBe($superAdminSchoolName);
 
     $this->postJson('/api/admin/impersonation/stop')
         ->assertStatus(200);
@@ -109,4 +114,31 @@ test('super admin can find and impersonate users from other schools', function (
     $this->postJson('/api/admin/impersonation/start', [
         'user_id' => $otherUser->id,
     ])->assertStatus(200);
+});
+
+test('impersonation status returns current user email and school while impersonating', function () {
+    $this->actingAs($this->superAdmin);
+
+    $this->postJson('/api/admin/impersonation/start', [
+        'user_id' => $this->targetUser->id,
+    ])->assertStatus(200);
+
+    $status = $this->getJson('/api/admin/impersonation/status')
+        ->assertStatus(200)
+        ->json();
+
+    $currentUserId = (int) data_get($status, 'current_user.id');
+    $currentUser = User::with('selectedSchool')->findOrFail($currentUserId);
+    $expectedSchoolName = trim((string) ($currentUser->selectedSchool?->long_name ?: $currentUser->selectedSchool?->short_name));
+    $impersonatorId = (int) data_get($status, 'impersonator.id');
+    $impersonator = User::with('selectedSchool')->findOrFail($impersonatorId);
+    $expectedImpersonatorSchoolName = trim((string) ($impersonator->selectedSchool?->long_name ?: $impersonator->selectedSchool?->short_name));
+
+    expect((bool) data_get($status, 'is_impersonating'))->toBeTrue()
+        ->and((string) data_get($status, 'current_user.email'))->toBe((string) $currentUser->email)
+        ->and((int) data_get($status, 'current_user.school_id'))->toBe((int) $currentUser->school_id)
+        ->and((string) data_get($status, 'current_user.school_name'))->toBe($expectedSchoolName)
+        ->and((string) data_get($status, 'impersonator.email'))->toBe((string) $impersonator->email)
+        ->and((int) data_get($status, 'impersonator.school_id'))->toBe((int) $impersonator->school_id)
+        ->and((string) data_get($status, 'impersonator.school_name'))->toBe($expectedImpersonatorSchoolName);
 });

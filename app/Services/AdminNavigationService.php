@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\Licence;
 use App\Models\User;
 use App\Services\UserService;
 use App\Traits\HasRoleTrait;
@@ -42,24 +41,24 @@ class AdminNavigationService
 
         // ANMELDESYSTEM
         if ($isSuperAdmin || $this->userHasRole(['admin', 'register_admin'])) {
-            if ($isSuperAdmin || $registerLicenceStatus !== 'missing') {
+            if ($registerLicenceStatus !== 'missing') {
                 $menu[] = [
                     'title' => 'Anmeldetool',
                     'icon' => 'mdi-calendar-cursor',
                     'to' => '/admin/register_system',
-                    'is_active' => $isSuperAdmin ? true : ($registerLicenceStatus === 'active' && config('schooltool.register_active', true)),
+                    'is_active' => ($registerLicenceStatus === 'active' && config('schooltool.register_active', true)),
                 ] + $this->moduleStatusMeta($registerLicenceStatus, 'Anmeldetool');
             }
         }
 
         // TUTORING
         if ($isSuperAdmin || $this->userHasRole(['admin', 'tutoring_admin', 'teacher'])) {
-            if ($isSuperAdmin || $tutoringLicenceStatus !== 'missing') {
+            if ($tutoringLicenceStatus !== 'missing') {
                 $menu[] = [
                     'title' => 'Nachhilfe',
                     'icon' => 'mdi-cast-education',
                     'to' => '/admin/tutoring',
-                    'is_active' => $isSuperAdmin ? true : ($tutoringLicenceStatus === 'active' && config('schooltool.tutoring_active', false)),
+                    'is_active' => ($tutoringLicenceStatus === 'active' && config('schooltool.tutoring_active', false)),
                 ] + $this->moduleStatusMeta($tutoringLicenceStatus, 'Nachhilfe');
             }
         }
@@ -67,12 +66,12 @@ class AdminNavigationService
         // TEACHER
 
         if ($isSuperAdmin || $this->userHasRole(['admin', 'teacher'])) {
-            if ($isSuperAdmin || $teachingLicenceStatus !== 'missing') {
+            if ($teachingLicenceStatus !== 'missing') {
                 $menu[] = [
                     'title' => 'Unterricht',
                     'icon' => 'mdi-school',
                     'to' => '/admin/teaching',
-                    'is_active' => $isSuperAdmin ? true : ($teachingLicenceStatus === 'active' && config('schooltool.teaching_active', false)),
+                    'is_active' => ($teachingLicenceStatus === 'active' && config('schooltool.teaching_active', false)),
                 ] + $this->moduleStatusMeta($teachingLicenceStatus, 'Unterricht');
             }
         }
@@ -130,26 +129,11 @@ class AdminNavigationService
 
     private function licenceStatus(?User $user, string $licenceName): string
     {
-        if (!$user || !$user->selectedSchool) {
+        if (! $user) {
             return 'missing';
         }
 
-        $licence = Licence::where('name', $licenceName)->first();
-        if (!$licence) {
-            return 'missing';
-        }
-
-        $schoolLicence = $user->selectedSchool->licences()->where('licence_id', $licence->id)->first();
-        if (!$schoolLicence) {
-            return 'missing';
-        }
-
-        $validUntil = $schoolLicence->pivot->valid_until;
-        if ($validUntil === null || $validUntil >= now()->toDateString()) {
-            return 'active';
-        }
-
-        return 'expired';
+        return app(LicenceService::class)->licenceStatus($user->selectedSchool, $licenceName);
     }
 
     private function moduleStatusMeta(string $status, string $moduleLabel): array

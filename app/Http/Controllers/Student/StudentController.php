@@ -5,8 +5,8 @@ namespace App\Http\Controllers\Student;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Homepage\SchoolWithLicenceRecource;
 use App\Http\Resources\Teaching\UserResource;
-use App\Models\School;
 use App\Models\SchoolTool;
+use App\Services\LicenceService;
 use App\Services\StudentService;
 use App\Services\UserService;
 use Fruitcake\LaravelDebugbar\Facades\Debugbar;
@@ -16,17 +16,9 @@ use Illuminate\Support\Facades\Hash;
 
 class StudentController extends Controller
 {
-    public function config()
+    public function config(LicenceService $licenceService)
     {
-        $licenceName = 'Lehrertool';
-
-        $schools = School::where('is_selectable', 1)->whereHas('licences', function ($query) use ($licenceName) {
-            $query->where('name', $licenceName)
-                ->where('school_licences.valid_until', '>=', now());
-        })->with(['licences' => function ($query) use ($licenceName) {
-            $query->where('name', $licenceName)
-                ->where('school_licences.valid_until', '>=', now());
-        }])->orderBy('long_name')->get();
+        $schools = $licenceService->selectableSchoolsForTool('Lehrertool')['schools'];
 
         $data = [
             'schools' => SchoolWithLicenceRecource::collection($schools),

@@ -18,6 +18,7 @@
 use App\Models\Register;
 use App\Models\RegisterDate;
 use App\Models\RegisterDateBooking;
+use App\Models\Licence;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
@@ -44,6 +45,14 @@ beforeEach(function () {
     $this->otherSchoolyear = Schoolyear::factory()->create([
         'school_id' => $this->school->id,
         'name' => '2024/2025',
+    ]);
+
+    $registerLicence = Licence::firstOrCreate(
+        ['name' => 'Anmeldetool'],
+        ['long_name' => 'Anmeldetool', 'is_selectable' => true]
+    );
+    $this->school->licences()->attach($registerLicence->id, [
+        'valid_until' => now()->addYear()->toDateString(),
     ]);
     
     // Create roles

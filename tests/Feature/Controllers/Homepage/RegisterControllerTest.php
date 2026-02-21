@@ -137,9 +137,7 @@ describe('config', function () {
 
         $response = $this->getJson("/api/homepage/register/config?school={$this->school->short_name}");
 
-        $response->assertStatus(200)
-            ->assertJsonPath('isLicenceValid', false)
-            ->assertJsonPath('licence', null);
+        $response->assertStatus(403);
     });
 });
 
@@ -193,11 +191,13 @@ describe('checkEmail', function () {
 
     it('validates required fields', function () {
         $response = $this->postJson('/api/homepage/register/check_email', [
-            'data' => [],
+            'data' => [
+                'school_id' => $this->school->id,
+            ],
         ]);
 
         $response->assertStatus(422)
-            ->assertJsonValidationErrors(['data.step', 'data.school_id', 'data.register_id', 'data.email']);
+            ->assertJsonValidationErrors(['data.step', 'data.register_id', 'data.email']);
     });
 
     it('validates email format', function () {

@@ -81,7 +81,9 @@ class AdminController extends Controller
         if ($isImpersonating) {
             $impersonatorId = $impersonateManager->getImpersonatorId();
             if ($impersonatorId) {
-                $impersonator = User::find($impersonatorId);
+                $impersonator = User::query()
+                    ->with('selectedSchool:id,long_name,short_name')
+                    ->find($impersonatorId);
             }
         }
 
@@ -117,6 +119,8 @@ class AdminController extends Controller
                     'last_name' => $impersonator->last_name,
                     'first_name' => $impersonator->first_name,
                     'email' => $impersonator->email,
+                    'school_id' => $impersonator->school_id,
+                    'school_name' => trim((string) ($impersonator->selectedSchool?->long_name ?: $impersonator->selectedSchool?->short_name)),
                 ] : null,
             ],
             'teaching' => [
