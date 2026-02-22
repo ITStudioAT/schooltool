@@ -91,6 +91,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/homepage/tutoring/set_user_search_criteria', [\App\Http\Controllers\Tutoring\OfferController::class, 'setUserSearchCriteria']);
     // setUserSearchCriteria
 
+    // Public: returns a guest-safe "not impersonating" response when unauthenticated.
+    Route::get('/admin/impersonation/status', [\App\Http\Controllers\Admin\ImpersonationController::class, 'status']);
+
     /* SANCTUM */
     Route::middleware(['auth:sanctum'])->group(function () {
         // navigation, menus
@@ -99,7 +102,6 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
         // users
         Route::apiResource('/admin/users', UserController::class)->names('admin.users');
-        Route::get('/admin/impersonation/status', [\App\Http\Controllers\Admin\ImpersonationController::class, 'status']);
         Route::post('/admin/impersonation/stop', [\App\Http\Controllers\Admin\ImpersonationController::class, 'stop']);
 
         Route::get('/admin/test-queue', [App\Http\Controllers\Admin\HealthController::class, 'testQueue']);

@@ -50,7 +50,7 @@
                         <div
                             class="tool-card card-register"
                             :class="{ 'card-disabled': registerStatus === 'expired' }"
-                            @click="registerStatus === 'active' && loadSchoolsForTool('Anmeldetool')"
+                            @click="handleToolCardClick('Anmeldetool')"
                             v-if="canShowRegister">
                             <div class="card-glow"></div>
                             <div class="card-content">
@@ -74,7 +74,7 @@
                         <div
                             class="tool-card card-tutoring"
                             :class="{ 'card-disabled': tutoringStatus === 'expired' }"
-                            @click="tutoringStatus === 'active' && loadSchoolsForTool('Nachhilfetool')"
+                            @click="handleToolCardClick('Nachhilfetool')"
                             v-if="canShowTutoring">
                             <div class="card-glow"></div>
                             <div class="card-content">
@@ -260,7 +260,7 @@
         </section>
 
         <!-- School Selection Step (temporarily hidden) -->
-        <section class="selection-section" v-if="false && step === 'selectSchool'">
+        <section class="selection-section" v-if="step === 'selectSchool'">
             <div class="selection-container">
                 <v-card class="selection-card" elevation="12">
                     <div class="selection-header" :class="licence?.name === 'Anmeldetool' ? 'header-green' : 'header-orange'">
@@ -344,6 +344,7 @@
 import { nextTick } from 'vue'
 import { mapWritableState } from 'pinia'
 import { useHomepageStore } from '@/stores/homepage/HomepageStore'
+import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
 export default {
     components: {},
@@ -419,8 +420,42 @@ export default {
             })
         },
         openUnterricht() {
-            if (!this.canShowTeaching || this.teachingStatus !== 'active') return
+            if (!this.canShowTeaching || this.teachingStatus !== 'active') {
+                this.notifyToolUnavailable('Lehrertool', this.teachingStatus)
+                return
+            }
             this.$router.push('/homepage/student')
+        },
+        notifyToolUnavailable(tool, status) {
+            const notification = useNotificationStore()
+            const toolLabel = {
+                Anmeldetool: 'Anmeldetool',
+                Nachhilfetool: 'Schüler helfen Schülern',
+                Lehrertool: 'Unterricht',
+            }[tool] || tool
+
+            const message =
+                status === 'expired'
+                    ? `${toolLabel}: Lizenz abgelaufen.`
+                    : `${toolLabel}: Lizenz nicht vorhanden.`
+
+            notification.notify({
+                status: 403,
+                message,
+                type: 'warning',
+                timeout: 3500,
+            })
+        },
+        async handleToolCardClick(tool) {
+            const status = this.toolStatuses?.[tool] || 'missing'
+            if (status !== 'active') {
+                this.notifyToolUnavailable(tool, status)
+                return
+            }
+
+            const ok = await this.homepageStore.loadSchoolsForTool(tool)
+            if (ok === false) return
+            this.step = 'selectSchool'
         },
         moveTo(licence, school) {
             console.log('moveTo')
@@ -445,7 +480,8 @@ export default {
         },
 
         async loadSchoolsForTool(tool) {
-            await this.homepageStore.loadSchoolsForTool(tool)
+            const ok = await this.homepageStore.loadSchoolsForTool(tool)
+            if (ok === false) return
             this.step = 'selectSchool'
         },
 

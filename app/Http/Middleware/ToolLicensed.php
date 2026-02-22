@@ -72,7 +72,9 @@ class ToolLicensed
         };
 
         if ($request->expectsJson() || $request->is('api/*')) {
-            abort(403, $message);
+            return response()->json([
+                'message' => $message,
+            ], 403);
         }
 
         if ($request->is('homepage/*')) {
