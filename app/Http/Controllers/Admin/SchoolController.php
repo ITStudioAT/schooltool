@@ -292,7 +292,7 @@ class SchoolController extends Controller
         $search_string = $validated['search_string'] ?? null;
         $expiredOnly = (bool) ($validated['expired_only'] ?? false);
 
-        $licenceModel = $service->normalizeLicenceModel($school_licence->licence_model);
+        $licenceModel = $this->mergedSchoolLicenceUserLicenceModel($school_licence->loadMissing('licence'), $service);
         $schoolLicenceRequired = (bool) ($licenceModel['school_licence_required'] ?? true);
 
         $licenceModelRoles = collect($licenceModel['user_licence_required_by_role'] ?? [])
@@ -341,13 +341,13 @@ class SchoolController extends Controller
                     ->filter(fn($userAssignments) => is_array($userAssignments))
                     ->filter(function (array $userAssignments) use ($licenceModelRoles) {
                         foreach ($licenceModelRoles as $roleName) {
-                            $rawValidUntil = $userAssignments[$roleName] ?? null;
-                            if (! is_string($rawValidUntil) || trim($rawValidUntil) === '') {
+                            $entry = $this->normalizeUserLicenceAssignmentEntry($userAssignments[$roleName] ?? null);
+                            $validUntil = $entry['valid_until'] ?? null;
+                            if (! is_string($validUntil) || trim($validUntil) === '') {
                                 continue;
                             }
 
-                            $validUntil = trim($rawValidUntil);
-                            if (! $this->isDateActive($validUntil)) {
+                            if (! $this->isDateActive(trim($validUntil))) {
                                 return true;
                             }
                         }
@@ -395,14 +395,14 @@ class SchoolController extends Controller
                         continue;
                     }
 
-                    $rawRoleValidUntil = $userAssignments[$roleName] ?? null;
-                    $roleValidUntil = is_string($rawRoleValidUntil) && trim($rawRoleValidUntil) !== ''
-                        ? trim($rawRoleValidUntil)
-                        : null;
+                    $entry = $this->normalizeUserLicenceAssignmentEntry($userAssignments[$roleName] ?? null);
+                    $roleValidUntil = $entry['valid_until'];
+                    $isActivated = $entry['is_activated'];
 
                     $statuses[$roleName] = [
                         'valid_until' => $roleValidUntil,
-                        'is_active' => $this->isUserRoleAssignmentActive($schoolLicenceRequired, $school_licence->valid_until, $roleValidUntil),
+                        'is_activated' => $isActivated,
+                        'is_active' => $this->isUserRoleAssignmentActive($schoolLicenceRequired, $school_licence->valid_until, $roleValidUntil, $isActivated),
                     ];
                 }
 
@@ -453,7 +453,7 @@ class SchoolController extends Controller
 
         $validated = $request->validated();
 
-        $licenceModel = $service->normalizeLicenceModel($school_licence->licence_model);
+        $licenceModel = $this->mergedSchoolLicenceUserLicenceModel($school_licence->loadMissing('licence'), $service);
         $roleNames = collect($licenceModel['user_licence_required_by_role'] ?? [])
             ->filter(fn($isRequired) => (bool) $isRequired)
             ->keys()
@@ -475,12 +475,23 @@ class SchoolController extends Controller
             $entry = $incomingByRole->get($roleName);
             $assigned = (bool) ($entry['assigned'] ?? false);
             $validUntil = $assigned ? ($entry['valid_until'] ?? null) : null;
+            $existingRoleEntry = $this->normalizeUserLicenceAssignmentEntry($assignments[$userKey][$roleName] ?? null);
+            $isActivated = $assigned
+                ? (bool) ($entry['is_activated'] ?? $existingRoleEntry['is_activated'] ?? false)
+                : false;
+            $planId = $assigned
+                ? (isset($entry['plan_id']) ? (int) $entry['plan_id'] : ($existingRoleEntry['plan_id'] ?? null))
+                : null;
 
             if ($assigned) {
                 if (! $user->hasRole($roleName)) {
                     $user->assignRole($roleName);
                 }
-                $updatedUserAssignments[$roleName] = $validUntil;
+                $updatedUserAssignments[$roleName] = [
+                    'valid_until' => $validUntil,
+                    'is_activated' => $isActivated,
+                    'plan_id' => $planId,
+                ];
                 continue;
             }
 
@@ -504,6 +515,337 @@ class SchoolController extends Controller
         );
     }
 
+    public function activateCurrentUserLicence(Request $request, SchoolLicence $school_licence, LicenceService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        if ((int) $auth_user->school_id !== (int) $school_licence->school_id) {
+            abort(422, 'Lizenz gehört nicht zur ausgewählten Schule.');
+        }
+
+        $validated = $request->validate([
+            'role_name' => ['required', 'string', 'max:255'],
+            'plan_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $roleName = trim((string) $validated['role_name']);
+        $planId = (int) $validated['plan_id'];
+        if ($roleName === '') {
+            abort(422, 'Rolle ist erforderlich.');
+        }
+
+        if (! $auth_user->hasRole($roleName)) {
+            abort(422, 'Die Benutzerlizenz ist für Ihre Rolle nicht verfügbar.');
+        }
+
+        $licenceModel = $this->mergedSchoolLicenceUserLicenceModel($school_licence->loadMissing('licence'), $service);
+        $requiredRoleNames = collect($licenceModel['user_licence_required_by_role'] ?? [])
+            ->filter(fn($isRequired) => (bool) $isRequired)
+            ->keys()
+            ->map(fn($name) => is_string($name) ? trim($name) : '')
+            ->filter()
+            ->values()
+            ->all();
+
+        if (! in_array($roleName, $requiredRoleNames, true)) {
+            abort(422, 'Für diese Rolle ist keine Benutzerlizenz erforderlich.');
+        }
+
+        $plansByRole = is_array($licenceModel['user_licence_plans_by_role'] ?? null)
+            ? $licenceModel['user_licence_plans_by_role']
+            : [];
+        $rolePlans = isset($plansByRole[$roleName]) && is_array($plansByRole[$roleName])
+            ? collect($plansByRole[$roleName])->filter(fn($plan) => is_array($plan))
+            : collect();
+
+        $selectedPlan = $rolePlans->first(function (array $plan) use ($planId) {
+            return isset($plan['id']) && (int) $plan['id'] === $planId;
+        });
+
+        if (! is_array($selectedPlan)) {
+            abort(422, 'Ungültige Plan-Auswahl.');
+        }
+
+        if (config('schooltool.payment_active', false)) {
+            return response()->json([
+                'message' => 'Payment',
+            ], 200);
+        }
+
+        if (! $this->isUserLicencePlanFree($selectedPlan['price_per_year'] ?? null)) {
+            abort(422, 'Aktuell können nur kostenlose Optionen aktiviert werden.');
+        }
+
+        $assignments = is_array($school_licence->user_licence_assignments) ? $school_licence->user_licence_assignments : [];
+        $userKey = (string) $auth_user->id;
+        $userAssignments = isset($assignments[$userKey]) && is_array($assignments[$userKey])
+            ? $assignments[$userKey]
+            : [];
+
+        $existingRoleEntry = $this->normalizeUserLicenceAssignmentEntry($userAssignments[$roleName] ?? null);
+        $newValidUntil = $this->resolveFreeUserLicenceActivationValidUntil();
+
+        $userAssignments[$roleName] = [
+            'valid_until' => $newValidUntil,
+            'is_activated' => true,
+            'plan_id' => $planId,
+        ];
+
+        $assignments[$userKey] = $userAssignments;
+        $school_licence->user_licence_assignments = $assignments;
+        $school_licence->save();
+
+        return response()->json([
+            'message' => 'Benutzerlizenz aktiviert.',
+            'valid_until' => $newValidUntil,
+        ], 200);
+    }
+
+    public function renewCurrentUserLicence(Request $request, SchoolLicence $school_licence, LicenceService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        if ((int) $auth_user->school_id !== (int) $school_licence->school_id) {
+            abort(422, 'Lizenz gehört nicht zur ausgewählten Schule.');
+        }
+
+        $validated = $request->validate([
+            'role_name' => ['required', 'string', 'max:255'],
+            'plan_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $roleName = trim((string) $validated['role_name']);
+        $planId = (int) $validated['plan_id'];
+        if ($roleName === '') {
+            abort(422, 'Rolle ist erforderlich.');
+        }
+
+        if (! $auth_user->hasRole($roleName)) {
+            abort(422, 'Die Benutzerlizenz ist für Ihre Rolle nicht verfügbar.');
+        }
+
+        $licenceModel = $this->mergedSchoolLicenceUserLicenceModel($school_licence->loadMissing('licence'), $service);
+        $requiredRoleNames = collect($licenceModel['user_licence_required_by_role'] ?? [])
+            ->filter(fn($isRequired) => (bool) $isRequired)
+            ->keys()
+            ->map(fn($name) => is_string($name) ? trim($name) : '')
+            ->filter()
+            ->values()
+            ->all();
+
+        if (! in_array($roleName, $requiredRoleNames, true)) {
+            abort(422, 'Für diese Rolle ist keine Benutzerlizenz erforderlich.');
+        }
+
+        $plansByRole = is_array($licenceModel['user_licence_plans_by_role'] ?? null)
+            ? $licenceModel['user_licence_plans_by_role']
+            : [];
+        $rolePlans = isset($plansByRole[$roleName]) && is_array($plansByRole[$roleName])
+            ? collect($plansByRole[$roleName])->filter(fn($plan) => is_array($plan))
+            : collect();
+
+        $selectedPlan = $rolePlans->first(function (array $plan) use ($planId) {
+            return isset($plan['id']) && (int) $plan['id'] === $planId;
+        });
+
+        if (! is_array($selectedPlan)) {
+            abort(422, 'Ungültige Plan-Auswahl.');
+        }
+
+        if (config('schooltool.payment_active', false)) {
+            return response()->json([
+                'message' => 'Payment',
+            ], 200);
+        }
+
+        if (! $this->isUserLicencePlanFree($selectedPlan['price_per_year'] ?? null)) {
+            abort(422, 'Aktuell können nur kostenlose Optionen verlängert werden.');
+        }
+
+        $assignments = is_array($school_licence->user_licence_assignments) ? $school_licence->user_licence_assignments : [];
+        $userKey = (string) $auth_user->id;
+        $userAssignments = isset($assignments[$userKey]) && is_array($assignments[$userKey])
+            ? $assignments[$userKey]
+            : [];
+
+        $existingRoleEntry = $this->normalizeUserLicenceAssignmentEntry($userAssignments[$roleName] ?? null);
+        if (! $existingRoleEntry['is_activated']) {
+            abort(409, 'Die Benutzerlizenz ist nicht aktiv.');
+        }
+
+        $baseDate = null;
+        if (is_string($existingRoleEntry['valid_until'] ?? null) && trim((string) $existingRoleEntry['valid_until']) !== '') {
+            try {
+                $baseDate = Carbon::parse((string) $existingRoleEntry['valid_until'])->startOfDay();
+            } catch (\Throwable $exception) {
+                $baseDate = null;
+            }
+        }
+        if (! $baseDate) {
+            $baseDate = now()->startOfDay();
+        }
+
+        $newValidUntil = $baseDate->copy()->addYear()->toDateString();
+
+        $userAssignments[$roleName] = [
+            'valid_until' => $newValidUntil,
+            'is_activated' => true,
+            'plan_id' => $planId,
+        ];
+
+        $assignments[$userKey] = $userAssignments;
+        $school_licence->user_licence_assignments = $assignments;
+        $school_licence->save();
+
+        return response()->json([
+            'message' => 'Benutzerlizenz verlängert.',
+            'valid_until' => $newValidUntil,
+        ], 200);
+    }
+
+    public function deactivateCurrentUserLicence(Request $request, SchoolLicence $school_licence, LicenceService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        if ((int) $auth_user->school_id !== (int) $school_licence->school_id) {
+            abort(422, 'Lizenz gehört nicht zur ausgewählten Schule.');
+        }
+
+        $validated = $request->validate([
+            'role_name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $roleName = trim((string) $validated['role_name']);
+        if ($roleName === '') {
+            abort(422, 'Rolle ist erforderlich.');
+        }
+
+        if (! $auth_user->hasRole($roleName)) {
+            abort(422, 'Die Benutzerlizenz ist für Ihre Rolle nicht verfügbar.');
+        }
+
+        $licenceModel = $this->mergedSchoolLicenceUserLicenceModel($school_licence->loadMissing('licence'), $service);
+        $requiredRoleNames = collect($licenceModel['user_licence_required_by_role'] ?? [])
+            ->filter(fn($isRequired) => (bool) $isRequired)
+            ->keys()
+            ->map(fn($name) => is_string($name) ? trim($name) : '')
+            ->filter()
+            ->values()
+            ->all();
+
+        if (! in_array($roleName, $requiredRoleNames, true)) {
+            abort(422, 'Für diese Rolle ist keine Benutzerlizenz erforderlich.');
+        }
+
+        $assignments = is_array($school_licence->user_licence_assignments) ? $school_licence->user_licence_assignments : [];
+        $userKey = (string) $auth_user->id;
+        $userAssignments = isset($assignments[$userKey]) && is_array($assignments[$userKey])
+            ? $assignments[$userKey]
+            : [];
+
+        $existingRoleEntry = $this->normalizeUserLicenceAssignmentEntry($userAssignments[$roleName] ?? null);
+        if ($existingRoleEntry['valid_until'] === null && $existingRoleEntry['plan_id'] === null && $existingRoleEntry['is_activated'] === false) {
+            abort(409, 'Für diese Rolle ist aktuell keine Benutzerlizenz gespeichert.');
+        }
+
+        $userAssignments[$roleName] = [
+            'valid_until' => $existingRoleEntry['valid_until'],
+            'is_activated' => false,
+            'plan_id' => $existingRoleEntry['plan_id'],
+        ];
+
+        $assignments[$userKey] = $userAssignments;
+        $school_licence->user_licence_assignments = $assignments;
+        $school_licence->save();
+
+        return response()->json([
+            'message' => 'Benutzerlizenz deaktiviert.',
+        ], 200);
+    }
+
+    private function mergedSchoolLicenceUserLicenceModel(SchoolLicence $school_licence, LicenceService $service): array
+    {
+        $schoolModel = $service->normalizeLicenceModel($school_licence->licence_model);
+        $baseModel = $service->normalizeLicenceModel($school_licence->licence?->licence_model);
+
+        $affectedRoles = collect(array_merge(
+            is_array($schoolModel['affected_roles'] ?? null) ? $schoolModel['affected_roles'] : [],
+            is_array($baseModel['affected_roles'] ?? null) ? $baseModel['affected_roles'] : []
+        ))
+            ->map(fn($role) => is_string($role) ? trim($role) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $schoolRequiredByRole = is_array($schoolModel['user_licence_required_by_role'] ?? null)
+            ? $schoolModel['user_licence_required_by_role']
+            : [];
+        $baseRequiredByRole = is_array($baseModel['user_licence_required_by_role'] ?? null)
+            ? $baseModel['user_licence_required_by_role']
+            : [];
+
+        $schoolPlansByRole = is_array($schoolModel['user_licence_plans_by_role'] ?? null)
+            ? $schoolModel['user_licence_plans_by_role']
+            : [];
+        $basePlansByRole = is_array($baseModel['user_licence_plans_by_role'] ?? null)
+            ? $baseModel['user_licence_plans_by_role']
+            : [];
+
+        $requiredByRole = [];
+        $plansByRole = [];
+
+        foreach ($affectedRoles as $roleName) {
+            $requiredByRole[$roleName] =
+                (bool) ($schoolRequiredByRole[$roleName] ?? false)
+                || (bool) ($baseRequiredByRole[$roleName] ?? false);
+
+            $schoolRolePlans = (array_key_exists($roleName, $schoolPlansByRole) && is_array($schoolPlansByRole[$roleName]))
+                ? $schoolPlansByRole[$roleName]
+                : [];
+            $baseRolePlans = (array_key_exists($roleName, $basePlansByRole) && is_array($basePlansByRole[$roleName]))
+                ? $basePlansByRole[$roleName]
+                : [];
+
+            $mergedPlans = [];
+            $seenPlanKeys = [];
+            foreach (array_merge($schoolRolePlans, $baseRolePlans) as $plan) {
+                if (! is_array($plan)) {
+                    continue;
+                }
+
+                $planId = (isset($plan['id']) && is_numeric($plan['id'])) ? (int) $plan['id'] : null;
+                $planText = isset($plan['text']) ? trim((string) $plan['text']) : '';
+                $planPrice = isset($plan['price_per_year']) ? trim((string) $plan['price_per_year']) : '';
+                $planKey = $planId !== null && $planId > 0
+                    ? "id:{$planId}"
+                    : 'txt:' . $planText . '|price:' . $planPrice;
+
+                if (isset($seenPlanKeys[$planKey])) {
+                    continue;
+                }
+
+                $seenPlanKeys[$planKey] = true;
+                $mergedPlans[] = $plan;
+            }
+
+            $plansByRole[$roleName] = $mergedPlans;
+        }
+
+        return [
+            'school_licence_required' => (bool) ($schoolModel['school_licence_required'] ?? true),
+            'affected_roles' => $affectedRoles,
+            'user_licence_required_by_role' => $requiredByRole,
+            'user_licence_plans_by_role' => $plansByRole,
+        ];
+    }
+
     private function schoolLicenceUserRolesPayload(SchoolLicence $school_licence, User $user, LicenceService $service): array
     {
         $licenceModel = $service->normalizeLicenceModel($school_licence->licence_model);
@@ -523,10 +865,13 @@ class SchoolController extends Controller
 
         $roles = collect($roleNames)
             ->map(function ($roleName) use ($user, $userAssignments) {
+                $entry = $this->normalizeUserLicenceAssignmentEntry($userAssignments[$roleName] ?? null);
                 return [
                     'name' => $roleName,
                     'assigned' => $user->hasRole($roleName),
-                    'valid_until' => isset($userAssignments[$roleName]) ? $userAssignments[$roleName] : null,
+                    'valid_until' => $entry['valid_until'],
+                    'is_activated' => $entry['is_activated'],
+                    'plan_id' => $entry['plan_id'],
                 ];
             })
             ->values()
@@ -539,13 +884,111 @@ class SchoolController extends Controller
         ];
     }
 
-    private function isUserRoleAssignmentActive(bool $schoolLicenceRequired, ?string $schoolLicenceValidUntil, ?string $userRoleValidUntil): bool
+    private function isUserRoleAssignmentActive(bool $schoolLicenceRequired, ?string $schoolLicenceValidUntil, ?string $userRoleValidUntil, bool $isActivated = false): bool
     {
+        if (! $isActivated) {
+            return false;
+        }
+
         if ($schoolLicenceRequired && ! $this->isDateActive($schoolLicenceValidUntil)) {
             return false;
         }
 
         return $this->isDateActive($userRoleValidUntil);
+    }
+
+    private function normalizeUserLicenceAssignmentEntry(mixed $entry): array
+    {
+        // Legacy shape: role => "YYYY-MM-DD" (or null)
+        if (is_string($entry)) {
+            $validUntil = trim($entry);
+            return [
+                'valid_until' => $validUntil !== '' ? $validUntil : null,
+                'is_activated' => false,
+                'plan_id' => null,
+            ];
+        }
+
+        if (! is_array($entry)) {
+            return [
+                'valid_until' => null,
+                'is_activated' => false,
+                'plan_id' => null,
+            ];
+        }
+
+        $rawValidUntil = $entry['valid_until'] ?? null;
+        $validUntil = is_string($rawValidUntil) && trim($rawValidUntil) !== '' ? trim($rawValidUntil) : null;
+        $planId = isset($entry['plan_id']) && is_numeric($entry['plan_id']) && (int) $entry['plan_id'] > 0
+            ? (int) $entry['plan_id']
+            : null;
+
+        return [
+            'valid_until' => $validUntil,
+            'is_activated' => (bool) ($entry['is_activated'] ?? false),
+            'plan_id' => $planId,
+        ];
+    }
+
+    private function isUserLicencePlanFree(mixed $rawPrice): bool
+    {
+        if ($rawPrice === null) {
+            return true;
+        }
+
+        $price = trim((string) $rawPrice);
+        if ($price === '') {
+            return true;
+        }
+
+        $lower = mb_strtolower($price);
+        foreach (['kostenlos', 'gratis', 'free'] as $token) {
+            if (str_contains($lower, $token)) {
+                return true;
+            }
+        }
+
+        // Accept "0,-", "EUR 0 / Jahr", "1.200,00", etc.
+        $normalized = preg_replace('/\s+/', '', $price);
+        if (! is_string($normalized)) {
+            return false;
+        }
+
+        if (str_contains($normalized, ',') && str_contains($normalized, '.')) {
+            $normalized = str_replace('.', '', $normalized);
+            $normalized = str_replace(',', '.', $normalized);
+        } else {
+            $normalized = str_replace(',', '.', $normalized);
+        }
+
+        $normalized = preg_replace('/[^0-9.\-]/', '', $normalized);
+        if (! is_string($normalized)) {
+            return false;
+        }
+
+        $normalized = preg_replace('/([0-9])\.(?=-|$)/', '$1', $normalized) ?? $normalized; // "0.-" -> "0"
+        $normalized = preg_replace('/([0-9])-(?=$)/', '$1', $normalized) ?? $normalized; // "0-" -> "0"
+
+        if (! preg_match('/-?\d+(?:\.\d+)?/', $normalized, $matches)) {
+            return false;
+        }
+
+        return ((float) $matches[0]) <= 0.0;
+    }
+
+    private function resolveFreeUserLicenceActivationValidUntil(): string
+    {
+        $configuredDate = config('schooltool.licence_free_activation_date');
+
+        if (is_string($configuredDate) && trim($configuredDate) !== '') {
+            try {
+                return Carbon::parse(trim($configuredDate))->toDateString();
+            } catch (\Throwable $exception) {
+                // Fallback keeps activation usable if config is malformed.
+            }
+        }
+
+        return now()->startOfDay()->addYear()->toDateString();
     }
 
     private function isDateActive(?string $validUntil): bool

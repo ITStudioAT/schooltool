@@ -230,20 +230,91 @@
 
                         <div class="licence-list" v-if="(school_licences || []).length > 0">
                             <div v-for="licence in school_licences" :key="licence.id" class="licence-item">
-                                <div class="licence-left">
-                                    <div class="licence-dot" :class="isLicenceActive(licence) ? 'is-active' : 'is-expired'"></div>
-                                    <div>
-                                        <div class="licence-name">{{ licence.name }}</div>
-                                        <div class="licence-long" v-if="licence.long_name">{{ licence.long_name }}</div>
+                                <div class="licence-main">
+                                    <div class="licence-left">
+                                        <div class="licence-dot" :class="isLicenceActive(licence) ? 'is-active' : 'is-expired'"></div>
+                                        <div>
+                                            <div class="licence-name">{{ licence.name }}</div>
+                                            <div class="licence-long" v-if="licence.long_name">{{ licence.long_name }}</div>
+                                        </div>
+                                    </div>
+                                    <div class="licence-right">
+                                        <div class="licence-validity" v-if="isLicenceActive(licence)">
+                                            <span v-if="licence.valid_until">aktiv bis {{ formatDateDisplay(licence.valid_until) }}</span>
+                                            <span v-else>aktiv (unbegrenzt)</span>
+                                        </div>
+                                        <div class="licence-validity is-expired-text" v-else>abgelaufen seit {{ formatDateDisplay(licence.valid_until) }}</div>
+                                        <div class="licence-price">EUR {{ licence.price_per_year }} / Jahr</div>
                                     </div>
                                 </div>
-                                <div class="licence-right">
-                                    <div class="licence-validity" v-if="isLicenceActive(licence)">
-                                        <span v-if="licence.valid_until">aktiv bis {{ licence.valid_until }}</span>
-                                        <span v-else>aktiv (unbegrenzt)</span>
-                                    </div>
-                                    <div class="licence-validity is-expired-text" v-else>abgelaufen seit {{ licence.valid_until }}</div>
-                                    <div class="licence-price">EUR {{ licence.price_per_year }} / Jahr</div>
+
+                                <div
+                                    v-if="isLicenceActive(licence) && licence.current_user_licence?.enabled"
+                                    class="user-licence-box">
+                                    <template v-if="userLicenceRoleEntries(licence).length > 0">
+                                        <div class="user-licence-title">Benutzerlizenzen</div>
+                                        <div
+                                            v-for="roleEntry in userLicenceRoleEntries(licence)"
+                                            :key="`user-licence-role-${licence.school_licence_id}-${roleEntry.role_name}`"
+                                            class="user-licence-role-card">
+                                            <div class="user-licence-role-head">
+                                                <span
+                                                    class="user-licence-role-dot"
+                                                    :class="userLicenceRoleDotClass(roleEntry)"></span>
+                                                <div class="user-licence-role-name">{{ roleEntry.role_name }}</div>
+                                            </div>
+
+                                            <template v-if="isUserLicenceRoleActive(roleEntry)">
+                                                <div class="user-licence-line">Status: aktiv</div>
+                                                <div class="user-licence-line" v-if="roleEntry?.plan?.text">Plan: {{ roleEntry.plan.text }}</div>
+                                                <div class="user-licence-line">
+                                                    Preis:
+                                                    {{ roleEntry?.plan?.price_per_year ? formatPlanPrice(roleEntry.plan.price_per_year) : '-' }}
+                                                </div>
+                                                <div class="user-licence-line">
+                                                    Gültig bis:
+                                                    {{ roleEntry?.valid_until ? formatDateDisplay(roleEntry.valid_until) : 'unbegrenzt' }}
+                                                </div>
+                                                <v-btn
+                                                    v-if="shouldShowRenewUserLicenceButton(roleEntry)"
+                                                    size="small"
+                                                    variant="outlined"
+                                                    color="primary"
+                                                    rounded="lg"
+                                                    class="mt-2 mr-2"
+                                                    @click="openRenewUserLicenceDialog(licence, roleEntry)">
+                                                    Verlängern
+                                                </v-btn>
+                                                <v-btn
+                                                    size="small"
+                                                    variant="outlined"
+                                                    color="error"
+                                                    rounded="lg"
+                                                    class="mt-2"
+                                                    @click="confirmDeactivateUserLicence(licence, roleEntry)">
+                                                    Deaktivieren
+                                                </v-btn>
+                                            </template>
+
+                                            <template v-else>
+                                                <div class="user-licence-line is-warning-text">Status: nicht aktiv</div>
+                                                <div class="user-licence-line">Für diese Funktion ist eine Benutzerlizenz erforderlich.</div>
+                                                <v-btn
+                                                    size="small"
+                                                    variant="outlined"
+                                                    color="primary"
+                                                    rounded="lg"
+                                                    class="mt-2"
+                                                    @click="openActivateUserLicenceDialog(licence, roleEntry.role_name)">
+                                                    Aktivieren
+                                                </v-btn>
+                                            </template>
+                                        </div>
+                                    </template>
+                                    <template v-else>
+                                        <div class="user-licence-title is-warning">Benutzerlizenz nicht aktiv</div>
+                                        <div class="user-licence-line">Für Ihre Rollen ist aktuell keine Benutzerlizenz zugeordnet.</div>
+                                    </template>
                                 </div>
                             </div>
                         </div>
@@ -252,6 +323,149 @@
                 </div>
             </div>
         </section>
+
+        <v-dialog v-model="activation_dialog_open" max-width="560">
+            <v-card>
+                <v-card-title>Benutzerlizenz aktivieren</v-card-title>
+                <v-card-text>
+                    <div class="text-body-2 mb-3" v-if="activation_dialog_licence">
+                        <strong>{{ activation_dialog_licence.name }}</strong>
+                        <span v-if="activation_dialog_role_name"> · Rolle: {{ activation_dialog_role_name }}</span>
+                    </div>
+
+                    <div class="text-body-2 mb-2" v-if="!activation_dialog_payment_active">
+                        Nur kostenlose Optionen sind auswählbar.
+                    </div>
+
+                    <v-radio-group v-model="activation_dialog_selected_plan_id" density="compact" hide-details>
+                        <v-radio
+                            v-for="plan in activation_dialog_plans"
+                            :key="`activation-plan-${plan.id}`"
+                            :value="plan.id"
+                            :disabled="!plan.is_selectable">
+                            <template #label>
+                                <div class="activation-plan-option">
+                                    <div class="activation-plan-title">{{ plan.text || 'Plan' }}</div>
+                                    <div class="activation-plan-price">
+                                        {{ formatPlanPrice(plan.price_per_year) }}
+                                        <span v-if="!plan.is_selectable" class="activation-plan-disabled-note"> (nicht auswählbar)</span>
+                                    </div>
+                                </div>
+                            </template>
+                        </v-radio>
+                    </v-radio-group>
+
+                    <div v-if="activation_dialog_plans.length === 0" class="text-body-2 text-medium-emphasis mt-2">
+                        Keine passenden Optionen verfügbar.
+                    </div>
+                    <div v-else-if="!activation_dialog_plans.some((plan) => plan.is_selectable)" class="text-body-2 text-medium-emphasis mt-2">
+                        Aktuell ist keine auswählbare Option verfügbar.
+                    </div>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="closeActivateUserLicenceDialog" :disabled="activation_dialog_loading">Abbrechen</v-btn>
+                    <v-btn
+                        color="primary"
+                        variant="flat"
+                        @click="commitActivateUserLicence"
+                        :loading="activation_dialog_loading"
+                        :disabled="activation_dialog_loading || !activation_dialog_selected_plan_id">
+                        Bestätigen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="deactivation_dialog_open" max-width="520">
+            <v-card class="deactivation-dialog-card">
+                <v-card-title class="d-flex align-center ga-2">
+                    <v-icon color="error" size="20">mdi-alert-outline</v-icon>
+                    <span>Benutzerlizenz deaktivieren</span>
+                </v-card-title>
+                <v-card-text>
+                    <div class="text-body-2">
+                        Sind Sie sicher, dass Sie diese Benutzerlizenz deaktivieren möchten?
+                    </div>
+                    <div v-if="deactivation_dialog_licence || deactivation_dialog_role_name" class="deactivation-dialog-meta mt-3">
+                        <div v-if="deactivation_dialog_licence?.name"><strong>Tool:</strong> {{ deactivation_dialog_licence.name }}</div>
+                        <div v-if="deactivation_dialog_role_name"><strong>Rolle:</strong> {{ deactivation_dialog_role_name }}</div>
+                    </div>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="closeDeactivateUserLicenceDialog" :disabled="deactivation_dialog_loading">Abbrechen</v-btn>
+                    <v-btn
+                        color="error"
+                        variant="flat"
+                        @click="commitDeactivateUserLicence"
+                        :loading="deactivation_dialog_loading"
+                        :disabled="deactivation_dialog_loading">
+                        Deaktivieren
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="renewal_dialog_open" max-width="560">
+            <v-card>
+                <v-card-title>Benutzerlizenz verlängern</v-card-title>
+                <v-card-text>
+                    <div class="text-body-2 mb-3" v-if="renewal_dialog_licence">
+                        <strong>{{ renewal_dialog_licence.name }}</strong>
+                        <span v-if="renewal_dialog_role_name"> · Rolle: {{ renewal_dialog_role_name }}</span>
+                    </div>
+
+                    <div class="text-body-2 mb-2" v-if="renewal_dialog_current_valid_until">
+                        Aktuell gültig bis: <strong>{{ formatDateDisplay(renewal_dialog_current_valid_until) }}</strong>
+                    </div>
+                    <div class="text-body-2 mb-3" v-if="renewal_dialog_new_valid_until">
+                        Neu gültig bis: <strong>{{ formatDateDisplay(renewal_dialog_new_valid_until) }}</strong>
+                    </div>
+
+                    <div class="text-body-2 mb-2" v-if="!renewal_dialog_payment_active">
+                        Nur kostenlose Optionen sind auswählbar.
+                    </div>
+
+                    <v-radio-group v-model="renewal_dialog_selected_plan_id" density="compact" hide-details>
+                        <v-radio
+                            v-for="plan in renewal_dialog_plans"
+                            :key="`renewal-plan-${plan.id}`"
+                            :value="plan.id"
+                            :disabled="!plan.is_selectable">
+                            <template #label>
+                                <div class="activation-plan-option">
+                                    <div class="activation-plan-title">{{ plan.text || 'Plan' }}</div>
+                                    <div class="activation-plan-price">
+                                        {{ formatPlanPrice(plan.price_per_year) }}
+                                        <span v-if="!plan.is_selectable" class="activation-plan-disabled-note"> (nicht auswählbar)</span>
+                                    </div>
+                                </div>
+                            </template>
+                        </v-radio>
+                    </v-radio-group>
+
+                    <div v-if="renewal_dialog_plans.length === 0" class="text-body-2 text-medium-emphasis mt-2">
+                        Keine passenden Optionen verfügbar.
+                    </div>
+                    <div v-else-if="!renewal_dialog_plans.some((plan) => plan.is_selectable)" class="text-body-2 text-medium-emphasis mt-2">
+                        Aktuell ist keine auswählbare Option verfügbar.
+                    </div>
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" @click="closeRenewUserLicenceDialog" :disabled="renewal_dialog_loading">Abbrechen</v-btn>
+                    <v-btn
+                        color="primary"
+                        variant="flat"
+                        @click="commitRenewUserLicence"
+                        :loading="renewal_dialog_loading"
+                        :disabled="renewal_dialog_loading || !renewal_dialog_selected_plan_id">
+                        Bestätigen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </div>
 </template>
 
@@ -260,6 +474,7 @@ import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolStore } from '@/stores/admin/SchoolStore'
 import { useHealthStore } from '@/stores/admin/HealthStore'
+import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
 export default {
     components: {},
@@ -288,6 +503,26 @@ export default {
             queue_test_result: 0,
             cron_test_status: 'waiting',
             cron_test_result: 0,
+            activation_dialog_open: false,
+            activation_dialog_loading: false,
+            activation_dialog_licence: null,
+            activation_dialog_role_name: null,
+            activation_dialog_selected_plan_id: null,
+            activation_dialog_plans: [],
+            activation_dialog_payment_active: false,
+            deactivation_dialog_open: false,
+            deactivation_dialog_loading: false,
+            deactivation_dialog_licence: null,
+            deactivation_dialog_role_name: null,
+            renewal_dialog_open: false,
+            renewal_dialog_loading: false,
+            renewal_dialog_licence: null,
+            renewal_dialog_role_name: null,
+            renewal_dialog_selected_plan_id: null,
+            renewal_dialog_plans: [],
+            renewal_dialog_payment_active: false,
+            renewal_dialog_current_valid_until: null,
+            renewal_dialog_new_valid_until: null,
         }
     },
 
@@ -355,10 +590,406 @@ export default {
             const day = String(date.getDate()).padStart(2, '0')
             return `${year}-${month}-${day}`
         },
+        formatDateDisplay(value) {
+            if (value == null) return ''
+            const raw = String(value).trim()
+            if (!raw) return ''
+
+            // Keep date-only values stable (avoid timezone shifts from Date parsing).
+            const plainDateMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+            if (plainDateMatch) {
+                const [, year, month, day] = plainDateMatch
+                return `${day}.${month}.${year}`
+            }
+
+            const parsed = new Date(raw)
+            if (!Number.isNaN(parsed.getTime())) {
+                const year = parsed.getFullYear()
+                const month = String(parsed.getMonth() + 1).padStart(2, '0')
+                const day = String(parsed.getDate()).padStart(2, '0')
+                return `${day}.${month}.${year}`
+            }
+
+            return raw
+        },
+        toBool(value, fallback = false) {
+            if (typeof value === 'boolean') return value
+            if (typeof value === 'number') return value === 1
+            if (typeof value === 'string') {
+                const normalized = value.trim().toLowerCase()
+                if (['1', 'true', 'yes', 'ja'].includes(normalized)) return true
+                if (['0', 'false', 'no', 'nein'].includes(normalized)) return false
+            }
+            return fallback
+        },
         isLicenceActive(licence) {
+            const schoolLicenceRequired = this.toBool(licence?.licence_model?.school_licence_required, true)
+            if (!schoolLicenceRequired) return true
             const validUntil = licence?.valid_until
             if (!validUntil) return true
             return String(validUntil) >= this.localDateKey()
+        },
+        userLicenceRoleEntries(licence) {
+            const roles = licence?.current_user_licence?.roles
+            return Array.isArray(roles) ? roles.filter((entry) => entry && typeof entry === 'object' && entry.role_name) : []
+        },
+        isUserLicenceRoleActive(roleEntry) {
+            return !!roleEntry?.is_active && !!roleEntry?.is_activated
+        },
+        userLicenceRoleDotClass(roleEntry) {
+            if (!this.isUserLicenceRoleActive(roleEntry)) return 'is-inactive'
+            if (this.shouldShowRenewUserLicenceButton(roleEntry)) return 'is-warning'
+            return 'is-active'
+        },
+        licenceRenewalDays() {
+            const raw = Number(this.config?.licence_renewal_days)
+            return Number.isFinite(raw) && raw >= 0 ? raw : 30
+        },
+        parseDateOnly(value) {
+            if (value == null) return null
+            const raw = String(value).trim()
+            if (!raw) return null
+            const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/)
+            if (!m) return null
+            const year = Number(m[1])
+            const monthIndex = Number(m[2]) - 1
+            const day = Number(m[3])
+            const date = new Date(year, monthIndex, day)
+            return Number.isNaN(date.getTime()) ? null : date
+        },
+        daysRemainingUntil(value) {
+            const target = this.parseDateOnly(value)
+            if (!target) return null
+            const today = new Date()
+            const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+            const diffMs = target.getTime() - startToday.getTime()
+            return Math.floor(diffMs / 86400000)
+        },
+        shouldShowRenewUserLicenceButton(roleEntry) {
+            if (!this.isUserLicenceRoleActive(roleEntry)) return false
+            if (!roleEntry?.valid_until) return false
+            const remaining = this.daysRemainingUntil(roleEntry.valid_until)
+            if (remaining == null) return false
+            return remaining <= this.licenceRenewalDays()
+        },
+        addOneYearToDateString(value) {
+            const date = this.parseDateOnly(value)
+            if (!date) return null
+            const next = new Date(date.getFullYear() + 1, date.getMonth(), date.getDate())
+            const y = next.getFullYear()
+            const m = String(next.getMonth() + 1).padStart(2, '0')
+            const d = String(next.getDate()).padStart(2, '0')
+            return `${y}-${m}-${d}`
+        },
+        buildRolePlanOptions(licence, roleName, paymentActive) {
+            const plansByRole = licence?.licence_model?.user_licence_plans_by_role || {}
+            const rawPlans = Array.isArray(plansByRole[roleName]) ? plansByRole[roleName] : []
+            return rawPlans
+                .filter((plan) => plan && typeof plan === 'object')
+                .map((plan) => ({
+                    id: Number(plan.id),
+                    text: typeof plan.text === 'string' ? plan.text : String(plan.text ?? ''),
+                    price_per_year: typeof plan.price_per_year === 'string' ? plan.price_per_year : String(plan.price_per_year ?? ''),
+                    is_selectable: paymentActive || this.isFreeUserLicencePrice(plan.price_per_year),
+                }))
+                .filter((plan) => Number.isInteger(plan.id) && plan.id > 0)
+        },
+        openActivateUserLicenceDialog(licence, forcedRoleName = null) {
+            const notification = useNotificationStore()
+            const currentUserLicence = licence?.current_user_licence || {}
+            const primaryRoleName = currentUserLicence?.role_name || null
+            const normalizedForcedRoleName = typeof forcedRoleName === 'string' && forcedRoleName.trim() ? forcedRoleName.trim() : null
+
+            const relevantRoleNames = Array.isArray(currentUserLicence?.roles)
+                ? currentUserLicence.roles
+                      .map((entry) => (entry && typeof entry === 'object' ? String(entry.role_name || '').trim() : ''))
+                      .filter((roleName, index, arr) => roleName && arr.indexOf(roleName) === index)
+                : []
+
+            const candidateRoleNames = normalizedForcedRoleName
+                ? [normalizedForcedRoleName]
+                : [
+                      ...(primaryRoleName ? [String(primaryRoleName).trim()] : []),
+                      ...relevantRoleNames,
+                  ].filter((roleName, index, arr) => roleName && arr.indexOf(roleName) === index)
+
+            if (candidateRoleNames.length === 0) {
+                notification.notify({
+                    status: 422,
+                    message: 'Keine Benutzerlizenz-Rolle gefunden.',
+                    type: 'warning',
+                    timeout: 3000,
+                })
+                return
+            }
+
+            const paymentActive = this.toBool(this.config?.payment_active, false)
+            const roleOptions = candidateRoleNames
+                .map((roleName) => {
+                    const plans = this.buildRolePlanOptions(licence, roleName, paymentActive)
+                    return { roleName, plans }
+                })
+                .filter((entry) => entry.plans.length > 0)
+
+            if (roleOptions.length === 0) {
+                notification.notify({
+                    status: 422,
+                    message: paymentActive ? 'Keine Optionen verfügbar.' : 'Für diese Funktion ist keine kostenlose Option verfügbar.',
+                    type: 'warning',
+                    timeout: 3500,
+                })
+                return
+            }
+
+            const selectableRoleOptions = roleOptions.filter((entry) => entry.plans.some((plan) => plan.is_selectable))
+            const selectedRoleOptions = normalizedForcedRoleName
+                ? (roleOptions.find((entry) => entry.roleName === normalizedForcedRoleName) || roleOptions[0])
+                : (selectableRoleOptions.find((entry) => entry.roleName === primaryRoleName) ||
+                    selectableRoleOptions[0] ||
+                    roleOptions.find((entry) => entry.roleName === primaryRoleName) ||
+                    roleOptions[0])
+            const roleName = selectedRoleOptions.roleName
+            const plans = selectedRoleOptions.plans
+
+            this.activation_dialog_licence = licence
+            this.activation_dialog_role_name = roleName
+            this.activation_dialog_plans = plans
+            const preferredPlanId = licence?.current_user_licence?.plan_id || null
+            const preferredPlan = plans.find((plan) => plan.id === preferredPlanId && plan.is_selectable)
+            const firstSelectablePlan = plans.find((plan) => plan.is_selectable)
+            this.activation_dialog_selected_plan_id = preferredPlan?.id || firstSelectablePlan?.id || null
+            this.activation_dialog_payment_active = paymentActive
+            this.activation_dialog_open = true
+        },
+        closeActivateUserLicenceDialog() {
+            this.activation_dialog_open = false
+            this.activation_dialog_loading = false
+            this.activation_dialog_licence = null
+            this.activation_dialog_role_name = null
+            this.activation_dialog_selected_plan_id = null
+            this.activation_dialog_plans = []
+            this.activation_dialog_payment_active = false
+        },
+        openRenewUserLicenceDialog(licence, roleEntry) {
+            const notification = useNotificationStore()
+            const roleName = roleEntry?.role_name ? String(roleEntry.role_name).trim() : ''
+            if (!roleName) return
+
+            const currentValidUntil = roleEntry?.valid_until || null
+            const newValidUntil = this.addOneYearToDateString(currentValidUntil)
+            if (!currentValidUntil || !newValidUntil) {
+                notification.notify({
+                    status: 422,
+                    message: 'Aktuelles Gültigkeitsdatum fehlt oder ist ungültig.',
+                    type: 'warning',
+                    timeout: 3500,
+                })
+                return
+            }
+
+            const paymentActive = this.toBool(this.config?.payment_active, false)
+            const plans = this.buildRolePlanOptions(licence, roleName, paymentActive)
+            if (plans.length === 0) {
+                notification.notify({
+                    status: 422,
+                    message: paymentActive ? 'Keine Optionen verfügbar.' : 'Für diese Funktion ist keine kostenlose Option verfügbar.',
+                    type: 'warning',
+                    timeout: 3500,
+                })
+                return
+            }
+
+            this.renewal_dialog_licence = licence
+            this.renewal_dialog_role_name = roleName
+            this.renewal_dialog_plans = plans
+            this.renewal_dialog_current_valid_until = currentValidUntil
+            this.renewal_dialog_new_valid_until = newValidUntil
+            const preferredPlanId = roleEntry?.plan_id || null
+            const preferredPlan = plans.find((plan) => plan.id === preferredPlanId && plan.is_selectable)
+            const firstSelectablePlan = plans.find((plan) => plan.is_selectable)
+            this.renewal_dialog_selected_plan_id = preferredPlan?.id || firstSelectablePlan?.id || null
+            this.renewal_dialog_payment_active = paymentActive
+            this.renewal_dialog_open = true
+        },
+        closeRenewUserLicenceDialog() {
+            this.renewal_dialog_open = false
+            this.renewal_dialog_loading = false
+            this.renewal_dialog_licence = null
+            this.renewal_dialog_role_name = null
+            this.renewal_dialog_selected_plan_id = null
+            this.renewal_dialog_plans = []
+            this.renewal_dialog_payment_active = false
+            this.renewal_dialog_current_valid_until = null
+            this.renewal_dialog_new_valid_until = null
+        },
+        async commitRenewUserLicence() {
+            const notification = useNotificationStore()
+            const licence = this.renewal_dialog_licence
+            const schoolLicenceId = licence?.school_licence_id
+            const roleName = this.renewal_dialog_role_name
+            const planId = Number(this.renewal_dialog_selected_plan_id)
+            if (!schoolLicenceId || !roleName || !Number.isInteger(planId) || planId <= 0) return
+
+            this.renewal_dialog_loading = true
+            try {
+                const response = await axios.post(`/api/admin/school_licences/${schoolLicenceId}/renew_user_licence`, {
+                    role_name: roleName,
+                    plan_id: planId,
+                })
+
+                const message = response?.data?.message || 'Erfolgreich.'
+                if (message === 'Payment') {
+                    notification.notify({ message: 'Payment', type: 'info', timeout: 3000 })
+                    this.closeRenewUserLicenceDialog()
+                    return
+                }
+
+                notification.notify({ message, type: 'success', timeout: 3000 })
+                if (this.config?.selected_school?.id) {
+                    await this.schoolStore.loadSchoolInfos(this.config.selected_school.id)
+                }
+                this.closeRenewUserLicenceDialog()
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3500,
+                })
+            } finally {
+                this.renewal_dialog_loading = false
+            }
+        },
+        normalizePriceToNumber(rawPrice) {
+            const raw = rawPrice == null ? '' : String(rawPrice).trim()
+            if (!raw) return 0
+
+            const lower = raw.toLowerCase()
+            if (['kostenlos', 'gratis', 'free'].some((token) => lower.includes(token))) {
+                return 0
+            }
+
+            // Accept German notations like "0,-", "1.200,00", "EUR 0 / Jahr".
+            let normalized = raw.replace(/\s+/g, '')
+            if (normalized.includes(',') && normalized.includes('.')) {
+                // Treat dot as thousands separator and comma as decimal separator.
+                normalized = normalized.replace(/\./g, '').replace(/,/g, '.')
+            } else {
+                normalized = normalized.replace(/,/g, '.')
+            }
+
+            // Strip everything except digits/sign/dot, then clean common trailing price notation.
+            normalized = normalized.replace(/[^0-9.\-]/g, '')
+            normalized = normalized.replace(/([0-9])\.(?=-|$)/g, '$1') // "0.-" -> "0"
+            normalized = normalized.replace(/([0-9])-(?=$)/g, '$1') // "0-" -> "0"
+
+            const match = normalized.match(/-?\d+(?:\.\d+)?/)
+            if (!match) return Number.NaN
+
+            return Number(match[0])
+        },
+        isFreeUserLicencePrice(rawPrice) {
+            const parsed = this.normalizePriceToNumber(rawPrice)
+            return Number.isFinite(parsed) && parsed <= 0
+        },
+        formatPlanPrice(rawPrice) {
+            return this.isFreeUserLicencePrice(rawPrice) ? 'Kostenlos' : `EUR ${rawPrice} / Jahr`
+        },
+        async commitActivateUserLicence() {
+            const notification = useNotificationStore()
+            const licence = this.activation_dialog_licence
+            const schoolLicenceId = licence?.school_licence_id
+            const roleName = this.activation_dialog_role_name
+            const planId = Number(this.activation_dialog_selected_plan_id)
+
+            if (!schoolLicenceId || !roleName || !Number.isInteger(planId) || planId <= 0) return
+
+            this.activation_dialog_loading = true
+            try {
+                const response = await axios.post(`/api/admin/school_licences/${schoolLicenceId}/activate_user_licence`, {
+                    role_name: roleName,
+                    plan_id: planId,
+                })
+
+                const message = response?.data?.message || 'Erfolgreich.'
+                if (message === 'Payment') {
+                    notification.notify({
+                        message: 'Payment',
+                        type: 'info',
+                        timeout: 3000,
+                    })
+                    this.closeActivateUserLicenceDialog()
+                    return
+                }
+
+                notification.notify({
+                    message,
+                    type: 'success',
+                    timeout: 3000,
+                })
+
+                if (this.config?.selected_school?.id) {
+                    await this.schoolStore.loadSchoolInfos(this.config.selected_school.id)
+                }
+                this.closeActivateUserLicenceDialog()
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3500,
+                })
+            } finally {
+                this.activation_dialog_loading = false
+            }
+        },
+        confirmDeactivateUserLicence(licence, roleEntry) {
+            const roleName = roleEntry?.role_name ? String(roleEntry.role_name).trim() : ''
+            const schoolLicenceId = licence?.school_licence_id
+            if (!roleName || !schoolLicenceId) return
+
+            this.deactivation_dialog_licence = licence
+            this.deactivation_dialog_role_name = roleName
+            this.deactivation_dialog_open = true
+        },
+        closeDeactivateUserLicenceDialog() {
+            this.deactivation_dialog_open = false
+            this.deactivation_dialog_loading = false
+            this.deactivation_dialog_licence = null
+            this.deactivation_dialog_role_name = null
+        },
+        async commitDeactivateUserLicence() {
+            const notification = useNotificationStore()
+            const roleName = this.deactivation_dialog_role_name ? String(this.deactivation_dialog_role_name).trim() : ''
+            const schoolLicenceId = this.deactivation_dialog_licence?.school_licence_id
+            if (!roleName || !schoolLicenceId) return
+
+            try {
+                this.deactivation_dialog_loading = true
+                const response = await axios.post(`/api/admin/school_licences/${schoolLicenceId}/deactivate_user_licence`, {
+                    role_name: roleName,
+                })
+
+                notification.notify({
+                    message: response?.data?.message || 'Benutzerlizenz deaktiviert.',
+                    type: 'success',
+                    timeout: 3000,
+                })
+
+                if (this.config?.selected_school?.id) {
+                    await this.schoolStore.loadSchoolInfos(this.config.selected_school.id)
+                }
+                this.closeDeactivateUserLicenceDialog()
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3500,
+                })
+            } finally {
+                this.deactivation_dialog_loading = false
+            }
         },
     },
 }
@@ -773,14 +1404,20 @@ export default {
 }
 
 .licence-item {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 14px;
+    display: grid;
+    gap: 10px;
+    align-items: stretch;
     border-radius: 14px;
     padding: 12px;
     border: 1px solid rgba(16, 38, 58, 0.1);
     background: rgba(255, 255, 255, 0.78);
+}
+
+.licence-main {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
 }
 
 .licence-left {
@@ -843,6 +1480,116 @@ export default {
     font-size: 0.82rem;
 }
 
+.user-licence-box {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(16, 38, 58, 0.1);
+    background: rgba(16, 38, 58, 0.03);
+}
+
+.user-licence-title {
+    color: #1c6b35;
+    font-weight: 700;
+    font-size: 0.76rem;
+}
+
+.user-licence-title.is-warning {
+    color: #9a5300;
+}
+
+.user-licence-line {
+    margin-top: 3px;
+    color: rgba(16, 38, 58, 0.92);
+    font-size: 0.75rem;
+}
+
+.user-licence-line.is-warning-text {
+    color: #9a5300;
+    font-weight: 600;
+}
+
+.user-licence-role-card {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(16, 38, 58, 0.1);
+    background: rgba(255, 255, 255, 0.55);
+}
+
+.user-licence-role-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.user-licence-role-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.user-licence-role-dot.is-active {
+    background: #2ea44f;
+    box-shadow: 0 0 0 4px rgba(46, 164, 79, 0.14);
+}
+
+.user-licence-role-dot.is-warning {
+    background: #f39200;
+    box-shadow: 0 0 0 4px rgba(243, 146, 0, 0.14);
+}
+
+.user-licence-role-dot.is-inactive {
+    background: #dc3545;
+    box-shadow: 0 0 0 4px rgba(220, 53, 69, 0.12);
+}
+
+.user-licence-role-name {
+    color: #10263a;
+    font-weight: 700;
+    font-size: 0.78rem;
+    text-transform: none;
+}
+
+.activation-plan-option {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+}
+
+.activation-plan-title {
+    color: #10263a;
+    font-weight: 600;
+}
+
+.activation-plan-price {
+    color: rgba(16, 38, 58, 0.86);
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+.activation-plan-disabled-note {
+    color: rgba(147, 47, 60, 0.9);
+}
+
+.deactivation-dialog-card {
+    border-radius: 16px;
+}
+
+.deactivation-dialog-meta {
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(16, 38, 58, 0.1);
+    background: rgba(16, 38, 58, 0.03);
+    color: rgba(16, 38, 58, 0.92);
+    font-size: 0.86rem;
+    display: grid;
+    gap: 4px;
+}
+
 .empty-state {
     border-radius: 14px;
     border: 1px dashed rgba(16, 38, 58, 0.14);
@@ -901,7 +1648,7 @@ export default {
     }
 
     .status-row,
-    .licence-item {
+    .licence-main {
         flex-direction: column;
         align-items: flex-start;
     }

@@ -99,6 +99,8 @@ class AdminController extends Controller
             'company' => 'ITStudio Dipl.-Ing. Günther Kron',
             'version' => config('schooltool.version', 'x.x.x'),
             'timeout' => config('spa.timeout', 3000),
+            'payment_active' => config('schooltool.payment_active', false),
+            'licence_renewal_days' => (int) config('schooltool.licence_renewal_days', 30),
             'is_auth' => Auth::check(),
             'user' => $user ? new UserWithRoleResource($user) : null,
             'selected_school' =>  $user && $user->selectedSchool ? new SchoolResource($user->selectedSchool) : null,

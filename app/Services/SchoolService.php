@@ -240,9 +240,36 @@ class SchoolService
 
     public function schoolInfos($school_id)
     {
-        $licences = School::find($school_id)->licences->sortBy('name');
+        $licences = School::find($school_id)->licences->sortBy('name')->values();
+        $authUser = Auth::user();
+        if ($authUser) {
+            $authUser->loadMissing('roles');
+        }
+
+        $licenceService = app(LicenceService::class);
+        $schoolLicencesById = SchoolLicence::query()
+            ->where('school_id', $school_id)
+            ->get()
+            ->keyBy(fn(SchoolLicence $schoolLicence) => (string) $schoolLicence->id);
+
+        $licenceRows = $licences
+            ->map(function ($licence) use ($authUser, $licenceService, $schoolLicencesById) {
+                $row = (new LicenceResource($licence))->resolve();
+                $schoolLicenceId = (string) ($row['school_licence_id'] ?? '');
+                $schoolLicence = $schoolLicencesById->get($schoolLicenceId);
+                $row['licence_model'] = $this->mergeDashboardLicenceModel(
+                    $schoolLicence?->licence_model ?? ($row['licence_model'] ?? null),
+                    $licence->licence_model ?? null,
+                    $licenceService
+                );
+
+                return $this->attachCurrentUserLicenceSummary($row, $authUser, $schoolLicence, $licenceService);
+            })
+            ->values()
+            ->all();
+
         $data = [
-            'licences' => LicenceResource::collection($licences)
+            'licences' => $licenceRows,
         ];
 
         $roles = ['admin', 'register_admin', 'super_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin'];
@@ -257,6 +284,238 @@ class SchoolService
         $data['teachers']['count'] = Teacher::where('school_id', $school_id)->count();
 
         return $data;
+    }
+
+    private function mergeDashboardLicenceModel(mixed $schoolLicenceModelRaw, mixed $baseLicenceModelRaw, LicenceService $licenceService): array
+    {
+        $schoolModel = $licenceService->normalizeLicenceModel($schoolLicenceModelRaw);
+        $baseModel = $licenceService->normalizeLicenceModel($baseLicenceModelRaw);
+
+        $affectedRoles = collect(array_merge(
+            is_array($schoolModel['affected_roles'] ?? null) ? $schoolModel['affected_roles'] : [],
+            is_array($baseModel['affected_roles'] ?? null) ? $baseModel['affected_roles'] : []
+        ))
+            ->map(fn($role) => is_string($role) ? trim($role) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $schoolRequiredByRole = is_array($schoolModel['user_licence_required_by_role'] ?? null)
+            ? $schoolModel['user_licence_required_by_role']
+            : [];
+        $baseRequiredByRole = is_array($baseModel['user_licence_required_by_role'] ?? null)
+            ? $baseModel['user_licence_required_by_role']
+            : [];
+
+        $schoolPlansByRole = is_array($schoolModel['user_licence_plans_by_role'] ?? null)
+            ? $schoolModel['user_licence_plans_by_role']
+            : [];
+        $basePlansByRole = is_array($baseModel['user_licence_plans_by_role'] ?? null)
+            ? $baseModel['user_licence_plans_by_role']
+            : [];
+
+        $requiredByRole = [];
+        $plansByRole = [];
+
+        foreach ($affectedRoles as $roleName) {
+            $requiredByRole[$roleName] =
+                (bool) ($schoolRequiredByRole[$roleName] ?? false)
+                || (bool) ($baseRequiredByRole[$roleName] ?? false);
+
+            $schoolRolePlans = (array_key_exists($roleName, $schoolPlansByRole) && is_array($schoolPlansByRole[$roleName]))
+                ? $schoolPlansByRole[$roleName]
+                : [];
+            $baseRolePlans = (array_key_exists($roleName, $basePlansByRole) && is_array($basePlansByRole[$roleName]))
+                ? $basePlansByRole[$roleName]
+                : [];
+
+            $mergedPlans = [];
+            $seenPlanKeys = [];
+            foreach (array_merge($schoolRolePlans, $baseRolePlans) as $plan) {
+                if (! is_array($plan)) {
+                    continue;
+                }
+
+                $planId = (isset($plan['id']) && is_numeric($plan['id'])) ? (int) $plan['id'] : null;
+                $planText = isset($plan['text']) ? trim((string) $plan['text']) : '';
+                $planPrice = isset($plan['price_per_year']) ? trim((string) $plan['price_per_year']) : '';
+                $planKey = $planId !== null && $planId > 0
+                    ? "id:{$planId}"
+                    : 'txt:' . $planText . '|price:' . $planPrice;
+
+                if (isset($seenPlanKeys[$planKey])) {
+                    continue;
+                }
+
+                $seenPlanKeys[$planKey] = true;
+                $mergedPlans[] = $plan;
+            }
+
+            $plansByRole[$roleName] = $mergedPlans;
+        }
+
+        return [
+            'school_licence_required' => (bool) ($schoolModel['school_licence_required'] ?? true),
+            'affected_roles' => $affectedRoles,
+            'user_licence_required_by_role' => $requiredByRole,
+            'user_licence_plans_by_role' => $plansByRole,
+        ];
+    }
+
+    private function attachCurrentUserLicenceSummary(array $licence, ?User $authUser, ?SchoolLicence $schoolLicence, LicenceService $licenceService): array
+    {
+        $licenceModel = $licenceService->normalizeLicenceModel($licence['licence_model'] ?? null);
+        $schoolLicenceRequired = (bool) ($licenceModel['school_licence_required'] ?? true);
+        $schoolLicenceValidUntil = isset($licence['valid_until']) ? (string) $licence['valid_until'] : null;
+        $isSchoolLicenceActive = ! $schoolLicenceRequired || $this->isDateActiveForSchoolInfo($schoolLicenceValidUntil);
+
+        $requiredRoles = collect($licenceModel['user_licence_required_by_role'] ?? [])
+            ->filter(fn($isRequired) => (bool) $isRequired)
+            ->keys()
+            ->map(fn($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->values()
+            ->all();
+
+        $userRoles = $authUser
+            ? $authUser->getRoleNames()
+                ->map(fn($roleName) => is_string($roleName) ? trim($roleName) : '')
+                ->filter()
+                ->values()
+                ->all()
+            : [];
+
+        $matchedRoles = collect($userRoles)
+            ->filter(fn(string $roleName) => in_array($roleName, $requiredRoles, true))
+            ->values()
+            ->all();
+
+        $assignments = is_array($schoolLicence?->user_licence_assignments) ? $schoolLicence->user_licence_assignments : [];
+        $userAssignments = [];
+        if ($authUser && isset($assignments[(string) $authUser->id]) && is_array($assignments[(string) $authUser->id])) {
+            $userAssignments = $assignments[(string) $authUser->id];
+        }
+
+        $roleSummaries = collect($matchedRoles)
+            ->map(function (string $roleName) use ($licenceModel, $userAssignments, $schoolLicenceRequired, $schoolLicenceValidUntil) {
+                $assigned = is_array($userAssignments) && array_key_exists($roleName, $userAssignments);
+                $assignmentEntry = $assigned
+                    ? $this->normalizeUserLicenceAssignmentEntryForSchoolInfo($userAssignments[$roleName] ?? null)
+                    : ['valid_until' => null, 'is_activated' => false, 'plan_id' => null];
+                $validUntil = $assignmentEntry['valid_until'];
+                $isActivated = $assignmentEntry['is_activated'];
+                $planId = $assignmentEntry['plan_id'];
+
+                $plansByRole = is_array($licenceModel['user_licence_plans_by_role'] ?? null)
+                    ? $licenceModel['user_licence_plans_by_role']
+                    : [];
+                $plans = isset($plansByRole[$roleName]) && is_array($plansByRole[$roleName])
+                    ? $plansByRole[$roleName]
+                    : [];
+                $selectedPlan = collect($plans)
+                    ->first(function ($plan) use ($planId) {
+                        return is_array($plan)
+                            && $planId !== null
+                            && isset($plan['id'])
+                            && (int) $plan['id'] === (int) $planId;
+                    });
+                $firstPlan = collect($plans)->first(fn($plan) => is_array($plan));
+                $plan = is_array($selectedPlan) ? $selectedPlan : $firstPlan;
+
+                $isActive = $assigned && $isActivated && (
+                    (! $schoolLicenceRequired || $this->isDateActiveForSchoolInfo($schoolLicenceValidUntil))
+                    && $this->isDateActiveForSchoolInfo($validUntil)
+                );
+
+                return [
+                    'role_name' => $roleName,
+                    'assigned' => $assigned,
+                    'is_activated' => $isActivated,
+                    'is_active' => $isActive,
+                    'valid_until' => $validUntil,
+                    'plan_id' => $planId,
+                    'plan' => is_array($plan)
+                        ? [
+                            'id' => isset($plan['id']) ? (int) $plan['id'] : null,
+                            'text' => isset($plan['text']) ? (string) $plan['text'] : null,
+                            'price_per_year' => isset($plan['price_per_year']) ? (string) $plan['price_per_year'] : null,
+                        ]
+                        : null,
+                ];
+            })
+            ->values()
+            ->all();
+
+        $hasUserLicence = collect($roleSummaries)->contains(fn(array $entry) => (bool) ($entry['is_active'] ?? false));
+        $selectedRoleSummary = collect($roleSummaries)->first(fn(array $entry) => (bool) ($entry['is_active'] ?? false))
+            ?? collect($roleSummaries)->first(fn(array $entry) => (bool) ($entry['is_activated'] ?? false))
+            ?? collect($roleSummaries)->first(fn(array $entry) => (bool) ($entry['assigned'] ?? false))
+            ?? collect($roleSummaries)->first();
+
+        $toolHasUserLicence = count($requiredRoles) > 0;
+        $requiresUserLicenceForCurrentUser = $isSchoolLicenceActive && count($matchedRoles) > 0;
+
+        $licence['current_user_licence'] = [
+            'enabled' => $toolHasUserLicence,
+            'required' => $requiresUserLicenceForCurrentUser,
+            'is_relevant_for_user' => count($matchedRoles) > 0,
+            'has_licence' => $hasUserLicence,
+            'is_activated' => is_array($selectedRoleSummary) ? (bool) ($selectedRoleSummary['is_activated'] ?? false) : false,
+            'role_name' => is_array($selectedRoleSummary) ? ($selectedRoleSummary['role_name'] ?? null) : null,
+            'plan_id' => is_array($selectedRoleSummary) ? ($selectedRoleSummary['plan_id'] ?? null) : null,
+            'valid_until' => is_array($selectedRoleSummary) ? ($selectedRoleSummary['valid_until'] ?? null) : null,
+            'plan' => is_array($selectedRoleSummary) ? ($selectedRoleSummary['plan'] ?? null) : null,
+            'roles' => $roleSummaries,
+        ];
+
+        return $licence;
+    }
+
+    private function normalizeUserLicenceAssignmentEntryForSchoolInfo(mixed $entry): array
+    {
+        // Legacy shape: role => "YYYY-MM-DD" (or null)
+        if (is_string($entry)) {
+            $validUntil = trim($entry);
+            return [
+                'valid_until' => $validUntil !== '' ? $validUntil : null,
+                'is_activated' => false,
+                'plan_id' => null,
+            ];
+        }
+
+        if (! is_array($entry)) {
+            return [
+                'valid_until' => null,
+                'is_activated' => false,
+                'plan_id' => null,
+            ];
+        }
+
+        $rawValidUntil = $entry['valid_until'] ?? null;
+        $validUntil = is_string($rawValidUntil) && trim($rawValidUntil) !== '' ? trim($rawValidUntil) : null;
+        $planId = isset($entry['plan_id']) && is_numeric($entry['plan_id']) && (int) $entry['plan_id'] > 0
+            ? (int) $entry['plan_id']
+            : null;
+
+        return [
+            'valid_until' => $validUntil,
+            'is_activated' => (bool) ($entry['is_activated'] ?? false),
+            'plan_id' => $planId,
+        ];
+    }
+
+    private function isDateActiveForSchoolInfo(?string $validUntil): bool
+    {
+        if (! is_string($validUntil) || trim($validUntil) === '') {
+            return true;
+        }
+
+        try {
+            return Carbon::parse($validUntil)->startOfDay()->greaterThanOrEqualTo(now()->startOfDay());
+        } catch (\Throwable $exception) {
+            return false;
+        }
     }
 
     public function loadSwitchableSchools($user)

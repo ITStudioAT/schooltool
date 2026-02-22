@@ -27,6 +27,8 @@ class SchoolLicenceUserRolesSaveRequest extends FormRequest
             'roles.*.name' => ['required', 'string', 'max:255'],
             'roles.*.assigned' => ['required', 'boolean'],
             'roles.*.valid_until' => ['nullable', 'date'],
+            'roles.*.is_activated' => ['sometimes', 'boolean'],
+            'roles.*.plan_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
         ];
     }
 }
