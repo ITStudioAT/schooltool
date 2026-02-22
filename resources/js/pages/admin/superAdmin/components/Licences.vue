@@ -130,7 +130,8 @@
     <!-- Lizenzmodell -->
     <v-col cols="12" md="6" xl="4" v-if="action == 'licence_model'">
         <its-grid-box color="primary" title="Lizenzmodell" class="w-100">
-            <v-card tile flat color="transparent" class="pa-1">
+            <v-form ref="licenceModelForm" v-model="is_licence_model_valid">
+                <v-card tile flat color="transparent" class="pa-1">
                 <v-alert type="info" variant="outlined" class="mb-4 text-subtitle-1" v-if="selectedLicence">
                     Ausgewählte Lizenz: <strong>{{ selectedLicence.name }}</strong>
                 </v-alert>
@@ -188,6 +189,76 @@
                                 <v-btn :value="false">NEIN</v-btn>
                             </v-btn-toggle>
                         </div>
+                        <div v-if="isUserLicenceRequiredForRole(roleName)" class="mt-3">
+                            <v-divider class="mb-3"></v-divider>
+                            <div class="d-flex flex-row align-center justify-space-between ga-2 mb-2">
+                                <div class="text-body-2">Pläne (Text + Preis pro Jahr)</div>
+                                <div class="d-flex flex-row flex-wrap align-center ga-2">
+                                    <v-select
+                                        v-if="copyablePlanSourceRoles(roleName).length >= 1"
+                                        v-model="plan_copy_sources_by_role[roleName]"
+                                        :items="copyablePlanSourceRoles(roleName)"
+                                        label="Von Rolle kopieren"
+                                        density="compact"
+                                        hide-details
+                                        style="min-width: 220px; max-width: 260px" />
+                                    <v-btn
+                                        v-if="plan_copy_sources_by_role[roleName]"
+                                        size="small"
+                                        color="secondary"
+                                        variant="flat"
+                                        prepend-icon="mdi-content-copy"
+                                        @click="copyUserLicencePlansFromRole(roleName)">
+                                        Kopieren
+                                    </v-btn>
+                                    <v-btn
+                                        size="small"
+                                        color="primary"
+                                        variant="outlined"
+                                        prepend-icon="mdi-plus"
+                                        @click="addUserLicencePlanRow(roleName)">
+                                        Zeile
+                                    </v-btn>
+                                </div>
+                            </div>
+
+                            <v-card
+                                v-for="(plan, planIndex) in userLicencePlansForRole(roleName)"
+                                :key="`licence-model-plan-${roleName}-${planIndex}`"
+                                variant="outlined"
+                                class="pa-2 mb-2">
+                                <v-row dense>
+                                    <v-col cols="12" md="7">
+                                        <v-text-field
+                                            v-model="plan.text"
+                                            label="Text"
+                                            :rules="[required(), maxLength(255)]"
+                                            hide-details="auto"
+                                            density="compact" />
+                                    </v-col>
+                                    <v-col cols="12" md="4">
+                                        <v-text-field
+                                            v-model="plan.price_per_year"
+                                            label="Preis pro Jahr"
+                                            :rules="[required(), decimalOrNull(), maxLength(255)]"
+                                            hide-details="auto"
+                                            density="compact" />
+                                    </v-col>
+                                    <v-col cols="12" md="1" class="d-flex align-center justify-end">
+                                        <v-btn
+                                            icon="mdi-delete"
+                                            size="small"
+                                            color="error"
+                                            variant="text"
+                                            @click="removeUserLicencePlanRow(roleName, planIndex)" />
+                                    </v-col>
+                                </v-row>
+                            </v-card>
+
+                            <div class="text-caption text-medium-emphasis" v-if="userLicencePlansForRole(roleName).length === 0">
+                                Noch kein Plan angelegt.
+                            </div>
+                        </div>
                     </v-card>
                     <div class="text-caption text-medium-emphasis" v-if="currentLicenceModel.affected_roles.length === 0">
                         Wählen Sie zuerst eine oder mehrere Rollen aus.
@@ -198,7 +269,8 @@
                     <v-btn color="warning" flat tile @click="closeLicenceModel">Abbrechen</v-btn>
                     <v-btn color="success" flat tile @click="saveCurrentLicenceModel">Speichern</v-btn>
                 </v-card>
-            </v-card>
+                </v-card>
+            </v-form>
         </its-grid-box>
     </v-col>
 </template>
@@ -241,6 +313,8 @@ export default {
             upload_file: null,
             is_uploading: false,
             licence_models: {},
+            is_licence_model_valid: false,
+            plan_copy_sources_by_role: {},
         }
     },
 
@@ -317,6 +391,9 @@ export default {
         },
         async saveCurrentLicenceModel() {
             if (!this.selectedLicenceId || !this.currentLicenceModel) return
+            this.is_licence_model_valid = false
+            await this.$refs.licenceModelForm?.validate()
+            if (!this.is_licence_model_valid) return
 
             const payload = this.normalizeLicenceModel(this.currentLicenceModel)
             const saved = await this.licenceStore.saveLicenceModel(this.selectedLicenceId, payload)
@@ -358,10 +435,13 @@ export default {
             if (index >= 0) {
                 roles.splice(index, 1)
                 delete this.currentLicenceModel.user_licence_required_by_role[roleName]
+                delete this.currentLicenceModel.user_licence_plans_by_role[roleName]
+                delete this.plan_copy_sources_by_role[roleName]
                 return
             }
             roles.push(roleName)
             this.currentLicenceModel.user_licence_required_by_role[roleName] = false
+            this.currentLicenceModel.user_licence_plans_by_role[roleName] = []
         },
         isUserLicenceRequiredForRole(roleName) {
             if (!this.currentLicenceModel) return false
@@ -371,6 +451,78 @@ export default {
             if (!this.currentLicenceModel) return
             if (typeof value !== 'boolean') return
             this.currentLicenceModel.user_licence_required_by_role[roleName] = value
+            if (value && this.userLicencePlansForRole(roleName).length === 0) {
+                this.addDefaultUserLicencePlanRow(roleName)
+            }
+        },
+        userLicencePlansForRole(roleName) {
+            if (!this.currentLicenceModel) return []
+            if (!this.currentLicenceModel.user_licence_plans_by_role || typeof this.currentLicenceModel.user_licence_plans_by_role !== 'object') {
+                this.currentLicenceModel.user_licence_plans_by_role = {}
+            }
+            if (!Array.isArray(this.currentLicenceModel.user_licence_plans_by_role[roleName])) {
+                this.currentLicenceModel.user_licence_plans_by_role[roleName] = []
+            }
+            return this.currentLicenceModel.user_licence_plans_by_role[roleName]
+        },
+        createUserLicencePlan(text = '', price_per_year = '', id = null) {
+            const plan = {
+                text,
+                price_per_year,
+            }
+            if (id !== null && id !== undefined) {
+                plan.id = id
+            }
+            return plan
+        },
+        createEmptyUserLicencePlan() {
+            return this.createUserLicencePlan('', '0')
+        },
+        createDefaultUserLicencePlan() {
+            return {
+                text: 'Standard',
+                price_per_year: '0',
+            }
+        },
+        addUserLicencePlanRow(roleName) {
+            this.userLicencePlansForRole(roleName).push(this.createEmptyUserLicencePlan())
+        },
+        addDefaultUserLicencePlanRow(roleName) {
+            this.userLicencePlansForRole(roleName).push(this.createDefaultUserLicencePlan())
+        },
+        removeUserLicencePlanRow(roleName, index) {
+            const plans = this.userLicencePlansForRole(roleName)
+            if (index < 0 || index >= plans.length) return
+            plans.splice(index, 1)
+        },
+        copyablePlanSourceRoles(targetRoleName) {
+            if (!this.currentLicenceModel) return []
+            return (this.currentLicenceModel.affected_roles || [])
+                .filter((roleName) => roleName !== targetRoleName)
+                .filter((roleName) => this.isUserLicenceRequiredForRole(roleName))
+                .filter((roleName) => this.userLicencePlansForRole(roleName).length >= 1)
+        },
+        copyUserLicencePlansFromRole(targetRoleName) {
+            const sourceRoleName = this.plan_copy_sources_by_role[targetRoleName]
+            if (!sourceRoleName || sourceRoleName === targetRoleName) return
+
+            const sourcePlans = this.userLicencePlansForRole(sourceRoleName)
+            const targetPlans = this.userLicencePlansForRole(targetRoleName)
+
+            targetPlans.splice(
+                0,
+                targetPlans.length,
+                ...sourcePlans.map((plan) =>
+                    this.createUserLicencePlan(
+                        typeof plan?.text === 'string' ? plan.text : '',
+                        typeof plan?.price_per_year === 'string' ? plan.price_per_year : '0'
+                    )
+                )
+            )
+
+            if (targetPlans.length === 0) {
+                targetPlans.push(this.createDefaultUserLicencePlan())
+            }
         },
         licenceModelFor(licence) {
             return this.normalizeLicenceModel(licence?.licence_model || null)
@@ -391,6 +543,7 @@ export default {
                 school_licence_required: true,
                 affected_roles: [],
                 user_licence_required_by_role: {},
+                user_licence_plans_by_role: {},
             }
 
             if (typeof licenceModel === 'string') {
@@ -421,10 +574,36 @@ export default {
                 user_licence_required_by_role[roleName] = !!rawMap[roleName]
             }
 
+            const rawPlansByRole =
+                licenceModel.user_licence_plans_by_role && typeof licenceModel.user_licence_plans_by_role === 'object'
+                    ? licenceModel.user_licence_plans_by_role
+                    : {}
+            const user_licence_plans_by_role = {}
+            for (const roleName of affected_roles) {
+                const rawPlans = Array.isArray(rawPlansByRole[roleName]) ? rawPlansByRole[roleName] : []
+                const normalizedPlans = rawPlans
+                    .filter((plan) => plan && typeof plan === 'object')
+                    .map((plan) =>
+                        this.createUserLicencePlan(
+                            (typeof plan.text === 'string' ? plan.text : (plan.text ?? '').toString()).trim(),
+                            (typeof plan.price_per_year === 'string' ? plan.price_per_year : (plan.price_per_year ?? '').toString()).trim(),
+                            Number.isInteger(Number(plan.id)) && Number(plan.id) > 0 ? Number(plan.id) : null
+                        )
+                    )
+                    .filter((plan) => !(plan.text === '' && plan.price_per_year === ''))
+
+                user_licence_plans_by_role[roleName] = normalizedPlans
+
+                if (user_licence_required_by_role[roleName] && user_licence_plans_by_role[roleName].length === 0) {
+                    user_licence_plans_by_role[roleName] = [this.createDefaultUserLicencePlan()]
+                }
+            }
+
             return {
                 school_licence_required: typeof licenceModel.school_licence_required === 'boolean' ? licenceModel.school_licence_required : true,
                 affected_roles,
                 user_licence_required_by_role,
+                user_licence_plans_by_role,
             }
         },
     },

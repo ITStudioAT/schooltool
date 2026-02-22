@@ -822,10 +822,12 @@ export default {
             if (index >= 0) {
                 roles.splice(index, 1)
                 delete this.currentSchoolLicenceModel.user_licence_required_by_role[roleName]
+                delete this.currentSchoolLicenceModel.user_licence_plans_by_role[roleName]
                 return
             }
             roles.push(roleName)
             this.currentSchoolLicenceModel.user_licence_required_by_role[roleName] = false
+            this.currentSchoolLicenceModel.user_licence_plans_by_role[roleName] = []
         },
         isUserLicenceRequiredForRole(roleName) {
             if (!this.currentSchoolLicenceModel) return false
@@ -996,6 +998,7 @@ export default {
                 school_licence_required: true,
                 affected_roles: [],
                 user_licence_required_by_role: {},
+                user_licence_plans_by_role: {},
             }
 
             if (typeof licenceModel === 'string') {
@@ -1026,10 +1029,28 @@ export default {
                 user_licence_required_by_role[roleName] = this.toBool(rawMap[roleName], false)
             }
 
+            const rawPlansByRole =
+                licenceModel.user_licence_plans_by_role && typeof licenceModel.user_licence_plans_by_role === 'object'
+                    ? licenceModel.user_licence_plans_by_role
+                    : {}
+            const user_licence_plans_by_role = {}
+            for (const roleName of affected_roles) {
+                const rawPlans = Array.isArray(rawPlansByRole[roleName]) ? rawPlansByRole[roleName] : []
+                user_licence_plans_by_role[roleName] = rawPlans
+                    .filter((plan) => plan && typeof plan === 'object')
+                    .map((plan) => ({
+                        ...(Number.isInteger(Number(plan.id)) && Number(plan.id) > 0 ? { id: Number(plan.id) } : {}),
+                        text: typeof plan.text === 'string' ? plan.text : (plan.text ?? '').toString(),
+                        price_per_year:
+                            typeof plan.price_per_year === 'string' ? plan.price_per_year : (plan.price_per_year ?? '').toString(),
+                    }))
+            }
+
             return {
                 school_licence_required: this.toBool(licenceModel.school_licence_required, true),
                 affected_roles,
                 user_licence_required_by_role,
+                user_licence_plans_by_role,
             }
         },
         toBool(value, fallback = false) {

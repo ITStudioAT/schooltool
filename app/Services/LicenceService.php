@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Licence;
+use App\Models\LicenceUserPlan;
 use App\Models\School;
 use App\Models\SchoolLicence;
 use Carbon\Carbon;
@@ -231,8 +232,12 @@ class LicenceService
 
     public function saveLicenceModel(Licence $licence, array $licenceModel): Licence
     {
-        $licence->licence_model = $this->normalizeLicenceModel($licenceModel);
+        $normalizedModel = $this->normalizeLicenceModel($licenceModel);
+        $syncedPlansByRole = $this->syncLicenceUserPlans($licence, $normalizedModel['user_licence_plans_by_role'] ?? []);
+        $normalizedModel['user_licence_plans_by_role'] = $syncedPlansByRole;
+        $licence->licence_model = $normalizedModel;
         $licence->save();
+        $licence->refresh();
 
         return $licence;
     }
@@ -270,10 +275,60 @@ class LicenceService
             $roleRequirements[$roleName] = $this->toBool($roleRequirementsRaw[$roleName] ?? false, false);
         }
 
+        $rolePlansRaw = $licenceModel['user_licence_plans_by_role'] ?? [];
+        $rolePlansRaw = is_array($rolePlansRaw) ? $rolePlansRaw : [];
+        $rolePlans = [];
+
+        foreach ($affectedRoles as $roleName) {
+            $rawPlans = $rolePlansRaw[$roleName] ?? [];
+            $rawPlans = is_array($rawPlans) ? $rawPlans : [];
+
+            $plans = [];
+            foreach ($rawPlans as $plan) {
+                if (!is_array($plan)) {
+                    continue;
+                }
+
+                $planId = null;
+                if (array_key_exists('id', $plan) && is_numeric($plan['id'])) {
+                    $planId = (int) $plan['id'];
+                }
+
+                $text = trim((string) ($plan['text'] ?? ''));
+                $pricePerYear = trim((string) ($plan['price_per_year'] ?? ''));
+
+                // Leere UI-Zeilen nicht persistieren.
+                if ($text === '' && $pricePerYear === '') {
+                    continue;
+                }
+
+                if ($text === '') {
+                    continue;
+                }
+
+                $normalizedPlan = [
+                    'text' => mb_substr($text, 0, 255),
+                    'price_per_year' => mb_substr($pricePerYear, 0, 255),
+                ];
+                if ($planId) {
+                    $normalizedPlan['id'] = $planId;
+                }
+
+                $plans[] = $normalizedPlan;
+            }
+
+            $rolePlans[$roleName] = $plans;
+
+            if (($roleRequirements[$roleName] ?? false) === true && count($rolePlans[$roleName]) === 0) {
+                $rolePlans[$roleName][] = $this->defaultUserLicencePlan();
+            }
+        }
+
         return [
             'school_licence_required' => $schoolLicenceRequired,
             'affected_roles' => $affectedRoles,
             'user_licence_required_by_role' => $roleRequirements,
+            'user_licence_plans_by_role' => $rolePlans,
         ];
     }
 
@@ -283,6 +338,15 @@ class LicenceService
             'school_licence_required' => true,
             'affected_roles' => [],
             'user_licence_required_by_role' => [],
+            'user_licence_plans_by_role' => [],
+        ];
+    }
+
+    private function defaultUserLicencePlan(): array
+    {
+        return [
+            'text' => 'Standard',
+            'price_per_year' => '0',
         ];
     }
 
@@ -316,5 +380,67 @@ class LicenceService
         }
 
         return $default;
+    }
+
+    private function syncLicenceUserPlans(Licence $licence, array $plansByRole): array
+    {
+        $existingPlans = $licence->userPlans()->get()->keyBy('id');
+        $keptPlanIds = [];
+        $syncedPlansByRole = [];
+
+        foreach ($plansByRole as $roleName => $plans) {
+            if (! is_string($roleName) || ! is_array($plans)) {
+                continue;
+            }
+
+            $roleName = trim($roleName);
+            if ($roleName === '') {
+                continue;
+            }
+
+            $syncedPlansByRole[$roleName] = [];
+            $sortOrder = 0;
+
+            foreach ($plans as $plan) {
+                if (! is_array($plan)) {
+                    continue;
+                }
+
+                $text = trim((string) ($plan['text'] ?? ''));
+                $pricePerYear = trim((string) ($plan['price_per_year'] ?? ''));
+                if ($text === '' || $pricePerYear === '') {
+                    continue;
+                }
+
+                $planId = (isset($plan['id']) && is_numeric($plan['id'])) ? (int) $plan['id'] : null;
+                /** @var LicenceUserPlan $planModel */
+                $planModel = ($planId && $existingPlans->has($planId))
+                    ? $existingPlans->get($planId)
+                    : new LicenceUserPlan(['licence_id' => $licence->id]);
+
+                $planModel->licence_id = $licence->id;
+                $planModel->role_name = $roleName;
+                $planModel->text = mb_substr($text, 0, 255);
+                $planModel->price_per_year = mb_substr($pricePerYear, 0, 255);
+                $planModel->sort_order = $sortOrder++;
+                $planModel->save();
+
+                $keptPlanIds[] = (int) $planModel->id;
+
+                $syncedPlansByRole[$roleName][] = [
+                    'id' => (int) $planModel->id,
+                    'text' => $planModel->text,
+                    'price_per_year' => $planModel->price_per_year,
+                ];
+            }
+        }
+
+        if (! empty($keptPlanIds)) {
+            $licence->userPlans()->whereNotIn('id', $keptPlanIds)->delete();
+        } else {
+            $licence->userPlans()->delete();
+        }
+
+        return $syncedPlansByRole;
     }
 }

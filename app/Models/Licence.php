@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\School;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 
@@ -47,5 +48,10 @@ class Licence extends Model
     public function schools(): BelongsToMany
     {
         return $this->belongsToMany(School::class, 'school_licences');
+    }
+
+    public function userPlans(): HasMany
+    {
+        return $this->hasMany(LicenceUserPlan::class)->orderBy('role_name')->orderBy('sort_order')->orderBy('id');
     }
 }

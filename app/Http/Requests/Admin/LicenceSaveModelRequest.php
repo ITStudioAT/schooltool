@@ -29,7 +29,12 @@ class LicenceSaveModelRequest extends FormRequest
             'licence_model.affected_roles.*' => ['required', 'string', 'max:255', 'exists:roles,name', 'distinct'],
             'licence_model.user_licence_required_by_role' => ['required', 'array'],
             'licence_model.user_licence_required_by_role.*' => ['boolean'],
+            'licence_model.user_licence_plans_by_role' => ['sometimes', 'array'],
+            'licence_model.user_licence_plans_by_role.*' => ['array'],
+            'licence_model.user_licence_plans_by_role.*.*' => ['array'],
+            'licence_model.user_licence_plans_by_role.*.*.id' => ['sometimes', 'integer', 'min:1'],
+            'licence_model.user_licence_plans_by_role.*.*.text' => ['required', 'string', 'max:255'],
+            'licence_model.user_licence_plans_by_role.*.*.price_per_year' => ['required', 'string', 'max:255'],
         ];
     }
 }
-
