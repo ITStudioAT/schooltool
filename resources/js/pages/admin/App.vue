@@ -83,7 +83,7 @@ export default {
     data() {
         return {
             adminStore: null,
-            admins: ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'teacher', 'lunch_admin'],
+            admins: ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin'],
         }
     },
 

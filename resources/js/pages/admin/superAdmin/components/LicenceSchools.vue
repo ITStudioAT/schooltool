@@ -1122,6 +1122,9 @@ export default {
                 this.school_licence_user_role_details_valid_until = response?.data?.school_licence_valid_until || this.school_licence_user_role_details_valid_until
                 this.normalizeSelectedUserRoleDetails()
                 this.initSelectedUserSpatieRoleState()
+                if (this.adminStore?.loadConfig) {
+                    await this.adminStore.loadConfig()
+                }
 
                 notification.notify({
                     message: 'Benutzerrollen wurden gespeichert.',
@@ -1231,6 +1234,9 @@ export default {
 
             if (!response) return
             this.normalizeSelectedUserRoleDetails()
+            if (this.adminStore?.loadConfig) {
+                await this.adminStore.loadConfig()
+            }
 
             const currentPage = Number(this.school_licence_users_meta?.current_page || 1)
             await this.loadSchoolLicenceUsers(currentPage)

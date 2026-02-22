@@ -38,7 +38,7 @@ class AdminNavigationService
         $registerLicenceStatus = $this->toolAccessStatus($user, 'Anmeldetool', ['admin', 'register_admin']);
         $tutoringLicenceStatus = $this->toolAccessStatus($user, 'Nachhilfetool', ['admin', 'tutoring_admin', 'teacher']);
         $teachingLicenceStatus = $this->toolAccessStatus($user, 'Lehrertool', ['admin', 'teaching_admin', 'teacher']);
-        $materialsLicenceStatus = $this->toolAccessStatus($user, 'Materialientool', ['admin', 'materials_admin', 'teaching_admin', 'teacher']);
+        $materialsLicenceStatus = $this->toolAccessStatus($user, 'Materialientool', ['admin', 'materials_admin', 'materials_moderator']);
 
         // ANMELDESYSTEM
         if ($isSuperAdmin || $this->userHasRole(['admin', 'register_admin'])) {
@@ -78,13 +78,13 @@ class AdminNavigationService
         }
 
         // MATERIALS
-        if ($isSuperAdmin || $this->userHasRole(['admin', 'materials_admin', 'teaching_admin', 'teacher'])) {
+        if ($isSuperAdmin || $this->userHasRole(['admin', 'materials_admin', 'materials_moderator'])) {
             if ($isSuperAdmin || $materialsLicenceStatus !== 'missing') {
                 $menu[] = [
                     'title' => 'Materialien',
                     'icon' => 'mdi-folder-multiple-outline',
                     'to' => '/admin/materials',
-                    'is_active' => $isSuperAdmin ? true : ($materialsLicenceStatus === 'active' && config('schooltool.materials_active', false)),
+                    'is_active' => ($materialsLicenceStatus === 'active' && config('schooltool.materials_active', false)),
                 ] + $this->moduleStatusMeta($materialsLicenceStatus, 'Materialien');
             }
         }

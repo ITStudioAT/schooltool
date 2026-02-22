@@ -214,8 +214,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/teaching/course_behaviour_entries', \App\Http\Controllers\Admin\Teaching\CourseBehaviourEntryController::class)->only(['index', 'store', 'update', 'destroy']);
     });
 
-    /* SANCTUM - admin, teaching_admin, materials_admin, teacher */
-    Route::middleware(['auth:sanctum', 'api-allowed:admin,teaching_admin,materials_admin,teacher', 'tool-licensed:Materialientool'])->group(function () {
+    /* SANCTUM - admin, materials_admin, materials_moderator */
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,materials_admin,materials_moderator', 'tool-licensed:Materialientool'])->group(function () {
         Route::get('/admin/materials/config', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'config']);
         Route::post('/admin/materials/subjects', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'storeSubject']);
         Route::put('/admin/materials/subjects/{material_subject}', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'updateSubject']);
@@ -258,8 +258,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/admin/materials/uploads/chunk/{upload_id}', [\App\Http\Controllers\Admin\Materials\MaterialChunkUploadController::class, 'destroy']);
     });
 
-    /* SANCTUM - admin, teaching_admin, materials_admin, teacher */
-    Route::middleware(['auth:sanctum', 'api-allowed:admin,teaching_admin,materials_admin,teacher', 'tool-licensed:Materialientool'])->group(function () {
+    /* SANCTUM - admin, materials_admin, materials_moderator */
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,materials_admin,materials_moderator', 'tool-licensed:Materialientool'])->group(function () {
         Route::get('/admin/materials/types', [\App\Http\Controllers\Admin\Materials\MaterialTypeController::class, 'index']);
         Route::post('/admin/materials/types', [\App\Http\Controllers\Admin\Materials\MaterialTypeController::class, 'store']);
         Route::put('/admin/materials/types/{material_type}', [\App\Http\Controllers\Admin\Materials\MaterialTypeController::class, 'update']);
@@ -275,8 +275,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::put('/admin/materials/file-settings', [\App\Http\Controllers\Admin\Materials\MaterialFileSettingsController::class, 'update']);
     });
 
-    /* SANCTUM - admin, register_admin, tutoring_admin, teaching_admin, materials_admin, teacher */
-    Route::middleware(['auth:sanctum', 'api-allowed:admin,register_admin,tutoring_admin,teaching_admin,materials_admin,teacher'])->group(function () {
+    /* SANCTUM - admin, register_admin, tutoring_admin, teaching_admin, materials_admin, materials_moderator, teacher */
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher'])->group(function () {
 
         // Tutoring, Offers
         Route::apiResource('/admin/tutoring/offers', \App\Http\Controllers\Admin\Tutoring\OfferController::class)->names('admin.tutoring.offers')->middleware('tool-licensed:Nachhilfetool');

@@ -848,6 +848,9 @@ export default {
                 if (this.config?.selected_school?.id) {
                     await this.schoolStore.loadSchoolInfos(this.config.selected_school.id)
                 }
+                if (this.adminStore?.loadConfig) {
+                    await this.adminStore.loadConfig()
+                }
                 this.closeRenewUserLicenceDialog()
             } catch (error) {
                 notification.notify({
@@ -931,6 +934,9 @@ export default {
                 if (this.config?.selected_school?.id) {
                     await this.schoolStore.loadSchoolInfos(this.config.selected_school.id)
                 }
+                if (this.adminStore?.loadConfig) {
+                    await this.adminStore.loadConfig()
+                }
                 this.closeActivateUserLicenceDialog()
             } catch (error) {
                 notification.notify({
@@ -978,6 +984,9 @@ export default {
 
                 if (this.config?.selected_school?.id) {
                     await this.schoolStore.loadSchoolInfos(this.config.selected_school.id)
+                }
+                if (this.adminStore?.loadConfig) {
+                    await this.adminStore.loadConfig()
                 }
                 this.closeDeactivateUserLicenceDialog()
             } catch (error) {
