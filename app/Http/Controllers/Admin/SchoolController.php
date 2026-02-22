@@ -316,6 +316,10 @@ class SchoolController extends Controller
             ->values()
             ->all();
 
+        if (empty($activeRoleFilters) && ! empty($licenceModelRoles)) {
+            $activeRoleFilters = $licenceModelRoles;
+        }
+
         $shouldApplyRoleFilter = ! empty($activeRoleFilters);
         $assignments = is_array($school_licence->user_licence_assignments) ? $school_licence->user_licence_assignments : [];
 
@@ -848,7 +852,7 @@ class SchoolController extends Controller
 
     private function schoolLicenceUserRolesPayload(SchoolLicence $school_licence, User $user, LicenceService $service): array
     {
-        $licenceModel = $service->normalizeLicenceModel($school_licence->licence_model);
+        $licenceModel = $this->mergedSchoolLicenceUserLicenceModel($school_licence->loadMissing('licence'), $service);
         $roleNames = collect($licenceModel['user_licence_required_by_role'] ?? [])
             ->filter(fn($isRequired) => (bool) $isRequired)
             ->keys()
@@ -863,8 +867,12 @@ class SchoolController extends Controller
             ? $assignments[(string) $user->id]
             : [];
 
+        $plansByRole = is_array($licenceModel['user_licence_plans_by_role'] ?? null)
+            ? $licenceModel['user_licence_plans_by_role']
+            : [];
+
         $roles = collect($roleNames)
-            ->map(function ($roleName) use ($user, $userAssignments) {
+            ->map(function ($roleName) use ($user, $userAssignments, $plansByRole) {
                 $entry = $this->normalizeUserLicenceAssignmentEntry($userAssignments[$roleName] ?? null);
                 return [
                     'name' => $roleName,
@@ -872,6 +880,9 @@ class SchoolController extends Controller
                     'valid_until' => $entry['valid_until'],
                     'is_activated' => $entry['is_activated'],
                     'plan_id' => $entry['plan_id'],
+                    'plans' => isset($plansByRole[$roleName]) && is_array($plansByRole[$roleName])
+                        ? array_values($plansByRole[$roleName])
+                        : [],
                 ];
             })
             ->values()

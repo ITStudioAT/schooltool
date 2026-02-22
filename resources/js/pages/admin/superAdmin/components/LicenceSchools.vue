@@ -403,14 +403,60 @@
                     :key="`selected-user-role-date-${selectedUserLicenceUser.id}-${roleEntry.name}`"
                     variant="tonal"
                     class="pa-3 mb-2">
-                    <div class="d-flex flex-row flex-wrap align-center justify-space-between ga-3">
-                        <v-chip color="primary" variant="flat">{{ roleEntry.name }}</v-chip>
-                        <v-date-input
-                            v-model="roleEntry.valid_until"
-                            label="Gültig bis"
-                            class="flex-grow-1"
-                            hide-details />
+                    <div class="d-flex flex-row flex-wrap align-center justify-space-between ga-3 mb-3">
+                        <v-chip color="primary" variant="flat">
+                            <v-avatar
+                                size="14"
+                                :color="isSelectedUserRoleAssignmentActive(roleEntry) ? 'success' : 'error'"
+                                class="mr-1">
+                                <v-icon
+                                    size="10"
+                                    color="white"
+                                    :icon="isSelectedUserRoleAssignmentActive(roleEntry) ? 'mdi-check' : 'mdi-close'" />
+                            </v-avatar>
+                            {{ roleEntry.name }}
+                        </v-chip>
+                        <div class="text-caption" :class="isSelectedUserRoleAssignmentActive(roleEntry) ? 'text-success' : 'text-error'">
+                            {{ selectedUserRoleStatusLabel(roleEntry) }}
+                        </div>
                     </div>
+
+                    <v-row dense>
+                        <v-col cols="12" md="4">
+                            <div class="text-caption text-medium-emphasis mb-1">Aktiviert</div>
+                            <v-btn-toggle
+                                :model-value="!!roleEntry.is_activated"
+                                mandatory
+                                divided
+                                color="primary"
+                                @update:model-value="setSelectedUserRoleActivation(roleEntry, $event)">
+                                <v-btn :value="true">JA</v-btn>
+                                <v-btn :value="false">NEIN</v-btn>
+                            </v-btn-toggle>
+                        </v-col>
+
+                        <v-col cols="12" md="8">
+                            <v-select
+                                v-model="roleEntry.plan_id"
+                                :items="rolePlanSelectItems(roleEntry)"
+                                item-title="title"
+                                item-value="value"
+                                label="Plan"
+                                clearable
+                                :hint="rolePlanSelectItems(roleEntry).length === 0 ? 'Keine Pläne für diese Rolle konfiguriert.' : undefined"
+                                persistent-hint
+                                :disabled="!roleEntry.assigned || !roleEntry.is_activated"
+                                hide-details="auto" />
+                        </v-col>
+
+                        <v-col cols="12">
+                            <v-date-input
+                                v-model="roleEntry.valid_until"
+                                label="Gültig bis"
+                                class="flex-grow-1"
+                                hide-details />
+                        </v-col>
+                    </v-row>
                 </v-card>
                 <div class="text-caption text-medium-emphasis" v-if="selectedAssignedUserLicenceRoleEntries.length === 0">
                     Wählen Sie zuerst eine oder mehrere Rollen aus.
@@ -846,7 +892,8 @@ export default {
             this.selected_user_licences_school_licence_id = licence?.school_licence_id || null
             this.syncInteractionLockAction()
             this.user_licence_user_search_string = ''
-            this.selected_user_licence_role_filters = [...this.selectedUserLicencesSourceRoles]
+            // Let the backend apply the merged licence-model default role filter (school + tool model).
+            this.selected_user_licence_role_filters = []
             this.selected_user_licence_users = []
             this.user_licence_expired_only = false
             await this.loadSchoolLicenceUsers(1)
@@ -926,6 +973,7 @@ export default {
             )
 
             if (!response) return
+            this.normalizeSelectedUserRoleDetails()
         },
         toggleSelectedUserRole(roleName) {
             const roleEntry = this.selectedUserLicenceRoleEntries.find((item) => item.name === roleName)
@@ -934,7 +982,79 @@ export default {
             roleEntry.assigned = !roleEntry.assigned
             if (!roleEntry.assigned) {
                 roleEntry.valid_until = null
+                roleEntry.is_activated = false
+                roleEntry.plan_id = null
+                return
             }
+
+            if (!roleEntry.valid_until) {
+                roleEntry.valid_until = this.defaultValidUntil()
+            }
+        },
+        setSelectedUserRoleActivation(roleEntry, value) {
+            if (!roleEntry) return
+            if (typeof value !== 'boolean') return
+            roleEntry.is_activated = value
+        },
+        rolePlanSelectItems(roleEntry) {
+            const plans = Array.isArray(roleEntry?.plans) ? roleEntry.plans : []
+            return plans
+                .map((plan) => {
+                    const id = Number(plan?.id)
+                    if (!Number.isInteger(id) || id <= 0) return null
+                    const text = String(plan?.text ?? '').trim() || `Plan ${id}`
+                    const price = String(plan?.price_per_year ?? '').trim()
+                    return {
+                        value: id,
+                        title: price ? `${text} (${price})` : text,
+                    }
+                })
+                .filter(Boolean)
+        },
+        normalizeSelectedUserRoleDetails() {
+            const details = Array.isArray(this.school_licence_user_role_details) ? this.school_licence_user_role_details : []
+            this.school_licence_user_role_details = details.map((entry) => {
+                const planId = Number(entry?.plan_id)
+                return {
+                    name: String(entry?.name ?? '').trim(),
+                    assigned: !!entry?.assigned,
+                    valid_until:
+                        entry?.valid_until instanceof Date
+                            ? this.toDateString(entry.valid_until)
+                            : (entry?.valid_until ? String(entry.valid_until).slice(0, 10) : null),
+                    is_activated: !!entry?.is_activated,
+                    plan_id: Number.isInteger(planId) && planId > 0 ? planId : null,
+                    plans: Array.isArray(entry?.plans) ? entry.plans : [],
+                }
+            })
+        },
+        normalizeRoleValidUntilForApi(value) {
+            if (!value) return null
+            if (value instanceof Date) return this.toDateString(value)
+            return String(value).slice(0, 10) || null
+        },
+        isDateValueActive(value) {
+            if (!value) return true
+            const normalized = value instanceof Date ? this.toDateString(value) : String(value).slice(0, 10)
+            return normalized >= this.localDateKey()
+        },
+        isSelectedUserRoleAssignmentActive(roleEntry) {
+            if (!roleEntry?.assigned) return false
+            if (!roleEntry?.is_activated) return false
+            if (!this.isDateValueActive(roleEntry?.valid_until)) return false
+            if (!this.isSchoolLicenceNotNeeded(this.selectedUserLicencesSource) && !this.isLicenceActive(this.selectedUserLicencesSource)) {
+                return false
+            }
+            return true
+        },
+        selectedUserRoleStatusLabel(roleEntry) {
+            if (!roleEntry?.assigned) return 'Nicht zugewiesen'
+            if (!roleEntry?.is_activated) return 'Deaktiviert'
+            if (!this.isSchoolLicenceNotNeeded(this.selectedUserLicencesSource) && !this.isLicenceActive(this.selectedUserLicencesSource)) {
+                return 'Schullizenz abgelaufen'
+            }
+            if (!this.isDateValueActive(roleEntry?.valid_until)) return 'Abgelaufen'
+            return 'Aktiv'
         },
         closeSelectedUserLicenceCard() {
             this.selected_user_licence_users = []
@@ -948,7 +1068,9 @@ export default {
             const rolesPayload = this.selectedUserLicenceRoleEntries.map((item) => ({
                 name: item.name,
                 assigned: !!item.assigned,
-                valid_until: item.assigned ? item.valid_until || null : null,
+                valid_until: item.assigned ? this.normalizeRoleValidUntilForApi(item.valid_until) : null,
+                is_activated: item.assigned ? !!item.is_activated : false,
+                plan_id: item.assigned && Number.isInteger(Number(item.plan_id)) && Number(item.plan_id) > 0 ? Number(item.plan_id) : null,
             }))
 
             const response = await this.schoolStore.saveSchoolLicenceUserRoles(
@@ -958,6 +1080,7 @@ export default {
             )
 
             if (!response) return
+            this.normalizeSelectedUserRoleDetails()
 
             const currentPage = Number(this.school_licence_users_meta?.current_page || 1)
             await this.loadSchoolLicenceUsers(currentPage)
