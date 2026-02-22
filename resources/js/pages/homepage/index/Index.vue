@@ -2,26 +2,43 @@
     <div class="intro-page">
         <!-- Animated Background -->
         <div class="animated-bg">
-            <div class="gradient-orb orb-1"></div>
-            <div class="gradient-orb orb-2"></div>
-            <div class="gradient-orb orb-3"></div>
+            <div class="hero-bg-image st-cloudflare-bg-image"></div>
         </div>
 
         <!-- Hero Section -->
         <section class="hero-section" v-if="step === ''">
-            <div class="hero-content">
-                <!-- Logo/Brand -->
-                <div class="brand-container">
-                    <div class="logo-wrapper">
-                        <span class="logo-icon">
-                            <v-icon size="48" color="white">mdi-school</v-icon>
-                        </span>
+            <div class="hero-content st-shell-1440">
+                <header class="cloud-header">
+                    <div class="cloud-header-left">
+                        <div class="logo-wrapper logo-wrapper-nav" aria-hidden="true">
+                            <span class="logo-icon">
+                                <v-icon size="20" color="white">mdi-school</v-icon>
+                            </span>
+                        </div>
+                        <div class="cloud-brand">
+                            <h1 class="cloud-brand-title">
+                                <span class="brand-school">School</span>
+                                <span class="brand-tool">Tool</span>
+                            </h1>
+                        </div>
+                        <nav class="cloud-header-nav" aria-label="Dummy Navigation">
+                            <button type="button" class="cloud-nav-item" @click="scrollToProducts">Produkte</button>
+                        </nav>
                     </div>
-                    <h1 class="brand-title">
-                        <span class="brand-school">School</span>
-                        <span class="brand-tool">Tool</span>
-                    </h1>
-                    <p class="brand-tagline">Digitale Werkzeuge für moderne Schulen</p>
+                </header>
+
+                <div class="cloud-hero-copy">
+                    <h2 class="cloud-hero-title">
+                        <div>Mehr Zeit für das Wesentliche.</div>
+                        <div class="mt-4">
+                            Schulalltag?
+                            <span class="text-white">Organisiert!</span>
+                        </div>
+                    </h2>
+                    <p class="cloud-hero-description mt-8">
+                        Wir machen Schulprozesse schneller, einfacher und übersichtlicher. Unsere modulare Plattform bringt Ordnung in den Schulalltag, und SchoolTool ist der beste
+                        Ort, um Schule digital zu organisieren.
+                    </p>
                 </div>
 
                 <!-- Feature Cards -->
@@ -30,7 +47,11 @@
 
                     <div class="tools-grid">
                         <!-- Anmeldetool Card -->
-                        <div class="tool-card card-register" :class="{ 'card-disabled': registerStatus === 'expired' }" @click="registerStatus === 'active' && loadSchoolsForTool('Anmeldetool')" v-if="canShowRegister">
+                        <div
+                            class="tool-card card-register"
+                            :class="{ 'card-disabled': registerStatus === 'expired' }"
+                            @click="registerStatus === 'active' && loadSchoolsForTool('Anmeldetool')"
+                            v-if="canShowRegister">
                             <div class="card-glow"></div>
                             <div class="card-content">
                                 <div class="card-icon">
@@ -50,7 +71,11 @@
                         </div>
 
                         <!-- Nachhilfetool Card -->
-                        <div class="tool-card card-tutoring" :class="{ 'card-disabled': tutoringStatus === 'expired' }" @click="tutoringStatus === 'active' && loadSchoolsForTool('Nachhilfetool')" v-if="canShowTutoring">
+                        <div
+                            class="tool-card card-tutoring"
+                            :class="{ 'card-disabled': tutoringStatus === 'expired' }"
+                            @click="tutoringStatus === 'active' && loadSchoolsForTool('Nachhilfetool')"
+                            v-if="canShowTutoring">
                             <div class="card-glow"></div>
                             <div class="card-content">
                                 <div class="card-icon">
@@ -118,8 +143,124 @@
             </div>
         </section>
 
-        <!-- School Selection Step -->
-        <section class="selection-section" v-if="step === 'selectSchool'">
+        <section class="products-showcase" v-if="step === ''" ref="productsStart">
+            <div class="products-shell st-shell-1440">
+                <div class="products-intro">
+                    <div class="products-eyebrow">Produkte</div>
+                    <h3 class="products-heading">Fünf starke Bereiche.</h3>
+                    <p class="products-lead">SchoolTool verbindet Organisation, Unterricht und Zusammenarbeit in einer Oberfläche.</p>
+                </div>
+
+                <article class="product-section product-section--register">
+                    <div class="product-copy">
+                        <div class="product-label">
+                            <v-icon size="18">mdi-calendar-check</v-icon>
+                            <span>Anmeldetool</span>
+                        </div>
+                        <h4 class="product-title">Termine und Veranstaltungen</h4>
+                        <p class="product-text">Planen Sie Schulanmeldungen und Veranstaltungen mit klaren Zeitslots, Kapazitäten und nachvollziehbaren Buchungen.</p>
+                        <div class="product-tags">
+                            <span>Zeitslots</span>
+                            <span>Buchungen</span>
+                            <span>Export</span>
+                        </div>
+                    </div>
+                    <div class="product-visual visual-register">
+                        <img
+                            class="product-illustration product-illustration-register"
+                            src="/images/illustrations/date-picker-animated-v2.svg"
+                            alt="Illustration für Anmeldetool" />
+                    </div>
+                </article>
+
+                <article class="product-section product-section--teaching">
+                    <div class="product-copy">
+                        <div class="product-label">
+                            <v-icon size="18">mdi-rocket-launch-outline</v-icon>
+                            <span>Unterricht</span>
+                        </div>
+                        <h4 class="product-title">Unterricht. Das digitale Klassenzimmer</h4>
+                        <p class="product-text">
+                            Lehrer:innen verwalten Ihren Unterricht und Schüler:innen sehen ihre Kurse, Aufgaben und Termine in einer klaren Oberfläche. Schnell, mobil und auf das
+                            Wesentliche reduziert.
+                        </p>
+                        <div class="product-tags">
+                            <span>Unterricht</span>
+                            <span>Aufgaben</span>
+                            <span>Termine</span>
+                        </div>
+                    </div>
+                    <div class="product-visual visual-teaching">
+                        <img
+                            class="product-illustration product-illustration-teaching"
+                            src="/images/illustrations/online-learning-animated.svg"
+                            alt="Illustration für Unterricht" />
+                    </div>
+                </article>
+
+                <article class="product-section product-section--tutoring">
+                    <div class="product-copy">
+                        <div class="product-label">
+                            <v-icon size="18">mdi-account-group</v-icon>
+                            <span>Schüler helfen Schülern</span>
+                        </div>
+                        <h4 class="product-title">Nachhilfe-Tool transparent organisiert</h4>
+                        <p class="product-text">Nachhilfe-Angebote übersichtlich verwaltet. Zuständigkeiten und Status bleiben jederzeit sichtbar.</p>
+                        <div class="product-tags">
+                            <span>Nachhilfe</span>
+                            <span>Anfragen</span>
+                            <span>Status</span>
+                        </div>
+                    </div>
+                    <div class="product-visual visual-tutoring">
+                        <img class="product-illustration product-illustration-tutoring" src="/images/illustrations/notebook-animated.svg" alt="Illustration für Nachhilfe" />
+                    </div>
+                </article>
+
+                <article class="product-section product-section--materials">
+                    <div class="product-copy">
+                        <div class="product-label">
+                            <v-icon size="18">mdi-folder-multiple-outline</v-icon>
+                            <span>Materialien</span>
+                        </div>
+                        <h4 class="product-title">Materialien zentral verwalten</h4>
+                        <p class="product-text">Arbeitsblätter, Präsentationen und Vorlagen strukturiert organisieren.</p>
+                        <div class="product-tags">
+                            <span>Dateien</span>
+                            <span>Ordner</span>
+                            <span>Organisation</span>
+                        </div>
+                    </div>
+                    <div class="product-visual visual-materials">
+                        <img class="product-illustration product-illustration-materials" src="/images/illustrations/bookshelves-animated.svg" alt="Illustration für Materialien" />
+                    </div>
+                </article>
+
+                <article class="product-section product-section--admin">
+                    <div class="product-copy">
+                        <div class="product-label">
+                            <v-icon size="18">mdi-food</v-icon>
+                            <span>Mittagsmenü</span>
+                        </div>
+                        <h4 class="product-title">Essen einfach bestellen</h4>
+                        <p class="product-text">
+                            Bestellungen für das Schulbuffet schnell und übersichtlich verwalten. Einfach auswählen, bestellen und den Überblick über Menüs behalten.
+                        </p>
+                        <div class="product-tags">
+                            <span>Menüs</span>
+                            <span>Bestellung</span>
+                            <span>Übersicht</span>
+                        </div>
+                    </div>
+                    <div class="product-visual visual-admin">
+                        <img class="product-illustration product-illustration-lunch" src="/images/illustrations/eating-pasta-animated.svg" alt="Illustration für Mittagsmenü" />
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <!-- School Selection Step (temporarily hidden) -->
+        <section class="selection-section" v-if="false && step === 'selectSchool'">
             <div class="selection-container">
                 <v-card class="selection-card" elevation="12">
                     <div class="selection-header" :class="licence?.name === 'Anmeldetool' ? 'header-green' : 'header-orange'">
@@ -192,8 +333,8 @@
             </div>
         </section>
 
-        <!-- Floating particles for ambiance -->
-        <div class="particles">
+        <!-- Floating particles for ambiance (temporarily hidden) -->
+        <div class="particles" v-if="false">
             <div class="particle" v-for="n in 20" :key="n" :style="getParticleStyle(n)"></div>
         </div>
     </div>
@@ -267,6 +408,16 @@ export default {
         doAlert() {
             alert('1')
         },
+        scrollToProducts() {
+            if (this.step !== '') return
+            const targetRef = this.$refs.productsStart
+            const target = Array.isArray(targetRef) ? targetRef[0] : targetRef?.$el || targetRef
+            if (!target || typeof window === 'undefined') return
+            target.scrollIntoView({
+                behavior: 'auto',
+                block: 'start',
+            })
+        },
         openUnterricht() {
             if (!this.canShowTeaching || this.teachingStatus !== 'active') return
             this.$router.push('/homepage/student')
@@ -319,7 +470,7 @@ export default {
     min-height: 100vh;
     position: relative;
     overflow: hidden;
-    background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
+    background: #f7901e;
 }
 
 /* Animated Background */
@@ -334,41 +485,112 @@ export default {
     pointer-events: none;
 }
 
-.gradient-orb {
+.hero-bg-image {
     position: absolute;
-    border-radius: 50%;
-    filter: blur(80px);
-    opacity: 0.5;
-    animation: float 20s ease-in-out infinite;
+    inset: 0;
 }
 
-.orb-1 {
-    width: 600px;
-    height: 600px;
-    background: linear-gradient(135deg, #3aaa35 0%, #2d8a2a 100%);
-    top: -200px;
-    left: -200px;
-    animation-delay: 0s;
+.hero-bg-image::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(650px 220px at 50% 16%, rgba(255, 220, 145, 0.16), transparent 70%), linear-gradient(180deg, rgba(255, 170, 68, 0.05), rgba(232, 103, 28, 0.05));
 }
 
-.orb-2 {
-    width: 500px;
-    height: 500px;
-    background: linear-gradient(135deg, #f39200 0%, #d67f00 100%);
-    bottom: -150px;
-    right: -150px;
-    animation-delay: -7s;
+.cf-grid {
+    position: absolute;
+    inset: 0;
+    opacity: 0.25;
+    background-image: linear-gradient(rgba(18, 44, 68, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(18, 44, 68, 0.05) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.4) 55%, transparent 100%);
 }
 
-.orb-3 {
-    width: 400px;
-    height: 400px;
-    background: linear-gradient(135deg, #37474f 0%, #263238 100%);
-    top: 50%;
+.cf-sun-glow {
+    position: absolute;
     left: 50%;
-    transform: translate(-50%, -50%);
-    animation-delay: -14s;
-    opacity: 0.3;
+    top: -8%;
+    width: min(1100px, 95vw);
+    height: min(520px, 44vh);
+    transform: translateX(-50%);
+    background: radial-gradient(closest-side, rgba(255, 180, 72, 0.9), rgba(245, 129, 32, 0.5) 48%, rgba(245, 129, 32, 0.08) 72%, transparent 82%);
+    filter: blur(12px);
+    opacity: 0.9;
+    animation: cfPulse 18s ease-in-out infinite;
+}
+
+.cf-sun-core {
+    position: absolute;
+    left: 50%;
+    top: 6%;
+    width: min(440px, 58vw);
+    height: min(210px, 22vh);
+    transform: translateX(-50%);
+    border-radius: 999px 999px 0 0;
+    background: radial-gradient(140% 120% at 50% 90%, rgba(255, 228, 166, 0.95), rgba(255, 180, 72, 0.95) 45%, rgba(243, 129, 29, 0.9) 72%, rgba(243, 129, 29, 0.1) 100%);
+    box-shadow:
+        0 0 0 1px rgba(255, 214, 140, 0.35) inset,
+        0 0 120px rgba(245, 129, 32, 0.35);
+    opacity: 0.95;
+}
+
+.cf-wave {
+    position: absolute;
+    left: 50%;
+    width: 150%;
+    border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+    transform: translateX(-50%);
+    filter: blur(0.2px);
+}
+
+.wave-back {
+    bottom: 24%;
+    height: 24%;
+    background: radial-gradient(120% 160% at 50% 0%, rgba(255, 196, 105, 0.45), rgba(255, 196, 105, 0) 48%), linear-gradient(180deg, rgba(32, 88, 125, 0.3), rgba(18, 54, 81, 0.8));
+    border-top: 1px solid rgba(255, 222, 174, 0.35);
+    opacity: 0.7;
+    animation: waveShift 26s ease-in-out infinite;
+}
+
+.wave-mid {
+    bottom: 12%;
+    height: 28%;
+    background:
+        radial-gradient(100% 170% at 50% -10%, rgba(255, 189, 89, 0.35), rgba(255, 189, 89, 0) 50%), linear-gradient(180deg, rgba(22, 69, 102, 0.45), rgba(12, 33, 53, 0.92));
+    border-top: 1px solid rgba(255, 204, 132, 0.28);
+    opacity: 0.9;
+    animation: waveShift 20s ease-in-out infinite reverse;
+}
+
+.wave-front {
+    bottom: -2%;
+    height: 24%;
+    background: linear-gradient(180deg, rgba(13, 39, 60, 0.25), rgba(9, 24, 38, 0.96)), radial-gradient(90% 200% at 50% 0%, rgba(255, 160, 61, 0.15), rgba(255, 160, 61, 0) 60%);
+    border-top: 1px solid rgba(255, 190, 111, 0.16);
+    animation: waveShift 16s ease-in-out infinite;
+}
+
+.cf-haze {
+    position: absolute;
+    width: min(560px, 72vw);
+    height: min(260px, 24vh);
+    border-radius: 50%;
+    filter: blur(50px);
+    opacity: 0.35;
+}
+
+.haze-left {
+    left: -10%;
+    top: 28%;
+    background: radial-gradient(circle, rgba(255, 183, 94, 0.6), rgba(255, 183, 94, 0) 70%);
+    animation: float 22s ease-in-out infinite;
+}
+
+.haze-right {
+    right: -8%;
+    top: 34%;
+    background: radial-gradient(circle, rgba(84, 143, 191, 0.55), rgba(84, 143, 191, 0) 70%);
+    animation: float 26s ease-in-out infinite reverse;
 }
 
 @keyframes float {
@@ -387,21 +609,133 @@ export default {
     }
 }
 
+@keyframes waveShift {
+    0%,
+    100% {
+        transform: translateX(-50%) translateY(0);
+    }
+    50% {
+        transform: translateX(calc(-50% + 18px)) translateY(-8px);
+    }
+}
+
+@keyframes cfPulse {
+    0%,
+    100% {
+        opacity: 0.82;
+        transform: translateX(-50%) scale(1);
+    }
+    50% {
+        opacity: 0.96;
+        transform: translateX(-50%) scale(1.03);
+    }
+}
+
 /* Hero Section */
 .hero-section {
     position: relative;
     z-index: 1;
     min-height: 100vh;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
-    padding: 40px 20px;
+    padding: 24px 20px 40px;
 }
 
 .hero-content {
-    max-width: 1200px;
-    width: 100%;
-    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.cloud-header {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 6px 4px;
+    animation: fadeInDown 0.6s ease-out;
+}
+
+.cloud-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.logo-wrapper-nav {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    margin-bottom: 0;
+    box-shadow: 0 3px 8px rgba(243, 146, 0, 0.12);
+    animation: none;
+}
+
+.cloud-brand-title {
+    display: flex;
+    align-items: baseline;
+    gap: 2px;
+    font-size: 1.28rem;
+    font-weight: 800;
+    letter-spacing: -0.35px;
+    margin: 0;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.cloud-header-nav {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-left: 34px;
+}
+
+.cloud-nav-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    border: 0;
+    background: transparent;
+    color: #233645;
+    padding: 4px 8px;
+    border-radius: 8px;
+    font-size: 0.98rem;
+    font-weight: 400;
+    cursor: default;
+    box-shadow: none;
+    opacity: 0.95;
+}
+
+.cloud-nav-item:hover {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+.cloud-hero-copy {
+    margin-top: clamp(72px, 12vw, 138px);
+    max-width: 1120px;
+    color: #14293b;
+    animation: fadeInUp 0.8s ease-out 0.1s both;
+}
+
+.cloud-hero-title {
+    margin: 0;
+    font-size: clamp(2.1rem, 4.8vw, 4.1rem);
+    line-height: 0.98;
+    letter-spacing: 0.015em;
+    font-weight: 700;
+    color: #10263a;
+    max-width: 1080px;
+}
+
+.cloud-hero-description {
+    margin: 22px 0 0;
+    max-width: 720px;
+    font-size: clamp(1rem, 1.45vw, 1.28rem);
+    line-height: 1.45;
+    font-weight: 400;
+    color: rgba(16, 38, 58, 0.9);
 }
 
 /* Brand */
@@ -426,9 +760,10 @@ export default {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 80px;
-    height: 80px;
+    width: 60px;
+    height: 60px;
     background: linear-gradient(135deg, #3aaa35 0%, #f39200 100%);
+    border: solid 1px #efc382;
     border-radius: 20px;
     margin-bottom: 20px;
     box-shadow: 0 10px 40px rgba(58, 170, 53, 0.3);
@@ -471,6 +806,8 @@ export default {
 /* Tools Section */
 .tools-container {
     animation: fadeInUp 0.8s ease-out 0.2s both;
+    margin-top: 34px;
+    width: 100%;
 }
 
 @keyframes fadeInUp {
@@ -485,7 +822,7 @@ export default {
 }
 
 .section-title {
-    text-align: center;
+    text-align: left;
     font-size: 1.5rem;
     font-weight: 600;
     color: #37474f;
@@ -494,10 +831,11 @@ export default {
 
 .tools-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 24px;
-    max-width: 1000px;
-    margin: 0 auto;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 320px));
+    gap: 18px;
+    width: 100%;
+    margin: 0;
+    justify-content: start;
 }
 
 /* Tool Cards */
@@ -505,7 +843,7 @@ export default {
     position: relative;
     background: white;
     border-radius: 20px;
-    padding: 32px;
+    padding: 22px;
     border: 1px solid transparent;
     cursor: pointer;
     transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
@@ -569,9 +907,9 @@ export default {
 }
 
 .card-icon {
-    width: 72px;
-    height: 72px;
-    border-radius: 16px;
+    width: 58px;
+    height: 58px;
+    border-radius: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -690,6 +1028,585 @@ export default {
     background: white;
     color: #37474f;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+/* Products Showcase */
+.products-showcase {
+    position: relative;
+    z-index: 1;
+    padding: 36px 20px 80px;
+}
+
+.products-shell {
+    display: grid;
+    gap: 20px;
+}
+
+.products-intro {
+    background: linear-gradient(180deg, rgba(255, 249, 239, 0.86), rgba(255, 243, 224, 0.72));
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    border-radius: 24px;
+    padding: 28px 28px 24px;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 14px 40px rgba(132, 65, 13, 0.08);
+}
+
+.products-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: rgba(245, 129, 32, 0.12);
+    color: #b45812;
+    font-size: 0.84rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.products-heading {
+    margin: 14px 0 10px;
+    color: #10263a;
+    font-size: clamp(1.4rem, 2.2vw, 2.1rem);
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+}
+
+.products-lead {
+    margin: 0;
+    max-width: 860px;
+    color: rgba(16, 38, 58, 0.88);
+    font-size: 1rem;
+    line-height: 1.5;
+}
+
+.product-section {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(260px, 1.1fr) minmax(220px, 500px);
+    gap: 20px;
+    align-items: stretch;
+    padding: 22px;
+    border-radius: 24px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    box-shadow: 0 16px 48px rgba(95, 47, 9, 0.1);
+    backdrop-filter: blur(10px);
+}
+
+.product-section::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(120deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 45%);
+}
+
+.product-section--register {
+    background: linear-gradient(140deg, rgba(255, 250, 241, 0.94), rgba(255, 238, 212, 0.8));
+}
+
+.product-section--teaching {
+    background: linear-gradient(140deg, rgba(248, 252, 255, 0.92), rgba(230, 241, 250, 0.82));
+}
+
+.product-section--tutoring {
+    background: linear-gradient(140deg, rgba(255, 248, 236, 0.92), rgba(255, 234, 210, 0.8));
+}
+
+.product-section--materials {
+    background: linear-gradient(140deg, rgba(242, 251, 247, 0.94), rgba(227, 245, 236, 0.82));
+}
+
+.product-section--admin {
+    background: linear-gradient(140deg, rgba(245, 249, 253, 0.92), rgba(228, 237, 246, 0.84));
+}
+
+.product-copy {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.product-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #233d4c;
+    font-weight: 700;
+    font-size: 0.92rem;
+}
+
+.product-title {
+    margin: 12px 0 10px;
+    color: #10263a;
+    font-size: clamp(1.15rem, 1.6vw, 1.8rem);
+    line-height: 1.08;
+    letter-spacing: -0.01em;
+}
+
+.product-text {
+    margin: 0;
+    color: rgba(16, 38, 58, 0.86);
+    line-height: 1.45;
+    font-size: 0.98rem;
+    max-width: 56ch;
+}
+
+.product-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.product-tags span {
+    border-radius: 999px;
+    padding: 6px 10px;
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    color: #243748;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+.product-visual {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 500px;
+    justify-self: end;
+    min-height: 200px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.65);
+    background: rgba(255, 255, 255, 0.5);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+}
+
+.visual-register {
+    justify-content: flex-start;
+    background: rgba(255, 255, 255, 0.88);
+}
+
+.product-illustration {
+    display: block;
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+}
+
+.product-illustration-register {
+    max-width: 440px;
+    max-height: 240px;
+    filter: drop-shadow(0 14px 26px rgba(18, 32, 46, 0.08));
+}
+
+.product-illustration-teaching {
+    max-width: 430px;
+    max-height: 245px;
+    filter: drop-shadow(0 14px 26px rgba(18, 32, 46, 0.08));
+}
+
+.product-illustration-tutoring {
+    max-width: 420px;
+    max-height: 240px;
+    filter: drop-shadow(0 14px 26px rgba(18, 32, 46, 0.08));
+}
+
+.product-illustration-materials {
+    max-width: 430px;
+    max-height: 235px;
+    filter: drop-shadow(0 14px 26px rgba(18, 32, 46, 0.08));
+}
+
+.product-illustration-lunch {
+    max-width: 410px;
+    max-height: 235px;
+    filter: drop-shadow(0 14px 26px rgba(18, 32, 46, 0.08));
+}
+
+.mock-panel {
+    width: 100%;
+    max-width: 430px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    box-shadow: 0 16px 30px rgba(41, 23, 9, 0.08);
+    overflow: hidden;
+}
+
+.mock-panel-top {
+    display: flex;
+    gap: 6px;
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(16, 38, 58, 0.06);
+}
+
+.mock-panel-top span {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(16, 38, 58, 0.16);
+}
+
+.slot-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 12px;
+}
+
+.slot-card {
+    border-radius: 10px;
+    padding: 10px;
+    background: rgba(242, 247, 251, 0.9);
+    border: 1px solid rgba(16, 38, 58, 0.05);
+    color: #243748;
+    font-size: 0.8rem;
+    line-height: 1.2;
+}
+
+.slot-card-active {
+    background: rgba(245, 129, 32, 0.12);
+    border-color: rgba(245, 129, 32, 0.25);
+}
+
+.slot-card-muted {
+    opacity: 0.65;
+}
+
+.visual-teaching {
+    background: radial-gradient(250px 130px at 15% 20%, rgba(92, 158, 214, 0.2), transparent 70%), rgba(255, 255, 255, 0.55);
+    display: grid;
+    grid-template-columns: 1.15fr 0.85fr;
+    gap: 12px;
+}
+
+.lesson-board,
+.task-card {
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.86);
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    box-shadow: 0 10px 24px rgba(16, 38, 58, 0.06);
+}
+
+.lesson-board {
+    padding: 14px;
+}
+
+.lesson-board-title,
+.task-card-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #162f45;
+    margin-bottom: 10px;
+}
+
+.lesson-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(16, 38, 58, 0.05);
+    font-size: 0.86rem;
+    color: #294156;
+}
+
+.lesson-row:last-child {
+    border-bottom: 0;
+}
+
+.task-card {
+    padding: 14px;
+    align-self: center;
+}
+
+.task-pill-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.task-pill {
+    padding: 6px 9px;
+    border-radius: 999px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    background: rgba(16, 38, 58, 0.06);
+    color: #25394c;
+}
+
+.task-pill-hot {
+    background: rgba(245, 129, 32, 0.14);
+    color: #a95414;
+}
+
+.visual-tutoring {
+    background: radial-gradient(180px 100px at 80% 18%, rgba(245, 129, 32, 0.16), transparent 70%), rgba(255, 255, 255, 0.54);
+}
+
+.match-network {
+    position: relative;
+    width: 100%;
+    height: 230px;
+    max-width: 420px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.86);
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    overflow: hidden;
+}
+
+.network-center,
+.network-node {
+    position: absolute;
+    border-radius: 999px;
+    padding: 7px 11px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    background: rgba(255, 255, 255, 0.94);
+    color: #233a4c;
+    z-index: 2;
+}
+
+.network-center {
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(245, 129, 32, 0.16);
+    border-color: rgba(245, 129, 32, 0.28);
+    color: #a65212;
+}
+
+.network-node-a {
+    left: 18px;
+    top: 24px;
+}
+
+.network-node-b {
+    right: 22px;
+    top: 36px;
+}
+
+.network-node-c {
+    left: 24px;
+    bottom: 30px;
+}
+
+.network-node-d {
+    right: 18px;
+    bottom: 22px;
+}
+
+.network-link {
+    position: absolute;
+    height: 2px;
+    background: linear-gradient(90deg, rgba(16, 38, 58, 0.18), rgba(245, 129, 32, 0.24));
+    transform-origin: left center;
+    z-index: 1;
+}
+
+.network-link-a {
+    left: 98px;
+    top: 53px;
+    width: 132px;
+    transform: rotate(28deg);
+}
+
+.network-link-b {
+    left: 220px;
+    top: 116px;
+    width: 120px;
+    transform: rotate(-34deg);
+}
+
+.network-link-c {
+    left: 102px;
+    top: 174px;
+    width: 138px;
+    transform: rotate(-29deg);
+}
+
+.network-link-d {
+    left: 220px;
+    top: 114px;
+    width: 144px;
+    transform: rotate(34deg);
+}
+
+.visual-admin {
+    background: radial-gradient(180px 100px at 22% 18%, rgba(95, 158, 214, 0.16), transparent 70%), rgba(255, 255, 255, 0.54);
+}
+
+.visual-materials {
+    background: radial-gradient(180px 100px at 20% 15%, rgba(74, 176, 122, 0.18), transparent 70%), rgba(255, 255, 255, 0.54);
+}
+
+.materials-board {
+    width: 100%;
+    max-width: 430px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    box-shadow: 0 12px 26px rgba(16, 38, 58, 0.06);
+    overflow: hidden;
+}
+
+.materials-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px;
+    border-bottom: 1px solid rgba(16, 38, 58, 0.06);
+    background: rgba(247, 251, 248, 0.85);
+}
+
+.materials-chip {
+    border-radius: 999px;
+    padding: 5px 10px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: #315146;
+    background: rgba(74, 176, 122, 0.08);
+    border: 1px solid rgba(74, 176, 122, 0.14);
+}
+
+.materials-chip-active {
+    background: rgba(74, 176, 122, 0.14);
+    border-color: rgba(74, 176, 122, 0.24);
+    color: #24573f;
+}
+
+.materials-list {
+    padding: 10px;
+    display: grid;
+    gap: 8px;
+}
+
+.materials-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(16, 38, 58, 0.05);
+    background: rgba(247, 250, 252, 0.82);
+}
+
+.materials-item > div {
+    min-width: 0;
+}
+
+.materials-item strong {
+    display: block;
+    color: #1f3748;
+    font-size: 0.82rem;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.materials-item small {
+    display: block;
+    margin-top: 2px;
+    color: rgba(31, 55, 72, 0.72);
+    font-size: 0.72rem;
+}
+
+.materials-item > span {
+    flex-shrink: 0;
+    border-radius: 999px;
+    padding: 4px 8px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    background: rgba(16, 38, 58, 0.06);
+    color: #2f4759;
+}
+
+.materials-item-folder {
+    background: rgba(255, 251, 239, 0.86);
+    border-color: rgba(245, 173, 63, 0.16);
+}
+
+.materials-item-folder > span {
+    background: rgba(245, 173, 63, 0.12);
+    color: #8b5713;
+}
+
+.materials-item-active {
+    background: rgba(74, 176, 122, 0.1);
+    border-color: rgba(74, 176, 122, 0.18);
+}
+
+.materials-item-active > span {
+    background: rgba(74, 176, 122, 0.14);
+    color: #24573f;
+}
+
+.admin-stack {
+    width: 100%;
+    max-width: 410px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    padding: 14px;
+    box-shadow: 0 12px 26px rgba(16, 38, 58, 0.06);
+}
+
+.admin-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(16, 38, 58, 0.05);
+    font-size: 0.85rem;
+    color: #30475b;
+}
+
+.admin-line:last-of-type {
+    border-bottom: 0;
+}
+
+.admin-bars {
+    margin-top: 14px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    align-items: end;
+    gap: 8px;
+    height: 86px;
+}
+
+.admin-bar {
+    border-radius: 8px 8px 4px 4px;
+    background: linear-gradient(180deg, rgba(95, 158, 214, 0.9), rgba(44, 105, 157, 0.9));
+}
+
+.admin-bar-1 {
+    height: 34%;
+}
+
+.admin-bar-2 {
+    height: 68%;
+}
+
+.admin-bar-3 {
+    height: 50%;
+}
+
+.admin-bar-4 {
+    height: 88%;
+    background: linear-gradient(180deg, rgba(245, 129, 32, 0.92), rgba(216, 104, 21, 0.92));
 }
 
 /* Selection Section */
@@ -855,17 +1772,17 @@ export default {
 
 .particle {
     position: absolute;
-    background: rgba(58, 170, 53, 0.3);
+    background: rgba(245, 129, 32, 0.2);
     border-radius: 50%;
     animation: drift 20s ease-in-out infinite;
 }
 
 .particle:nth-child(even) {
-    background: rgba(243, 146, 0, 0.3);
+    background: rgba(255, 183, 94, 0.22);
 }
 
 .particle:nth-child(3n) {
-    background: rgba(55, 71, 79, 0.2);
+    background: rgba(68, 123, 168, 0.18);
 }
 
 @keyframes drift {
@@ -888,8 +1805,96 @@ export default {
 
 /* Responsive */
 @media (max-width: 768px) {
+    .cf-sun-core {
+        top: 8%;
+        width: min(360px, 72vw);
+        height: min(180px, 18vh);
+    }
+
+    .wave-back {
+        bottom: 22%;
+        height: 22%;
+    }
+
+    .wave-mid {
+        bottom: 11%;
+        height: 27%;
+    }
+
+    .wave-front {
+        height: 26%;
+    }
+
+    .products-showcase {
+        padding: 28px 16px 56px;
+    }
+
+    .products-intro {
+        padding: 20px 18px;
+        border-radius: 18px;
+    }
+
+    .product-section {
+        grid-template-columns: 1fr;
+        gap: 14px;
+        padding: 16px;
+        border-radius: 18px;
+    }
+
+    .product-visual {
+        max-width: 100%;
+        justify-self: stretch;
+        min-height: 190px;
+        border-radius: 14px;
+        padding: 12px;
+    }
+
+    .visual-teaching {
+        grid-template-columns: 1fr;
+    }
+
+    .match-network {
+        height: 210px;
+    }
+
     .hero-section {
         padding: 20px 16px;
+    }
+
+    .cloud-header {
+        gap: 10px;
+        padding: 4px 2px;
+    }
+
+    .cloud-header-nav {
+        gap: 10px;
+        margin-left: 18px;
+    }
+
+    .cloud-nav-item {
+        padding: 4px 6px;
+        font-size: 0.9rem;
+    }
+
+    .cloud-brand-title {
+        font-size: 1.12rem;
+    }
+
+    .logo-wrapper-nav {
+        width: 20px;
+        height: 20px;
+        border-radius: 5px;
+    }
+
+    .cloud-hero-copy {
+        margin-top: 66px;
+        max-width: 100%;
+    }
+
+    .cloud-hero-description {
+        margin-top: 16px;
+        max-width: 92%;
+        line-height: 1.4;
     }
 
     .brand-container {
@@ -903,17 +1908,17 @@ export default {
     }
 
     .tools-grid {
-        grid-template-columns: 1fr;
         gap: 16px;
+        max-width: 100%;
     }
 
     .tool-card {
-        padding: 24px;
+        padding: 20px;
     }
 
     .card-icon {
-        width: 60px;
-        height: 60px;
+        width: 52px;
+        height: 52px;
     }
 
     .card-title {
@@ -947,6 +1952,68 @@ export default {
 }
 
 @media (max-width: 480px) {
+    .products-shell {
+        gap: 14px;
+    }
+
+    .products-heading {
+        margin-top: 10px;
+    }
+
+    .product-title {
+        font-size: 1.08rem;
+    }
+
+    .product-text {
+        font-size: 0.92rem;
+    }
+
+    .product-tags {
+        gap: 6px;
+    }
+
+    .slot-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .match-network {
+        height: 190px;
+    }
+
+    .network-center,
+    .network-node {
+        font-size: 0.72rem;
+        padding: 6px 9px;
+    }
+
+    .cloud-header {
+        align-items: center;
+        flex-direction: row;
+    }
+
+    .cloud-header-nav {
+        width: auto;
+        justify-content: flex-start;
+        flex-wrap: nowrap;
+        gap: 8px;
+        margin-left: 14px;
+    }
+
+    .cloud-hero-copy {
+        margin-top: 51px;
+    }
+
+    .cloud-hero-title {
+        font-size: 1.7rem;
+        line-height: 1.02;
+        max-width: 95%;
+    }
+
+    .cloud-hero-description {
+        font-size: 0.98rem;
+        max-width: 100%;
+    }
+
     .brand-title {
         font-size: 2.2rem;
     }
@@ -966,7 +2033,9 @@ export default {
 
 /* Accessibility - Reduced Motion */
 @media (prefers-reduced-motion: reduce) {
-    .gradient-orb,
+    .cf-sun-glow,
+    .cf-wave,
+    .cf-haze,
     .particle,
     .tool-card,
     .logo-wrapper {
