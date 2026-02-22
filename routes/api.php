@@ -215,7 +215,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     /* SANCTUM - admin, teaching_admin, materials_admin, teacher */
-    Route::middleware(['auth:sanctum', 'api-allowed:admin,teaching_admin,materials_admin,teacher'])->group(function () {
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,teaching_admin,materials_admin,teacher', 'tool-licensed:Materialientool'])->group(function () {
         Route::get('/admin/materials/config', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'config']);
         Route::post('/admin/materials/subjects', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'storeSubject']);
         Route::put('/admin/materials/subjects/{material_subject}', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'updateSubject']);
@@ -259,7 +259,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     /* SANCTUM - admin, teaching_admin, materials_admin, teacher */
-    Route::middleware(['auth:sanctum', 'api-allowed:admin,teaching_admin,materials_admin,teacher'])->group(function () {
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,teaching_admin,materials_admin,teacher', 'tool-licensed:Materialientool'])->group(function () {
         Route::get('/admin/materials/types', [\App\Http\Controllers\Admin\Materials\MaterialTypeController::class, 'index']);
         Route::post('/admin/materials/types', [\App\Http\Controllers\Admin\Materials\MaterialTypeController::class, 'store']);
         Route::put('/admin/materials/types/{material_type}', [\App\Http\Controllers\Admin\Materials\MaterialTypeController::class, 'update']);
@@ -267,7 +267,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     /* SANCTUM - admin */
-    Route::middleware(['auth:sanctum', 'api-allowed:admin'])->group(function () {
+    Route::middleware(['auth:sanctum', 'api-allowed:admin', 'tool-licensed:Materialientool'])->group(function () {
         Route::get('/admin/materials/statuses', [\App\Http\Controllers\Admin\Materials\MaterialStatusController::class, 'index']);
         Route::post('/admin/materials/statuses', [\App\Http\Controllers\Admin\Materials\MaterialStatusController::class, 'store']);
         Route::put('/admin/materials/statuses/{material_status}', [\App\Http\Controllers\Admin\Materials\MaterialStatusController::class, 'update']);

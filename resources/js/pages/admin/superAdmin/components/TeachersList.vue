@@ -7,6 +7,9 @@
                         <v-alert type="info" title="Hinweis">
                             Diese Liste dient dazu, festzulegen, welche Lehrer:innen berechtigt sind, sich am System zu registrieren.
                             <div class="text-caption">(Das entspricht nicht unbedingt den am System bereits tatsächlich registrierten Lehrer:inen)</div>
+
+                            <div class="font-weight-bold mt-4">Es ist eine xlsx-Datei zu importieren.</div>
+                            <div class="font-weight-bold">Diese Datei benötigt folgende Überschriften: Kurz, Nachname, Vorname, Email</div>
                         </v-alert>
                         <!-- Abwählen / Auswählen-->
                         <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2 mt-2" v-if="is_upload == false">

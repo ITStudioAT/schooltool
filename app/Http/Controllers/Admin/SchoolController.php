@@ -260,6 +260,13 @@ class SchoolController extends Controller
 
         $validated = $request->validated();
         $school_licence = SchoolLicence::findOrFail($validated['school_licence_id']);
+
+        if ($this->schoolLicenceHasRemainingUserLicenceAssignments($school_licence)) {
+            return response()->json([
+                'message' => 'Lizenz kann nicht entfernt werden, solange noch Benutzerlizenzen vorhanden sind.',
+            ], 422);
+        }
+
         $school_id = $school_licence->school_id;
         $school_licence->delete();
 
@@ -848,6 +855,27 @@ class SchoolController extends Controller
             'user_licence_required_by_role' => $requiredByRole,
             'user_licence_plans_by_role' => $plansByRole,
         ];
+    }
+
+    private function schoolLicenceHasRemainingUserLicenceAssignments(SchoolLicence $school_licence): bool
+    {
+        $assignments = is_array($school_licence->user_licence_assignments) ? $school_licence->user_licence_assignments : [];
+
+        foreach ($assignments as $userAssignments) {
+            if (! is_array($userAssignments)) {
+                continue;
+            }
+
+            foreach ($userAssignments as $roleName => $entry) {
+                if (! is_string($roleName) || trim($roleName) === '') {
+                    continue;
+                }
+
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function schoolLicenceUserRolesPayload(SchoolLicence $school_licence, User $user, LicenceService $service): array

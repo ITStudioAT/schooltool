@@ -46,6 +46,10 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         return view('spa::admin');
     })->where('any', '.*')->middleware(['auth:sanctum', 'web-allowed:admin,register_admin,tutoring_admin,teacher,lunch_admin', 'tool-licensed:Lehrertool,auth']);
 
+    Route::get('/admin/materials/{any?}', function () {
+        return view('spa::admin');
+    })->where('any', '.*')->middleware(['auth:sanctum', 'web-allowed:admin,teaching_admin,materials_admin,teacher', 'tool-licensed:Materialientool,auth']);
+
     Route::get('/admin/{any?}', function () {
         return view('spa::admin');
     })->where('any', '.*')->middleware(['auth:sanctum', 'web-allowed:admin,register_admin,tutoring_admin,teaching_admin,materials_admin,teacher,lunch_admin']);

@@ -35,10 +35,10 @@ class AdminNavigationService
             }
         }
 
-        $registerLicenceStatus = $this->licenceStatus($user, 'Anmeldetool');
-        $tutoringLicenceStatus = $this->licenceStatus($user, 'Nachhilfetool');
-        $teachingLicenceStatus = $this->licenceStatus($user, 'Lehrertool');
-        $materialsLicenceStatus = $this->licenceStatus($user, 'Materialientool');
+        $registerLicenceStatus = $this->toolAccessStatus($user, 'Anmeldetool', ['admin', 'register_admin']);
+        $tutoringLicenceStatus = $this->toolAccessStatus($user, 'Nachhilfetool', ['admin', 'tutoring_admin', 'teacher']);
+        $teachingLicenceStatus = $this->toolAccessStatus($user, 'Lehrertool', ['admin', 'teaching_admin', 'teacher']);
+        $materialsLicenceStatus = $this->toolAccessStatus($user, 'Materialientool', ['admin', 'materials_admin', 'teaching_admin', 'teacher']);
 
         // ANMELDESYSTEM
         if ($isSuperAdmin || $this->userHasRole(['admin', 'register_admin'])) {
@@ -140,13 +140,13 @@ class AdminNavigationService
         return $selection;
     }
 
-    private function licenceStatus(?User $user, string $licenceName): string
+    private function toolAccessStatus(?User $user, string $licenceName, array $allowedRoles = []): string
     {
         if (! $user) {
             return 'missing';
         }
 
-        return app(LicenceService::class)->licenceStatus($user->selectedSchool, $licenceName);
+        return app(LicenceService::class)->toolAccessStatusForUser($user, $user->selectedSchool, $licenceName, $allowedRoles);
     }
 
     private function moduleStatusMeta(string $status, string $moduleLabel): array

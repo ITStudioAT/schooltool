@@ -6,6 +6,7 @@ use App\Models\Licence;
 use App\Models\LicenceUserPlan;
 use App\Models\School;
 use App\Models\SchoolLicence;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 
@@ -44,6 +45,33 @@ class LicenceService
         }
 
         return $this->schoolLicenceStatus($schoolLicence, $licence);
+    }
+
+    public function toolAccessStatusForUser(?User $user, ?School $school, string $app, array $candidateRoleNames = []): string
+    {
+        if (! $school) {
+            return 'missing';
+        }
+
+        $licence = Licence::where('name', $app)->first();
+        if (! $licence) {
+            return 'missing';
+        }
+
+        $schoolLicence = SchoolLicence::where('school_id', $school->id)
+            ->where('licence_id', $licence->id)
+            ->first();
+
+        $schoolStatus = $this->schoolLicenceStatus($schoolLicence, $licence);
+        if ($schoolStatus !== 'active') {
+            return $schoolStatus;
+        }
+
+        if (! $user || ! $schoolLicence) {
+            return 'active';
+        }
+
+        return $this->userLicenceStatusForTool($user, $schoolLicence, $licence, $candidateRoleNames);
     }
 
     public function schoolLicenceStatus(?SchoolLicence $schoolLicence, ?Licence $licence = null): string
@@ -361,6 +389,192 @@ class LicenceService
         }
 
         return $this->defaultLicenceModel();
+    }
+
+    private function mergedSchoolLicenceModel(SchoolLicence $schoolLicence, ?Licence $licence = null): array
+    {
+        $schoolModel = $this->normalizeLicenceModel($schoolLicence->licence_model);
+        $baseModel = $licence ? $this->normalizeLicenceModel($licence->licence_model) : $this->defaultLicenceModel();
+
+        $affectedRoles = collect(array_merge(
+            is_array($schoolModel['affected_roles'] ?? null) ? $schoolModel['affected_roles'] : [],
+            is_array($baseModel['affected_roles'] ?? null) ? $baseModel['affected_roles'] : []
+        ))
+            ->map(fn($role) => is_string($role) ? trim($role) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $schoolRequiredByRole = is_array($schoolModel['user_licence_required_by_role'] ?? null)
+            ? $schoolModel['user_licence_required_by_role']
+            : [];
+        $baseRequiredByRole = is_array($baseModel['user_licence_required_by_role'] ?? null)
+            ? $baseModel['user_licence_required_by_role']
+            : [];
+
+        $schoolPlansByRole = is_array($schoolModel['user_licence_plans_by_role'] ?? null)
+            ? $schoolModel['user_licence_plans_by_role']
+            : [];
+        $basePlansByRole = is_array($baseModel['user_licence_plans_by_role'] ?? null)
+            ? $baseModel['user_licence_plans_by_role']
+            : [];
+
+        $requiredByRole = [];
+        $plansByRole = [];
+
+        foreach ($affectedRoles as $roleName) {
+            $requiredByRole[$roleName] =
+                (bool) ($schoolRequiredByRole[$roleName] ?? false)
+                || (bool) ($baseRequiredByRole[$roleName] ?? false);
+
+            $schoolRolePlans = (array_key_exists($roleName, $schoolPlansByRole) && is_array($schoolPlansByRole[$roleName]))
+                ? $schoolPlansByRole[$roleName]
+                : [];
+            $baseRolePlans = (array_key_exists($roleName, $basePlansByRole) && is_array($basePlansByRole[$roleName]))
+                ? $basePlansByRole[$roleName]
+                : [];
+
+            $mergedPlans = [];
+            $seenPlanKeys = [];
+            foreach (array_merge($schoolRolePlans, $baseRolePlans) as $plan) {
+                if (! is_array($plan)) {
+                    continue;
+                }
+
+                $planId = (isset($plan['id']) && is_numeric($plan['id'])) ? (int) $plan['id'] : null;
+                $planText = isset($plan['text']) ? trim((string) $plan['text']) : '';
+                $planPrice = isset($plan['price_per_year']) ? trim((string) $plan['price_per_year']) : '';
+                $planKey = $planId !== null && $planId > 0
+                    ? "id:{$planId}"
+                    : 'txt:' . $planText . '|price:' . $planPrice;
+
+                if (isset($seenPlanKeys[$planKey])) {
+                    continue;
+                }
+
+                $seenPlanKeys[$planKey] = true;
+                $mergedPlans[] = $plan;
+            }
+
+            $plansByRole[$roleName] = $mergedPlans;
+        }
+
+        return [
+            'school_licence_required' => (bool) ($schoolModel['school_licence_required'] ?? true),
+            'affected_roles' => $affectedRoles,
+            'user_licence_required_by_role' => $requiredByRole,
+            'user_licence_plans_by_role' => $plansByRole,
+        ];
+    }
+
+    private function userLicenceStatusForTool(User $user, SchoolLicence $schoolLicence, ?Licence $licence = null, array $candidateRoleNames = []): string
+    {
+        $licenceModel = $this->mergedSchoolLicenceModel($schoolLicence, $licence);
+
+        $requiredRoleNames = collect($licenceModel['user_licence_required_by_role'] ?? [])
+            ->filter(fn($isRequired) => (bool) $isRequired)
+            ->keys()
+            ->map(fn($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($requiredRoleNames)) {
+            return 'active';
+        }
+
+        $userRoleNames = $user->getRoleNames()
+            ->map(fn($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $candidateRoleNames = collect($candidateRoleNames)
+            ->map(fn($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (! empty($candidateRoleNames)) {
+            $userRoleNames = array_values(array_intersect($userRoleNames, $candidateRoleNames));
+        }
+
+        $relevantRequiredRoles = array_values(array_intersect($userRoleNames, $requiredRoleNames));
+        if (empty($relevantRequiredRoles)) {
+            return 'active';
+        }
+
+        $assignments = is_array($schoolLicence->user_licence_assignments) ? $schoolLicence->user_licence_assignments : [];
+        $userAssignments = isset($assignments[(string) $user->id]) && is_array($assignments[(string) $user->id])
+            ? $assignments[(string) $user->id]
+            : [];
+
+        $hasExpiredAssignment = false;
+
+        foreach ($relevantRequiredRoles as $roleName) {
+            $entry = $this->normalizeUserLicenceAssignmentEntry($userAssignments[$roleName] ?? null);
+
+            if (! $entry['is_activated']) {
+                continue;
+            }
+
+            if ($this->isDateActive($entry['valid_until'])) {
+                return 'active';
+            }
+
+            $hasExpiredAssignment = true;
+        }
+
+        return $hasExpiredAssignment ? 'expired' : 'missing';
+    }
+
+    private function normalizeUserLicenceAssignmentEntry($entry): array
+    {
+        if (is_string($entry)) {
+            $validUntil = trim($entry);
+            return [
+                'valid_until' => $validUntil !== '' ? $validUntil : null,
+                'is_activated' => false,
+                'plan_id' => null,
+            ];
+        }
+
+        if (! is_array($entry)) {
+            return [
+                'valid_until' => null,
+                'is_activated' => false,
+                'plan_id' => null,
+            ];
+        }
+
+        $rawValidUntil = $entry['valid_until'] ?? null;
+        $validUntil = is_string($rawValidUntil) && trim($rawValidUntil) !== '' ? trim($rawValidUntil) : null;
+        $planId = isset($entry['plan_id']) && is_numeric($entry['plan_id']) && (int) $entry['plan_id'] > 0
+            ? (int) $entry['plan_id']
+            : null;
+
+        return [
+            'valid_until' => $validUntil,
+            'is_activated' => (bool) ($entry['is_activated'] ?? false),
+            'plan_id' => $planId,
+        ];
+    }
+
+    private function isDateActive(?string $validUntil): bool
+    {
+        if (! is_string($validUntil) || trim($validUntil) === '') {
+            return true;
+        }
+
+        try {
+            return Carbon::parse(trim($validUntil))->toDateString() >= Carbon::today()->toDateString();
+        } catch (\Throwable $e) {
+            return false;
+        }
     }
 
     private function toBool($value, bool $default): bool

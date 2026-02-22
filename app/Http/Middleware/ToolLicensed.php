@@ -7,6 +7,7 @@ use App\Services\LicenceService;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
 
 class ToolLicensed
@@ -21,7 +22,8 @@ class ToolLicensed
         }
 
         $school = $this->resolveSchool($request, $schoolSource);
-        $status = $licenceService->licenceStatus($school, $licenceName);
+        $allowedRoles = $this->resolveAllowedRolesFromRoute($request);
+        $status = $licenceService->toolAccessStatusForUser(Auth::user(), $school, $licenceName, $allowedRoles);
         if ($status !== 'active') {
             return $this->deny($request, $status);
         }
@@ -89,7 +91,38 @@ class ToolLicensed
         return match ($licenceName) {
             'Nachhilfetool' => 'schooltool.tutoring_active',
             'Lehrertool' => 'schooltool.teaching_active',
+            'Materialientool' => 'schooltool.materials_active',
             default => null,
         };
+    }
+
+    private function resolveAllowedRolesFromRoute(Request $request): array
+    {
+        $route = $request->route();
+        if (! $route || ! method_exists($route, 'gatherMiddleware')) {
+            return [];
+        }
+
+        $roles = [];
+        foreach ($route->gatherMiddleware() as $middleware) {
+            if (! is_string($middleware)) {
+                continue;
+            }
+
+            if (! Str::startsWith($middleware, ['api-allowed:', 'web-allowed:'])) {
+                continue;
+            }
+
+            [, $list] = array_pad(explode(':', $middleware, 2), 2, '');
+            foreach (explode(',', (string) $list) as $roleName) {
+                $roleName = trim($roleName);
+                if ($roleName === '') {
+                    continue;
+                }
+                $roles[$roleName] = true;
+            }
+        }
+
+        return array_keys($roles);
     }
 }
