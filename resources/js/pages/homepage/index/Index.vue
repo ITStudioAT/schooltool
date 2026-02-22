@@ -232,10 +232,7 @@
                         </div>
                     </div>
                     <div class="product-visual visual-materials">
-                        <img
-                            class="product-illustration product-illustration-materials"
-                            src="/images/illustrations/bookshelves-animated.svg"
-                            alt="Illustration für Materialien" />
+                        <img class="product-illustration product-illustration-materials" src="/images/illustrations/bookshelves-animated.svg" alt="Illustration für Materialien" />
                     </div>
                 </article>
 
@@ -256,7 +253,7 @@
                         </div>
                     </div>
                     <div class="product-visual visual-admin">
-                        <img class="product-illustration product-illustration-lunch" src="/images/illustrations/undraw_eating-pasta_96tb.svg" alt="Illustration für Mittagsmenü" />
+                        <img class="product-illustration product-illustration-lunch" src="/images/illustrations/eating-pasta-animated.svg" alt="Illustration für Mittagsmenü" />
                     </div>
                 </article>
             </div>
