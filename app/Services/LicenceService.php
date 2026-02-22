@@ -485,7 +485,8 @@ class LicenceService
             return 'active';
         }
 
-        $userRoleNames = $user->getRoleNames()
+        $userRoleNames = $user->roles()
+            ->pluck('name')
             ->map(fn($roleName) => is_string($roleName) ? trim($roleName) : '')
             ->filter()
             ->unique()

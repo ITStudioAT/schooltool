@@ -243,7 +243,7 @@ class SchoolService
         $licences = School::find($school_id)->licences->sortBy('name')->values();
         $authUser = Auth::user();
         if ($authUser) {
-            $authUser->loadMissing('roles');
+            $authUser->load('roles');
         }
 
         $licenceService = app(LicenceService::class);
@@ -379,7 +379,8 @@ class SchoolService
             ->all();
 
         $userRoles = $authUser
-            ? $authUser->getRoleNames()
+            ? $authUser->roles()
+                ->pluck('name')
                 ->map(fn($roleName) => is_string($roleName) ? trim($roleName) : '')
                 ->filter()
                 ->values()

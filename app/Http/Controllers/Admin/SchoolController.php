@@ -323,10 +323,6 @@ class SchoolController extends Controller
             ->values()
             ->all();
 
-        if (empty($activeRoleFilters) && ! empty($licenceModelRoles)) {
-            $activeRoleFilters = $licenceModelRoles;
-        }
-
         $shouldApplyRoleFilter = ! empty($activeRoleFilters);
         $assignments = is_array($school_licence->user_licence_assignments) ? $school_licence->user_licence_assignments : [];
 
@@ -484,7 +480,8 @@ class SchoolController extends Controller
 
         foreach ($roleNames as $roleName) {
             $entry = $incomingByRole->get($roleName);
-            $assigned = (bool) ($entry['assigned'] ?? false);
+            $userHasRole = $user->hasRole($roleName);
+            $assigned = $userHasRole && (bool) ($entry['assigned'] ?? false);
             $validUntil = $assigned ? ($entry['valid_until'] ?? null) : null;
             $existingRoleEntry = $this->normalizeUserLicenceAssignmentEntry($assignments[$userKey][$roleName] ?? null);
             $isActivated = $assigned
@@ -495,19 +492,12 @@ class SchoolController extends Controller
                 : null;
 
             if ($assigned) {
-                if (! $user->hasRole($roleName)) {
-                    $user->assignRole($roleName);
-                }
                 $updatedUserAssignments[$roleName] = [
                     'valid_until' => $validUntil,
                     'is_activated' => $isActivated,
                     'plan_id' => $planId,
                 ];
                 continue;
-            }
-
-            if ($user->hasRole($roleName)) {
-                $user->removeRole($roleName);
             }
         }
 
@@ -519,6 +509,90 @@ class SchoolController extends Controller
 
         $school_licence->user_licence_assignments = $assignments;
         $school_licence->save();
+
+        return response()->json(
+            $this->schoolLicenceUserRolesPayload($school_licence->fresh(), $user->fresh('roles'), $service),
+            200
+        );
+    }
+
+    public function saveSchoolLicenceUserSpatieRoles(Request $request, SchoolLicence $school_licence, User $user, LicenceService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        if ((int) $user->school_id !== (int) $school_licence->school_id) {
+            abort(422, 'Benutzer gehört nicht zur Schule der Lizenz.');
+        }
+
+        $validated = $request->validate([
+            'role_names' => ['nullable', 'array'],
+            'role_names.*' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $licenceModel = $this->mergedSchoolLicenceUserLicenceModel($school_licence->loadMissing('licence'), $service);
+        $licenceRoleNames = collect($licenceModel['user_licence_required_by_role'] ?? [])
+            ->filter(fn($isRequired) => (bool) $isRequired)
+            ->keys()
+            ->map(fn($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $selectedLicenceRoleNames = collect($validated['role_names'] ?? [])
+            ->map(fn($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->filter(fn($roleName) => in_array($roleName, $licenceRoleNames, true))
+            ->unique()
+            ->values()
+            ->all();
+
+        $currentRoleNames = $user->roles()
+            ->pluck('name')
+            ->map(fn($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $nonLicenceRoleNames = array_values(array_diff($currentRoleNames, $licenceRoleNames));
+        $rolesToSync = array_values(array_unique(array_merge($nonLicenceRoleNames, $selectedLicenceRoleNames)));
+
+        if ($user->hasRole('super_admin') && ! in_array('super_admin', $rolesToSync, true)) {
+            $rolesToSync[] = 'super_admin';
+        }
+
+        sort($rolesToSync);
+        $user->syncRoles($rolesToSync);
+
+        // Remove stale user-licence assignments for licence-model roles that are no longer assigned as Spatie roles.
+        $assignments = is_array($school_licence->user_licence_assignments) ? $school_licence->user_licence_assignments : [];
+        $userKey = (string) $user->id;
+        if (isset($assignments[$userKey]) && is_array($assignments[$userKey])) {
+            foreach (array_keys($assignments[$userKey]) as $roleName) {
+                if (! is_string($roleName)) {
+                    continue;
+                }
+
+                $roleName = trim($roleName);
+                if ($roleName === '') {
+                    continue;
+                }
+
+                if (in_array($roleName, $licenceRoleNames, true) && ! in_array($roleName, $selectedLicenceRoleNames, true)) {
+                    unset($assignments[$userKey][$roleName]);
+                }
+            }
+
+            if (empty($assignments[$userKey])) {
+                unset($assignments[$userKey]);
+            }
+
+            $school_licence->user_licence_assignments = $assignments;
+            $school_licence->save();
+        }
 
         return response()->json(
             $this->schoolLicenceUserRolesPayload($school_licence->fresh(), $user->fresh('roles'), $service),
@@ -901,10 +975,16 @@ class SchoolController extends Controller
 
         $roles = collect($roleNames)
             ->map(function ($roleName) use ($user, $userAssignments, $plansByRole) {
-                $entry = $this->normalizeUserLicenceAssignmentEntry($userAssignments[$roleName] ?? null);
+                $hasUserRole = $user->hasRole($roleName);
+                $hasLicenceAssignment = is_array($userAssignments) && array_key_exists($roleName, $userAssignments);
+                $entry = ($hasUserRole && $hasLicenceAssignment)
+                    ? $this->normalizeUserLicenceAssignmentEntry($userAssignments[$roleName] ?? null)
+                    : ['valid_until' => null, 'is_activated' => false, 'plan_id' => null];
+
                 return [
                     'name' => $roleName,
-                    'assigned' => $user->hasRole($roleName),
+                    'assigned' => $hasUserRole && $hasLicenceAssignment,
+                    'is_user_role_assigned' => $hasUserRole,
                     'valid_until' => $entry['valid_until'],
                     'is_activated' => $entry['is_activated'],
                     'plan_id' => $entry['plan_id'],

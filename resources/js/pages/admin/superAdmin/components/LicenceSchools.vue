@@ -377,12 +377,46 @@
             </v-card>
 
             <v-card variant="outlined" class="pa-4 mb-4">
+                <div class="text-subtitle-1 mb-3">Benutzerrollen (Spatie)</div>
+                <div class="text-caption text-medium-emphasis mb-2">
+                    Nur mit diesen Rollen kann der Benutzer die passenden Benutzerlizenzen nutzen.
+                </div>
+                <div class="d-flex flex-row flex-wrap ga-2 mb-3">
+                    <v-chip
+                        v-for="roleName in selectedUserLicenceModelRoleNames"
+                        :key="`selected-user-spatie-role-${selectedUserLicenceUser.id}-${roleName}`"
+                        clickable
+                        :color="isSelectedUserSpatieRoleChecked(roleName) ? 'primary' : undefined"
+                        :variant="isSelectedUserSpatieRoleChecked(roleName) ? 'flat' : 'outlined'"
+                        @click="toggleSelectedUserSpatieRole(roleName)">
+                        {{ roleName }}
+                    </v-chip>
+                    <span class="text-caption text-medium-emphasis" v-if="selectedUserLicenceModelRoleNames.length === 0">-</span>
+                </div>
+                <div class="d-flex flex-row align-center justify-space-between ga-2 flex-wrap">
+                    <div class="text-caption text-medium-emphasis">
+                        Ausgewählt: {{ selected_user_spatie_role_names.length >= 1 ? selected_user_spatie_role_names.join(', ') : '-' }}
+                    </div>
+                    <v-btn
+                        size="small"
+                        color="primary"
+                        variant="outlined"
+                        :loading="selected_user_spatie_roles_saving"
+                        :disabled="!selectedUserLicenceUser || selected_user_spatie_roles_saving || !selected_user_spatie_roles_dirty"
+                        @click="saveSelectedUserSpatieRoles">
+                        Rollen speichern
+                    </v-btn>
+                </div>
+            </v-card>
+
+            <v-card variant="outlined" class="pa-4 mb-4">
                 <div class="text-subtitle-1 mb-3">Rollen aus Lizenzmodell</div>
                 <div class="d-flex flex-row flex-wrap ga-2 mb-4">
                     <v-chip
                         v-for="roleEntry in selectedUserLicenceRoleEntries"
                         :key="`selected-user-role-toggle-${selectedUserLicenceUser.id}-${roleEntry.name}`"
                         clickable
+                        :disabled="!isSelectableUserLicenceRole(roleEntry)"
                         :color="roleEntry.assigned ? 'primary' : undefined"
                         :variant="roleEntry.assigned ? 'flat' : 'outlined'"
                         @click="toggleSelectedUserRole(roleEntry.name)">
@@ -489,11 +523,13 @@
 </template>
 
 <script>
+import axios from 'axios'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolStore } from '@/stores/admin/SchoolStore'
 import { useLicenceStore } from '@/stores/admin/LicenceStore'
 import { useRoleStore } from '@/stores/admin/RoleStore'
+import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import { parseLocalDate } from '@/helpers/date'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import SearchField from '@/pages/components/SearchField.vue'
@@ -534,6 +570,10 @@ export default {
             selected_user_licence_role_filters: [],
             selected_user_licence_users: [],
             user_licence_expired_only: false,
+            user_licence_default_select_all_pending: false,
+            selected_user_spatie_role_names: [],
+            selected_user_spatie_roles_dirty: false,
+            selected_user_spatie_roles_saving: false,
         }
     },
 
@@ -611,6 +651,9 @@ export default {
         },
         selectedAssignedUserLicenceRoleNames() {
             return this.sortedRoleNames(this.selectedAssignedUserLicenceRoleEntries.map((item) => item.name))
+        },
+        selectedUserLicenceModelRoleNames() {
+            return this.sortedRoleNames(this.selectedUserLicenceRoleEntries.map((item) => item?.name))
         },
         selectedUserLicenceValidUntilLabel() {
             return this.school_licence_user_role_details_valid_until || this.selectedUserLicencesSource?.valid_until || 'unbegrenzt'
@@ -892,10 +935,10 @@ export default {
             this.selected_user_licences_school_licence_id = licence?.school_licence_id || null
             this.syncInteractionLockAction()
             this.user_licence_user_search_string = ''
-            // Let the backend apply the merged licence-model default role filter (school + tool model).
             this.selected_user_licence_role_filters = []
             this.selected_user_licence_users = []
             this.user_licence_expired_only = false
+            this.user_licence_default_select_all_pending = true
             await this.loadSchoolLicenceUsers(1)
         },
         closeUserLicencesCard() {
@@ -904,6 +947,8 @@ export default {
             this.selected_user_licence_role_filters = []
             this.selected_user_licence_users = []
             this.user_licence_expired_only = false
+            this.user_licence_default_select_all_pending = false
+            this.resetSelectedUserSpatieRoleState()
             this.school_licence_users = []
             this.school_licence_users_meta = []
             this.school_licence_users_roles = []
@@ -916,6 +961,7 @@ export default {
         onSelectedUserLicenceUsersUpdate(value) {
             if (!Array.isArray(value)) {
                 this.selected_user_licence_users = []
+                this.resetSelectedUserSpatieRoleState()
                 return
             }
             if (value.length <= 1) {
@@ -928,6 +974,7 @@ export default {
             return this.selected_user_licence_role_filters.includes(roleName)
         },
         async toggleUserRoleFilter(roleName) {
+            this.user_licence_default_select_all_pending = false
             const index = this.selected_user_licence_role_filters.indexOf(roleName)
             if (index >= 0) {
                 this.selected_user_licence_role_filters.splice(index, 1)
@@ -938,10 +985,12 @@ export default {
             await this.loadSchoolLicenceUsers(1)
         },
         async showAllUsersWithoutRoleFilter() {
+            this.user_licence_default_select_all_pending = false
             this.selected_user_licence_role_filters = []
             await this.loadSchoolLicenceUsers(1)
         },
         async toggleUserLicencesExpiredOnly() {
+            this.user_licence_default_select_all_pending = false
             this.user_licence_expired_only = !this.user_licence_expired_only
             this.selected_user_licence_users = []
             await this.loadSchoolLicenceUsers(1)
@@ -957,11 +1006,26 @@ export default {
             )
 
             if (!success) return
+
+            if (
+                this.user_licence_default_select_all_pending &&
+                this.selected_user_licence_role_filters.length === 0 &&
+                Array.isArray(this.school_licence_users_roles) &&
+                this.school_licence_users_roles.length >= 1
+            ) {
+                this.user_licence_default_select_all_pending = false
+                this.selected_user_licence_role_filters = [...this.school_licence_users_roles]
+                await this.loadSchoolLicenceUsers(1)
+                return
+            }
+
+            this.user_licence_default_select_all_pending = false
             this.selected_user_licence_role_filters = [...(this.school_licence_users_active_role_filters || [])]
             this.selected_user_licence_users = []
         },
         async loadSelectedUserLicenceRoleDetails() {
             if (!this.selected_user_licences_school_licence_id || !this.selectedUserLicenceUserId) {
+                this.resetSelectedUserSpatieRoleState()
                 this.school_licence_user_role_details = []
                 this.school_licence_user_role_details_valid_until = this.selectedUserLicencesSource?.valid_until || null
                 return
@@ -974,10 +1038,12 @@ export default {
 
             if (!response) return
             this.normalizeSelectedUserRoleDetails()
+            this.initSelectedUserSpatieRoleState()
         },
         toggleSelectedUserRole(roleName) {
             const roleEntry = this.selectedUserLicenceRoleEntries.find((item) => item.name === roleName)
             if (!roleEntry) return
+            if (!this.isSelectableUserLicenceRole(roleEntry)) return
 
             roleEntry.assigned = !roleEntry.assigned
             if (!roleEntry.assigned) {
@@ -993,8 +1059,85 @@ export default {
         },
         setSelectedUserRoleActivation(roleEntry, value) {
             if (!roleEntry) return
+            if (!this.isSelectableUserLicenceRole(roleEntry)) return
             if (typeof value !== 'boolean') return
             roleEntry.is_activated = value
+        },
+        isSelectableUserLicenceRole(roleEntry) {
+            return !!roleEntry?.is_user_role_assigned
+        },
+        isSelectedUserSpatieRoleChecked(roleName) {
+            return this.selected_user_spatie_role_names.includes(roleName)
+        },
+        toggleSelectedUserSpatieRole(roleName) {
+            if (!roleName) return
+            const index = this.selected_user_spatie_role_names.indexOf(roleName)
+            if (index >= 0) {
+                this.selected_user_spatie_role_names.splice(index, 1)
+            } else {
+                this.selected_user_spatie_role_names.push(roleName)
+                this.selected_user_spatie_role_names = this.sortedRoleNames(this.selected_user_spatie_role_names)
+            }
+            this.selected_user_spatie_roles_dirty = true
+        },
+        resetSelectedUserSpatieRoleState() {
+            this.selected_user_spatie_role_names = []
+            this.selected_user_spatie_roles_dirty = false
+            this.selected_user_spatie_roles_saving = false
+        },
+        initSelectedUserSpatieRoleState() {
+            const actualUserRoles = new Set(this.sortedRoleNames(this.selectedUserLicenceUser?.roles || []))
+            this.selected_user_spatie_role_names = this.selectedUserLicenceModelRoleNames.filter((roleName) => actualUserRoles.has(roleName))
+            this.selected_user_spatie_roles_dirty = false
+            this.selected_user_spatie_roles_saving = false
+        },
+        async saveSelectedUserSpatieRoles() {
+            if (!this.selected_user_licences_school_licence_id || !this.selectedUserLicenceUserId) return
+            if (this.selected_user_spatie_roles_saving) return
+
+            const notification = useNotificationStore()
+            this.selected_user_spatie_roles_saving = true
+
+            try {
+                const response = await axios.put(
+                    `/api/admin/school_licences/${this.selected_user_licences_school_licence_id}/users/${this.selectedUserLicenceUserId}/spatie_roles`,
+                    { role_names: this.selected_user_spatie_role_names }
+                )
+
+                const savedRoleNames = this.sortedRoleNames(this.selected_user_spatie_role_names)
+                const roleNamesFromLicenceModel = this.selectedUserLicenceModelRoleNames
+                const listItem = (this.school_licence_users || []).find((item) => item.id === this.selectedUserLicenceUserId)
+                if (listItem) {
+                    const allRoles = new Set(this.sortedRoleNames(listItem.roles || []))
+                    for (const roleName of roleNamesFromLicenceModel) {
+                        allRoles.delete(roleName)
+                    }
+                    for (const roleName of savedRoleNames) {
+                        allRoles.add(roleName)
+                    }
+                    listItem.roles = Array.from(allRoles).sort((a, b) => String(a).localeCompare(String(b), 'de'))
+                }
+
+                this.school_licence_user_role_details = response?.data?.roles || []
+                this.school_licence_user_role_details_valid_until = response?.data?.school_licence_valid_until || this.school_licence_user_role_details_valid_until
+                this.normalizeSelectedUserRoleDetails()
+                this.initSelectedUserSpatieRoleState()
+
+                notification.notify({
+                    message: 'Benutzerrollen wurden gespeichert.',
+                    type: 'success',
+                    timeout: 3000,
+                })
+            } catch (error) {
+                notification.notify({
+                    status: error?.response?.status,
+                    message: error?.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+            } finally {
+                this.selected_user_spatie_roles_saving = false
+            }
         },
         rolePlanSelectItems(roleEntry) {
             const plans = Array.isArray(roleEntry?.plans) ? roleEntry.plans : []
@@ -1013,17 +1156,23 @@ export default {
         },
         normalizeSelectedUserRoleDetails() {
             const details = Array.isArray(this.school_licence_user_role_details) ? this.school_licence_user_role_details : []
+            const actualUserRoles = new Set(
+                this.sortedRoleNames(this.selectedUserLicenceUser?.roles || [])
+            )
             this.school_licence_user_role_details = details.map((entry) => {
                 const planId = Number(entry?.plan_id)
+                const roleName = String(entry?.name ?? '').trim()
+                const isUserRoleAssigned = actualUserRoles.has(roleName) && !!entry?.is_user_role_assigned
                 return {
-                    name: String(entry?.name ?? '').trim(),
-                    assigned: !!entry?.assigned,
+                    name: roleName,
+                    assigned: isUserRoleAssigned && !!entry?.assigned,
+                    is_user_role_assigned: isUserRoleAssigned,
                     valid_until:
                         entry?.valid_until instanceof Date
                             ? this.toDateString(entry.valid_until)
                             : (entry?.valid_until ? String(entry.valid_until).slice(0, 10) : null),
-                    is_activated: !!entry?.is_activated,
-                    plan_id: Number.isInteger(planId) && planId > 0 ? planId : null,
+                    is_activated: isUserRoleAssigned && !!entry?.is_activated,
+                    plan_id: isUserRoleAssigned && Number.isInteger(planId) && planId > 0 ? planId : null,
                     plans: Array.isArray(entry?.plans) ? entry.plans : [],
                 }
             })
@@ -1058,6 +1207,7 @@ export default {
         },
         closeSelectedUserLicenceCard() {
             this.selected_user_licence_users = []
+            this.resetSelectedUserSpatieRoleState()
             this.school_licence_user_role_details = []
             this.school_licence_user_role_details_valid_until = this.selectedUserLicencesSource?.valid_until || null
         },
@@ -1067,7 +1217,7 @@ export default {
             const selectedUserId = this.selectedUserLicenceUserId
             const rolesPayload = this.selectedUserLicenceRoleEntries.map((item) => ({
                 name: item.name,
-                assigned: !!item.assigned,
+                assigned: !!item.assigned && this.isSelectableUserLicenceRole(item),
                 valid_until: item.assigned ? this.normalizeRoleValidUntilForApi(item.valid_until) : null,
                 is_activated: item.assigned ? !!item.is_activated : false,
                 plan_id: item.assigned && Number.isInteger(Number(item.plan_id)) && Number(item.plan_id) > 0 ? Number(item.plan_id) : null,
