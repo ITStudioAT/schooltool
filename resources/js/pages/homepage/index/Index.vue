@@ -2,12 +2,12 @@
     <div class="intro-page">
         <!-- Animated Background -->
         <div class="animated-bg">
-            <div class="hero-bg-image"></div>
+            <div class="hero-bg-image st-cloudflare-bg-image"></div>
         </div>
 
         <!-- Hero Section -->
         <section class="hero-section" v-if="step === ''">
-            <div class="hero-content">
+            <div class="hero-content st-shell-1440">
                 <header class="cloud-header">
                     <div class="cloud-header-left">
                         <div class="logo-wrapper logo-wrapper-nav" aria-hidden="true">
@@ -144,7 +144,7 @@
         </section>
 
         <section class="products-showcase" v-if="step === ''" ref="productsStart">
-            <div class="products-shell">
+            <div class="products-shell st-shell-1440">
                 <div class="products-intro">
                     <div class="products-eyebrow">Produkte</div>
                     <h3 class="products-heading">Fünf starke Bereiche.</h3>
@@ -168,7 +168,7 @@
                     <div class="product-visual visual-register">
                         <img
                             class="product-illustration product-illustration-register"
-                            src="/images/illustrations/undraw_date-picker_8qys.svg"
+                            src="/images/illustrations/date-picker-animated-v2.svg"
                             alt="Illustration für Anmeldetool" />
                     </div>
                 </article>
@@ -193,7 +193,7 @@
                     <div class="product-visual visual-teaching">
                         <img
                             class="product-illustration product-illustration-teaching"
-                            src="/images/illustrations/undraw_online-learning_tgmv.svg"
+                            src="/images/illustrations/online-learning-animated.svg"
                             alt="Illustration für Unterricht" />
                     </div>
                 </article>
@@ -213,7 +213,7 @@
                         </div>
                     </div>
                     <div class="product-visual visual-tutoring">
-                        <img class="product-illustration product-illustration-tutoring" src="/images/illustrations/undraw_notebook_8ihb.svg" alt="Illustration für Nachhilfe" />
+                        <img class="product-illustration product-illustration-tutoring" src="/images/illustrations/notebook-animated.svg" alt="Illustration für Nachhilfe" />
                     </div>
                 </article>
 
@@ -234,7 +234,7 @@
                     <div class="product-visual visual-materials">
                         <img
                             class="product-illustration product-illustration-materials"
-                            src="/images/illustrations/undraw_bookshelves_vhu6.svg"
+                            src="/images/illustrations/bookshelves-animated.svg"
                             alt="Illustration für Materialien" />
                     </div>
                 </article>
@@ -491,10 +491,6 @@ export default {
 .hero-bg-image {
     position: absolute;
     inset: 0;
-    background-image: url('/images/backgrounds/cloudflare-hero-orange.svg');
-    background-repeat: no-repeat;
-    background-position: center top;
-    background-size: cover;
 }
 
 .hero-bg-image::after {
@@ -650,9 +646,6 @@ export default {
 }
 
 .hero-content {
-    max-width: 1440px;
-    width: 100%;
-    margin: 0 auto;
     display: flex;
     flex-direction: column;
 }
@@ -818,7 +811,6 @@ export default {
     animation: fadeInUp 0.8s ease-out 0.2s both;
     margin-top: 34px;
     width: 100%;
-    max-width: 100%;
 }
 
 @keyframes fadeInUp {
@@ -845,7 +837,6 @@ export default {
     grid-template-columns: repeat(auto-fit, minmax(220px, 320px));
     gap: 18px;
     width: 100%;
-    max-width: 100%;
     margin: 0;
     justify-content: start;
 }
@@ -1050,8 +1041,6 @@ export default {
 }
 
 .products-shell {
-    max-width: 1440px;
-    margin: 0 auto;
     display: grid;
     gap: 20px;
 }
@@ -1205,7 +1194,8 @@ export default {
 }
 
 .visual-register {
-    background: radial-gradient(220px 120px at 80% 15%, rgba(255, 198, 111, 0.35), transparent 70%), rgba(255, 255, 255, 0.56);
+    justify-content: flex-start;
+    background: rgba(255, 255, 255, 0.88);
 }
 
 .product-illustration {
@@ -2064,4 +2054,3 @@ export default {
     }
 }
 </style>
-

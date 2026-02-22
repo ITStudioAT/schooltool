@@ -1,124 +1,177 @@
 <template>
-    <v-container fluid class="h-100 w-100 d-flex flex-column align-center justify-center" v-if="config">
-        <v-card class="mx-auto w-100" max-width="600">
-            <v-img height="80px" :src="'/storage/images/' + config.logo" @click="homepage" class="hover"></v-img>
-            <v-card-subtitle class="text-caption text-text">
-                {{ config.version }}
-            </v-card-subtitle>
-            <v-card-title class="mb-4 bg-secondary">Login</v-card-title>
+    <div class="login-page">
+        <!-- Animated Background (same as homepage) -->
+        <div class="animated-bg">
+            <div class="hero-bg-image"></div>
+        </div>
 
-            <!-- Login STEP LOGIN_ENTER_EMAIL = E-Mail -->
-            <v-card-text v-if="step == 'LOGIN_ENTER_EMAIL'">
-                <v-form ref="form" v-model="is_valid" @submit.prevent="loginStepEmail()" class="mb-4">
-                    <div class="text-caption text-text">Bitte die E-Mail-Adresse eingeben</div>
-                    <v-text-field autofocus v-model="data.email" label="Email" :rules="[required(), mail()]" data-testid="admin-login-email" id="admin-login-email" />
-                </v-form>
-                <v-btn block color="success" slim flat rounded="0" type="submit" data-testid="admin-login-continue-password" @click="loginStepEmail()">Weiter</v-btn>
-                <div class="text-caption text-center font-weight-light">oder</div>
-                <v-btn block color="primary" slim flat rounded="0" variant="text" data-testid="admin-login-unknown-password" @click="passwordUnknown">Kennwort unbekannt</v-btn>
-                <div class="text-caption text-center font-weight-light">oder</div>
-                <div class="text-center mt-2">
-                    <v-btn color="surface" slim flat rounded="0" type="submit" data-testid="admin-login-new-teacher" @click="newTeacherStepEmail">Neuer Lehrer</v-btn>
+        <div class="login-layout" v-if="config">
+            <div class="login-shell">
+                <!-- Header -->
+                <header class="cloud-header">
+                    <div class="cloud-header-left">
+                        <div class="login-brand-link">
+                            <div class="logo-wrapper logo-wrapper-nav" aria-hidden="true">
+                                <v-icon size="20" color="white">mdi-school</v-icon>
+                            </div>
+                            <div class="cloud-brand">
+                                <h1 class="cloud-brand-title">
+                                    <span class="brand-school">School</span><span class="brand-tool">Tool</span>
+                                </h1>
+                            </div>
+                        </div>
+
+                    </div>
+                </header>
+
+                <!-- Login Card -->
+                <div class="login-main">
+                    <div class="login-hero-copy" aria-hidden="true">
+                        <h2 class="login-hero-title">
+                            <div>Mehr Zeit für das Wesentliche.</div>
+                            <div class="mt-4"><span class="login-hero-title-accent">Admin-Bereich</span></div>
+                        </h2>
+                    </div>
+
+                    <div class="login-card-wrap">
+                        <div class="login-card">
+                    <!-- School Logo -->
+                    <div class="school-logo-area" v-if="config.logo">
+                        <img :src="'/storage/images/' + config.logo" class="school-logo hover" @click="homepage" />
+                    </div>
+
+                    <!-- Step: Enter Email -->
+                    <div class="card-body" v-if="step == 'LOGIN_ENTER_EMAIL'">
+                        <h2 class="step-title">Willkommen zurück</h2>
+                        <p class="step-hint">Bitte die E-Mail-Adresse eingeben</p>
+                        <v-form ref="form" v-model="is_valid" @submit.prevent="loginStepEmail()" class="mb-3">
+                            <v-text-field
+                                autofocus
+                                v-model="data.email"
+                                label="E-Mail"
+                                variant="outlined"
+                                density="comfortable"
+                                :rules="[required(), mail()]"
+                                data-testid="admin-login-email"
+                                id="admin-login-email" />
+                        </v-form>
+                        <v-btn block color="success" flat size="large" data-testid="admin-login-continue-password" @click="loginStepEmail()" class="mb-4">Weiter</v-btn>
+                        <div class="alt-actions">
+                            <v-btn variant="text" size="small" color="#14293b" data-testid="admin-login-unknown-password" @click="passwordUnknown">Kennwort unbekannt</v-btn>
+                            <span class="alt-sep">·</span>
+                            <v-btn variant="text" size="small" color="#14293b" data-testid="admin-login-new-teacher" @click="newTeacherStepEmail">Neuer Lehrer</v-btn>
+                            <template v-if="config.register_admin_allowed">
+                                <span class="alt-sep">·</span>
+                                <v-btn variant="text" size="small" color="success" data-testid="admin-login-register" @click="register">Neu registrieren</v-btn>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Step: Select School -->
+                    <div class="card-body" v-if="step == 'LOGIN_SELECT_SCHOOL'">
+                        <h2 class="step-title">Schule auswählen</h2>
+                        <p class="step-hint">Bitte die Schule auswählen</p>
+                        <v-autocomplete
+                            v-model="selected_school_id"
+                            :items="data.schools"
+                            item-title="long_name"
+                            item-value="id"
+                            label="Auswahl Schule"
+                            variant="outlined"
+                            density="comfortable"
+                            data-testid="admin-login-school-select"
+                            class="mb-3" />
+                        <v-btn block color="success" flat size="large" data-testid="admin-login-continue-school" @click="loginStepSchool()" v-if="school" class="mb-3">Weiter</v-btn>
+                        <v-btn block variant="text" color="warning" data-testid="admin-login-back-from-school" @click="restartLogin">Zurück</v-btn>
+                    </div>
+
+                    <!-- Step: Enter Password -->
+                    <div class="card-body" v-if="step == 'LOGIN_ENTER_PASSWORD'">
+                        <h2 class="step-title">Kennwort eingeben</h2>
+                        <p class="step-hint school-name">{{ data?.school?.long_name }}</p>
+                        <v-form ref="form" v-model="is_valid" @submit.prevent="loginStep2()" class="mb-3">
+                            <v-text-field
+                                autofocus
+                                label="Kennwort"
+                                variant="outlined"
+                                density="comfortable"
+                                :append-icon="is_password_visible ? 'mdi-eye' : 'mdi-eye-off'"
+                                :type="is_password_visible ? 'text' : 'password'"
+                                @click:append="() => (is_password_visible = !is_password_visible)"
+                                :rules="[required(), minLength(8), maxLength(255)]"
+                                v-model="data.password"
+                                data-testid="admin-login-password"
+                                id="admin-login-password" />
+                        </v-form>
+                        <v-btn block color="success" flat size="large" data-testid="admin-login-submit-password" @click="loginStep2()" class="mb-3">Anmelden</v-btn>
+                        <v-btn block variant="text" color="warning" data-testid="admin-login-back-from-password" @click="restartLogin">Zurück</v-btn>
+                    </div>
+
+                    <!-- Step: Enter 2FA Token -->
+                    <div class="card-body" v-if="step == 'LOGIN_ENTER_TOKEN'">
+                        <h2 class="step-title">Zwei-Faktor-Code</h2>
+                        <p class="step-hint school-name">{{ data?.school?.long_name }}</p>
+                        <v-form ref="form" v-model="is_valid" @submit.prevent="loginStep3()">
+                            <v-alert closable color="success" type="info" density="compact" text="Bitte prüfen Sie Ihre E-Mails" class="mb-3" />
+                            <p class="step-hint">Bitte den Code laut E-Mail eingeben</p>
+                            <v-otp-input autofocus v-model="data.token_2fa" data-testid="admin-login-token" id="admin-login-token" class="mb-3" />
+                        </v-form>
+                        <v-btn block color="success" flat size="large" data-testid="admin-login-submit-token" @click="loginStep3()" class="mb-3">Anmelden</v-btn>
+                        <v-btn block variant="text" color="warning" data-testid="admin-login-back-from-token" @click="restartLogin">Zurück</v-btn>
+                    </div>
+
+                    <!-- New Teacher: Select School -->
+                    <div class="card-body" v-if="step == 'NEW_TEACHER_SELECT_SCHOOL'">
+                        <h2 class="step-title">Neue:r Lehrer:in</h2>
+                        <p class="step-hint">{{ data.email }}</p>
+                        <p class="step-hint">Bitte die Schule auswählen</p>
+                        <v-autocomplete
+                            v-model="selected_school_id"
+                            :items="data.schools"
+                            item-title="long_name"
+                            item-value="id"
+                            label="Auswahl Schule"
+                            variant="outlined"
+                            density="comfortable"
+                            class="mb-3" />
+                        <v-btn block color="success" flat size="large" @click="newTeacherStepSchool()" v-if="school" class="mb-3">Weiter</v-btn>
+                        <v-btn block variant="text" color="warning" @click="restartLogin">Zurück</v-btn>
+                    </div>
+
+                    <!-- New Teacher: Enter Code -->
+                    <div class="card-body" v-if="step == 'NEW_TEACHER_INPUT_CODE' || step == 'NEW_TEACHER_TOKEN_WRONG'">
+                        <h2 class="step-title">Neue:r Lehrer:in</h2>
+                        <p class="step-hint">{{ data.email }}</p>
+                        <p class="step-hint school-name">{{ data?.school?.long_name }}</p>
+                        <v-alert v-if="step == 'NEW_TEACHER_TOKEN_WRONG'" closable type="error" density="compact" text="Das Token war falsch oder abgelaufen. Versuchen Sie es erneut." class="mb-3" />
+                        <v-form ref="form" v-model="is_valid" @submit.prevent="newTeacherStepCode()">
+                            <v-alert closable color="success" type="info" density="compact" text="Sie wurden als Lehrer:in erkannt. Bitte prüfen Sie Ihre E-Mails" class="mb-3" />
+                            <p class="step-hint">Bitte den Code laut E-Mail eingeben</p>
+                            <v-otp-input autofocus v-model="data.token" class="mb-3" />
+                            <v-btn block color="success" flat size="large" type="submit" @click="submit">Anmelden</v-btn>
+                        </v-form>
+                        <v-btn block variant="text" color="warning" @click="restartLogin" class="mt-3">Zurück</v-btn>
+                    </div>
+
+                    <!-- New Teacher: Success -->
+                    <div class="card-body" v-if="step == 'NEW_TEACHER_OK'">
+                        <h2 class="step-title">Neue:r Lehrer:in</h2>
+                        <p class="step-hint">{{ data.email }}</p>
+                        <p class="step-hint school-name">{{ data?.school?.long_name }}</p>
+                        <v-alert type="success" class="mb-4">
+                            <div>Sie wurden am System registriert und eingeloggt.</div>
+                            <div>Herzliche Gratulation!</div>
+                        </v-alert>
+                        <v-btn block color="success" flat size="large" @click="moveAdmin">Weiter</v-btn>
+                    </div>
+                        </div>
+
+                        <div class="card-version">{{ config.version }}</div>
+                    </div>
                 </div>
-
-                <div v-if="config.register_admin_allowed">
-                    <div class="text-caption text-center font-weight-light">oder</div>
-                    <v-btn block color="success" slim flat rounded="0" variant="text" data-testid="admin-login-register" @click="register">Neu registrieren</v-btn>
-                </div>
-            </v-card-text>
-
-            <!-- Login STEP LOGIN_SELECT_SCHOOL -->
-            <v-card-text v-if="step == 'LOGIN_SELECT_SCHOOL'">
-                <div class="text-h6">Bitte die Schule auswählen</div>
-                <v-autocomplete v-model="selected_school_id" :items="data.schools" item-title="long_name" item-value="id" label="Auswahl Schule" data-testid="admin-login-school-select" />
-                <v-btn block color="success" slim flat rounded="0" data-testid="admin-login-continue-school" @click="loginStepSchool()" v-if="school">Weiter</v-btn>
-                <div class="text-caption text-center font-weight-light">oder</div>
-                <v-btn block color="warning" slim flat rounded="0" variant="text" data-testid="admin-login-back-from-school" @click="restartLogin">Zurück</v-btn>
-            </v-card-text>
-
-            <!-- Login STEP LOGIN_ENTER_PASSWORD = Password -->
-            <v-card-text v-if="step == 'LOGIN_ENTER_PASSWORD'">
-                <v-card-subtitle class="mb-4">
-                    {{ data?.school?.long_name }}
-                </v-card-subtitle>
-                <v-form ref="form" v-model="is_valid" @submit.prevent="loginStep2()" class="mb-4">
-                    <div class="text-caption text-text">Bitte das Kennwort eingeben</div>
-                    <v-text-field
-                        autofocus
-                        label="Kennwort"
-                        :append-icon="is_password_visible ? 'mdi-eye' : 'mdi-eye-off'"
-                        :type="is_password_visible ? 'text' : 'password'"
-                        @click:append="() => (is_password_visible = !is_password_visible)"
-                        :rules="[required(), minLength(8), maxLength(255)]"
-                        v-model="data.password"
-                        data-testid="admin-login-password"
-                        id="admin-login-password" />
-                </v-form>
-                <v-btn block color="success" slim flat rounded="0" data-testid="admin-login-submit-password" @click="loginStep2()">Anmelden</v-btn>
-                <div class="text-caption text-center font-weight-light">oder</div>
-                <v-btn block color="warning" slim flat rounded="0" variant="text" data-testid="admin-login-back-from-password" @click="restartLogin">Zurück</v-btn>
-            </v-card-text>
-
-            <!-- Login STEP LOGIN_ENTER_TOKEN = Token_2fa -->
-            <v-card-text v-if="step == 'LOGIN_ENTER_TOKEN'">
-                <v-card-subtitle class="mb-4">
-                    {{ data?.school?.long_name }}
-                </v-card-subtitle>
-                <v-form ref="form" v-model="is_valid" @submit.prevent="loginStep3()" class="mb-4">
-                    <v-alert closable color="success" type="info" text="Bitte prüfen Sie Ihre E-Mails" />
-                    <div class="text-caption text-text">Bitte den Code laut E-Mail eingeben</div>
-                    <v-otp-input autofocus v-model="data.token_2fa" data-testid="admin-login-token" id="admin-login-token" />
-                </v-form>
-                <v-btn block color="success" slim flat rounded="0" data-testid="admin-login-submit-token" @click="loginStep3()">Anmelden</v-btn>
-                <div class="text-caption text-center font-weight-light">oder</div>
-                <v-btn block color="warning" slim flat rounded="0" variant="text" data-testid="admin-login-back-from-token" @click="restartLogin">Zurück</v-btn>
-            </v-card-text>
-
-            <!-- NEW TEACHER STEP NEW_TEACHER_SELECT_SCHOOL -->
-            <v-card-text v-if="step == 'NEW_TEACHER_SELECT_SCHOOL'">
-                <div class="text-h6">Neue:r Lehrer:in</div>
-                <v-card-subtitle>{{ data.email }}</v-card-subtitle>
-                <div class="text-h6 mt-4">Bitte die Schule auswählen</div>
-                <v-autocomplete v-model="selected_school_id" :items="data.schools" item-title="long_name" item-value="id" label="Auswahl Schule" />
-                <v-btn block color="success" slim flat rounded="0" @click="newTeacherStepSchool()" v-if="school">Weiter</v-btn>
-                <div class="text-caption text-center font-weight-light">oder</div>
-                <v-btn block color="warning" slim flat rounded="0" variant="text" @click="restartLogin">Zurück</v-btn>
-            </v-card-text>
-
-            <!-- NEW TEACHER STEP NEW_TEACHER_ENTER_TOKEN -->
-            <v-card-text v-if="step == 'NEW_TEACHER_INPUT_CODE' || step == 'NEW_TEACHER_TOKEN_WRONG'">
-                <div class="text-h6">Neue:r Lehrer:in</div>
-                <v-card-subtitle>{{ data.email }}</v-card-subtitle>
-                <v-card-subtitle class="mb-4">
-                    {{ data?.school?.long_name }}
-                </v-card-subtitle>
-                <v-alert closable type="error" text="Das Token war falsch oder abgelaufen. Versuchen Sie es erneut." v-if="step == 'NEW_TEACHER_TOKEN_WRONG'" />
-                <v-form ref="form" v-model="is_valid" @submit.prevent="newTeacherStepCode()" class="my-4">
-                    <v-alert closable color="success" type="info" text="Sie wurden als Lehrer:in erkannt. Bitte prüfen Sie Ihre E-Mails" />
-                    <div class="text-caption text-text">Bitte den Code laut E-Mail eingeben</div>
-                    <v-otp-input autofocus v-model="data.token" />
-
-                    <v-btn block color="success" slim flat rounded="0" type="submit" @click="submit">Anmelden</v-btn>
-                    <div class="text-caption text-center font-weight-light">oder</div>
-                    <v-btn block color="warning" slim flat rounded="0" variant="text" @click="restartLogin">Zurück</v-btn>
-                </v-form>
-            </v-card-text>
-
-            <!-- NEW TEACHER STEP NEW_TEACHER_OK -->
-            <v-card-text v-if="step == 'NEW_TEACHER_OK'">
-                <div class="text-h6">Neue:r Lehrer:in</div>
-                <v-card-subtitle>{{ data.email }}</v-card-subtitle>
-                <v-card-subtitle class="mb-4">
-                    {{ data?.school?.long_name }}
-                </v-card-subtitle>
-                <v-alert type="success" class="mt-4">
-                    <div>Sie wurden am System registriert und eingeloggt.</div>
-                    <div>Herzliche Gratultion!</div>
-                </v-alert>
-                <v-btn block color="success" slim flat rounded="0" @click="moveAdmin">Weiter</v-btn>
-            </v-card-text>
-        </v-card>
-    </v-container>
+            </div>
+        </div>
+    </div>
 </template>
 
 <script>
@@ -264,3 +317,441 @@ export default {
     },
 }
 </script>
+
+<style scoped>
+/* Base */
+.login-page {
+    min-height: 100vh;
+    position: relative;
+    background: #f7901e;
+}
+
+/* Animated Background */
+.animated-bg {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.hero-bg-image {
+    position: absolute;
+    inset: 0;
+    background-image: url('/images/backgrounds/cloudflare-hero-orange.svg');
+    background-repeat: no-repeat;
+    background-position: center top;
+    background-size: cover;
+}
+
+.hero-bg-image::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(650px 220px at 50% 16%, rgba(255, 220, 145, 0.16), transparent 70%),
+        linear-gradient(180deg, rgba(255, 170, 68, 0.05), rgba(232, 103, 28, 0.05));
+}
+
+/* Layout */
+.login-layout {
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 28px 20px 48px;
+}
+
+.login-shell {
+    width: 100%;
+    max-width: 1440px;
+    min-height: calc(100vh - 76px);
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Header (same as homepage) */
+.cloud-header {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+    gap: 12px;
+    padding: 6px 4px;
+    margin-bottom: 18px;
+    animation: fadeInDown 0.6s ease-out;
+}
+
+.cloud-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.login-brand-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: default;
+}
+
+.logo-wrapper {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 60px;
+    height: 60px;
+    background: linear-gradient(135deg, #3aaa35 0%, #f39200 100%);
+    border: 1px solid #efc382;
+    border-radius: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 10px 40px rgba(58, 170, 53, 0.3);
+    animation: pulse-glow 3s ease-in-out infinite;
+    flex-shrink: 0;
+}
+
+.logo-wrapper-nav {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    margin-bottom: 0;
+    box-shadow: 0 3px 8px rgba(243, 146, 0, 0.12);
+    animation: none;
+}
+
+/* Match homepage header rendering (current cascade result) */
+.cloud-header .logo-wrapper {
+    width: 60px;
+    height: 60px;
+    border-radius: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 10px 40px rgba(58, 170, 53, 0.3);
+    animation: pulse-glow 3s ease-in-out infinite;
+}
+
+.cloud-brand-title {
+    display: flex;
+    align-items: baseline;
+    gap: 2px;
+    font-size: 1.28rem;
+    font-weight: 800;
+    letter-spacing: -0.35px;
+    margin: 0;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.brand-school {
+    color: #3aaa35;
+}
+
+.brand-tool {
+    color: #37474f;
+}
+
+.cloud-header-nav {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-left: 34px;
+}
+
+.cloud-nav-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    border: 0;
+    background: transparent;
+    color: #233645;
+    padding: 4px 8px;
+    border-radius: 8px;
+    font-size: 0.98rem;
+    font-weight: 400;
+    cursor: default;
+    box-shadow: none;
+    opacity: 0.95;
+}
+
+.cloud-nav-item:hover {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+@keyframes pulse-glow {
+    0%,
+    100% {
+        box-shadow: 0 10px 40px rgba(58, 170, 53, 0.3);
+    }
+    50% {
+        box-shadow: 0 10px 60px rgba(243, 146, 0, 0.4);
+    }
+}
+
+/* Card Wrap */
+.login-main {
+    flex: 1;
+    width: 100%;
+    max-width: 1120px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 26px;
+}
+
+.login-card-wrap {
+    width: 100%;
+    max-width: 480px;
+    animation: scaleIn 0.4s ease-out;
+    flex-shrink: 0;
+}
+
+.login-hero-copy {
+    position: relative;
+    top: -150px;
+    width: 100%;
+    max-width: 900px;
+    color: #14293b;
+    text-align: center;
+    margin-bottom: -150px;
+    animation: fadeInUp 0.8s ease-out 0.1s both;
+}
+
+.login-hero-title {
+    margin: 0;
+    font-size: clamp(2.1rem, 4.8vw, 4.1rem);
+    line-height: 0.98;
+    letter-spacing: 0.015em;
+    font-weight: 700;
+    color: #10263a;
+    text-shadow: 0 8px 22px rgba(27, 15, 6, 0.12);
+}
+
+.login-hero-title-accent {
+    color: #fff;
+}
+
+/* Card */
+.login-card {
+    background: white;
+    border-radius: 24px;
+    box-shadow:
+        0 24px 60px rgba(68, 33, 4, 0.2),
+        0 4px 16px rgba(68, 33, 4, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    overflow: hidden;
+}
+
+/* School Logo */
+.school-logo-area {
+    padding: 24px 28px 0;
+    display: flex;
+    align-items: center;
+}
+
+.school-logo {
+    max-height: 56px;
+    max-width: 180px;
+    object-fit: contain;
+}
+
+/* Card Body */
+.card-body {
+    padding: 24px 28px 28px;
+}
+
+/* Step Title & Hint */
+.step-title {
+    font-size: 1.45rem;
+    font-weight: 700;
+    color: #10263a;
+    margin: 0 0 6px 0;
+    line-height: 1.2;
+}
+
+.step-hint {
+    font-size: 0.92rem;
+    color: rgba(16, 38, 58, 0.65);
+    margin: 0 0 16px 0;
+    line-height: 1.4;
+}
+
+.step-hint.school-name {
+    font-weight: 600;
+    color: #10263a;
+}
+
+/* Alt Actions */
+.alt-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 2px;
+}
+
+.alt-sep {
+    color: rgba(16, 38, 58, 0.3);
+    font-size: 0.9rem;
+    line-height: 1;
+}
+
+/* Version */
+.card-version {
+    text-align: center;
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.6);
+    margin-top: 14px;
+    margin-bottom: 2px;
+}
+
+/* Animations */
+@keyframes fadeInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes scaleIn {
+    from {
+        opacity: 0;
+        transform: scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(24px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (max-width: 1400px) {
+    .login-hero-copy {
+        top: -120px;
+        margin-bottom: -120px;
+        max-width: 780px;
+    }
+}
+
+@media (max-width: 1200px) {
+    .login-hero-copy {
+        top: -80px;
+        margin-bottom: -80px;
+        max-width: 720px;
+    }
+
+    .login-hero-title {
+        font-size: clamp(1.9rem, 4.1vw, 3.2rem);
+    }
+}
+
+@media (max-width: 1100px) {
+    .login-main {
+        justify-content: center;
+        align-items: center;
+    }
+
+    .login-hero-copy {
+        top: -40px;
+        margin-bottom: -40px;
+        max-width: 640px;
+    }
+
+    .login-hero-title {
+        font-size: clamp(1.7rem, 3.8vw, 2.6rem);
+    }
+}
+
+@media (max-width: 860px) {
+    .login-main {
+        gap: 16px;
+    }
+
+    .login-hero-copy {
+        display: block;
+        top: -18px;
+        margin-bottom: -18px;
+        max-width: 560px;
+    }
+
+    .login-hero-title {
+        font-size: clamp(1.35rem, 4.8vw, 2rem);
+        line-height: 1.02;
+    }
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+    .login-layout {
+        padding: 20px 16px 40px;
+    }
+
+    .login-shell {
+        min-height: calc(100vh - 60px);
+    }
+
+    .login-main {
+        max-width: 100%;
+        gap: 12px;
+    }
+
+    .login-hero-copy {
+        top: 0;
+        margin-bottom: 2px;
+        max-width: 100%;
+    }
+
+    .login-hero-title {
+        font-size: 1.35rem;
+        line-height: 1.05;
+        letter-spacing: 0.01em;
+    }
+
+    .cloud-header {
+        margin-bottom: 12px;
+    }
+
+    .cloud-header-nav {
+        margin-left: 14px;
+        gap: 10px;
+    }
+
+    .cloud-nav-item {
+        font-size: 0.92rem;
+    }
+
+    .school-logo-area {
+        padding: 20px 20px 0;
+    }
+
+    .card-body {
+        padding: 20px;
+    }
+
+    .login-card {
+        border-radius: 20px;
+    }
+}
+</style>

@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+@import './schooltool-design.css';
+@import './admin-index-design.css';
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
