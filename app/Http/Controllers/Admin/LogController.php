@@ -13,9 +13,9 @@ class LogController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $logPath = storage_path('logs/laravel.log');
+        $logPath = $this->resolveLogPath();
 
-        if (!file_exists($logPath)) {
+        if (! $logPath || ! file_exists($logPath)) {
             return response()->json([
                 'error' => 'Log-Datei nicht gefunden'
             ], 404);
@@ -53,7 +53,14 @@ class LogController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $logPath = storage_path('logs/laravel.log');
+        $logPath = $this->resolveLogPath();
+
+        if (! $logPath || ! file_exists($logPath)) {
+            return response()->json([
+                'error' => 'Log-Datei nicht gefunden'
+            ], 404);
+        }
+
         $backup = storage_path('logs/laravel_backup.log');
 
         // Kopiere zu Backup (überschreibt altes Backup)
@@ -66,5 +73,32 @@ class LogController extends Controller
 
 
         return response()->noContent();
+    }
+
+    private function resolveLogPath(): ?string
+    {
+        $singleLogPath = storage_path('logs/laravel.log');
+
+        if (file_exists($singleLogPath)) {
+            return $singleLogPath;
+        }
+
+        $dailyLogs = glob(storage_path('logs/laravel-*.log')) ?: [];
+
+        if (empty($dailyLogs)) {
+            return null;
+        }
+
+        usort($dailyLogs, static function (string $a, string $b): int {
+            $mtimeCompare = filemtime($b) <=> filemtime($a);
+
+            if ($mtimeCompare !== 0) {
+                return $mtimeCompare;
+            }
+
+            return strcmp($b, $a);
+        });
+
+        return $dailyLogs[0] ?? null;
     }
 }
