@@ -76,6 +76,16 @@
                             <v-icon start>{{ isDayOverviewMode ? 'mdi-account-group' : 'mdi-view-list' }}</v-icon>
                             {{ isDayOverviewMode ? 'Schülerliste' : 'Tagesübersicht' }}
                         </v-btn>
+                        <v-btn-toggle
+                            v-if="!isDayOverviewMode"
+                            v-model="students_sort_mode"
+                            mandatory
+                            density="compact"
+                            color="primary"
+                            class="students-sort-toggle">
+                            <v-btn size="small" value="class_last_name" class="students-sort-toggle-btn">Klasse, Name</v-btn>
+                            <v-btn size="small" value="last_name_first_name" class="students-sort-toggle-btn">Name</v-btn>
+                        </v-btn-toggle>
                         <v-btn
                             v-if="!isDayOverviewMode"
                             size="small"
@@ -292,6 +302,7 @@ export default {
             presence_by_student: {},
             savingAttendance: false,
             hasUnsavedAttendanceChanges: false,
+            students_sort_mode: 'class_last_name',
         }
     },
 
@@ -330,21 +341,7 @@ export default {
         studentItems() {
             const list = this.selected_course?.students_info || []
             return [...list]
-                .sort((a, b) => {
-                    const classA = (a.schoolclass || a.class || '').toString()
-                    const classB = (b.schoolclass || b.class || '').toString()
-                    const classCmp = classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
-                    if (classCmp !== 0) return classCmp
-
-                    const lastA = (a.last_name || '').toString()
-                    const lastB = (b.last_name || '').toString()
-                    const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
-                    if (lastCmp !== 0) return lastCmp
-
-                    const firstA = (a.first_name || '').toString()
-                    const firstB = (b.first_name || '').toString()
-                    return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
-                })
+                .sort((a, b) => this.compareStudentsBySelectedSort(a, b))
                 .map((student) => ({
                     title: this.studentLabel(student),
                     value: student.id,
@@ -457,19 +454,7 @@ export default {
                 const canceledB = this.isStudentCanceled(b) ? 1 : 0
                 if (canceledA !== canceledB) return canceledA - canceledB
 
-                const classA = (a.schoolclass || a.class || '').toString()
-                const classB = (b.schoolclass || b.class || '').toString()
-                const classCmp = classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
-                if (classCmp !== 0) return classCmp
-
-                const lastA = (a.last_name || '').toString()
-                const lastB = (b.last_name || '').toString()
-                const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
-                if (lastCmp !== 0) return lastCmp
-
-                const firstA = (a.first_name || '').toString()
-                const firstB = (b.first_name || '').toString()
-                return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
+                return this.compareStudentsBySelectedSort(a, b)
             })
         },
         activeStudentsCount() {
@@ -758,6 +743,31 @@ export default {
             const cls = student.schoolclass ? `${student.schoolclass} ` : ''
             const name = `${student.last_name || ''}, ${student.first_name || ''}`.trim()
             return `${cls}${name}`.trim()
+        },
+        studentClassValue(student) {
+            return (student?.schoolclass || student?.class || '').toString()
+        },
+        compareStudentsBySelectedSort(a, b) {
+            const lastA = (a?.last_name || '').toString()
+            const lastB = (b?.last_name || '').toString()
+            const firstA = (a?.first_name || '').toString()
+            const firstB = (b?.first_name || '').toString()
+            const classA = this.studentClassValue(a)
+            const classB = this.studentClassValue(b)
+
+            if (this.students_sort_mode === 'last_name_first_name') {
+                const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
+                if (lastCmp !== 0) return lastCmp
+                const firstCmp = firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
+                if (firstCmp !== 0) return firstCmp
+                return classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
+            }
+
+            const classCmp = classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
+            if (classCmp !== 0) return classCmp
+            const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
+            if (lastCmp !== 0) return lastCmp
+            return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
         },
         toDateString(date) {
             const d = parseLocalDate(date)
@@ -1275,6 +1285,15 @@ export default {
         display: none;
     }
 
+    .students-sort-toggle {
+        width: 100%;
+        margin-top: 6px;
+    }
+
+    .students-sort-toggle-btn {
+        flex: 1 1 0;
+    }
+
     .students-bulk-btn {
         width: 100%;
         margin-top: 6px;
@@ -1284,6 +1303,11 @@ export default {
         width: 100%;
         margin-top: 6px;
     }
+}
+
+.students-sort-toggle-btn {
+    text-transform: none;
+    letter-spacing: 0;
 }
 
 .students-attendance-check-btn--open {

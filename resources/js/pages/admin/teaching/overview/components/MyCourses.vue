@@ -83,15 +83,25 @@
 
                     <!-- Schülerinnen -->
                     <v-card variant="outlined" class="mt-4">
-                        <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                        <v-card-title class="text-subtitle-1 d-flex align-center ga-2 flex-wrap">
                             <v-icon size="18">mdi-account-check</v-icon>
                             Ausgewählte Schülerinnen
                             <v-chip v-if="activeSelectedStudentsCount" size="x-small" color="primary" variant="tonal">
                                 {{ activeSelectedStudentsCount }}
                             </v-chip>
-                            <v-spacer />
-                            <v-btn size="x-small" color="error" variant="tonal" prepend-icon="mdi-minus" @click="removeAllStudents">Alle entfernen</v-btn>
-                            <v-btn size="x-small" color="primary" variant="tonal" prepend-icon="mdi-plus" @click="addAllStudents">Alle hinzufügen</v-btn>
+                            <div class="w-100 d-flex flex-wrap align-center justify-end ga-2 mt-1 course-edit-students-actions-row">
+                                <v-btn-toggle
+                                    v-model="students_sort_mode"
+                                    mandatory
+                                    density="compact"
+                                    color="primary"
+                                    class="course-edit-students-sort-toggle">
+                                    <v-btn size="x-small" value="class_last_name" class="course-edit-students-sort-toggle-btn">Klasse, Name</v-btn>
+                                    <v-btn size="x-small" value="last_name_first_name" class="course-edit-students-sort-toggle-btn">Name</v-btn>
+                                </v-btn-toggle>
+                                <v-btn size="x-small" color="error" variant="tonal" prepend-icon="mdi-minus" @click="removeAllStudents">Alle entfernen</v-btn>
+                                <v-btn size="x-small" color="primary" variant="tonal" prepend-icon="mdi-plus" @click="addAllStudents">Alle hinzufügen</v-btn>
+                            </div>
                         </v-card-title>
                         <v-divider />
                         <v-card-text class="pa-0">
@@ -205,6 +215,16 @@
                             <v-chip v-if="filteredImport116Students.length" size="x-small" color="primary" variant="tonal">
                                 {{ filteredImport116Students.length }}
                             </v-chip>
+                            <v-spacer />
+                            <v-btn-toggle
+                                v-model="students_sort_mode"
+                                mandatory
+                                density="compact"
+                                color="primary"
+                                class="course-edit-students-sort-toggle">
+                                <v-btn size="x-small" value="class_last_name" class="course-edit-students-sort-toggle-btn">Klasse, Name</v-btn>
+                                <v-btn size="x-small" value="last_name_first_name" class="course-edit-students-sort-toggle-btn">Name</v-btn>
+                            </v-btn-toggle>
                         </v-card-title>
                         <v-divider />
                         <v-card-text class="pa-0">
@@ -289,6 +309,7 @@ export default {
             },
 
             delete_level: 0,
+            students_sort_mode: 'class_last_name',
             student_search_string: '',
             student_search_results: [],
             student_search_loading: false,
@@ -305,16 +326,16 @@ export default {
         filteredImport116Students() {
             const list = this.import116_students_local || []
             const selected = this.data?.students_info || []
-            if (!selected.length) return list
+            if (!selected.length) return [...list].sort((a, b) => this.compareStudentsBySelectedSort(a, b))
 
             const selectedEmails = new Set(selected.map((student) => (student.email || '').toString().trim().toLowerCase()).filter((email) => email))
 
-            if (!selectedEmails.size) return list
+            if (!selectedEmails.size) return [...list].sort((a, b) => this.compareStudentsBySelectedSort(a, b))
 
             return list.filter((student) => {
                 const email = (student.email || '').toString().trim().toLowerCase()
                 return !email || !selectedEmails.has(email)
-            })
+            }).sort((a, b) => this.compareStudentsBySelectedSort(a, b))
         },
         sortedSelectedStudents() {
             const list = this.data?.students_info || []
@@ -323,19 +344,7 @@ export default {
                 const canceledB = this.isStudentCanceled(b) ? 1 : 0
                 if (canceledA !== canceledB) return canceledA - canceledB
 
-                const classA = (a.schoolclass || a.class || '').toString()
-                const classB = (b.schoolclass || b.class || '').toString()
-                const classCmp = classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
-                if (classCmp !== 0) return classCmp
-
-                const lastA = (a.last_name || '').toString()
-                const lastB = (b.last_name || '').toString()
-                const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
-                if (lastCmp !== 0) return lastCmp
-
-                const firstA = (a.first_name || '').toString()
-                const firstB = (b.first_name || '').toString()
-                return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
+                return this.compareStudentsBySelectedSort(a, b)
             })
         },
         activeSelectedStudentsCount() {
@@ -554,6 +563,31 @@ export default {
         studentNameClass(student) {
             return this.isStudentCanceled(student) ? 'student-name--canceled' : ''
         },
+        studentClassValue(student) {
+            return (student?.schoolclass || student?.class || '').toString()
+        },
+        compareStudentsBySelectedSort(a, b) {
+            const lastA = (a?.last_name || '').toString()
+            const lastB = (b?.last_name || '').toString()
+            const firstA = (a?.first_name || '').toString()
+            const firstB = (b?.first_name || '').toString()
+            const classA = this.studentClassValue(a)
+            const classB = this.studentClassValue(b)
+
+            if (this.students_sort_mode === 'last_name_first_name') {
+                const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
+                if (lastCmp !== 0) return lastCmp
+                const firstCmp = firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
+                if (firstCmp !== 0) return firstCmp
+                return classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
+            }
+
+            const classCmp = classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
+            if (classCmp !== 0) return classCmp
+            const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
+            if (lastCmp !== 0) return lastCmp
+            return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
+        },
 
         formatDateTime(value) {
             if (!value) return '-'
@@ -767,5 +801,21 @@ export default {
 .student-name--canceled {
     text-decoration: line-through;
     opacity: 0.75;
+}
+
+.course-edit-students-sort-toggle-btn {
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+@media (max-width: 900px) {
+    .course-edit-students-sort-toggle {
+        width: 100%;
+        margin-top: 4px;
+    }
+
+    .course-edit-students-sort-toggle-btn {
+        flex: 1 1 0;
+    }
 }
 </style>
