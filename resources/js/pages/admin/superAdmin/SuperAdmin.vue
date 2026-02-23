@@ -298,7 +298,7 @@ export default {
             return this.main_action == ''
         },
         usesOverviewTheme() {
-            return this.main_action == '' || this.main_action == 'schools'
+            return this.main_action == '' || this.main_action == 'schools' || this.main_action == 'schoolyears'
         },
         canAccessSuperAdminPage() {
             const roles = this.config?.roles || []

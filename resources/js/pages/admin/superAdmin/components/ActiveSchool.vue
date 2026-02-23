@@ -22,8 +22,8 @@
 
                 <template v-if="action == ''">
                     <div class="sa-school-block">
-                        <div class="sa-school-avatar">
-                            {{ (effectiveSchool.short_name || effectiveSchool.long_name || 'S').slice(0, 2).toUpperCase() }}
+                        <div class="sa-school-avatar" :title="effectiveSchool.short_name || effectiveSchool.long_name || 'Schule'">
+                            {{ effectiveSchool.short_name || effectiveSchool.long_name || 'Schule' }}
                         </div>
                         <div class="sa-school-copy">
                             <div class="sa-school-name">{{ effectiveSchool.long_name || '-' }}</div>
@@ -111,8 +111,8 @@
 
                 <div class="sa-list" v-if="school_admins && school_admins.length > 0">
                     <div v-for="admin in school_admins" :key="admin.id" class="sa-list-item sa-admin-item">
-                        <div class="sa-user-avatar">
-                            {{ ((admin.first_name || '').slice(0, 1) + (admin.last_name || '').slice(0, 1)).toUpperCase() }}
+                        <div class="sa-user-avatar" :class="{ 'is-short-name': !!adminBadgeShortName(admin) }" :title="adminBadgeText(admin)">
+                            {{ adminBadgeText(admin) }}
                         </div>
                         <div class="sa-admin-copy">
                             <div class="sa-item-title">{{ admin.last_name + ' ' + admin.first_name }}</div>
@@ -297,6 +297,15 @@ export default {
                 if (['0', 'false', 'no', 'nein'].includes(normalized)) return false
             }
             return fallback
+        },
+        adminBadgeShortName(admin) {
+            const shortName = String(admin?.short ?? admin?.short_name ?? '').trim()
+            return shortName || ''
+        },
+        adminBadgeText(admin) {
+            const shortName = this.adminBadgeShortName(admin)
+            if (shortName) return shortName
+            return ((admin?.first_name || '').slice(0, 1) + (admin?.last_name || '').slice(0, 1)).toUpperCase()
         },
     },
 }

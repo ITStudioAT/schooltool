@@ -180,8 +180,8 @@
                         </div>
 
                         <div class="user-block">
-                            <div class="user-avatar">
-                                {{ (config?.user?.first_name?.[0] || '') + (config?.user?.last_name?.[0] || '') }}
+                            <div class="user-avatar" :class="{ 'has-short-code': !!userBadgeShortName(config?.user) }" :title="userBadgeText(config?.user)">
+                                {{ userBadgeText(config?.user) }}
                             </div>
                             <div>
                                 <div class="user-name">{{ config?.user?.last_name + ' ' + config?.user?.first_name }}</div>
@@ -207,8 +207,8 @@
 
                         <div class="people-list" v-if="(school_admins || []).length > 0">
                             <div v-for="admin in school_admins" :key="admin.id" class="person-row">
-                                <div class="person-avatar">
-                                    {{ (admin?.first_name?.[0] || '') + (admin?.last_name?.[0] || '') }}
+                                <div class="person-avatar" :class="{ 'has-short-code': !!userBadgeShortName(admin) }" :title="userBadgeText(admin)">
+                                    {{ userBadgeText(admin) }}
                                 </div>
                                 <div class="person-body">
                                     <div class="person-name">{{ admin.last_name + ' ' + admin.first_name }}</div>
@@ -583,6 +583,15 @@ export default {
 
         user(id) {
             return this.school_admins.find((a) => a.id === id)
+        },
+        userBadgeShortName(user) {
+            const shortName = String(user?.short ?? user?.short_name ?? '').trim()
+            return shortName || ''
+        },
+        userBadgeText(user) {
+            const shortName = this.userBadgeShortName(user)
+            if (shortName) return shortName
+            return ((user?.first_name || '').slice(0, 1) + (user?.last_name || '').slice(0, 1)).toUpperCase()
         },
         localDateKey(date = new Date()) {
             const year = date.getFullYear()
@@ -1006,3 +1015,17 @@ export default {
 
 <style scoped src="../../../../css/admin-index-page.css"></style>
 
+<style scoped>
+.user-avatar.has-short-code,
+.person-avatar.has-short-code {
+    width: auto;
+    min-width: 38px;
+    max-width: 120px;
+    padding: 0 10px;
+    font-size: 0.72rem;
+    line-height: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+</style>

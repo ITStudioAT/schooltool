@@ -50,9 +50,6 @@
                                 <template #title>
                                     <div class="person-row schools-item-row">
                                         <div class="schools-item-main">
-                                            <div class="person-avatar schools-item-avatar">
-                                                {{ schoolInitials(item) }}
-                                            </div>
                                             <div class="person-body schools-item-copy">
                                                 <div class="person-name">{{ item.long_name }}</div>
                                                 <div class="person-roles">{{ item.short_name || '-' }}</div>
@@ -353,17 +350,6 @@ export default {
         isSelectedSchool(id) {
             return this.selected_schools.includes(id)
         },
-        schoolInitials(item) {
-            const short = String(item?.short_name || '').trim()
-            if (short) return short.slice(0, 2).toUpperCase()
-
-            const name = String(item?.long_name || '').trim()
-            if (!name) return 'SC'
-
-            const parts = name.split(/\s+/).filter(Boolean)
-            if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
-            return (parts[0][0] + parts[1][0]).toUpperCase()
-        },
     },
 }
 </script>
@@ -460,8 +446,7 @@ export default {
 
 .schools-item-main {
     display: flex;
-    align-items: center;
-    gap: 10px;
+    align-items: flex-start;
     min-width: 0;
 }
 
