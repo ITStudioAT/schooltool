@@ -1,6 +1,6 @@
 <template>
-    <div class="super-admin-page" :class="{ 'is-overview': isOverviewPage }" v-if="canAccessSuperAdminPage">
-        <div class="super-admin-bg" v-if="isOverviewPage">
+    <div class="super-admin-page" :class="{ 'is-overview': usesOverviewTheme }" v-if="canAccessSuperAdminPage">
+        <div class="super-admin-bg" v-if="usesOverviewTheme">
             <div class="super-admin-bg-image"></div>
             <div class="super-admin-bg-glow super-admin-bg-glow-left"></div>
             <div class="super-admin-bg-glow super-admin-bg-glow-right"></div>
@@ -43,7 +43,7 @@
                 flat
                 color="transparent"
                 class="d-flex flex-row ga-2 w-100 mb-2 super-admin-menu-row"
-                :class="{ 'super-admin-menu-row--overview': isOverviewPage, 'is-disabled': action != '' }"
+                :class="{ 'super-admin-menu-row--overview': usesOverviewTheme, 'is-disabled': action != '' }"
                 :disabled="action != ''">
             <its-menu-button
                 subtitle="Übersicht"
@@ -109,7 +109,7 @@
                 flat
                 color="transparent"
                 class="d-flex flex-row flex-wrap ga-2 w-100 mb-2 super-admin-menu-row"
-                :class="{ 'super-admin-menu-row--overview': isOverviewPage, 'is-disabled': action != '' }"
+                :class="{ 'super-admin-menu-row--overview': usesOverviewTheme, 'is-disabled': action != '' }"
                 :disabled="action != ''"
                 v-if="main_action == 'licences' && ['super_admin'].some((role) => config.roles.includes(role))">
             <its-menu-button
@@ -124,7 +124,7 @@
                 @click="licences_action = 'schools'" />
             </v-card>
 
-            <div class="super-admin-overview-shell" :class="{ 'super-admin-overview-shell--active': isOverviewPage }">
+            <div class="super-admin-overview-shell" :class="{ 'super-admin-overview-shell--active': usesOverviewTheme }">
                 <v-row class="w-100 ma-0" dense>
                     <ActiveSchool v-if="main_action == '' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
                     <Schools v-if="main_action == 'schools' && ['super_admin'].some((role) => config.roles.includes(role))" />
@@ -296,6 +296,9 @@ export default {
         ...mapWritableState(useAdminStore, ['config', 'action', 'main_action', 'impersonatable_schools', 'impersonatable_users', 'impersonatable_users_meta']),
         isOverviewPage() {
             return this.main_action == ''
+        },
+        usesOverviewTheme() {
+            return this.main_action == '' || this.main_action == 'schools'
         },
         canAccessSuperAdminPage() {
             const roles = this.config?.roles || []
