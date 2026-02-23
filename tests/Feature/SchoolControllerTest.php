@@ -702,7 +702,8 @@ test('super admin can load all school users and licence model roles for user lic
         ->and($response->json('active_role_filters'))->toBe([]);
 
     $roleStatuses = $response->json('role_statuses_by_user');
-    expect(data_get($roleStatuses, "{$matching->id}.teacher.is_active"))->toBeTrue()
+    expect(data_get($roleStatuses, "{$matching->id}.teacher.is_active"))->toBeFalse()
+        ->and(data_get($roleStatuses, "{$matching->id}.teacher.is_activated"))->toBeFalse()
         ->and(data_get($roleStatuses, "{$matching->id}.teacher.valid_until"))->toBeNull()
         ->and(data_get($roleStatuses, (string) $nonMatching->id))->toBe([]);
 
@@ -744,7 +745,10 @@ test('school licence users response marks outdated user role licences', function
 
     $schoolLicence->user_licence_assignments = [
         (string) $user->id => [
-            'teacher' => now()->subDay()->toDateString(),
+            'teacher' => [
+                'valid_until' => now()->subDay()->toDateString(),
+                'is_activated' => true,
+            ],
         ],
     ];
     $schoolLicence->save();
@@ -787,7 +791,10 @@ test('school licence users response ignores expired school licence when school l
 
     $schoolLicence->user_licence_assignments = [
         (string) $user->id => [
-            'teacher' => now()->addDay()->toDateString(),
+            'teacher' => [
+                'valid_until' => now()->addDay()->toDateString(),
+                'is_activated' => true,
+            ],
         ],
     ];
     $schoolLicence->save();
@@ -836,10 +843,16 @@ test('super admin can filter school licence users by expired user licences', fun
 
     $schoolLicence->user_licence_assignments = [
         (string) $outdatedUser->id => [
-            'teacher' => now()->subDay()->toDateString(),
+            'teacher' => [
+                'valid_until' => now()->subDay()->toDateString(),
+                'is_activated' => true,
+            ],
         ],
         (string) $activeUser->id => [
-            'teacher' => now()->addDay()->toDateString(),
+            'teacher' => [
+                'valid_until' => now()->addDay()->toDateString(),
+                'is_activated' => true,
+            ],
         ],
     ];
     $schoolLicence->save();
@@ -890,10 +903,16 @@ test('expired user licences filter ignores expired school licence when school li
 
     $schoolLicence->user_licence_assignments = [
         (string) $outdatedUser->id => [
-            'teacher' => now()->subDay()->toDateString(),
+            'teacher' => [
+                'valid_until' => now()->subDay()->toDateString(),
+                'is_activated' => true,
+            ],
         ],
         (string) $activeUser->id => [
-            'teacher' => now()->addDay()->toDateString(),
+            'teacher' => [
+                'valid_until' => now()->addDay()->toDateString(),
+                'is_activated' => true,
+            ],
         ],
     ];
     $schoolLicence->save();
@@ -994,7 +1013,10 @@ test('super admin can load school licence user role details', function () {
 
     $schoolLicence->user_licence_assignments = [
         (string) $user->id => [
-            'teacher' => '2026-12-31',
+            'teacher' => [
+                'valid_until' => '2026-12-31',
+                'is_activated' => true,
+            ],
         ],
     ];
     $schoolLicence->save();
@@ -1053,16 +1075,15 @@ test('super admin can save school licence user role details with valid until', f
         ->assertJsonPath('roles.0.name', 'teacher')
         ->assertJsonPath('roles.0.assigned', false)
         ->assertJsonPath('roles.1.name', 'admin')
-        ->assertJsonPath('roles.1.assigned', true)
-        ->assertJsonPath('roles.1.valid_until', '2026-10-15');
+        ->assertJsonPath('roles.1.assigned', false)
+        ->assertJsonPath('roles.1.valid_until', null);
 
     $user->refresh();
-    expect($user->hasRole('teacher'))->toBeFalse()
-        ->and($user->hasRole('admin'))->toBeTrue();
+    expect($user->hasRole('teacher'))->toBeTrue()
+        ->and($user->hasRole('admin'))->toBeFalse();
 
     $schoolLicence->refresh();
-    expect($schoolLicence->user_licence_assignments[(string) $user->id]['admin'] ?? null)->toBe('2026-10-15')
-        ->and(isset($schoolLicence->user_licence_assignments[(string) $user->id]['teacher']))->toBeFalse();
+    expect(isset($schoolLicence->user_licence_assignments[(string) $user->id]))->toBeFalse();
 });
 
 // ============================================================================

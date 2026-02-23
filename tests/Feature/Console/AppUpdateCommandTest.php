@@ -36,8 +36,12 @@ namespace Tests\Feature\Console {
             'teaching_admin',
             'materials_admin',
             'student',
+            'materials_moderator',
         ])->once();
         $install->shouldReceive('findOrCreateFolders')->once();
+        $install->shouldReceive('pruneOrphanPrivateSchoolFolders')
+            ->once()
+            ->andReturn(['deleted' => [], 'failed' => []]);
         $install->shouldReceive('clearDebugbar')->once();
         $records->shouldReceive('initRecords')->once();
 

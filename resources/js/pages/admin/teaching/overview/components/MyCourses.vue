@@ -60,15 +60,7 @@
         <!-- NEUER/EDIT KURS-->
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text>
-                <v-form
-                    ref="form"
-                    v-model="is_valid"
-                    @submit.prevent="
-                        $refs.form.validate().then((v) => {
-                            if (v.valid) save(data)
-                        })
-                    "
-                    class="mb-4">
+                <v-form ref="form" v-model="is_valid" class="mb-4">
                     <div class="text-caption text-text">Bitte geben Sie die Felder ein (* = Pflichtfeld)</div>
                     <v-text-field autofocus v-model="data.title" label="Bezeichnung *" :rules="[required(), maxLength(255)]" />
                     <v-select
@@ -87,6 +79,7 @@
                         </v-chip>
                     </v-chip-group>
                     <div class="text-caption text-text mt-1" v-if="data?.classes?.length">Ausgewählt: {{ data.classes.join(', ') }}</div>
+                </v-form>
 
                     <!-- Schülerinnen -->
                     <v-card variant="outlined" class="mt-4">
@@ -152,6 +145,58 @@
                         </v-card-text>
                     </v-card>
 
+                    <!-- Schülerinnen suchen (alle Klassen) -->
+                    <v-card variant="outlined" class="mt-4">
+                        <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                            <v-icon size="18">mdi-account-search</v-icon>
+                            Schülerinnen suchen
+                            <v-chip v-if="student_search_results.length" size="x-small" color="secondary" variant="tonal">
+                                {{ student_search_results.length }}
+                            </v-chip>
+                        </v-card-title>
+                        <v-divider />
+                        <v-card-text>
+                            <div class="d-flex ga-2">
+                                <v-text-field
+                                    v-model="student_search_string"
+                                    label="Name, Klasse oder E-Mail"
+                                    density="compact"
+                                    hide-details
+                                    variant="outlined"
+                                    clearable
+                                    @keyup.enter="searchStudents"
+                                    @click:clear="clearStudentSearch" />
+                                <v-btn
+                                    color="primary"
+                                    variant="tonal"
+                                    icon="mdi-magnify"
+                                    :loading="student_search_loading"
+                                    @click="searchStudents" />
+                            </div>
+                            <v-list density="compact" class="mt-1 pa-0" v-if="student_search_results.length">
+                                <v-list-item v-for="student in student_search_results" :key="student.id">
+                                    <div class="d-flex align-center ga-2 w-100">
+                                        <v-chip v-if="student.class" size="x-small" variant="tonal" color="secondary">
+                                            {{ student.class }}
+                                        </v-chip>
+                                        <div class="text-body-2">{{ student.last_name }}, {{ student.first_name }}</div>
+                                        <v-spacer />
+                                        <v-btn
+                                            size="x-small"
+                                            color="primary"
+                                            variant="tonal"
+                                            prepend-icon="mdi-plus"
+                                            :disabled="isStudentSelected(student)"
+                                            @click="addStudentFromSearch(student)">
+                                            Hinzufügen
+                                        </v-btn>
+                                    </div>
+                                </v-list-item>
+                            </v-list>
+                            <div v-else-if="student_search_done" class="text-caption text-medium-emphasis mt-2">Keine Schülerinnen gefunden.</div>
+                        </v-card-text>
+                    </v-card>
+
                     <!-- Neue Schülerinnen -->
                     <v-card variant="outlined" class="mt-4">
                         <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
@@ -191,9 +236,15 @@
 
                     <div class="d-flex flex-row align-center justify-space-between mt-4">
                         <v-btn color="warning" flat tile @click="abortNewCourse">Abbruch</v-btn>
-                        <v-btn color="success" flat tile type="submit" v-if="data.title && data?.classes?.length > 0 && data.teaching_schema_id">Speichern</v-btn>
+                        <v-btn
+                            color="success"
+                            flat
+                            tile
+                            v-if="data.title && data?.classes?.length > 0 && data.teaching_schema_id"
+                            @click="$refs.form.validate().then((v) => { if (v.valid) save(data) })">
+                            Speichern
+                        </v-btn>
                     </div>
-                </v-form>
             </v-card-text>
         </v-card>
     </ItsGridBox>
@@ -238,6 +289,10 @@ export default {
             },
 
             delete_level: 0,
+            student_search_string: '',
+            student_search_results: [],
+            student_search_loading: false,
+            student_search_done: false,
         }
     },
 
@@ -310,6 +365,33 @@ export default {
             const courseDateStore = useCourseDateStore()
             courseDateStore.selected_courseDate = null
         },
+        async searchStudents() {
+            if (!this.student_search_string?.trim()) return
+            this.student_search_loading = true
+            this.student_search_done = false
+            try {
+                const response = await axios.get('/api/admin/teaching/search116', {
+                    params: { search_string: this.student_search_string.trim() },
+                })
+                this.student_search_results = response?.data?.data || []
+                this.student_search_done = true
+            } finally {
+                this.student_search_loading = false
+            }
+        },
+
+        clearStudentSearch() {
+            this.student_search_string = ''
+            this.student_search_results = []
+            this.student_search_done = false
+        },
+
+        addStudentFromSearch(student) {
+            this.addStudent(student)
+            // Remove from search results so the list stays clean
+            this.student_search_results = this.student_search_results.filter((s) => s.id !== student.id)
+        },
+
         async selectStudents(classes) {
             if (!Array.isArray(classes) || !classes.length) {
                 this.import116_students_local = []
@@ -614,6 +696,7 @@ export default {
             this.selected_course_student = null
             this.action_2 = ''
             this.import116_students_local = []
+            this.clearStudentSearch()
             this.data = {
                 id: null,
                 title: '',
@@ -631,6 +714,7 @@ export default {
             this.selected_course_student = null
             this.action_2 = ''
             this.import116_students_local = []
+            this.clearStudentSearch()
 
             let freshCourse = course
             if (course?.id) {
@@ -660,6 +744,7 @@ export default {
             this.selected_course_student = null
             this.action_2 = ''
             this.import116_students_local = []
+            this.clearStudentSearch()
             this.action = ''
         },
         async deleteCourse(course) {

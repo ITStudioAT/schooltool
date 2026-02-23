@@ -369,7 +369,9 @@ describe('schoolInfos', function () {
         $school->licences()->attach([$licence1->id, $licence2->id]);
 
         $result = $this->service->schoolInfos($school->id);
-        $licencesData = $result['licences']->resolve();
+        $licencesData = is_array($result['licences'])
+            ? $result['licences']
+            : $result['licences']->resolve();
 
         expect($licencesData)->toBeArray()
             ->and($licencesData)->toHaveCount(2)
@@ -688,4 +690,3 @@ describe('deleteAdmin', function () {
         $this->service->deleteAdmin($user->id, true);
     })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'hat noch gebuchte Anmeldungen');
 });
-

@@ -64,15 +64,27 @@ test('get_log denies non super admin', function () {
 });
 
 test('get_log returns 404 when log is missing', function () {
-    if (file_exists($this->logPath)) {
-        @unlink($this->logPath);
+    $movedLogs = [];
+    foreach ((glob(storage_path('logs/laravel*.log')) ?: []) as $path) {
+        $tempPath = $path . '.pest-hidden-' . uniqid();
+        if (@rename($path, $tempPath)) {
+            $movedLogs[] = [$tempPath, $path];
+        }
     }
 
-    $this->actingAs($this->superAdmin, 'sanctum');
+    try {
+        $this->actingAs($this->superAdmin, 'sanctum');
 
-    $this->getJson('/api/admin/get_log')
-        ->assertStatus(404)
-        ->assertJsonFragment(['error' => 'Log-Datei nicht gefunden']);
+        $this->getJson('/api/admin/get_log')
+            ->assertStatus(404)
+            ->assertJsonFragment(['error' => 'Log-Datei nicht gefunden']);
+    } finally {
+        foreach ($movedLogs as [$tempPath, $originalPath]) {
+            if (file_exists($tempPath)) {
+                @rename($tempPath, $originalPath);
+            }
+        }
+    }
 });
 
 test('get_log returns content and headers', function () {

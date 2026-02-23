@@ -3,8 +3,6 @@
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\User;
-use App\Models\Licence;
-use App\Models\School;
 use App\Models\SchoolLicence;
 use App\Services\AdminNavigationService;
 use App\Services\UserService;

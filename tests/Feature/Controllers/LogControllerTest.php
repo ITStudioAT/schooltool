@@ -59,15 +59,28 @@ describe('getLog', function () {
         $user = User::factory()->create(['school_id' => $this->school->id]);
         $user->assignRole('super_admin');
 
-        // Ensure log file does not exist
-        if (file_exists($this->logPath)) {
-            unlink($this->logPath);
+        // The controller now also falls back to daily logs (laravel-YYYY-MM-DD.log).
+        // Temporarily move all matching log files away to make the test deterministic.
+        $movedLogs = [];
+        foreach ((glob(storage_path('logs/laravel*.log')) ?: []) as $path) {
+            $tempPath = $path . '.pest-hidden-' . uniqid();
+            if (@rename($path, $tempPath)) {
+                $movedLogs[] = [$tempPath, $path];
+            }
         }
 
-        $response = $this->actingAs($user)->getJson('/api/admin/get_log');
+        try {
+            $response = $this->actingAs($user)->getJson('/api/admin/get_log');
 
-        $response->assertStatus(404)
-            ->assertJson(['error' => 'Log-Datei nicht gefunden']);
+            $response->assertStatus(404)
+                ->assertJson(['error' => 'Log-Datei nicht gefunden']);
+        } finally {
+            foreach ($movedLogs as [$tempPath, $originalPath]) {
+                if (file_exists($tempPath)) {
+                    @rename($tempPath, $originalPath);
+                }
+            }
+        }
     });
 
     it('returns log content with default parameters', function () {

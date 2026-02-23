@@ -3,6 +3,8 @@
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
 use App\Models\MaterialCardClassification;
+use App\Models\Licence;
+use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\MaterialSubject;
 use App\Models\MaterialType;
@@ -24,6 +26,7 @@ beforeEach(function () {
         'admin',
         'teaching_admin',
         'materials_admin',
+        'materials_moderator',
         'teacher',
         'user',
     ])->each(fn(string $role) => Role::firstOrCreate([
@@ -48,8 +51,21 @@ beforeEach(function () {
     $this->admin = $makeUser('admin@materials.test', 'admin');
     $this->teachingAdmin = $makeUser('teaching-admin@materials.test', 'teaching_admin');
     $this->materialsAdmin = $makeUser('materials-admin@materials.test', 'materials_admin');
-    $this->teacher = $makeUser('teacher@materials.test', 'teacher');
+    $this->materialsModerator = $makeUser('materials-moderator@materials.test', 'materials_moderator');
+    $this->teacherRoleUser = $makeUser('teacher@materials.test', 'teacher');
+    $this->teacher = $this->materialsModerator;
     $this->regularUser = $makeUser('user@materials.test', 'user');
+
+    $materialsLicence = Licence::firstOrCreate(
+        ['name' => 'Materialientool'],
+        ['long_name' => 'Materialientool']
+    );
+
+    SchoolLicence::create([
+        'school_id' => $this->school->id,
+        'licence_id' => $materialsLicence->id,
+        'valid_until' => now()->addYear(),
+    ]);
 });
 
 test('requires authentication', function () {
@@ -68,15 +84,11 @@ test('allows admin role', function () {
         ]);
 });
 
-test('allows teaching_admin role', function () {
+test('denies teaching_admin role', function () {
     $this->actingAs($this->teachingAdmin, 'sanctum');
 
     $this->getJson('/api/admin/materials/config')
-        ->assertStatus(200)
-        ->assertJsonFragment([
-            'module' => 'materials',
-            'school_id' => $this->teachingAdmin->school_id,
-        ]);
+        ->assertStatus(403);
 });
 
 test('allows materials_admin role', function () {
@@ -90,15 +102,22 @@ test('allows materials_admin role', function () {
         ]);
 });
 
-test('allows teacher role', function () {
-    $this->actingAs($this->teacher, 'sanctum');
+test('allows materials_moderator role', function () {
+    $this->actingAs($this->materialsModerator, 'sanctum');
 
     $this->getJson('/api/admin/materials/config')
         ->assertStatus(200)
         ->assertJsonFragment([
             'module' => 'materials',
-            'school_id' => $this->teacher->school_id,
+            'school_id' => $this->materialsModerator->school_id,
         ]);
+});
+
+test('denies teacher role', function () {
+    $this->actingAs($this->teacherRoleUser, 'sanctum');
+
+    $this->getJson('/api/admin/materials/config')
+        ->assertStatus(403);
 });
 
 test('allows super_admin role via middleware trait handling', function () {
@@ -120,7 +139,7 @@ test('denies regular user role', function () {
 });
 
 test('config returns status options', function () {
-    $this->actingAs($this->teacher, 'sanctum');
+    $this->actingAs($this->materialsModerator, 'sanctum');
 
     $this->getJson('/api/admin/materials/config')
         ->assertStatus(200)
@@ -134,7 +153,7 @@ test('config returns status options', function () {
 });
 
 test('config exposes status management only for admin', function () {
-    $this->actingAs($this->teacher, 'sanctum');
+    $this->actingAs($this->materialsModerator, 'sanctum');
     $this->getJson('/api/admin/materials/config')
         ->assertStatus(200)
         ->assertJsonPath('can_manage_status_values', false);
@@ -146,7 +165,7 @@ test('config exposes status management only for admin', function () {
 });
 
 test('config exposes file settings and file setting management only for admin', function () {
-    $this->actingAs($this->teacher, 'sanctum');
+    $this->actingAs($this->materialsModerator, 'sanctum');
     $this->getJson('/api/admin/materials/config')
         ->assertStatus(200)
         ->assertJsonPath('can_manage_file_settings', false)
@@ -160,7 +179,7 @@ test('config exposes file settings and file setting management only for admin', 
 });
 
 test('config exposes user pagination settings for materials overview', function () {
-    $this->actingAs($this->teacher, 'sanctum');
+    $this->actingAs($this->materialsModerator, 'sanctum');
 
     $this->getJson('/api/admin/materials/config')
         ->assertStatus(200)
@@ -171,7 +190,7 @@ test('config exposes user pagination settings for materials overview', function 
 test('config returns default material type options from schooltool config', function () {
     Config::set('schooltool.materials_default_types', ['Arbeitsblatt', 'Test']);
 
-    $this->actingAs($this->teacher, 'sanctum');
+    $this->actingAs($this->materialsModerator, 'sanctum');
 
     $this->getJson('/api/admin/materials/config')
         ->assertStatus(200)
@@ -254,7 +273,7 @@ test('teacher cannot rename subject from another user taxonomy', function () {
         'schoolyear_id' => $this->schoolyear->id,
         'email' => 'other-teacher@materials.test',
     ]);
-    $otherTeacher->assignRole('teacher');
+    $otherTeacher->assignRole('materials_moderator');
 
     $foreignSubject = MaterialSubject::query()->create([
         'user_id' => $otherTeacher->id,
@@ -651,7 +670,7 @@ test('material types are separated per user', function () {
         'schoolyear_id' => $this->schoolyear->id,
         'email' => 'other-teacher-types@materials.test',
     ]);
-    $otherTeacher->assignRole('teacher');
+    $otherTeacher->assignRole('materials_moderator');
 
     $this->actingAs($otherTeacher, 'sanctum');
 

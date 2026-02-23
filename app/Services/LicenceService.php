@@ -506,7 +506,8 @@ class LicenceService
 
         $relevantRequiredRoles = array_values(array_intersect($userRoleNames, $requiredRoleNames));
         if (empty($relevantRequiredRoles)) {
-            return 'missing';
+            // None of the user's relevant roles require a per-user licence assignment.
+            return 'active';
         }
 
         $assignments = is_array($schoolLicence->user_licence_assignments) ? $schoolLicence->user_licence_assignments : [];

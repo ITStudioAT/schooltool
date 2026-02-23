@@ -25,11 +25,10 @@ class MaterialUserSettingsController extends Controller
 
     private function authorizeForMaterialUserSettings()
     {
-        if (! $authUser = $this->userHasRole(['admin', 'materials_admin', 'teaching_admin', 'teacher'])) {
+        if (! $authUser = $this->userHasRole(['admin', 'materials_admin', 'materials_moderator'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
         return $authUser;
     }
 }
-

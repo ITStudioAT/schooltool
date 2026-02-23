@@ -3,9 +3,11 @@
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolLicence;
+use App\Models\User;
 use App\Services\LicenceService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -212,6 +214,51 @@ describe('licenceStatus with school_licence_required', function () {
         ]);
 
         $result = $this->service->licenceStatus($school, 'app1');
+
+        expect($result)->toBe('active');
+    });
+});
+
+describe('toolAccessStatusForUser with per-user licences', function () {
+    it('returns active when user only has roles without per-user licence requirement', function () {
+        $school = School::factory()->create();
+        $user = User::factory()->create();
+
+        Role::findOrCreate('student', 'web');
+        $user->assignRole('student');
+
+        $licence = Licence::create([
+            'name' => 'Lehrertool',
+            'long_name' => 'Lehrertool',
+            'licence_model' => [
+                'school_licence_required' => true,
+                'affected_roles' => ['teacher', 'teaching_admin', 'student'],
+                'user_licence_required_by_role' => [
+                    'teacher' => true,
+                    'teaching_admin' => true,
+                    'student' => false,
+                ],
+                'user_licence_plans_by_role' => [],
+            ],
+        ]);
+
+        SchoolLicence::create([
+            'school_id' => $school->id,
+            'licence_id' => $licence->id,
+            'valid_until' => now()->addYear(),
+            'licence_model' => [
+                'school_licence_required' => true,
+                'affected_roles' => ['teacher', 'teaching_admin', 'student'],
+                'user_licence_required_by_role' => [
+                    'teacher' => true,
+                    'teaching_admin' => true,
+                    'student' => false,
+                ],
+                'user_licence_plans_by_role' => [],
+            ],
+        ]);
+
+        $result = $this->service->toolAccessStatusForUser($user, $school, 'Lehrertool');
 
         expect($result)->toBe('active');
     });
