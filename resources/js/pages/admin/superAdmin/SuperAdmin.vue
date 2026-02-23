@@ -1,7 +1,50 @@
 <template>
-    <v-container fluid class="ma-0 w-100 pa-2" v-if="canAccessSuperAdminPage">
-        <!-- Menüleiste oben -->
-        <v-card tile flat color="transparent" class="d-flex flex-row ga-2 w-100 mb-2" :disabled="action != ''">
+    <div class="super-admin-page" :class="{ 'is-overview': isOverviewPage }" v-if="canAccessSuperAdminPage">
+        <div class="super-admin-bg" v-if="isOverviewPage">
+            <div class="super-admin-bg-image"></div>
+            <div class="super-admin-bg-glow super-admin-bg-glow-left"></div>
+            <div class="super-admin-bg-glow super-admin-bg-glow-right"></div>
+        </div>
+
+        <v-container fluid class="ma-0 w-100 pa-2 super-admin-page-inner">
+            <header class="super-admin-header" v-if="isOverviewPage">
+                <div class="super-admin-brand">
+                    <div class="super-admin-brand-badge">
+                        <v-icon size="20" color="white">mdi-shield-crown</v-icon>
+                    </div>
+                    <div>
+                        <div class="super-admin-brand-eyebrow">Admin Dashboard</div>
+                        <h1 class="super-admin-brand-title">Super-Admin</h1>
+                        <p class="super-admin-brand-subtitle">
+                            Verwaltung von Schulen, Schuljahren, Lizenzen und Benutzern in einer Oberfläche.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="super-admin-header-meta">
+                    <div class="super-admin-meta-pill" v-if="config?.selected_school?.long_name || config?.selected_school?.short_name">
+                        <span>Schule</span>
+                        <strong>{{ config?.selected_school?.long_name || config?.selected_school?.short_name }}</strong>
+                    </div>
+                    <div class="super-admin-meta-pill" v-if="config?.version">
+                        <span>Version</span>
+                        <strong>{{ config.version }}</strong>
+                    </div>
+                    <div class="super-admin-meta-pill" v-if="isImpersonating">
+                        <span>Status</span>
+                        <strong>Übernahme aktiv</strong>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Menüleiste oben -->
+            <v-card
+                tile
+                flat
+                color="transparent"
+                class="d-flex flex-row ga-2 w-100 mb-2 super-admin-menu-row"
+                :class="{ 'super-admin-menu-row--overview': isOverviewPage, 'is-disabled': action != '' }"
+                :disabled="action != ''">
             <its-menu-button
                 subtitle="Übersicht"
                 icon="mdi-home"
@@ -60,14 +103,15 @@
                 @click="main_action = 'log'"
                 v-if="['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
             <its-menu-button subtitle="Horizon" icon="mdi-horizontal-rotate-clockwise" color="secondary" @click="moveToHorizon" />
-        </v-card>
-        <v-card
-            tile
-            flat
-            color="transparent"
-            class="d-flex flex-row flex-wrap ga-2 w-100 mb-2"
-            :disabled="action != ''"
-            v-if="main_action == 'licences' && ['super_admin'].some((role) => config.roles.includes(role))">
+            </v-card>
+            <v-card
+                tile
+                flat
+                color="transparent"
+                class="d-flex flex-row flex-wrap ga-2 w-100 mb-2 super-admin-menu-row"
+                :class="{ 'super-admin-menu-row--overview': isOverviewPage, 'is-disabled': action != '' }"
+                :disabled="action != ''"
+                v-if="main_action == 'licences' && ['super_admin'].some((role) => config.roles.includes(role))">
             <its-menu-button
                 subtitle="Alle Lizenzen"
                 icon="mdi-home"
@@ -78,20 +122,24 @@
                 icon="mdi-card-account-details-outline"
                 :color="licences_action == 'schools' ? 'primary' : 'secondary'"
                 @click="licences_action = 'schools'" />
-        </v-card>
-        <v-row class="w-100" dense>
-            <ActiveSchool v-if="main_action == '' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
-            <Schools v-if="main_action == 'schools' && ['super_admin'].some((role) => config.roles.includes(role))" />
-            <Schoolyears v-if="main_action == 'schoolyears' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
-            <Licences v-if="main_action == 'licences' && licences_action == 'overview' && ['super_admin'].some((role) => config.roles.includes(role))" />
-            <LicenceSchools v-if="main_action == 'licences' && licences_action == 'schools' && ['super_admin'].some((role) => config.roles.includes(role))" />
-            <Roles v-if="main_action == 'roles' && ['super_admin'].some((role) => config.roles.includes(role))" />
-            <Users v-if="main_action == 'users' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
-            <TeacherOverview v-if="main_action == 'teachers_overview' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
-            <Teachers v-if="main_action == 'teachers' && (config.roles.includes('super_admin') || config.roles.includes('admin'))" />
-            <TeachersList v-if="main_action == 'teachers_list' && (config.roles.includes('super_admin') || config.roles.includes('admin'))" />
-            <Log v-if="main_action == 'log' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
-        </v-row>
+            </v-card>
+
+            <div class="super-admin-overview-shell" :class="{ 'super-admin-overview-shell--active': isOverviewPage }">
+                <v-row class="w-100 ma-0" dense>
+                    <ActiveSchool v-if="main_action == '' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
+                    <Schools v-if="main_action == 'schools' && ['super_admin'].some((role) => config.roles.includes(role))" />
+                    <Schoolyears v-if="main_action == 'schoolyears' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
+                    <Licences v-if="main_action == 'licences' && licences_action == 'overview' && ['super_admin'].some((role) => config.roles.includes(role))" />
+                    <LicenceSchools v-if="main_action == 'licences' && licences_action == 'schools' && ['super_admin'].some((role) => config.roles.includes(role))" />
+                    <Roles v-if="main_action == 'roles' && ['super_admin'].some((role) => config.roles.includes(role))" />
+                    <Users v-if="main_action == 'users' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
+                    <TeacherOverview v-if="main_action == 'teachers_overview' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
+                    <Teachers v-if="main_action == 'teachers' && (config.roles.includes('super_admin') || config.roles.includes('admin'))" />
+                    <TeachersList v-if="main_action == 'teachers_list' && (config.roles.includes('super_admin') || config.roles.includes('admin'))" />
+                    <Log v-if="main_action == 'log' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
+                </v-row>
+            </div>
+        </v-container>
 
         <v-dialog v-model="impersonation_dialog" max-width="720">
             <v-card>
@@ -200,7 +248,7 @@
                 </v-card-actions>
             </v-card>
         </v-dialog>
-    </v-container>
+    </div>
 </template>
 
 <script>
@@ -246,6 +294,9 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'action', 'main_action', 'impersonatable_schools', 'impersonatable_users', 'impersonatable_users_meta']),
+        isOverviewPage() {
+            return this.main_action == ''
+        },
         canAccessSuperAdminPage() {
             const roles = this.config?.roles || []
             return ['super_admin', 'admin'].some((role) => roles.includes(role)) || this.isImpersonating
@@ -361,3 +412,226 @@ export default {
     },
 }
 </script>
+
+<style scoped>
+.super-admin-page {
+    position: relative;
+    min-height: 100%;
+}
+
+.super-admin-page.is-overview {
+    background: #101d2a;
+}
+
+.super-admin-bg {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.super-admin-bg-image {
+    position: absolute;
+    inset: 0;
+    opacity: 1;
+    background: #101d2a;
+}
+
+.super-admin-bg-glow {
+    display: none;
+}
+
+.super-admin-bg-glow-left {
+    width: 360px;
+    height: 360px;
+    left: -80px;
+    top: 180px;
+    background: radial-gradient(circle, rgba(255, 198, 124, 0.65), rgba(255, 198, 124, 0));
+}
+
+.super-admin-bg-glow-right {
+    width: 420px;
+    height: 420px;
+    right: -120px;
+    top: 120px;
+    background: radial-gradient(circle, rgba(88, 143, 194, 0.55), rgba(88, 143, 194, 0));
+}
+
+.super-admin-page-inner {
+    position: relative;
+    z-index: 1;
+}
+
+.super-admin-page.is-overview .super-admin-page-inner {
+    max-width: 1160px;
+    margin: 0 auto;
+}
+
+.super-admin-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 12px;
+    border-radius: 20px;
+    padding: 14px 16px;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.68));
+    box-shadow: 0 18px 48px rgba(16, 38, 58, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.65);
+    backdrop-filter: blur(10px);
+}
+
+.super-admin-brand {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    min-width: 0;
+}
+
+.super-admin-brand-badge {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    background: linear-gradient(180deg, #f68a2e, #e16f16);
+    box-shadow: 0 8px 18px rgba(208, 98, 18, 0.28);
+}
+
+.super-admin-brand-eyebrow {
+    color: rgba(16, 38, 58, 0.88);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.super-admin-brand-title {
+    margin: 0;
+    color: #112536;
+    font-size: 1.25rem;
+    line-height: 1.05;
+    letter-spacing: 0.01em;
+}
+
+.super-admin-brand-subtitle {
+    margin: 8px 0 0;
+    color: rgba(18, 40, 60, 0.9);
+    font-size: 0.88rem;
+    line-height: 1.35;
+    max-width: 62ch;
+}
+
+.super-admin-header-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.super-admin-meta-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 11px;
+    border-radius: 999px;
+    border: 1px solid rgba(16, 38, 58, 0.12);
+    background: rgba(255, 255, 255, 0.82);
+    color: #1d3448;
+    max-width: 100%;
+}
+
+.super-admin-meta-pill span {
+    font-size: 0.75rem;
+    opacity: 0.9;
+}
+
+.super-admin-meta-pill strong {
+    font-size: 0.82rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 280px;
+}
+
+.super-admin-menu-row {
+    flex-wrap: wrap;
+}
+
+.super-admin-menu-row--overview {
+    border-radius: 18px;
+    padding: 10px;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.68));
+    box-shadow: 0 18px 48px rgba(16, 38, 58, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.65);
+    backdrop-filter: blur(10px);
+}
+
+.super-admin-menu-row.is-disabled {
+    opacity: 0.7;
+}
+
+.super-admin-menu-row--overview :deep(.v-card) {
+    border-radius: 16px !important;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    box-shadow: 0 18px 48px rgba(16, 38, 58, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.65);
+    backdrop-filter: blur(10px);
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.super-admin-menu-row--overview :deep(.v-card.bg-secondary) {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.68)) !important;
+    color: #163146 !important;
+}
+
+.super-admin-menu-row--overview :deep(.v-card.bg-primary) {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.8)) !important;
+    border-color: rgba(57, 73, 171, 0.28) !important;
+    color: #2f41a8 !important;
+    box-shadow: 0 18px 48px rgba(16, 38, 58, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.75), 0 0 0 2px rgba(57, 73, 171, 0.06);
+}
+
+.super-admin-menu-row--overview :deep(.v-card:hover) {
+    transform: translateY(-1px);
+    box-shadow: 0 18px 48px rgba(16, 38, 58, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 8px 18px rgba(16, 38, 58, 0.08);
+}
+
+.super-admin-menu-row--overview :deep(.v-card .v-icon) {
+    opacity: 0.95;
+}
+
+.super-admin-menu-row--overview :deep(.v-card.bg-primary .v-icon),
+.super-admin-menu-row--overview :deep(.v-card.bg-primary .text-caption),
+.super-admin-menu-row--overview :deep(.v-card.bg-primary .text-body-2) {
+    color: #2f41a8 !important;
+}
+
+.super-admin-overview-shell--active {
+    padding: 0;
+}
+
+@media (max-width: 960px) {
+    .super-admin-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .super-admin-header-meta {
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 640px) {
+    .super-admin-header {
+        border-radius: 16px;
+        padding: 12px;
+    }
+
+    .super-admin-menu-row--overview :deep(.v-card) {
+        width: 132px !important;
+        height: 64px !important;
+    }
+}
+</style>
