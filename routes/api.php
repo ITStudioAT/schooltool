@@ -178,6 +178,11 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/users20/toggle_is_active', [\App\Http\Controllers\Admin\UserController::class, 'toggleIsActive']);
     });
 
+    /* SANCTUM - admin, materials_admin, materials_moderator */
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,materials_admin,materials_moderator'])->group(function () {
+        Route::apiResource('/admin/groups', \App\Http\Controllers\Admin\GroupController::class)->only(['index', 'store', 'update', 'destroy']);
+    });
+
 
     /* SANCTUM - admin, tutoring_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:admin,tutoring_admin'])->group(function () {});

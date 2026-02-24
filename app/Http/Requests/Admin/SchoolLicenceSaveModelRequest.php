@@ -33,8 +33,8 @@ class SchoolLicenceSaveModelRequest extends FormRequest
             'licence_model.user_licence_plans_by_role.*' => ['array'],
             'licence_model.user_licence_plans_by_role.*.*' => ['array'],
             'licence_model.user_licence_plans_by_role.*.*.id' => ['sometimes', 'integer', 'min:1'],
-            'licence_model.user_licence_plans_by_role.*.*.text' => ['required', 'string', 'max:255'],
-            'licence_model.user_licence_plans_by_role.*.*.price_per_year' => ['required', 'string', 'max:255'],
+            'licence_model.user_licence_plans_by_role.*.*.text' => ['nullable', 'string', 'max:255'],
+            'licence_model.user_licence_plans_by_role.*.*.price_per_year' => ['nullable', 'string', 'max:255'],
         ];
     }
 }

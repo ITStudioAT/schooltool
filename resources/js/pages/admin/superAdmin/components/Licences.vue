@@ -392,8 +392,13 @@ export default {
         async saveCurrentLicenceModel() {
             if (!this.selectedLicenceId || !this.currentLicenceModel) return
             this.is_licence_model_valid = false
-            await this.$refs.licenceModelForm?.validate()
-            if (!this.is_licence_model_valid) return
+            const validationResult = await this.$refs.licenceModelForm?.validate()
+            const isValid =
+                typeof validationResult === 'object' && validationResult !== null && Object.prototype.hasOwnProperty.call(validationResult, 'valid')
+                    ? !!validationResult.valid
+                    : validationResult !== false
+            this.is_licence_model_valid = isValid
+            if (!isValid) return
 
             const payload = this.normalizeLicenceModel(this.currentLicenceModel)
             const saved = await this.licenceStore.saveLicenceModel(this.selectedLicenceId, payload)

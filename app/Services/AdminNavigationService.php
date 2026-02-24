@@ -39,6 +39,7 @@ class AdminNavigationService
         $tutoringLicenceStatus = $this->toolAccessStatus($user, 'Nachhilfetool', ['admin', 'tutoring_admin', 'teacher']);
         $teachingLicenceStatus = $this->toolAccessStatus($user, 'Lehrertool', ['admin', 'teaching_admin', 'teacher']);
         $materialsLicenceStatus = $this->toolAccessStatus($user, 'Materialientool', ['admin', 'materials_admin', 'materials_moderator']);
+        $groupsFeatureLicensed = in_array($teachingLicenceStatus, ['active'], true) || in_array($materialsLicenceStatus, ['active'], true);
 
         // ANMELDESYSTEM
         if ($isSuperAdmin || $this->userHasRole(['admin', 'register_admin'])) {
@@ -87,6 +88,16 @@ class AdminNavigationService
                     'is_active' => ($materialsLicenceStatus === 'active' && config('schooltool.materials_active', false)),
                 ] + $this->moduleStatusMeta($materialsLicenceStatus, 'Materialien');
             }
+        }
+
+        // GROUPS (visible if at least one valid licence exists: Lehrertool OR Materialientool)
+        if (($isSuperAdmin || $this->userHasRole(['admin', 'materials_admin', 'materials_moderator'])) && $groupsFeatureLicensed) {
+            $menu[] = [
+                'title' => 'Gruppen',
+                'icon' => 'mdi-account-group-outline',
+                'to' => '/admin/groups',
+                'is_active' => true,
+            ];
         }
 
 

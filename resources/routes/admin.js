@@ -20,6 +20,7 @@ import Tutoring from '@/pages/admin/tutoring/Tutoring.vue'
 import Teaching from '@/pages/admin/teaching/Teaching.vue'
 import Materials from '@/pages/admin/materials/Materials.vue'
 import MaterialsSubjectsOverview from '@/pages/admin/materials/MaterialsSubjectsOverview.vue'
+import Groups from '@/pages/admin/groups/Groups.vue'
 
 const routes = [
     { path: '/admin', component: Index },
@@ -38,6 +39,7 @@ const routes = [
     { path: '/admin/tutoring', component: Tutoring },
     { path: '/admin/teaching', component: Teaching },
     { path: '/admin/materials', component: Materials },
+    { path: '/admin/groups', component: Groups },
     { path: '/admin/materials/subjects-overview', component: MaterialsSubjectsOverview },
 ]
 

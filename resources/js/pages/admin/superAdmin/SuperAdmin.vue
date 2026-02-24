@@ -92,7 +92,7 @@
                 v-if="config.roles.includes('super_admin') && !isImpersonating" />
             <its-menu-button
                 subtitle="Lehrer"
-                icon="mdi-school"
+                icon="mdi-account-tie"
                 :color="main_action == 'teachers_overview' ? 'primary' : 'secondary'"
                 @click="main_action = 'teachers_overview'"
                 v-if="['super_admin', 'admin'].some((role) => config.roles.includes(role))" />

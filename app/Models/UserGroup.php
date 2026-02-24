@@ -1,0 +1,45 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+
+class UserGroup extends Model
+{
+    public const TYPE_SCHOOL = 'school';
+    public const TYPE_MATERIALS = 'materials';
+    public const TYPE_OWN = 'own';
+
+    public const TYPES = [
+        self::TYPE_SCHOOL,
+        self::TYPE_MATERIALS,
+        self::TYPE_OWN,
+    ];
+
+    protected $fillable = [
+        'school_id',
+        'type',
+        'name',
+        'description',
+        'created_by_user_id',
+    ];
+
+    public function school(): BelongsTo
+    {
+        return $this->belongsTo(School::class);
+    }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
+    public function members(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'user_group_members')
+            ->withPivot(['added_by_user_id'])
+            ->withTimestamps();
+    }
+}

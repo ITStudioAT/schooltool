@@ -25,6 +25,10 @@ class RouteService
         if (! $user) return RouteResult::NOT_EXISTS;
         if (! ($user->hasAnyRole($roles) || $user->hasRole('super_admin'))) return RouteResult::NOT_ALLOWED;
 
+        if (str_starts_with($fullPath, '/admin/groups') && ! $this->hasValidGroupsLicence($user)) {
+            return RouteResult::NOT_ALLOWED;
+        }
+
         $requiredLicence = $this->requiredLicenceForPath($fullPath);
         if (! $requiredLicence) {
             return RouteResult::ALLOWED;
@@ -58,6 +62,18 @@ class RouteService
         }
 
         return null;
+    }
+
+    private function hasValidGroupsLicence($user): bool
+    {
+        $school = $user?->selectedSchool;
+        if (! $school) {
+            return false;
+        }
+
+        $licenceService = app(LicenceService::class);
+        return $licenceService->licenceStatus($school, 'Lehrertool') === 'active'
+            || $licenceService->licenceStatus($school, 'Materialientool') === 'active';
     }
 
     private function configFlagForLicence(string $licenceName): ?string
