@@ -15,7 +15,7 @@
                         rounded="xl"
                         class="sa-switch-btn"
                         prepend-icon="mdi-swap-horizontal"
-                        @click="action = 'switch_school'">
+                        @click="openSwitchSchool">
                         Schule wechseln
                     </v-btn>
                 </div>
@@ -55,6 +55,22 @@
                 <div v-else-if="action == 'switch_school'" class="sa-switch-shell">
                     <div class="sa-inline-banner">Schule wechseln</div>
                     <v-form ref="form" v-model="is_valid" @submit.prevent="doSwitch(selected_school_id)">
+                        <v-text-field
+                            v-model="switch_email"
+                            label="E-Mail"
+                            variant="outlined"
+                            hide-details="auto"
+                            class="mt-3"
+                            prepend-inner-icon="mdi-email-outline"
+                            @keydown.enter.prevent="refreshSwitchableSchools" />
+
+                        <div class="d-flex flex-row align-center justify-space-between ga-2 mt-2">
+                            <div class="text-caption">Schulen zu dieser E-Mail laden</div>
+                            <v-btn type="button" color="secondary" variant="tonal" rounded="lg" prepend-icon="mdi-refresh" @click="refreshSwitchableSchools">
+                                Liste laden
+                            </v-btn>
+                        </div>
+
                         <v-autocomplete
                             v-model="selected_school_id"
                             :items="switchable_schools"
@@ -149,7 +165,8 @@ export default {
         this.licenceStore = useLicenceStore()
 
         if (this.config.roles.includes('super_admin')) {
-            await this.schoolStore.loadSwitchableSchools()
+            this.switch_email = this.currentUserEmail
+            await this.schoolStore.loadSwitchableSchools(this.switch_email)
             if (this.config.selected_school.id) await this.schoolStore.loadSchoolInfos(this.config.selected_school.id)
             await this.licenceStore.loadLicences()
             await this.adminStore.loadRoles()
@@ -172,6 +189,7 @@ export default {
             selected_roles: [],
             admin: null,
             is_delete_complete: false,
+            switch_email: '',
         }
     },
 
@@ -188,9 +206,32 @@ export default {
         expiredLicenceCount() {
             return (this.school_licences || []).filter((licence) => !this.isLicenceActive(licence)).length
         },
+        currentUserEmail() {
+            return String(this.config?.user?.email || '').trim()
+        },
     },
 
     methods: {
+        async openSwitchSchool() {
+            this.switch_email = this.currentUserEmail
+            this.selected_school_id = null
+            this.action = 'switch_school'
+            await this.refreshSwitchableSchools()
+        },
+        async refreshSwitchableSchools() {
+            const ok = await this.schoolStore.loadSwitchableSchools(this.switch_email)
+            if (!ok) return false
+
+            if (!Array.isArray(this.switchable_schools)) {
+                this.selected_school_id = null
+                return true
+            }
+
+            const selectedStillExists = this.switchable_schools.some((school) => school?.id === this.selected_school_id)
+            if (!selectedStillExists) this.selected_school_id = null
+
+            return true
+        },
         async doAddAdmin(data) {
             this.is_valid = false
             await this.$refs.form.validate()
@@ -226,8 +267,9 @@ export default {
 
         async doSwitch(school_id) {
             if (!school_id) return
-            await this.schoolStore.switchSchool(school_id)
+            if (!(await this.schoolStore.switchSchool(school_id, this.switch_email))) return
             await this.adminStore.loadConfig()
+            this.switch_email = this.currentUserEmail
             await this.schoolStore.loadSchoolInfos(this.config.selected_school.id)
 
             this.action = ''

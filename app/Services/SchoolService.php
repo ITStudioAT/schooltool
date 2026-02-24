@@ -519,10 +519,10 @@ class SchoolService
         }
     }
 
-    public function loadSwitchableSchools($user)
+    public function loadSwitchableSchools($user, ?string $email = null)
     {
-
-        $users = User::where('email', $user->email)->get();
+        $email = is_string($email) && trim($email) !== '' ? trim($email) : $user->email;
+        $users = User::where('email', $email)->get();
         $ids = $users->pluck('id');
 
         $schools = User::whereIn('id', $ids)
@@ -537,10 +537,11 @@ class SchoolService
         return $schools;
     }
 
-    public function switchSchool($user, $school_id)
+    public function switchSchool($user, $school_id, ?string $email = null)
     {
+        $email = is_string($email) && trim($email) !== '' ? trim($email) : $user->email;
         // Prüfen, ob es den User mit der Schule gibt
-        $targetUser = User::where('email', $user->email)
+        $targetUser = User::where('email', $email)
             ->where('school_id', $school_id)
             ->first();
 

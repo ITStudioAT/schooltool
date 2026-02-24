@@ -24,6 +24,7 @@ class SchoolSwitchSchoolRequest extends FormRequest
     {
         return [
             'school_id' => ['required', 'integer', 'exists:schools,id'],
+            'email' => ['nullable', 'string', 'email', 'max:255'],
         ];
     }
 }

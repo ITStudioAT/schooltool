@@ -50,13 +50,14 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
             }
         },
 
-        async loadSwitchableSchools() {
+        async loadSwitchableSchools(email = null) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
-            const search_string = this.search_string
             try {
-                const response = await axios.post(`/api/admin/schools/load_switchable_schools`, {})
+                const payload = {}
+                if (typeof email === 'string' && email.trim() !== '') payload.email = email.trim()
+                const response = await axios.post(`/api/admin/schools/load_switchable_schools`, payload)
                 this.switchable_schools = response.data
                 return true
             } catch (error) {
@@ -72,13 +73,14 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
             }
         },
 
-        async switchSchool(school_id) {
+        async switchSchool(school_id, email = null) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
-            const search_string = this.search_string
             try {
-                const response = await axios.post(`/api/admin/schools/switch_school`, { school_id })
+                const payload = { school_id }
+                if (typeof email === 'string' && email.trim() !== '') payload.email = email.trim()
+                const response = await axios.post(`/api/admin/schools/switch_school`, payload)
                 notification.notify({
                     message: 'Schule gewechselt.',
                     type: 'success',

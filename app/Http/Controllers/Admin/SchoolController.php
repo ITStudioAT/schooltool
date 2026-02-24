@@ -201,7 +201,11 @@ class SchoolController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $schools = $service->loadSwitchableSchools($auth_user);
+        $validated = $request->validate([
+            'email' => ['nullable', 'string', 'email', 'max:255'],
+        ]);
+
+        $schools = $service->loadSwitchableSchools($auth_user, $validated['email'] ?? null);
 
         return response()->json(SchoolResource::collection($schools), 200);
     }
@@ -214,7 +218,11 @@ class SchoolController extends Controller
 
         $validated = $request->validated();
 
-        $auth_user = $service->switchSchool($auth_user, $validated['school_id']);
+        $auth_user = $service->switchSchool(
+            $auth_user,
+            $validated['school_id'],
+            $validated['email'] ?? null
+        );
         return response()->noContent();
     }
 
