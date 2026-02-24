@@ -2,7 +2,6 @@
     <v-row align="center" class="mb-4">
         <v-col cols="12" md="8">
             <div class="text-h4 font-weight-bold mb-2">Übersicht</div>
-            <div class="text-subtitle-1 subline">Hier siehst du alle aktuell gespeicherten Materialien.</div>
         </v-col>
 
         <v-col cols="12" md="4" class="d-flex justify-md-end align-center flex-wrap ga-2">

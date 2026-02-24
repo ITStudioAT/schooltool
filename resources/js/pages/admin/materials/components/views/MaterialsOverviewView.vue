@@ -94,6 +94,8 @@
                 :items="subjectsContentsOverviewItems"
                 :action-busy="isLoading || isDeletingId !== null || isSavingEdit"
                 :enable-share-buttons="enableShareButtons"
+                :show-share-indicators="enableShareButtons"
+                :share-indicator-color-fn="shareIndicatorColor"
                 :status-color-fn="statusColor"
                 :status-label-fn="statusLabel"
                 :subject-group-style-fn="subjectGroupStyle"
@@ -701,12 +703,14 @@
         </v-card>
     </v-dialog>
 
-    <MaterialShareDummyDialog
-        v-model="shareDummyDialogOpen"
-        :target="shareDummyTarget"
-        :assignments="shareDummyAssignments"
-        :loading="shareDummyAssignmentsLoading"
-        :error="shareDummyAssignmentsError" />
+    <MaterialShareDialog
+        v-model="shareDialogOpen"
+        :target="shareTarget"
+        :assignments="shareAssignments"
+        :loading="shareAssignmentsLoading"
+        :error="shareAssignmentsError"
+        @reload-assignments="loadShareAssignments"
+        @shares-changed="loadShareIndicators" />
 
     <MaterialTypeManagerDialog v-model="typeManagerDialogOpen" />
 </template>
@@ -729,7 +733,7 @@ import MaterialsOverviewPagination from '../overview/MaterialsOverviewPagination
 import MaterialsOverviewSortBar from '../overview/MaterialsOverviewSortBar.vue'
 import MaterialsSubjectsContentsTree from '../overview/MaterialsSubjectsContentsTree.vue'
 import MaterialDetailDialog from '../overview/dialogs/MaterialDetailDialog.vue'
-import MaterialShareDummyDialog from '../overview/dialogs/MaterialShareDummyDialog.vue'
+import MaterialShareDialog from '../overview/dialogs/MaterialShareDialog.vue'
 
 const FilePond = vueFilePond(FilePondPluginFileValidateType)
 
@@ -785,7 +789,7 @@ export default {
         MaterialsOverviewSortBar,
         MaterialsSubjectsContentsTree,
         MaterialDetailDialog,
-        MaterialShareDummyDialog,
+        MaterialShareDialog,
     },
     data() {
         return {
@@ -843,11 +847,13 @@ export default {
             textAttachmentEditorTitle: '',
             textAttachmentEditorBodyHtml: '',
             textAttachmentEditorError: '',
-            shareDummyDialogOpen: false,
-            shareDummyAssignmentsLoading: false,
-            shareDummyAssignmentsError: '',
-            shareDummyAssignments: [],
-            shareDummyTarget: {
+            shareDialogOpen: false,
+            shareAssignmentsLoading: false,
+            shareAssignmentsError: '',
+            shareAssignments: [],
+            shareIndicatorsLoading: false,
+            shareIndicatorMap: {},
+            shareTarget: {
                 level: '',
                 id: null,
                 label: '',
@@ -1363,7 +1369,7 @@ export default {
     methods: {
         openShareDialog(target = {}) {
             if (!this.enableShareButtons) return
-            this.shareDummyTarget = {
+            this.shareTarget = {
                 level: String(target?.level || '').trim(),
                 id: Number.isFinite(Number(target?.id)) ? Number(target.id) : null,
                 label: String(target?.label || '').trim(),
@@ -1376,12 +1382,83 @@ export default {
                     ? Number(target.attachmentsCount)
                     : null,
             }
-            this.shareDummyAssignments = []
-            this.shareDummyAssignmentsError = ''
-            this.shareDummyDialogOpen = true
-            this.loadShareDummyAssignments()
+            this.shareAssignments = []
+            this.shareAssignmentsError = ''
+            this.shareDialogOpen = true
+            this.loadShareAssignments()
         },
-        shareDummyScopeType(level) {
+        shareIndicatorKey(scopeType, scopeId) {
+            const type = String(scopeType || '').trim()
+            const id = Number(scopeId || 0)
+            if (!type || id <= 0) return ''
+            return `${type}:${id}`
+        },
+        sharePermissionRank(permission) {
+            const normalized = String(permission || '').trim()
+            if (normalized === 'full_access') return 3
+            if (normalized === 'read_write') return 2
+            if (normalized === 'read_only') return 1
+            return 1
+        },
+        sharePermissionColor(permission) {
+            const normalized = String(permission || '').trim()
+            if (normalized === 'full_access') return 'error'
+            if (normalized === 'read_write') return 'warning'
+            if (normalized === 'read_only') return 'primary'
+            return 'primary'
+        },
+        shareIndicatorColor(level, id) {
+            const key = this.shareIndicatorKey(level, id)
+            if (!key) return ''
+            return String(this.shareIndicatorMap?.[key]?.color || '')
+        },
+        async loadShareIndicators() {
+            if (!this.enableShareButtons) {
+                this.shareIndicatorMap = {}
+                return
+            }
+
+            this.shareIndicatorsLoading = true
+            try {
+                const response = await axios.get('/api/admin/materials/shares')
+                const rows = Array.isArray(response.data?.data) ? response.data.data : []
+                const nextMap = {}
+
+                for (const row of rows) {
+                    const key = this.shareIndicatorKey(row?.scope_type, row?.scope_id)
+                    if (!key) continue
+
+                    const targets = Array.isArray(row?.targets) ? row.targets : []
+                    let bestRank = 0
+                    let bestPermission = 'read_only'
+                    for (const target of targets) {
+                        const permission = String(target?.permission || 'read_only').trim()
+                        const rank = this.sharePermissionRank(permission)
+                        if (rank > bestRank) {
+                            bestRank = rank
+                            bestPermission = permission
+                        }
+                    }
+                    if (bestRank <= 0) continue
+
+                    const existingRank = Number(nextMap[key]?.rank || 0)
+                    if (bestRank > existingRank) {
+                        nextMap[key] = {
+                            rank: bestRank,
+                            permission: bestPermission,
+                            color: this.sharePermissionColor(bestPermission),
+                        }
+                    }
+                }
+
+                this.shareIndicatorMap = nextMap
+            } catch {
+                this.shareIndicatorMap = {}
+            } finally {
+                this.shareIndicatorsLoading = false
+            }
+        },
+        shareScopeType(level) {
             return ({
                 subject: 'subject',
                 topic: 'topic',
@@ -1389,27 +1466,32 @@ export default {
                 material: 'material',
             })[String(level || '').trim()] || null
         },
-        async loadShareDummyAssignments() {
-            const scopeType = this.shareDummyScopeType(this.shareDummyTarget.level)
-            const scopeId = Number(this.shareDummyTarget.id || 0)
+        async loadShareAssignments() {
+            const scopeType = this.shareScopeType(this.shareTarget.level)
+            const scopeId = Number(this.shareTarget.id || 0)
             if (!scopeType || scopeId <= 0) {
-                this.shareDummyAssignments = []
+                this.shareAssignments = []
                 return
             }
 
-            this.shareDummyAssignmentsLoading = true
-            this.shareDummyAssignmentsError = ''
+            this.shareAssignmentsLoading = true
+            this.shareAssignmentsError = ''
             try {
-                const response = await axios.get('/api/admin/materials/shares')
+                const response = await axios.get('/api/admin/materials/shares', {
+                    params: {
+                        scope_type: scopeType,
+                        scope_id: scopeId,
+                    },
+                })
                 const rows = Array.isArray(response.data?.data) ? response.data.data : []
-                this.shareDummyAssignments = rows.filter((row) =>
+                this.shareAssignments = rows.filter((row) =>
                     String(row?.scope_type || '') === scopeType && Number(row?.scope_id || 0) === scopeId
                 )
             } catch (error) {
-                this.shareDummyAssignments = []
-                this.shareDummyAssignmentsError = error?.response?.data?.message || 'Vorhandene Freigaben konnten nicht geladen werden.'
+                this.shareAssignments = []
+                this.shareAssignmentsError = error?.response?.data?.message || 'Vorhandene Freigaben konnten nicht geladen werden.'
             } finally {
-                this.shareDummyAssignmentsLoading = false
+                this.shareAssignmentsLoading = false
             }
         },
         setOverviewMode(value) {
@@ -1832,6 +1914,9 @@ export default {
 
                 this.subjectsContentsOverviewItems = this.buildSubjectsContentsOverviewItems(cards, filters)
                 this.subjectsContentsOverviewSnapshotKey = snapshotKey
+                if (this.enableShareButtons) {
+                    this.loadShareIndicators()
+                }
             } finally {
                 if (requestId === this.subjectsContentsOverviewRequestId) {
                     this.isLoadingSubjectsContentsOverview = false
@@ -4129,3 +4214,4 @@ ${content}
 
 }
 </style>
+

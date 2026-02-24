@@ -10,6 +10,12 @@
                         <div class="overview-subjects-node overview-subjects-node--subject">
                             <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
                             <span>{{ subject.name }}</span>
+                            <v-icon
+                                v-if="showShareIndicator('subject', subject.id)"
+                                size="16"
+                                icon="mdi-share-variant"
+                                :color="shareIndicatorColorFn('subject', subject.id)"
+                                class="ml-1" />
                         </div>
                         <v-btn
                             v-if="enableShareButtons"
@@ -56,6 +62,12 @@
                                 class="overview-subjects-material-status">
                                 {{ statusLabelFn(material.status) }}
                             </v-chip>
+                            <v-icon
+                                v-if="showShareIndicator('material', material.id)"
+                                size="14"
+                                icon="mdi-share-variant"
+                                :color="shareIndicatorColorFn('material', material.id)"
+                                class="overview-subjects-share-icon" />
                             <v-btn
                                 v-if="enableShareButtons"
                                 size="x-small"
@@ -89,6 +101,12 @@
                                 <div class="overview-subjects-node overview-subjects-node--topic">
                                     <v-icon size="14" icon="mdi-book-open-page-variant-outline" class="mr-2" />
                                     <span>{{ topic.name }}</span>
+                                    <v-icon
+                                        v-if="showShareIndicator('topic', topic.id)"
+                                        size="15"
+                                        icon="mdi-share-variant"
+                                        :color="shareIndicatorColorFn('topic', topic.id)"
+                                        class="ml-1" />
                                 </div>
                                 <v-btn
                                     v-if="enableShareButtons"
@@ -135,6 +153,12 @@
                                         class="overview-subjects-material-status">
                                         {{ statusLabelFn(material.status) }}
                                     </v-chip>
+                                    <v-icon
+                                        v-if="showShareIndicator('material', material.id)"
+                                        size="14"
+                                        icon="mdi-share-variant"
+                                        :color="shareIndicatorColorFn('material', material.id)"
+                                        class="overview-subjects-share-icon" />
                                     <v-btn
                                         v-if="enableShareButtons"
                                         size="x-small"
@@ -167,6 +191,12 @@
                                         <div class="overview-subjects-node overview-subjects-node--unit">
                                             <v-icon size="13" icon="mdi-circle-medium" class="mr-1" />
                                             <span>{{ unit.name }}</span>
+                                            <v-icon
+                                                v-if="showShareIndicator('unit', unit.id)"
+                                                size="14"
+                                                icon="mdi-share-variant"
+                                                :color="shareIndicatorColorFn('unit', unit.id)"
+                                                class="ml-1" />
                                         </div>
                                         <v-btn
                                             v-if="enableShareButtons"
@@ -213,6 +243,12 @@
                                                 class="overview-subjects-material-status">
                                                 {{ statusLabelFn(material.status) }}
                                             </v-chip>
+                                            <v-icon
+                                                v-if="showShareIndicator('material', material.id)"
+                                                size="14"
+                                                icon="mdi-share-variant"
+                                                :color="shareIndicatorColorFn('material', material.id)"
+                                                class="overview-subjects-share-icon" />
                                             <v-btn
                                                 v-if="enableShareButtons"
                                                 size="x-small"
@@ -261,6 +297,14 @@ export default {
             type: Boolean,
             default: false,
         },
+        showShareIndicators: {
+            type: Boolean,
+            default: false,
+        },
+        shareIndicatorColorFn: {
+            type: Function,
+            default: () => '',
+        },
         statusColorFn: {
             type: Function,
             required: true,
@@ -279,6 +323,13 @@ export default {
         },
     },
     emits: ['open-material', 'open-share'],
+    methods: {
+        showShareIndicator(level, id) {
+            if (!this.showShareIndicators) return false
+            const color = String(this.shareIndicatorColorFn?.(level, id) || '').trim()
+            return color !== ''
+        },
+    },
 }
 </script>
 
@@ -421,5 +472,10 @@ export default {
     font-size: 0.74rem;
     line-height: 1.2;
     color: rgba(35, 61, 76, 0.85);
+}
+
+.overview-subjects-share-icon {
+    margin-left: 2px;
+    opacity: 0.95;
 }
 </style>
