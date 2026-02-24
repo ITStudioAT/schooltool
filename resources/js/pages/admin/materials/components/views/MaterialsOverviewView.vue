@@ -1,221 +1,51 @@
 <template>
     <v-card class="materials-shell pa-4 pa-md-8" rounded="xl" elevation="0">
-        <v-row align="center" class="mb-4">
-            <v-col cols="12" md="8">
-                <div class="text-h4 font-weight-bold mb-2">Übersicht</div>
-                <div class="text-subtitle-1 subline">Hier siehst du alle aktuell gespeicherten Materialien.</div>
-            </v-col>
+        <MaterialsOverviewHeader
+            :hide-overview-mode-toggle="hideOverviewModeToggle"
+            :overview-view-mode="overviewViewMode"
+            :is-loading="isLoading"
+            :action-disabled="isDeletingId !== null || isSavingEdit"
+            @update:overview-view-mode="setOverviewMode"
+            @refresh="loadCards" />
 
-            <v-col cols="12" md="4" class="d-flex justify-md-end align-center flex-wrap ga-2">
-                <v-btn-toggle
-                    v-if="!hideOverviewModeToggle"
-                    :model-value="overviewViewMode"
-                    mandatory
-                    color="primary"
-                    variant="tonal"
-                    density="comfortable"
-                    class="overview-mode-toggle"
-                    @update:modelValue="setOverviewMode">
-                    <v-btn value="list" prepend-icon="mdi-format-list-bulleted">
-                        Liste
-                    </v-btn>
-                    <v-btn value="grid" prepend-icon="mdi-view-grid-outline">
-                        Karten
-                    </v-btn>
-                    <v-btn value="alpha" prepend-icon="mdi-sort-alphabetical-ascending">
-                        A-Z
-                    </v-btn>
-                    <v-btn value="subjects_contents" prepend-icon="mdi-file-tree-outline">
-                        Fächer/Inhalte
-                    </v-btn>
-                </v-btn-toggle>
-
-                <v-btn
-                    prepend-icon="mdi-refresh"
-                    color="primary"
-                    variant="flat"
-                    :loading="isLoading"
-                    :disabled="isDeletingId !== null || isSavingEdit"
-                    @click="loadCards">
-                    Aktualisieren
-                </v-btn>
-            </v-col>
-        </v-row>
-
-        <div class="material-filters-wrap mb-4">
-            <div class="filter-section">
-                <div class="text-subtitle-2 mb-2">Fach filtern</div>
-
-                <div class="d-flex flex-wrap ga-2">
-                    <v-badge class="filter-chip-badge" inline :content="badgeCountContent(subjectAllCount)">
-                        <v-chip
-                            size="small"
-                            :variant="hasActiveSubjectFilter ? 'tonal' : 'flat'"
-                            :color="hasActiveSubjectFilter ? undefined : 'primary'"
-                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                            @click="clearSubjectFilter">
-                            Alle
-                        </v-chip>
-                    </v-badge>
-
-                    <v-badge
-                        v-for="subject in subjectFilterOptions"
-                        :key="`subject-filter-${subject}`"
-                        class="filter-chip-badge"
-                        inline
-                        :content="badgeCountContent(subjectFilterCount(subject))">
-                        <v-chip
-                            size="small"
-                            color="primary"
-                            :variant="isSubjectFilterActive(subject) ? 'flat' : 'tonal'"
-                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                            @click="toggleSubjectFilter(subject)">
-                            {{ subject }}
-                        </v-chip>
-                    </v-badge>
-                </div>
-
-                <div v-if="hasActiveSubjectFilter" class="subject-dependent-filters mt-3">
-                    <div class="subject-dependent-filter">
-                        <div class="text-subtitle-2 mb-2">Thema filtern</div>
-
-                        <div class="d-flex flex-wrap ga-2">
-                            <v-badge class="filter-chip-badge" inline :content="badgeCountContent(topicAllCount)">
-                                <v-chip
-                                    size="small"
-                                    :variant="hasActiveTopicFilter ? 'tonal' : 'flat'"
-                                    :color="hasActiveTopicFilter ? undefined : 'primary'"
-                                    :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                    @click="clearTopicFilter">
-                                    Alle
-                                </v-chip>
-                            </v-badge>
-
-                            <v-badge
-                                v-for="topic in topicFilterOptions"
-                                :key="`topic-filter-${topic}`"
-                                class="filter-chip-badge"
-                                inline
-                                :content="badgeCountContent(topicFilterCount(topic))">
-                                <v-chip
-                                    size="small"
-                                    color="primary"
-                                    :variant="isTopicFilterActive(topic) ? 'flat' : 'tonal'"
-                                    :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                    @click="toggleTopicFilter(topic)">
-                                    {{ topic }}
-                                </v-chip>
-                            </v-badge>
-                        </div>
-                    </div>
-
-                    <div v-if="hasActiveTopicFilter" class="subject-dependent-filter">
-                        <div class="text-subtitle-2 mb-2">Bereich filtern</div>
-
-                        <div class="d-flex flex-wrap ga-2">
-                            <v-badge class="filter-chip-badge" inline :content="badgeCountContent(unitAllCount)">
-                                <v-chip
-                                    size="small"
-                                    :variant="hasActiveUnitFilter ? 'tonal' : 'flat'"
-                                    :color="hasActiveUnitFilter ? undefined : 'primary'"
-                                    :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                    @click="clearUnitFilter">
-                                    Alle
-                                </v-chip>
-                            </v-badge>
-
-                            <v-badge
-                                v-for="unit in unitFilterOptions"
-                                :key="`unit-filter-${unit}`"
-                                class="filter-chip-badge"
-                                inline
-                                :content="badgeCountContent(unitFilterCount(unit))">
-                                <v-chip
-                                    size="small"
-                                    color="primary"
-                                    :variant="isUnitFilterActive(unit) ? 'flat' : 'tonal'"
-                                    :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                    @click="toggleUnitFilter(unit)">
-                                    {{ unit }}
-                                </v-chip>
-                            </v-badge>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="d-flex justify-end mb-2">
-                <v-tooltip location="top">
-                    <template #activator="{ props }">
-                        <v-btn
-                            v-bind="props"
-                            :icon="showSecondaryFilters ? 'mdi-filter-variant-minus' : 'mdi-filter-variant-plus'"
-                            size="small"
-                            variant="text"
-                            color="primary"
-                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                            @click="toggleSecondaryFilters" />
-                    </template>
-                    <span>
-                        {{ showSecondaryFilters ? 'Materialtyp- und Statusfilter ausblenden' : 'Materialtyp- und Statusfilter einblenden' }}
-                    </span>
-                </v-tooltip>
-            </div>
-
-            <template v-if="showSecondaryFilters">
-                <div class="filter-section">
-                    <div class="text-subtitle-2 mb-2">Materialtyp filtern</div>
-
-                    <div class="d-flex flex-wrap ga-2">
-                        <v-chip
-                            size="small"
-                            :variant="hasActiveTypeFilter ? 'tonal' : 'flat'"
-                            :color="hasActiveTypeFilter ? undefined : 'primary'"
-                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                            @click="clearTypeFilter">
-                            Alle
-                        </v-chip>
-
-                        <v-chip
-                            v-for="typeOption in typeFilterOptions"
-                            :key="`type-filter-${typeOption.value}`"
-                            size="small"
-                            :color="typeColor(typeOption.value) || 'primary'"
-                            :variant="isTypeFilterActive(typeOption.value) ? 'flat' : 'tonal'"
-                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                            @click="toggleTypeFilter(typeOption.value)">
-                            {{ typeOption.label }}
-                        </v-chip>
-                    </div>
-                </div>
-
-                <div class="filter-section">
-                    <div class="text-subtitle-2 mb-2">Status filtern</div>
-
-                    <div class="d-flex flex-wrap ga-2">
-                        <v-chip
-                            size="small"
-                            :variant="hasActiveStatusFilter ? 'tonal' : 'flat'"
-                            :color="hasActiveStatusFilter ? undefined : 'primary'"
-                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                            @click="clearStatusFilter">
-                            Alle
-                        </v-chip>
-
-                        <v-chip
-                            v-for="statusOption in statusFilterOptions"
-                            :key="`status-filter-${statusOption.value}`"
-                            size="small"
-                            :color="statusColor(statusOption.value)"
-                            :variant="isStatusFilterActive(statusOption.value) ? 'flat' : 'tonal'"
-                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                            @click="toggleStatusFilter(statusOption.value)">
-                            {{ statusOption.label }}
-                        </v-chip>
-                    </div>
-                </div>
-            </template>
-        </div>
+        <MaterialsOverviewFilters
+            :action-disabled="isLoading || isDeletingId !== null || isSavingEdit"
+            :badge-count-content="badgeCountContent"
+            :subject-all-count="subjectAllCount"
+            :has-active-subject-filter="hasActiveSubjectFilter"
+            :clear-subject-filter="clearSubjectFilter"
+            :subject-filter-options="subjectFilterOptions"
+            :subject-filter-count="subjectFilterCount"
+            :is-subject-filter-active="isSubjectFilterActive"
+            :toggle-subject-filter="toggleSubjectFilter"
+            :topic-all-count="topicAllCount"
+            :has-active-topic-filter="hasActiveTopicFilter"
+            :clear-topic-filter="clearTopicFilter"
+            :topic-filter-options="topicFilterOptions"
+            :topic-filter-count="topicFilterCount"
+            :is-topic-filter-active="isTopicFilterActive"
+            :toggle-topic-filter="toggleTopicFilter"
+            :unit-all-count="unitAllCount"
+            :has-active-unit-filter="hasActiveUnitFilter"
+            :clear-unit-filter="clearUnitFilter"
+            :unit-filter-options="unitFilterOptions"
+            :unit-filter-count="unitFilterCount"
+            :is-unit-filter-active="isUnitFilterActive"
+            :toggle-unit-filter="toggleUnitFilter"
+            :show-secondary-filters="showSecondaryFilters"
+            :toggle-secondary-filters="toggleSecondaryFilters"
+            :has-active-type-filter="hasActiveTypeFilter"
+            :clear-type-filter="clearTypeFilter"
+            :type-filter-options="typeFilterOptions"
+            :type-color="typeColor"
+            :is-type-filter-active="isTypeFilterActive"
+            :toggle-type-filter="toggleTypeFilter"
+            :has-active-status-filter="hasActiveStatusFilter"
+            :clear-status-filter="clearStatusFilter"
+            :status-filter-options="statusFilterOptions"
+            :status-color="statusColor"
+            :is-status-filter-active="isStatusFilterActive"
+            :toggle-status-filter="toggleStatusFilter" />
 
         <v-alert type="info" variant="tonal" class="mb-4">
             {{ displayedMaterials }}/{{ totalMaterials }} Material{{ totalMaterials === 1 ? '' : 'ien' }} angezeigt.
@@ -223,24 +53,10 @@
                 • Speicher: angezeigt {{ shownListedAttachmentSizeLabel }} / alle {{ allListedAttachmentSizeLabel }}
             </span>
         </v-alert>
-        <div v-if="!isSubjectsContentsOverview" class="d-flex flex-wrap align-center ga-2 mb-4">
-            <div class="text-caption text-medium-emphasis">Sortierung:</div>
-            <v-btn-toggle
-                :model-value="overviewSortMode"
-                mandatory
-                color="primary"
-                variant="tonal"
-                density="comfortable"
-                class="overview-sort-toggle"
-                @update:modelValue="setOverviewSortMode">
-                <v-btn value="date" prepend-icon="mdi-calendar-clock">
-                    Datum
-                </v-btn>
-                <v-btn value="name" prepend-icon="mdi-sort-alphabetical-ascending">
-                    Name
-                </v-btn>
-            </v-btn-toggle>
-        </div>
+        <MaterialsOverviewSortBar
+            v-if="!isSubjectsContentsOverview"
+            :overview-sort-mode="overviewSortMode"
+            @update:overview-sort-mode="setOverviewSortMode" />
 
         <v-skeleton-loader v-if="isLoading && !hasCards" type="list-item-three-line@4" />
 
@@ -273,562 +89,83 @@
                 Keine Fachstruktur mit Materialien gefunden.
             </v-alert>
 
-            <div v-else class="overview-subjects-tree">
-                <ul class="overview-subjects-list">
-                    <li
-                        v-for="subject in subjectsContentsOverviewItems"
-                        :key="`overview-subjects-subject-${subject.id || subject.name}`"
-                        class="overview-subjects-item">
-                        <div class="overview-subjects-group" :style="subjectGroupStyle(subject)">
-                            <div class="overview-subjects-node-row">
-                                <div class="overview-subjects-node overview-subjects-node--subject">
-                                    <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
-                                    <span>{{ subject.name }}</span>
-                                </div>
-                                <v-btn
-                                    v-if="enableShareButtons"
-                                    size="x-small"
-                                    color="primary"
-                                    variant="outlined"
-                                    prepend-icon="mdi-share-variant-outline"
-                                    @click="openShareDummyDialog({ level: 'subject', id: subject.id, label: subject.name })">
-                                    Freigabe
-                                </v-btn>
-                            </div>
-
-                            <ul v-if="subject.materials.length" class="overview-subjects-material-list">
-                                <li
-                                    v-for="material in subject.materials"
-                                    :key="`overview-subjects-subject-material-${subject.id || subject.name}-${material.id}`"
-                                    class="overview-subjects-material-item">
-                                    <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" />
-                                    <button
-                                        type="button"
-                                        class="overview-subjects-material-link"
-                                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                        @click="openDetailDialog({ id: material.id })">
-                                        {{ material.title }}
-                                    </button>
-                                    <v-chip
-                                        v-if="material.typeLabel"
-                                        size="x-small"
-                                        variant="outlined"
-                                        :color="material.typeColor || 'primary'"
-                                        class="overview-subjects-material-type">
-                                        {{ material.typeLabel }}
-                                    </v-chip>
-                                    <span
-                                        v-if="material.attachmentsCount > 0"
-                                        class="overview-subjects-material-count">
-                                        <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
-                                        {{ material.attachmentsCount }}
-                                    </span>
-                                    <v-chip
-                                        size="x-small"
-                                        variant="tonal"
-                                        :color="statusColor(material.status)"
-                                        class="overview-subjects-material-status">
-                                        {{ statusLabel(material.status) }}
-                                    </v-chip>
-                                    <v-btn
-                                        v-if="enableShareButtons"
-                                        size="x-small"
-                                        color="primary"
-                                        variant="text"
-                                        density="comfortable"
-                                        prepend-icon="mdi-share-variant-outline"
-                                        @click="openShareDummyDialog({ level: 'material', id: material.id, label: material.title, parentLabel: subject.name })">
-                                        Freigabe
-                                    </v-btn>
-                                </li>
-                            </ul>
-
-                            <ul v-if="subject.topics.length" class="overview-subjects-list overview-subjects-list--child">
-                                <li
-                                    v-for="topic in subject.topics"
-                                    :key="`overview-subjects-topic-${topic.id || `${subject.id || subject.name}-${topic.name}`}`"
-                                    class="overview-subjects-item overview-subjects-topic-group"
-                                    :style="topicGroupStyle(subject)">
-                                    <div class="overview-subjects-node-row">
-                                        <div class="overview-subjects-node overview-subjects-node--topic">
-                                            <v-icon size="14" icon="mdi-book-open-page-variant-outline" class="mr-2" />
-                                            <span>{{ topic.name }}</span>
-                                        </div>
-                                        <v-btn
-                                            v-if="enableShareButtons"
-                                            size="x-small"
-                                            color="primary"
-                                            variant="outlined"
-                                            prepend-icon="mdi-share-variant-outline"
-                                            @click="openShareDummyDialog({ level: 'topic', id: topic.id, label: topic.name, parentLabel: subject.name })">
-                                            Freigabe
-                                        </v-btn>
-                                    </div>
-
-                                    <ul v-if="topic.materials.length" class="overview-subjects-material-list">
-                                        <li
-                                            v-for="material in topic.materials"
-                                            :key="`overview-subjects-topic-material-${topic.id || topic.name}-${material.id}`"
-                                            class="overview-subjects-material-item">
-                                            <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" />
-                                            <button
-                                                type="button"
-                                                class="overview-subjects-material-link"
-                                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                                @click="openDetailDialog({ id: material.id })">
-                                                {{ material.title }}
-                                            </button>
-                                            <v-chip
-                                                v-if="material.typeLabel"
-                                                size="x-small"
-                                                variant="outlined"
-                                                :color="material.typeColor || 'primary'"
-                                                class="overview-subjects-material-type">
-                                                {{ material.typeLabel }}
-                                            </v-chip>
-                                            <span
-                                                v-if="material.attachmentsCount > 0"
-                                                class="overview-subjects-material-count">
-                                                <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
-                                                {{ material.attachmentsCount }}
-                                            </span>
-                                            <v-chip
-                                                size="x-small"
-                                                variant="tonal"
-                                                :color="statusColor(material.status)"
-                                                class="overview-subjects-material-status">
-                                                {{ statusLabel(material.status) }}
-                                            </v-chip>
-                                            <v-btn
-                                                v-if="enableShareButtons"
-                                                size="x-small"
-                                                color="primary"
-                                                variant="text"
-                                                density="comfortable"
-                                                prepend-icon="mdi-share-variant-outline"
-                                                @click="openShareDummyDialog({ level: 'material', id: material.id, label: material.title, parentLabel: `${subject.name} / ${topic.name}` })">
-                                                Freigabe
-                                            </v-btn>
-                                        </li>
-                                    </ul>
-
-                                    <ul v-if="topic.units.length" class="overview-subjects-list overview-subjects-list--child">
-                                        <li
-                                            v-for="unit in topic.units"
-                                            :key="`overview-subjects-unit-${unit.id || `${topic.id || topic.name}-${unit.name}`}`"
-                                            class="overview-subjects-item">
-                                            <div class="overview-subjects-node-row">
-                                                <div class="overview-subjects-node overview-subjects-node--unit">
-                                                    <v-icon size="13" icon="mdi-circle-medium" class="mr-1" />
-                                                    <span>{{ unit.name }}</span>
-                                                </div>
-                                                <v-btn
-                                                    v-if="enableShareButtons"
-                                                    size="x-small"
-                                                    color="primary"
-                                                    variant="outlined"
-                                                    prepend-icon="mdi-share-variant-outline"
-                                                    @click="openShareDummyDialog({ level: 'unit', id: unit.id, label: unit.name, parentLabel: `${subject.name} / ${topic.name}` })">
-                                                    Freigabe
-                                                </v-btn>
-                                            </div>
-
-                                            <ul v-if="unit.materials.length" class="overview-subjects-material-list">
-                                                <li
-                                                    v-for="material in unit.materials"
-                                                    :key="`overview-subjects-unit-material-${unit.id || unit.name}-${material.id}`"
-                                                    class="overview-subjects-material-item">
-                                                    <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" />
-                                                    <button
-                                                        type="button"
-                                                        class="overview-subjects-material-link"
-                                                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                                        @click="openDetailDialog({ id: material.id })">
-                                                        {{ material.title }}
-                                                    </button>
-                                                    <v-chip
-                                                        v-if="material.typeLabel"
-                                                        size="x-small"
-                                                        variant="outlined"
-                                                        :color="material.typeColor || 'primary'"
-                                                        class="overview-subjects-material-type">
-                                                        {{ material.typeLabel }}
-                                                    </v-chip>
-                                                    <span
-                                                        v-if="material.attachmentsCount > 0"
-                                                        class="overview-subjects-material-count">
-                                                        <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
-                                                        {{ material.attachmentsCount }}
-                                                    </span>
-                                                    <v-chip
-                                                        size="x-small"
-                                                        variant="tonal"
-                                                        :color="statusColor(material.status)"
-                                                        class="overview-subjects-material-status">
-                                                        {{ statusLabel(material.status) }}
-                                                    </v-chip>
-                                                    <v-btn
-                                                        v-if="enableShareButtons"
-                                                        size="x-small"
-                                                        color="primary"
-                                                        variant="text"
-                                                        density="comfortable"
-                                                        prepend-icon="mdi-share-variant-outline"
-                                                        @click="openShareDummyDialog({ level: 'material', id: material.id, label: material.title, parentLabel: `${subject.name} / ${topic.name} / ${unit.name}` })">
-                                                        Freigabe
-                                                    </v-btn>
-                                                </li>
-                                            </ul>
-                                        </li>
-                                    </ul>
-                                </li>
-                            </ul>
-                        </div>
-                    </li>
-                </ul>
-            </div>
+            <MaterialsSubjectsContentsTree
+                v-else
+                :items="subjectsContentsOverviewItems"
+                :action-busy="isLoading || isDeletingId !== null || isSavingEdit"
+                :enable-share-buttons="enableShareButtons"
+                :status-color-fn="statusColor"
+                :status-label-fn="statusLabel"
+                :subject-group-style-fn="subjectGroupStyle"
+                :topic-group-style-fn="topicGroupStyle"
+                @open-material="openDetailDialog"
+                @open-share="openShareDialog" />
         </template>
 
         <template v-else-if="hasCards">
-            <v-row v-if="isCompactOverview" class="overview-grid ma-0">
-                <v-col
-                    v-for="card in sortedCards"
-                    :key="`grid-card-${card.id}`"
-                    cols="12"
-                    sm="6"
-                    md="4"
-                    lg="3"
-                    xl="2"
-                    class="pa-2 d-flex">
-                    <v-card
-                        class="overview-grid-item d-flex flex-column flex-grow-1"
-                        rounded="lg"
-                        elevation="0"
-                        :style="cardBackgroundStyle(card)">
-                        <v-card-text class="pa-3 d-flex flex-column ga-2">
-                            <div class="overview-grid-header">
-                                <v-avatar :color="statusColor(card.status)" variant="tonal" size="32">
-                                    <v-icon :icon="sourceIcon(card)" :color="statusColor(card.status)" />
-                                </v-avatar>
+            <MaterialsOverviewGrid
+                v-if="isCompactOverview"
+                :cards="sortedCards"
+                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                :show-edit-action="!readOnlyMaterialActions"
+                :card-background-style-fn="cardBackgroundStyle"
+                :status-color-fn="statusColor"
+                :status-label-fn="statusLabel"
+                :source-icon-fn="sourceIcon"
+                :attachment-count-compact-label-fn="attachmentCountCompactLabel"
+                :classification-labels-fn="classificationLabels"
+                :preview-fn="preview"
+                :format-date-time-fn="formatDateTime"
+                @open-detail="openDetailDialog"
+                @open-edit="openEditDialog"
+                @open-attachments="openAttachmentManager" />
 
-                                <v-chip size="x-small" :color="statusColor(card.status)" variant="flat" class="material-status-chip">
-                                    {{ statusLabel(card.status) }}
-                                </v-chip>
-                            </div>
+            <MaterialsOverviewAlphaList
+                v-else-if="isAlphabeticOverview"
+                :cards="sortedCards"
+                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                :show-edit-action="!readOnlyMaterialActions"
+                :card-background-style-fn="cardBackgroundStyle"
+                :status-color-fn="statusColor"
+                :status-label-fn="statusLabel"
+                :source-icon-fn="sourceIcon"
+                :attachment-count-compact-label-fn="attachmentCountCompactLabel"
+                :alphabetic-assignment-line-fn="alphabeticAssignmentLine"
+                @open-detail="openDetailDialog"
+                @open-edit="openEditDialog"
+                @open-attachments="openAttachmentManager" />
 
-                            <div class="text-subtitle-2 font-weight-bold overview-grid-title">
-                                {{ card.title || 'Ohne Titel' }}
-                            </div>
+            <MaterialsOverviewList
+                v-else
+                :cards="sortedCards"
+                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                :show-edit-action="!readOnlyMaterialActions"
+                :card-background-style-fn="cardBackgroundStyle"
+                :status-color-fn="statusColor"
+                :status-label-fn="statusLabel"
+                :source-icon-fn="sourceIcon"
+                :classification-labels-fn="classificationLabels"
+                :preview-fn="preview"
+                :attachment-count-label-fn="attachmentCountLabel"
+                :file-attachments-fn="fileAttachments"
+                :is-downloading-attachment-fn="isDownloadingAttachment"
+                :attachment-chip-label-fn="attachmentChipLabel"
+                :format-date-time-fn="formatDateTime"
+                @open-detail="openDetailDialog"
+                @open-edit="openEditDialog"
+                @open-attachments="openAttachmentManager"
+                @download-attachment="downloadAttachment" />
 
-                            <div class="d-flex flex-wrap ga-1">
-                                <v-chip v-if="card.type" size="x-small" variant="tonal" color="primary">
-                                    {{ card.type }}
-                                </v-chip>
-
-                                <v-chip
-                                    v-if="card.attachments_count"
-                                    size="x-small"
-                                    variant="flat"
-                                    color="primary"
-                                    prepend-icon="mdi-paperclip"
-                                    class="attachments-count-chip attachments-count-chip-clickable"
-                                    @click="openAttachmentManager(card)">
-                                    {{ attachmentCountCompactLabel(card) }}
-                                </v-chip>
-                            </div>
-
-                            <div v-if="classificationLabels(card).length" class="d-flex flex-wrap ga-1">
-                                <v-chip
-                                    v-for="(label, index) in classificationLabels(card).slice(0, 2)"
-                                    :key="`grid-classification-label-${card.id}-${index}`"
-                                    size="x-small"
-                                    variant="tonal"
-                                    color="primary"
-                                    class="classification-chip"
-                                    :title="label">
-                                    {{ label }}
-                                </v-chip>
-                            </div>
-
-                            <div v-if="card.source_text" class="text-caption text-medium-emphasis overview-grid-preview">
-                                {{ preview(card.source_text, 160) }}
-                            </div>
-
-                            <div v-else-if="card.notes" class="text-caption text-medium-emphasis overview-grid-preview">
-                                {{ preview(card.notes, 160) }}
-                            </div>
-
-                            <div v-else-if="card.source_url" class="text-caption source-link overview-grid-link">
-                                <a :href="card.source_url" target="_blank" rel="noopener noreferrer">
-                                    {{ preview(card.source_url, 80) }}
-                                </a>
-                            </div>
-
-                            <div class="text-caption text-medium-emphasis mt-auto">
-                                {{ formatDateTime(card.updated_at) }}
-                            </div>
-                        </v-card-text>
-
-                        <v-card-actions class="px-3 pb-3 pt-0 overview-grid-actions">
-                            <v-btn
-                                icon
-                                size="small"
-                                rounded="circle"
-                                color="primary"
-                                variant="tonal"
-                                class="overview-grid-action-btn"
-                                :title="'Detail'"
-                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                @click="openDetailDialog(card)">
-                                <v-icon icon="mdi-eye-outline" />
-                            </v-btn>
-
-                            <v-btn
-                                icon
-                                size="small"
-                                rounded="circle"
-                                color="primary"
-                                variant="flat"
-                                class="overview-grid-action-btn"
-                                :title="'Bearbeiten'"
-                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                @click="openEditDialog(card)">
-                                <v-icon icon="mdi-pencil-outline" />
-                            </v-btn>
-                        </v-card-actions>
-                    </v-card>
-                </v-col>
-            </v-row>
-
-            <v-list v-else-if="isAlphabeticOverview" class="bg-transparent pa-0">
-                <v-list-item
-                    v-for="card in sortedCards"
-                    :key="`alpha-card-${card.id}`"
-                    class="overview-alpha-item mb-2 px-3 py-2"
-                    rounded="lg"
-                    :style="cardBackgroundStyle(card)">
-                    <template #prepend>
-                        <v-avatar :color="statusColor(card.status)" variant="tonal" size="34" class="mr-3">
-                            <v-icon :icon="sourceIcon(card)" :color="statusColor(card.status)" />
-                        </v-avatar>
-                    </template>
-
-                    <div class="overview-alpha-line">
-                        <v-list-item-title class="overview-alpha-title">
-                            {{ card.title || 'Ohne Titel' }}
-                        </v-list-item-title>
-
-                        <v-chip
-                            v-if="card.type"
-                            size="small"
-                            variant="tonal"
-                            color="primary"
-                            class="material-type-chip">
-                            {{ card.type }}
-                        </v-chip>
-
-                        <v-chip
-                            v-if="card.attachments_count"
-                            size="small"
-                            variant="flat"
-                            color="primary"
-                            prepend-icon="mdi-paperclip"
-                            class="attachments-count-chip attachments-count-chip-clickable"
-                            @click="openAttachmentManager(card)">
-                            {{ attachmentCountCompactLabel(card) }}
-                        </v-chip>
-
-                        <v-chip size="small" :color="statusColor(card.status)" variant="flat" class="material-status-chip">
-                            {{ statusLabel(card.status) }}
-                        </v-chip>
-                    </div>
-
-                    <v-list-item-subtitle class="overview-alpha-subtitle">
-                        {{ alphabeticAssignmentLine(card) }}
-                    </v-list-item-subtitle>
-
-                    <template #append>
-                        <div class="overview-alpha-actions">
-                            <v-btn
-                                icon="mdi-eye-outline"
-                                size="small"
-                                color="primary"
-                                variant="text"
-                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                @click="openDetailDialog(card)" />
-                            <v-btn
-                                icon="mdi-pencil-outline"
-                                size="small"
-                                color="primary"
-                                variant="text"
-                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                @click="openEditDialog(card)" />
-                        </div>
-                    </template>
-                </v-list-item>
-            </v-list>
-
-            <v-list v-else class="bg-transparent pa-0">
-            <v-list-item
-                v-for="card in sortedCards"
-                :key="card.id"
-                class="overview-item mb-3 px-4 py-3"
-                rounded="lg"
-                :style="cardBackgroundStyle(card)">
-                <template #prepend>
-                    <v-avatar :color="statusColor(card.status)" variant="tonal" size="38" class="mr-4">
-                        <v-icon :icon="sourceIcon(card)" :color="statusColor(card.status)" />
-                    </v-avatar>
-                </template>
-
-                <div class="material-header">
-                    <div class="title-type-inline d-inline-flex align-center flex-wrap ga-2">
-                        <div class="text-subtitle-1 font-weight-bold material-title">
-                            {{ card.title || 'Ohne Titel' }}
-                        </div>
-
-                        <v-chip v-if="card.type" size="small" variant="tonal" color="primary" class="material-type-chip">
-                            {{ card.type }}
-                        </v-chip>
-                    </div>
-
-                    <v-chip size="small" :color="statusColor(card.status)" variant="flat" class="material-status-chip">
-                        {{ statusLabel(card.status) }}
-                    </v-chip>
-                </div>
-
-                <v-list-item-subtitle>
-                    <div v-if="classificationLabels(card).length" class="d-flex flex-wrap ga-2 mt-2 mb-2">
-                        <v-chip
-                            v-for="(label, index) in classificationLabels(card)"
-                            :key="`classification-label-${card.id}-${index}`"
-                            size="small"
-                            variant="tonal"
-                            color="primary"
-                            class="classification-chip"
-                            :title="label">
-                            {{ label }}
-                        </v-chip>
-                    </div>
-
-                    <div v-if="card.source_url" class="text-body-2 mb-1 source-link">
-                        <a :href="card.source_url" target="_blank" rel="noopener noreferrer">{{ card.source_url }}</a>
-                    </div>
-
-                    <div v-if="card.source_text" class="text-body-2 text-medium-emphasis mb-1 preview-text">
-                        {{ preview(card.source_text, 320) }}
-                    </div>
-
-                    <div v-else-if="card.notes" class="text-body-2 text-medium-emphasis mb-1 preview-text">
-                        {{ preview(card.notes, 320) }}
-                    </div>
-                </v-list-item-subtitle>
-
-                <div class="d-flex flex-wrap ga-2 mt-2 mb-1 attachment-count-row">
-                    <v-chip
-                        v-if="card.attachments_count"
-                        size="small"
-                        variant="flat"
-                        color="primary"
-                        prepend-icon="mdi-paperclip"
-                        class="attachments-count-chip attachments-count-chip-clickable"
-                        @click="openAttachmentManager(card)">
-                        {{ attachmentCountLabel(card) }}
-                    </v-chip>
-                </div>
-
-                <div v-if="fileAttachments(card).length" class="attachment-block d-flex flex-column ga-2 mt-1 mb-2 pa-2">
-                    <div class="attachment-chip-wrap d-flex flex-wrap ga-2">
-                        <v-chip
-                            v-for="attachment in fileAttachments(card)"
-                            :key="`file-attachment-${card.id}-${attachment.id}`"
-                            size="small"
-                            variant="outlined"
-                            color="primary"
-                            prepend-icon="mdi-paperclip"
-                            append-icon="mdi-download"
-                            class="attachment-chip"
-                            :disabled="isDownloadingAttachment(attachment.id)"
-                            :title="attachmentChipLabel(attachment)"
-                            @click.prevent="downloadAttachment(attachment)">
-                            {{ attachmentChipLabel(attachment) }}
-                        </v-chip>
-                    </div>
-                </div>
-
-                <div class="text-caption text-medium-emphasis mt-1">
-                    Aktualisiert: {{ formatDateTime(card.updated_at) }}
-                </div>
-
-                <template #append>
-                    <div class="overview-actions d-flex flex-column align-end ga-2">
-                        <v-btn
-                            icon="mdi-eye-outline"
-                            size="small"
-                            color="primary"
-                            variant="tonal"
-                            :title="'Detail'"
-                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                            @click="openDetailDialog(card)" />
-
-                        <v-btn
-                            icon="mdi-pencil-outline"
-                            size="small"
-                            color="primary"
-                            variant="flat"
-                            :title="'Bearbeiten'"
-                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                            @click="openEditDialog(card)" />
-                    </div>
-                </template>
-            </v-list-item>
-            </v-list>
-
-            <div class="overview-pagination d-flex flex-wrap align-center justify-end ga-2 mt-2">
-                <div class="text-caption text-medium-emphasis page-indicator">
-                    Seite {{ currentMetaPage }} von {{ lastMetaPage }}
-                </div>
-
-                <v-btn
-                    size="small"
-                    variant="tonal"
-                    color="primary"
-                    prepend-icon="mdi-page-first"
-                    :disabled="isLoading || isDeletingId !== null || isSavingEdit || !hasPreviousPage"
-                    @click="goToFirstPage">
-                    Erste
-                </v-btn>
-
-                <v-btn
-                    size="small"
-                    variant="tonal"
-                    color="primary"
-                    prepend-icon="mdi-chevron-left"
-                    :disabled="isLoading || isDeletingId !== null || isSavingEdit || !hasPreviousPage"
-                    @click="goToPreviousPage">
-                    Zurück
-                </v-btn>
-
-                <v-btn
-                    size="small"
-                    variant="tonal"
-                    color="primary"
-                    append-icon="mdi-chevron-right"
-                    :disabled="isLoading || isDeletingId !== null || isSavingEdit || !hasNextPage"
-                    @click="goToNextPage">
-                    Weiter
-                </v-btn>
-
-                <v-btn
-                    size="small"
-                    variant="tonal"
-                    color="primary"
-                    append-icon="mdi-page-last"
-                    :disabled="isLoading || isDeletingId !== null || isSavingEdit || !hasNextPage"
-                    @click="goToLastPage">
-                    Letzte
-                </v-btn>
-            </div>
+            <MaterialsOverviewPagination
+                :current-page="currentMetaPage"
+                :last-page="lastMetaPage"
+                :has-previous-page="hasPreviousPage"
+                :has-next-page="hasNextPage"
+                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                @first="goToFirstPage"
+                @previous="goToPreviousPage"
+                @next="goToNextPage"
+                @last="goToLastPage" />
         </template>
 
         <v-alert v-else type="warning" variant="tonal" class="mb-0">
@@ -1061,228 +398,38 @@
         </v-card>
     </v-dialog>
 
-    <v-dialog v-model="detailDialogOpen" max-width="860" persistent>
-        <v-card rounded="xl">
-            <v-card-title class="d-flex align-center ga-2">
-                <span class="text-h5">Material-Details</span>
-                <v-spacer />
-                <v-btn
-                    icon="mdi-close"
-                    variant="text"
-                    :disabled="detailDialogLoading || isDeletingDetail"
-                    @click="closeDetailDialog" />
-            </v-card-title>
-
-            <v-card-text>
-                <v-skeleton-loader v-if="detailDialogLoading" type="article, list-item-two-line@3" />
-
-                <template v-else-if="detailDialogCard">
-                    <div class="material-header mb-3">
-                        <div class="title-type-inline d-inline-flex align-center flex-wrap ga-2">
-                            <div class="text-subtitle-1 font-weight-bold material-title">
-                                {{ detailDialogCard.title || 'Material' }}
-                            </div>
-
-                            <v-chip v-if="detailDialogCard.type" size="small" variant="tonal" color="primary" class="material-type-chip">
-                                {{ detailDialogCard.type }}
-                            </v-chip>
-                        </div>
-
-                        <v-chip size="small" :color="statusColor(detailDialogCard.status)" variant="flat" class="material-status-chip">
-                            {{ statusLabel(detailDialogCard.status) }}
-                        </v-chip>
-                    </div>
-
-                    <div v-if="classificationLabels(detailDialogCard).length" class="mb-4">
-                        <div class="text-subtitle-2 mb-2">Fach / Thema / Bereich</div>
-                        <div class="d-flex flex-wrap ga-2">
-                            <v-chip
-                                v-for="(label, index) in classificationLabels(detailDialogCard)"
-                                :key="`detail-classification-${detailDialogCard.id}-${index}`"
-                                size="small"
-                                variant="tonal"
-                                color="primary"
-                                class="classification-chip"
-                                :title="label">
-                                {{ label }}
-                            </v-chip>
-                        </div>
-                    </div>
-
-                    <div v-if="detailDialogCard.source_url" class="mb-4 source-link">
-                        <div class="text-subtitle-2 mb-1">Link</div>
-                        <a :href="detailDialogCard.source_url" target="_blank" rel="noopener noreferrer">
-                            {{ detailDialogCard.source_url }}
-                        </a>
-                    </div>
-
-                    <div v-if="detailDialogCard.source_text" class="mb-4">
-                        <div class="text-subtitle-2 mb-1">Beschreibung</div>
-                        <div class="text-body-2 detail-text">{{ detailDialogCard.source_text }}</div>
-                    </div>
-
-                    <div v-if="detailDialogCard.notes" class="mb-4">
-                        <div class="text-subtitle-2 mb-1">Notiz</div>
-                        <div class="text-body-2 detail-text">{{ detailDialogCard.notes }}</div>
-                    </div>
-
-                    <div v-if="detailAttachments(detailDialogCard).length" class="mb-2">
-                        <div class="text-subtitle-2 mb-2">Anhänge</div>
-
-                        <v-list class="bg-transparent pa-0">
-                            <v-list-item
-                                v-for="attachment in detailAttachments(detailDialogCard)"
-                                :key="`detail-attachment-${detailDialogCard.id}-${attachment.id}`"
-                                class="px-0 py-2">
-                                <div class="d-flex flex-column flex-md-row align-md-center ga-2 w-100 detail-attachment-row">
-                                    <div class="flex-grow-1 detail-attachment-content">
-                                        <div class="text-body-2 font-weight-medium detail-attachment-name">
-                                            {{ attachmentDisplayName(attachment) }}
-                                        </div>
-                                        <div class="d-flex flex-wrap align-center ga-2">
-                                            <v-tooltip location="top">
-                                                <template #activator="{ props }">
-                                                    <v-chip
-                                                        v-bind="props"
-                                                        size="x-small"
-                                                        variant="tonal"
-                                                        color="secondary"
-                                                        class="link-copy-chip"
-                                                        @click="copyAttachmentChipToClipboard(attachment)">
-                                                        {{ attachmentTypeLabel(attachment) }}
-                                                    </v-chip>
-                                                </template>
-                                                <div class="d-flex align-center ga-1">
-                                                    <v-icon icon="mdi-content-copy" size="14" />
-                                                    <span>In Zwischenablage kopieren</span>
-                                                </div>
-                                            </v-tooltip>
-                                            <div class="text-caption text-medium-emphasis">
-                                                {{ attachmentSizeBytes(attachment) > 0 ? formatBytes(attachmentSizeBytes(attachment)) : '' }}
-                                            </div>
-                                        </div>
-                                        <div
-                                            v-if="attachmentSourceUrl(attachment)"
-                                            class="text-caption attachment-source-text source-link">
-                                            Quelle:
-                                            <a :href="attachmentSourceUrl(attachment)" target="_blank" rel="noopener noreferrer">
-                                                {{ preview(attachmentSourceUrl(attachment), 110) }}
-                                            </a>
-                                        </div>
-                                        <div
-                                            v-if="attachmentDownloadedAtLabel(attachment)"
-                                            class="text-caption text-medium-emphasis attachment-source-text">
-                                            Heruntergeladen: {{ attachmentDownloadedAtLabel(attachment) }}
-                                        </div>
-                                    </div>
-
-                                    <div class="d-flex flex-wrap ga-2 justify-end detail-attachment-actions">
-                                    <v-btn
-                                        v-if="attachment.attachment_type === 'file' && (attachment.preview_url || attachment.download_url)"
-                                        icon="mdi-eye-outline"
-                                        size="small"
-                                        color="primary"
-                                        variant="tonal"
-                                        :title="'Vorschau'"
-                                        :loading="isPreviewingAttachment(attachment.id)"
-                                        :disabled="isDeletingDetail"
-                                        @click="previewAttachment(attachment)" />
-
-                                    <v-btn
-                                        v-if="attachment.attachment_type === 'file' && attachment.download_url"
-                                        icon="mdi-download"
-                                        size="small"
-                                        color="primary"
-                                        variant="tonal"
-                                        :title="'Download'"
-                                        :loading="isDownloadingAttachment(attachment.id)"
-                                        :disabled="isDeletingDetail"
-                                        @click="downloadAttachment(attachment)" />
-
-                                        <v-btn
-                                            v-if="isEditableTextAttachment(attachment)"
-                                            icon="mdi-file-word-outline"
-                                            size="small"
-                                            color="primary"
-                                            variant="tonal"
-                                            :title="'DOCX'"
-                                            :loading="isDownloadingAttachment(attachment.id)"
-                                            :disabled="isDeletingDetail"
-                                            @click="downloadAttachmentDocx(attachment)" />
-
-                                    <v-btn
-                                        v-else-if="attachment.url"
-                                        icon="mdi-open-in-new"
-                                        size="small"
-                                        color="primary"
-                                        variant="tonal"
-                                        :title="'Öffnen'"
-                                        :href="attachment.url"
-                                        target="_blank"
-                                        rel="noopener noreferrer" />
-                                    </div>
-                                </div>
-                            </v-list-item>
-                        </v-list>
-                    </div>
-
-                    <div class="text-caption text-medium-emphasis mt-3">
-                        Aktualisiert: {{ formatDateTime(detailDialogCard.updated_at) }}
-                    </div>
-                </template>
-            </v-card-text>
-
-            <v-card-actions class="px-6 pb-6 pt-2 d-flex flex-wrap justify-end ga-2">
-                <template v-if="!readOnlyMaterialActions && detailDeleteStep === 0">
-                    <v-btn
-                        color="warning"
-                        variant="tonal"
-                        prepend-icon="mdi-delete"
-                        :disabled="detailDialogLoading || isDeletingDetail || isSavingEdit"
-                        @click="startDetailDeleteFlow">
-                        Löschen
-                    </v-btn>
-                </template>
-
-                <template v-else-if="!readOnlyMaterialActions">
-                    <v-btn
-                        color="success"
-                        variant="tonal"
-                        prepend-icon="mdi-delete-off"
-                        :disabled="isDeletingDetail"
-                        @click="resetDetailDeleteFlow">
-                        Abbrechen
-                    </v-btn>
-                    <v-btn
-                        color="error"
-                        variant="flat"
-                        prepend-icon="mdi-delete"
-                        :loading="isDeletingDetail"
-                        :disabled="detailDialogLoading || isSavingEdit"
-                        @click="confirmDeleteFromDetail">
-                        Löschen
-                    </v-btn>
-                </template>
-
-                <v-btn
-                    variant="text"
-                    :disabled="detailDialogLoading || isDeletingDetail || isSavingEdit"
-                    @click="closeDetailDialog">
-                    Schließen
-                </v-btn>
-
-                <v-btn
-                    v-if="!readOnlyMaterialActions"
-                    color="primary"
-                    variant="flat"
-                    prepend-icon="mdi-pencil"
-                    :disabled="detailDialogLoading || isDeletingDetail || isSavingEdit"
-                    @click="openEditFromDetail">
-                    Bearbeiten
-                </v-btn>
-            </v-card-actions>
-        </v-card>
-    </v-dialog>
+    <MaterialDetailDialog
+        v-model="detailDialogOpen"
+        :loading="detailDialogLoading"
+        :card="detailDialogCard"
+        :is-deleting="isDeletingDetail"
+        :is-saving-edit="isSavingEdit"
+        :read-only-material-actions="readOnlyMaterialActions"
+        :delete-step="detailDeleteStep"
+        :close-dialog-fn="closeDetailDialog"
+        :status-color-fn="statusColor"
+        :status-label-fn="statusLabel"
+        :classification-labels-fn="classificationLabels"
+        :detail-attachments-fn="detailAttachments"
+        :attachment-display-name-fn="attachmentDisplayName"
+        :copy-attachment-chip-to-clipboard-fn="copyAttachmentChipToClipboard"
+        :attachment-type-label-fn="attachmentTypeLabel"
+        :attachment-size-bytes-fn="attachmentSizeBytes"
+        :format-bytes-fn="formatBytes"
+        :attachment-source-url-fn="attachmentSourceUrl"
+        :preview-fn="preview"
+        :attachment-downloaded-at-label-fn="attachmentDownloadedAtLabel"
+        :is-previewing-attachment-fn="isPreviewingAttachment"
+        :preview-attachment-fn="previewAttachment"
+        :is-downloading-attachment-fn="isDownloadingAttachment"
+        :download-attachment-fn="downloadAttachment"
+        :is-editable-text-attachment-fn="isEditableTextAttachment"
+        :download-attachment-docx-fn="downloadAttachmentDocx"
+        :format-date-time-fn="formatDateTime"
+        :start-delete-flow-fn="startDetailDeleteFlow"
+        :reset-delete-flow-fn="resetDetailDeleteFlow"
+        :confirm-delete-fn="confirmDeleteFromDetail"
+        :open-edit-fn="openEditFromDetail" />
 
     <v-dialog v-model="editDialogOpen" max-width="640" persistent>
         <MaterialsCreateInlineForm
@@ -1554,87 +701,12 @@
         </v-card>
     </v-dialog>
 
-    <v-dialog v-model="shareDummyDialogOpen" max-width="560" persistent>
-        <v-card rounded="xl">
-            <v-card-title class="d-flex align-center ga-2">
-                <span class="text-h6">Freigabe (Dummy)</span>
-                <v-spacer />
-                <v-btn icon="mdi-close" variant="text" @click="closeShareDummyDialog" />
-            </v-card-title>
-
-            <v-card-text>
-                <div class="text-body-2 mb-3">Hier kommt später der Freigabe-Dialog.</div>
-
-                <div class="share-dummy-highlight mb-4">
-                    <div class="text-caption text-medium-emphasis mb-2">Ausgewählt zum Freigeben</div>
-                    <div v-if="shareDummyTarget.level" class="d-flex flex-wrap ga-2 mb-2">
-                        <v-chip color="primary" variant="flat" size="small">
-                            Ebene: {{ shareDummyLevelLabel(shareDummyTarget.level) }}
-                        </v-chip>
-                        <v-chip v-if="shareDummyTarget.id" color="secondary" variant="flat" size="small">
-                            ID: {{ shareDummyTarget.id }}
-                        </v-chip>
-                    </div>
-                    <div class="text-body-2">
-                        <strong>Objekt:</strong> {{ shareDummyTarget.label || '-' }}
-                    </div>
-                    <div v-if="shareDummyTarget.parentLabel" class="text-caption text-medium-emphasis mt-1">
-                        Kontext: {{ shareDummyTarget.parentLabel }}
-                    </div>
-                </div>
-
-                <div class="text-subtitle-2 mb-2">Bereits freigegeben an</div>
-                <div v-if="shareDummyAssignmentsLoading" class="text-body-2 text-medium-emphasis">
-                    Lade vorhandene Freigaben ...
-                </div>
-                <v-alert
-                    v-else-if="shareDummyAssignmentsError"
-                    type="warning"
-                    variant="tonal"
-                    density="compact"
-                    class="mb-0">
-                    {{ shareDummyAssignmentsError }}
-                </v-alert>
-                <div v-else-if="shareDummyAssignments.length === 0" class="text-body-2 text-medium-emphasis">
-                    Noch keine Freigabe für dieses Objekt vorhanden.
-                </div>
-                <div v-else class="d-grid ga-2">
-                    <div
-                        v-for="assignment in shareDummyAssignments"
-                        :key="`share-dummy-assignment-${assignment.id}`"
-                        class="share-dummy-assignment">
-                        <div class="d-flex align-center flex-wrap ga-2 mb-1">
-                            <v-chip
-                                :color="assignment.is_active ? 'success' : 'secondary'"
-                                variant="flat"
-                                size="x-small">
-                                {{ assignment.is_active ? 'aktiv' : 'inaktiv' }}
-                            </v-chip>
-                            <span class="text-caption text-medium-emphasis">
-                                von {{ assignment.created_by_label || 'Unbekannt' }}
-                            </span>
-                        </div>
-                        <div class="d-flex flex-wrap ga-1">
-                            <v-chip
-                                v-for="target in assignment.targets"
-                                :key="`share-dummy-target-${assignment.id}-${target.id}`"
-                                :color="shareDummyTargetChipColor(target)"
-                                variant="flat"
-                                size="x-small">
-                                {{ target.label }}
-                            </v-chip>
-                        </div>
-                    </div>
-                </div>
-            </v-card-text>
-
-            <v-card-actions class="px-6 pb-5 d-flex justify-end">
-                <v-btn color="primary" variant="flat" @click="closeShareDummyDialog">
-                    Schließen
-                </v-btn>
-            </v-card-actions>
-        </v-card>
-    </v-dialog>
+    <MaterialShareDummyDialog
+        v-model="shareDummyDialogOpen"
+        :target="shareDummyTarget"
+        :assignments="shareDummyAssignments"
+        :loading="shareDummyAssignmentsLoading"
+        :error="shareDummyAssignmentsError" />
 
     <MaterialTypeManagerDialog v-model="typeManagerDialogOpen" />
 </template>
@@ -1648,6 +720,16 @@ import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 import MaterialsCreateInlineForm from '../forms/MaterialsCreateInlineForm.vue'
 import MaterialTypeManagerDialog from '../forms/MaterialTypeManagerDialog.vue'
+import MaterialsOverviewAlphaList from '../overview/MaterialsOverviewAlphaList.vue'
+import MaterialsOverviewFilters from '../overview/MaterialsOverviewFilters.vue'
+import MaterialsOverviewGrid from '../overview/MaterialsOverviewGrid.vue'
+import MaterialsOverviewHeader from '../overview/MaterialsOverviewHeader.vue'
+import MaterialsOverviewList from '../overview/MaterialsOverviewList.vue'
+import MaterialsOverviewPagination from '../overview/MaterialsOverviewPagination.vue'
+import MaterialsOverviewSortBar from '../overview/MaterialsOverviewSortBar.vue'
+import MaterialsSubjectsContentsTree from '../overview/MaterialsSubjectsContentsTree.vue'
+import MaterialDetailDialog from '../overview/dialogs/MaterialDetailDialog.vue'
+import MaterialShareDummyDialog from '../overview/dialogs/MaterialShareDummyDialog.vue'
 
 const FilePond = vueFilePond(FilePondPluginFileValidateType)
 
@@ -1694,6 +776,16 @@ export default {
         ItsRichTextEditor,
         MaterialsCreateInlineForm,
         MaterialTypeManagerDialog,
+        MaterialsOverviewAlphaList,
+        MaterialsOverviewFilters,
+        MaterialsOverviewGrid,
+        MaterialsOverviewHeader,
+        MaterialsOverviewList,
+        MaterialsOverviewPagination,
+        MaterialsOverviewSortBar,
+        MaterialsSubjectsContentsTree,
+        MaterialDetailDialog,
+        MaterialShareDummyDialog,
     },
     data() {
         return {
@@ -2269,32 +1361,25 @@ export default {
         await this.loadCards()
     },
     methods: {
-        openShareDummyDialog(target = {}) {
+        openShareDialog(target = {}) {
             if (!this.enableShareButtons) return
             this.shareDummyTarget = {
                 level: String(target?.level || '').trim(),
                 id: Number.isFinite(Number(target?.id)) ? Number(target.id) : null,
                 label: String(target?.label || '').trim(),
                 parentLabel: String(target?.parentLabel || '').trim(),
+                kindLabel: String(target?.kindLabel || '').trim(),
+                kindColor: String(target?.kindColor || '').trim(),
+                statusLabel: String(target?.statusLabel || '').trim(),
+                statusColor: String(target?.statusColor || '').trim(),
+                attachmentsCount: Number.isFinite(Number(target?.attachmentsCount))
+                    ? Number(target.attachmentsCount)
+                    : null,
             }
             this.shareDummyAssignments = []
             this.shareDummyAssignmentsError = ''
             this.shareDummyDialogOpen = true
             this.loadShareDummyAssignments()
-        },
-        closeShareDummyDialog() {
-            this.shareDummyDialogOpen = false
-            this.shareDummyAssignmentsLoading = false
-            this.shareDummyAssignmentsError = ''
-            this.shareDummyAssignments = []
-        },
-        shareDummyLevelLabel(level) {
-            return ({
-                subject: 'Fach',
-                topic: 'Thema',
-                unit: 'Einheit',
-                material: 'Material',
-            })[String(level || '').trim()] || String(level || '-')
         },
         shareDummyScopeType(level) {
             return ({
@@ -2326,11 +1411,6 @@ export default {
             } finally {
                 this.shareDummyAssignmentsLoading = false
             }
-        },
-        shareDummyTargetChipColor(target) {
-            if (target?.target_type === 'everyone') return 'success'
-            if (target?.target_type === 'group') return 'primary'
-            return 'secondary'
         },
         setOverviewMode(value) {
             const nextMode = ['list', 'grid', 'alpha', 'subjects_contents'].includes(String(value))
@@ -4858,331 +3938,6 @@ ${content}
 </script>
 
 <style scoped>
-.material-filters-wrap {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 12px;
-    align-items: start;
-}
-
-.filter-section {
-    min-width: 0;
-}
-
-.subject-dependent-filters {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 12px;
-    align-items: start;
-}
-
-.subject-dependent-filter {
-    min-width: 0;
-}
-
-.filter-chip-badge {
-    display: inline-flex;
-}
-
-.filter-chip-badge :deep(.v-badge__badge) {
-    top: -12px;
-    background: rgba(35, 61, 76, 0.16) !important;
-    color: rgba(35, 61, 76, 0.9) !important;
-    font-weight: 600;
-    box-shadow: none;
-}
-
-.overview-item {
-    border: 1px solid rgba(40, 58, 80, 0.12);
-    background-color: rgba(255, 255, 255, 0.72);
-}
-
-.overview-alpha-item {
-    border: 1px solid rgba(40, 58, 80, 0.12);
-    background-color: rgba(255, 255, 255, 0.72);
-}
-
-.overview-alpha-line {
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    flex-wrap: wrap;
-    gap: 4px 6px;
-    min-width: 0;
-}
-
-.overview-alpha-title {
-    font-weight: 700;
-    flex: 0 1 auto;
-    max-width: min(100%, 460px);
-    min-width: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    margin-right: 2px;
-}
-
-.overview-alpha-subtitle {
-    margin-top: 4px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.overview-alpha-actions {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-}
-
-.overview-mode-toggle {
-    max-width: 100%;
-}
-
-.overview-sort-toggle {
-    max-width: 100%;
-}
-
-.overview-subjects-tree {
-    border: 1px solid rgba(35, 61, 76, 0.18);
-    border-radius: 14px;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.6) 100%);
-    padding: 14px;
-}
-
-.overview-subjects-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: 8px;
-}
-
-.overview-subjects-tree > .overview-subjects-list {
-    gap: 32px;
-}
-
-.overview-subjects-list--child {
-    margin-top: 6px;
-    margin-left: 34px;
-    padding-left: 20px;
-    border-left: 1px dashed rgba(35, 61, 76, 0.25);
-}
-
-.overview-subjects-group {
-    border: 1px solid rgba(35, 61, 76, 0.24);
-    border-radius: 12px;
-    padding: 10px 12px;
-}
-
-.overview-subjects-topic-group {
-    position: relative;
-    padding-left: 12px;
-    border-radius: 8px;
-    background: linear-gradient(90deg, rgba(255, 255, 255, 0.52) 0%, rgba(255, 255, 255, 0.24) 34%, transparent 62%);
-}
-
-.overview-subjects-topic-group::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 5px;
-    bottom: 5px;
-    width: 2px;
-    border-radius: 999px;
-    background: var(--overview-topic-accent-color, #1f6f8b);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.32);
-}
-
-.overview-subjects-topic-group + .overview-subjects-topic-group {
-    margin-top: 24px;
-}
-
-.overview-subjects-node {
-    display: inline-flex;
-    align-items: center;
-    min-height: 28px;
-    gap: 4px;
-    padding: 2px 8px;
-    border-radius: 8px;
-}
-
-.overview-subjects-node-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-.share-dummy-highlight {
-    border: 1px solid rgba(25, 118, 210, 0.2);
-    background: rgba(25, 118, 210, 0.05);
-    border-radius: 12px;
-    padding: 10px 12px;
-}
-
-.share-dummy-assignment {
-    border: 1px solid rgba(35, 61, 76, 0.1);
-    background: rgba(255, 255, 255, 0.7);
-    border-radius: 10px;
-    padding: 8px 10px;
-}
-
-.overview-subjects-node--subject {
-    font-weight: 700;
-    background: rgba(35, 61, 76, 0.08);
-}
-
-.overview-subjects-node--topic {
-    font-weight: 600;
-    color: #2e4a5a;
-    background: rgba(35, 61, 76, 0.05);
-}
-
-.overview-subjects-node--unit {
-    font-weight: 700;
-    color: #3c5a6d;
-    background: rgba(35, 61, 76, 0.03);
-}
-
-.overview-subjects-material-list {
-    list-style: none;
-    margin: 6px 0 0 0;
-    padding: 0 0 0 30px;
-    display: grid;
-    gap: 4px;
-}
-
-.overview-subjects-material-item {
-    display: inline-flex;
-    align-items: flex-start;
-    gap: 6px;
-    color: rgba(35, 61, 76, 0.92);
-    font-size: 0.92rem;
-    line-height: 1.32;
-}
-
-.overview-subjects-material-link {
-    border: 0;
-    background: transparent;
-    padding: 0;
-    margin: 0;
-    color: inherit;
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-}
-
-.overview-subjects-material-link:disabled {
-    cursor: default;
-    opacity: 0.7;
-}
-
-.overview-subjects-material-link:not(:disabled):hover {
-    text-decoration: underline;
-}
-
-.overview-subjects-material-status {
-    margin-left: 2px;
-}
-
-.overview-subjects-material-type {
-    margin-left: 2px;
-}
-
-.overview-subjects-material-count {
-    display: inline-flex;
-    align-items: center;
-    margin-left: 6px;
-    padding: 0 6px;
-    border-radius: 999px;
-    border: 1px solid rgba(35, 61, 76, 0.2);
-    background: rgba(35, 61, 76, 0.06);
-    font-size: 0.74rem;
-    line-height: 1.2;
-    color: rgba(35, 61, 76, 0.85);
-}
-
-.overview-grid {
-    margin-left: -8px;
-    margin-right: -8px;
-}
-
-.overview-grid-item {
-    border: 1px solid rgba(40, 58, 80, 0.12);
-    background-color: rgba(255, 255, 255, 0.72);
-    min-height: 100%;
-}
-
-.overview-grid-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 8px;
-}
-
-.overview-grid-title {
-    min-height: 2.8em;
-    line-height: 1.35;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.overview-grid-preview {
-    white-space: pre-wrap;
-    word-break: break-word;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    min-height: 3.6em;
-}
-
-.overview-grid-link a {
-    word-break: break-all;
-}
-
-.overview-grid-actions {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: 8px;
-    width: 100%;
-}
-
-.overview-grid-actions :deep(.v-btn) {
-    width: auto;
-}
-
-.overview-grid-action-btn {
-    width: 32px !important;
-    height: 32px !important;
-    min-width: 32px !important;
-    padding: 0 !important;
-    border-radius: 50% !important;
-}
-
-.overview-actions {
-    min-width: 140px;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 8px;
-}
-
-.overview-pagination {
-    width: 100%;
-}
-
-.page-indicator {
-    margin-right: 4px;
-}
-
 .material-header {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -5223,16 +3978,6 @@ ${content}
     cursor: pointer;
 }
 
-.attachment-count-row {
-    opacity: 1 !important;
-}
-
-.attachment-block {
-    border: 1px solid rgba(31, 95, 191, 0.3);
-    border-radius: 10px;
-    background: rgba(31, 95, 191, 0.08);
-}
-
 .classification-chip,
 .attachment-chip {
     max-width: min(100%, 360px);
@@ -5253,10 +3998,6 @@ ${content}
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-
-.attachment-chip-wrap {
-    min-width: 0;
 }
 
 .link-copy-chip {
@@ -5366,66 +4107,9 @@ ${content}
 }
 
 @media (max-width: 959px) {
-    .overview-mode-toggle {
-        width: 100%;
-    }
-
-    .overview-mode-toggle :deep(.v-btn) {
-        flex: 1 1 0;
-    }
-
-    .overview-sort-toggle {
-        width: 100%;
-    }
-
-    .overview-sort-toggle :deep(.v-btn) {
-        flex: 1 1 0;
-    }
-
-    :deep(.overview-item.v-list-item) {
-        grid-template-areas:
-            "prepend content"
-            "append append";
-        grid-template-columns: max-content minmax(0, 1fr);
-        align-items: start;
-    }
-
-    :deep(.overview-item .v-list-item__content) {
-        min-width: 0;
-    }
-
-    :deep(.overview-item .v-list-item__append) {
-        grid-area: append;
-        margin-top: 10px;
-        margin-inline-start: 0;
-        width: 100%;
-        justify-self: stretch;
-    }
-
     .classification-chip,
     .attachment-chip {
         max-width: 100%;
-    }
-
-    .overview-actions {
-        margin-top: 8px;
-        width: 100%;
-        min-width: 0;
-        display: flex;
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    .overview-actions :deep(.v-btn) {
-        width: 100%;
-    }
-
-    .overview-pagination {
-        justify-content: stretch;
-    }
-
-    .overview-pagination :deep(.v-btn) {
-        flex: 1 1 auto;
     }
 
     .attachment-manage-actions {
