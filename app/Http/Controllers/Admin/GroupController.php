@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Import116;
 use App\Models\User;
 use App\Models\UserGroup;
 use Illuminate\Http\Request;
@@ -173,6 +174,51 @@ class GroupController extends Controller
         ]);
     }
 
+    public function removeMembers(Request $request, UserGroup $group)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'materials_admin', 'materials_moderator'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+        $this->assertGroupsFeatureLicence($auth_user);
+
+        $schoolId = $this->currentSchoolId($auth_user);
+        $this->assertGroupInCurrentSchool($group, $schoolId);
+        $this->assertTypePermission($auth_user, (string) $group->type);
+
+        $validated = $request->validate([
+            'user_ids' => ['required', 'array', 'min:1'],
+            'user_ids.*' => ['required', 'integer', 'distinct', 'exists:users,id'],
+        ]);
+
+        $userIds = collect($validated['user_ids'])
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        $validUserIds = User::query()
+            ->where('school_id', $schoolId)
+            ->whereIn('id', $userIds)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values();
+
+        if ($validUserIds->isEmpty()) {
+            abort(422, 'Keine passenden Benutzer in der aktuellen Schule gefunden.');
+        }
+
+        $group->members()->detach($validUserIds->all());
+        $group->loadCount('members');
+
+        return response()->json([
+            'message' => 'Benutzer wurden aus der Gruppe entfernt.',
+            'meta' => [
+                'removed_count' => $validUserIds->count(),
+                'members_count' => (int) $group->members_count,
+            ],
+            'group' => $this->serializeGroup($group),
+        ]);
+    }
+
     public function assignableUsers(Request $request, UserGroup $group)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'materials_admin', 'materials_moderator'])) {
@@ -186,17 +232,29 @@ class GroupController extends Controller
 
         $validated = $request->validate([
             'search_string' => ['nullable', 'string', 'max:255'],
-            'limit' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:5000'],
+            'role_name' => ['nullable', 'string', 'in:teacher,student'],
         ]);
 
         $search = trim((string) ($validated['search_string'] ?? ''));
         $limit = (int) ($validated['limit'] ?? 25);
+        $roleName = trim((string) ($validated['role_name'] ?? ''));
+
+        if ($roleName === 'student') {
+            return $this->assignableStudentsFromImport116($auth_user, $group, $search, $limit);
+        }
 
         $query = User::query()
             ->where('school_id', $schoolId)
             ->orderBy('last_name')
             ->orderBy('first_name')
             ->orderBy('email');
+
+        if (in_array($roleName, ['teacher', 'student'], true)) {
+            $query->whereHas('roles', function ($q) use ($roleName) {
+                $q->where('name', $roleName);
+            });
+        }
 
         if ($search !== '') {
             $query->where(function ($q) use ($search) {
@@ -223,6 +281,74 @@ class GroupController extends Controller
                 ];
             })->values(),
         ]);
+    }
+
+    private function assignableStudentsFromImport116($auth_user, UserGroup $group, string $search, int $limit)
+    {
+        $schoolId = $this->currentSchoolId($auth_user);
+        $schoolyearId = $auth_user->schoolyear_id ? (int) $auth_user->schoolyear_id : null;
+
+        $query = Import116::query()
+            ->where('school_id', $schoolId)
+            ->orderByRaw('LOWER(class)')
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->orderBy('email');
+
+        if ($schoolyearId) {
+            $query->where('schoolyear_id', $schoolyearId);
+        }
+
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('last_name', 'like', "%{$search}%")
+                    ->orWhere('first_name', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhere('class', 'like', "%{$search}%");
+            });
+        }
+
+        $importRows = $query
+            ->limit($limit)
+            ->get(['id', 'schoolyear_id', 'class', 'last_name', 'first_name', 'email']);
+
+        if ($importRows->isEmpty()) {
+            return response()->json(['data' => []]);
+        }
+
+        $userQuery = User::query()
+            ->where('school_id', $schoolId)
+            ->whereIn('import116_id', $importRows->pluck('id')->map(fn ($id) => (int) $id)->all())
+            ->get(['id', 'import116_id']);
+
+        $usersByImportId = $userQuery
+            ->filter(fn (User $user) => ! empty($user->import116_id))
+            ->keyBy(fn (User $user) => (int) $user->import116_id);
+
+        $existingMemberIds = $group->members()->pluck('users.id')->map(fn ($id) => (int) $id)->all();
+
+        $data = $importRows
+            ->map(function (Import116 $import) use ($usersByImportId, $existingMemberIds) {
+                $mappedUser = $usersByImportId->get((int) $import->id);
+                $fullName = trim((string) (($import->last_name ?? '').' '.($import->first_name ?? '')));
+                return [
+                    'id' => $mappedUser ? (int) $mappedUser->id : null,
+                    'user_id' => $mappedUser ? (int) $mappedUser->id : null,
+                    'import116_id' => (int) $import->id,
+                    'name' => $fullName !== '' ? $fullName : ($import->email ?? 'Schüler:in'),
+                    'last_name' => $import->last_name,
+                    'first_name' => $import->first_name,
+                    'email' => $import->email,
+                    'schoolclass' => $import->class,
+                    'has_user_account' => (bool) $mappedUser,
+                    'already_member' => $mappedUser
+                        ? in_array((int) $mappedUser->id, $existingMemberIds, true)
+                        : false,
+                ];
+            })
+            ->values();
+
+        return response()->json(['data' => $data]);
     }
 
     public function assignUsers(Request $request, UserGroup $group)
@@ -290,6 +416,7 @@ class GroupController extends Controller
         $groups = UserGroup::query()
             ->where('school_id', $schoolId)
             ->where('id', '!=', $group->id)
+            ->whereHas('members')
             ->withCount('members')
             ->orderByRaw("CASE type WHEN 'school' THEN 1 WHEN 'materials' THEN 2 ELSE 3 END")
             ->orderByRaw('LOWER(name)')
