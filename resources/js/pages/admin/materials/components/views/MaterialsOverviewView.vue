@@ -280,9 +280,20 @@
                         :key="`overview-subjects-subject-${subject.id || subject.name}`"
                         class="overview-subjects-item">
                         <div class="overview-subjects-group" :style="subjectGroupStyle(subject)">
-                            <div class="overview-subjects-node overview-subjects-node--subject">
-                                <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
-                                <span>{{ subject.name }}</span>
+                            <div class="overview-subjects-node-row">
+                                <div class="overview-subjects-node overview-subjects-node--subject">
+                                    <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
+                                    <span>{{ subject.name }}</span>
+                                </div>
+                                <v-btn
+                                    v-if="enableShareButtons"
+                                    size="x-small"
+                                    color="primary"
+                                    variant="outlined"
+                                    prepend-icon="mdi-share-variant-outline"
+                                    @click="openShareDummyDialog({ level: 'subject', id: subject.id, label: subject.name })">
+                                    Freigabe
+                                </v-btn>
                             </div>
 
                             <ul v-if="subject.materials.length" class="overview-subjects-material-list">
@@ -319,6 +330,16 @@
                                         class="overview-subjects-material-status">
                                         {{ statusLabel(material.status) }}
                                     </v-chip>
+                                    <v-btn
+                                        v-if="enableShareButtons"
+                                        size="x-small"
+                                        color="primary"
+                                        variant="text"
+                                        density="comfortable"
+                                        prepend-icon="mdi-share-variant-outline"
+                                        @click="openShareDummyDialog({ level: 'material', id: material.id, label: material.title, parentLabel: subject.name })">
+                                        Freigabe
+                                    </v-btn>
                                 </li>
                             </ul>
 
@@ -328,9 +349,20 @@
                                     :key="`overview-subjects-topic-${topic.id || `${subject.id || subject.name}-${topic.name}`}`"
                                     class="overview-subjects-item overview-subjects-topic-group"
                                     :style="topicGroupStyle(subject)">
-                                    <div class="overview-subjects-node overview-subjects-node--topic">
-                                        <v-icon size="14" icon="mdi-book-open-page-variant-outline" class="mr-2" />
-                                        <span>{{ topic.name }}</span>
+                                    <div class="overview-subjects-node-row">
+                                        <div class="overview-subjects-node overview-subjects-node--topic">
+                                            <v-icon size="14" icon="mdi-book-open-page-variant-outline" class="mr-2" />
+                                            <span>{{ topic.name }}</span>
+                                        </div>
+                                        <v-btn
+                                            v-if="enableShareButtons"
+                                            size="x-small"
+                                            color="primary"
+                                            variant="outlined"
+                                            prepend-icon="mdi-share-variant-outline"
+                                            @click="openShareDummyDialog({ level: 'topic', id: topic.id, label: topic.name, parentLabel: subject.name })">
+                                            Freigabe
+                                        </v-btn>
                                     </div>
 
                                     <ul v-if="topic.materials.length" class="overview-subjects-material-list">
@@ -367,6 +399,16 @@
                                                 class="overview-subjects-material-status">
                                                 {{ statusLabel(material.status) }}
                                             </v-chip>
+                                            <v-btn
+                                                v-if="enableShareButtons"
+                                                size="x-small"
+                                                color="primary"
+                                                variant="text"
+                                                density="comfortable"
+                                                prepend-icon="mdi-share-variant-outline"
+                                                @click="openShareDummyDialog({ level: 'material', id: material.id, label: material.title, parentLabel: `${subject.name} / ${topic.name}` })">
+                                                Freigabe
+                                            </v-btn>
                                         </li>
                                     </ul>
 
@@ -375,9 +417,20 @@
                                             v-for="unit in topic.units"
                                             :key="`overview-subjects-unit-${unit.id || `${topic.id || topic.name}-${unit.name}`}`"
                                             class="overview-subjects-item">
-                                            <div class="overview-subjects-node overview-subjects-node--unit">
-                                                <v-icon size="13" icon="mdi-circle-medium" class="mr-1" />
-                                                <span>{{ unit.name }}</span>
+                                            <div class="overview-subjects-node-row">
+                                                <div class="overview-subjects-node overview-subjects-node--unit">
+                                                    <v-icon size="13" icon="mdi-circle-medium" class="mr-1" />
+                                                    <span>{{ unit.name }}</span>
+                                                </div>
+                                                <v-btn
+                                                    v-if="enableShareButtons"
+                                                    size="x-small"
+                                                    color="primary"
+                                                    variant="outlined"
+                                                    prepend-icon="mdi-share-variant-outline"
+                                                    @click="openShareDummyDialog({ level: 'unit', id: unit.id, label: unit.name, parentLabel: `${subject.name} / ${topic.name}` })">
+                                                    Freigabe
+                                                </v-btn>
                                             </div>
 
                                             <ul v-if="unit.materials.length" class="overview-subjects-material-list">
@@ -414,6 +467,16 @@
                                                         class="overview-subjects-material-status">
                                                         {{ statusLabel(material.status) }}
                                                     </v-chip>
+                                                    <v-btn
+                                                        v-if="enableShareButtons"
+                                                        size="x-small"
+                                                        color="primary"
+                                                        variant="text"
+                                                        density="comfortable"
+                                                        prepend-icon="mdi-share-variant-outline"
+                                                        @click="openShareDummyDialog({ level: 'material', id: material.id, label: material.title, parentLabel: `${subject.name} / ${topic.name} / ${unit.name}` })">
+                                                        Freigabe
+                                                    </v-btn>
                                                 </li>
                                             </ul>
                                         </li>
@@ -1491,6 +1554,88 @@
         </v-card>
     </v-dialog>
 
+    <v-dialog v-model="shareDummyDialogOpen" max-width="560" persistent>
+        <v-card rounded="xl">
+            <v-card-title class="d-flex align-center ga-2">
+                <span class="text-h6">Freigabe (Dummy)</span>
+                <v-spacer />
+                <v-btn icon="mdi-close" variant="text" @click="closeShareDummyDialog" />
+            </v-card-title>
+
+            <v-card-text>
+                <div class="text-body-2 mb-3">Hier kommt später der Freigabe-Dialog.</div>
+
+                <div class="share-dummy-highlight mb-4">
+                    <div class="text-caption text-medium-emphasis mb-2">Ausgewählt zum Freigeben</div>
+                    <div v-if="shareDummyTarget.level" class="d-flex flex-wrap ga-2 mb-2">
+                        <v-chip color="primary" variant="flat" size="small">
+                            Ebene: {{ shareDummyLevelLabel(shareDummyTarget.level) }}
+                        </v-chip>
+                        <v-chip v-if="shareDummyTarget.id" color="secondary" variant="flat" size="small">
+                            ID: {{ shareDummyTarget.id }}
+                        </v-chip>
+                    </div>
+                    <div class="text-body-2">
+                        <strong>Objekt:</strong> {{ shareDummyTarget.label || '-' }}
+                    </div>
+                    <div v-if="shareDummyTarget.parentLabel" class="text-caption text-medium-emphasis mt-1">
+                        Kontext: {{ shareDummyTarget.parentLabel }}
+                    </div>
+                </div>
+
+                <div class="text-subtitle-2 mb-2">Bereits freigegeben an</div>
+                <div v-if="shareDummyAssignmentsLoading" class="text-body-2 text-medium-emphasis">
+                    Lade vorhandene Freigaben ...
+                </div>
+                <v-alert
+                    v-else-if="shareDummyAssignmentsError"
+                    type="warning"
+                    variant="tonal"
+                    density="compact"
+                    class="mb-0">
+                    {{ shareDummyAssignmentsError }}
+                </v-alert>
+                <div v-else-if="shareDummyAssignments.length === 0" class="text-body-2 text-medium-emphasis">
+                    Noch keine Freigabe für dieses Objekt vorhanden.
+                </div>
+                <div v-else class="d-grid ga-2">
+                    <div
+                        v-for="assignment in shareDummyAssignments"
+                        :key="`share-dummy-assignment-${assignment.id}`"
+                        class="share-dummy-assignment">
+                        <div class="d-flex align-center flex-wrap ga-2 mb-1">
+                            <v-chip
+                                :color="assignment.is_active ? 'success' : 'secondary'"
+                                variant="flat"
+                                size="x-small">
+                                {{ assignment.is_active ? 'aktiv' : 'inaktiv' }}
+                            </v-chip>
+                            <span class="text-caption text-medium-emphasis">
+                                von {{ assignment.created_by_label || 'Unbekannt' }}
+                            </span>
+                        </div>
+                        <div class="d-flex flex-wrap ga-1">
+                            <v-chip
+                                v-for="target in assignment.targets"
+                                :key="`share-dummy-target-${assignment.id}-${target.id}`"
+                                :color="shareDummyTargetChipColor(target)"
+                                variant="flat"
+                                size="x-small">
+                                {{ target.label }}
+                            </v-chip>
+                        </div>
+                    </div>
+                </div>
+            </v-card-text>
+
+            <v-card-actions class="px-6 pb-5 d-flex justify-end">
+                <v-btn color="primary" variant="flat" @click="closeShareDummyDialog">
+                    Schließen
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
+
     <MaterialTypeManagerDialog v-model="typeManagerDialogOpen" />
 </template>
 
@@ -1536,6 +1681,10 @@ export default {
             default: false,
         },
         readOnlyMaterialActions: {
+            type: Boolean,
+            default: false,
+        },
+        enableShareButtons: {
             type: Boolean,
             default: false,
         },
@@ -1602,6 +1751,16 @@ export default {
             textAttachmentEditorTitle: '',
             textAttachmentEditorBodyHtml: '',
             textAttachmentEditorError: '',
+            shareDummyDialogOpen: false,
+            shareDummyAssignmentsLoading: false,
+            shareDummyAssignmentsError: '',
+            shareDummyAssignments: [],
+            shareDummyTarget: {
+                level: '',
+                id: null,
+                label: '',
+                parentLabel: '',
+            },
         }
     },
     watch: {
@@ -2110,6 +2269,69 @@ export default {
         await this.loadCards()
     },
     methods: {
+        openShareDummyDialog(target = {}) {
+            if (!this.enableShareButtons) return
+            this.shareDummyTarget = {
+                level: String(target?.level || '').trim(),
+                id: Number.isFinite(Number(target?.id)) ? Number(target.id) : null,
+                label: String(target?.label || '').trim(),
+                parentLabel: String(target?.parentLabel || '').trim(),
+            }
+            this.shareDummyAssignments = []
+            this.shareDummyAssignmentsError = ''
+            this.shareDummyDialogOpen = true
+            this.loadShareDummyAssignments()
+        },
+        closeShareDummyDialog() {
+            this.shareDummyDialogOpen = false
+            this.shareDummyAssignmentsLoading = false
+            this.shareDummyAssignmentsError = ''
+            this.shareDummyAssignments = []
+        },
+        shareDummyLevelLabel(level) {
+            return ({
+                subject: 'Fach',
+                topic: 'Thema',
+                unit: 'Einheit',
+                material: 'Material',
+            })[String(level || '').trim()] || String(level || '-')
+        },
+        shareDummyScopeType(level) {
+            return ({
+                subject: 'subject',
+                topic: 'topic',
+                unit: 'unit',
+                material: 'material',
+            })[String(level || '').trim()] || null
+        },
+        async loadShareDummyAssignments() {
+            const scopeType = this.shareDummyScopeType(this.shareDummyTarget.level)
+            const scopeId = Number(this.shareDummyTarget.id || 0)
+            if (!scopeType || scopeId <= 0) {
+                this.shareDummyAssignments = []
+                return
+            }
+
+            this.shareDummyAssignmentsLoading = true
+            this.shareDummyAssignmentsError = ''
+            try {
+                const response = await axios.get('/api/admin/materials/shares')
+                const rows = Array.isArray(response.data?.data) ? response.data.data : []
+                this.shareDummyAssignments = rows.filter((row) =>
+                    String(row?.scope_type || '') === scopeType && Number(row?.scope_id || 0) === scopeId
+                )
+            } catch (error) {
+                this.shareDummyAssignments = []
+                this.shareDummyAssignmentsError = error?.response?.data?.message || 'Vorhandene Freigaben konnten nicht geladen werden.'
+            } finally {
+                this.shareDummyAssignmentsLoading = false
+            }
+        },
+        shareDummyTargetChipColor(target) {
+            if (target?.target_type === 'everyone') return 'success'
+            if (target?.target_type === 'group') return 'primary'
+            return 'secondary'
+        },
         setOverviewMode(value) {
             const nextMode = ['list', 'grid', 'alpha', 'subjects_contents'].includes(String(value))
                 ? String(value)
@@ -4783,6 +5005,27 @@ ${content}
     gap: 4px;
     padding: 2px 8px;
     border-radius: 8px;
+}
+
+.overview-subjects-node-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.share-dummy-highlight {
+    border: 1px solid rgba(25, 118, 210, 0.2);
+    background: rgba(25, 118, 210, 0.05);
+    border-radius: 12px;
+    padding: 10px 12px;
+}
+
+.share-dummy-assignment {
+    border: 1px solid rgba(35, 61, 76, 0.1);
+    background: rgba(255, 255, 255, 0.7);
+    border-radius: 10px;
+    padding: 8px 10px;
 }
 
 .overview-subjects-node--subject {

@@ -130,7 +130,8 @@
             forced-overview-mode="subjects_contents"
             :hide-overview-mode-toggle="true"
             :hide-subjects-overview-print-button="true"
-            :read-only-material-actions="true" />
+            :read-only-material-actions="true"
+            :enable-share-buttons="true" />
     </v-card>
 </template>
 
