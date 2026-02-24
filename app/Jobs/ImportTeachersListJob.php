@@ -6,8 +6,10 @@ use App\Events\TeachersListImportFinishedEvent;
 use App\Models\Teacher;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Facades\Log;
+use OpenSpout\Common\Exception\UnsupportedTypeException;
+use PhpOffice\PhpSpreadsheet\IOFactory as SpreadsheetIOFactory;
 use Spatie\SimpleExcel\SimpleExcelReader;
+use Throwable;
 
 class ImportTeachersListJob implements ShouldQueue
 {
@@ -26,75 +28,130 @@ class ImportTeachersListJob implements ShouldQueue
      */
     public function handle(): void
     {
-        $fullPath = storage_path($this->path);
-        $reader = SimpleExcelReader::create($fullPath);
+        try {
+            $fullPath = storage_path($this->path);
+            [$headers, $rows] = $this->readRowsWithHeaders($fullPath);
 
-        // Hole die erste Zeile (Header)
-        $headers = $reader->getHeaders();
+            // Validiere die Header und hole die Mapping-Informationen
+            $headerMapping = $this->validateAndMapHeaders($headers);
 
-        // Validiere die Header und hole die Mapping-Informationen
-        $headerMapping = $this->validateAndMapHeaders($headers);
+            if ($headerMapping === false) {
+                $this->broadcastFailed('Die Überschriften der Excel-Datei sind nicht korrekt! (Kurz, Nachname, Vorname, Email)');
+                return;
+            }
 
-        if ($headerMapping === false) {
+            $school_id = $this->user->school_id;
+
+            $created = 0;
+            $updated = 0;
+            $processedTeacherIds = [];
+
+            foreach ($rows as $row) {
+                $mappedRow = [];
+                foreach ($headerMapping as $originalHeader => $standardHeader) {
+                    $mappedRow[$standardHeader] = $row[$originalHeader] ?? null;
+                }
+
+                $email = trim((string) ($mappedRow['Email'] ?? ''));
+                if ($email === '') {
+                    continue;
+                }
+
+                $teacher = Teacher::updateOrCreate(
+                    [
+                        'school_id' => $school_id,
+                        'email' => $email,
+                    ],
+                    [
+                        'short' => strtoupper(trim((string) ($mappedRow['Kurz'] ?? ''))),
+                        'last_name' => trim((string) ($mappedRow['Nachname'] ?? '')),
+                        'first_name' => trim((string) ($mappedRow['Vorname'] ?? '')) ?: null,
+                    ]
+                );
+
+                $processedTeacherIds[] = $teacher->id;
+
+                if ($teacher->wasRecentlyCreated) {
+                    $created++;
+                } else {
+                    $updated++;
+                }
+            }
+
+            $deleted = 0;
 
             broadcast(new TeachersListImportFinishedEvent(
-                500,
+                200,
                 $this->user->id,
-                'Die Überschriften der Excel-Datei sind nicht korrekt! (Kurz, Nachname, Vorname, Email)',
-                []
+                'Die Lehrerliste (Excel) wurde erfolgreich importiert (' . $created . ' neu, ' . $updated . ' geprüft, ' . $deleted . ' gelöscht)',
+                ['created' => $created, 'updated' => $updated, 'deleted' => $deleted]
             ));
+        } catch (Throwable $e) {
+            report($e);
+            $message = str_contains(strtolower($e->getMessage()), 'no readers supporting the given type: xls')
+                ? 'Das Dateiformat .xls wird beim Lehrerlisten-Import nicht direkt unterstützt. Bitte als .xlsx speichern und erneut importieren.'
+                : 'Die Lehrerliste konnte nicht importiert werden.';
+            $this->broadcastFailed($message);
+        }
+    }
 
-            return;
+    /**
+     * @return array{0: array<int, string>, 1: array<int, array<string, mixed>>}
+     */
+    private function readRowsWithHeaders(string $fullPath): array
+    {
+        try {
+            $reader = SimpleExcelReader::create($fullPath);
+            $headers = $reader->getHeaders();
+            $rows = $reader->getRows()->toArray();
+            return [$headers, $rows];
+        } catch (UnsupportedTypeException $e) {
+            $ext = strtolower((string) pathinfo($fullPath, PATHINFO_EXTENSION));
+            if ($ext !== 'xls') {
+                throw $e;
+            }
+
+            return $this->readLegacyXls($fullPath);
+        }
+    }
+
+    /**
+     * @return array{0: array<int, string>, 1: array<int, array<string, mixed>>}
+     */
+    private function readLegacyXls(string $fullPath): array
+    {
+        $spreadsheet = SpreadsheetIOFactory::load($fullPath);
+        $sheet = $spreadsheet->getActiveSheet();
+        $rawRows = $sheet->toArray(null, true, true, false);
+
+        if (empty($rawRows)) {
+            return [[], []];
         }
 
-        $school_id = $this->user->school_id;
+        $headers = array_map(fn ($value) => trim((string) $value), array_shift($rawRows) ?: []);
 
-        $created = 0;
-        $updated = 0;
-        $processedTeacherIds = [];
-
-        $reader->getRows()->each(function (array $row) use ($headerMapping, $school_id, &$created, &$updated, &$processedTeacherIds) {
-            // Mappe die Daten auf die Standard-Header
-            $mappedRow = [];
-            foreach ($headerMapping as $originalHeader => $standardHeader) {
-                $mappedRow[$standardHeader] = $row[$originalHeader] ?? null;
+        $rows = [];
+        foreach ($rawRows as $rowValues) {
+            $assoc = [];
+            foreach ($headers as $index => $header) {
+                if ($header === '') {
+                    continue;
+                }
+                $assoc[$header] = $rowValues[$index] ?? null;
             }
+            $rows[] = $assoc;
+        }
 
-            $teacher = Teacher::updateOrCreate(
-                [
-                    'school_id' => $school_id,
-                    'email' => $mappedRow['Email'],
-                ],
-                [
-                    'short' => strtoupper($mappedRow['Kurz']),
-                    'last_name' => $mappedRow['Nachname'],
-                    'first_name' => $mappedRow['Vorname'],
-                ]
-            );
+        return [$headers, $rows];
+    }
 
-            // Speichere die ID des verarbeiteten Lehrers
-            $processedTeacherIds[] = $teacher->id;
-
-            if ($teacher->wasRecentlyCreated) {
-                $created++;
-            } else {
-                $updated++;
-            }
-        });
-
-        // Lösche alle Lehrer dieser Schule, die nicht in der Excel-Datei waren
-        /*
-        $deleted = Teacher::where('school_id', $school_id)
-            ->whereNotIn('id', $processedTeacherIds)
-            ->delete();
-            */
-        $deleted = 0;
-
+    private function broadcastFailed(string $message): void
+    {
         broadcast(new TeachersListImportFinishedEvent(
-            200,
+            500,
             $this->user->id,
-            'Die Lehrerliste (Excel) wurde erfolgreich importiert (' . $created . ' neu, ' . $updated . ' geprüft, ' . $deleted . ' gelöscht)',
-            ['created' => $created, 'updated' => $updated, 'deleted' => $deleted]
+            $message,
+            []
         ));
     }
 
