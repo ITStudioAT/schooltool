@@ -181,6 +181,12 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     /* SANCTUM - admin, materials_admin, materials_moderator */
     Route::middleware(['auth:sanctum', 'api-allowed:admin,materials_admin,materials_moderator'])->group(function () {
         Route::apiResource('/admin/groups', \App\Http\Controllers\Admin\GroupController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::get('/admin/groups/{group}/members', [\App\Http\Controllers\Admin\GroupController::class, 'members']);
+        Route::delete('/admin/groups/{group}/members/{user}', [\App\Http\Controllers\Admin\GroupController::class, 'removeMember']);
+        Route::get('/admin/groups/{group}/assignable-users', [\App\Http\Controllers\Admin\GroupController::class, 'assignableUsers']);
+        Route::post('/admin/groups/{group}/assign-users', [\App\Http\Controllers\Admin\GroupController::class, 'assignUsers']);
+        Route::get('/admin/groups/{group}/assignable-groups', [\App\Http\Controllers\Admin\GroupController::class, 'assignableGroups']);
+        Route::post('/admin/groups/{group}/assign-from-group', [\App\Http\Controllers\Admin\GroupController::class, 'assignFromGroup']);
     });
 
 

@@ -75,14 +75,24 @@
                         </div>
 
                         <div class="d-flex justify-space-between align-center flex-wrap ga-2 mb-2">
-                            <v-btn
-                                v-if="canManageType(section.type)"
-                                flat
-                                color="primary"
-                                prepend-icon="mdi-plus"
-                                @click="openCreateDialog(section.type)">
-                                Gruppe anlegen
-                            </v-btn>
+                            <div class="d-flex flex-wrap ga-2">
+                                <v-btn
+                                    v-if="canManageType(section.type)"
+                                    flat
+                                    color="primary"
+                                    prepend-icon="mdi-plus"
+                                    @click="openCreateDialog(section.type)">
+                                    Gruppe anlegen
+                                </v-btn>
+                                <v-btn
+                                    v-if="canManageType(section.type) && selectedGroupByType(section.type)"
+                                    flat
+                                    color="secondary"
+                                    prepend-icon="mdi-account-plus-outline"
+                                    @click="openAssignUsersDialog(selectedGroupByType(section.type))">
+                                    Benutzer zuordnen
+                                </v-btn>
+                            </div>
                         </div>
 
                         <div class="sa-empty" v-if="groupsByType(section.type).length === 0">
@@ -97,7 +107,12 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr v-for="group in groupsByType(section.type)" :key="group.id">
+                                    <tr
+                                        v-for="group in groupsByType(section.type)"
+                                        :key="group.id"
+                                        class="groups-row"
+                                        :class="{ 'is-selected': isSelectedGroup(section.type, group.id) }"
+                                        @click="selectGroup(section.type, group)">
                                         <td>
                                             <div class="d-flex align-center justify-space-between flex-wrap ga-2">
                                                 <div class="d-inline-flex align-center flex-wrap ga-2">
@@ -117,7 +132,7 @@
                                                         variant="text"
                                                         color="primary"
                                                         :title="`${group.name} bearbeiten`"
-                                                        @click="openEditDialog(group)" />
+                                                        @click.stop="openEditDialog(group)" />
                                                     <v-btn
                                                         v-if="canManageType(section.type)"
                                                         icon="mdi-delete"
@@ -126,7 +141,7 @@
                                                         color="warning"
                                                         :disabled="group.members_count > 0"
                                                         :title="group.members_count > 0 ? 'Nur ohne Mitglieder löschbar' : `${group.name} löschen`"
-                                                        @click="openDeleteDialog(group)" />
+                                                        @click.stop="openDeleteDialog(group)" />
                                                 </div>
                                             </div>
                                             <div class="text-caption text-medium-emphasis groups-desc-cell">
@@ -216,6 +231,184 @@
                 </v-card-actions>
             </v-card>
         </v-dialog>
+
+        <v-dialog v-model="assignUsersDialog.open" max-width="760" persistent>
+            <v-card class="ai-glass-panel">
+                <v-card-title class="d-flex justify-space-between align-center">
+                    <div>
+                        <div class="text-caption text-medium-emphasis">
+                            {{ currentTypeLabel(assignUsersDialog.group?.type) }}
+                        </div>
+                        <div>Benutzer zuordnen</div>
+                    </div>
+                    <v-btn icon="mdi-close" variant="text" @click="closeAssignUsersDialog" />
+                </v-card-title>
+                <v-card-text>
+                    <div v-if="assignUsersDialog.group" class="text-body-2 mb-2">
+                        Gruppe: <strong>{{ assignUsersDialog.group.name }}</strong>
+                    </div>
+                    <div class="d-grid ga-3">
+                        <section class="groups-assign-section">
+                            <div class="d-flex justify-space-between align-center flex-wrap ga-2">
+                                <div>
+                                    <div class="admin-card-eyebrow">Zugeordnete Benutzer</div>
+                                    <div class="text-caption text-medium-emphasis">
+                                        {{ assignUsersDialog.members.length }} Benutzer in dieser Gruppe
+                                    </div>
+                                </div>
+                                <div class="d-flex flex-wrap ga-2">
+                                    <v-btn
+                                        flat
+                                        color="secondary"
+                                        prepend-icon="mdi-refresh"
+                                        :loading="assignUsersDialog.membersLoading"
+                                        @click="loadAssignedMembers">
+                                        Aktualisieren
+                                    </v-btn>
+                                    <v-btn
+                                        flat
+                                        :color="assignUsersDialog.membersExpanded ? 'secondary' : 'primary'"
+                                        :prepend-icon="assignUsersDialog.membersExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+                                        @click="assignUsersDialog.membersExpanded = !assignUsersDialog.membersExpanded">
+                                        {{ assignUsersDialog.membersExpanded ? 'Einklappen' : 'Aufklappen' }}
+                                    </v-btn>
+                                </div>
+                            </div>
+
+                            <div v-if="assignUsersDialog.membersExpanded" class="mt-3">
+                                <div class="sa-empty" v-if="assignUsersDialog.membersLoading">
+                                    Lade zugeordnete Benutzer ...
+                                </div>
+                                <div class="sa-empty" v-else-if="assignUsersDialog.members.length === 0">
+                                    Keine Benutzer zugeordnet.
+                                </div>
+                                <div class="groups-assign-list" v-else>
+                                    <div class="groups-assign-list-item" v-for="member in assignUsersDialog.members" :key="`group-member-${member.id}`">
+                                        <div class="min-w-0">
+                                            <div class="font-weight-bold text-body-2">{{ member.name }}</div>
+                                            <div class="text-caption text-medium-emphasis">{{ member.email }}</div>
+                                            <div class="text-caption text-medium-emphasis" v-if="member.schoolclass">Klasse: {{ member.schoolclass }}</div>
+                                        </div>
+                                        <v-btn
+                                            flat
+                                            color="warning"
+                                            size="small"
+                                            prepend-icon="mdi-account-remove"
+                                            :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(member.id)"
+                                            @click="removeAssignedMember(member)">
+                                            Entfernen
+                                        </v-btn>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="groups-assign-section">
+                            <div class="d-flex justify-space-between align-center flex-wrap ga-2 mb-2">
+                                <div>
+                                    <div class="admin-card-eyebrow">1. Benutzer suchen</div>
+                                    <div class="text-caption text-medium-emphasis">Benutzer der aktuellen Schule suchen und direkt zuordnen.</div>
+                                </div>
+                                <v-btn
+                                    flat
+                                    color="primary"
+                                    prepend-icon="mdi-refresh"
+                                    :loading="assignUsersDialog.userSearchLoading"
+                                    @click="searchAssignableUsers">
+                                    Aktualisieren
+                                </v-btn>
+                            </div>
+
+                            <div class="d-flex flex-wrap ga-2 align-start mb-2">
+                                <v-text-field
+                                    v-model="assignUsersDialog.userSearchString"
+                                    label="Benutzer suchen"
+                                    hide-details
+                                    density="comfortable"
+                                    class="flex-grow-1"
+                                    @keyup.enter="searchAssignableUsers" />
+                                <v-btn
+                                    flat
+                                    color="primary"
+                                    prepend-icon="mdi-magnify"
+                                    :loading="assignUsersDialog.userSearchLoading"
+                                    @click="searchAssignableUsers">
+                                    Suchen
+                                </v-btn>
+                            </div>
+
+                            <div class="sa-empty" v-if="!assignUsersDialog.userSearchHasRun">
+                                Bitte zuerst einen Benutzer suchen.
+                            </div>
+                            <div class="sa-empty" v-else-if="assignUsersDialog.userSearchResults.length === 0">
+                                Keine Benutzer gefunden.
+                            </div>
+                            <div class="groups-assign-list" v-else>
+                                <div class="groups-assign-list-item" v-for="user in assignUsersDialog.userSearchResults" :key="`assign-user-${user.id}`">
+                                    <div class="min-w-0">
+                                        <div class="font-weight-bold text-body-2">{{ user.name }}</div>
+                                        <div class="text-caption text-medium-emphasis">{{ user.email }}</div>
+                                        <div class="text-caption text-medium-emphasis" v-if="user.schoolclass">Klasse: {{ user.schoolclass }}</div>
+                                    </div>
+                                    <div class="d-flex flex-wrap ga-1 justify-end">
+                                        <v-chip
+                                            v-if="user.already_member"
+                                            color="secondary"
+                                            variant="flat"
+                                            size="x-small">
+                                            schon in Gruppe
+                                        </v-chip>
+                                        <v-btn
+                                            flat
+                                            color="success"
+                                            size="small"
+                                            prepend-icon="mdi-account-plus"
+                                            :loading="isBusy"
+                                            @click="assignUsersToCurrentGroup([user.id])">
+                                            Zuordnen
+                                        </v-btn>
+                                        <v-btn
+                                            @click="assignUsersToCurrentGroup([user.id])">
+                                            Zuordnen
+                                        </v-btn>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="groups-assign-section">
+                            <div class="admin-card-eyebrow">2. Aus anderer Gruppe übernehmen</div>
+                            <div class="text-caption text-medium-emphasis mb-2">Mitglieder einer anderen Gruppe in diese Gruppe übernehmen.</div>
+                            <div class="d-flex flex-wrap ga-2 align-start">
+                                <v-select
+                                    v-model="assignUsersDialog.sourceGroupId"
+                                    :items="assignUsersDialog.sourceGroups"
+                                    item-title="display_name"
+                                    item-value="id"
+                                    label="Quellgruppe"
+                                    density="comfortable"
+                                    hide-details
+                                    class="flex-grow-1"
+                                    :loading="assignUsersDialog.sourceGroupsLoading" />
+                                <v-btn
+                                    flat
+                                    color="primary"
+                                    prepend-icon="mdi-account-multiple-plus"
+                                    :disabled="!assignUsersDialog.sourceGroupId"
+                                    :loading="isBusy"
+                                    @click="assignFromOtherGroup">
+                                    Übernehmen
+                                </v-btn>
+                            </div>
+                        </section>
+                    </div>
+                </v-card-text>
+                <v-card-actions class="d-flex justify-space-between">
+                    <v-btn color="warning" variant="text" @click="closeAssignUsersDialog">Schließen</v-btn>
+                    <v-btn color="success" variant="flat" disabled>Speichern</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </div>
 </template>
 
@@ -259,6 +452,11 @@ export default {
                     permissionText: 'Bearbeitung durch super_admin, admin, materials_admin und materials_moderator.',
                 },
             ],
+            selectedGroupIdsByType: {
+                school: null,
+                materials: null,
+                own: null,
+            },
             editDialog: {
                 open: false,
                 mode: 'create',
@@ -273,6 +471,21 @@ export default {
             deleteDialog: {
                 open: false,
                 group: null,
+            },
+            assignUsersDialog: {
+                open: false,
+                group: null,
+                membersExpanded: true,
+                members: [],
+                membersLoading: false,
+                removingUserId: null,
+                userSearchString: '',
+                userSearchResults: [],
+                userSearchHasRun: false,
+                userSearchLoading: false,
+                sourceGroups: [],
+                sourceGroupsLoading: false,
+                sourceGroupId: null,
             },
         }
     },
@@ -310,6 +523,12 @@ export default {
             return this.groups.filter((group) => group.type === type)
         },
 
+        selectedGroupByType(type) {
+            const selectedId = this.selectedGroupIdsByType?.[type] ?? null
+            if (!selectedId) return null
+            return this.groups.find((group) => group.type === type && Number(group.id) === Number(selectedId)) || null
+        },
+
         currentTypeLabel(type) {
             return this.groupSections.find((section) => section.type === type)?.label || type
         },
@@ -338,9 +557,13 @@ export default {
                 const response = await axios.get('/api/admin/groups')
                 this.groups = Array.isArray(response.data?.data) ? response.data.data : []
                 this.apiPermissions = response.data?.meta?.permissions || {}
+                this.cleanupSelectedGroups()
+                this.refreshAssignDialogGroupReference()
             } catch (error) {
                 this.groups = []
                 this.apiPermissions = {}
+                this.selectedGroupIdsByType = { school: null, materials: null, own: null }
+                this.refreshAssignDialogGroupReference()
                 this.notifyError(error, 'Gruppen konnten nicht geladen werden.')
             } finally {
                 this.is_loading--
@@ -441,6 +664,193 @@ export default {
                 this.isBusy = false
             }
         },
+        selectGroup(type, group) {
+            if (!group || group.type !== type) return
+            const currentId = this.selectedGroupIdsByType[type]
+            this.selectedGroupIdsByType[type] = Number(currentId) === Number(group.id) ? null : group.id
+        },
+        isSelectedGroup(type, groupId) {
+            return Number(this.selectedGroupIdsByType?.[type] || 0) === Number(groupId)
+        },
+        cleanupSelectedGroups() {
+            const next = { ...this.selectedGroupIdsByType }
+            for (const section of this.groupSections) {
+                const type = section.type
+                const selectedId = next[type]
+                if (!selectedId) continue
+                const exists = this.groups.some((group) => group.type === type && Number(group.id) === Number(selectedId))
+                if (!exists) next[type] = null
+            }
+            this.selectedGroupIdsByType = next
+        },
+        openAssignUsersDialog(group) {
+            if (!group) return
+            this.assignUsersDialog.group = group
+            this.assignUsersDialog.membersExpanded = true
+            this.assignUsersDialog.members = []
+            this.assignUsersDialog.membersLoading = false
+            this.assignUsersDialog.removingUserId = null
+            this.assignUsersDialog.userSearchString = ''
+            this.assignUsersDialog.userSearchResults = []
+            this.assignUsersDialog.userSearchHasRun = false
+            this.assignUsersDialog.sourceGroups = []
+            this.assignUsersDialog.sourceGroupId = null
+            this.assignUsersDialog.open = true
+            this.loadAssignedMembers()
+            this.loadAssignableGroups()
+        },
+        closeAssignUsersDialog() {
+            this.assignUsersDialog.open = false
+            this.assignUsersDialog.group = null
+            this.assignUsersDialog.membersExpanded = true
+            this.assignUsersDialog.members = []
+            this.assignUsersDialog.membersLoading = false
+            this.assignUsersDialog.removingUserId = null
+            this.assignUsersDialog.userSearchString = ''
+            this.assignUsersDialog.userSearchResults = []
+            this.assignUsersDialog.userSearchHasRun = false
+            this.assignUsersDialog.sourceGroups = []
+            this.assignUsersDialog.sourceGroupId = null
+        },
+        refreshAssignDialogGroupReference() {
+            if (!this.assignUsersDialog?.group?.id) return
+            const nextGroup = this.groups.find((row) => Number(row.id) === Number(this.assignUsersDialog.group.id)) || null
+            this.assignUsersDialog.group = nextGroup
+            if (!nextGroup) {
+                this.closeAssignUsersDialog()
+            }
+        },
+        async loadAssignedMembers() {
+            const group = this.assignUsersDialog.group
+            if (!group?.id) return
+            this.assignUsersDialog.membersLoading = true
+            try {
+                const response = await axios.get(`/api/admin/groups/${group.id}/members`)
+                this.assignUsersDialog.members = Array.isArray(response.data?.data) ? response.data.data : []
+            } catch (error) {
+                this.assignUsersDialog.members = []
+                this.notifyError(error, 'Zugeordnete Benutzer konnten nicht geladen werden.')
+            } finally {
+                this.assignUsersDialog.membersLoading = false
+            }
+        },
+        async removeAssignedMember(member) {
+            const group = this.assignUsersDialog.group
+            if (!group?.id || !member?.id || this.isBusy) return
+
+            this.isBusy = true
+            this.is_loading++
+            this.assignUsersDialog.removingUserId = member.id
+            try {
+                await axios.delete(`/api/admin/groups/${group.id}/members/${member.id}`)
+                this.notifySuccess('Benutzer entfernt.')
+                await this.loadGroups()
+                await this.loadAssignedMembers()
+                if (this.assignUsersDialog.userSearchHasRun) {
+                    await this.searchAssignableUsers()
+                }
+                await this.loadAssignableGroups()
+            } catch (error) {
+                this.notifyError(error, 'Benutzer konnte nicht entfernt werden.')
+            } finally {
+                this.assignUsersDialog.removingUserId = null
+                this.is_loading--
+                this.isBusy = false
+            }
+        },
+        async searchAssignableUsers() {
+            const group = this.assignUsersDialog.group
+            if (!group?.id) return
+            const searchString = String(this.assignUsersDialog.userSearchString || '').trim()
+            if (searchString === '') {
+                this.assignUsersDialog.userSearchHasRun = false
+                this.assignUsersDialog.userSearchResults = []
+                return
+            }
+            this.assignUsersDialog.userSearchLoading = true
+            try {
+                const response = await axios.get(`/api/admin/groups/${group.id}/assignable-users`, {
+                    params: { search_string: searchString },
+                })
+                this.assignUsersDialog.userSearchHasRun = true
+                this.assignUsersDialog.userSearchResults = Array.isArray(response.data?.data) ? response.data.data : []
+            } catch (error) {
+                this.assignUsersDialog.userSearchHasRun = true
+                this.assignUsersDialog.userSearchResults = []
+                this.notifyError(error, 'Benutzer konnten nicht geladen werden.')
+            } finally {
+                this.assignUsersDialog.userSearchLoading = false
+            }
+        },
+        async loadAssignableGroups() {
+            const group = this.assignUsersDialog.group
+            if (!group?.id) return
+            this.assignUsersDialog.sourceGroupsLoading = true
+            try {
+                const response = await axios.get(`/api/admin/groups/${group.id}/assignable-groups`)
+                const rows = Array.isArray(response.data?.data) ? response.data.data : []
+                this.assignUsersDialog.sourceGroups = rows.map((row) => ({
+                    ...row,
+                    display_name: `${this.currentTypeLabel(row.type)} | ${row.name} (${row.members_count})`,
+                }))
+                if (!this.assignUsersDialog.sourceGroups.some((row) => Number(row.id) === Number(this.assignUsersDialog.sourceGroupId))) {
+                    this.assignUsersDialog.sourceGroupId = null
+                }
+            } catch (error) {
+                this.assignUsersDialog.sourceGroups = []
+                this.assignUsersDialog.sourceGroupId = null
+                this.notifyError(error, 'Quellgruppen konnten nicht geladen werden.')
+            } finally {
+                this.assignUsersDialog.sourceGroupsLoading = false
+            }
+        },
+        async assignUsersToCurrentGroup(userIds = []) {
+            const group = this.assignUsersDialog.group
+            if (!group?.id || this.isBusy || !Array.isArray(userIds) || userIds.length === 0) return
+
+            this.isBusy = true
+            this.is_loading++
+            try {
+                const response = await axios.post(`/api/admin/groups/${group.id}/assign-users`, {
+                    user_ids: userIds,
+                })
+                const newCount = Number(response.data?.meta?.new_count ?? 0)
+                this.notifySuccess(newCount > 0 ? `${newCount} Benutzer zugeordnet.` : 'Benutzer waren bereits zugeordnet.')
+                await this.loadGroups()
+                await this.loadAssignedMembers()
+                await this.searchAssignableUsers()
+                await this.loadAssignableGroups()
+            } catch (error) {
+                this.notifyError(error, 'Benutzer konnten nicht zugeordnet werden.')
+            } finally {
+                this.is_loading--
+                this.isBusy = false
+            }
+        },
+        async assignFromOtherGroup() {
+            const group = this.assignUsersDialog.group
+            const sourceGroupId = this.assignUsersDialog.sourceGroupId
+            if (!group?.id || !sourceGroupId || this.isBusy) return
+
+            this.isBusy = true
+            this.is_loading++
+            try {
+                const response = await axios.post(`/api/admin/groups/${group.id}/assign-from-group`, {
+                    source_group_id: sourceGroupId,
+                })
+                const newCount = Number(response.data?.meta?.new_count ?? 0)
+                this.notifySuccess(newCount > 0 ? `${newCount} Benutzer aus Gruppe übernommen.` : (response.data?.message || 'Keine neuen Benutzer übernommen.'))
+                await this.loadGroups()
+                await this.loadAssignedMembers()
+                await this.searchAssignableUsers()
+                await this.loadAssignableGroups()
+            } catch (error) {
+                this.notifyError(error, 'Benutzer konnten nicht aus der Gruppe übernommen werden.')
+            } finally {
+                this.is_loading--
+                this.isBusy = false
+            }
+        },
     },
 }
 </script>
@@ -485,6 +895,19 @@ export default {
     vertical-align: middle;
 }
 
+.groups-table :deep(.groups-row) {
+    cursor: pointer;
+    transition: background-color 0.12s ease;
+}
+
+.groups-table :deep(.groups-row:hover) {
+    background: rgba(57, 73, 171, 0.04);
+}
+
+.groups-table :deep(.groups-row.is-selected) {
+    background: rgba(57, 73, 171, 0.08);
+}
+
 .groups-desc-cell {
     width: 100%;
     max-width: none;
@@ -492,11 +915,44 @@ export default {
     line-height: 1.25;
 }
 
+.groups-assign-section {
+    border-radius: 12px;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    background: rgba(255, 255, 255, 0.62);
+    padding: 12px;
+}
+
+.groups-assign-list {
+    display: grid;
+    gap: 8px;
+}
+
+.groups-assign-list-item {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    background: rgba(255, 255, 255, 0.72);
+    padding: 8px 10px;
+}
+
+.min-w-0 {
+    min-width: 0;
+}
+
 @media (max-width: 1200px) {
     .groups-cards-shell {
         width: 100%;
         max-width: 100%;
     }
+}
 
+@media (max-width: 720px) {
+    .groups-assign-list-item {
+        flex-direction: column;
+        align-items: stretch;
+    }
 }
 </style>
