@@ -8,6 +8,7 @@
 
             <v-col cols="12" md="4" class="d-flex justify-md-end align-center flex-wrap ga-2">
                 <v-btn-toggle
+                    v-if="!hideOverviewModeToggle"
                     :model-value="overviewViewMode"
                     mandatory
                     color="primary"
@@ -246,6 +247,7 @@
         <template v-else-if="isSubjectsContentsOverview">
             <div class="d-flex flex-wrap align-center ga-2 mb-3">
                 <v-btn
+                    v-if="!hideSubjectsOverviewPrintButton"
                     size="small"
                     color="primary"
                     variant="outlined"
@@ -1168,7 +1170,7 @@
             </v-card-text>
 
             <v-card-actions class="px-6 pb-6 pt-2 d-flex flex-wrap justify-end ga-2">
-                <template v-if="detailDeleteStep === 0">
+                <template v-if="!readOnlyMaterialActions && detailDeleteStep === 0">
                     <v-btn
                         color="warning"
                         variant="tonal"
@@ -1179,7 +1181,7 @@
                     </v-btn>
                 </template>
 
-                <template v-else>
+                <template v-else-if="!readOnlyMaterialActions">
                     <v-btn
                         color="success"
                         variant="tonal"
@@ -1207,6 +1209,7 @@
                 </v-btn>
 
                 <v-btn
+                    v-if="!readOnlyMaterialActions"
                     color="primary"
                     variant="flat"
                     prepend-icon="mdi-pencil"
@@ -1519,6 +1522,24 @@ const createDefaultEditForm = () => ({
 
 export default {
     name: 'MaterialsOverviewView',
+    props: {
+        forcedOverviewMode: {
+            type: String,
+            default: null,
+        },
+        hideOverviewModeToggle: {
+            type: Boolean,
+            default: false,
+        },
+        hideSubjectsOverviewPrintButton: {
+            type: Boolean,
+            default: false,
+        },
+        readOnlyMaterialActions: {
+            type: Boolean,
+            default: false,
+        },
+    },
     components: {
         FilePond,
         ItsRichTextEditor,
@@ -2043,6 +2064,10 @@ export default {
             this.overviewViewMode = allowedModes.includes(storedMode) ? storedMode : 'list'
         } catch {
             this.overviewViewMode = 'list'
+        }
+        const forcedMode = String(this.forcedOverviewMode || '').trim()
+        if (['list', 'grid', 'alpha', 'subjects_contents'].includes(forcedMode)) {
+            this.overviewViewMode = forcedMode
         }
         try {
             const storedSortMode = window?.localStorage?.getItem?.('materials.overview.sort')
