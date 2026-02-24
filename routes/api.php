@@ -188,6 +188,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/groups/{group}/assign-users', [\App\Http\Controllers\Admin\GroupController::class, 'assignUsers']);
         Route::get('/admin/groups/{group}/assignable-groups', [\App\Http\Controllers\Admin\GroupController::class, 'assignableGroups']);
         Route::post('/admin/groups/{group}/assign-from-group', [\App\Http\Controllers\Admin\GroupController::class, 'assignFromGroup']);
+        Route::get('/admin/groups/{group}/my-teaching-courses', [\App\Http\Controllers\Admin\GroupController::class, 'myTeachingCourses']);
     });
 
 

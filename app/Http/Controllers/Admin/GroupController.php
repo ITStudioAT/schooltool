@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Import116;
+use App\Models\TeachingCourse;
 use App\Models\User;
 use App\Models\UserGroup;
 use Illuminate\Http\Request;
@@ -462,6 +463,90 @@ class GroupController extends Controller
         }
 
         return $this->assignUsers(new Request(['user_ids' => $sourceMemberIds->all()]), $group);
+    }
+
+    public function myTeachingCourses(Request $request, UserGroup $group)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'materials_admin', 'materials_moderator'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+        $this->assertGroupsFeatureLicence($auth_user);
+
+        $schoolId = $this->currentSchoolId($auth_user);
+        $this->assertGroupInCurrentSchool($group, $schoolId);
+        $this->assertTypePermission($auth_user, (string) $group->type);
+
+        if ((string) $group->type !== UserGroup::TYPE_OWN) {
+            abort(422, 'Diese Funktion ist nur für Eigene Gruppen verfügbar.');
+        }
+
+        $schoolyearId = $auth_user->schoolyear_id ? (int) $auth_user->schoolyear_id : null;
+
+        $coursesQuery = TeachingCourse::query()
+            ->where('school_id', $schoolId)
+            ->where('user_id', (int) $auth_user->id)
+            ->with([
+                'teachingCourseStudents' => function ($q) {
+                    $q->select(['id', 'teaching_course_id', 'user_id', 'import116_id']);
+                },
+                'teachingCourseStudents.user:id,last_name,first_name,email,schoolclass',
+                'teachingCourseStudents.import116:id,class,last_name,first_name,email',
+            ])
+            ->orderByRaw('LOWER(title)');
+
+        if ($schoolyearId) {
+            $coursesQuery->where('schoolyear_id', $schoolyearId);
+        }
+
+        $courses = $coursesQuery->get(['id', 'school_id', 'schoolyear_id', 'title', 'classes']);
+        $existingMemberIds = $group->members()->pluck('users.id')->map(fn ($id) => (int) $id)->all();
+
+        $data = $courses->map(function (TeachingCourse $course) use ($existingMemberIds) {
+            $students = $course->teachingCourseStudents
+                ->map(function ($courseStudent) use ($existingMemberIds) {
+                    $user = $courseStudent->user;
+                    $import = $courseStudent->import116;
+
+                    $name = null;
+                    $email = null;
+                    $schoolclass = null;
+
+                    if ($user) {
+                        $name = trim((string) (($user->last_name ?? '').' '.($user->first_name ?? '')));
+                        $email = $user->email;
+                        $schoolclass = $user->schoolclass;
+                    } elseif ($import) {
+                        $name = trim((string) (($import->last_name ?? '').' '.($import->first_name ?? '')));
+                        $email = $import->email;
+                        $schoolclass = $import->class;
+                    }
+
+                    $userId = $user ? (int) $user->id : null;
+
+                    return [
+                        'id' => $userId,
+                        'user_id' => $userId,
+                        'import116_id' => $courseStudent->import116_id ? (int) $courseStudent->import116_id : null,
+                        'name' => $name !== '' ? $name : ($email ?: 'Schüler:in'),
+                        'email' => $email,
+                        'schoolclass' => $schoolclass,
+                        'has_user_account' => (bool) $userId,
+                        'already_member' => $userId ? in_array($userId, $existingMemberIds, true) : false,
+                    ];
+                })
+                ->values();
+
+            $classes = is_array($course->classes) ? array_values(array_filter($course->classes, fn ($v) => trim((string) $v) !== '')) : [];
+
+            return [
+                'id' => (int) $course->id,
+                'title' => (string) ($course->title ?: 'Fach'),
+                'classes' => $classes,
+                'students' => $students,
+            ];
+        })->values();
+
+        return response()->json(['data' => $data]);
     }
 
     private function currentSchoolId($auth_user): int

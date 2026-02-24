@@ -408,6 +408,7 @@
                             <div class="admin-card-eyebrow mb-2">Weitere Möglichkeiten</div>
                             <v-expansion-panels
                                 v-model="assignUsersDialog.extraPanel"
+                                @update:modelValue="onExtraPanelChanged"
                                 variant="accordion">
                                 <v-expansion-panel value="group">
                                     <v-expansion-panel-title>
@@ -438,6 +439,156 @@
                                     Übernehmen
                                 </v-btn>
                             </div>
+                                    </v-expansion-panel-text>
+                                </v-expansion-panel>
+
+                                <v-expansion-panel
+                                    v-if="assignUsersDialog.group?.type === 'own'"
+                                    value="my-courses">
+                                    <v-expansion-panel-title>
+                                        <div class="d-flex align-center ga-2">
+                                            <v-icon size="18">mdi-book-education-outline</v-icon>
+                                            <span>3. Aus meinen Fächern übernehmen</span>
+                                        </div>
+                                    </v-expansion-panel-title>
+                                    <v-expansion-panel-text>
+                                        <div class="sa-empty" v-if="assignUsersDialog.myCoursesLoading">
+                                            Lade meine Fächer ...
+                                        </div>
+                                        <div class="sa-empty" v-else-if="assignUsersDialog.myCourses.length === 0">
+                                            Keine Fächer gefunden.
+                                        </div>
+                                        <div class="groups-assign-list" v-else>
+                                            <div class="groups-assign-list-item d-block" v-for="course in assignUsersDialog.myCourses" :key="`my-course-${course.id}`">
+                                                <div class="d-flex justify-space-between align-center flex-wrap ga-2">
+                                                    <div class="d-inline-flex align-center flex-wrap ga-2 min-w-0">
+                                                        <div class="font-weight-bold text-body-2">{{ course.title }}</div>
+                                                        <v-chip color="secondary" variant="flat" size="x-small">
+                                                            {{ course.students.length }}
+                                                        </v-chip>
+                                                        <v-chip
+                                                            v-if="course.classes_label"
+                                                            color="primary"
+                                                            variant="flat"
+                                                            size="x-small">
+                                                            {{ course.classes_label }}
+                                                        </v-chip>
+                                                        <v-chip
+                                                            v-if="myCourseAssignableIds(course).length > 0"
+                                                            color="success"
+                                                            variant="flat"
+                                                            size="x-small">
+                                                            {{ myCourseAssignableIds(course).length }} neu
+                                                        </v-chip>
+                                                    </div>
+                                                    <div class="d-flex flex-wrap ga-1 justify-end">
+                                                        <v-btn
+                                                            flat
+                                                            color="success"
+                                                            size="small"
+                                                            prepend-icon="mdi-account-multiple-plus"
+                                                            :disabled="myCourseAssignableIds(course).length === 0"
+                                                            :loading="isBusy"
+                                                            @click="assignWholeMyCourse(course)">
+                                                            Fach zuordnen
+                                                        </v-btn>
+                                                        <v-btn
+                                                            flat
+                                                            :color="course.expanded ? 'secondary' : 'primary'"
+                                                            size="small"
+                                                            :prepend-icon="course.expanded ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+                                                            @click="toggleMyCourseExpanded(course.id)">
+                                                            {{ course.expanded ? 'Ausblenden' : 'Anzeigen' }}
+                                                        </v-btn>
+                                                    </div>
+                                                </div>
+
+                                                <div v-if="course.expanded" class="mt-3">
+                                                    <div class="d-flex flex-wrap ga-2 mb-2">
+                                                        <v-btn
+                                                            flat
+                                                            color="primary"
+                                                            size="small"
+                                                            prepend-icon="mdi-check-all"
+                                                            @click="selectAllMyCourseStudents(course.id)">
+                                                            Alle auswählen
+                                                        </v-btn>
+                                                        <v-btn
+                                                            flat
+                                                            color="secondary"
+                                                            size="small"
+                                                            prepend-icon="mdi-close-box-multiple-outline"
+                                                            :disabled="course.selectedIds.length === 0"
+                                                            @click="clearMyCourseSelection(course.id)">
+                                                            Auswahl aufheben ({{ course.selectedIds.length }})
+                                                        </v-btn>
+                                                        <v-btn
+                                                            flat
+                                                            color="success"
+                                                            size="small"
+                                                            prepend-icon="mdi-account-multiple-plus"
+                                                            :disabled="course.selectedIds.length === 0"
+                                                            :loading="isBusy"
+                                                            @click="assignSelectedMyCourseStudents(course.id)">
+                                                            Ausgewählte zuordnen ({{ course.selectedIds.length }})
+                                                        </v-btn>
+                                                    </div>
+
+                                                    <div class="groups-assign-list">
+                                                        <div class="groups-assign-list-item" v-for="student in course.students" :key="`my-course-student-${course.id}-${student.import116_id || student.id}`">
+                                                            <div class="d-flex align-start ga-2 min-w-0">
+                                                                <v-checkbox-btn
+                                                                    :model-value="isMyCourseStudentSelected(course.id, student.id)"
+                                                                    :disabled="student.already_member || !student.has_user_account"
+                                                                    color="primary"
+                                                                    @update:model-value="toggleMyCourseStudentSelection(course.id, student.id)" />
+                                                                <div class="min-w-0">
+                                                                    <div class="font-weight-bold text-body-2">{{ student.name }}</div>
+                                                                    <div class="text-caption text-medium-emphasis">{{ student.email }}</div>
+                                                                    <div class="text-caption text-medium-emphasis" v-if="student.schoolclass">Klasse: {{ student.schoolclass }}</div>
+                                                                </div>
+                                                            </div>
+                                                            <div class="d-flex flex-wrap ga-1 justify-end">
+                                                                <v-chip
+                                                                    v-if="student.already_member"
+                                                                    color="secondary"
+                                                                    variant="flat"
+                                                                    size="x-small">
+                                                                    zugeordnet
+                                                                </v-chip>
+                                                                <v-chip
+                                                                    v-else-if="!student.has_user_account"
+                                                                    color="warning"
+                                                                    variant="flat"
+                                                                    size="x-small">
+                                                                    kein Benutzerkonto
+                                                                </v-chip>
+                                                                <v-btn
+                                                                    v-if="!student.already_member && student.has_user_account"
+                                                                    flat
+                                                                    color="success"
+                                                                    size="small"
+                                                                    prepend-icon="mdi-account-plus"
+                                                                    :loading="isBusy"
+                                                                    @click="assignUsersToCurrentGroup([student.user_id || student.id])">
+                                                                    Zuordnen
+                                                                </v-btn>
+                                                                <v-btn
+                                                                    v-else
+                                                                    flat
+                                                                    color="warning"
+                                                                    size="small"
+                                                                    prepend-icon="mdi-account-remove"
+                                                                    :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(student.id)"
+                                                                    @click="removeAssignedMember(student)">
+                                                                    Entfernen
+                                                                </v-btn>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </v-expansion-panel-text>
                                 </v-expansion-panel>
 
@@ -896,6 +1047,9 @@ export default {
                 teacherSearchLoading: false,
                 selectedTeacherIds: [],
                 teacherShowAll: false,
+                myCoursesLoading: false,
+                myCoursesLoaded: false,
+                myCourses: [],
                 studentSearchString: '',
                 studentSearchResults: [],
                 studentSearchHasRun: false,
@@ -1122,6 +1276,9 @@ export default {
             this.assignUsersDialog.teacherSearchLoading = false
             this.assignUsersDialog.selectedTeacherIds = []
             this.assignUsersDialog.teacherShowAll = false
+            this.assignUsersDialog.myCoursesLoading = false
+            this.assignUsersDialog.myCoursesLoaded = false
+            this.assignUsersDialog.myCourses = []
             this.assignUsersDialog.studentSearchString = ''
             this.assignUsersDialog.studentSearchResults = []
             this.assignUsersDialog.studentSearchHasRun = false
@@ -1154,6 +1311,9 @@ export default {
             this.assignUsersDialog.teacherSearchLoading = false
             this.assignUsersDialog.selectedTeacherIds = []
             this.assignUsersDialog.teacherShowAll = false
+            this.assignUsersDialog.myCoursesLoading = false
+            this.assignUsersDialog.myCoursesLoaded = false
+            this.assignUsersDialog.myCourses = []
             this.assignUsersDialog.studentSearchString = ''
             this.assignUsersDialog.studentSearchResults = []
             this.assignUsersDialog.studentSearchHasRun = false
@@ -1321,6 +1481,96 @@ export default {
 
             return Array.from(groupsMap.values()).sort((a, b) => a.label.localeCompare(b.label, 'de', { numeric: true, sensitivity: 'base' }))
         },
+        onExtraPanelChanged(panel) {
+            if (panel === 'my-courses') {
+                this.loadMyTeachingCourses()
+            }
+        },
+        buildMyTeachingCourses(rows = []) {
+            const previous = new Map(
+                (this.assignUsersDialog.myCourses || []).map((course) => [Number(course.id), { expanded: !!course.expanded }])
+            )
+
+            return rows.map((course) => ({
+                ...course,
+                classes_label: Array.isArray(course.classes) && course.classes.length ? course.classes.join(', ') : '',
+                expanded: previous.get(Number(course.id))?.expanded || false,
+                selectedIds: [],
+                students: Array.isArray(course.students) ? course.students : [],
+            }))
+        },
+        async loadMyTeachingCourses(force = false) {
+            const group = this.assignUsersDialog.group
+            if (!group?.id || group.type !== 'own') return
+            if (this.assignUsersDialog.myCoursesLoaded && !force) return
+
+            this.assignUsersDialog.myCoursesLoading = true
+            try {
+                const response = await axios.get(`/api/admin/groups/${group.id}/my-teaching-courses`)
+                const rows = Array.isArray(response.data?.data) ? response.data.data : []
+                this.assignUsersDialog.myCourses = this.buildMyTeachingCourses(rows)
+                this.assignUsersDialog.myCoursesLoaded = true
+            } catch (error) {
+                this.assignUsersDialog.myCourses = []
+                this.assignUsersDialog.myCoursesLoaded = false
+                this.notifyError(error, 'Meine Fächer konnten nicht geladen werden.')
+            } finally {
+                this.assignUsersDialog.myCoursesLoading = false
+            }
+        },
+        findMyCourse(courseId) {
+            return this.assignUsersDialog.myCourses.find((row) => Number(row.id) === Number(courseId)) || null
+        },
+        myCourseAssignableIds(course) {
+            return (course?.students || [])
+                .filter((student) => !student.already_member && !!student.has_user_account)
+                .map((student) => Number(student.user_id || student.id))
+        },
+        toggleMyCourseExpanded(courseId) {
+            const course = this.findMyCourse(courseId)
+            if (!course) return
+            course.expanded = !course.expanded
+        },
+        isMyCourseStudentSelected(courseId, userId) {
+            if (!userId) return false
+            const course = this.findMyCourse(courseId)
+            if (!course) return false
+            return course.selectedIds.some((id) => Number(id) === Number(userId))
+        },
+        toggleMyCourseStudentSelection(courseId, userId) {
+            if (!userId) return
+            const course = this.findMyCourse(courseId)
+            if (!course) return
+            const id = Number(userId)
+            const next = [...course.selectedIds]
+            const index = next.findIndex((row) => Number(row) === id)
+            if (index >= 0) next.splice(index, 1)
+            else next.push(id)
+            course.selectedIds = next
+        },
+        selectAllMyCourseStudents(courseId) {
+            const course = this.findMyCourse(courseId)
+            if (!course) return
+            course.selectedIds = this.myCourseAssignableIds(course)
+        },
+        clearMyCourseSelection(courseId) {
+            const course = this.findMyCourse(courseId)
+            if (!course) return
+            course.selectedIds = []
+        },
+        async assignWholeMyCourse(course) {
+            const userIds = this.myCourseAssignableIds(course)
+            if (userIds.length === 0) return
+            await this.assignUsersToCurrentGroup(userIds)
+        },
+        async assignSelectedMyCourseStudents(courseId) {
+            const course = this.findMyCourse(courseId)
+            if (!course) return
+            const userIds = (course.selectedIds || []).map((id) => Number(id)).filter((id) => id > 0)
+            if (userIds.length === 0) return
+            await this.assignUsersToCurrentGroup(userIds)
+            this.clearMyCourseSelection(courseId)
+        },
         onTeacherSearchCleared() {
             if (this.assignUsersDialog.teacherShowAll) {
                 this.searchAssignableTeachers({ allowEmpty: true })
@@ -1368,6 +1618,9 @@ export default {
                 if (this.assignUsersDialog.studentClassesVisible) {
                     await this.loadStudentClasses()
                 }
+                if (this.assignUsersDialog.myCoursesLoaded) {
+                    await this.loadMyTeachingCourses(true)
+                }
                 await this.loadAssignableGroups()
             } catch (error) {
                 this.notifyError(error, 'Benutzer konnte nicht entfernt werden.')
@@ -1403,6 +1656,9 @@ export default {
                 }
                 if (this.assignUsersDialog.studentClassesVisible) {
                     await this.loadStudentClasses()
+                }
+                if (this.assignUsersDialog.myCoursesLoaded) {
+                    await this.loadMyTeachingCourses(true)
                 }
                 await this.loadAssignableGroups()
             } catch (error) {
@@ -1585,6 +1841,9 @@ export default {
                 if (this.assignUsersDialog.studentClassesVisible) {
                     await this.loadStudentClasses()
                 }
+                if (this.assignUsersDialog.myCoursesLoaded) {
+                    await this.loadMyTeachingCourses(true)
+                }
                 await this.loadAssignableGroups()
             } catch (error) {
                 this.notifyError(error, 'Benutzer konnten nicht zugeordnet werden.')
@@ -1617,6 +1876,9 @@ export default {
                 }
                 if (this.assignUsersDialog.studentClassesVisible) {
                     await this.loadStudentClasses()
+                }
+                if (this.assignUsersDialog.myCoursesLoaded) {
+                    await this.loadMyTeachingCourses(true)
                 }
                 await this.loadAssignableGroups()
             } catch (error) {
