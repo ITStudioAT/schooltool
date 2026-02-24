@@ -209,6 +209,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
             ->parameters(['my_holidays' => 'my_holiday']);
         Route::get('/admin/teaching/load_class_students', [\App\Http\Controllers\Admin\Teaching\StudentController::class, 'loadClassStudents']);
         Route::get('/admin/teaching/import116/load_class_students', [\App\Http\Controllers\Admin\Teaching\Import116Controller::class, 'loadClassStudents']);
+        Route::get('/admin/teaching/import116/runs', [\App\Http\Controllers\Admin\Teaching\Import116Controller::class, 'runs']);
+        Route::get('/admin/teaching/import116/runs/{import116_run}', [\App\Http\Controllers\Admin\Teaching\Import116Controller::class, 'runDetails']);
+        Route::post('/admin/teaching/import116/runs/reset', [\App\Http\Controllers\Admin\Teaching\Import116Controller::class, 'resetRuns']);
+        Route::delete('/admin/teaching/import116/runs/{import116_run}', [\App\Http\Controllers\Admin\Teaching\Import116Controller::class, 'destroyRun']);
         Route::apiResource('/admin/teaching/course_works', \App\Http\Controllers\Admin\Teaching\CourseWorkController::class);
         Route::apiResource('/admin/teaching/course_student_entries', \App\Http\Controllers\Admin\Teaching\CourseStudentEntryController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::apiResource('/admin/teaching/course_behaviour_entries', \App\Http\Controllers\Admin\Teaching\CourseBehaviourEntryController::class)->only(['index', 'store', 'update', 'destroy']);

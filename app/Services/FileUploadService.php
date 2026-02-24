@@ -42,6 +42,12 @@ class FileUploadService
         }
 
         $part = "{$dir}/file.part";
+        $metaOriginalNamePath = "{$dir}/upload_name.txt";
+
+        $headerOriginalName = $request->header('Upload-Name');
+        if (is_string($headerOriginalName) && trim($headerOriginalName) !== '') {
+            @file_put_contents($metaOriginalNamePath, trim($headerOriginalName));
+        }
 
         // Append raw chunk body
         $bytes = $request->getContent();
@@ -59,7 +65,12 @@ class FileUploadService
 
         if ($total > 0 && $size >= $total) {
             // Extension comes from original upload name header
-            $originalName = $request->header('Upload-Name') ?: 'upload.bin';
+            $originalName = $request->header('Upload-Name');
+            if (! is_string($originalName) || trim($originalName) === '') {
+                $originalName = is_file($metaOriginalNamePath) ? @file_get_contents($metaOriginalNamePath) : null;
+            }
+            $originalName = is_string($originalName) && trim($originalName) !== '' ? trim($originalName) : 'upload.bin';
+            $request->attributes->set('upload_original_name', $originalName);
             $extension    = pathinfo($originalName, PATHINFO_EXTENSION);
 
 
@@ -104,6 +115,7 @@ class FileUploadService
             // Cleanup temp
 
             @unlink($part);
+            @unlink($metaOriginalNamePath);
             @rmdir($dir);
 
             return $name; // FilePond confirmation / serverId

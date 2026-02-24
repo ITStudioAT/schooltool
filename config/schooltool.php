@@ -74,6 +74,8 @@ return [
         'mdi-trophy-outline',
     ],
     'teaching_max_schools_shown' => (int) env('TEACHING_MAX_SCHOOLS_SHOWN', 20),
+    'import116_reset_max_runs' => (int) env('IMPORT116_RESET_MAX_RUNS', 5),
+    'import116_runs_history_limit' => (int) env('IMPORT116_RUNS_HISTORY_LIMIT', 10),
 
     'schoolyears' => [
         ['name' => 'Schuljahr 2025/26', 'from' => '2025-09-08', 'sem_2_start' => '2026-02-16', 'to' => '2026-07-10', 'concerns' => '2025/26'],

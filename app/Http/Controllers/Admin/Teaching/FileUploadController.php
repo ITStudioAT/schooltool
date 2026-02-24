@@ -44,9 +44,12 @@ class FileUploadController extends Controller
         }
 
         if ($slug === '116') {
+            $originalUploadName = $request->attributes->get('upload_original_name') ?: $request->header('Upload-Name');
             Import116Job::dispatch(
                 $auth_user,
-                "app/private/{$auth_user->school_id}/excel/{$slug}.xlsx"
+                "app/private/{$auth_user->school_id}/excel/{$slug}.xlsx",
+                null,
+                is_string($originalUploadName) ? $originalUploadName : null
             );
         }
 

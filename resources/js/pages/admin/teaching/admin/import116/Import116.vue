@@ -35,6 +35,141 @@
                     </v-alert>
                     <v-alert v-if="is_upload_error" type="error" class="mt-2">Upload fehlgeschlagen.</v-alert>
                     <v-btn v-if="is_upload_finished || is_upload_error" color="warning" flat tile class="mt-2" @click="resetUpload">Neu hochladen</v-btn>
+
+                    <v-divider class="my-4" />
+
+                    <div class="d-flex flex-row align-center justify-space-between ga-2">
+                        <div class="text-subtitle-2">Importe</div>
+                        <v-btn size="small" variant="flat" color="secondary" :loading="is_loading_runs" @click="loadRuns">Aktualisieren</v-btn>
+                    </div>
+
+                    <v-alert v-if="run_action_message" type="success" class="mt-2" density="compact">{{ run_action_message }}</v-alert>
+                    <v-alert v-if="run_action_error" type="error" class="mt-2" density="compact">{{ run_action_error }}</v-alert>
+                    <v-alert v-if="run_tracking_error" type="warning" class="mt-2" density="compact">{{ run_tracking_error }}</v-alert>
+
+                    <div v-if="!run_tracking_error" class="mt-2">
+                        <div class="d-flex flex-row align-end ga-2">
+                            <v-btn
+                                color="warning"
+                                variant="flat"
+                                :disabled="!canRestoreSelection"
+                                :loading="is_resetting_runs"
+                                @click="resetRecentRuns">
+                                Import zurücksetzen
+                            </v-btn>
+                        </div>
+                        <div class="text-caption mt-1">
+                            Maximal {{ runs_meta.reset_max_runs || 0 }} Importdateien gespeichert. Verfügbar: {{ runs_meta.available_reset_runs || 0 }}
+                        </div>
+                        <div class="text-caption" v-if="selected_restore_target_id">
+                            Ziel: Import #{{ selected_restore_target_id }}
+                        </div>
+                        <div class="text-caption" v-else>
+                            Klicken Sie auf einen Import in der Liste, um ihn als Ziel für das Zurücksetzen auszuwählen.
+                        </div>
+                    </div>
+
+                    <div v-if="!is_loading_runs && !run_tracking_error && runs.length === 0" class="text-caption mt-3">
+                        Noch keine Importe protokolliert.
+                    </div>
+
+                    <div class="mt-3 d-flex flex-column ga-2" v-if="runs.length > 0">
+                        <v-card
+                            v-for="run in runs"
+                            :key="run.id"
+                            variant="outlined"
+                            :class="{ 'import116-selected-card': isSelectedRestoreTarget(run) }"
+                            @click="selectRestoreTarget(run)">
+                            <v-card-text class="pa-3">
+                                <div class="d-flex flex-row flex-wrap align-center justify-space-between ga-2">
+                                    <div>
+                                        <div class="text-subtitle-2 d-flex align-center ga-2">
+                                            <span>Import #{{ run.id }}</span>
+                                            <v-chip v-if="isSelectedRestoreTarget(run)" size="x-small" color="warning" variant="flat">Ziel</v-chip>
+                                            <v-chip
+                                                v-if="canSelectAsRestoreTarget(run)"
+                                                size="x-small"
+                                                color="success"
+                                                variant="flat">
+                                                zurücksetzbar
+                                            </v-chip>
+                                            <v-chip
+                                                v-else-if="isActiveImport(run)"
+                                                size="x-small"
+                                                color="warning"
+                                                variant="flat">
+                                                nicht zurücksetzbar
+                                            </v-chip>
+                                        </div>
+                                        <div class="text-caption">
+                                            {{ formatDateTime(run.finished_at || run.started_at) }}
+                                            <span v-if="run.undone_at"> | zurückgesetzt</span>
+                                            <span v-else-if="run.status"> | {{ run.status }}</span>
+                                        </div>
+                                        <div class="text-caption" v-if="run.source_name">
+                                            Datei: {{ run.source_name }}
+                                        </div>
+                                    </div>
+                                    <div class="d-flex flex-row flex-wrap ga-1">
+                                        <v-chip size="x-small" color="success" variant="tonal">+ {{ run.counts?.inserted || 0 }}</v-chip>
+                                        <v-chip size="x-small" color="info" variant="tonal">~ {{ run.counts?.updated || 0 }}</v-chip>
+                                        <v-chip size="x-small" color="error" variant="tonal">- {{ run.counts?.deleted || 0 }}</v-chip>
+                                    </div>
+                                </div>
+
+                                <div class="text-caption mt-2">
+                                    Zeilen: {{ run.counts?.processed_rows || 0 }}, Änderungen gesamt: {{ run.counts?.changes_total || 0 }}
+                                </div>
+
+                                <div class="d-flex flex-row ga-2 mt-2">
+                                    <v-btn size="small" variant="text" @click.stop="toggleRunDetails(run.id)">
+                                        {{ expanded_run_ids[run.id] ? 'Details ausblenden' : 'Details anzeigen' }}
+                                    </v-btn>
+                                    <v-btn
+                                        v-if="canDeleteImport(run)"
+                                        size="small"
+                                        color="error"
+                                        variant="text"
+                                        :loading="deleting_import_id === run.id"
+                                        @click.stop="deleteImport(run)">
+                                        Import löschen
+                                    </v-btn>
+                                </div>
+
+                                <v-progress-linear v-if="loading_run_id === run.id" indeterminate class="mt-2" />
+
+                                <div v-if="expanded_run_ids[run.id]" class="mt-2">
+                                    <div v-if="!run_details[run.id]" class="text-caption">Details werden geladen ...</div>
+                                    <div v-else class="d-flex flex-column ga-3">
+                                        <div v-for="type in changeTypes" :key="`${run.id}-${type}`">
+                                            <div class="d-flex align-center justify-space-between ga-2">
+                                                <div class="text-body-2 font-weight-medium">
+                                                    {{ changeTypeLabel(type) }} ({{ run_details[run.id]?.changes?.[type]?.length || 0 }})
+                                                </div>
+                                                <v-btn
+                                                    size="x-small"
+                                                    variant="text"
+                                                    @click.stop="toggleChangeGroup(run.id, type)">
+                                                    {{ isChangeGroupOpen(run.id, type) ? 'Schließen' : 'Öffnen' }}
+                                                </v-btn>
+                                            </div>
+                                            <template v-if="isChangeGroupOpen(run.id, type)">
+                                                <v-list density="compact" class="py-0" v-if="(run_details[run.id]?.changes?.[type] || []).length > 0">
+                                                    <v-list-item v-for="item in run_details[run.id].changes[type]" :key="`${run.id}-${type}-${item.id}`" class="px-0">
+                                                        <v-list-item-title>
+                                                            {{ item.name || '-' }}
+                                                            <span class="text-caption">({{ item.student_code }}<span v-if="item.class">, {{ item.class }}</span>)</span>
+                                                        </v-list-item-title>
+                                                    </v-list-item>
+                                                </v-list>
+                                                <div v-else class="text-caption">Keine</div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </div>
+                            </v-card-text>
+                        </v-card>
+                    </div>
                 </v-card>
             </div>
         </ItsGridBox>
@@ -52,12 +187,18 @@ export default {
 
     async beforeMount() {
         this.adminStore = useAdminStore()
+        await this.loadRuns()
     },
 
     mounted() {
-        this.onImportFinished = () => {
+        this.onImportFinished = async (event) => {
             this.is_importing = false
             this.last_import_116_at = new Date().toISOString()
+            const payload = event?.detail?.data || {}
+            if (payload && typeof payload === 'object' && Object.keys(payload).length > 0) {
+                this.run_action_message = `Import abgeschlossen: +${payload.created ?? 0} / ~${payload.updated ?? 0} / -${payload.deleted ?? 0}`
+            }
+            await this.loadRuns()
         }
         window.addEventListener('import116-finished', this.onImportFinished)
     },
@@ -77,11 +218,38 @@ export default {
             is_importing: false,
             onImportFinished: null,
             last_import_116_at: null,
+            runs: [],
+            runs_meta: { reset_max_runs: 0, available_reset_runs: 0, history_limit: 0 },
+            run_details: {},
+            expanded_run_ids: {},
+            expanded_change_groups: {},
+            is_loading_runs: false,
+            loading_run_id: null,
+            is_resetting_runs: false,
+            deleting_import_id: null,
+            selected_restore_target_id: null,
+            run_tracking_error: '',
+            run_action_message: '',
+            run_action_error: '',
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'config']),
+        changeTypes() {
+            return ['inserted', 'updated', 'deleted']
+        },
+        restorableImports() {
+            const active = (this.runs || []).filter((item) => this.isActiveImport(item))
+            const max = Number(this.runs_meta?.reset_max_runs || 0)
+            return max > 0 ? active.slice(0, max) : []
+        },
+        selected_restore_depth() {
+            const targetId = Number(this.selected_restore_target_id || 0)
+            if (!targetId) return 0
+            const idx = this.restorableImports.findIndex((item) => Number(item?.id) === targetId)
+            return idx >= 0 ? idx + 1 : 0
+        },
         lastImportDisplay() {
             const value = this.last_import_116_at || this.config?.teaching?.last_import_116_at
             if (!value) return null
@@ -89,12 +257,158 @@ export default {
             if (Number.isNaN(date.getTime())) return value
             return new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
         },
+        canRestoreSelection() {
+            if (this.run_tracking_error) return false
+            if (!this.selected_restore_target_id) return false
+            if (this.selected_restore_depth <= 0) return false
+            return this.selected_restore_depth <= Number(this.runs_meta?.reset_max_runs || 0)
+        },
     },
 
     methods: {
+        isActiveImport(run) {
+            return !!run && run.status === 'completed' && !run.undone_at
+        },
+        canSelectAsRestoreTarget(run) {
+            if (!this.isActiveImport(run)) return false
+            return this.restorableImports.some((item) => Number(item?.id) === Number(run?.id))
+        },
+        canDeleteImport(run) {
+            return !!run && !!run.id
+        },
+        async loadRuns() {
+            this.is_loading_runs = true
+            this.run_tracking_error = ''
+            this.run_action_error = ''
+            try {
+                const response = await axios.get('/api/admin/teaching/import116/runs')
+                this.runs = response?.data?.data || []
+                this.runs_meta = response?.data?.meta || { reset_max_runs: 0, available_reset_runs: 0, history_limit: 0 }
+                if (!this.restorableImports.some((item) => Number(item?.id) === Number(this.selected_restore_target_id || 0))) {
+                    this.selected_restore_target_id = null
+                }
+            } catch (error) {
+                this.runs = []
+                this.runs_meta = { reset_max_runs: 0, available_reset_runs: 0, history_limit: 0 }
+                this.run_tracking_error = error?.response?.data?.message || 'Import-Protokolle konnten nicht geladen werden.'
+            } finally {
+                this.is_loading_runs = false
+            }
+        },
+        selectRestoreTarget(run) {
+            if (!this.canSelectAsRestoreTarget(run)) return
+            const id = Number(run.id || 0)
+            if (!id) return
+            this.selected_restore_target_id = this.selected_restore_target_id === id ? null : id
+            this.run_action_error = ''
+            this.run_action_message = ''
+        },
+        isSelectedRestoreTarget(run) {
+            return Number(this.selected_restore_target_id || 0) > 0 && Number(run?.id || 0) === Number(this.selected_restore_target_id)
+        },
+        async toggleRunDetails(runId) {
+            const isOpen = !!this.expanded_run_ids[runId]
+            if (isOpen) {
+                this.expanded_run_ids = { ...this.expanded_run_ids, [runId]: false }
+                return
+            }
+
+            this.expanded_run_ids = { ...this.expanded_run_ids, [runId]: true }
+            if (this.run_details[runId]) return
+
+            this.loading_run_id = runId
+            this.run_action_error = ''
+            try {
+                const response = await axios.get(`/api/admin/teaching/import116/runs/${runId}`)
+                this.run_details = {
+                    ...this.run_details,
+                    [runId]: response?.data || null,
+                }
+            } catch (error) {
+                this.run_action_error = error?.response?.data?.message || 'Import-Details konnten nicht geladen werden.'
+                this.expanded_run_ids = { ...this.expanded_run_ids, [runId]: false }
+            } finally {
+                this.loading_run_id = null
+            }
+        },
+        changeGroupKey(runId, type) {
+            return `${runId}:${type}`
+        },
+        isChangeGroupOpen(runId, type) {
+            return !!this.expanded_change_groups[this.changeGroupKey(runId, type)]
+        },
+        toggleChangeGroup(runId, type) {
+            const key = this.changeGroupKey(runId, type)
+            this.expanded_change_groups = {
+                ...this.expanded_change_groups,
+                [key]: !this.expanded_change_groups[key],
+            }
+        },
+        async resetRecentRuns() {
+            if (!this.canRestoreSelection) return
+            this.is_resetting_runs = true
+            this.run_action_message = ''
+            this.run_action_error = ''
+            try {
+                const response = await axios.post('/api/admin/teaching/import116/runs/reset', { target_import_id: this.selected_restore_target_id })
+                this.run_action_message = response?.data?.message || 'Importe wurden zurückgesetzt.'
+                this.run_details = {}
+                this.expanded_run_ids = {}
+                this.expanded_change_groups = {}
+                this.selected_restore_target_id = null
+                await this.loadRuns()
+            } catch (error) {
+                this.run_action_error = error?.response?.data?.message || 'Import konnte nicht zurückgesetzt werden.'
+            } finally {
+                this.is_resetting_runs = false
+            }
+        },
+        async deleteImport(run) {
+            if (!this.canDeleteImport(run)) return
+            const id = Number(run?.id || 0)
+            if (!id) return
+
+            this.deleting_import_id = id
+            this.run_action_message = ''
+            this.run_action_error = ''
+            try {
+                const response = await axios.delete(`/api/admin/teaching/import116/runs/${id}`)
+                this.run_action_message = response?.data?.message || `Import #${id} wurde gelöscht.`
+                if (Number(this.selected_restore_target_id || 0) === id) {
+                    this.selected_restore_target_id = null
+                }
+                if (this.run_details[id]) {
+                    const copy = { ...this.run_details }
+                    delete copy[id]
+                    this.run_details = copy
+                }
+                this.expanded_change_groups = Object.fromEntries(
+                    Object.entries(this.expanded_change_groups).filter(([key]) => !key.startsWith(`${id}:`))
+                )
+                await this.loadRuns()
+            } catch (error) {
+                this.run_action_error = error?.response?.data?.message || 'Import konnte nicht gelöscht werden.'
+            } finally {
+                this.deleting_import_id = null
+            }
+        },
+        formatDateTime(value) {
+            if (!value) return '-'
+            const date = new Date(value)
+            if (Number.isNaN(date.getTime())) return String(value)
+            return new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+        },
+        changeTypeLabel(type) {
+            if (type === 'inserted') return 'Eingefügt'
+            if (type === 'updated') return 'Aktualisiert'
+            if (type === 'deleted') return 'Gelöscht'
+            return type
+        },
         onUploadStart() {
             this.is_upload_finished = false
             this.is_upload_error = false
+            this.run_action_message = ''
+            this.run_action_error = ''
             if (this.config?.is_auth) this.adminStore.initializeEcho()
             this.is_importing = true
         },
@@ -115,3 +429,9 @@ export default {
     },
 }
 </script>
+<style scoped>
+.import116-selected-card {
+    background: #fff3e0;
+    border-color: #ef6c00 !important;
+}
+</style>
