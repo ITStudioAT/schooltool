@@ -71,6 +71,25 @@
                             </v-btn>
                         </div>
 
+                        <div v-if="quickSwitchSchoolChips.length > 0" class="mt-3">
+                            <div class="text-caption mb-2">Schnellwechsel (gleicher Nachname in anderen Schulen)</div>
+                            <div class="d-flex flex-wrap ga-2">
+                            <v-chip
+                                v-for="chip in quickSwitchSchoolChips"
+                                :key="`switch-user-${chip.email}-${chip.school_id}`"
+                                size="small"
+                                color="primary"
+                                variant="outlined"
+                                :title="chip.email"
+                                @click="quickSwitchToSchool(chip)">
+                                {{ chip.last_name }} {{ chip.first_name }} • {{ chip.email }} • {{ chip.school_label || 'Schule' }}
+                            </v-chip>
+                            </div>
+                        </div>
+                        <div v-else-if="switch_last_name && switch_last_name.trim() !== ''" class="text-caption mt-2">
+                            Keine Treffer für diesen Nachnamen.
+                        </div>
+
                         <v-autocomplete
                             v-model="selected_school_id"
                             :items="switchable_schools"
@@ -190,12 +209,13 @@ export default {
             admin: null,
             is_delete_complete: false,
             switch_email: '',
+            switch_last_name: '',
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'config', 'roles', 'main_action']),
-        ...mapWritableState(useSchoolStore, ['selected_school', 'switchable_schools', 'school_licences', 'school_admins', 'teachers']),
+        ...mapWritableState(useSchoolStore, ['selected_school', 'switchable_schools', 'switch_user_matches', 'school_licences', 'school_admins', 'teachers']),
         ...mapWritableState(useLicenceStore, ['licences']),
         effectiveSchool() {
             return this.selected_school && Object.keys(this.selected_school).length ? this.selected_school : this.config?.selected_school || {}
@@ -209,14 +229,33 @@ export default {
         currentUserEmail() {
             return String(this.config?.user?.email || '').trim()
         },
+        currentUserLastName() {
+            return String(this.config?.user?.last_name || '').trim()
+        },
+        quickSwitchSchoolChips() {
+            return (Array.isArray(this.switch_user_matches) ? this.switch_user_matches : [])
+                .flatMap((match) => {
+                    const schools = Array.isArray(match?.schools) ? match.schools : []
+                    return schools.map((school) => ({
+                        email: String(match?.email || '').trim(),
+                        first_name: String(match?.first_name || '').trim(),
+                        last_name: String(match?.last_name || '').trim(),
+                        school_id: Number(school?.id || 0),
+                        school_label: String(school?.label || '').trim(),
+                    }))
+                })
+                .filter((chip) => chip.email && chip.school_id > 0)
+        },
     },
 
     methods: {
         async openSwitchSchool() {
             this.switch_email = this.currentUserEmail
+            this.switch_last_name = this.currentUserLastName
             this.selected_school_id = null
             this.action = 'switch_school'
             await this.refreshSwitchableSchools()
+            await this.loadQuickSwitchUsers()
         },
         async refreshSwitchableSchools() {
             const ok = await this.schoolStore.loadSwitchableSchools(this.switch_email)
@@ -231,6 +270,25 @@ export default {
             if (!selectedStillExists) this.selected_school_id = null
 
             return true
+        },
+        async loadQuickSwitchUsers() {
+            const search = String(this.switch_last_name || '').trim()
+            if (search === '') {
+                this.switch_user_matches = []
+                return true
+            }
+
+            const result = await this.schoolStore.searchSwitchUsers(search)
+            return !!result
+        },
+        async quickSwitchToSchool(chip) {
+            const schoolId = Number(chip?.school_id || 0)
+            const email = String(chip?.email || '').trim()
+            if (!schoolId || email === '') return
+
+            this.switch_email = email
+            this.selected_school_id = schoolId
+            await this.doSwitch(schoolId, email)
         },
         async doAddAdmin(data) {
             this.is_valid = false
@@ -265,11 +323,13 @@ export default {
             await this.schoolStore.deleteLicence(school_licence_id)
         },
 
-        async doSwitch(school_id) {
+        async doSwitch(school_id, emailOverride = null) {
             if (!school_id) return
-            if (!(await this.schoolStore.switchSchool(school_id, this.switch_email))) return
+            const email = typeof emailOverride === 'string' && emailOverride.trim() !== '' ? emailOverride.trim() : this.switch_email
+            if (!(await this.schoolStore.switchSchool(school_id, email))) return
             await this.adminStore.loadConfig()
             this.switch_email = this.currentUserEmail
+            this.switch_last_name = this.currentUserLastName
             await this.schoolStore.loadSchoolInfos(this.config.selected_school.id)
 
             this.action = ''

@@ -210,6 +210,77 @@ class SchoolController extends Controller
         return response()->json(SchoolResource::collection($schools), 200);
     }
 
+    public function searchSwitchUsers(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'last_name' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $lastName = trim((string) ($validated['last_name'] ?? ''));
+        if ($lastName === '') {
+            return response()->json([], 200);
+        }
+
+        $users = User::query()
+            ->with('selectedSchool:id,long_name,short_name')
+            ->whereNotNull('email')
+            ->where('email', '!=', '')
+            ->where('school_id', '!=', $auth_user->school_id)
+            ->where('last_name', 'like', "{$lastName}%")
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->orderBy('email')
+            ->limit(100)
+            ->get();
+
+        $matches = $users
+            ->groupBy(fn(User $user) => mb_strtolower(trim((string) $user->email)))
+            ->map(function ($group) {
+                /** @var \App\Models\User $first */
+                $first = $group->first();
+                $schools = $group
+                    ->map(function (User $user) {
+                        $label = trim((string) ($user->selectedSchool?->long_name ?: $user->selectedSchool?->short_name));
+
+                        return [
+                            'id' => (int) $user->school_id,
+                            'label' => $label !== '' ? $label : ('Schule #' . (int) $user->school_id),
+                        ];
+                    })
+                    ->unique('id')
+                    ->sortBy('label')
+                    ->values()
+                    ->all();
+
+                $fullName = trim(((string) ($first->last_name ?? '')) . ' ' . ((string) ($first->first_name ?? '')));
+                $schoolsText = collect($schools)->pluck('label')->implode(', ');
+
+                return [
+                    'email' => (string) $first->email,
+                    'first_name' => $first->first_name,
+                    'last_name' => $first->last_name,
+                    'school_count' => count($schools),
+                    'schools' => $schools,
+                    'label' => trim(($fullName !== '' ? $fullName : (string) $first->email) . ' • ' . (string) $first->email),
+                    'subtitle' => $schoolsText,
+                ];
+            })
+            ->sortBy([
+                ['last_name', 'asc'],
+                ['first_name', 'asc'],
+                ['email', 'asc'],
+            ])
+            ->values()
+            ->take(20)
+            ->all();
+
+        return response()->json($matches, 200);
+    }
+
     public function switchSchool(SchoolSwitchSchoolRequest $request, SchoolService $service)
     {
         if (! $auth_user = $this->userHasRole(['super_admin'])) {

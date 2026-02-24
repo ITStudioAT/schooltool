@@ -304,6 +304,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::patch('/admin/schools_upload/uploadLogo', [\App\Http\Controllers\Admin\SchoolController::class, 'uploadLogoNext']);
         Route::post('/admin/schools/delete_schools',  [\App\Http\Controllers\Admin\SchoolController::class, 'deleteSchools']);
         Route::post('/admin/schools/load_switchable_schools',  [\App\Http\Controllers\Admin\SchoolController::class, 'loadSwitchableSchools']);
+        Route::post('/admin/schools/search_switch_users',  [\App\Http\Controllers\Admin\SchoolController::class, 'searchSwitchUsers']);
         Route::post('/admin/schools/switch_school',  [\App\Http\Controllers\Admin\SchoolController::class, 'switchSchool']);
         Route::post('/admin/schools/load_school_infos',  [\App\Http\Controllers\Admin\SchoolController::class, 'loadSchoolInfos']);
         Route::post('/admin/schools/add_licence',  [\App\Http\Controllers\Admin\SchoolController::class, 'addLicence']);

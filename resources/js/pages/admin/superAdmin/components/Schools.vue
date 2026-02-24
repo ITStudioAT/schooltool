@@ -1,13 +1,13 @@
 <template>
     <v-col cols="12" :xl="schoolsMainXlCols">
-        <section class="schools-shell admin-card ai-glass-panel" :class="{ 'is-disabled': action != '' }">
-            <div class="admin-card-head schools-head">
+        <section class="crud-shell admin-card ai-glass-panel" :class="{ 'is-disabled': action != '' }">
+            <div class="admin-card-head crud-head mb-4">
                 <div>
                     <div class="admin-card-eyebrow">Verwaltung</div>
-                    <h2 class="admin-card-title schools-title">Schulen</h2>
+                    <h2 class="admin-card-title crud-title">Schulen</h2>
                 </div>
 
-                <div class="admin-kpi-grid schools-kpis">
+                <div class="admin-kpi-grid crud-kpis">
                     <div class="kpi-card ai-glass-panel">
                         <div class="kpi-label">Gesamt</div>
                         <div class="kpi-value">{{ totalSchoolsCount }}</div>
@@ -15,14 +15,14 @@
                 </div>
             </div>
 
-            <div class="schools-content-grid">
-                <section class="admin-card ai-glass-panel schools-main-card">
-                    <div class="schools-toolbar">
-                        <div class="empty-state schools-search-panel">
+            <div class="crud-content-grid">
+                <section class="admin-card ai-glass-panel crud-main-card pa-3">
+                    <div class="d-grid ga-3 mb-3">
+                        <div class="empty-state crud-search-panel">
                             <SearchField :store="schoolStore" selected_field="selected_schools" />
                         </div>
 
-                        <div class="schools-bulk-actions" :disabled="action != ''">
+                        <div class="d-flex flex-wrap ga-2" :disabled="action != ''">
                             <v-btn color="primary" variant="tonal" rounded="lg" class="text-caption" @click="selectAll">
                                 Alle auswählen [{{ Math.max(0, schools.length - selected_schools.length) }}]
                             </v-btn>
@@ -32,12 +32,12 @@
                         </div>
                     </div>
 
-                    <div class="empty-state schools-list-shell" v-if="schools.length === 0">Keine Schulen gefunden.</div>
-                    <div class="empty-state schools-list-shell" v-else>
+                    <div class="empty-state pa-2" v-if="schools.length === 0">Keine Schulen gefunden.</div>
+                    <div class="empty-state pa-2" v-else>
                         <v-list
                             dense
                             variant="flat"
-                            class="schools-list"
+                            class="crud-list"
                             select-strategy="leaf"
                             v-model:selected="selected_schools"
                             color="success-lighten-2">
@@ -45,15 +45,15 @@
                                 v-for="item in schools"
                                 :key="item.id"
                                 :value="item.id"
-                                class="schools-list-item"
+                                class="crud-list-item"
                                 :class="{ 'is-selected': isSelectedSchool(item.id) }">
                                 <template #title>
-                                    <div class="person-row schools-item-row">
-                                        <div class="schools-item-main">
-                                            <div class="person-body schools-item-copy">
+                                    <div class="person-row crud-item-row">
+                                        <div class="d-flex align-start" style="min-width: 0">
+                                            <div class="person-body" style="min-width: 0">
                                                 <div class="person-name">{{ item.long_name }}</div>
                                                 <div class="person-roles">{{ item.short_name || '-' }}</div>
-                                                <div class="person-email schools-item-email">{{ item.email || 'Keine E-Mail hinterlegt' }}</div>
+                                                <div class="person-email" style="max-width: 280px">{{ item.email || 'Keine E-Mail hinterlegt' }}</div>
                                             </div>
                                         </div>
                                     </div>
@@ -62,22 +62,22 @@
                         </v-list>
                     </div>
 
-                    <div class="empty-state schools-pagination">
+                    <div class="empty-state crud-pagination mt-3 pa-3">
                         <Pagination :meta="safeMeta" :store="schoolStore" selected_field="selected_schools" />
                     </div>
                 </section>
 
-                <aside class="schools-side-stack">
+                <aside class="crud-side-stack">
                     <section class="admin-card ai-glass-panel">
-                        <div class="admin-card-head schools-card-head">
+                        <div class="admin-card-head mb-2">
                             <div>
                                 <div class="admin-card-eyebrow">Aktionen</div>
                                 <h3 class="admin-card-title">Schulen verwalten</h3>
                             </div>
                         </div>
-                        <div class="kpi-sub schools-card-copy">Verfügbare Schritte für die aktuelle Auswahl.</div>
+                        <div class="kpi-sub" style="margin-top: -2px">Verfügbare Schritte für die aktuelle Auswahl.</div>
 
-                        <div class="schools-action-list">
+                        <div class="d-grid ga-2 mt-3">
                             <v-btn block color="primary" variant="flat" rounded="lg" prepend-icon="mdi-plus" @click="createSchool">
                                 Hinzufügen
                             </v-btn>
@@ -112,22 +112,22 @@
     </v-col>
 
     <v-dialog v-model="schoolDialogOpen" persistent :max-width="schoolDialogMaxWidth" scrollable>
-        <v-card class="schools-dialog-card ai-glass-panel">
-            <div class="schools-dialog-head">
+        <v-card class="crud-dialog-card ai-glass-panel">
+            <div class="crud-dialog-head">
                 <div>
-                    <div class="admin-card-eyebrow" :class="{ 'schools-delete-eyebrow': action == 'delete_school' }">
+                    <div class="admin-card-eyebrow" :class="{ 'crud-delete-eyebrow': action == 'delete_school' }">
                         {{ action == 'delete_school' ? 'Achtung' : 'Schule' }}
                     </div>
-                    <div class="admin-card-title schools-dialog-title">{{ schoolDialogTitle }}</div>
+                    <div class="admin-card-title" style="margin-top: 4px">{{ schoolDialogTitle }}</div>
                 </div>
 
                 <v-btn icon="mdi-close" variant="text" rounded="lg" @click="abort" />
             </div>
 
-            <v-card-text class="schools-dialog-body">
+            <v-card-text class="crud-dialog-body">
                 <template v-if="action == 'create_school' || action == 'edit_school'">
-                    <v-form ref="form" v-model="is_valid" @submit.prevent="saveSchool(data)" class="mb-2 schools-editor-form">
-                        <div class="empty-state schools-form-section">
+                    <v-form ref="form" v-model="is_valid" @submit.prevent="saveSchool(data)" class="mb-2 crud-form">
+                        <div class="empty-state crud-form-section">
                             <v-row dense>
                                 <v-col cols="12">
                                     <v-text-field autofocus v-model="data.long_name" label="Schule (langer Name)" :rules="[required(), maxLength(255)]" />
@@ -146,18 +146,18 @@
                             </v-row>
                         </div>
 
-                        <div class="empty-state schools-form-section mt-3" v-if="data.id">
+                        <div class="empty-state crud-form-section mt-3" v-if="data.id">
                             <div class="admin-card-eyebrow">Logo</div>
-                            <div class="schools-logo-block mt-2">
+                            <div class="d-grid ga-2 mt-2">
                                 <div v-if="data.upload_file" class="schools-logo-preview">
                                     <div class="schools-logo-canvas">
-                                        <img :src="`${data.upload_file}`" alt="Logo" height="60px" class="schools-logo-image" />
+                                        <img :src="`${data.upload_file}`" alt="Logo" height="60px" class="d-block" style="max-width: 220px; object-fit: contain" />
                                     </div>
                                 </div>
 
                                 <div v-if="data.logo && !data.upload_file" class="d-flex flex-row align-center justify-space-between ga-2 schools-logo-preview">
                                     <div class="schools-logo-canvas">
-                                        <img :src="'/storage/images/logos/' + data.logo + '?t=' + Date.now()" alt="Logo" height="60px" class="schools-logo-image" />
+                                        <img :src="'/storage/images/logos/' + data.logo + '?t=' + Date.now()" alt="Logo" height="60px" class="d-block" style="max-width: 220px; object-fit: contain" />
                                     </div>
                                     <v-btn
                                         color="error"
@@ -176,7 +176,7 @@
                             </div>
                         </div>
 
-                        <div class="schools-form-actions d-flex flex-row align-center justify-space-between mt-4" :disabled="is_uploading">
+                        <div class="crud-form-actions d-flex flex-row align-center justify-space-between mt-4" :disabled="is_uploading">
                             <v-btn color="warning" variant="text" rounded="lg" @click="abort">Abbruch</v-btn>
                             <v-btn color="success" variant="flat" rounded="lg" type="submit" :loading="is_uploading">Speichern</v-btn>
                         </div>
@@ -184,10 +184,10 @@
                 </template>
 
                 <template v-else-if="action == 'delete_school'">
-                    <v-form ref="form" v-model="is_valid" @submit.prevent="doDeleteSchools(selected_schools)" class="schools-delete-form">
-                        <div class="empty-state schools-delete-alert">
-                            <div class="admin-card-eyebrow schools-delete-eyebrow">Achtung</div>
-                            <div class="admin-card-title schools-delete-title">Schule löschen</div>
+                    <v-form ref="form" v-model="is_valid" @submit.prevent="doDeleteSchools(selected_schools)" class="crud-form">
+                        <div class="empty-state crud-delete-alert">
+                            <div class="admin-card-eyebrow crud-delete-eyebrow">Achtung</div>
+                            <div class="admin-card-title crud-delete-title">Schule löschen</div>
                             <div class="kpi-sub mt-2" v-if="selected_schools.length == 1">
                                 Es soll eine Schule gelöscht werden. Sind Sie sicher, dass Sie die markierte Schule löschen möchten?
                             </div>
@@ -196,7 +196,7 @@
                             </div>
                         </div>
 
-                        <div class="schools-form-actions d-flex flex-row align-center justify-space-between mt-4">
+                        <div class="crud-form-actions d-flex flex-row align-center justify-space-between mt-4">
                             <v-btn color="success" variant="text" rounded="lg" @click="abort">Abbruch</v-btn>
                             <v-btn color="error" variant="flat" rounded="lg" type="submit" prepend-icon="mdi-delete">Löschen</v-btn>
                         </div>
@@ -355,187 +355,9 @@ export default {
 </script>
 
 <style scoped src="../../../../../css/admin-index-page.css"></style>
+<style scoped src="../../../../../css/admin-crud-panel.css"></style>
 
 <style scoped>
-.schools-shell.is-disabled {
-    opacity: 0.78;
-}
-
-.schools-head {
-    align-items: flex-start;
-    margin-bottom: 14px;
-}
-
-.schools-title {
-    font-size: 1.35rem;
-}
-
-.schools-subtitle {
-    margin-top: 8px;
-    max-width: 60ch;
-}
-
-.schools-kpis {
-    margin-top: 0;
-    min-width: min(180px, 100%);
-    grid-template-columns: minmax(140px, 220px);
-    gap: 8px;
-}
-
-.schools-kpis .kpi-card {
-    border-radius: 14px;
-    padding: 10px 12px;
-}
-
-.schools-content-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 220px;
-    gap: 12px;
-    align-items: start;
-}
-
-.schools-main-card {
-    padding: 12px;
-}
-
-.schools-toolbar {
-    display: grid;
-    gap: 10px;
-    margin-bottom: 10px;
-}
-
-.schools-search-panel {
-    padding: 10px 10px 2px;
-}
-
-.schools-bulk-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.schools-list-shell {
-    padding: 6px;
-}
-
-.schools-list {
-    background: transparent !important;
-}
-
-.schools-list-item {
-    border-radius: 12px !important;
-    margin-bottom: 4px;
-    border: 1px solid transparent;
-    transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
-}
-
-.schools-list-item:hover {
-    background: rgba(46, 104, 171, 0.045);
-    border-color: rgba(46, 104, 171, 0.1);
-    transform: translateY(-1px);
-}
-
-.schools-list-item.is-selected {
-    background: rgba(57, 73, 171, 0.08);
-    border-color: rgba(57, 73, 171, 0.2);
-}
-
-.schools-item-row {
-    margin: 1px 0;
-}
-
-.schools-item-main {
-    display: flex;
-    align-items: flex-start;
-    min-width: 0;
-}
-
-.schools-item-copy {
-    min-width: 0;
-}
-
-.schools-item-email {
-    max-width: 280px;
-}
-
-.schools-pagination {
-    margin-top: 10px;
-    padding: 10px;
-}
-
-.schools-side-stack {
-    display: grid;
-    gap: 10px;
-}
-
-.schools-card-head {
-    margin-bottom: 8px;
-}
-
-.schools-card-copy {
-    margin-top: -2px;
-}
-
-.schools-action-list {
-    margin-top: 10px;
-    display: grid;
-    gap: 8px;
-}
-
-.schools-dialog-card {
-    border-radius: 20px !important;
-    border: 1px solid rgba(16, 38, 58, 0.08) !important;
-    box-shadow: 0 18px 48px rgba(16, 38, 58, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.65) !important;
-    overflow: hidden;
-}
-
-.schools-dialog-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 14px 16px 12px;
-    border-bottom: 1px solid rgba(16, 38, 58, 0.08);
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.76));
-}
-
-.schools-dialog-title {
-    margin-top: 4px;
-}
-
-.schools-dialog-body {
-    padding: 14px !important;
-    background: linear-gradient(180deg, rgba(245, 248, 254, 0.95), rgba(239, 244, 250, 0.95)) !important;
-}
-
-.schools-editor-form,
-.schools-delete-form {
-    color: #112536;
-}
-
-.schools-form-section,
-.schools-delete-alert {
-    border-style: solid;
-}
-
-.schools-form-section {
-    padding: 12px;
-}
-
-.schools-form-section :deep(.v-field) {
-    border-radius: 12px !important;
-    background: rgba(255, 255, 255, 0.8);
-}
-
-.schools-form-section :deep(.v-selection-control) {
-    min-height: 36px;
-}
-
-.schools-logo-block {
-    display: grid;
-    gap: 8px;
-}
-
 .schools-logo-preview {
     border-radius: 12px;
     border: 1px solid rgba(16, 38, 58, 0.08);
@@ -560,101 +382,5 @@ export default {
     background-size: 16px 16px;
     background-position: 0 0, 0 8px, 8px -8px, -8px 0;
     padding: 6px 10px;
-}
-
-.schools-logo-image {
-    display: block;
-    max-width: 220px;
-    object-fit: contain;
-}
-
-.schools-form-actions {
-    border-top: 1px solid rgba(16, 38, 58, 0.08);
-    padding-top: 12px;
-}
-
-.schools-delete-alert {
-    padding: 12px;
-    border-color: rgba(220, 53, 69, 0.18);
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 244, 246, 0.78));
-}
-
-.schools-delete-eyebrow {
-    color: #932f3c;
-}
-
-.schools-delete-title {
-    margin-top: 4px;
-    font-size: 1rem;
-}
-
-.schools-search-panel :deep(.v-text-field),
-.schools-pagination :deep(.v-btn) {
-    font-size: 0.85rem;
-}
-
-.schools-search-panel :deep(.v-input__control),
-.schools-search-panel :deep(.v-field) {
-    border-radius: 12px !important;
-}
-
-.schools-pagination :deep(.v-btn) {
-    border-radius: 10px !important;
-    min-width: 34px;
-}
-
-@media (max-width: 1260px) {
-    .schools-content-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .schools-side-stack {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-}
-
-@media (max-width: 900px) {
-    .schools-head {
-        flex-direction: column;
-    }
-
-    .schools-kpis {
-        width: 100%;
-        min-width: 0;
-    }
-
-    .schools-item-row {
-        align-items: flex-start;
-        flex-direction: column;
-    }
-
-    .schools-side-stack {
-        grid-template-columns: 1fr;
-    }
-}
-
-@media (max-width: 640px) {
-    .schools-shell {
-        border-radius: 16px;
-        padding: 10px;
-    }
-
-    .schools-main-card,
-    .schools-side-stack > .admin-card {
-        border-radius: 14px;
-        padding: 10px;
-    }
-
-    .schools-dialog-head {
-        padding: 12px;
-    }
-
-    .schools-dialog-body {
-        padding: 10px !important;
-    }
-
-    .schools-kpis {
-        grid-template-columns: 1fr;
-    }
 }
 </style>

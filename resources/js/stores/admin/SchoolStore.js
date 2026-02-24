@@ -13,6 +13,7 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
         saved_school: null,
         answer: null,
         switchable_schools: [],
+        switch_user_matches: [],
         school_licences: [],
         school_licence_users: [],
         school_licence_users_meta: [],
@@ -64,6 +65,30 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
                 notification.notify({
                     status: error.response.status,
                     message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async searchSwitchUsers(last_name = null) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const payload = {}
+                if (typeof last_name === 'string' && last_name.trim() !== '') payload.last_name = last_name.trim()
+                const response = await axios.post(`/api/admin/schools/search_switch_users`, payload)
+                this.switch_user_matches = Array.isArray(response.data) ? response.data : []
+                return this.switch_user_matches
+            } catch (error) {
+                this.switch_user_matches = []
+                notification.notify({
+                    status: error.response?.status || 500,
+                    message: error.response?.data?.message || 'Fehler passiert.',
                     type: 'error',
                     timeout: 3000,
                 })
