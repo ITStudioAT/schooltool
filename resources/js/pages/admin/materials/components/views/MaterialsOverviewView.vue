@@ -2539,27 +2539,11 @@ export default {
             }, 0)
         },
         async refreshAllListedAttachmentBytes() {
-            const shownBytes = this.totalListedAttachmentBytes
-            const totalMaterials = Number(this.totalMaterials)
-            const displayedMaterials = Number(this.displayedMaterials)
             const requestId = this.allListedAttachmentBytesRequestId + 1
             this.allListedAttachmentBytesRequestId = requestId
 
-            if (!Number.isFinite(totalMaterials) || totalMaterials <= 0) {
-                this.allListedAttachmentBytes = 0
-                this.allListedAttachmentBytesLoading = false
-                return
-            }
-
-            if (totalMaterials <= displayedMaterials) {
-                this.allListedAttachmentBytes = shownBytes
-                this.allListedAttachmentBytesLoading = false
-                return
-            }
-
             this.allListedAttachmentBytesLoading = true
-            const filters = { ...(this.materialCardStore?.filters || {}) }
-            const snapshot = await this.materialCardStore.listAllCardsSnapshot(filters)
+            const snapshot = await this.materialCardStore.listAllCardsSnapshot({})
             if (requestId !== this.allListedAttachmentBytesRequestId) return
 
             if (Array.isArray(snapshot)) {

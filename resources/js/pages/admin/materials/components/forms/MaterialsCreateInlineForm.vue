@@ -357,6 +357,15 @@
                             </v-chip-group>
                             <div class="classification-action-row mt-2">
                                 <v-btn
+                                    icon="mdi-delete-outline"
+                                    size="small"
+                                    variant="flat"
+                                    color="error"
+                                    class="classification-action-btn"
+                                    :title="'Zuordnung löschen'"
+                                    :disabled="isSaving || classificationCreateSaving || isClassificationRowEmpty(entry.row)"
+                                    @click="removeClassificationRow(entry.index)" />
+                                <v-btn
                                     icon="mdi-close"
                                     size="small"
                                     variant="flat"
