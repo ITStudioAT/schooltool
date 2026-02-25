@@ -304,12 +304,15 @@
                                         class="overview-subjects-material-type">
                                         {{ material.typeLabel }}
                                     </v-chip>
-                                    <span
+                                    <button
                                         v-if="material.attachmentsCount > 0"
-                                        class="overview-subjects-material-count">
+                                        type="button"
+                                        class="overview-subjects-material-count overview-subjects-material-count--clickable"
+                                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                                        @click="openAttachmentManager(material)">
                                         <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
                                         {{ material.attachmentsCount }}
-                                    </span>
+                                    </button>
                                     <v-chip
                                         size="x-small"
                                         variant="tonal"
@@ -352,12 +355,15 @@
                                                 class="overview-subjects-material-type">
                                                 {{ material.typeLabel }}
                                             </v-chip>
-                                            <span
+                                            <button
                                                 v-if="material.attachmentsCount > 0"
-                                                class="overview-subjects-material-count">
+                                                type="button"
+                                                class="overview-subjects-material-count overview-subjects-material-count--clickable"
+                                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                                                @click="openAttachmentManager(material)">
                                                 <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
                                                 {{ material.attachmentsCount }}
-                                            </span>
+                                            </button>
                                             <v-chip
                                                 size="x-small"
                                                 variant="tonal"
@@ -399,12 +405,15 @@
                                                         class="overview-subjects-material-type">
                                                         {{ material.typeLabel }}
                                                     </v-chip>
-                                                    <span
+                                                    <button
                                                         v-if="material.attachmentsCount > 0"
-                                                        class="overview-subjects-material-count">
+                                                        type="button"
+                                                        class="overview-subjects-material-count overview-subjects-material-count--clickable"
+                                                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                                                        @click="openAttachmentManager(material)">
                                                         <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
                                                         {{ material.attachmentsCount }}
-                                                    </span>
+                                                    </button>
                                                     <v-chip
                                                         size="x-small"
                                                         variant="tonal"
@@ -1168,37 +1177,6 @@
             </v-card-text>
 
             <v-card-actions class="px-6 pb-6 pt-2 d-flex flex-wrap justify-end ga-2">
-                <template v-if="detailDeleteStep === 0">
-                    <v-btn
-                        color="warning"
-                        variant="tonal"
-                        prepend-icon="mdi-delete"
-                        :disabled="detailDialogLoading || isDeletingDetail || isSavingEdit"
-                        @click="startDetailDeleteFlow">
-                        Löschen
-                    </v-btn>
-                </template>
-
-                <template v-else>
-                    <v-btn
-                        color="success"
-                        variant="tonal"
-                        prepend-icon="mdi-delete-off"
-                        :disabled="isDeletingDetail"
-                        @click="resetDetailDeleteFlow">
-                        Abbrechen
-                    </v-btn>
-                    <v-btn
-                        color="error"
-                        variant="flat"
-                        prepend-icon="mdi-delete"
-                        :loading="isDeletingDetail"
-                        :disabled="detailDialogLoading || isSavingEdit"
-                        @click="confirmDeleteFromDetail">
-                        Löschen
-                    </v-btn>
-                </template>
-
                 <v-btn
                     variant="text"
                     :disabled="detailDialogLoading || isDeletingDetail || isSavingEdit"
@@ -1252,6 +1230,39 @@
             @save="saveEdit"
             @cancel="closeEditDialog">
             <template #extra-content>
+                <div class="mt-4 d-flex flex-wrap justify-end ga-2">
+                    <template v-if="editDeleteStep === 0">
+                        <v-btn
+                            color="warning"
+                            variant="tonal"
+                            prepend-icon="mdi-delete"
+                            :disabled="isSavingEdit || isDeletingEditedMaterial"
+                            @click="startEditDeleteFlow">
+                            Material löschen
+                        </v-btn>
+                    </template>
+
+                    <template v-else>
+                        <v-btn
+                            color="success"
+                            variant="tonal"
+                            prepend-icon="mdi-delete-off"
+                            :disabled="isDeletingEditedMaterial"
+                            @click="resetEditDeleteFlow">
+                            Abbrechen
+                        </v-btn>
+                        <v-btn
+                            color="error"
+                            variant="flat"
+                            prepend-icon="mdi-delete"
+                            :loading="isDeletingEditedMaterial"
+                            :disabled="isSavingEdit"
+                            @click="confirmDeleteFromEdit">
+                            Löschen
+                        </v-btn>
+                    </template>
+                </div>
+
                 <div class="mt-4">
                     <div class="text-subtitle-2 mb-2">Anhänge</div>
 
@@ -1562,6 +1573,7 @@ export default {
             detailDialogLoading: false,
             detailDialogCard: null,
             detailDeleteStep: 0,
+            editDeleteStep: 0,
             returnToDetailOnEditCancel: false,
             detailCardForEditReturn: null,
             attachmentDeleteArmedIds: [],
@@ -1764,6 +1776,11 @@ export default {
         },
         isDeletingDetail() {
             const id = Number(this.detailDialogCard?.id)
+            if (!Number.isFinite(id) || id <= 0) return false
+            return this.isDeletingId === id
+        },
+        isDeletingEditedMaterial() {
+            const id = Number(this.editForm?.id)
             if (!Number.isFinite(id) || id <= 0) return false
             return this.isDeletingId === id
         },
@@ -3368,11 +3385,37 @@ export default {
             this.attachmentRows = this.toAttachmentRows(card?.attachments)
             this.attachmentDeleteArmedIds = []
             this.attachmentNameEditingIds = []
+            this.editDeleteStep = 0
             this.editClassificationEditorVisible = false
             this.editDialogOpen = true
         },
+        startEditDeleteFlow() {
+            const cardId = Number(this.editForm?.id)
+            if (!Number.isFinite(cardId) || cardId <= 0) return
+            if (this.isSavingEdit || this.isDeletingEditedMaterial) return
+            this.editDeleteStep = 1
+        },
+        resetEditDeleteFlow() {
+            if (this.isDeletingEditedMaterial) return
+            this.editDeleteStep = 0
+        },
+        async confirmDeleteFromEdit() {
+            const cardId = Number(this.editForm?.id)
+            if (!Number.isFinite(cardId) || cardId <= 0) return
+            if (this.isSavingEdit || this.isDeletingEditedMaterial || this.editDeleteStep !== 1) return
+
+            this.isDeletingId = cardId
+            const deleted = await this.materialCardStore.destroy(cardId)
+            this.isDeletingId = null
+            this.editDeleteStep = 0
+
+            if (deleted) {
+                await this.closeEditDialog(false)
+                await this.loadCards(null, { forceFilterCountRefresh: true })
+            }
+        },
         async closeEditDialog(restoreDetail = true) {
-            if (this.isSavingEdit) return
+            if (this.isSavingEdit || this.isDeletingEditedMaterial) return
 
             await this.cleanupPendingTempUploads(this.editForm.pendingAttachments)
             this.closeTextAttachmentEditor()
@@ -3391,6 +3434,7 @@ export default {
             this.attachmentRows = []
             this.attachmentDeleteArmedIds = []
             this.attachmentNameEditingIds = []
+            this.editDeleteStep = 0
             this.returnToDetailOnEditCancel = false
             this.detailCardForEditReturn = null
 
@@ -3403,7 +3447,7 @@ export default {
             this.typeManagerDialogOpen = true
         },
         async saveEdit() {
-            if (!this.canSaveEdit || this.isSavingEdit || !this.editForm.id) return
+            if (!this.canSaveEdit || this.isSavingEdit || this.isDeletingEditedMaterial || !this.editForm.id) return
 
             this.isSavingEdit = true
             const classifications = this.normalizeClassifications(this.editForm.classifications)
@@ -3839,14 +3883,21 @@ ${content}
                 this.textAttachmentEditorSaving = false
             }
         },
-        openAttachmentManager(card) {
-            this.attachmentDialogCardId = Number(card?.id) || null
+        async openAttachmentManager(card) {
+            const cardId = Number(card?.id)
+            if (!Number.isFinite(cardId) || cardId <= 0) return
+
+            this.attachmentDialogCardId = cardId
             this.attachmentDialogCardTitle = String(card?.title || '').trim()
             this.attachmentRows = this.toAttachmentRows(card?.attachments)
             this.attachmentDeleteArmedIds = []
             this.attachmentNameEditingIds = []
             this.isUploadingAttachment = false
             this.attachmentDialogOpen = true
+
+            if (!Array.isArray(card?.attachments)) {
+                await this.refreshAttachmentDialogCard(cardId)
+            }
         },
         closeAttachmentManager() {
             if (this.attachmentDialogBusy) return
@@ -4833,6 +4884,20 @@ ${content}
     font-size: 0.74rem;
     line-height: 1.2;
     color: rgba(35, 61, 76, 0.85);
+    font: inherit;
+}
+
+.overview-subjects-material-count--clickable {
+    cursor: pointer;
+}
+
+.overview-subjects-material-count--clickable:disabled {
+    cursor: default;
+    opacity: 0.7;
+}
+
+.overview-subjects-material-count--clickable:not(:disabled):hover {
+    background: rgba(35, 61, 76, 0.1);
 }
 
 .overview-grid {
