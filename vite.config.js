@@ -51,10 +51,33 @@ export default defineConfig({
         rollupOptions: {
             output: {
                 manualChunks(id) {
-                    // Falls du hier Custom Chunks brauchst, sonst entfernen
+                    if (!id.includes('node_modules')) return;
+
+                    if (id.includes('vuetify')) {
+                        return 'vendor-vuetify';
+                    }
+
+                    if (
+                        id.includes('/vue/') ||
+                        id.includes('\\vue\\') ||
+                        id.includes('@vue') ||
+                        id.includes('vue-router') ||
+                        id.includes('pinia')
+                    ) {
+                        return 'vendor-vue';
+                    }
+
+                    if (id.includes('@tiptap')) {
+                        return 'vendor-tiptap';
+                    }
+
+                    if (id.includes('axios')) {
+                        return 'vendor-axios';
+                    }
                 },
             },
         },
-        chunkSizeWarningLimit: 500,
+        // After route-level code splitting, the remaining large chunk is mostly Vuetify vendor code.
+        chunkSizeWarningLimit: 550,
     }
 });

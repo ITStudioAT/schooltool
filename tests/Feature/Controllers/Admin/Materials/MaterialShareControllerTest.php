@@ -12,6 +12,7 @@ use App\Models\SchoolLicence;
 use App\Models\Schoolyear;
 use App\Models\User;
 use App\Models\UserGroup;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\Models\Role;
@@ -420,6 +421,179 @@ test('can create cross-school user target by school and email', function () {
         ->assertJsonPath('rule.targets.0.meta.school_id', (int) $otherSchool->id);
 });
 
+test('store target validates required and referenced fields for different target types', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->materialsAdmin->id,
+        'name' => 'Physik',
+        'sort_order' => 1,
+    ]);
+
+    $this->postJson('/api/admin/materials/shares/targets', [
+        'scope_type' => MaterialShareRule::SCOPE_SUBJECT,
+        'target_type' => MaterialShareTarget::TARGET_EVERYONE,
+        'audience_scope' => MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['scope_id']);
+
+    $this->postJson('/api/admin/materials/shares/targets', [
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'target_type' => MaterialShareTarget::TARGET_EVERYONE,
+        'audience_scope' => 'invalid',
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['audience_scope']);
+
+    $this->postJson('/api/admin/materials/shares/targets', [
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['target_school_id']);
+
+    $foreignSchool = School::factory()->create(['is_selectable' => true]);
+    $this->postJson('/api/admin/materials/shares/targets', [
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'target_school_id' => $foreignSchool->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['user_email']);
+
+    $this->postJson('/api/admin/materials/shares/targets', [
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'target_school_id' => 999999,
+        'user_email' => 'nobody@test.local',
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['target_school_id']);
+
+    $this->postJson('/api/admin/materials/shares/targets', [
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'target_school_id' => $foreignSchool->id,
+        'user_email' => 'missing@test.local',
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['user_id']);
+
+    $this->postJson('/api/admin/materials/shares/targets', [
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'target_type' => MaterialShareTarget::TARGET_GROUP,
+        'user_group_id' => 999999,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['user_group_id']);
+
+    $this->postJson('/api/admin/materials/shares/targets', [
+        'scope_type' => MaterialShareRule::SCOPE_SUBJECT,
+        'scope_id' => $subject->id,
+        'target_type' => MaterialShareTarget::TARGET_EVERYONE,
+        'audience_scope' => MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ])->assertStatus(200);
+});
+
+test('update rule validates boolean is_active', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $this->materialsAdmin->id,
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'scope_id' => null,
+        'is_active' => true,
+    ]);
+
+    $this->patchJson('/api/admin/materials/shares/' . $rule->id, [])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['is_active']);
+
+    $this->patchJson('/api/admin/materials/shares/' . $rule->id, [
+        'is_active' => 'not-bool',
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['is_active']);
+});
+
+test('index reports active count and sorts by updated_at descending', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $oldRule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $this->materialsAdmin->id,
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'scope_id' => null,
+        'is_active' => false,
+    ]);
+    $newerRule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $this->materialsAdmin->id,
+        'scope_type' => MaterialShareRule::SCOPE_SUBJECT,
+        'scope_id' => 123,
+        'is_active' => true,
+    ]);
+    $newestRule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $this->materialsAdmin->id,
+        'scope_type' => MaterialShareRule::SCOPE_TOPIC,
+        'scope_id' => 456,
+        'is_active' => true,
+    ]);
+
+    $oldRule->forceFill(['updated_at' => Carbon::parse('2026-02-24 10:00:00')])->saveQuietly();
+    $newerRule->forceFill(['updated_at' => Carbon::parse('2026-02-24 11:00:00')])->saveQuietly();
+    $newestRule->forceFill(['updated_at' => Carbon::parse('2026-02-24 12:00:00')])->saveQuietly();
+
+    $response = $this->getJson('/api/admin/materials/shares')
+        ->assertStatus(200)
+        ->assertJsonPath('meta.total', 3)
+        ->assertJsonPath('meta.active_count', 2);
+
+    expect((int) $response->json('data.0.id'))->toBe((int) $newestRule->id);
+    expect((int) $response->json('data.1.id'))->toBe((int) $newerRule->id);
+    expect((int) $response->json('data.2.id'))->toBe((int) $oldRule->id);
+});
+
+test('index filters out serialized targets when referenced user or group was deleted', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $targetUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'delete-me@test.local',
+    ]);
+
+    $response = $this->postJson('/api/admin/materials/shares/targets', [
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $targetUser->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ])->assertStatus(200);
+
+    $ruleId = (int) $response->json('rule.id');
+
+    $targetUser->delete();
+
+    $indexResponse = $this->getJson('/api/admin/materials/shares?' . http_build_query([
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+    ]))->assertStatus(200);
+
+    expect((int) $indexResponse->json('data.0.id'))->toBe($ruleId);
+    expect((int) $indexResponse->json('data.0.targets_count'))->toBe(0);
+    expect($indexResponse->json('data.0.targets'))->toEqual([]);
+});
+
 test('index can filter by scope type and scope id and returns scope labels', function () {
     $this->actingAs($this->materialsAdmin, 'sanctum');
 
@@ -537,6 +711,12 @@ test('share mutation and lookup endpoints return 409 when share tables are missi
     Schema::dropIfExists('material_share_rules');
 
     $this->getJson('/api/admin/materials/shares/lookup-users?search=test')
+        ->assertStatus(409);
+
+    $this->getJson('/api/admin/materials/shares/lookup-schools')
+        ->assertStatus(409);
+
+    $this->getJson('/api/admin/materials/shares/lookup-groups?type=materials')
         ->assertStatus(409);
 
     $this->postJson('/api/admin/materials/shares/targets', workspaceEveryonePayload())

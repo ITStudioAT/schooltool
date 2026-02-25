@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import axios from 'axios'
+import { render, screen, waitFor } from '@testing-library/vue'
 import MaterialsSharesView from '@/pages/admin/materials/components/views/MaterialsSharesView.vue'
 
 vi.mock('axios', () => ({
@@ -10,6 +11,37 @@ vi.mock('axios', () => ({
         delete: vi.fn(),
     },
 }))
+
+const vuetifyStubs = {
+    'v-card': { template: '<div><slot /></div>' },
+    VCard: { template: '<div><slot /></div>' },
+    'v-card-text': { template: '<div><slot /></div>' },
+    VCardText: { template: '<div><slot /></div>' },
+    'v-btn': { template: '<button><slot /></button>' },
+    VBtn: { template: '<button><slot /></button>' },
+    'v-alert': { template: '<div role="alert"><slot /></div>' },
+    VAlert: { template: '<div role="alert"><slot /></div>' },
+    'v-chip': { template: '<span><slot /></span>' },
+    VChip: { template: '<span><slot /></span>' },
+    'v-switch': { template: '<input type="checkbox" />' },
+    VSwitch: { template: '<input type="checkbox" />' },
+    'v-table': { template: '<table><slot /></table>' },
+    VTable: { template: '<table><slot /></table>' },
+    'v-icon': { template: '<span><slot /></span>' },
+    VIcon: { template: '<span><slot /></span>' },
+}
+
+function renderMaterialsSharesView() {
+    return render(MaterialsSharesView, {
+        global: {
+            stubs: {
+                ...vuetifyStubs,
+                MaterialsOverviewView: true,
+                MaterialShareDialog: true,
+            },
+        },
+    })
+}
 
 function createViewCtx(overrides: Record<string, unknown> = {}) {
     const component = MaterialsSharesView as any
@@ -105,6 +137,23 @@ describe('MaterialsSharesView', () => {
         expect(ctx.isLoading).toBe(false)
     })
 
+    it('loadShares stores error state on failure', async () => {
+        axiosMock.get.mockRejectedValue({
+            response: { data: { message: 'Freigaben laden fehlgeschlagen' } },
+        })
+
+        const ctx = createViewCtx({
+            rows: [{ id: 1 }],
+            needsMigration: true,
+        })
+        await ctx.loadShares()
+
+        expect(ctx.rows).toEqual([])
+        expect(ctx.needsMigration).toBe(false)
+        expect(ctx.errorMessage).toBe('Freigaben laden fehlgeschlagen')
+        expect(ctx.isLoading).toBe(false)
+    })
+
     it('updateRuleActive patches rule and updates row with returned payload', async () => {
         axiosMock.patch.mockResolvedValue({
             data: {
@@ -142,6 +191,21 @@ describe('MaterialsSharesView', () => {
         expect(ctx.statusBusyIds).toEqual([])
     })
 
+    it('updateRuleActive falls back to local row update when api returns no rule payload', async () => {
+        axiosMock.patch.mockResolvedValue({
+            data: { message: 'ok' },
+        })
+
+        const ctx = createViewCtx({
+            rows: [{ id: 9, is_active: true, scope_type: 'all', targets: [] }],
+        })
+
+        await ctx.updateRuleActive({ id: 9 }, false)
+
+        expect(ctx.rows[0].is_active).toBe(false)
+        expect(ctx.statusBusyIds).toEqual([])
+    })
+
     it('opens workspace share dialog and triggers assignment loading', () => {
         const ctx = createViewCtx({
             loadWorkspaceShareAssignments: vi.fn(),
@@ -168,5 +232,71 @@ describe('MaterialsSharesView', () => {
 
         expect(ctx.loadWorkspaceShareAssignments).toHaveBeenCalledTimes(1)
         expect(ctx.loadShares).toHaveBeenCalledTimes(1)
+    })
+
+    it('loadWorkspaceShareAssignments stores filtered all-scope assignments', async () => {
+        axiosMock.get.mockResolvedValue({
+            data: {
+                data: [
+                    { id: 1, scope_type: 'all' },
+                    { id: 2, scope_type: 'subject' },
+                ],
+            },
+        })
+
+        const ctx = createViewCtx()
+        await ctx.loadWorkspaceShareAssignments()
+
+        expect(axiosMock.get).toHaveBeenCalledWith('/api/admin/materials/shares', { params: { scope_type: 'all' } })
+        expect(ctx.workspaceShareAssignments).toEqual([{ id: 1, scope_type: 'all' }, { id: 2, scope_type: 'subject' }])
+        expect(ctx.workspaceShareAssignmentsError).toBe('')
+        expect(ctx.workspaceShareAssignmentsLoading).toBe(false)
+    })
+
+    it('loadWorkspaceShareAssignments stores error state on failure', async () => {
+        axiosMock.get.mockRejectedValue({
+            response: { data: { message: 'Workspace-Freigaben kaputt' } },
+        })
+
+        const ctx = createViewCtx()
+        await ctx.loadWorkspaceShareAssignments()
+
+        expect(ctx.workspaceShareAssignments).toEqual([])
+        expect(ctx.workspaceShareAssignmentsError).toBe('Workspace-Freigaben kaputt')
+        expect(ctx.workspaceShareAssignmentsLoading).toBe(false)
+    })
+
+    it('renders migration warning state', async () => {
+        axiosMock.get.mockResolvedValue({
+            data: { data: [], meta: { needs_migration: true } },
+        })
+
+        renderMaterialsSharesView()
+
+        expect(await screen.findByText(/Freigaben-Tabellen sind noch nicht vorhanden/i)).toBeInTheDocument()
+    })
+
+    it('renders empty state when no shares exist and no migration is needed', async () => {
+        axiosMock.get.mockResolvedValue({
+            data: { data: [], meta: { needs_migration: false } },
+        })
+
+        renderMaterialsSharesView()
+
+        await waitFor(() => {
+            expect(screen.getByText(/Noch keine Freigaben vorhanden\./i)).toBeInTheDocument()
+        })
+    })
+
+    it('renders error state when loadShares fails', async () => {
+        axiosMock.get.mockRejectedValue({
+            response: { data: { message: 'Freigaben konnten nicht geladen werden (Test).' } },
+        })
+
+        renderMaterialsSharesView()
+
+        await waitFor(() => {
+            expect(screen.getByText(/Freigaben konnten nicht geladen werden \(Test\)\./i)).toBeInTheDocument()
+        })
     })
 })

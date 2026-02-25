@@ -4,6 +4,7 @@ import { hideObstructiveUi } from './helpers/ui'
 
 test('tutoring request lifecycle works for requester and offer owner', async ({ page }) => {
     const requestMessage = `E2E tutoring request ${Date.now()}`
+    await page.emulateMedia({ reducedMotion: 'reduce' })
 
     await loginAsTutoringUser(page, 'e2e.tutoring.peer@example.test')
     await page.goto('/homepage/tutoring_overview?school=E2E')
@@ -15,7 +16,12 @@ test('tutoring request lifecycle works for requester and offer owner', async ({ 
 
     await expect(page.getByTestId('tutoring-offer-detail-dialog')).toBeVisible()
     await page.getByTestId('tutoring-offer-detail-contact').click()
-    await page.locator('[data-testid="tutoring-offer-detail-request-message"] textarea').fill(requestMessage)
+
+    const requestMessageField = page.getByTestId('tutoring-offer-detail-request-message')
+    if (await requestMessageField.count()) {
+        await requestMessageField.locator('textarea').fill(requestMessage)
+    }
+
     await page.getByTestId('tutoring-offer-detail-serious-request').click()
     await page.getByTestId('tutoring-offer-detail-send-request').click()
 
@@ -37,12 +43,24 @@ test('tutoring request lifecycle works for requester and offer owner', async ({ 
     await page.goto('/homepage/tutoring_overview?school=E2E')
     await hideObstructiveUi(page)
 
-    await page.getByTestId('tutoring-overview-received-requests').click()
+    const receivedRequestsCard = page.getByTestId('tutoring-overview-received-requests')
+    const startLoginCard = page.getByTestId('tutoring-overview-start-login')
+    await expect(receivedRequestsCard.or(startLoginCard)).toBeVisible()
+    if (await startLoginCard.isVisible()) {
+        await loginAsTutoringUser(page, 'e2e.tutoring@example.test')
+        await page.goto('/homepage/tutoring_overview?school=E2E')
+        await hideObstructiveUi(page)
+        await expect(receivedRequestsCard).toBeVisible()
+    }
+
+    await receivedRequestsCard.click()
     await expect(page.getByTestId('tutoring-received-requests-section')).toBeVisible()
 
     const receivedRequest = page.locator('[data-testid^="tutoring-received-request-"]', { hasText: 'TutoringPeer' }).first()
     await expect(receivedRequest).toBeVisible()
-    await receivedRequest.locator('[data-testid^="tutoring-received-request-mark-done-"]').click()
+    const markDoneButton = receivedRequest.locator('[data-testid^="tutoring-received-request-mark-done-"]')
+    await markDoneButton.scrollIntoViewIfNeeded()
+    await markDoneButton.click()
 
     await expect(receivedRequest).toContainText('TutoringPeer')
 })

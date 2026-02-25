@@ -24,6 +24,7 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     Notification::fake();
+    config(['schooltool.tutoring_active' => true]);
 
     $this->school = School::factory()->create();
     $this->schoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
@@ -403,4 +404,3 @@ describe('logout', function () {
         // in the Laravel test environment due to how actingAs() works
     });
 });
-

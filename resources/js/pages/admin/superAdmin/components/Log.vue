@@ -1,63 +1,155 @@
 <template>
-    <v-col cols="12" v-if="is_loaded">
-        <its-grid-box color="primary" title="Log-File" class="w-100">
-            <v-card tile flat color="transparent" class="w-100">
-                <v-card tile flat color="transparent" class="d-flex flex-row ga-2 w-100 mb-2" v-if="['super_admin'].some((role) => config.roles.includes(role))">
-                    <its-menu-button subtitle="Löschen" icon="mdi-delete" color="warning" @click="delete_level++" v-if="delete_level == 0" />
-                    <its-menu-button subtitle="Löschen" icon="mdi-delete-off" color="success" @click="delete_level = 0" v-if="delete_level == 1" />
-                    <its-menu-button subtitle="Löschen" icon="mdi-delete" color="error" @click="deleteLog" v-if="delete_level == 1" />
-                </v-card>
-                <v-card-text>
-                    <div style="white-space: pre-line" v-if="log">
-                        {{ log }}
-                    </div>
-                    <div class="text-h6" v-else>Die Log-Datei ist leer</div>
-                </v-card-text>
-            </v-card>
-        </its-grid-box>
-    </v-col>
+    <v-dialog :model-value="modelValue" @update:model-value="$emit('update:modelValue', $event)" persistent max-width="1300">
+        <v-card>
+            <v-card-title class="d-flex justify-space-between align-center py-3 px-4">
+                <span>Log-Dateien</span>
+                <v-btn icon variant="text" size="small" @click="$emit('update:modelValue', false)">
+                    <v-icon>mdi-close</v-icon>
+                </v-btn>
+            </v-card-title>
+            <v-divider />
+            <v-card-text class="pa-0" style="height: 75vh; overflow: hidden;">
+                <v-row class="ma-0" style="height: 100%;">
+                    <!-- Linke Seite: Liste der Log-Dateien -->
+                    <v-col cols="4" class="pa-0" style="border-right: 1px solid rgba(128,128,128,0.2); overflow-y: auto; height: 100%;">
+                        <v-list density="compact">
+                            <v-list-item
+                                v-for="logFile in logs"
+                                :key="logFile.name"
+                                :class="{ 'bg-primary': selected_log === logFile.name }"
+                                class="py-2">
+                                <template #default>
+                                    <div class="text-body-2 font-weight-medium">{{ logFile.name }}</div>
+                                    <div class="text-caption text-medium-emphasis">{{ logFile.size }} &bull; {{ logFile.modified }}</div>
+                                </template>
+                                <template #append>
+                                    <div class="d-flex align-center ga-1">
+                                        <v-btn
+                                            icon
+                                            size="small"
+                                            variant="text"
+                                            :color="selected_log === logFile.name ? 'white' : 'primary'"
+                                            @click="viewLog(logFile.name)"
+                                            title="Anzeigen">
+                                            <v-icon size="18">mdi-eye</v-icon>
+                                        </v-btn>
+                                        <template v-if="['super_admin'].some((role) => config.roles.includes(role))">
+                                            <!-- Löschen: Stufe 0 -->
+                                            <v-btn
+                                                v-if="getDeleteLevel(logFile.name) === 0"
+                                                icon
+                                                size="small"
+                                                variant="text"
+                                                color="warning"
+                                                @click="setDeleteLevel(logFile.name, 1)"
+                                                title="Löschen">
+                                                <v-icon size="18">mdi-delete</v-icon>
+                                            </v-btn>
+                                            <!-- Löschen: Stufe 1 – Bestätigung -->
+                                            <template v-else>
+                                                <v-btn
+                                                    icon
+                                                    size="small"
+                                                    variant="text"
+                                                    color="success"
+                                                    @click="setDeleteLevel(logFile.name, 0)"
+                                                    title="Abbrechen">
+                                                    <v-icon size="18">mdi-delete-off</v-icon>
+                                                </v-btn>
+                                                <v-btn
+                                                    icon
+                                                    size="small"
+                                                    variant="text"
+                                                    color="error"
+                                                    @click="deleteLog(logFile.name)"
+                                                    title="Endgültig löschen">
+                                                    <v-icon size="18">mdi-delete</v-icon>
+                                                </v-btn>
+                                            </template>
+                                        </template>
+                                    </div>
+                                </template>
+                            </v-list-item>
+                            <v-list-item v-if="is_loaded && !logs.length">
+                                <v-list-item-title class="text-medium-emphasis">Keine Log-Dateien vorhanden</v-list-item-title>
+                            </v-list-item>
+                        </v-list>
+                    </v-col>
+
+                    <!-- Rechte Seite: Log-Inhalt -->
+                    <v-col cols="8" class="pa-0" style="overflow-y: auto; height: 100%;">
+                        <div
+                            v-if="log"
+                            class="pa-4"
+                            style="white-space: pre-wrap; font-family: monospace; font-size: 11px; line-height: 1.6; word-break: break-all;">
+                            {{ log }}
+                        </div>
+                        <div v-else class="d-flex justify-center align-center text-medium-emphasis" style="height: 100%;">
+                            <span>Wähle eine Log-Datei aus</span>
+                        </div>
+                    </v-col>
+                </v-row>
+            </v-card-text>
+        </v-card>
+    </v-dialog>
 </template>
+
 <script>
-import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useLogStore } from '@/stores/admin/LogStore'
-import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
-import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
 export default {
-    setup() {
-        return useValidationRulesSetup()
+    props: {
+        modelValue: {
+            type: Boolean,
+            default: false,
+        },
     },
 
-    components: { ItsMenuButton, ItsGridBox },
+    emits: ['update:modelValue'],
 
     async beforeMount() {
-        this.adminStore = useAdminStore()
         this.logStore = useLogStore()
-        await this.logStore.getLog()
+        await this.logStore.listLogs()
         this.is_loaded = true
     },
-
-    unmounted() {},
 
     data() {
         return {
             logStore: null,
-            delete_level: 0,
+            selected_log: null,
+            delete_levels: {},
             is_loaded: false,
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['config']),
-        ...mapWritableState(useLogStore, ['log']),
+        ...mapWritableState(useLogStore, ['logs', 'log']),
     },
 
     methods: {
-        async deleteLog() {
-            await this.logStore.deleteLog()
-            this.delete_level = 0
+        async viewLog(filename) {
+            this.delete_levels = {}
+            this.selected_log = filename
+            this.log = null
+            await this.logStore.getLog(filename)
+        },
+        getDeleteLevel(filename) {
+            return this.delete_levels[filename] ?? 0
+        },
+        setDeleteLevel(filename, level) {
+            const reset = {}
+            Object.keys(this.delete_levels).forEach((key) => (reset[key] = 0))
+            this.delete_levels = { ...reset, [filename]: level }
+        },
+        async deleteLog(filename) {
+            await this.logStore.deleteLog(filename)
+            this.setDeleteLevel(filename, 0)
+            if (this.selected_log === filename) {
+                this.selected_log = null
+            }
         },
     },
 }

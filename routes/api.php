@@ -412,5 +412,6 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     /* SANCTUM - super_admin, admin */
     Route::middleware(['auth:sanctum', 'api-allowed:super_admin,admin'])->group(function () {
         Route::get('/admin/get_log',  [\App\Http\Controllers\Admin\LogController::class, 'getLog']);
+        Route::get('/admin/list_logs', [\App\Http\Controllers\Admin\LogController::class, 'listLogs']);
     });
 });

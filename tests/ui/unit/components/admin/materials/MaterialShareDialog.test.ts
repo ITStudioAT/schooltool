@@ -179,4 +179,178 @@ describe('MaterialShareDialog', () => {
         expect(ctx.peopleSearchResults).toEqual([])
         expect(ctx.peopleSearchError).toBe('Suche fehlgeschlagen.')
     })
+
+    it('watch modelValue initializes dialog state on open', () => {
+        const initializeDialogState = vi.fn()
+        const ctx = createDialogCtx({ initializeDialogState })
+        const watcher = (MaterialShareDialog as any).watch.modelValue
+
+        watcher.call(ctx, false)
+        expect(initializeDialogState).not.toHaveBeenCalled()
+
+        watcher.call(ctx, true)
+        expect(initializeDialogState).toHaveBeenCalledTimes(1)
+    })
+
+    it('initializeDialogState resets state and loads schools + groups', () => {
+        const loadExternalSchools = vi.fn()
+        const loadGroups = vi.fn()
+        const ctx = createDialogCtx({
+            loadExternalSchools,
+            loadGroups,
+            shareTargetPanel: 4,
+            pendingShareTarget: { foo: 'bar' },
+            shareMode: 'full_access',
+            lastActionError: 'x',
+            peopleSearchError: 'y',
+            peopleSearchResults: [{ id: 1 }],
+            externalSchoolsError: 'z',
+            selectedExternalSchoolId: 8,
+            externalUserEmail: 'a@b.c',
+        })
+
+        ctx.initializeDialogState()
+
+        expect(ctx.shareTargetPanel).toBe(0)
+        expect(ctx.pendingShareTarget).toBeNull()
+        expect(ctx.shareMode).toBe('read_only')
+        expect(ctx.lastActionError).toBe('')
+        expect(ctx.peopleSearchError).toBe('')
+        expect(ctx.peopleSearchResults).toEqual([])
+        expect(ctx.externalSchoolsError).toBe('')
+        expect(ctx.selectedExternalSchoolId).toBeNull()
+        expect(ctx.externalUserEmail).toBe('')
+        expect(loadExternalSchools).toHaveBeenCalledTimes(1)
+        expect(loadGroups).toHaveBeenNthCalledWith(1, 'materials')
+        expect(loadGroups).toHaveBeenNthCalledWith(2, 'own')
+    })
+
+    it('scopePayload returns normalized payload for all and scoped targets', () => {
+        const allCtx = createDialogCtx({ target: { level: 'all', id: null, label: 'Alles' } })
+        expect(allCtx.scopePayload()).toEqual({ scope_type: 'all', scope_id: null })
+
+        const subjectCtx = createDialogCtx({ target: { level: 'subject', id: 12, label: 'Mathe' } })
+        expect(subjectCtx.scopePayload()).toEqual({ scope_type: 'subject', scope_id: 12 })
+
+        const invalidCtx = createDialogCtx({ target: { level: 'subject', id: null, label: 'Mathe' } })
+        expect(invalidCtx.scopePayload()).toBeNull()
+    })
+
+    it('stages user and group targets', () => {
+        const ctx = createDialogCtx({
+            selectedMaterialsGroupId: 7,
+            materialsGroups: [{ id: 7, label: 'Materialgruppe A' }],
+            selectedOwnGroupId: 9,
+            ownGroups: [{ id: 9, label: 'Eigene Gruppe B' }],
+        })
+
+        ctx.stageUserShare({ id: 13, label: 'Anna Muster', email: 'anna@test.local' })
+        expect(ctx.pendingShareTarget).toMatchObject({
+            typeLabel: 'Person',
+            label: 'Anna Muster',
+            metaLabel: 'anna@test.local',
+            payload: { target_type: 'user', user_id: 13 },
+            busyKey: 'user:13',
+        })
+
+        ctx.stageSelectedGroup('materials')
+        expect(ctx.pendingShareTarget).toMatchObject({
+            typeLabel: 'Materialiengruppe',
+            label: 'Materialgruppe A',
+            payload: { target_type: 'group', user_group_id: 7 },
+            busyKey: 'group:7',
+        })
+
+        ctx.stageSelectedGroup('own')
+        expect(ctx.pendingShareTarget).toMatchObject({
+            typeLabel: 'Eigene Gruppe',
+            label: 'Eigene Gruppe B',
+            payload: { target_type: 'group', user_group_id: 9 },
+            busyKey: 'group:9',
+        })
+    })
+
+    it('confirmPendingShareTarget clears pending target on success and keeps it on failure', async () => {
+        const ctx = createDialogCtx({
+            pendingShareTarget: {
+                payload: { target_type: 'everyone', audience_scope: 'school' },
+                busyKey: 'everyone:school',
+            },
+            requestStoreTarget: vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false),
+            clearPendingShareTarget: vi.fn(),
+        })
+
+        await ctx.confirmPendingShareTarget()
+        expect(ctx.requestStoreTarget).toHaveBeenNthCalledWith(1, { target_type: 'everyone', audience_scope: 'school' }, 'everyone:school')
+        expect(ctx.clearPendingShareTarget).toHaveBeenCalledTimes(1)
+
+        await ctx.confirmPendingShareTarget()
+        expect(ctx.clearPendingShareTarget).toHaveBeenCalledTimes(1)
+    })
+
+    it('loadExternalSchools stores schools and error states', async () => {
+        const ctx = createDialogCtx()
+
+        axiosMock.get.mockResolvedValueOnce({
+            data: { data: [{ id: 2, label: 'Schule B' }] },
+        })
+        await ctx.loadExternalSchools()
+
+        expect(axiosMock.get).toHaveBeenCalledWith('/api/admin/materials/shares/lookup-schools')
+        expect(ctx.externalSchools).toEqual([{ id: 2, label: 'Schule B' }])
+        expect(ctx.externalSchoolsLoaded).toBe(true)
+        expect(ctx.externalSchoolsError).toBe('')
+        expect(ctx.externalSchoolsLoading).toBe(false)
+
+        axiosMock.get.mockRejectedValueOnce({
+            response: { data: { message: 'Schulen kaputt' } },
+        })
+        await ctx.loadExternalSchools()
+
+        expect(ctx.externalSchools).toEqual([])
+        expect(ctx.externalSchoolsError).toBe('Schulen kaputt')
+        expect(ctx.externalSchoolsLoading).toBe(false)
+    })
+
+    it('loadGroups stores materials and own groups and handles errors', async () => {
+        const ctx = createDialogCtx()
+
+        axiosMock.get.mockResolvedValueOnce({ data: { data: [{ id: 3, label: 'MG' }] } })
+        await ctx.loadGroups('materials')
+        expect(ctx.materialsGroups).toEqual([{ id: 3, label: 'MG' }])
+        expect(ctx.materialsGroupsLoaded).toBe(true)
+        expect(ctx.materialsGroupsError).toBe('')
+
+        axiosMock.get.mockResolvedValueOnce({ data: { data: [{ id: 4, label: 'OG' }] } })
+        await ctx.loadGroups('own')
+        expect(ctx.ownGroups).toEqual([{ id: 4, label: 'OG' }])
+        expect(ctx.ownGroupsLoaded).toBe(true)
+        expect(ctx.ownGroupsError).toBe('')
+
+        axiosMock.get.mockRejectedValueOnce({ response: { data: { message: 'Gruppenfehler' } } })
+        await ctx.loadGroups('materials')
+        expect(ctx.materialsGroups).toEqual([])
+        expect(ctx.materialsGroupsError).toBe('Gruppenfehler')
+        expect(ctx.materialsGroupsLoading).toBe(false)
+    })
+
+    it('lazy menu open handlers only load when needed', () => {
+        const ctx = createDialogCtx({
+            loadExternalSchools: vi.fn(),
+            loadGroups: vi.fn(),
+            externalSchoolsLoaded: false,
+            materialsGroupsLoaded: false,
+            ownGroupsLoaded: true,
+        })
+
+        ctx.onExternalSchoolsMenuOpen(false)
+        ctx.onExternalSchoolsMenuOpen(true)
+        expect(ctx.loadExternalSchools).toHaveBeenCalledTimes(1)
+
+        ctx.onGroupsMenuOpen('materials', false)
+        ctx.onGroupsMenuOpen('materials', true)
+        ctx.onGroupsMenuOpen('own', true)
+        expect(ctx.loadGroups).toHaveBeenCalledTimes(1)
+        expect(ctx.loadGroups).toHaveBeenCalledWith('materials')
+    })
 })
