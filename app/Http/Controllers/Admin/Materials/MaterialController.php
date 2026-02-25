@@ -241,13 +241,19 @@ class MaterialController extends Controller
             abort(404, 'Datei nicht gefunden');
         }
 
-        if (! Storage::exists($material_card_attachment->file_path)) {
+        $disk = Storage::disk(config('filesystems.default'));
+        $relativePath = (string) $material_card_attachment->file_path;
+
+        if (! $disk->exists($relativePath)) {
             abort(404, 'Datei nicht gefunden');
         }
 
-        $name = $material_card_attachment->name ?: basename($material_card_attachment->file_path);
+        $name = $this->safeAttachmentDownloadName(
+            $material_card_attachment->name ?: basename($relativePath)
+        );
+
         if ($this->isHtmlAttachment($material_card_attachment)) {
-            $rawHtml = (string) Storage::get($material_card_attachment->file_path);
+            $rawHtml = (string) $disk->get($relativePath);
             $styledHtml = $this->ensureRichTextStylesForHtmlDownload($rawHtml, $name);
 
             return response()->streamDownload(
@@ -263,18 +269,31 @@ class MaterialController extends Controller
             );
         }
 
-        $filePath = $material_card_attachment->file_path;
+        $stream = $disk->readStream($relativePath);
+        if (! is_resource($stream)) {
+            abort(404, 'Datei nicht gefunden');
+        }
+
+        $contentType = $this->attachmentDownloadContentType($material_card_attachment, $disk, $relativePath);
+
         return response()->streamDownload(
-            static function () use ($filePath): void {
-                $stream = Storage::readStream($filePath);
-                if ($stream) {
-                    fpassthru($stream);
+            static function () use ($stream): void {
+                try {
+                    while (! feof($stream)) {
+                        $chunk = fread($stream, 8192);
+                        if ($chunk === false) {
+                            break;
+                        }
+
+                        echo $chunk;
+                    }
+                } finally {
                     fclose($stream);
                 }
             },
             $name,
             [
-                'Content-Type' => Storage::mimeType($filePath) ?: 'application/octet-stream',
+                'Content-Type' => $contentType,
                 'Cache-Control' => 'private, no-store, max-age=0',
                 'X-Content-Type-Options' => 'nosniff',
             ]
@@ -673,5 +692,48 @@ class MaterialController extends Controller
         }
 
         return mb_substr($withoutTrailingDot, 0, 240) . '.docx';
+    }
+
+    private function safeAttachmentDownloadName(string $name): string
+    {
+        $value = trim($name);
+        $value = preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $value) ?? $value;
+        $value = str_replace(['/', '\\'], '_', $value);
+        $value = trim($value, " .\t\n\r\0\x0B");
+
+        if ($value === '') {
+            return 'Datei';
+        }
+
+        return mb_substr($value, 0, 240);
+    }
+
+    private function attachmentDownloadContentType(
+        MaterialCardAttachment $attachment,
+        \Illuminate\Contracts\Filesystem\Filesystem $disk,
+        string $relativePath
+    ): string {
+        $storedMimeType = trim((string) ($attachment->mime_type ?? ''));
+        if ($this->isSafeHeaderValue($storedMimeType)) {
+            return $storedMimeType;
+        }
+
+        $detectedMimeType = $disk->mimeType($relativePath);
+        $detectedMimeType = is_string($detectedMimeType) ? trim($detectedMimeType) : '';
+
+        if ($this->isSafeHeaderValue($detectedMimeType)) {
+            return $detectedMimeType;
+        }
+
+        return 'application/octet-stream';
+    }
+
+    private function isSafeHeaderValue(string $value): bool
+    {
+        if ($value === '') {
+            return false;
+        }
+
+        return ! preg_match('/[\r\n\x00]/', $value);
     }
 }
