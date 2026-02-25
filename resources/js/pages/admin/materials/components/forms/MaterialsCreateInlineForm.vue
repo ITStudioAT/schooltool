@@ -158,7 +158,47 @@
                         class="classification-row mb-1"
                         :class="{ 'classification-row-active': activeClassificationIndex === entry.index }">
                         <v-col cols="12" class="py-1">
-                            <div class="classification-chip-label mb-0">Fach</div>
+                            <div class="d-flex align-center justify-space-between mb-0">
+                                <div class="classification-chip-label mb-0">Fach</div>
+                                <v-btn
+                                    icon="mdi-plus"
+                                    size="x-small"
+                                    variant="text"
+                                    color="primary"
+                                    :disabled="isSaving || classificationCreateSaving"
+                                    :title="'Fach hinzufügen'"
+                                    @click="openClassificationCreateField('subject')" />
+                            </div>
+                            <div
+                                v-if="classificationCreateField === 'subject'"
+                                class="classification-inline-create d-flex flex-wrap align-center ga-2 mt-2 mb-2">
+                                <v-text-field
+                                    :model-value="classificationCreateValue"
+                                    label="Neues Fach"
+                                    variant="outlined"
+                                    density="comfortable"
+                                    hide-details="auto"
+                                    class="classification-inline-create-field"
+                                    :disabled="isSaving || classificationCreateSaving"
+                                    @update:modelValue="classificationCreateValue = normalizeText($event)"
+                                    @keyup.enter="submitClassificationCreateField"
+                                    @keydown.esc="cancelClassificationCreateField" />
+                                <v-btn
+                                    icon="mdi-check"
+                                    size="small"
+                                    variant="flat"
+                                    color="primary"
+                                    :loading="classificationCreateSaving"
+                                    :disabled="!canSubmitClassificationCreate"
+                                    @click="submitClassificationCreateField" />
+                                <v-btn
+                                    icon="mdi-close"
+                                    size="small"
+                                    variant="text"
+                                    color="warning"
+                                    :disabled="classificationCreateSaving"
+                                    @click="cancelClassificationCreateField" />
+                            </div>
                             <v-chip-group
                                 :model-value="normalizedClassificationDraft.subject"
                                 column
@@ -184,7 +224,47 @@
                         </v-col>
 
                         <v-col cols="12" class="py-1">
-                            <div class="classification-chip-label mb-0">Thema</div>
+                            <div class="d-flex align-center justify-space-between mb-0">
+                                <div class="classification-chip-label mb-0">Thema</div>
+                                <v-btn
+                                    icon="mdi-plus"
+                                    size="x-small"
+                                    variant="text"
+                                    color="primary"
+                                    :disabled="isSaving || classificationCreateSaving || !canOpenTopicCreate"
+                                    :title="canOpenTopicCreate ? 'Thema hinzufügen' : 'Zuerst Fach wählen'"
+                                    @click="openClassificationCreateField('topic')" />
+                            </div>
+                            <div
+                                v-if="classificationCreateField === 'topic'"
+                                class="classification-inline-create d-flex flex-wrap align-center ga-2 mt-2 mb-2">
+                                <v-text-field
+                                    :model-value="classificationCreateValue"
+                                    label="Neues Thema"
+                                    variant="outlined"
+                                    density="comfortable"
+                                    hide-details="auto"
+                                    class="classification-inline-create-field"
+                                    :disabled="isSaving || classificationCreateSaving"
+                                    @update:modelValue="classificationCreateValue = normalizeText($event)"
+                                    @keyup.enter="submitClassificationCreateField"
+                                    @keydown.esc="cancelClassificationCreateField" />
+                                <v-btn
+                                    icon="mdi-check"
+                                    size="small"
+                                    variant="flat"
+                                    color="primary"
+                                    :loading="classificationCreateSaving"
+                                    :disabled="!canSubmitClassificationCreate"
+                                    @click="submitClassificationCreateField" />
+                                <v-btn
+                                    icon="mdi-close"
+                                    size="small"
+                                    variant="text"
+                                    color="warning"
+                                    :disabled="classificationCreateSaving"
+                                    @click="cancelClassificationCreateField" />
+                            </div>
                             <v-chip-group
                                 :model-value="normalizedClassificationDraft.topic"
                                 column
@@ -211,7 +291,47 @@
                         </v-col>
 
                         <v-col cols="12" class="py-1">
-                            <div class="classification-chip-label mb-0">Bereich</div>
+                            <div class="d-flex align-center justify-space-between mb-0">
+                                <div class="classification-chip-label mb-0">Bereich</div>
+                                <v-btn
+                                    icon="mdi-plus"
+                                    size="x-small"
+                                    variant="text"
+                                    color="primary"
+                                    :disabled="isSaving || classificationCreateSaving || !canOpenUnitCreate"
+                                    :title="canOpenUnitCreate ? 'Bereich hinzufügen' : 'Zuerst Thema wählen'"
+                                    @click="openClassificationCreateField('unit')" />
+                            </div>
+                            <div
+                                v-if="classificationCreateField === 'unit'"
+                                class="classification-inline-create d-flex flex-wrap align-center ga-2 mt-2 mb-2">
+                                <v-text-field
+                                    :model-value="classificationCreateValue"
+                                    label="Neuer Bereich"
+                                    variant="outlined"
+                                    density="comfortable"
+                                    hide-details="auto"
+                                    class="classification-inline-create-field"
+                                    :disabled="isSaving || classificationCreateSaving"
+                                    @update:modelValue="classificationCreateValue = normalizeText($event)"
+                                    @keyup.enter="submitClassificationCreateField"
+                                    @keydown.esc="cancelClassificationCreateField" />
+                                <v-btn
+                                    icon="mdi-check"
+                                    size="small"
+                                    variant="flat"
+                                    color="primary"
+                                    :loading="classificationCreateSaving"
+                                    :disabled="!canSubmitClassificationCreate"
+                                    @click="submitClassificationCreateField" />
+                                <v-btn
+                                    icon="mdi-close"
+                                    size="small"
+                                    variant="text"
+                                    color="warning"
+                                    :disabled="classificationCreateSaving"
+                                    @click="cancelClassificationCreateField" />
+                            </div>
                             <v-chip-group
                                 :model-value="normalizedClassificationDraft.unit"
                                 column
@@ -467,6 +587,7 @@ import vueFilePond from 'vue-filepond/dist/vue-filepond.js'
 import 'filepond/dist/filepond.min.css'
 import FilePondPluginFileValidateType from 'filepond-plugin-file-validate-type'
 import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
+import { useMaterialCardStore } from '@/stores/admin/materials/MaterialCardStore'
 
 const FilePond = vueFilePond(FilePondPluginFileValidateType)
 
@@ -566,6 +687,9 @@ export default {
                 unit: '',
             },
             classificationDraftDirty: false,
+            classificationCreateField: '',
+            classificationCreateValue: '',
+            classificationCreateSaving: false,
             pendingAttachmentDeleteArmedKeys: [],
             isReadingClipboard: false,
             clipboardPasteArmed: false,
@@ -597,6 +721,7 @@ export default {
                 this.newlyAddedClassificationIndex = null
                 this.classificationDraft = this.emptyClassificationRow()
                 this.classificationDraftDirty = false
+                this.resetClassificationCreateState()
                 return
             }
 
@@ -898,6 +1023,23 @@ export default {
             const index = Number(this.activeClassificationIndex)
             return Number.isInteger(index) && index >= 0 && this.hasClassificationDraftChanges
         },
+        canOpenTopicCreate() {
+            return this.normalizeText(this.normalizedClassificationDraft.subject) !== ''
+        },
+        canOpenUnitCreate() {
+            return this.normalizeText(this.normalizedClassificationDraft.subject) !== ''
+                && this.normalizeText(this.normalizedClassificationDraft.topic) !== ''
+        },
+        canSubmitClassificationCreate() {
+            if (this.isSaving || this.classificationCreateSaving) return false
+            const field = this.normalizeText(this.classificationCreateField).toLocaleLowerCase()
+            const name = this.normalizeText(this.classificationCreateValue)
+            if (!field || !name) return false
+            if (field === 'subject') return true
+            if (field === 'topic') return this.canOpenTopicCreate
+            if (field === 'unit') return this.canOpenUnitCreate
+            return false
+        },
     },
     methods: {
         emptyClassificationRow() {
@@ -909,6 +1051,67 @@ export default {
         },
         normalizeText(value) {
             return String(value ?? '').trim().slice(0, 255)
+        },
+        resetClassificationCreateState() {
+            this.classificationCreateField = ''
+            this.classificationCreateValue = ''
+            this.classificationCreateSaving = false
+        },
+        openClassificationCreateField(field) {
+            const key = this.normalizeText(field).toLocaleLowerCase()
+            if (!['subject', 'topic', 'unit'].includes(key)) return
+            if (this.isSaving || this.classificationCreateSaving) return
+            if (key === 'topic' && !this.canOpenTopicCreate) return
+            if (key === 'unit' && !this.canOpenUnitCreate) return
+
+            if (this.classificationCreateField === key) {
+                this.cancelClassificationCreateField()
+                return
+            }
+
+            this.classificationCreateField = key
+            this.classificationCreateValue = ''
+        },
+        cancelClassificationCreateField() {
+            if (this.classificationCreateSaving) return
+            this.classificationCreateField = ''
+            this.classificationCreateValue = ''
+        },
+        async submitClassificationCreateField() {
+            const field = this.normalizeText(this.classificationCreateField).toLocaleLowerCase()
+            const name = this.normalizeText(this.classificationCreateValue)
+            if (!['subject', 'topic', 'unit'].includes(field)) return
+            if (!name || !this.canSubmitClassificationCreate) return
+
+            const materialCardStore = useMaterialCardStore()
+            this.classificationCreateSaving = true
+
+            try {
+                let created = null
+
+                if (field === 'subject') {
+                    created = await materialCardStore.createSubject(name)
+                } else if (field === 'topic') {
+                    const subjectNode = this.subjectNodeByName(this.normalizedClassificationDraft.subject)
+                    const subjectId = Number(subjectNode?.id)
+                    if (!Number.isFinite(subjectId) || subjectId <= 0) return
+                    created = await materialCardStore.createTopic(subjectId, name)
+                } else {
+                    const subjectNode = this.subjectNodeByName(this.normalizedClassificationDraft.subject)
+                    const topicNode = this.topicNodeByName(subjectNode, this.normalizedClassificationDraft.topic)
+                    const topicId = Number(topicNode?.id)
+                    if (!Number.isFinite(topicId) || topicId <= 0) return
+                    created = await materialCardStore.createUnit(topicId, name)
+                }
+
+                if (!created) return
+
+                const nextName = this.normalizeText(created?.name) || name
+                this.updateClassificationDraftField(field, nextName)
+                this.cancelClassificationCreateField()
+            } finally {
+                this.classificationCreateSaving = false
+            }
         },
         normalizeUrl(value) {
             const raw = String(value ?? '').trim()
@@ -1995,10 +2198,16 @@ ${bodyHtml}
                 unit,
             }
             this.classificationDraftDirty = false
+            if (!this.classificationCreateSaving) {
+                this.cancelClassificationCreateField()
+            }
         },
         updateClassificationDraftField(field, value) {
             const key = String(field || '')
             if (!['subject', 'topic', 'unit'].includes(key)) return
+            if (this.classificationCreateField && this.classificationCreateField !== key && !this.classificationCreateSaving) {
+                this.cancelClassificationCreateField()
+            }
 
             const nextValue = this.normalizeText(value)
             const nextDraft = {
@@ -2223,6 +2432,15 @@ ${bodyHtml}
     font-size: 0.82rem;
     font-weight: 700;
     color: #2f4a5d;
+}
+
+.classification-inline-create {
+    width: 100%;
+}
+
+.classification-inline-create-field {
+    min-width: 220px;
+    flex: 1 1 220px;
 }
 
 .classification-option-chip--selected {
