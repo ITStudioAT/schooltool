@@ -10,3 +10,22 @@
 .tutoring-admin-shell {
     padding: 0;
 }
+
+.tutoring-admin-menu-wrap {
+    position: relative;
+}
+
+.tutoring-admin-menu-row {
+    align-items: center;
+}
+
+:deep(.tutoring-admin-menu-button) {
+    position: relative;
+}
+
+@media (max-width: 900px) {
+    .tutoring-admin-menu-row {
+        gap: 6px !important;
+        flex-wrap: wrap;
+    }
+}

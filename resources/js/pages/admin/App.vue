@@ -11,13 +11,13 @@
             <v-list>
                 <template v-for="(item, i) in config.menu" :key="i">
                     <!-- route item -->
-                    <v-list-item v-if="item.to" :exact="false" :title="item.title" :prepend-icon="item.icon" :to="item.to" :disabled="is_navigation_locked || !item.is_active">
+                    <v-list-item v-if="item.to" :exact="false" :title="item.title" :prepend-icon="item.icon" :to="item.to" :disabled="is_navigation_locked || !item.is_active || is_loading > 0">
                         <template v-if="item.status_icon" #append>
                             <v-icon :icon="item.status_icon" :color="item.status_color || 'warning'" :title="item.status_title || ''" size="small" />
                         </template>
                     </v-list-item>
                     <!-- click item -->
-                    <v-list-item v-else-if="item.click" :exact="false" :title="item.title" :prepend-icon="item.icon" :disabled="is_navigation_locked" @click="callItemClick(item)" />
+                    <v-list-item v-else-if="item.click" :exact="false" :title="item.title" :prepend-icon="item.icon" :disabled="is_navigation_locked || is_loading > 0" @click="callItemClick(item)" />
                 </template>
             </v-list>
         </v-navigation-drawer>
