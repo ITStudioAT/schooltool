@@ -47,7 +47,7 @@
                             v-for="material in subject.materials"
                             :key="`overview-subjects-subject-material-${subject.id || subject.name}-${material.id}`"
                             class="overview-subjects-material-item">
-                            <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" />
+                            <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || undefined" />
                             <button
                                 type="button"
                                 class="overview-subjects-material-link"
@@ -168,7 +168,7 @@
                                     v-for="material in topic.materials"
                                     :key="`overview-subjects-topic-material-${topic.id || topic.name}-${material.id}`"
                                     class="overview-subjects-material-item">
-                                    <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" />
+                                    <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || undefined" />
                                     <button
                                         type="button"
                                         class="overview-subjects-material-link"
@@ -288,7 +288,7 @@
                                             v-for="material in unit.materials"
                                             :key="`overview-subjects-unit-material-${unit.id || unit.name}-${material.id}`"
                                             class="overview-subjects-material-item">
-                                            <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" />
+                                            <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || undefined" />
                                             <button
                                                 type="button"
                                                 class="overview-subjects-material-link"
