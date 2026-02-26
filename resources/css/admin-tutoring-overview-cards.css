@@ -3,13 +3,18 @@
 /* --- Filter bar --- */
 
 .tov-filter-groups {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 14px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 10px;
 }
 
 .tov-filter-group {
     min-width: 0;
+    border-radius: 14px;
+    border: 1px solid rgba(16, 38, 58, 0.09);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 251, 255, 0.82));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    padding: 10px 10px 9px;
 }
 
 .tov-filter-label {
@@ -18,7 +23,68 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.07em;
-    margin-bottom: 6px;
+    margin-bottom: 0;
+}
+
+.tov-filter-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.tov-filter-label-icon {
+    color: rgba(16, 38, 58, 0.5);
+}
+
+.tov-filter-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    background: rgba(255, 255, 255, 0.78);
+    color: rgba(16, 38, 58, 0.82);
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+
+.tov-filter-options {
+    padding: 2px;
+    border-radius: 12px;
+    border: 1px solid rgba(16, 38, 58, 0.06);
+    background: rgba(255, 255, 255, 0.72);
+}
+
+.tov-filter-btn {
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 700;
+    min-height: 28px !important;
+    box-shadow: none !important;
+    border: 1px solid transparent !important;
+}
+
+.tov-filter-btn:hover {
+    transform: translateY(-1px);
+}
+
+.tov-filter-options :deep(.v-btn.bg-secondary) {
+    background: rgba(16, 38, 58, 0.05) !important;
+    color: rgba(16, 38, 58, 0.86) !important;
+    border-color: rgba(16, 38, 58, 0.08) !important;
+}
+
+.tov-filter-options :deep(.v-btn.bg-primary) {
+    border-color: rgba(57, 73, 171, 0.22) !important;
+    box-shadow: 0 4px 10px rgba(57, 73, 171, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.5) !important;
+}
+
+.tov-filter-options :deep(.v-btn--disabled) {
+    opacity: 0.55 !important;
 }
 
 /* --- Offer list item (works with crud-list-item as base) --- */
@@ -31,9 +97,17 @@
     padding: 10px 12px;
 }
 
+.tov-offer-select {
+    padding-top: 1px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+}
+
 .tov-offer-item.is-selected {
     background: rgba(46, 164, 79, 0.1) !important;
     border-color: rgba(46, 164, 79, 0.28) !important;
+    box-shadow: inset 3px 0 0 rgba(57, 73, 171, 0.8);
 }
 
 .tov-offer-status {
@@ -61,4 +135,15 @@
 
 .tov-offer-mentor--accepted {
     color: rgba(16, 38, 58, 0.55);
+}
+
+@media (max-width: 700px) {
+    .tov-filter-groups {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+
+    .tov-filter-group {
+        padding: 9px;
+    }
 }

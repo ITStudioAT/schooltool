@@ -24,19 +24,53 @@
                         </div>
                         <div class="tov-filter-groups">
                             <div class="tov-filter-group">
-                                <div class="tov-filter-label">Genehmigung</div>
-                                <div class="d-flex flex-row flex-wrap align-center ga-1">
-                                    <v-btn :color="select_accepted == 'all' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleAccepted('all')" :disabled="action != ''">Alle</v-btn>
-                                    <v-btn :color="select_accepted == 'no' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleAccepted('no')" :disabled="action != ''">Nur Offene</v-btn>
-                                    <v-btn :color="select_accepted == 'yes' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleAccepted('yes')" :disabled="action != ''">Nur Genehmigte</v-btn>
+                                <div class="tov-filter-label-row">
+                                    <div class="tov-filter-label">Genehmigung</div>
+                                    <v-icon size="14" icon="mdi-shield-check-outline" class="tov-filter-label-icon" />
+                                </div>
+                                <div class="d-flex flex-row flex-wrap align-center ga-1 tov-filter-options">
+                                    <v-btn :color="select_accepted == 'all' ? 'primary' : 'secondary'" variant="tonal" rounded="pill" size="small" class="text-caption tov-filter-btn" @click="toggleAccepted('all')" :disabled="action != ''">Alle</v-btn>
+                                    <v-btn :color="select_accepted == 'no' ? 'primary' : 'secondary'" variant="tonal" rounded="pill" size="small" class="text-caption tov-filter-btn" @click="toggleAccepted('no')" :disabled="action != ''">Nur Offene</v-btn>
+                                    <v-btn :color="select_accepted == 'yes' ? 'primary' : 'secondary'" variant="tonal" rounded="pill" size="small" class="text-caption tov-filter-btn" @click="toggleAccepted('yes')" :disabled="action != ''">Nur Genehmigte</v-btn>
                                 </div>
                             </div>
                             <div class="tov-filter-group">
-                                <div class="tov-filter-label">Online</div>
-                                <div class="d-flex flex-row flex-wrap align-center ga-1">
-                                    <v-btn :color="select_online == 'all' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleOnline('all')" :disabled="action != ''">Alle</v-btn>
-                                    <v-btn :color="select_online == 'yes' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleOnline('yes')" :disabled="action != ''">Nur Online</v-btn>
-                                    <v-btn :color="select_online == 'no' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleOnline('no')" :disabled="action != ''">Nur Offline</v-btn>
+                                <div class="tov-filter-label-row">
+                                    <div class="tov-filter-label">Online</div>
+                                    <v-icon size="14" icon="mdi-cloud-outline" class="tov-filter-label-icon" />
+                                </div>
+                                <div class="d-flex flex-row flex-wrap align-center ga-1 tov-filter-options">
+                                    <v-btn :color="select_online == 'all' ? 'primary' : 'secondary'" variant="tonal" rounded="pill" size="small" class="text-caption tov-filter-btn" @click="toggleOnline('all')" :disabled="action != ''">Alle</v-btn>
+                                    <v-btn :color="select_online == 'yes' ? 'primary' : 'secondary'" variant="tonal" rounded="pill" size="small" class="text-caption tov-filter-btn" @click="toggleOnline('yes')" :disabled="action != ''">Nur Online</v-btn>
+                                    <v-btn :color="select_online == 'no' ? 'primary' : 'secondary'" variant="tonal" rounded="pill" size="small" class="text-caption tov-filter-btn" @click="toggleOnline('no')" :disabled="action != ''">Nur Offline</v-btn>
+                                </div>
+                            </div>
+                            <div class="tov-filter-group">
+                                <div class="tov-filter-label-row">
+                                    <div class="tov-filter-label">Auswahl</div>
+                                    <div class="tov-filter-count">{{ selected_offers.length }}/{{ offers.length }}</div>
+                                </div>
+                                <div class="d-flex flex-row flex-wrap align-center ga-1 tov-filter-options">
+                                    <v-btn
+                                        color="primary"
+                                        variant="tonal"
+                                        rounded="pill"
+                                        size="small"
+                                        class="text-caption tov-filter-btn"
+                                        @click="selectAll"
+                                        :disabled="action != '' || offers.length === 0 || selected_offers.length === offers.length">
+                                        Alle auswählen
+                                    </v-btn>
+                                    <v-btn
+                                        color="secondary"
+                                        variant="tonal"
+                                        rounded="pill"
+                                        size="small"
+                                        class="text-caption tov-filter-btn"
+                                        @click="unselectAll"
+                                        :disabled="action != '' || selected_offers.length === 0">
+                                        Auswahl löschen
+                                    </v-btn>
                                 </div>
                             </div>
                         </div>
@@ -50,6 +84,12 @@
                             class="crud-list-item tov-offer-item"
                             :class="{ 'is-selected': selected_offers.includes(item.id) }"
                             @click="onOfferClick(item.id)">
+                            <div class="tov-offer-select">
+                                <v-icon
+                                    size="18"
+                                    :icon="selected_offers.includes(item.id) ? 'mdi-checkbox-marked-circle' : 'mdi-checkbox-blank-circle-outline'"
+                                    :color="selected_offers.includes(item.id) ? 'primary' : 'grey-darken-1'" />
+                            </div>
                             <div class="tov-offer-status">
                                 <v-icon size="16" color="success" icon="mdi-cloud-check" v-if="item.is_active" />
                                 <v-icon size="16" color="error-lighten-3" icon="mdi-cloud-off" v-if="!item.is_active" />
@@ -111,6 +151,7 @@
                             </div>
                         </template>
 
+                        <div v-else-if="selected_offers.length > 1" class="kpi-sub mt-3">{{ selected_offers.length }} Angebote ausgewählt. Für Aktionen bitte genau ein Angebot wählen.</div>
                         <div v-else class="kpi-sub mt-3">Kein Angebot ausgewählt.</div>
                     </section>
 
@@ -386,7 +427,9 @@ export default {
         },
         onOfferClick(id) {
             this.delete_level = 0
-            this.selected_offers = this.selected_offers.includes(id) ? [] : [id]
+            this.selected_offers = this.selected_offers.includes(id)
+                ? this.selected_offers.filter((selectedId) => selectedId !== id)
+                : [...this.selected_offers, id]
         },
     },
 }
