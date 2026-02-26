@@ -8,6 +8,7 @@
                 <v-spacer></v-spacer>
                 <v-btn icon="mdi-menu-close" @click="show_navigation_drawer = false" v-if="show_navigation_drawer" />
             </v-toolbar>
+            <v-progress-linear v-if="is_loading > 0" indeterminate color="light-blue-lighten-3" />
             <v-list>
                 <template v-for="(item, i) in config.menu" :key="i">
                     <!-- route item -->
