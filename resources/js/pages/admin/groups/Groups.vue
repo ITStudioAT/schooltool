@@ -1901,6 +1901,7 @@ export default {
 </script>
 
 <style scoped src="../../../../css/admin-superadmin-overview-shell.css"></style>
+<style scoped src="../../../../css/admin-overview-card-foundation.css"></style>
 <style scoped src="../../../../css/admin-superadmin-overview-cards.css"></style>
 
 <style scoped>

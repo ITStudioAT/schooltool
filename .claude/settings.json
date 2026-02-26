@@ -3,7 +3,11 @@
     "allow": [
       "Bash(find:*)",
       "Bash(npm run test:ui:*)",
-      "Bash(composer update:*)"
+      "Bash(composer update:*)",
+      "Read(//c/Users/kron/.claude/projects/c--Dropbox-laravel-schooltool/memory/**)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\kron\\.claude\\projects\\c--Dropbox-laravel-schooltool\\memory"
     ]
   }
 }

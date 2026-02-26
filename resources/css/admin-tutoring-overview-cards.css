@@ -1,0 +1,169 @@
+/* tov = Tutoring Overview cards */
+
+.tov-card--disabled {
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+/* --- Filter bar --- */
+
+.tov-filter-bar {
+    margin-bottom: 12px;
+}
+
+.tov-filter-groups {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+}
+
+.tov-filter-group {
+    min-width: 0;
+}
+
+.tov-filter-label {
+    color: rgba(16, 38, 58, 0.86);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-bottom: 6px;
+}
+
+/* --- Offers body --- */
+
+.tov-offers-body {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.tov-offers-list {
+    flex: 1 1 0;
+    min-width: 0;
+    display: grid;
+    gap: 8px;
+}
+
+.tov-offer-item {
+    cursor: pointer;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.tov-offer-item.is-selected {
+    background: rgba(46, 164, 79, 0.1);
+    border-color: rgba(46, 164, 79, 0.28);
+    box-shadow: 0 0 0 2px rgba(46, 164, 79, 0.06);
+}
+
+.tov-offer-item:hover:not(.is-selected) {
+    background: rgba(255, 255, 255, 0.9);
+}
+
+.tov-offer-status {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding-top: 2px;
+    flex-shrink: 0;
+}
+
+.tov-offer-copy {
+    flex: 1;
+    min-width: 0;
+}
+
+.tov-offer-mentor {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    font-size: 0.78rem;
+    color: rgba(16, 38, 58, 0.7);
+}
+
+.tov-offer-mentor--accepted {
+    color: rgba(16, 38, 58, 0.55);
+}
+
+/* --- Action sidebar --- */
+
+.tov-offers-sidebar {
+    width: 144px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* --- Stats card sections --- */
+
+.tov-stats-section {
+    margin-bottom: 16px;
+}
+
+.tov-stats-section:last-child {
+    margin-bottom: 0;
+}
+
+.tov-stats-section-label {
+    margin-bottom: 8px;
+}
+
+.tov-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.tov-kpi-grid--2col {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.tov-kpi-card {
+    border-radius: 12px;
+    padding: 10px 12px;
+    border: 1px solid rgba(16, 38, 58, 0.1);
+    background: rgba(255, 255, 255, 0.78);
+}
+
+.tov-kpi-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: rgba(18, 39, 58, 0.86);
+    font-weight: 700;
+}
+
+.tov-kpi-value {
+    margin-top: 5px;
+    color: #10263a;
+    font-size: 1.4rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+/* --- Responsive --- */
+
+@media (max-width: 960px) {
+    .tov-offers-body {
+        flex-direction: column;
+    }
+
+    .tov-offers-sidebar {
+        width: 100%;
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+}
+
+@media (max-width: 700px) {
+    .tov-kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}

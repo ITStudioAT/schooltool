@@ -4,40 +4,8 @@
     gap: 14px;
 }
 
-.sa-card {
-    border-radius: 20px;
-    padding: 16px;
-    border: 1px solid rgba(16, 38, 58, 0.08);
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.68));
-    box-shadow: 0 18px 48px rgba(16, 38, 58, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.65);
-    backdrop-filter: blur(10px);
-}
-
 .sa-card-school {
     grid-column: 1 / -1;
-}
-
-.sa-card-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 12px;
-}
-
-.sa-card-eyebrow {
-    color: rgba(16, 38, 58, 0.86);
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    font-size: 0.72rem;
-    font-weight: 700;
-}
-
-.sa-card-title {
-    margin: 4px 0 0;
-    color: #10263a;
-    font-size: 1.15rem;
-    line-height: 1.15;
 }
 
 .sa-switch-btn {
@@ -169,18 +137,6 @@
     background: #3949ab;
 }
 
-.sa-list {
-    display: grid;
-    gap: 10px;
-}
-
-.sa-list-item {
-    border-radius: 14px;
-    padding: 12px;
-    border: 1px solid rgba(16, 38, 58, 0.1);
-    background: rgba(255, 255, 255, 0.78);
-}
-
 .sa-licence-main {
     display: flex;
     align-items: flex-start;
@@ -218,24 +174,6 @@
     box-shadow: 0 0 0 4px rgba(220, 53, 69, 0.12);
 }
 
-.sa-item-title {
-    color: #10263a;
-    font-weight: 700;
-    line-height: 1.15;
-}
-
-.sa-item-sub {
-    margin-top: 3px;
-    color: rgba(16, 38, 58, 0.86);
-    font-size: 0.78rem;
-    word-break: break-word;
-}
-
-.sa-item-meta {
-    color: rgba(16, 38, 58, 0.94);
-    font-size: 0.78rem;
-}
-
 .sa-admin-item {
     display: flex;
     align-items: flex-start;
@@ -265,15 +203,6 @@
     font-weight: 700;
 }
 
-.sa-empty {
-    border-radius: 14px;
-    border: 1px dashed rgba(16, 38, 58, 0.14);
-    background: rgba(255, 255, 255, 0.72);
-    color: rgba(16, 38, 58, 0.92);
-    padding: 12px;
-    font-size: 0.86rem;
-}
-
 @media (max-width: 1100px) {
     .sa-overview-grid {
         grid-template-columns: 1fr;
@@ -283,16 +212,6 @@
 @media (max-width: 700px) {
     .sa-kpi-grid {
         grid-template-columns: 1fr;
-    }
-
-    .sa-card {
-        border-radius: 16px;
-        padding: 12px;
-    }
-
-    .sa-card-head {
-        flex-direction: column;
-        align-items: stretch;
     }
 
     .sa-licence-main {

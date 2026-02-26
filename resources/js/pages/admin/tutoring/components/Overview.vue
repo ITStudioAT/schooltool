@@ -1,192 +1,127 @@
 <template>
     <!-- FREIZUGEBENDE ANGEBOTE-->
-    <v-col cols="12" md="6" xl="4" v-if="offers">
-        <ItsGridBox color="primary" title="Freizugebende Angebote" subtitle="Diese Angebot warten auf Deine Freigabe" class="w-100" :disabled="action != ''">
-            <div class="d-flex flex-row align-start">
-                <v-card tile flat color="transparent" class="w-100">
-                    <v-card-text>
-                        <!-- SEARCHFIELD -->
-                        <SearchField :store="offerStore" selected_field="selected_offers" />
-
-                        <!-- // NUR EINFACHAUSWAHL MÖGLICH Abwählen / Auswählen
-                        <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2 mt-2" :disabled="action != ''">
-                            <v-btn color="primary" slim flat tile class="text-caption" @click="selectAll">Alle auswählen [{{ offers.length - selected_offers.length }}]</v-btn>
-                            <v-btn color="primary" slim flat tile class="text-caption" @click="unselectAll">Alle abwählen [{{ selected_offers.length }}]</v-btn>
-                        </v-card>
-                        -->
-
-                        <!-- Andere Selektionen: -->
-                        <v-card tile flat color="transparent" class="mt-2" :disabled="action != ''">
-                            <div class="text-body-2 font-weight-medium">Genehmigung:</div>
-                            <div class="d-flex flex-row flex-wrap align-center ga-2">
-                                <v-btn :color="select_accepted == 'all' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleAccepted('all')">Alle</v-btn>
-                                <v-btn :color="select_accepted == 'no' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleAccepted('no')">
-                                    Nur Offene
-                                </v-btn>
-                                <v-btn :color="select_accepted == 'yes' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleAccepted('yes')">
-                                    Nur Genehmtigte
-                                </v-btn>
-                            </div>
-
-                            <div class="text-body-2 font-weight-medium mt-2">Online:</div>
-                            <div class="d-flex flex-row flex-wrap align-center ga-2">
-                                <v-btn :color="select_online == 'all' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleOnline('all')">Alle</v-btn>
-                                <v-btn :color="select_online == 'yes' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleOnline('yes')">Nur Online</v-btn>
-                                <v-btn :color="select_online == 'no' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleOnline('no')">Nur Offline</v-btn>
-                            </div>
-                        </v-card>
-
-                        <!-- RECORDS -->
-                        <v-list dense variant="elevated" select-strategy="single-leaf" v-model:selected="selected_offers" color="success-lighten-2">
-                            <v-list-item dense v-for="item in offers" :key="item.id" :value="item.id">
-                                <template v-slot:title>
-                                    <div class="w-100">
-                                        <div class="d-flex flex-row align-center ga-2">
-                                            <v-icon size="small" color="success" icon="mdi-cloud-check" v-if="item.is_active" />
-                                            <v-icon size="small" color="error-lighten-3" icon="mdi-cloud-off" v-if="!item.is_active" />
-                                            {{ item.subject.short_name + ': ' + item.title }}
-                                        </div>
-                                        <div class="d-flex flex-row align-center ga-2">
-                                            <v-icon color="error" size="small" icon="mdi-lock" v-if="!item?.user?.is_active" />
-                                            <div>
-                                                {{ item?.user?.last_name + ' ' + item?.user?.first_name + ' (' + item?.user?.schoolclass + ', ' + item?.user?.email + ')' }}
-                                            </div>
-                                        </div>
-
-                                        <div class="text-body-2 d-flex flex-row align-center ga-2 w-100" v-if="!item.accepted_at">
-                                            <v-icon size="small" color="warning" icon="mdi-help" />
-                                            <div class="opacity-60">{{ item.email_mentor }}</div>
-                                        </div>
-                                        <div class="text-body-2 d-flex flex-row align-center ga-2 w-100" v-if="item.accepted_at">
-                                            <v-icon size="small" color="success" icon="mdi-check" />
-                                            <div class="opacity-60">{{ item.email_mentor + ' (' + item.accepted_at + ')' }}</div>
-                                        </div>
-                                    </div>
-                                </template>
-                            </v-list-item>
-                        </v-list>
-
-                        <!-- PAGINATION-->
-                    </v-card-text>
-                </v-card>
-                <!-- MENÜ -->
-                <v-card tile flat color="transparent" style="width: 150px" class="d-flex flex-column ga-2">
-                    <!-- GENAU EINES AUSGEWÄHLT -->
-                    <div class="d-flex flex-column ga-2" v-if="selected_offers.length == 1">
-                        <v-btn
-                            block
-                            tile
-                            flat
-                            color="warning"
-                            class="text-caption"
-                            prepend-icon="mdi-help"
-                            @click="doRecordtoggleAccepted(selectedOffer.id)"
-                            v-if="selectedOffer.accepted_at">
-                            Nicht genehm.
-                        </v-btn>
-                        <v-btn
-                            block
-                            tile
-                            flat
-                            color="success"
-                            class="text-caption"
-                            prepend-icon="mdi-check"
-                            @click="doRecordtoggleAccepted(selectedOffer.id)"
-                            v-if="!selectedOffer.accepted_at">
-                            Genehmigen
-                        </v-btn>
-
-                        <v-btn
-                            block
-                            tile
-                            flat
-                            color="error"
-                            class="text-caption"
-                            prepend-icon="mdi-lock"
-                            @click="toggleIsActive(selectedOffer?.user?.id)"
-                            v-if="selectedOffer?.user?.is_active">
-                            Sperren
-                        </v-btn>
-                        <v-btn
-                            block
-                            tile
-                            flat
-                            color="success"
-                            class="text-caption"
-                            prepend-icon="mdi-lock-open"
-                            @click="toggleIsActive(selectedOffer?.user?.id)"
-                            v-if="!selectedOffer?.user?.is_active">
-                            Entsperren
-                        </v-btn>
-                        <div v-if="selectedOffer.accepted_at">
-                            <v-btn
-                                block
-                                tile
-                                flat
-                                color="warning"
-                                class="text-caption"
-                                prepend-icon="mdi-cloud-off"
-                                @click="doRecordtoggleActive(selectedOffer.id)"
-                                v-if="selectedOffer.is_active">
-                                Offline
-                            </v-btn>
-                            <v-btn
-                                block
-                                tile
-                                flat
-                                color="success"
-                                class="text-caption"
-                                prepend-icon="mdi-cloud"
-                                @click="doRecordtoggleActive(selectedOffer.id)"
-                                v-if="!selectedOffer.is_active">
-                                Online
-                            </v-btn>
-                        </div>
-                        <v-btn block tile flat color="warning" class="text-caption" prepend-icon="mdi-delete" @click="delete_level++" v-if="delete_level == 0">Löschen</v-btn>
-                        <v-btn block tile flat color="success" class="text-caption" prepend-icon="mdi-delete-off" @click="delete_level = 0" v-if="delete_level == 1">Löschen</v-btn>
-                        <v-btn block tile flat color="error" class="text-caption" prepend-icon="mdi-delete" @click="doDelete(selectedOffer)" v-if="delete_level == 1">
-                            Löschen
-                        </v-btn>
-                    </div>
-                    <div>
-                        {{ selectedOffer?.user?.is_active }}
-                    </div>
-                </v-card>
+    <v-col cols="12" lg="7" v-if="offers">
+        <section class="admin-overview-card tov-offers-card" :class="{ 'tov-card--disabled': action != '' }">
+            <div class="admin-overview-card-head">
+                <div>
+                    <div class="admin-overview-card-eyebrow">Freigabe</div>
+                    <h3 class="admin-overview-card-title">Freizugebende Angebote</h3>
+                </div>
             </div>
-        </ItsGridBox>
+
+            <!-- Filter -->
+            <div class="tov-filter-bar">
+                <SearchField :store="offerStore" selected_field="selected_offers" />
+                <div class="tov-filter-groups">
+                    <div class="tov-filter-group">
+                        <div class="tov-filter-label">Genehmigung</div>
+                        <div class="d-flex flex-row flex-wrap align-center ga-1">
+                            <v-btn :color="select_accepted == 'all' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleAccepted('all')" :disabled="action != ''">Alle</v-btn>
+                            <v-btn :color="select_accepted == 'no' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleAccepted('no')" :disabled="action != ''">Nur Offene</v-btn>
+                            <v-btn :color="select_accepted == 'yes' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleAccepted('yes')" :disabled="action != ''">Nur Genehmigte</v-btn>
+                        </div>
+                    </div>
+                    <div class="tov-filter-group">
+                        <div class="tov-filter-label">Online</div>
+                        <div class="d-flex flex-row flex-wrap align-center ga-1">
+                            <v-btn :color="select_online == 'all' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleOnline('all')" :disabled="action != ''">Alle</v-btn>
+                            <v-btn :color="select_online == 'yes' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleOnline('yes')" :disabled="action != ''">Nur Online</v-btn>
+                            <v-btn :color="select_online == 'no' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleOnline('no')" :disabled="action != ''">Nur Offline</v-btn>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Liste + Sidebar -->
+            <div class="tov-offers-body">
+                <div class="tov-offers-list">
+                    <div class="admin-overview-empty" v-if="offers.length === 0">Keine Angebote gefunden.</div>
+                    <div
+                        v-for="item in offers"
+                        :key="item.id"
+                        class="admin-overview-list-item tov-offer-item"
+                        :class="{ 'is-selected': selected_offers.includes(item.id) }"
+                        @click="onOfferClick(item.id)">
+                        <div class="tov-offer-status">
+                            <v-icon size="16" color="success" icon="mdi-cloud-check" v-if="item.is_active" />
+                            <v-icon size="16" color="error-lighten-3" icon="mdi-cloud-off" v-if="!item.is_active" />
+                            <v-icon size="16" color="error" icon="mdi-lock" v-if="!item?.user?.is_active" />
+                        </div>
+                        <div class="tov-offer-copy">
+                            <div class="admin-overview-item-title">{{ item.subject.short_name }}: {{ item.title }}</div>
+                            <div class="admin-overview-item-sub">{{ item?.user?.last_name }} {{ item?.user?.first_name }} ({{ item?.user?.schoolclass }}, {{ item?.user?.email }})</div>
+                            <div class="tov-offer-mentor" v-if="!item.accepted_at">
+                                <v-icon size="14" color="warning" icon="mdi-help" />
+                                <span>{{ item.email_mentor }}</span>
+                            </div>
+                            <div class="tov-offer-mentor tov-offer-mentor--accepted" v-if="item.accepted_at">
+                                <v-icon size="14" color="success" icon="mdi-check" />
+                                <span>{{ item.email_mentor }} ({{ item.accepted_at }})</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Aktions-Sidebar -->
+                <div class="tov-offers-sidebar" v-if="selected_offers.length == 1">
+                    <v-btn block tile flat color="warning" class="text-caption" prepend-icon="mdi-help" @click="doRecordtoggleAccepted(selectedOffer.id)" v-if="selectedOffer.accepted_at">Nicht genehm.</v-btn>
+                    <v-btn block tile flat color="success" class="text-caption" prepend-icon="mdi-check" @click="doRecordtoggleAccepted(selectedOffer.id)" v-if="!selectedOffer.accepted_at">Genehmigen</v-btn>
+                    <v-btn block tile flat color="error" class="text-caption" prepend-icon="mdi-lock" @click="toggleIsActive(selectedOffer?.user?.id)" v-if="selectedOffer?.user?.is_active">Sperren</v-btn>
+                    <v-btn block tile flat color="success" class="text-caption" prepend-icon="mdi-lock-open" @click="toggleIsActive(selectedOffer?.user?.id)" v-if="!selectedOffer?.user?.is_active">Entsperren</v-btn>
+                    <template v-if="selectedOffer.accepted_at">
+                        <v-btn block tile flat color="warning" class="text-caption" prepend-icon="mdi-cloud-off" @click="doRecordtoggleActive(selectedOffer.id)" v-if="selectedOffer.is_active">Offline</v-btn>
+                        <v-btn block tile flat color="success" class="text-caption" prepend-icon="mdi-cloud" @click="doRecordtoggleActive(selectedOffer.id)" v-if="!selectedOffer.is_active">Online</v-btn>
+                    </template>
+                    <v-btn block tile flat color="warning" class="text-caption" prepend-icon="mdi-delete" @click="delete_level++" v-if="delete_level == 0">Löschen</v-btn>
+                    <v-btn block tile flat color="success" class="text-caption" prepend-icon="mdi-delete-off" @click="delete_level = 0" v-if="delete_level == 1">Abbruch</v-btn>
+                    <v-btn block tile flat color="error" class="text-caption" prepend-icon="mdi-delete" @click="doDelete(selectedOffer)" v-if="delete_level == 1">Löschen</v-btn>
+                </div>
+            </div>
+        </section>
     </v-col>
 
     <!-- STATISTIK -->
-    <v-col cols="12" md="6" xl="4" v-if="stats">
-        <ItsGridBox color="primary" title="Statistik" class="w-100" :disabled="action != ''">
-            <v-card tile flat color="transparent" class="w-100">
-                <v-card-text class="text-body-1 d-flex flex-column ga-2">
-                    <div class="d-flex flex-row align-center justify-space-between pa-1 font-weight-medium">
-                        <div>Anzahl Angebote:</div>
-                        <div>{{ stats.count }}</div>
-                    </div>
-                    <div class="d-flex flex-row align-center justify-space-between pa-1 bg-secondary-lighten-1">
-                        <div>… davon freigegeben:</div>
-                        <div>{{ stats.accepted_count }}</div>
-                    </div>
-                    <div class="d-flex flex-row align-center justify-space-between pa-1">
-                        <div>… davon Online:</div>
-                        <div>{{ stats.online_count }}</div>
-                    </div>
+    <v-col cols="12" lg="5" v-if="stats">
+        <section class="admin-overview-card tov-stats-card" :class="{ 'tov-card--disabled': action != '' }">
+            <div class="admin-overview-card-head">
+                <div>
+                    <div class="admin-overview-card-eyebrow">Übersicht</div>
+                    <h3 class="admin-overview-card-title">Statistik</h3>
+                </div>
+            </div>
 
-                    <v-divider />
+            <div class="tov-stats-section">
+                <div class="tov-filter-label tov-stats-section-label">Angebote</div>
+                <div class="tov-kpi-grid">
+                    <div class="tov-kpi-card">
+                        <div class="tov-kpi-label">Gesamt</div>
+                        <div class="tov-kpi-value">{{ stats.count }}</div>
+                    </div>
+                    <div class="tov-kpi-card">
+                        <div class="tov-kpi-label">Freigegeben</div>
+                        <div class="tov-kpi-value">{{ stats.accepted_count }}</div>
+                    </div>
+                    <div class="tov-kpi-card">
+                        <div class="tov-kpi-label">Online</div>
+                        <div class="tov-kpi-value">{{ stats.online_count }}</div>
+                    </div>
+                </div>
+            </div>
 
-                    <div class="d-flex flex-row align-center justify-space-between pa-1 font-weight-medium">
-                        <div>Anzahl angemeldeter Schüler:innen:</div>
-                        <div>{{ stats.users_count }}</div>
+            <div class="tov-stats-section">
+                <div class="tov-filter-label tov-stats-section-label">Schüler:innen</div>
+                <div class="tov-kpi-grid tov-kpi-grid--2col">
+                    <div class="tov-kpi-card">
+                        <div class="tov-kpi-label">Angemeldet</div>
+                        <div class="tov-kpi-value">{{ stats.users_count }}</div>
                     </div>
-                    <div class="d-flex flex-row align-center justify-space-between pa-1 bg-secondary-lighten-1">
-                        <div>… davon mit Angeboten:</div>
-                        <div>{{ stats.students_count }}</div>
+                    <div class="tov-kpi-card">
+                        <div class="tov-kpi-label">Mit Angeboten</div>
+                        <div class="tov-kpi-value">{{ stats.students_count }}</div>
                     </div>
-                </v-card-text>
-            </v-card>
-        </ItsGridBox>
+                </div>
+            </div>
+        </section>
     </v-col>
 
     <!-- ##### ANGEBOT IM DETAIL ##### -->
@@ -425,6 +360,13 @@ export default {
         unselectAll() {
             this.selected_offers = []
         },
+        onOfferClick(id) {
+            this.delete_level = 0
+            this.selected_offers = this.selected_offers.includes(id) ? [] : [id]
+        },
     },
 }
 </script>
+
+<style scoped src="../../../../../css/admin-overview-card-foundation.css"></style>
+<style scoped src="../../../../../css/admin-tutoring-overview-cards.css"></style>
