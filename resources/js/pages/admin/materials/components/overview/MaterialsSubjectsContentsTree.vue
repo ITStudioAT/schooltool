@@ -63,12 +63,16 @@
                                 class="overview-subjects-material-type">
                                 {{ material.typeLabel }}
                             </v-chip>
-                            <span
+                            <button
                                 v-if="material.attachmentsCount > 0"
-                                class="overview-subjects-material-count">
+                                type="button"
+                                class="overview-subjects-material-count overview-subjects-material-count--button"
+                                :disabled="actionBusy"
+                                title="Anhänge verwalten"
+                                @click="openAttachments(material)">
                                 <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
                                 {{ material.attachmentsCount }}
-                            </span>
+                            </button>
                             <v-chip
                                 size="x-small"
                                 variant="tonal"
@@ -168,12 +172,16 @@
                                         class="overview-subjects-material-type">
                                         {{ material.typeLabel }}
                                     </v-chip>
-                                    <span
+                                    <button
                                         v-if="material.attachmentsCount > 0"
-                                        class="overview-subjects-material-count">
+                                        type="button"
+                                        class="overview-subjects-material-count overview-subjects-material-count--button"
+                                        :disabled="actionBusy"
+                                        title="Anhänge verwalten"
+                                        @click="openAttachments(material)">
                                         <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
                                         {{ material.attachmentsCount }}
-                                    </span>
+                                    </button>
                                     <v-chip
                                         size="x-small"
                                         variant="tonal"
@@ -272,12 +280,16 @@
                                                 class="overview-subjects-material-type">
                                                 {{ material.typeLabel }}
                                             </v-chip>
-                                            <span
+                                            <button
                                                 v-if="material.attachmentsCount > 0"
-                                                class="overview-subjects-material-count">
+                                                type="button"
+                                                class="overview-subjects-material-count overview-subjects-material-count--button"
+                                                :disabled="actionBusy"
+                                                title="Anhänge verwalten"
+                                                @click="openAttachments(material)">
                                                 <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
                                                 {{ material.attachmentsCount }}
-                                            </span>
+                                            </button>
                                             <v-chip
                                                 size="x-small"
                                                 variant="tonal"
@@ -368,12 +380,22 @@ export default {
             required: true,
         },
     },
-    emits: ['open-material', 'open-share', 'open-create'],
+    emits: ['open-material', 'open-share', 'open-create', 'open-attachments'],
     methods: {
         showShareIndicator(level, id) {
             if (!this.showShareIndicators) return false
             const color = String(this.shareIndicatorColorFn?.(level, id) || '').trim()
             return color !== ''
+        },
+        openAttachments(material) {
+            const cardId = Number(material?.id)
+            if (!Number.isFinite(cardId) || cardId <= 0) return
+
+            this.$emit('open-attachments', {
+                id: cardId,
+                title: String(material?.title || '').trim(),
+                attachments: Array.isArray(material?.attachments) ? material.attachments : undefined,
+            })
         },
     },
 }
@@ -518,6 +540,25 @@ export default {
     font-size: 0.74rem;
     line-height: 1.2;
     color: rgba(35, 61, 76, 0.85);
+}
+
+.overview-subjects-material-count--button {
+    background: rgba(35, 61, 76, 0.06);
+    cursor: pointer;
+}
+
+.overview-subjects-material-count--button:hover:not(:disabled) {
+    background: rgba(35, 61, 76, 0.12);
+}
+
+.overview-subjects-material-count--button:focus-visible {
+    outline: 2px solid rgba(31, 111, 139, 0.45);
+    outline-offset: 1px;
+}
+
+.overview-subjects-material-count--button:disabled {
+    cursor: default;
+    opacity: 0.7;
 }
 
 .overview-subjects-share-icon {

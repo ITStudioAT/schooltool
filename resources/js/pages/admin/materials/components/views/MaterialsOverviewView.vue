@@ -87,7 +87,8 @@
                 :topic-group-style-fn="topicGroupStyle"
                 @open-material="openDetailDialog"
                 @open-share="openShareDialog"
-                @open-create="openCreateDialogFromTree" />
+                @open-create="openCreateDialogFromTree"
+                @open-attachments="openAttachmentManager" />
         </template>
 
         <template v-else-if="hasCards">
