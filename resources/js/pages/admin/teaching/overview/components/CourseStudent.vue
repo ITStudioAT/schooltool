@@ -968,9 +968,15 @@ export default {
             return this.buildCategoryGroups(this.entriesForSemester(this.entries || [], 2))
         },
         semester1Total() {
+            const entries = this.semesterCount === 2
+                ? this.entriesForSemester(this.entries || [], 1)
+                : (this.filteredEntries || [])
+            if (this.hasSingleNaSemesterGrade(entries)) return 5
             return this.totalFromCategoryGroups(this.semester1Groups)
         },
         semester2Total() {
+            const entries = this.entriesForSemester(this.entries || [], 2)
+            if (this.hasSingleNaSemesterGrade(entries)) return 5
             return this.totalFromCategoryGroups(this.semester2Groups)
         },
         semester1HasMissingCategory() {
@@ -1013,8 +1019,11 @@ export default {
             // Semester 1 basis for yearly grade:
             // - use_semester_grade_only = true  -> stored sem_1_grade
             // - otherwise                        -> calculated Semester-1 value
-            const sem1CalculatedValue = this.totalFromCategoryGroups(sem1Groups)
-            const sem1CalculatedFormula = this.categoryGroupTotalLine(sem1Groups, sem1CalculatedValue)
+            const sem1ForcedNa = this.hasSingleNaSemesterGrade(sem1Entries)
+            const sem1CalculatedValue = sem1ForcedNa ? 5 : this.totalFromCategoryGroups(sem1Groups)
+            const sem1CalculatedFormula = sem1ForcedNa
+                ? 'Regel: Einziger benoteter Eintrag ist NA (NICHT ABGEGEBEN) -> Semesterwertung 5.00'
+                : this.categoryGroupTotalLine(sem1Groups, sem1CalculatedValue)
             const sem1GradeRaw = this.selected_course_student?.sem_1_grade
             const sem1GradeValue = sem1GradeRaw != null && sem1GradeRaw !== ''
                 ? parseFloat(String(sem1GradeRaw).replace(',', '.'))
@@ -1026,8 +1035,11 @@ export default {
                 : sem1CalculatedValue
 
             // Semester 2 for yearly grade is based on calculated Semester-2 value.
-            const sem2CalculatedValue = this.totalFromCategoryGroups(sem2Groups)
-            const sem2CalculatedFormula = this.categoryGroupTotalLine(sem2Groups, sem2CalculatedValue)
+            const sem2ForcedNa = this.hasSingleNaSemesterGrade(sem2Entries)
+            const sem2CalculatedValue = sem2ForcedNa ? 5 : this.totalFromCategoryGroups(sem2Groups)
+            const sem2CalculatedFormula = sem2ForcedNa
+                ? 'Regel: Einziger benoteter Eintrag ist NA (NICHT ABGEGEBEN) -> Semesterwertung 5.00'
+                : this.categoryGroupTotalLine(sem2Groups, sem2CalculatedValue)
             const sem2Value = sem2CalculatedValue
 
             if (sem1Value == null || sem2Value == null) return null
@@ -1704,9 +1716,29 @@ export default {
             if (!found) return type
             return `${found.short_name} - ${found.name}`
         },
+        normalizeGradeKey(gradeKey) {
+            return String(gradeKey || '').trim().toUpperCase()
+        },
+        isNaGradeKey(gradeKey) {
+            return this.normalizeGradeKey(gradeKey) === 'NA'
+        },
+        isGradedEntry(entry) {
+            return String(entry?.grade || '').trim() !== ''
+        },
+        hasSingleNaSemesterGrade(entries) {
+            const gradedEntries = (entries || []).filter((entry) => this.isGradedEntry(entry))
+            if (gradedEntries.length !== 1) return false
+
+            const onlyEntry = gradedEntries[0]
+            if (!this.isNaGradeKey(onlyEntry?.grade)) return false
+
+            const work = this.teachingWorks.find((w) => w.short_name === onlyEntry?.type)
+            return Boolean(work?.require_all_entries)
+        },
         gradeValueForWork(work, gradeKey) {
             if (!work || !gradeKey) return null
-            const grade = (work.grades || []).find((g) => g.grade === gradeKey)
+            const lookupGrade = this.normalizeGradeKey(gradeKey)
+            const grade = (work.grades || []).find((g) => this.normalizeGradeKey(g.grade) === lookupGrade)
             if (!grade || grade.value == null) return null
             const num = parseFloat(String(grade.value).replace(',', '.'))
             return Number.isNaN(num) ? null : num

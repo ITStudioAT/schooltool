@@ -129,6 +129,7 @@ class TeachingController extends Controller
             'teaching_schemas.*.works.*.grades.*.name' => 'nullable|string|max:50',
             'teaching_schemas.*.works.*.grades.*.value' => 'nullable|string|max:10',
             'teaching_schemas.*.works.*.calculation' => 'nullable|string|in:average,points',
+            'teaching_schemas.*.works.*.require_all_entries' => 'nullable|boolean',
             'teaching_schemas.*.works.*.points_table' => 'nullable|array',
             'teaching_schemas.*.works.*.points_table.*.min_points' => 'required|numeric',
             'teaching_schemas.*.works.*.points_table.*.grade' => 'required|string|max:10',

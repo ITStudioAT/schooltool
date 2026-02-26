@@ -72,7 +72,11 @@
                         <v-btn color="primary" icon="mdi-plus" size="small" @click="addGrade" :disabled="!new_grade.grade" />
                     </div>
                     <v-chip-group class="mt-2" column>
-                        <v-chip v-for="(grade, idx) in data.grades" :key="`${idx}-${grade.grade}-${grade.value}`" closable @click:close="removeGrade(idx)">
+                        <v-chip
+                            v-for="(grade, idx) in data.grades"
+                            :key="`${idx}-${grade.grade}-${grade.value}`"
+                            :closable="!isMandatoryNaGrade(grade)"
+                            @click:close="removeGrade(idx)">
                             {{ grade.grade }}<span v-if="grade.name" class="ml-1 text-medium-emphasis">({{ grade.name }})</span><span v-if="grade.value" class="ml-1 text-medium-emphasis">= {{ grade.value }}</span>
                         </v-chip>
                     </v-chip-group>
@@ -90,6 +94,14 @@
                             Punkte-Tabelle
                         </v-btn>
                     </v-btn-toggle>
+                    <v-checkbox
+                        v-model="data.require_all_entries"
+                        label="Pflicht: alle vorhanden!"
+                        density="compact"
+                        hide-details
+                        color="primary"
+                        class="mt-2"
+                        @update:model-value="onRequireAllEntriesChanged" />
 
                     <!-- Erklärung -->
                     <v-alert v-if="data.calculation === 'average'" color="teal" density="compact" variant="tonal" class="mt-3">
@@ -199,6 +211,7 @@ export default {
                 grades: [],
                 calculation: 'average',
                 points_table: [],
+                require_all_entries: true,
             },
             new_grade: { grade: '', name: '', value: '' },
             new_points_entry: { min_points: '', grade: '' },
@@ -247,7 +260,8 @@ export default {
         },
 
         newWork() {
-            this.data = { short_name: '', name: '', grades: [], calculation: 'average', points_table: [] }
+            this.data = { short_name: '', name: '', grades: [], calculation: 'average', points_table: [], require_all_entries: true }
+            this.ensureMandatoryNaGrade(this.data)
             this.new_grade = { grade: '', name: '', value: '' }
             this.new_points_entry = { min_points: '', grade: '' }
             this.edit_index = null
@@ -261,6 +275,10 @@ export default {
                 grades: (work.grades || []).map((g) => ({ ...g })),
                 calculation: work.calculation || 'average',
                 points_table: (work.points_table || []).map((pt) => ({ ...pt })),
+                require_all_entries: Boolean(work.require_all_entries),
+            }
+            if (this.data.require_all_entries) {
+                this.ensureMandatoryNaGrade(this.data)
             }
             this.new_grade = { grade: '', name: '', value: '' }
             this.new_points_entry = { min_points: '', grade: '' }
@@ -276,10 +294,15 @@ export default {
                 name: this.new_grade.name?.trim() || '',
                 value: this.new_grade.value?.trim() || '',
             })
+            if (this.data.require_all_entries) {
+                this.ensureMandatoryNaGrade(this.data)
+            }
             this.new_grade = { grade: '', name: '', value: '' }
         },
 
         removeGrade(index) {
+            const grade = this.data.grades?.[index]
+            if (this.isMandatoryNaGrade(grade)) return
             const newGrades = [...this.data.grades]
             newGrades.splice(index, 1)
             this.data = { ...this.data, grades: newGrades }
@@ -353,8 +376,12 @@ export default {
             if (schemaIndex === -1) return
 
             const works = [...this.teaching_works]
-            const sortedGrades = this.sortedGrades(this.data.grades || [])
-            const workData = { ...this.data, grades: sortedGrades }
+            const workData = { ...this.data, grades: [...(this.data.grades || [])] }
+            if (workData.require_all_entries) {
+                this.ensureMandatoryNaGrade(workData)
+            }
+            const sortedGrades = this.sortedGrades(workData.grades || [])
+            workData.grades = sortedGrades
 
             if (this.edit_index !== null) {
                 works[this.edit_index] = workData
@@ -380,6 +407,38 @@ export default {
             schemas[schemaIndex] = { ...schemas[schemaIndex], works }
             await this.teachingStore.saveSettings({ teaching_schemas: schemas })
             this.delete_index = null
+        },
+        normalizeGradeKey(gradeKey) {
+            return String(gradeKey || '').trim().toUpperCase()
+        },
+        isMandatoryNaGrade(grade) {
+            if (!this.data?.require_all_entries) return false
+            return this.normalizeGradeKey(grade?.grade) === 'NA'
+        },
+        onRequireAllEntriesChanged(value) {
+            if (!value) return
+            this.ensureMandatoryNaGrade(this.data)
+        },
+        ensureMandatoryNaGrade(targetWork = this.data) {
+            if (!targetWork) return
+            if (!Array.isArray(targetWork.grades)) targetWork.grades = []
+
+            const naIndex = targetWork.grades.findIndex((g) => this.normalizeGradeKey(g?.grade) === 'NA')
+            if (naIndex === -1) {
+                targetWork.grades.push({
+                    grade: 'NA',
+                    name: 'NICHT ABGEGEBEN',
+                    value: '',
+                })
+                return
+            }
+
+            const existing = targetWork.grades[naIndex] || {}
+            targetWork.grades[naIndex] = {
+                ...existing,
+                grade: 'NA',
+                name: 'NICHT ABGEGEBEN',
+            }
         },
     },
 }

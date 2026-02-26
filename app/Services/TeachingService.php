@@ -66,7 +66,7 @@ class TeachingService
                     'user_id' => $user->id,
                     'schema_id' => $schemaId,
                     'name' => (string) ($schema['name'] ?? 'Standard'),
-                    'works' => is_array($schema['works'] ?? null) ? $schema['works'] : [],
+                    'works' => $this->normalizeWorks(is_array($schema['works'] ?? null) ? $schema['works'] : []),
                     'grading' => is_array($schema['grading'] ?? null) ? $schema['grading'] : [],
                 ];
             })
@@ -184,10 +184,12 @@ class TeachingService
                     'short_name' => 'MA',
                     'name' => 'Mitarbeit',
                     'calculation' => 'points',
+                    'require_all_entries' => true,
                     'grades' => [
                         ['grade' => '-', 'name' => 'Minus', 'value' => '-1'],
                         ['grade' => '+', 'name' => 'Plus', 'value' => '1'],
                         ['grade' => '~', 'name' => 'Mittel', 'value' => '0'],
+                        ['grade' => 'NA', 'name' => 'NICHT ABGEGEBEN', 'value' => ''],
                     ],
                     'points_table' => [
                         ['grade' => '1', 'min_points' => 3],
@@ -201,12 +203,14 @@ class TeachingService
                     'short_name' => 'SA',
                     'name' => 'Schularbeit',
                     'calculation' => 'average',
+                    'require_all_entries' => true,
                     'grades' => [
                         ['grade' => '1', 'name' => 'Sehr gut', 'value' => '1'],
                         ['grade' => '2', 'name' => 'Gut', 'value' => '2'],
                         ['grade' => '3', 'name' => 'Befriedigend', 'value' => '3'],
                         ['grade' => '4', 'name' => 'Genügend', 'value' => '4'],
                         ['grade' => '5', 'name' => 'Nicht genügend', 'value' => '5'],
+                        ['grade' => 'NA', 'name' => 'NICHT ABGEGEBEN', 'value' => ''],
                     ],
                     'points_table' => [],
                 ],
@@ -250,5 +254,41 @@ class TeachingService
             ->where('schoolyear_id', $schoolyearId)
             ->orderBy('id')
             ->get();
+    }
+
+    private function normalizeWorks(array $works): array
+    {
+        return collect($works)
+            ->filter(fn ($work) => is_array($work))
+            ->map(function (array $work) {
+                $work['require_all_entries'] = (bool) ($work['require_all_entries'] ?? false);
+
+                $grades = is_array($work['grades'] ?? null) ? $work['grades'] : [];
+                if ($work['require_all_entries']) {
+                    $naIndex = collect($grades)->search(function ($grade) {
+                        if (! is_array($grade)) {
+                            return false;
+                        }
+
+                        $key = strtoupper(trim((string) ($grade['grade'] ?? '')));
+                        return $key === 'NA';
+                    });
+
+                    if ($naIndex === false) {
+                        $grades[] = ['grade' => 'NA', 'name' => 'NICHT ABGEGEBEN', 'value' => ''];
+                    } else {
+                        $existing = is_array($grades[$naIndex] ?? null) ? $grades[$naIndex] : [];
+                        $grades[$naIndex] = array_merge($existing, [
+                            'grade' => 'NA',
+                            'name' => 'NICHT ABGEGEBEN',
+                        ]);
+                    }
+                }
+
+                $work['grades'] = $grades;
+                return $work;
+            })
+            ->values()
+            ->all();
     }
 }
