@@ -1,251 +1,64 @@
 <template>
     <v-card class="materials-shell pa-4 pa-md-8" rounded="xl" elevation="0">
-        <v-row align="center" class="mb-4">
-            <v-col cols="12" md="8">
-                <div class="text-h4 font-weight-bold mb-2">Übersicht</div>
-                <div class="text-subtitle-1 subline">Hier siehst du alle aktuell gespeicherten Materialien.</div>
-            </v-col>
+        <MaterialsOverviewHeader
+            :hide-overview-mode-toggle="hideOverviewModeToggle"
+            :overview-view-mode="overviewViewMode"
+            :is-loading="isLoading"
+            :action-disabled="isDeletingId !== null || isSavingEdit"
+            @update:overview-view-mode="setOverviewMode"
+            @refresh="loadCards" />
 
-            <v-col cols="12" md="4" class="d-flex justify-md-end align-center flex-wrap ga-2">
-                <v-btn-toggle
-                    :model-value="overviewViewMode"
-                    mandatory
-                    color="primary"
-                    variant="tonal"
-                    density="comfortable"
-                    class="overview-mode-toggle"
-                    @update:modelValue="setOverviewMode">
-                    <v-btn value="list" prepend-icon="mdi-format-list-bulleted">
-                        Liste
-                    </v-btn>
-                    <v-btn value="grid" prepend-icon="mdi-view-grid-outline">
-                        Karten
-                    </v-btn>
-                    <v-btn value="alpha" prepend-icon="mdi-sort-alphabetical-ascending">
-                        A-Z
-                    </v-btn>
-                    <v-btn value="subjects_contents" prepend-icon="mdi-file-tree-outline">
-                        Fächer/Inhalte
-                    </v-btn>
-                </v-btn-toggle>
-
-                <v-btn
-                    prepend-icon="mdi-refresh"
-                    color="primary"
-                    variant="flat"
-                    :loading="isLoading"
-                    :disabled="isDeletingId !== null || isSavingEdit"
-                    @click="loadCards">
-                    Aktualisieren
-                </v-btn>
-            </v-col>
-        </v-row>
-
-        <div class="material-filters-wrap mb-4">
-            <div class="filter-section">
-                <div class="text-subtitle-2 mb-2">Fach filtern</div>
-
-                <div class="d-flex flex-wrap ga-2">
-                    <v-badge class="filter-chip-badge" inline :content="badgeCountContent(subjectAllCount)">
-                        <v-chip
-                            size="small"
-                            :variant="hasActiveSubjectFilter ? 'tonal' : 'flat'"
-                            :color="hasActiveSubjectFilter ? undefined : 'primary'"
-                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                            @click="clearSubjectFilter">
-                            Alle
-                        </v-chip>
-                    </v-badge>
-
-                    <v-badge
-                        v-for="subject in subjectFilterOptions"
-                        :key="`subject-filter-${subject}`"
-                        class="filter-chip-badge"
-                        inline
-                        :content="badgeCountContent(subjectFilterCount(subject))">
-                        <v-chip
-                            size="small"
-                            color="primary"
-                            :variant="isSubjectFilterActive(subject) ? 'flat' : 'tonal'"
-                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                            @click="toggleSubjectFilter(subject)">
-                            {{ subject }}
-                        </v-chip>
-                    </v-badge>
-                </div>
-
-                <div v-if="hasActiveSubjectFilter" class="subject-dependent-filters mt-3">
-                    <div class="subject-dependent-filter">
-                        <div class="text-subtitle-2 mb-2">Thema filtern</div>
-
-                        <div class="d-flex flex-wrap ga-2">
-                            <v-badge class="filter-chip-badge" inline :content="badgeCountContent(topicAllCount)">
-                                <v-chip
-                                    size="small"
-                                    :variant="hasActiveTopicFilter ? 'tonal' : 'flat'"
-                                    :color="hasActiveTopicFilter ? undefined : 'primary'"
-                                    :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                    @click="clearTopicFilter">
-                                    Alle
-                                </v-chip>
-                            </v-badge>
-
-                            <v-badge
-                                v-for="topic in topicFilterOptions"
-                                :key="`topic-filter-${topic}`"
-                                class="filter-chip-badge"
-                                inline
-                                :content="badgeCountContent(topicFilterCount(topic))">
-                                <v-chip
-                                    size="small"
-                                    color="primary"
-                                    :variant="isTopicFilterActive(topic) ? 'flat' : 'tonal'"
-                                    :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                    @click="toggleTopicFilter(topic)">
-                                    {{ topic }}
-                                </v-chip>
-                            </v-badge>
-                        </div>
-                    </div>
-
-                    <div v-if="hasActiveTopicFilter" class="subject-dependent-filter">
-                        <div class="text-subtitle-2 mb-2">Bereich filtern</div>
-
-                        <div class="d-flex flex-wrap ga-2">
-                            <v-badge class="filter-chip-badge" inline :content="badgeCountContent(unitAllCount)">
-                                <v-chip
-                                    size="small"
-                                    :variant="hasActiveUnitFilter ? 'tonal' : 'flat'"
-                                    :color="hasActiveUnitFilter ? undefined : 'primary'"
-                                    :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                    @click="clearUnitFilter">
-                                    Alle
-                                </v-chip>
-                            </v-badge>
-
-                            <v-badge
-                                v-for="unit in unitFilterOptions"
-                                :key="`unit-filter-${unit}`"
-                                class="filter-chip-badge"
-                                inline
-                                :content="badgeCountContent(unitFilterCount(unit))">
-                                <v-chip
-                                    size="small"
-                                    color="primary"
-                                    :variant="isUnitFilterActive(unit) ? 'flat' : 'tonal'"
-                                    :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                    @click="toggleUnitFilter(unit)">
-                                    {{ unit }}
-                                </v-chip>
-                            </v-badge>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="d-flex justify-end mb-2">
-                <v-tooltip location="top">
-                    <template #activator="{ props }">
-                        <v-btn
-                            v-bind="props"
-                            :icon="showSecondaryFilters ? 'mdi-filter-variant-minus' : 'mdi-filter-variant-plus'"
-                            size="small"
-                            variant="text"
-                            color="primary"
-                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                            @click="toggleSecondaryFilters" />
-                    </template>
-                    <span>
-                        {{ showSecondaryFilters ? 'Materialtyp- und Statusfilter ausblenden' : 'Materialtyp- und Statusfilter einblenden' }}
-                    </span>
-                </v-tooltip>
-            </div>
-
-            <template v-if="showSecondaryFilters">
-                <div class="filter-section">
-                    <div class="text-subtitle-2 mb-2">Materialtyp filtern</div>
-
-                    <div class="d-flex flex-wrap ga-2">
-                        <v-chip
-                            size="small"
-                            :variant="hasActiveTypeFilter ? 'tonal' : 'flat'"
-                            :color="hasActiveTypeFilter ? undefined : 'primary'"
-                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                            @click="clearTypeFilter">
-                            Alle
-                        </v-chip>
-
-                        <v-chip
-                            v-for="typeOption in typeFilterOptions"
-                            :key="`type-filter-${typeOption.value}`"
-                            size="small"
-                            :color="typeColor(typeOption.value) || 'primary'"
-                            :variant="isTypeFilterActive(typeOption.value) ? 'flat' : 'tonal'"
-                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                            @click="toggleTypeFilter(typeOption.value)">
-                            {{ typeOption.label }}
-                        </v-chip>
-                    </div>
-                </div>
-
-                <div class="filter-section">
-                    <div class="text-subtitle-2 mb-2">Status filtern</div>
-
-                    <div class="d-flex flex-wrap ga-2">
-                        <v-chip
-                            size="small"
-                            :variant="hasActiveStatusFilter ? 'tonal' : 'flat'"
-                            :color="hasActiveStatusFilter ? undefined : 'primary'"
-                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                            @click="clearStatusFilter">
-                            Alle
-                        </v-chip>
-
-                        <v-chip
-                            v-for="statusOption in statusFilterOptions"
-                            :key="`status-filter-${statusOption.value}`"
-                            size="small"
-                            :color="statusColor(statusOption.value)"
-                            :variant="isStatusFilterActive(statusOption.value) ? 'flat' : 'tonal'"
-                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                            @click="toggleStatusFilter(statusOption.value)">
-                            {{ statusOption.label }}
-                        </v-chip>
-                    </div>
-                </div>
-            </template>
-        </div>
+        <MaterialsOverviewFilters
+            :action-disabled="isLoading || isDeletingId !== null || isSavingEdit"
+            :badge-count-content="badgeCountContent"
+            :subject-all-count="subjectAllCount"
+            :has-active-subject-filter="hasActiveSubjectFilter"
+            :clear-subject-filter="clearSubjectFilter"
+            :subject-filter-options="subjectFilterOptions"
+            :subject-filter-count="subjectFilterCount"
+            :is-subject-filter-active="isSubjectFilterActive"
+            :toggle-subject-filter="toggleSubjectFilter"
+            :topic-all-count="topicAllCount"
+            :has-active-topic-filter="hasActiveTopicFilter"
+            :clear-topic-filter="clearTopicFilter"
+            :topic-filter-options="topicFilterOptions"
+            :topic-filter-count="topicFilterCount"
+            :is-topic-filter-active="isTopicFilterActive"
+            :toggle-topic-filter="toggleTopicFilter"
+            :unit-all-count="unitAllCount"
+            :has-active-unit-filter="hasActiveUnitFilter"
+            :clear-unit-filter="clearUnitFilter"
+            :unit-filter-options="unitFilterOptions"
+            :unit-filter-count="unitFilterCount"
+            :is-unit-filter-active="isUnitFilterActive"
+            :toggle-unit-filter="toggleUnitFilter"
+            :show-secondary-filters="showSecondaryFilters"
+            :toggle-secondary-filters="toggleSecondaryFilters"
+            :has-active-type-filter="hasActiveTypeFilter"
+            :clear-type-filter="clearTypeFilter"
+            :type-filter-options="typeFilterOptions"
+            :type-color="typeColor"
+            :is-type-filter-active="isTypeFilterActive"
+            :toggle-type-filter="toggleTypeFilter"
+            :has-active-status-filter="hasActiveStatusFilter"
+            :clear-status-filter="clearStatusFilter"
+            :status-filter-options="statusFilterOptions"
+            :status-color="statusColor"
+            :is-status-filter-active="isStatusFilterActive"
+            :toggle-status-filter="toggleStatusFilter" />
 
         <v-alert type="info" variant="tonal" class="mb-4">
             {{ displayedMaterials }}/{{ totalMaterials }} Material{{ totalMaterials === 1 ? '' : 'ien' }} angezeigt.
-            <span class="ml-2">
-                • Speicher: angezeigt {{ shownListedAttachmentSizeLabel }} / alle {{ allListedAttachmentSizeLabel }}
-            </span>
+            <span class="ml-2">• Speicher: angezeigt {{ shownListedAttachmentSizeLabel }} / alle {{ allListedAttachmentSizeLabel }}</span>
         </v-alert>
-        <div v-if="!isSubjectsContentsOverview" class="d-flex flex-wrap align-center ga-2 mb-4">
-            <div class="text-caption text-medium-emphasis">Sortierung:</div>
-            <v-btn-toggle
-                :model-value="overviewSortMode"
-                mandatory
-                color="primary"
-                variant="tonal"
-                density="comfortable"
-                class="overview-sort-toggle"
-                @update:modelValue="setOverviewSortMode">
-                <v-btn value="date" prepend-icon="mdi-calendar-clock">
-                    Datum
-                </v-btn>
-                <v-btn value="name" prepend-icon="mdi-sort-alphabetical-ascending">
-                    Name
-                </v-btn>
-            </v-btn-toggle>
-        </div>
+        <MaterialsOverviewSortBar v-if="!isSubjectsContentsOverview" :overview-sort-mode="overviewSortMode" @update:overview-sort-mode="setOverviewSortMode" />
 
         <v-skeleton-loader v-if="isLoading && !hasCards" type="list-item-three-line@4" />
 
         <template v-else-if="isSubjectsContentsOverview">
             <div class="d-flex flex-wrap align-center ga-2 mb-3">
                 <v-btn
+                    v-if="!hideSubjectsOverviewPrintButton"
                     size="small"
                     color="primary"
                     variant="outlined"
@@ -256,528 +69,92 @@
                 </v-btn>
             </div>
 
-            <v-progress-linear
-                v-if="isLoadingSubjectsContentsOverview"
-                indeterminate
-                color="primary"
-                rounded
-                class="mb-3" />
+            <v-progress-linear v-if="isLoadingSubjectsContentsOverview" indeterminate color="primary" rounded class="mb-3" />
 
-            <v-alert
-                v-else-if="!subjectsContentsOverviewItems.length"
-                type="info"
-                variant="tonal"
-                class="mb-0">
-                Keine Fachstruktur mit Materialien gefunden.
-            </v-alert>
+            <v-alert v-else-if="!subjectsContentsOverviewItems.length" type="info" variant="tonal" class="mb-0">Keine Fachstruktur mit Materialien gefunden.</v-alert>
 
-            <div v-else class="overview-subjects-tree">
-                <ul class="overview-subjects-list">
-                    <li
-                        v-for="subject in subjectsContentsOverviewItems"
-                        :key="`overview-subjects-subject-${subject.id || subject.name}`"
-                        class="overview-subjects-item">
-                        <div class="overview-subjects-group" :style="subjectGroupStyle(subject)">
-                            <div class="overview-subjects-node overview-subjects-node--subject">
-                                <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
-                                <span>{{ subject.name }}</span>
-                            </div>
-
-                            <ul v-if="subject.materials.length" class="overview-subjects-material-list">
-                                <li
-                                    v-for="material in subject.materials"
-                                    :key="`overview-subjects-subject-material-${subject.id || subject.name}-${material.id}`"
-                                    class="overview-subjects-material-item">
-                                    <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" />
-                                    <button
-                                        type="button"
-                                        class="overview-subjects-material-link"
-                                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                        @click="openDetailDialog({ id: material.id })">
-                                        {{ material.title }}
-                                    </button>
-                                    <v-chip
-                                        v-if="material.typeLabel"
-                                        size="x-small"
-                                        variant="outlined"
-                                        :color="material.typeColor || 'primary'"
-                                        class="overview-subjects-material-type">
-                                        {{ material.typeLabel }}
-                                    </v-chip>
-                                    <button
-                                        v-if="material.attachmentsCount > 0"
-                                        type="button"
-                                        class="overview-subjects-material-count overview-subjects-material-count--clickable"
-                                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                        @click="openAttachmentManager(material)">
-                                        <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
-                                        {{ material.attachmentsCount }}
-                                    </button>
-                                    <v-chip
-                                        size="x-small"
-                                        variant="tonal"
-                                        :color="statusColor(material.status)"
-                                        class="overview-subjects-material-status">
-                                        {{ statusLabel(material.status) }}
-                                    </v-chip>
-                                </li>
-                            </ul>
-
-                            <ul v-if="subject.topics.length" class="overview-subjects-list overview-subjects-list--child">
-                                <li
-                                    v-for="topic in subject.topics"
-                                    :key="`overview-subjects-topic-${topic.id || `${subject.id || subject.name}-${topic.name}`}`"
-                                    class="overview-subjects-item overview-subjects-topic-group"
-                                    :style="topicGroupStyle(subject)">
-                                    <div class="overview-subjects-node overview-subjects-node--topic">
-                                        <v-icon size="14" icon="mdi-book-open-page-variant-outline" class="mr-2" />
-                                        <span>{{ topic.name }}</span>
-                                    </div>
-
-                                    <ul v-if="topic.materials.length" class="overview-subjects-material-list">
-                                        <li
-                                            v-for="material in topic.materials"
-                                            :key="`overview-subjects-topic-material-${topic.id || topic.name}-${material.id}`"
-                                            class="overview-subjects-material-item">
-                                            <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" />
-                                            <button
-                                                type="button"
-                                                class="overview-subjects-material-link"
-                                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                                @click="openDetailDialog({ id: material.id })">
-                                                {{ material.title }}
-                                            </button>
-                                            <v-chip
-                                                v-if="material.typeLabel"
-                                                size="x-small"
-                                                variant="outlined"
-                                                :color="material.typeColor || 'primary'"
-                                                class="overview-subjects-material-type">
-                                                {{ material.typeLabel }}
-                                            </v-chip>
-                                            <button
-                                                v-if="material.attachmentsCount > 0"
-                                                type="button"
-                                                class="overview-subjects-material-count overview-subjects-material-count--clickable"
-                                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                                @click="openAttachmentManager(material)">
-                                                <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
-                                                {{ material.attachmentsCount }}
-                                            </button>
-                                            <v-chip
-                                                size="x-small"
-                                                variant="tonal"
-                                                :color="statusColor(material.status)"
-                                                class="overview-subjects-material-status">
-                                                {{ statusLabel(material.status) }}
-                                            </v-chip>
-                                        </li>
-                                    </ul>
-
-                                    <ul v-if="topic.units.length" class="overview-subjects-list overview-subjects-list--child">
-                                        <li
-                                            v-for="unit in topic.units"
-                                            :key="`overview-subjects-unit-${unit.id || `${topic.id || topic.name}-${unit.name}`}`"
-                                            class="overview-subjects-item">
-                                            <div class="overview-subjects-node overview-subjects-node--unit">
-                                                <v-icon size="13" icon="mdi-circle-medium" class="mr-1" />
-                                                <span>{{ unit.name }}</span>
-                                            </div>
-
-                                            <ul v-if="unit.materials.length" class="overview-subjects-material-list">
-                                                <li
-                                                    v-for="material in unit.materials"
-                                                    :key="`overview-subjects-unit-material-${unit.id || unit.name}-${material.id}`"
-                                                    class="overview-subjects-material-item">
-                                                    <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" />
-                                                    <button
-                                                        type="button"
-                                                        class="overview-subjects-material-link"
-                                                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                                        @click="openDetailDialog({ id: material.id })">
-                                                        {{ material.title }}
-                                                    </button>
-                                                    <v-chip
-                                                        v-if="material.typeLabel"
-                                                        size="x-small"
-                                                        variant="outlined"
-                                                        :color="material.typeColor || 'primary'"
-                                                        class="overview-subjects-material-type">
-                                                        {{ material.typeLabel }}
-                                                    </v-chip>
-                                                    <button
-                                                        v-if="material.attachmentsCount > 0"
-                                                        type="button"
-                                                        class="overview-subjects-material-count overview-subjects-material-count--clickable"
-                                                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                                        @click="openAttachmentManager(material)">
-                                                        <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
-                                                        {{ material.attachmentsCount }}
-                                                    </button>
-                                                    <v-chip
-                                                        size="x-small"
-                                                        variant="tonal"
-                                                        :color="statusColor(material.status)"
-                                                        class="overview-subjects-material-status">
-                                                        {{ statusLabel(material.status) }}
-                                                    </v-chip>
-                                                </li>
-                                            </ul>
-                                        </li>
-                                    </ul>
-                                </li>
-                            </ul>
-                        </div>
-                    </li>
-                </ul>
-            </div>
+            <MaterialsSubjectsContentsTree
+                v-else
+                :items="subjectsContentsOverviewItems"
+                :action-busy="isLoading || isDeletingId !== null || isSavingEdit"
+                :enable-share-buttons="enableShareButtons"
+                :show-share-indicators="enableShareButtons"
+                :share-indicator-color-fn="shareIndicatorColor"
+                :status-color-fn="statusColor"
+                :status-label-fn="statusLabel"
+                :subject-group-style-fn="subjectGroupStyle"
+                :topic-group-style-fn="topicGroupStyle"
+                @open-material="openDetailDialog"
+                @open-share="openShareDialog" />
         </template>
 
         <template v-else-if="hasCards">
-            <v-row v-if="isCompactOverview" class="overview-grid ma-0">
-                <v-col
-                    v-for="card in sortedCards"
-                    :key="`grid-card-${card.id}`"
-                    cols="12"
-                    sm="6"
-                    md="4"
-                    lg="3"
-                    xl="2"
-                    class="pa-2 d-flex">
-                    <v-card
-                        class="overview-grid-item d-flex flex-column flex-grow-1"
-                        rounded="lg"
-                        elevation="0"
-                        :style="cardBackgroundStyle(card)">
-                        <v-card-text class="pa-3 d-flex flex-column ga-2">
-                            <div class="overview-grid-header">
-                                <v-avatar :color="statusColor(card.status)" variant="tonal" size="32">
-                                    <v-icon :icon="sourceIcon(card)" :color="statusColor(card.status)" />
-                                </v-avatar>
+            <MaterialsOverviewGrid
+                v-if="isCompactOverview"
+                :cards="sortedCards"
+                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                :show-edit-action="!readOnlyMaterialActions"
+                :card-background-style-fn="cardBackgroundStyle"
+                :status-color-fn="statusColor"
+                :status-label-fn="statusLabel"
+                :source-icon-fn="sourceIcon"
+                :attachment-count-compact-label-fn="attachmentCountCompactLabel"
+                :classification-labels-fn="classificationLabels"
+                :preview-fn="preview"
+                :format-date-time-fn="formatDateTime"
+                @open-detail="openDetailDialog"
+                @open-edit="openEditDialog"
+                @open-attachments="openAttachmentManager" />
 
-                                <v-chip size="x-small" :color="statusColor(card.status)" variant="flat" class="material-status-chip">
-                                    {{ statusLabel(card.status) }}
-                                </v-chip>
-                            </div>
+            <MaterialsOverviewAlphaList
+                v-else-if="isAlphabeticOverview"
+                :cards="sortedCards"
+                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                :show-edit-action="!readOnlyMaterialActions"
+                :card-background-style-fn="cardBackgroundStyle"
+                :status-color-fn="statusColor"
+                :status-label-fn="statusLabel"
+                :source-icon-fn="sourceIcon"
+                :attachment-count-compact-label-fn="attachmentCountCompactLabel"
+                :alphabetic-assignment-line-fn="alphabeticAssignmentLine"
+                @open-detail="openDetailDialog"
+                @open-edit="openEditDialog"
+                @open-attachments="openAttachmentManager" />
 
-                            <div class="text-subtitle-2 font-weight-bold overview-grid-title">
-                                {{ card.title || 'Ohne Titel' }}
-                            </div>
+            <MaterialsOverviewList
+                v-else
+                :cards="sortedCards"
+                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                :show-edit-action="!readOnlyMaterialActions"
+                :card-background-style-fn="cardBackgroundStyle"
+                :status-color-fn="statusColor"
+                :status-label-fn="statusLabel"
+                :source-icon-fn="sourceIcon"
+                :classification-labels-fn="classificationLabels"
+                :preview-fn="preview"
+                :attachment-count-label-fn="attachmentCountLabel"
+                :file-attachments-fn="fileAttachments"
+                :is-downloading-attachment-fn="isDownloadingAttachment"
+                :attachment-chip-label-fn="attachmentChipLabel"
+                :format-date-time-fn="formatDateTime"
+                @open-detail="openDetailDialog"
+                @open-edit="openEditDialog"
+                @open-attachments="openAttachmentManager"
+                @download-attachment="downloadAttachment" />
 
-                            <div class="d-flex flex-wrap ga-1">
-                                <v-chip v-if="card.type" size="x-small" variant="tonal" color="primary">
-                                    {{ card.type }}
-                                </v-chip>
-
-                                <v-chip
-                                    v-if="card.attachments_count"
-                                    size="x-small"
-                                    variant="flat"
-                                    color="primary"
-                                    prepend-icon="mdi-paperclip"
-                                    class="attachments-count-chip attachments-count-chip-clickable"
-                                    @click="openAttachmentManager(card)">
-                                    {{ attachmentCountCompactLabel(card) }}
-                                </v-chip>
-                            </div>
-
-                            <div v-if="classificationLabels(card).length" class="d-flex flex-wrap ga-1">
-                                <v-chip
-                                    v-for="(label, index) in classificationLabels(card).slice(0, 2)"
-                                    :key="`grid-classification-label-${card.id}-${index}`"
-                                    size="x-small"
-                                    variant="tonal"
-                                    color="primary"
-                                    class="classification-chip"
-                                    :title="label">
-                                    {{ label }}
-                                </v-chip>
-                            </div>
-
-                            <div v-if="card.source_text" class="text-caption text-medium-emphasis overview-grid-preview">
-                                {{ preview(card.source_text, 160) }}
-                            </div>
-
-                            <div v-else-if="card.notes" class="text-caption text-medium-emphasis overview-grid-preview">
-                                {{ preview(card.notes, 160) }}
-                            </div>
-
-                            <div v-else-if="card.source_url" class="text-caption source-link overview-grid-link">
-                                <a :href="card.source_url" target="_blank" rel="noopener noreferrer">
-                                    {{ preview(card.source_url, 80) }}
-                                </a>
-                            </div>
-
-                            <div class="text-caption text-medium-emphasis mt-auto">
-                                {{ formatDateTime(card.updated_at) }}
-                            </div>
-                        </v-card-text>
-
-                        <v-card-actions class="px-3 pb-3 pt-0 overview-grid-actions">
-                            <v-btn
-                                icon
-                                size="small"
-                                rounded="circle"
-                                color="primary"
-                                variant="tonal"
-                                class="overview-grid-action-btn"
-                                :title="'Detail'"
-                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                @click="openDetailDialog(card)">
-                                <v-icon icon="mdi-eye-outline" />
-                            </v-btn>
-
-                            <v-btn
-                                icon
-                                size="small"
-                                rounded="circle"
-                                color="primary"
-                                variant="flat"
-                                class="overview-grid-action-btn"
-                                :title="'Bearbeiten'"
-                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                @click="openEditDialog(card)">
-                                <v-icon icon="mdi-pencil-outline" />
-                            </v-btn>
-                        </v-card-actions>
-                    </v-card>
-                </v-col>
-            </v-row>
-
-            <v-list v-else-if="isAlphabeticOverview" class="bg-transparent pa-0">
-                <v-list-item
-                    v-for="card in sortedCards"
-                    :key="`alpha-card-${card.id}`"
-                    class="overview-alpha-item mb-2 px-3 py-2"
-                    rounded="lg"
-                    :style="cardBackgroundStyle(card)">
-                    <template #prepend>
-                        <v-avatar :color="statusColor(card.status)" variant="tonal" size="34" class="mr-3">
-                            <v-icon :icon="sourceIcon(card)" :color="statusColor(card.status)" />
-                        </v-avatar>
-                    </template>
-
-                    <div class="overview-alpha-line">
-                        <v-list-item-title class="overview-alpha-title">
-                            {{ card.title || 'Ohne Titel' }}
-                        </v-list-item-title>
-
-                        <v-chip
-                            v-if="card.type"
-                            size="small"
-                            variant="tonal"
-                            color="primary"
-                            class="material-type-chip">
-                            {{ card.type }}
-                        </v-chip>
-
-                        <v-chip
-                            v-if="card.attachments_count"
-                            size="small"
-                            variant="flat"
-                            color="primary"
-                            prepend-icon="mdi-paperclip"
-                            class="attachments-count-chip attachments-count-chip-clickable"
-                            @click="openAttachmentManager(card)">
-                            {{ attachmentCountCompactLabel(card) }}
-                        </v-chip>
-
-                        <v-chip size="small" :color="statusColor(card.status)" variant="flat" class="material-status-chip">
-                            {{ statusLabel(card.status) }}
-                        </v-chip>
-                    </div>
-
-                    <v-list-item-subtitle class="overview-alpha-subtitle">
-                        {{ alphabeticAssignmentLine(card) }}
-                    </v-list-item-subtitle>
-
-                    <template #append>
-                        <div class="overview-alpha-actions">
-                            <v-btn
-                                icon="mdi-eye-outline"
-                                size="small"
-                                color="primary"
-                                variant="text"
-                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                @click="openDetailDialog(card)" />
-                            <v-btn
-                                icon="mdi-pencil-outline"
-                                size="small"
-                                color="primary"
-                                variant="text"
-                                :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                                @click="openEditDialog(card)" />
-                        </div>
-                    </template>
-                </v-list-item>
-            </v-list>
-
-            <v-list v-else class="bg-transparent pa-0">
-            <v-list-item
-                v-for="card in sortedCards"
-                :key="card.id"
-                class="overview-item mb-3 px-4 py-3"
-                rounded="lg"
-                :style="cardBackgroundStyle(card)">
-                <template #prepend>
-                    <v-avatar :color="statusColor(card.status)" variant="tonal" size="38" class="mr-4">
-                        <v-icon :icon="sourceIcon(card)" :color="statusColor(card.status)" />
-                    </v-avatar>
-                </template>
-
-                <div class="material-header">
-                    <div class="title-type-inline d-inline-flex align-center flex-wrap ga-2">
-                        <div class="text-subtitle-1 font-weight-bold material-title">
-                            {{ card.title || 'Ohne Titel' }}
-                        </div>
-
-                        <v-chip v-if="card.type" size="small" variant="tonal" color="primary" class="material-type-chip">
-                            {{ card.type }}
-                        </v-chip>
-                    </div>
-
-                    <v-chip size="small" :color="statusColor(card.status)" variant="flat" class="material-status-chip">
-                        {{ statusLabel(card.status) }}
-                    </v-chip>
-                </div>
-
-                <v-list-item-subtitle>
-                    <div v-if="classificationLabels(card).length" class="d-flex flex-wrap ga-2 mt-2 mb-2">
-                        <v-chip
-                            v-for="(label, index) in classificationLabels(card)"
-                            :key="`classification-label-${card.id}-${index}`"
-                            size="small"
-                            variant="tonal"
-                            color="primary"
-                            class="classification-chip"
-                            :title="label">
-                            {{ label }}
-                        </v-chip>
-                    </div>
-
-                    <div v-if="card.source_url" class="text-body-2 mb-1 source-link">
-                        <a :href="card.source_url" target="_blank" rel="noopener noreferrer">{{ card.source_url }}</a>
-                    </div>
-
-                    <div v-if="card.source_text" class="text-body-2 text-medium-emphasis mb-1 preview-text">
-                        {{ preview(card.source_text, 320) }}
-                    </div>
-
-                    <div v-else-if="card.notes" class="text-body-2 text-medium-emphasis mb-1 preview-text">
-                        {{ preview(card.notes, 320) }}
-                    </div>
-                </v-list-item-subtitle>
-
-                <div class="d-flex flex-wrap ga-2 mt-2 mb-1 attachment-count-row">
-                    <v-chip
-                        v-if="card.attachments_count"
-                        size="small"
-                        variant="flat"
-                        color="primary"
-                        prepend-icon="mdi-paperclip"
-                        class="attachments-count-chip attachments-count-chip-clickable"
-                        @click="openAttachmentManager(card)">
-                        {{ attachmentCountLabel(card) }}
-                    </v-chip>
-                </div>
-
-                <div v-if="fileAttachments(card).length" class="attachment-block d-flex flex-column ga-2 mt-1 mb-2 pa-2">
-                    <div class="attachment-chip-wrap d-flex flex-wrap ga-2">
-                        <v-chip
-                            v-for="attachment in fileAttachments(card)"
-                            :key="`file-attachment-${card.id}-${attachment.id}`"
-                            size="small"
-                            variant="outlined"
-                            color="primary"
-                            prepend-icon="mdi-paperclip"
-                            append-icon="mdi-download"
-                            class="attachment-chip"
-                            :disabled="isDownloadingAttachment(attachment.id)"
-                            :title="attachmentChipLabel(attachment)"
-                            @click.prevent="downloadAttachment(attachment)">
-                            {{ attachmentChipLabel(attachment) }}
-                        </v-chip>
-                    </div>
-                </div>
-
-                <div class="text-caption text-medium-emphasis mt-1">
-                    Aktualisiert: {{ formatDateTime(card.updated_at) }}
-                </div>
-
-                <template #append>
-                    <div class="overview-actions d-flex flex-column align-end ga-2">
-                        <v-btn
-                            icon="mdi-eye-outline"
-                            size="small"
-                            color="primary"
-                            variant="tonal"
-                            :title="'Detail'"
-                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                            @click="openDetailDialog(card)" />
-
-                        <v-btn
-                            icon="mdi-pencil-outline"
-                            size="small"
-                            color="primary"
-                            variant="flat"
-                            :title="'Bearbeiten'"
-                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                            @click="openEditDialog(card)" />
-                    </div>
-                </template>
-            </v-list-item>
-            </v-list>
-
-            <div class="overview-pagination d-flex flex-wrap align-center justify-end ga-2 mt-2">
-                <div class="text-caption text-medium-emphasis page-indicator">
-                    Seite {{ currentMetaPage }} von {{ lastMetaPage }}
-                </div>
-
-                <v-btn
-                    size="small"
-                    variant="tonal"
-                    color="primary"
-                    prepend-icon="mdi-page-first"
-                    :disabled="isLoading || isDeletingId !== null || isSavingEdit || !hasPreviousPage"
-                    @click="goToFirstPage">
-                    Erste
-                </v-btn>
-
-                <v-btn
-                    size="small"
-                    variant="tonal"
-                    color="primary"
-                    prepend-icon="mdi-chevron-left"
-                    :disabled="isLoading || isDeletingId !== null || isSavingEdit || !hasPreviousPage"
-                    @click="goToPreviousPage">
-                    Zurück
-                </v-btn>
-
-                <v-btn
-                    size="small"
-                    variant="tonal"
-                    color="primary"
-                    append-icon="mdi-chevron-right"
-                    :disabled="isLoading || isDeletingId !== null || isSavingEdit || !hasNextPage"
-                    @click="goToNextPage">
-                    Weiter
-                </v-btn>
-
-                <v-btn
-                    size="small"
-                    variant="tonal"
-                    color="primary"
-                    append-icon="mdi-page-last"
-                    :disabled="isLoading || isDeletingId !== null || isSavingEdit || !hasNextPage"
-                    @click="goToLastPage">
-                    Letzte
-                </v-btn>
-            </div>
+            <MaterialsOverviewPagination
+                :current-page="currentMetaPage"
+                :last-page="lastMetaPage"
+                :has-previous-page="hasPreviousPage"
+                :has-next-page="hasNextPage"
+                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                @first="goToFirstPage"
+                @previous="goToPreviousPage"
+                @next="goToNextPage"
+                @last="goToLastPage" />
         </template>
 
-        <v-alert v-else type="warning" variant="tonal" class="mb-0">
-            Aktuell sind keine Materialien gespeichert.
-        </v-alert>
+        <v-alert v-else type="warning" variant="tonal" class="mb-0">Aktuell sind keine Materialien gespeichert.</v-alert>
     </v-card>
 
     <v-dialog v-model="attachmentDialogOpen" max-width="820" persistent>
@@ -793,10 +170,7 @@
             </div>
 
             <v-card-text>
-                <div
-                    class="attachment-pond-wrap mb-3"
-                    @dragover.capture="onAttachmentDragOver"
-                    @drop.capture="onAttachmentDrop">
+                <div class="attachment-pond-wrap mb-3" @dragover.capture="onAttachmentDragOver" @drop.capture="onAttachmentDrop">
                     <file-pond
                         v-if="csrfToken"
                         ref="attachmentPond"
@@ -816,42 +190,21 @@
                         @processfileerror="onAttachmentPondProcessFileError"
                         @error="onAttachmentPondProcessFileError" />
 
-                    <v-alert
-                        v-else
-                        type="warning"
-                        variant="tonal"
-                        class="mb-0">
-                        Upload-Token fehlt. Bitte Seite neu laden.
-                    </v-alert>
+                    <v-alert v-else type="warning" variant="tonal" class="mb-0">Upload-Token fehlt. Bitte Seite neu laden.</v-alert>
                 </div>
 
-                <div class="text-caption text-medium-emphasis mb-1">
-                    Maximale Uploadgröße je Datei: {{ maxUploadSizeLabel }}
-                </div>
-                <div class="text-caption text-medium-emphasis mb-3">
-                    Du kannst auch einen Web-Link oder ein Web-Bild hierher ziehen.
-                </div>
+                <div class="text-caption text-medium-emphasis mb-1">Maximale Uploadgröße je Datei: {{ maxUploadSizeLabel }}</div>
+                <div class="text-caption text-medium-emphasis mb-3">Du kannst auch einen Web-Link oder ein Web-Bild hierher ziehen.</div>
 
-                <v-alert v-if="!attachmentRows.length" type="info" variant="tonal" class="mb-0">
-                    Keine Anhänge vorhanden.
-                </v-alert>
+                <v-alert v-if="!attachmentRows.length" type="info" variant="tonal" class="mb-0">Keine Anhänge vorhanden.</v-alert>
 
                 <v-list v-else class="bg-transparent pa-0">
-                    <v-list-item
-                        v-for="row in attachmentRows"
-                        :key="`attachment-manage-${row.id}`"
-                        class="px-0 py-2">
+                    <v-list-item v-for="row in attachmentRows" :key="`attachment-manage-${row.id}`" class="px-0 py-2">
                         <div class="attachment-manage-row d-flex flex-column ga-2 w-100">
                             <div class="d-flex flex-wrap align-center ga-2">
                                 <v-tooltip location="top">
                                     <template #activator="{ props }">
-                                        <v-chip
-                                            v-bind="props"
-                                            size="x-small"
-                                            variant="tonal"
-                                            color="secondary"
-                                            class="link-copy-chip"
-                                            @click="copyAttachmentChipToClipboard(row)">
+                                        <v-chip v-bind="props" size="x-small" variant="tonal" color="secondary" class="link-copy-chip" @click="copyAttachmentChipToClipboard(row)">
                                             {{ attachmentTypeLabel(row) }}
                                         </v-chip>
                                     </template>
@@ -866,17 +219,13 @@
                                 </div>
                             </div>
 
-                            <div
-                                v-if="attachmentSourceUrl(row)"
-                                class="text-caption attachment-source-text source-link">
+                            <div v-if="attachmentSourceUrl(row)" class="text-caption attachment-source-text source-link">
                                 Quelle:
                                 <a :href="attachmentSourceUrl(row)" target="_blank" rel="noopener noreferrer">
                                     {{ preview(attachmentSourceUrl(row), 110) }}
                                 </a>
                             </div>
-                            <div
-                                v-if="attachmentDownloadedAtLabel(row)"
-                                class="text-caption text-medium-emphasis attachment-source-text">
+                            <div v-if="attachmentDownloadedAtLabel(row)" class="text-caption text-medium-emphasis attachment-source-text">
                                 Heruntergeladen: {{ attachmentDownloadedAtLabel(row) }}
                             </div>
 
@@ -892,12 +241,8 @@
                                         :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
                                         @update:modelValue="updateAttachmentDraft(row.id, $event)"
                                         @keyup.enter="saveAttachmentName(row)" />
-                                    <div
-                                        v-else
-                                        class="attachment-name-readonly-row">
-                                        <div
-                                            class="attachment-name-readonly"
-                                            :title="row.name">
+                                    <div v-else class="attachment-name-readonly-row">
+                                        <div class="attachment-name-readonly" :title="row.name">
                                             {{ row.name }}
                                         </div>
                                         <v-btn
@@ -1005,196 +350,38 @@
         </v-card>
     </v-dialog>
 
-    <v-dialog v-model="detailDialogOpen" max-width="860" persistent>
-        <v-card rounded="xl">
-            <v-card-title class="d-flex align-center ga-2">
-                <span class="text-h5">Material-Details</span>
-                <v-spacer />
-                <v-btn
-                    icon="mdi-close"
-                    variant="text"
-                    :disabled="detailDialogLoading || isDeletingDetail"
-                    @click="closeDetailDialog" />
-            </v-card-title>
-
-            <v-card-text>
-                <v-skeleton-loader v-if="detailDialogLoading" type="article, list-item-two-line@3" />
-
-                <template v-else-if="detailDialogCard">
-                    <div class="material-header mb-3">
-                        <div class="title-type-inline d-inline-flex align-center flex-wrap ga-2">
-                            <div class="text-subtitle-1 font-weight-bold material-title">
-                                {{ detailDialogCard.title || 'Material' }}
-                            </div>
-
-                            <v-chip v-if="detailDialogCard.type" size="small" variant="tonal" color="primary" class="material-type-chip">
-                                {{ detailDialogCard.type }}
-                            </v-chip>
-                        </div>
-
-                        <v-chip size="small" :color="statusColor(detailDialogCard.status)" variant="flat" class="material-status-chip">
-                            {{ statusLabel(detailDialogCard.status) }}
-                        </v-chip>
-                    </div>
-
-                    <div v-if="classificationLabels(detailDialogCard).length" class="mb-4">
-                        <div class="text-subtitle-2 mb-2">Fach / Thema / Bereich</div>
-                        <div class="d-flex flex-wrap ga-2">
-                            <v-chip
-                                v-for="(label, index) in classificationLabels(detailDialogCard)"
-                                :key="`detail-classification-${detailDialogCard.id}-${index}`"
-                                size="small"
-                                variant="tonal"
-                                color="primary"
-                                class="classification-chip"
-                                :title="label">
-                                {{ label }}
-                            </v-chip>
-                        </div>
-                    </div>
-
-                    <div v-if="detailDialogCard.source_url" class="mb-4 source-link">
-                        <div class="text-subtitle-2 mb-1">Link</div>
-                        <a :href="detailDialogCard.source_url" target="_blank" rel="noopener noreferrer">
-                            {{ detailDialogCard.source_url }}
-                        </a>
-                    </div>
-
-                    <div v-if="detailDialogCard.source_text" class="mb-4">
-                        <div class="text-subtitle-2 mb-1">Beschreibung</div>
-                        <div class="text-body-2 detail-text">{{ detailDialogCard.source_text }}</div>
-                    </div>
-
-                    <div v-if="detailDialogCard.notes" class="mb-4">
-                        <div class="text-subtitle-2 mb-1">Notiz</div>
-                        <div class="text-body-2 detail-text">{{ detailDialogCard.notes }}</div>
-                    </div>
-
-                    <div v-if="detailAttachments(detailDialogCard).length" class="mb-2">
-                        <div class="text-subtitle-2 mb-2">Anhänge</div>
-
-                        <v-list class="bg-transparent pa-0">
-                            <v-list-item
-                                v-for="attachment in detailAttachments(detailDialogCard)"
-                                :key="`detail-attachment-${detailDialogCard.id}-${attachment.id}`"
-                                class="px-0 py-2">
-                                <div class="d-flex flex-column flex-md-row align-md-center ga-2 w-100 detail-attachment-row">
-                                    <div class="flex-grow-1 detail-attachment-content">
-                                        <div class="text-body-2 font-weight-medium detail-attachment-name">
-                                            {{ attachmentDisplayName(attachment) }}
-                                        </div>
-                                        <div class="d-flex flex-wrap align-center ga-2">
-                                            <v-tooltip location="top">
-                                                <template #activator="{ props }">
-                                                    <v-chip
-                                                        v-bind="props"
-                                                        size="x-small"
-                                                        variant="tonal"
-                                                        color="secondary"
-                                                        class="link-copy-chip"
-                                                        @click="copyAttachmentChipToClipboard(attachment)">
-                                                        {{ attachmentTypeLabel(attachment) }}
-                                                    </v-chip>
-                                                </template>
-                                                <div class="d-flex align-center ga-1">
-                                                    <v-icon icon="mdi-content-copy" size="14" />
-                                                    <span>In Zwischenablage kopieren</span>
-                                                </div>
-                                            </v-tooltip>
-                                            <div class="text-caption text-medium-emphasis">
-                                                {{ attachmentSizeBytes(attachment) > 0 ? formatBytes(attachmentSizeBytes(attachment)) : '' }}
-                                            </div>
-                                        </div>
-                                        <div
-                                            v-if="attachmentSourceUrl(attachment)"
-                                            class="text-caption attachment-source-text source-link">
-                                            Quelle:
-                                            <a :href="attachmentSourceUrl(attachment)" target="_blank" rel="noopener noreferrer">
-                                                {{ preview(attachmentSourceUrl(attachment), 110) }}
-                                            </a>
-                                        </div>
-                                        <div
-                                            v-if="attachmentDownloadedAtLabel(attachment)"
-                                            class="text-caption text-medium-emphasis attachment-source-text">
-                                            Heruntergeladen: {{ attachmentDownloadedAtLabel(attachment) }}
-                                        </div>
-                                    </div>
-
-                                    <div class="d-flex flex-wrap ga-2 justify-end detail-attachment-actions">
-                                    <v-btn
-                                        v-if="attachment.attachment_type === 'file' && (attachment.preview_url || attachment.download_url)"
-                                        icon="mdi-eye-outline"
-                                        size="small"
-                                        color="primary"
-                                        variant="tonal"
-                                        :title="'Vorschau'"
-                                        :loading="isPreviewingAttachment(attachment.id)"
-                                        :disabled="isDeletingDetail"
-                                        @click="previewAttachment(attachment)" />
-
-                                    <v-btn
-                                        v-if="attachment.attachment_type === 'file' && attachment.download_url"
-                                        icon="mdi-download"
-                                        size="small"
-                                        color="primary"
-                                        variant="tonal"
-                                        :title="'Download'"
-                                        :loading="isDownloadingAttachment(attachment.id)"
-                                        :disabled="isDeletingDetail"
-                                        @click="downloadAttachment(attachment)" />
-
-                                        <v-btn
-                                            v-if="isEditableTextAttachment(attachment)"
-                                            icon="mdi-file-word-outline"
-                                            size="small"
-                                            color="primary"
-                                            variant="tonal"
-                                            :title="'DOCX'"
-                                            :loading="isDownloadingAttachment(attachment.id)"
-                                            :disabled="isDeletingDetail"
-                                            @click="downloadAttachmentDocx(attachment)" />
-
-                                    <v-btn
-                                        v-else-if="attachment.url"
-                                        icon="mdi-open-in-new"
-                                        size="small"
-                                        color="primary"
-                                        variant="tonal"
-                                        :title="'Öffnen'"
-                                        :href="attachment.url"
-                                        target="_blank"
-                                        rel="noopener noreferrer" />
-                                    </div>
-                                </div>
-                            </v-list-item>
-                        </v-list>
-                    </div>
-
-                    <div class="text-caption text-medium-emphasis mt-3">
-                        Aktualisiert: {{ formatDateTime(detailDialogCard.updated_at) }}
-                    </div>
-                </template>
-            </v-card-text>
-
-            <v-card-actions class="px-6 pb-6 pt-2 d-flex flex-wrap justify-end ga-2">
-                <v-btn
-                    variant="text"
-                    :disabled="detailDialogLoading || isDeletingDetail || isSavingEdit"
-                    @click="closeDetailDialog">
-                    Schließen
-                </v-btn>
-
-                <v-btn
-                    color="primary"
-                    variant="flat"
-                    prepend-icon="mdi-pencil"
-                    :disabled="detailDialogLoading || isDeletingDetail || isSavingEdit"
-                    @click="openEditFromDetail">
-                    Bearbeiten
-                </v-btn>
-            </v-card-actions>
-        </v-card>
-    </v-dialog>
+    <MaterialDetailDialog
+        v-model="detailDialogOpen"
+        :loading="detailDialogLoading"
+        :card="detailDialogCard"
+        :is-deleting="isDeletingDetail"
+        :is-saving-edit="isSavingEdit"
+        :read-only-material-actions="readOnlyMaterialActions"
+        :delete-step="detailDeleteStep"
+        :close-dialog-fn="closeDetailDialog"
+        :status-color-fn="statusColor"
+        :status-label-fn="statusLabel"
+        :classification-labels-fn="classificationLabels"
+        :detail-attachments-fn="detailAttachments"
+        :attachment-display-name-fn="attachmentDisplayName"
+        :copy-attachment-chip-to-clipboard-fn="copyAttachmentChipToClipboard"
+        :attachment-type-label-fn="attachmentTypeLabel"
+        :attachment-size-bytes-fn="attachmentSizeBytes"
+        :format-bytes-fn="formatBytes"
+        :attachment-source-url-fn="attachmentSourceUrl"
+        :preview-fn="preview"
+        :attachment-downloaded-at-label-fn="attachmentDownloadedAtLabel"
+        :is-previewing-attachment-fn="isPreviewingAttachment"
+        :preview-attachment-fn="previewAttachment"
+        :is-downloading-attachment-fn="isDownloadingAttachment"
+        :download-attachment-fn="downloadAttachment"
+        :is-editable-text-attachment-fn="isEditableTextAttachment"
+        :download-attachment-docx-fn="downloadAttachmentDocx"
+        :format-date-time-fn="formatDateTime"
+        :start-delete-flow-fn="startDetailDeleteFlow"
+        :reset-delete-flow-fn="resetDetailDeleteFlow"
+        :confirm-delete-fn="confirmDeleteFromDetail"
+        :open-edit-fn="openEditFromDetail" />
 
     <v-dialog v-model="editDialogOpen" max-width="640" persistent>
         <MaterialsCreateInlineForm
@@ -1232,32 +419,14 @@
             <template #extra-content>
                 <div class="mt-4 d-flex flex-wrap justify-end ga-2">
                     <template v-if="editDeleteStep === 0">
-                        <v-btn
-                            color="warning"
-                            variant="tonal"
-                            prepend-icon="mdi-delete"
-                            :disabled="isSavingEdit || isDeletingEditedMaterial"
-                            @click="startEditDeleteFlow">
+                        <v-btn color="warning" variant="tonal" prepend-icon="mdi-delete" :disabled="isSavingEdit || isDeletingEditedMaterial" @click="startEditDeleteFlow">
                             Material löschen
                         </v-btn>
                     </template>
 
                     <template v-else>
-                        <v-btn
-                            color="success"
-                            variant="tonal"
-                            prepend-icon="mdi-delete-off"
-                            :disabled="isDeletingEditedMaterial"
-                            @click="resetEditDeleteFlow">
-                            Abbrechen
-                        </v-btn>
-                        <v-btn
-                            color="error"
-                            variant="flat"
-                            prepend-icon="mdi-delete"
-                            :loading="isDeletingEditedMaterial"
-                            :disabled="isSavingEdit"
-                            @click="confirmDeleteFromEdit">
+                        <v-btn color="success" variant="tonal" prepend-icon="mdi-delete-off" :disabled="isDeletingEditedMaterial" @click="resetEditDeleteFlow">Abbrechen</v-btn>
+                        <v-btn color="error" variant="flat" prepend-icon="mdi-delete" :loading="isDeletingEditedMaterial" :disabled="isSavingEdit" @click="confirmDeleteFromEdit">
                             Löschen
                         </v-btn>
                     </template>
@@ -1266,15 +435,10 @@
                 <div class="mt-4">
                     <div class="text-subtitle-2 mb-2">Anhänge</div>
 
-                    <v-alert v-if="!attachmentRows.length" type="info" variant="tonal" class="mb-0">
-                        Keine Anhänge vorhanden.
-                    </v-alert>
+                    <v-alert v-if="!attachmentRows.length" type="info" variant="tonal" class="mb-0">Keine Anhänge vorhanden.</v-alert>
 
                     <v-list v-else class="bg-transparent pa-0">
-                        <v-list-item
-                            v-for="row in attachmentRows"
-                            :key="`edit-attachment-manage-${row.id}`"
-                            class="px-0 py-2">
+                        <v-list-item v-for="row in attachmentRows" :key="`edit-attachment-manage-${row.id}`" class="px-0 py-2">
                             <div class="attachment-manage-row d-flex flex-column ga-2 w-100">
                                 <div class="d-flex flex-wrap align-center ga-2">
                                     <v-tooltip location="top">
@@ -1300,17 +464,13 @@
                                     </div>
                                 </div>
 
-                                <div
-                                    v-if="attachmentSourceUrl(row)"
-                                    class="text-caption attachment-source-text source-link">
+                                <div v-if="attachmentSourceUrl(row)" class="text-caption attachment-source-text source-link">
                                     Quelle:
                                     <a :href="attachmentSourceUrl(row)" target="_blank" rel="noopener noreferrer">
                                         {{ preview(attachmentSourceUrl(row), 110) }}
                                     </a>
                                 </div>
-                                <div
-                                    v-if="attachmentDownloadedAtLabel(row)"
-                                    class="text-caption text-medium-emphasis attachment-source-text">
+                                <div v-if="attachmentDownloadedAtLabel(row)" class="text-caption text-medium-emphasis attachment-source-text">
                                     Heruntergeladen: {{ attachmentDownloadedAtLabel(row) }}
                                 </div>
 
@@ -1326,12 +486,8 @@
                                             :disabled="isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
                                             @update:modelValue="updateAttachmentDraft(row.id, $event)"
                                             @keyup.enter="saveAttachmentName(row)" />
-                                        <div
-                                            v-else
-                                            class="attachment-name-readonly-row">
-                                            <div
-                                                class="attachment-name-readonly"
-                                                :title="row.name">
+                                        <div v-else class="attachment-name-readonly-row">
+                                            <div class="attachment-name-readonly" :title="row.name">
                                                 {{ row.name }}
                                             </div>
                                             <v-btn
@@ -1353,8 +509,8 @@
                                             variant="tonal"
                                             prepend-icon="mdi-content-save"
                                             :loading="isAttachmentSaving(row.id)"
-                                        :disabled="isSavingEdit || !canSaveAttachmentName(row) || isAttachmentDeleting(row.id)"
-                                        @click="saveAttachmentName(row)">
+                                            :disabled="isSavingEdit || !canSaveAttachmentName(row) || isAttachmentDeleting(row.id)"
+                                            @click="saveAttachmentName(row)">
                                             Speichern
                                         </v-btn>
 
@@ -1445,11 +601,7 @@
             <v-card-title class="d-flex align-center ga-2">
                 <span class="text-h6">Text-Anhang bearbeiten</span>
                 <v-spacer />
-                <v-btn
-                    icon="mdi-close"
-                    variant="text"
-                    :disabled="textAttachmentEditorSaving"
-                    @click="closeTextAttachmentEditor" />
+                <v-btn icon="mdi-close" variant="text" :disabled="textAttachmentEditorSaving" @click="closeTextAttachmentEditor" />
             </v-card-title>
 
             <v-card-text>
@@ -1467,12 +619,7 @@
 
                     <ItsRichTextEditor v-model="textAttachmentEditorBodyHtml" />
 
-                    <v-alert
-                        v-if="textAttachmentEditorError"
-                        type="warning"
-                        variant="tonal"
-                        density="compact"
-                        class="mt-3">
+                    <v-alert v-if="textAttachmentEditorError" type="warning" variant="tonal" density="compact" class="mt-3">
                         {{ textAttachmentEditorError }}
                     </v-alert>
                 </template>
@@ -1480,12 +627,7 @@
 
             <v-card-actions class="px-6 pb-5">
                 <v-spacer />
-                <v-btn
-                    variant="text"
-                    :disabled="textAttachmentEditorSaving"
-                    @click="closeTextAttachmentEditor">
-                    Abbrechen
-                </v-btn>
+                <v-btn variant="text" :disabled="textAttachmentEditorSaving" @click="closeTextAttachmentEditor">Abbrechen</v-btn>
                 <v-btn
                     color="primary"
                     variant="flat"
@@ -1499,6 +641,15 @@
         </v-card>
     </v-dialog>
 
+    <MaterialShareDialog
+        v-model="shareDialogOpen"
+        :target="shareTarget"
+        :assignments="shareAssignments"
+        :loading="shareAssignmentsLoading"
+        :error="shareAssignmentsError"
+        @reload-assignments="loadShareAssignments"
+        @shares-changed="loadShareIndicators" />
+
     <MaterialTypeManagerDialog v-model="typeManagerDialogOpen" />
 </template>
 
@@ -1511,6 +662,16 @@ import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 import MaterialsCreateInlineForm from '../forms/MaterialsCreateInlineForm.vue'
 import MaterialTypeManagerDialog from '../forms/MaterialTypeManagerDialog.vue'
+import MaterialsOverviewAlphaList from '../overview/MaterialsOverviewAlphaList.vue'
+import MaterialsOverviewFilters from '../overview/MaterialsOverviewFilters.vue'
+import MaterialsOverviewGrid from '../overview/MaterialsOverviewGrid.vue'
+import MaterialsOverviewHeader from '../overview/MaterialsOverviewHeader.vue'
+import MaterialsOverviewList from '../overview/MaterialsOverviewList.vue'
+import MaterialsOverviewPagination from '../overview/MaterialsOverviewPagination.vue'
+import MaterialsOverviewSortBar from '../overview/MaterialsOverviewSortBar.vue'
+import MaterialsSubjectsContentsTree from '../overview/MaterialsSubjectsContentsTree.vue'
+import MaterialDetailDialog from '../overview/dialogs/MaterialDetailDialog.vue'
+import MaterialShareDialog from '../overview/dialogs/MaterialShareDialog.vue'
 
 const FilePond = vueFilePond(FilePondPluginFileValidateType)
 
@@ -1530,11 +691,43 @@ const createDefaultEditForm = () => ({
 
 export default {
     name: 'MaterialsOverviewView',
+    props: {
+        forcedOverviewMode: {
+            type: String,
+            default: null,
+        },
+        hideOverviewModeToggle: {
+            type: Boolean,
+            default: false,
+        },
+        hideSubjectsOverviewPrintButton: {
+            type: Boolean,
+            default: false,
+        },
+        readOnlyMaterialActions: {
+            type: Boolean,
+            default: false,
+        },
+        enableShareButtons: {
+            type: Boolean,
+            default: false,
+        },
+    },
     components: {
         FilePond,
         ItsRichTextEditor,
         MaterialsCreateInlineForm,
         MaterialTypeManagerDialog,
+        MaterialsOverviewAlphaList,
+        MaterialsOverviewFilters,
+        MaterialsOverviewGrid,
+        MaterialsOverviewHeader,
+        MaterialsOverviewList,
+        MaterialsOverviewPagination,
+        MaterialsOverviewSortBar,
+        MaterialsSubjectsContentsTree,
+        MaterialDetailDialog,
+        MaterialShareDialog,
     },
     data() {
         return {
@@ -1593,13 +786,23 @@ export default {
             textAttachmentEditorTitle: '',
             textAttachmentEditorBodyHtml: '',
             textAttachmentEditorError: '',
+            shareDialogOpen: false,
+            shareAssignmentsLoading: false,
+            shareAssignmentsError: '',
+            shareAssignments: [],
+            shareIndicatorsLoading: false,
+            shareIndicatorMap: {},
+            shareTarget: {
+                level: '',
+                id: null,
+                label: '',
+                parentLabel: '',
+            },
         }
     },
     watch: {
         attachmentRows() {
-            const validIds = this.attachmentRows
-                .map((row) => Number(row?.id))
-                .filter((id) => Number.isFinite(id) && id > 0)
+            const validIds = this.attachmentRows.map((row) => Number(row?.id)).filter((id) => Number.isFinite(id) && id > 0)
             this.resetAttachmentDeleteArmed(validIds)
             this.resetAttachmentNameEditing(validIds)
         },
@@ -1617,11 +820,11 @@ export default {
             return Array.isArray(items) && items.length
                 ? items
                 : [
-                    { value: 'inbox', label: 'Neu/Idee', color: '#607d8b' },
-                    { value: 'in_progress', label: 'In Arbeit', color: '#f9a825' },
-                    { value: 'done', label: 'ok', color: '#2e7d32' },
-                    { value: 'update_needed', label: 'Änderung nötig', color: '#c62828' },
-                ]
+                      { value: 'inbox', label: 'Neu/Idee', color: '#607d8b' },
+                      { value: 'in_progress', label: 'In Arbeit', color: '#f9a825' },
+                      { value: 'done', label: 'ok', color: '#2e7d32' },
+                      { value: 'update_needed', label: 'Änderung nötig', color: '#c62828' },
+                  ]
         },
         typeOptions() {
             const items = this.materialCardStore?.config?.type_values
@@ -1769,10 +972,7 @@ export default {
             }
         },
         attachmentDialogBusy() {
-            return this.savingAttachmentIds.length > 0
-                || this.deletingAttachmentIds.length > 0
-                || this.isUploadingAttachment
-                || this.textAttachmentEditorSaving
+            return this.savingAttachmentIds.length > 0 || this.deletingAttachmentIds.length > 0 || this.isUploadingAttachment || this.textAttachmentEditorSaving
         },
         isDeletingDetail() {
             const id = Number(this.detailDialogCard?.id)
@@ -1785,9 +985,7 @@ export default {
             return this.isDeletingId === id
         },
         subjectFilterOptions() {
-            const options = this.classificationTree
-                .map((entry) => String(entry?.name || '').trim())
-                .filter((value) => value !== '')
+            const options = this.classificationTree.map((entry) => String(entry?.name || '').trim()).filter((value) => value !== '')
 
             const selected = String(this.subjectFilter || '').trim()
             if (selected && !options.some((option) => option.toLocaleLowerCase() === selected.toLocaleLowerCase())) {
@@ -1803,14 +1001,10 @@ export default {
             const selectedSubject = this.normalizeFilterText(this.subjectFilter)
             if (selectedSubject === '') return []
 
-            const subjectNode = this.classificationTree.find((entry) =>
-                this.normalizeFilterText(entry?.name).toLocaleLowerCase() === selectedSubject.toLocaleLowerCase()
-            )
+            const subjectNode = this.classificationTree.find((entry) => this.normalizeFilterText(entry?.name).toLocaleLowerCase() === selectedSubject.toLocaleLowerCase())
             const topics = Array.isArray(subjectNode?.topics) ? subjectNode.topics : []
 
-            const options = topics
-                .map((entry) => this.normalizeFilterText(entry?.name))
-                .filter((value) => value !== '')
+            const options = topics.map((entry) => this.normalizeFilterText(entry?.name)).filter((value) => value !== '')
 
             const selectedTopic = this.normalizeFilterText(this.topicFilter)
             if (selectedTopic && !options.some((option) => option.toLocaleLowerCase() === selectedTopic.toLocaleLowerCase())) {
@@ -1827,18 +1021,12 @@ export default {
             const selectedTopic = this.normalizeFilterText(this.topicFilter)
             if (selectedSubject === '' || selectedTopic === '') return []
 
-            const subjectNode = this.classificationTree.find((entry) =>
-                this.normalizeFilterText(entry?.name).toLocaleLowerCase() === selectedSubject.toLocaleLowerCase()
-            )
+            const subjectNode = this.classificationTree.find((entry) => this.normalizeFilterText(entry?.name).toLocaleLowerCase() === selectedSubject.toLocaleLowerCase())
             const topics = Array.isArray(subjectNode?.topics) ? subjectNode.topics : []
-            const topicNode = topics.find((entry) =>
-                this.normalizeFilterText(entry?.name).toLocaleLowerCase() === selectedTopic.toLocaleLowerCase()
-            )
+            const topicNode = topics.find((entry) => this.normalizeFilterText(entry?.name).toLocaleLowerCase() === selectedTopic.toLocaleLowerCase())
             const units = Array.isArray(topicNode?.units) ? topicNode.units : []
 
-            const options = units
-                .map((entry) => this.normalizeFilterText(entry?.name))
-                .filter((value) => value !== '')
+            const options = units.map((entry) => this.normalizeFilterText(entry?.name)).filter((value) => value !== '')
 
             const selectedUnit = this.normalizeFilterText(this.unitFilter)
             if (selectedUnit && !options.some((option) => option.toLocaleLowerCase() === selectedUnit.toLocaleLowerCase())) {
@@ -2061,6 +1249,10 @@ export default {
         } catch {
             this.overviewViewMode = 'list'
         }
+        const forcedMode = String(this.forcedOverviewMode || '').trim()
+        if (['list', 'grid', 'alpha', 'subjects_contents'].includes(forcedMode)) {
+            this.overviewViewMode = forcedMode
+        }
         try {
             const storedSortMode = window?.localStorage?.getItem?.('materials.overview.sort')
             const allowedSortModes = ['date', 'name']
@@ -2102,10 +1294,133 @@ export default {
         await this.loadCards()
     },
     methods: {
+        openShareDialog(target = {}) {
+            if (!this.enableShareButtons) return
+            this.shareTarget = {
+                level: String(target?.level || '').trim(),
+                id: Number.isFinite(Number(target?.id)) ? Number(target.id) : null,
+                label: String(target?.label || '').trim(),
+                parentLabel: String(target?.parentLabel || '').trim(),
+                kindLabel: String(target?.kindLabel || '').trim(),
+                kindColor: String(target?.kindColor || '').trim(),
+                statusLabel: String(target?.statusLabel || '').trim(),
+                statusColor: String(target?.statusColor || '').trim(),
+                attachmentsCount: Number.isFinite(Number(target?.attachmentsCount)) ? Number(target.attachmentsCount) : null,
+            }
+            this.shareAssignments = []
+            this.shareAssignmentsError = ''
+            this.shareDialogOpen = true
+            this.loadShareAssignments()
+        },
+        shareIndicatorKey(scopeType, scopeId) {
+            const type = String(scopeType || '').trim()
+            const id = Number(scopeId || 0)
+            if (!type || id <= 0) return ''
+            return `${type}:${id}`
+        },
+        sharePermissionRank(permission) {
+            const normalized = String(permission || '').trim()
+            if (normalized === 'full_access') return 3
+            if (normalized === 'read_write') return 2
+            if (normalized === 'read_only') return 1
+            return 1
+        },
+        sharePermissionColor(permission) {
+            const normalized = String(permission || '').trim()
+            if (normalized === 'full_access') return 'error'
+            if (normalized === 'read_write') return 'warning'
+            if (normalized === 'read_only') return 'primary'
+            return 'primary'
+        },
+        shareIndicatorColor(level, id) {
+            const key = this.shareIndicatorKey(level, id)
+            if (!key) return ''
+            return String(this.shareIndicatorMap?.[key]?.color || '')
+        },
+        async loadShareIndicators() {
+            if (!this.enableShareButtons) {
+                this.shareIndicatorMap = {}
+                return
+            }
+
+            this.shareIndicatorsLoading = true
+            try {
+                const response = await axios.get('/api/admin/materials/shares')
+                const rows = Array.isArray(response.data?.data) ? response.data.data : []
+                const nextMap = {}
+
+                for (const row of rows) {
+                    const key = this.shareIndicatorKey(row?.scope_type, row?.scope_id)
+                    if (!key) continue
+
+                    const targets = Array.isArray(row?.targets) ? row.targets : []
+                    let bestRank = 0
+                    let bestPermission = 'read_only'
+                    for (const target of targets) {
+                        const permission = String(target?.permission || 'read_only').trim()
+                        const rank = this.sharePermissionRank(permission)
+                        if (rank > bestRank) {
+                            bestRank = rank
+                            bestPermission = permission
+                        }
+                    }
+                    if (bestRank <= 0) continue
+
+                    const existingRank = Number(nextMap[key]?.rank || 0)
+                    if (bestRank > existingRank) {
+                        nextMap[key] = {
+                            rank: bestRank,
+                            permission: bestPermission,
+                            color: this.sharePermissionColor(bestPermission),
+                        }
+                    }
+                }
+
+                this.shareIndicatorMap = nextMap
+            } catch {
+                this.shareIndicatorMap = {}
+            } finally {
+                this.shareIndicatorsLoading = false
+            }
+        },
+        shareScopeType(level) {
+            return (
+                {
+                    subject: 'subject',
+                    topic: 'topic',
+                    unit: 'unit',
+                    material: 'material',
+                }[String(level || '').trim()] || null
+            )
+        },
+        async loadShareAssignments() {
+            const scopeType = this.shareScopeType(this.shareTarget.level)
+            const scopeId = Number(this.shareTarget.id || 0)
+            if (!scopeType || scopeId <= 0) {
+                this.shareAssignments = []
+                return
+            }
+
+            this.shareAssignmentsLoading = true
+            this.shareAssignmentsError = ''
+            try {
+                const response = await axios.get('/api/admin/materials/shares', {
+                    params: {
+                        scope_type: scopeType,
+                        scope_id: scopeId,
+                    },
+                })
+                const rows = Array.isArray(response.data?.data) ? response.data.data : []
+                this.shareAssignments = rows.filter((row) => String(row?.scope_type || '') === scopeType && Number(row?.scope_id || 0) === scopeId)
+            } catch (error) {
+                this.shareAssignments = []
+                this.shareAssignmentsError = error?.response?.data?.message || 'Vorhandene Freigaben konnten nicht geladen werden.'
+            } finally {
+                this.shareAssignmentsLoading = false
+            }
+        },
         setOverviewMode(value) {
-            const nextMode = ['list', 'grid', 'alpha', 'subjects_contents'].includes(String(value))
-                ? String(value)
-                : 'list'
+            const nextMode = ['list', 'grid', 'alpha', 'subjects_contents'].includes(String(value)) ? String(value) : 'list'
             if (nextMode === this.overviewViewMode) {
                 if (nextMode === 'subjects_contents') {
                     this.loadSubjectsContentsOverview({ force: true })
@@ -2276,9 +1591,7 @@ export default {
             const rawType = this.normalizeFilterText(card?.type)
             if (!rawType) return ''
 
-            const option = this.typeOptions.find((entry) =>
-                this.normalizeFilterText(entry?.value).toLocaleLowerCase() === rawType.toLocaleLowerCase()
-            )
+            const option = this.typeOptions.find((entry) => this.normalizeFilterText(entry?.value).toLocaleLowerCase() === rawType.toLocaleLowerCase())
             const configuredLabel = this.normalizeFilterText(option?.label)
             return configuredLabel || rawType
         },
@@ -2302,9 +1615,7 @@ export default {
                 })),
             }))
 
-            const subjectMap = new Map(
-                subjects.map((subject) => [this.normalizeFilterText(subject?.name).toLocaleLowerCase(), subject])
-            )
+            const subjectMap = new Map(subjects.map((subject) => [this.normalizeFilterText(subject?.name).toLocaleLowerCase(), subject]))
             const ensureSubject = (name) => {
                 const normalizedName = this.normalizeFilterText(name)
                 if (!normalizedName) return null
@@ -2441,14 +1752,13 @@ export default {
                                     return null
                                 }
 
-                                const nextUnits = (Array.isArray(topic?.units) ? topic.units : [])
-                                    .filter((unit) => {
-                                        const unitName = this.normalizeFilterText(unit?.name).toLocaleLowerCase()
-                                        if (unitFilter !== '' && unitName !== unitFilter) {
-                                            return false
-                                        }
-                                        return Array.isArray(unit?.materials) && unit.materials.length > 0
-                                    })
+                                const nextUnits = (Array.isArray(topic?.units) ? topic.units : []).filter((unit) => {
+                                    const unitName = this.normalizeFilterText(unit?.name).toLocaleLowerCase()
+                                    if (unitFilter !== '' && unitName !== unitFilter) {
+                                        return false
+                                    }
+                                    return Array.isArray(unit?.materials) && unit.materials.length > 0
+                                })
 
                                 const topicHasMaterials = Array.isArray(topic?.materials) && topic.materials.length > 0
                                 if (!topicHasMaterials && nextUnits.length === 0) {
@@ -2522,6 +1832,9 @@ export default {
 
                 this.subjectsContentsOverviewItems = this.buildSubjectsContentsOverviewItems(cards, filters)
                 this.subjectsContentsOverviewSnapshotKey = snapshotKey
+                if (this.enableShareButtons) {
+                    this.loadShareIndicators()
+                }
             } finally {
                 if (requestId === this.subjectsContentsOverviewRequestId) {
                     this.isLoadingSubjectsContentsOverview = false
@@ -2570,13 +1883,15 @@ export default {
             await this.loadCards(this.lastMetaPage)
         },
         normalizeFilterText(value) {
-            return String(value ?? '').trim().slice(0, 255)
+            return String(value ?? '')
+                .trim()
+                .slice(0, 255)
         },
         stringHash(value) {
             const input = String(value ?? '')
             let hash = 0
             for (let index = 0; index < input.length; index += 1) {
-                hash = ((hash << 5) - hash) + input.charCodeAt(index)
+                hash = (hash << 5) - hash + input.charCodeAt(index)
                 hash |= 0
             }
             return Math.abs(hash)
@@ -2584,9 +1899,7 @@ export default {
         subjectColorSeed(subject) {
             const subjectId = Number(subject?.id)
             const subjectName = this.normalizeFilterText(subject?.name).toLocaleLowerCase()
-            return Number.isFinite(subjectId) && subjectId > 0
-                ? `subject-${subjectId}`
-                : `subject-${subjectName}`
+            return Number.isFinite(subjectId) && subjectId > 0 ? `subject-${subjectId}` : `subject-${subjectName}`
         },
         subjectColorTokens(subject) {
             const seed = this.subjectColorSeed(subject)
@@ -2851,11 +2164,13 @@ export default {
         cardMatchesFilterSet(card, normalizedFilters = null) {
             const filters = normalizedFilters || this.normalizeFilterSelection({})
 
-            return this.cardHasClassificationValue(card, 'subject', filters.subject)
-                && this.cardHasClassificationValue(card, 'topic', filters.topic)
-                && this.cardHasClassificationValue(card, 'unit', filters.unit)
-                && this.cardMatchesTypeFilterValue(card, filters.type)
-                && this.cardMatchesStatusFilterValue(card, filters.status)
+            return (
+                this.cardHasClassificationValue(card, 'subject', filters.subject) &&
+                this.cardHasClassificationValue(card, 'topic', filters.topic) &&
+                this.cardHasClassificationValue(card, 'unit', filters.unit) &&
+                this.cardMatchesTypeFilterValue(card, filters.type) &&
+                this.cardMatchesStatusFilterValue(card, filters.status)
+            )
         },
         countCardsForFilterSet(filters = {}) {
             const normalized = this.normalizeFilterSelection(filters)
@@ -2916,7 +2231,9 @@ export default {
                     return ''
                 }
 
-                return String(parsed.href || '').trim().slice(0, 2048)
+                return String(parsed.href || '')
+                    .trim()
+                    .slice(0, 2048)
             } catch {
                 return ''
             }
@@ -3029,8 +2346,7 @@ export default {
             const dt = event?.dataTransfer
             if (!dt) return
 
-            const hasFiles = (dt.files && dt.files.length > 0)
-                || Array.from(dt.items || []).some((item) => item?.kind === 'file')
+            const hasFiles = (dt.files && dt.files.length > 0) || Array.from(dt.items || []).some((item) => item?.kind === 'file')
             if (hasFiles) return
 
             const urls = this.extractDropUrls(dt)
@@ -3042,8 +2358,7 @@ export default {
             const dt = event?.dataTransfer
             if (!dt) return
 
-            const hasFiles = (dt.files && dt.files.length > 0)
-                || Array.from(dt.items || []).some((item) => item?.kind === 'file')
+            const hasFiles = (dt.files && dt.files.length > 0) || Array.from(dt.items || []).some((item) => item?.kind === 'file')
             if (hasFiles) return
 
             if (typeof event.preventDefault === 'function') {
@@ -3063,7 +2378,12 @@ export default {
 
             const knownLinks = new Set(
                 this.attachmentRows
-                    .filter((row) => String(row?.attachment_type || '').trim().toLocaleLowerCase() === 'link')
+                    .filter(
+                        (row) =>
+                            String(row?.attachment_type || '')
+                                .trim()
+                                .toLocaleLowerCase() === 'link'
+                    )
                     .map((row) => this.normalizeUrl(row?.url).toLocaleLowerCase())
                     .filter((url) => url !== '')
             )
@@ -3090,11 +2410,7 @@ export default {
                     changed = true
 
                     if (this.isLikelyImageUrl(normalizedUrl)) {
-                        const imageStored = await this.materialCardStore.addImageUrlAttachment(
-                            cardId,
-                            normalizedUrl,
-                            attachmentTitle
-                        )
+                        const imageStored = await this.materialCardStore.addImageUrlAttachment(cardId, normalizedUrl, attachmentTitle)
                         if (imageStored) {
                             changed = true
                         }
@@ -3116,7 +2432,9 @@ export default {
 
             for (let index = 0; index < input.length; index += 1) {
                 const item = input[index]
-                const attachmentType = String(item?.attachmentType || '').trim().toLocaleLowerCase()
+                const attachmentType = String(item?.attachmentType || '')
+                    .trim()
+                    .toLocaleLowerCase()
                 const linkUrl = this.normalizeUrl(item?.url)
                 if ((attachmentType === 'link' || linkUrl) && linkUrl) {
                     const rawTitle = String(item?.title || '').trim()
@@ -3206,11 +2524,7 @@ export default {
             const incoming = Array.isArray(files) ? files : []
             if (!incoming.length) return
 
-            this.editForm.pendingAttachments = this.mergeUniquePendingAttachments(
-                this.editForm.pendingAttachments,
-                incoming,
-                'picker'
-            )
+            this.editForm.pendingAttachments = this.mergeUniquePendingAttachments(this.editForm.pendingAttachments, incoming, 'picker')
         },
         notifyUploadError(message) {
             const text = String(message || '').trim()
@@ -3228,9 +2542,7 @@ export default {
         },
         async cleanupPendingTempUploads(rows = null) {
             const list = this.toPendingAttachments(rows ?? this.editForm.pendingAttachments)
-            const uploads = list
-                .map((item) => String(item?.tempUpload || '').trim())
-                .filter((value) => value !== '')
+            const uploads = list.map((item) => String(item?.tempUpload || '').trim()).filter((value) => value !== '')
 
             for (const uploadId of uploads) {
                 await this.materialCardStore.deleteTempUpload(uploadId, false)
@@ -3243,15 +2555,15 @@ export default {
                 ...card,
                 classifications: Array.isArray(card.classifications)
                     ? card.classifications.map((row) => ({
-                        subject: String(row?.subject || '').trim(),
-                        topic: String(row?.topic || '').trim(),
-                        unit: String(row?.unit || '').trim(),
-                    }))
+                          subject: String(row?.subject || '').trim(),
+                          topic: String(row?.topic || '').trim(),
+                          unit: String(row?.unit || '').trim(),
+                      }))
                     : [],
                 attachments: Array.isArray(card.attachments)
                     ? card.attachments.map((attachment) => ({
-                        ...attachment,
-                    }))
+                          ...attachment,
+                      }))
                     : [],
             }
         },
@@ -3350,13 +2662,14 @@ export default {
                 id: card?.id ?? null,
                 title: card?.title || '',
                 description: card?.source_text || card?.notes || '',
-                classifications: Array.isArray(card?.classifications) && card.classifications.length > 0
-                    ? card.classifications.map((row) => ({
-                        subject: String(row?.subject || '').trim(),
-                        topic: String(row?.topic || '').trim(),
-                        unit: String(row?.unit || '').trim(),
-                    }))
-                    : [{ subject: '', topic: '', unit: '' }],
+                classifications:
+                    Array.isArray(card?.classifications) && card.classifications.length > 0
+                        ? card.classifications.map((row) => ({
+                              subject: String(row?.subject || '').trim(),
+                              topic: String(row?.topic || '').trim(),
+                              unit: String(row?.unit || '').trim(),
+                          }))
+                        : [{ subject: '', topic: '', unit: '' }],
                 pendingAttachments: [],
                 source_url: card?.source_url || '',
                 area: card?.area || '',
@@ -3404,12 +2717,8 @@ export default {
             await this.cleanupPendingTempUploads(this.editForm.pendingAttachments)
             this.closeTextAttachmentEditor()
 
-            const shouldRestoreDetail = restoreDetail
-                && this.returnToDetailOnEditCancel
-                && this.detailCardForEditReturn
-            const restoreCard = shouldRestoreDetail
-                ? this.sanitizeDialogCard(this.detailCardForEditReturn)
-                : null
+            const shouldRestoreDetail = restoreDetail && this.returnToDetailOnEditCancel && this.detailCardForEditReturn
+            const restoreCard = shouldRestoreDetail ? this.sanitizeDialogCard(this.detailCardForEditReturn) : null
 
             this.editDialogOpen = false
             this.editClassificationEditorVisible = false
@@ -3467,20 +2776,12 @@ export default {
                     }
 
                     if (attachment.tempUpload) {
-                        await this.materialCardStore.addTempFileAttachment(
-                            this.editForm.id,
-                            attachment.tempUpload,
-                            this.toNullable(attachment.title) || attachment.fileName || ''
-                        )
+                        await this.materialCardStore.addTempFileAttachment(this.editForm.id, attachment.tempUpload, this.toNullable(attachment.title) || attachment.fileName || '')
                         continue
                     }
 
                     if (attachment.file instanceof File) {
-                        await this.materialCardStore.addFileAttachment(
-                            this.editForm.id,
-                            attachment.file,
-                            this.toNullable(attachment.title) || attachment.file.name || ''
-                        )
+                        await this.materialCardStore.addFileAttachment(this.editForm.id, attachment.file, this.toNullable(attachment.title) || attachment.file.name || '')
                     }
                 }
             }
@@ -3499,9 +2800,15 @@ export default {
 
             for (const row of input) {
                 if (!row || typeof row !== 'object') continue
-                const subject = String(row.subject ?? '').trim().slice(0, 255)
-                const topic = String(row.topic ?? '').trim().slice(0, 255)
-                let unit = String(row.unit ?? '').trim().slice(0, 255)
+                const subject = String(row.subject ?? '')
+                    .trim()
+                    .slice(0, 255)
+                const topic = String(row.topic ?? '')
+                    .trim()
+                    .slice(0, 255)
+                let unit = String(row.unit ?? '')
+                    .trim()
+                    .slice(0, 255)
                 if (!subject) continue
                 if (!topic) {
                     unit = ''
@@ -3554,11 +2861,15 @@ export default {
             return this.normalizeTypeColor(value)
         },
         typeColor(typeValue) {
-            const value = String(typeValue || '').trim().toLocaleLowerCase()
+            const value = String(typeValue || '')
+                .trim()
+                .toLocaleLowerCase()
             if (!value) return ''
 
             const option = this.typeOptions.find((entry) => {
-                const entryValue = String(entry?.value || '').trim().toLocaleLowerCase()
+                const entryValue = String(entry?.value || '')
+                    .trim()
+                    .toLocaleLowerCase()
                 return entryValue !== '' && entryValue === value
             })
 
@@ -3591,9 +2902,13 @@ export default {
             }
         },
         statusLabel(status) {
-            const normalized = String(status || '').trim().toLocaleLowerCase()
+            const normalized = String(status || '')
+                .trim()
+                .toLocaleLowerCase()
             const configured = this.statusOptions.find((option) => {
-                const value = String(option?.value || '').trim().toLocaleLowerCase()
+                const value = String(option?.value || '')
+                    .trim()
+                    .toLocaleLowerCase()
                 return value !== '' && value === normalized
             })
 
@@ -3611,9 +2926,13 @@ export default {
             return map[status] || 'Unbekannt'
         },
         statusColor(status) {
-            const normalized = String(status || '').trim().toLocaleLowerCase()
+            const normalized = String(status || '')
+                .trim()
+                .toLocaleLowerCase()
             const configured = this.statusOptions.find((option) => {
-                const value = String(option?.value || '').trim().toLocaleLowerCase()
+                const value = String(option?.value || '')
+                    .trim()
+                    .toLocaleLowerCase()
                 return value !== '' && value === normalized
             })
 
@@ -3636,9 +2955,15 @@ export default {
             const seen = new Set()
 
             for (const row of rows) {
-                const subject = String(row?.subject || '').trim().slice(0, 255)
-                const topic = String(row?.topic || '').trim().slice(0, 255)
-                let unit = String(row?.unit || '').trim().slice(0, 255)
+                const subject = String(row?.subject || '')
+                    .trim()
+                    .slice(0, 255)
+                const topic = String(row?.topic || '')
+                    .trim()
+                    .slice(0, 255)
+                let unit = String(row?.unit || '')
+                    .trim()
+                    .slice(0, 255)
                 if (!subject) continue
                 if (!topic) {
                     unit = ''
@@ -3657,7 +2982,9 @@ export default {
             return result
         },
         normalizeAttachmentName(value) {
-            return String(value ?? '').trim().slice(0, 255)
+            return String(value ?? '')
+                .trim()
+                .slice(0, 255)
         },
         toAttachmentRows(attachments) {
             const list = Array.isArray(attachments) ? attachments : []
@@ -3690,10 +3017,17 @@ export default {
                 .filter(Boolean)
         },
         isEditableTextAttachment(row) {
-            if (String(row?.attachment_type || '').trim().toLocaleLowerCase() !== 'file') return false
+            if (
+                String(row?.attachment_type || '')
+                    .trim()
+                    .toLocaleLowerCase() !== 'file'
+            )
+                return false
 
             const ext = this.attachmentExtension(row)
-            const mimeType = String(row?.mime_type || '').trim().toLocaleLowerCase()
+            const mimeType = String(row?.mime_type || '')
+                .trim()
+                .toLocaleLowerCase()
             return ext === 'html' || ext === 'htm' || mimeType === 'text/html' || mimeType === 'application/xhtml+xml'
         },
         escapeHtml(value) {
@@ -3787,9 +3121,7 @@ ${content}
         },
         ensureHtmlAttachmentName(value) {
             const normalized = this.normalizeAttachmentName(value) || 'Text'
-            return /\.(html?|HTML?)$/.test(normalized)
-                ? normalized
-                : `${normalized}.html`
+            return /\.(html?|HTML?)$/.test(normalized) ? normalized : `${normalized}.html`
         },
         async openTextAttachmentEditor(row) {
             const id = Number(row?.id)
@@ -3852,12 +3184,7 @@ ${content}
             this.textAttachmentEditorError = ''
 
             try {
-                const updated = await this.materialCardStore.updateTextAttachmentContent(
-                    attachmentId,
-                    cardId,
-                    documentHtml,
-                    title
-                )
+                const updated = await this.materialCardStore.updateTextAttachmentContent(attachmentId, cardId, documentHtml, title)
                 if (!updated) return
 
                 await this.refreshAttachmentDialogCard(cardId)
@@ -3999,7 +3326,9 @@ ${content}
             const fromPath = extractFromPath(row?.file_path)
             if (fromPath) return fromPath
 
-            const mime = String(row?.mime_type || '').trim().toLocaleLowerCase()
+            const mime = String(row?.mime_type || '')
+                .trim()
+                .toLocaleLowerCase()
             if (mime === 'application/pdf') return 'pdf'
             if (mime === 'application/msword') return 'doc'
             if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx'
@@ -4066,9 +3395,7 @@ ${content}
                 unitIndex += 1
             }
 
-            const rounded = size >= 100 || unitIndex === 0
-                ? Math.round(size)
-                : Math.round(size * 10) / 10
+            const rounded = size >= 100 || unitIndex === 0 ? Math.round(size) : Math.round(size * 10) / 10
             return `${rounded} ${units[unitIndex]}`
         },
         attachmentTypeAndSizeLabel(attachment) {
@@ -4085,9 +3412,7 @@ ${content}
             const sizeLabel = this.attachmentSizeBytes(row) > 0 ? this.formatBytes(this.attachmentSizeBytes(row)) : ''
             const ext = this.attachmentExtension(row)
             if (ext) {
-                return sizeLabel
-                    ? `Dateiformat: ${ext.toUpperCase()} • ${sizeLabel}`
-                    : `Dateiformat: ${ext.toUpperCase()}`
+                return sizeLabel ? `Dateiformat: ${ext.toUpperCase()} • ${sizeLabel}` : `Dateiformat: ${ext.toUpperCase()}`
             }
 
             const fallback = String(row?.file_path || '').trim() || 'Datei-Anhang'
@@ -4167,9 +3492,7 @@ ${content}
             this.markAttachmentDeleteArmed(attachmentId, false)
         },
         resetAttachmentDeleteArmed(validIds = []) {
-            const ids = Array.isArray(validIds)
-                ? validIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
-                : []
+            const ids = Array.isArray(validIds) ? validIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0) : []
 
             if (ids.length === 0) {
                 if (this.attachmentDeleteArmedIds.length) {
@@ -4182,9 +3505,7 @@ ${content}
             this.attachmentDeleteArmedIds = this.attachmentDeleteArmedIds.filter((id) => validSet.has(id))
         },
         resetAttachmentNameEditing(validIds = []) {
-            const ids = Array.isArray(validIds)
-                ? validIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
-                : []
+            const ids = Array.isArray(validIds) ? validIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0) : []
 
             if (ids.length === 0) {
                 if (this.attachmentNameEditingIds.length) {
@@ -4354,19 +3675,18 @@ ${content}
             }
         },
         async copyAttachmentChipToClipboard(row) {
-            const isLink = String(row?.attachment_type || '').trim().toLocaleLowerCase() === 'link'
-            const valueToCopy = isLink
-                ? this.normalizeUrl(row?.url)
-                : this.normalizeAttachmentName(row?.name) || this.attachmentDisplayName(row)
+            const isLink =
+                String(row?.attachment_type || '')
+                    .trim()
+                    .toLocaleLowerCase() === 'link'
+            const valueToCopy = isLink ? this.normalizeUrl(row?.url) : this.normalizeAttachmentName(row?.name) || this.attachmentDisplayName(row)
             if (!valueToCopy) return
 
             const notification = useNotificationStore()
             const copied = await this.copyTextToClipboard(valueToCopy)
             if (copied) {
                 notification.notify({
-                    message: isLink
-                        ? 'Link wurde in die Zwischenablage kopiert.'
-                        : 'Dateiname wurde in die Zwischenablage kopiert.',
+                    message: isLink ? 'Link wurde in die Zwischenablage kopiert.' : 'Dateiname wurde in die Zwischenablage kopiert.',
                     type: 'success',
                     timeout: 2200,
                 })
@@ -4374,9 +3694,7 @@ ${content}
             }
 
             notification.notify({
-                message: isLink
-                    ? 'Link konnte nicht kopiert werden.'
-                    : 'Dateiname konnte nicht kopiert werden.',
+                message: isLink ? 'Link konnte nicht kopiert werden.' : 'Dateiname konnte nicht kopiert werden.',
                 type: 'warning',
                 timeout: 2800,
             })
@@ -4416,7 +3734,9 @@ ${content}
             this.downloadingAttachmentIds = this.downloadingAttachmentIds.filter((item) => item !== id)
         },
         normalizeDownloadFileName(value) {
-            const normalized = String(value || '').trim().replace(/[\\/:*?"<>|]/g, '_')
+            const normalized = String(value || '')
+                .trim()
+                .replace(/[\\/:*?"<>|]/g, '_')
             return normalized.slice(0, 255) || 'Datei'
         },
         filenameFromContentDisposition(headerValue) {
@@ -4546,11 +3866,12 @@ ${content}
                 })
 
                 const contentType = String(response?.headers?.['content-type'] || '').trim()
-                const blob = response?.data instanceof Blob
-                    ? response.data
-                    : new Blob([response?.data], {
-                        type: contentType || 'application/octet-stream',
-                    })
+                const blob =
+                    response?.data instanceof Blob
+                        ? response.data
+                        : new Blob([response?.data], {
+                              type: contentType || 'application/octet-stream',
+                          })
 
                 const objectUrl = URL.createObjectURL(blob)
                 previewWindow.location.replace(objectUrl)
@@ -4577,10 +3898,7 @@ ${content}
         },
         fileAttachments(card) {
             const attachments = Array.isArray(card?.attachments) ? card.attachments : []
-            return attachments.filter((attachment) =>
-                String(attachment?.attachment_type || '').trim() === 'file'
-                && String(attachment?.download_url || '').trim() !== ''
-            )
+            return attachments.filter((attachment) => String(attachment?.attachment_type || '').trim() === 'file' && String(attachment?.download_url || '').trim() !== '')
         },
         cardAttachmentTotalBytes(card) {
             const attachments = Array.isArray(card?.attachments) ? card.attachments : []
@@ -4618,9 +3936,7 @@ ${content}
         attachmentChipLabel(attachment) {
             const name = this.attachmentDisplayName(attachment)
             const ext = this.attachmentExtension(attachment)
-            const sizeLabel = this.attachmentSizeBytes(attachment) > 0
-                ? this.formatBytes(this.attachmentSizeBytes(attachment))
-                : ''
+            const sizeLabel = this.attachmentSizeBytes(attachment) > 0 ? this.formatBytes(this.attachmentSizeBytes(attachment)) : ''
             const nameWithType = ext ? `${name} (${ext.toUpperCase()})` : name
             return sizeLabel ? `${nameWithType} • ${sizeLabel}` : nameWithType
         },
@@ -5004,16 +4320,6 @@ ${content}
     cursor: pointer;
 }
 
-.attachment-count-row {
-    opacity: 1 !important;
-}
-
-.attachment-block {
-    border: 1px solid rgba(31, 95, 191, 0.3);
-    border-radius: 10px;
-    background: rgba(31, 95, 191, 0.08);
-}
-
 .classification-chip,
 .attachment-chip {
     max-width: min(100%, 360px);
@@ -5034,10 +4340,6 @@ ${content}
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-
-.attachment-chip-wrap {
-    min-width: 0;
 }
 
 .link-copy-chip {
@@ -5147,66 +4449,9 @@ ${content}
 }
 
 @media (max-width: 959px) {
-    .overview-mode-toggle {
-        width: 100%;
-    }
-
-    .overview-mode-toggle :deep(.v-btn) {
-        flex: 1 1 0;
-    }
-
-    .overview-sort-toggle {
-        width: 100%;
-    }
-
-    .overview-sort-toggle :deep(.v-btn) {
-        flex: 1 1 0;
-    }
-
-    :deep(.overview-item.v-list-item) {
-        grid-template-areas:
-            "prepend content"
-            "append append";
-        grid-template-columns: max-content minmax(0, 1fr);
-        align-items: start;
-    }
-
-    :deep(.overview-item .v-list-item__content) {
-        min-width: 0;
-    }
-
-    :deep(.overview-item .v-list-item__append) {
-        grid-area: append;
-        margin-top: 10px;
-        margin-inline-start: 0;
-        width: 100%;
-        justify-self: stretch;
-    }
-
     .classification-chip,
     .attachment-chip {
         max-width: 100%;
-    }
-
-    .overview-actions {
-        margin-top: 8px;
-        width: 100%;
-        min-width: 0;
-        display: flex;
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    .overview-actions :deep(.v-btn) {
-        width: 100%;
-    }
-
-    .overview-pagination {
-        justify-content: stretch;
-    }
-
-    .overview-pagination :deep(.v-btn) {
-        flex: 1 1 auto;
     }
 
     .attachment-manage-actions {
@@ -5223,6 +4468,5 @@ ${content}
         width: 100%;
         justify-content: flex-start;
     }
-
 }
 </style>

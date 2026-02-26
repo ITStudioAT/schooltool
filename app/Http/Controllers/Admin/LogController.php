@@ -7,32 +7,56 @@ use Illuminate\Http\Request;
 
 class LogController extends Controller
 {
-    public function getLog(Request $request)
+    public function listLogs(Request $request)
     {
-        if (! $auth_user = $this->userHasRole(['super_admin'])) {
+        if (! $auth_user = $this->userHasRole(['super_admin', 'admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $logPath = $this->resolveLogPath();
+        $logFiles = glob(storage_path('logs/*.log')) ?: [];
+
+        $logs = collect($logFiles)->map(function (string $path): array {
+            return [
+                'name'     => basename($path),
+                'size'     => $this->formatBytes(filesize($path)),
+                'modified' => date('d.m.Y H:i', filemtime($path)),
+            ];
+        })->sortByDesc('name')->values();
+
+        return response()->json($logs);
+    }
+
+    public function getLog(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin', 'admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $filename = $request->input('filename');
+
+        if ($filename) {
+            $filename = basename($filename);
+            $logPath  = storage_path('logs/'.$filename);
+        } else {
+            $logPath = $this->resolveLogPath();
+        }
 
         if (! $logPath || ! file_exists($logPath)) {
             return response()->json([
-                'error' => 'Log-Datei nicht gefunden'
+                'error' => 'Log-Datei nicht gefunden',
             ], 404);
         }
 
         $maxLines = $request->input('lines', 500);
         $maxLines = min($maxLines, 1000);
-        $mode = $request->input('mode', 'first'); // 'last' oder 'first'
+        $mode     = $request->input('mode', 'first'); // 'last' oder 'first'
 
-        $allLines = file($logPath);
+        $allLines   = file($logPath);
         $totalLines = count($allLines);
 
         if ($mode === 'first') {
-            // Erste X Zeilen
             $lines = array_slice($allLines, 0, $maxLines);
         } else {
-            // Letzte X Zeilen (Standard)
             $lines = array_slice($allLines, -$maxLines);
         }
 
@@ -45,19 +69,24 @@ class LogController extends Controller
             ->header('X-Mode', $mode);
     }
 
-
-
     public function deleteLog(Request $request)
     {
         if (! $auth_user = $this->userHasRole(['super_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $logPath = $this->resolveLogPath();
+        $filename = $request->input('filename');
+
+        if ($filename) {
+            $filename = basename($filename);
+            $logPath  = storage_path('logs/'.$filename);
+        } else {
+            $logPath = $this->resolveLogPath();
+        }
 
         if (! $logPath || ! file_exists($logPath)) {
             return response()->json([
-                'error' => 'Log-Datei nicht gefunden'
+                'error' => 'Log-Datei nicht gefunden',
             ], 404);
         }
 
@@ -68,9 +97,6 @@ class LogController extends Controller
 
         // Leere die Original-Datei
         file_put_contents($logPath, '');
-
-
-
 
         return response()->noContent();
     }
@@ -100,5 +126,17 @@ class LogController extends Controller
         });
 
         return $dailyLogs[0] ?? null;
+    }
+
+    private function formatBytes(int $bytes): string
+    {
+        if ($bytes < 1024) {
+            return $bytes.' B';
+        }
+        if ($bytes < 1048576) {
+            return round($bytes / 1024, 1).' KB';
+        }
+
+        return round($bytes / 1048576, 1).' MB';
     }
 }

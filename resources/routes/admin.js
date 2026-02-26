@@ -1,26 +1,27 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Index from '@/pages/admin/index/Index.vue'
-import Auth_Login from '@/pages/admin/auth/Login.vue'
-import Auth_UnknownPassword from '@/pages/admin/auth/UnknownPassword.vue'
-import Auth_Register from '@/pages/admin/auth/Register.vue'
-import Auth_EmailVerification from '@/pages/admin/auth/EmailVerification.vue'
-import Profile from '@/pages/admin/profile/Profile.vue'
-import Users from '@/pages/admin/users/Users.vue'
-import Users_AllUsers from '@/pages/admin/users/AllUsers/Items.vue'
-import Users_Roles from '@/pages/admin/users/Roles/Items.vue'
-import Users_UsersWithRoles from '@/pages/admin/users/UsersWithRoles/Items.vue'
 
-import RegisterSystem from '@/pages/admin/registerSystem/RegisterSystem.vue'
-import RegisterSystem_Details from '@/pages/admin/registerSystem/RegisterDetails.vue'
+const Index = () => import('@/pages/admin/index/Index.vue')
+const Auth_Login = () => import('@/pages/admin/auth/Login.vue')
+const Auth_UnknownPassword = () => import('@/pages/admin/auth/UnknownPassword.vue')
+const Auth_Register = () => import('@/pages/admin/auth/Register.vue')
+const Auth_EmailVerification = () => import('@/pages/admin/auth/EmailVerification.vue')
+const Profile = () => import('@/pages/admin/profile/Profile.vue')
+const Users = () => import('@/pages/admin/users/Users.vue')
+const Users_AllUsers = () => import('@/pages/admin/users/AllUsers/Items.vue')
+const Users_Roles = () => import('@/pages/admin/users/Roles/Items.vue')
+const Users_UsersWithRoles = () => import('@/pages/admin/users/UsersWithRoles/Items.vue')
 
-import SuperAdmin from '@/pages/admin/superAdmin/SuperAdmin.vue'
+const RegisterSystem = () => import('@/pages/admin/registerSystem/RegisterSystem.vue')
+const RegisterSystem_Details = () => import('@/pages/admin/registerSystem/RegisterDetails.vue')
 
-import Tutoring from '@/pages/admin/tutoring/Tutoring.vue'
+const SuperAdmin = () => import('@/pages/admin/superAdmin/SuperAdmin.vue')
 
-import Teaching from '@/pages/admin/teaching/Teaching.vue'
-import Materials from '@/pages/admin/materials/Materials.vue'
-import MaterialsSubjectsOverview from '@/pages/admin/materials/MaterialsSubjectsOverview.vue'
-import Groups from '@/pages/admin/groups/Groups.vue'
+const Tutoring = () => import('@/pages/admin/tutoring/Tutoring.vue')
+
+const Teaching = () => import('@/pages/admin/teaching/Teaching.vue')
+const Materials = () => import('@/pages/admin/materials/Materials.vue')
+const MaterialsSubjectsOverview = () => import('@/pages/admin/materials/MaterialsSubjectsOverview.vue')
+const Groups = () => import('@/pages/admin/groups/Groups.vue')
 
 const routes = [
     { path: '/admin', component: Index },

@@ -233,6 +233,13 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /* SANCTUM - admin, materials_admin, materials_moderator */
     Route::middleware(['auth:sanctum', 'api-allowed:admin,materials_admin,materials_moderator', 'tool-licensed:Materialientool'])->group(function () {
+        Route::get('/admin/materials/shares', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'index']);
+        Route::patch('/admin/materials/shares/{material_share_rule}', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'updateRule']);
+        Route::get('/admin/materials/shares/lookup-users', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'lookupUsers']);
+        Route::get('/admin/materials/shares/lookup-schools', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'lookupSchools']);
+        Route::get('/admin/materials/shares/lookup-groups', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'lookupGroups']);
+        Route::post('/admin/materials/shares/targets', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'storeTarget']);
+        Route::delete('/admin/materials/shares/targets/{material_share_target}', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'destroyTarget']);
         Route::get('/admin/materials/config', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'config']);
         Route::post('/admin/materials/subjects', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'storeSubject']);
         Route::put('/admin/materials/subjects/{material_subject}', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'updateSubject']);
@@ -405,5 +412,6 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     /* SANCTUM - super_admin, admin */
     Route::middleware(['auth:sanctum', 'api-allowed:super_admin,admin'])->group(function () {
         Route::get('/admin/get_log',  [\App\Http\Controllers\Admin\LogController::class, 'getLog']);
+        Route::get('/admin/list_logs', [\App\Http\Controllers\Admin\LogController::class, 'listLogs']);
     });
 });

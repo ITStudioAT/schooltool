@@ -7,12 +7,11 @@
         "dev": "vite",
         "ide-helper": "php artisan ide-helper:generate && php artisan ide-helper:meta",
         "preview": "vite preview",
-        "test:php": "php artisan test --without-tty --no-ansi",
-        "test:ui": "vitest run --reporter=default",
+        "test:all": "composer test && npm run test:ui && npm run test:e2e",
+        "test:ui": "vitest run",
         "test:ui:watch": "vitest",
         "pretest:e2e": "npm run build && php -r \"if (!file_exists('.env.e2e')) { fwrite(STDERR, '.env.e2e is missing. Copy .env.e2e.example to .env.e2e first.' . PHP_EOL); exit(1); } if (!file_exists('database/e2e.sqlite')) { touch('database/e2e.sqlite'); }\" && php artisan migrate:fresh --env=e2e --seed --seeder=E2eSeeder --force",
-        "test:e2e": "playwright test --reporter=line",
-        "test:all": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$log='storage/logs/tests.log'; New-Item -ItemType Directory -Force -Path (Split-Path $log) | Out-Null; function Write-Log([string]$m){ [System.IO.File]::AppendAllText($log, $m + [Environment]::NewLine, [System.Text.UTF8Encoding]::new($false)) }; function Strip-Ansi([string]$s){ if ($null -eq $s) { return '' }; return [regex]::Replace($s, '\\x1B\\[[0-9;?]*[ -/]*[@-~]', '') }; function Normalize([string]$s){ if ($null -eq $s) { return '' }; $s = Strip-Ansi $s; $s = $s -replace 'Ô£ô','OK' -replace '✓','OK'; $s = $s -replace 'Ô¿»','-' -replace '❯','-'; $s = $s -replace 'ÔåÆ','->' -replace '→','->'; $s = $s -replace 'Ôûò','|' -replace '│','|'; $s = $s -replace 'ÔÇ║','|' -replace '║','|'; $s = $s -replace 'Ôöé','gzip:'; $s = $s -replace '✗','FAIL' -replace '×','FAIL' -replace '❌','FAIL'; $s = $s -replace 'ÔFAIL£','FAIL'; $s = $s -replace '(ÔöÇ){3,}','------------------------------------------------------------'; return $s.TrimEnd() }; function Run-And-Log([string]$cmd){ cmd /c $cmd 2>&1 | ForEach-Object { Write-Log (Normalize ([string]$_)) }; return $LASTEXITCODE }; Write-Log(''); Write-Log('=== test:all started ' + (Get-Date -Format s) + ' ==='); $env:NO_COLOR='1'; $env:FORCE_COLOR='0'; $failed=$false; Run-And-Log 'npm run test:php'; if ($LASTEXITCODE -ne 0) { $failed=$true }; Run-And-Log 'npm run test:ui'; if ($LASTEXITCODE -ne 0) { $failed=$true }; Run-And-Log 'npm run test:e2e'; if ($LASTEXITCODE -ne 0) { $failed=$true }; Write-Log('=== test:all finished ' + (Get-Date -Format s) + ' ==='); if ($failed) { exit 1 } else { exit 0 }\""
+        "test:e2e": "playwright test"
     },
     "devDependencies": {
         "@laravel/echo-vue": "^2.2.6",

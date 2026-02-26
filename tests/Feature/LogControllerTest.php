@@ -56,11 +56,11 @@ afterEach(function () {
     }
 });
 
-test('get_log denies non super admin', function () {
+test('get_log allows admin role', function () {
     $this->actingAs($this->admin, 'sanctum');
 
     $this->getJson('/api/admin/get_log')
-        ->assertStatus(403);
+        ->assertStatus(200);
 });
 
 test('get_log returns 404 when log is missing', function () {

@@ -2,8 +2,10 @@
 
 namespace App\Http\Requests\Tutoring;
 
+use App\Models\TutoringSubject;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 
 class OfferUpdateRequest extends FormRequest
 {
@@ -23,6 +25,14 @@ class OfferUpdateRequest extends FormRequest
     public function rules(): array
     {
         $user = Auth::user();
+        $subjectRequiresAcceptance = false;
+
+        if ($this->filled('subject_id')) {
+            $subjectRequiresAcceptance = (bool) TutoringSubject::query()
+                ->where('id', $this->input('subject_id'))
+                ->where('school_id', $user->school_id)
+                ->value('must_be_accepted');
+        }
 
         return [
             'id' => 'required|integer|exists:tutoring_offers,id',
@@ -39,7 +49,12 @@ class OfferUpdateRequest extends FormRequest
             'is_group' => 'boolean',
             'max_group_members' => 'required|integer|min:2|max:5',
             'price_per_hour' => 'required|integer|min:0|max:100',
-            'email_mentor' => 'nullable|string|max:255',
+            'email_mentor' => [
+                'nullable',
+                'email',
+                'max:255',
+                Rule::requiredIf($subjectRequiresAcceptance),
+            ],
             'visible_for_other_schools' => 'boolean'
         ];
     }

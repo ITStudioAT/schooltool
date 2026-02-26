@@ -205,9 +205,9 @@ describe('dashboardMenu', function () {
 
         expect($result)
             ->toBeArray()
-            ->toHaveCount(8)
+            ->toHaveCount(9)
             ->and(collect($result)->pluck('title')->toArray())
-            ->toContain('Home', 'Super-Admin', 'Anmeldetool', 'Nachhilfe', 'Unterricht', 'Materialien', 'Role Multi', 'Abmelden');
+            ->toContain('Home', 'Super-Admin', 'Anmeldetool', 'Nachhilfe', 'Unterricht', 'Materialien', 'Gruppen', 'Role Multi', 'Abmelden');
     });
 
     it('keeps module active when expired school licence is not required by model', function () {

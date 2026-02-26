@@ -99,8 +99,8 @@
             <its-menu-button
                 subtitle="Log"
                 icon="mdi-file-document"
-                :color="main_action == 'log' ? 'primary' : 'secondary'"
-                @click="main_action = 'log'"
+                color="secondary"
+                @click="log_dialog = true"
                 v-if="['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
             <its-menu-button subtitle="Horizon" icon="mdi-horizontal-rotate-clockwise" color="secondary" @click="moveToHorizon" />
             </v-card>
@@ -136,10 +136,11 @@
                     <TeacherOverview v-if="main_action == 'teachers_overview' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
                     <Teachers v-if="main_action == 'teachers' && (config.roles.includes('super_admin') || config.roles.includes('admin'))" />
                     <TeachersList v-if="main_action == 'teachers_list' && (config.roles.includes('super_admin') || config.roles.includes('admin'))" />
-                    <Log v-if="main_action == 'log' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
                 </v-row>
             </div>
         </v-container>
+
+        <Log v-model="log_dialog" v-if="['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
 
         <v-dialog v-model="impersonation_dialog" max-width="720">
             <v-card>
@@ -285,6 +286,7 @@ export default {
         return {
             adminStore: null,
             licences_action: 'overview',
+            log_dialog: false,
             impersonation_dialog: false,
             selected_impersonation_school_id: null,
             impersonation_user_search_string: '',

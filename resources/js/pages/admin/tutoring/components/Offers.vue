@@ -57,7 +57,8 @@
                                         <div class="text-body-2 d-flex flex-row align-center ga-2 w-100" v-if="item.accepted_at">
                                             <v-icon size="small" color="success" icon="mdi-check" />
                                             <div class="opacity-60" v-if="item.email_mentor">{{ item.email_mentor }}</div>
-                                            <div class="opacity-60" v-if="!item.email_mentor">automatisch akzeptiert</div>
+                                            <div class="opacity-60" v-if="!item.email_mentor && !item.must_be_accepted">automatisch akzeptiert</div>
+                                            <div class="opacity-60" v-if="!item.email_mentor && item.must_be_accepted">keine Lehrkraft hinterlegt</div>
                                             <div class="opacity-60">{{ ' (' + item.accepted_at + ')' }}</div>
                                         </div>
                                     </div>

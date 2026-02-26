@@ -11,5 +11,5 @@ test('homepage footer can navigate to impressum and back to start page', async (
 
     await page.getByRole('button', { name: 'Startseite' }).click()
     await expect(page).toHaveURL(/\/$/)
-    await expect(page.getByRole('heading', { name: 'SchoolTool' })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: /school\s*tool/i })).toBeVisible()
 })

@@ -749,6 +749,9 @@ export default {
         },
 
         async doCreateOffer(data) {
+            // Prevent accidental form submit (e.g. Enter key) before the final confirmation step.
+            if (this.step !== 7) return
+
             if (data.id) {
                 if (!(await this.offerStore.update(data))) return
             } else {

@@ -46,13 +46,13 @@ describe('getLog', function () {
         $response->assertStatus(401);
     });
 
-    it('returns 403 when user does not have super_admin role', function () {
+    it('returns 200 when user has admin role', function () {
         $user = User::factory()->create(['school_id' => $this->school->id]);
         $user->assignRole('admin');
 
         $response = $this->actingAs($user)->getJson('/api/admin/get_log');
 
-        $response->assertStatus(403);
+        $response->assertStatus(200);
     });
 
     it('returns 404 when log file does not exist', function () {
@@ -451,9 +451,9 @@ describe('integration tests', function () {
         $response1 = $this->actingAs($superAdmin)->getJson('/api/admin/get_log');
         $response1->assertStatus(200);
 
-        // Regular admin cannot access
+        // Admin can also access
         $response2 = $this->actingAs($regularUser)->getJson('/api/admin/get_log');
-        $response2->assertStatus(403);
+        $response2->assertStatus(200);
 
         // Super admin can delete
         $response3 = $this->actingAs($superAdmin)->postJson('/api/admin/delete_log');

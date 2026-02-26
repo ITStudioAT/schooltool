@@ -15,6 +15,11 @@ describe('CourseStudents sorting', () => {
             isStudentCanceled(student: { canceled_at?: string | null }) {
                 return !!student?.canceled_at
             },
+            compareStudentsBySelectedSort(a: { last_name?: string | null; first_name?: string | null }, b: { last_name?: string | null; first_name?: string | null }) {
+                const byLastName = (a.last_name || '').localeCompare(b.last_name || '', 'de', { sensitivity: 'base' })
+                if (byLastName !== 0) return byLastName
+                return (a.first_name || '').localeCompare(b.first_name || '', 'de', { sensitivity: 'base' })
+            },
         }
 
         const sorted = (CourseStudents as any).computed.sortedSelectedStudents.call(ctx)

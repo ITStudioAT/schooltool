@@ -553,7 +553,7 @@ describe('handle - edge cases', function () {
 
         $teacher = Teacher::where('email', 'mueller@test.de')->first();
         expect($teacher)->not->toBeNull()
-            ->and($teacher->first_name)->toBe('');
+            ->and($teacher->first_name)->toBeNull();
     });
 });
 
