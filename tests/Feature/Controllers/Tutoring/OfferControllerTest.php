@@ -540,6 +540,7 @@ describe('store', function () {
             'is_group' => false,
             'max_group_members' => 2,
             'visible_for_other_schools' => false,
+            'email_mentor' => 'mentor@example.com',
         ];
 
         $response = $this->actingAs($this->user)->postJson('/api/homepage/tutoring/offers', $data);
@@ -662,6 +663,7 @@ describe('update', function () {
             'price_per_hour' => 20,
             'is_group' => true,
             'max_group_members' => 3,
+            'email_mentor' => 'mentor@example.com',
         ];
 
         $response = $this->actingAs($this->user)->putJson("/api/homepage/tutoring/offers/{$offer->id}", $data);
