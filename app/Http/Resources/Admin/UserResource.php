@@ -43,11 +43,20 @@ class UserResource extends JsonResource
                         return [
                             'id' => $offer->id,
                             'title' => $offer->title,
+                            'description' => $offer->description,
                             'subject_short_name' => $offer->subject?->short_name,
                             'subject_long_name' => $offer->subject?->long_name,
+                            'classes' => (array) ($offer->classes ?? []),
+                            'price_per_hour' => $offer->price_per_hour,
+                            'is_group' => (bool) $offer->is_group,
+                            'max_group_members' => $offer->max_group_members,
+                            'must_be_accepted' => (bool) $offer->must_be_accepted,
+                            'email_mentor' => $offer->email_mentor,
                             'is_active' => (bool) $offer->is_active,
+                            'active_until' => $offer->active_until,
                             'is_accepted' => (bool) $offer->accepted_at,
-                            'accepted_at' => $offer->accepted_at ? Carbon::parse($offer->accepted_at)->format('d.m.Y H:i') : null,
+                            'accepted_at' => $offer->accepted_at,
+                            'click_count' => (int) ($offer->click_count ?? 0),
                         ];
                     })
                     ->values();

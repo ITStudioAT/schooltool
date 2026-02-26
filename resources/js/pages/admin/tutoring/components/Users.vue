@@ -114,7 +114,12 @@
                                 </div>
 
                                 <div class="tutoring-users-offers-list" v-else>
-                                    <div v-for="offer in item.tutoring_offers" :key="offer.id" class="tutoring-users-offer-item">
+                                    <button
+                                        v-for="offer in item.tutoring_offers"
+                                        :key="offer.id"
+                                        type="button"
+                                        class="tutoring-users-offer-item"
+                                        @click.stop="openOfferDialog(item, offer)">
                                         <div class="tutoring-users-offer-item__head">
                                             <div class="tutoring-users-offer-item__title">
                                                 {{ offer.subject_short_name ? offer.subject_short_name + ': ' : '' }}{{ offer.title }}
@@ -131,7 +136,7 @@
                                             <span v-if="offer.accepted_at">Genehmigt: {{ offer.accepted_at }}</span>
                                             <span v-else>Nicht genehmigt</span>
                                         </div>
-                                    </div>
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -265,6 +270,106 @@
             </v-form>
         </section>
     </v-col>
+
+    <v-dialog v-model="offer_dialog_open" persistent max-width="820">
+        <v-card class="tutoring-users-offer-dialog">
+            <div class="tutoring-users-offer-dialog__head">
+                <div class="tov-card-heading">
+                    <div class="admin-card-eyebrow">Angebot</div>
+                    <h3 class="admin-card-title">
+                        {{ offer_dialog_offer?.subject_short_name ? offer_dialog_offer.subject_short_name + ': ' : '' }}{{ offer_dialog_offer?.title }}
+                    </h3>
+                </div>
+                <v-btn icon="mdi-close" variant="text" density="comfortable" @click="closeOfferDialog" />
+            </div>
+
+            <div class="tutoring-users-offer-dialog__body" v-if="offer_dialog_offer">
+                <div class="tutoring-users-offer-dialog__meta">
+                    <span class="tutoring-users-offer-pill">
+                        {{ offer_dialog_user?.last_name }} {{ offer_dialog_user?.first_name }}
+                        <template v-if="offer_dialog_user?.schoolclass"> ({{ offer_dialog_user.schoolclass }})</template>
+                    </span>
+                    <span class="tutoring-users-offer-pill" v-if="offer_dialog_user?.email">{{ offer_dialog_user.email }}</span>
+                    <span class="tutoring-users-offer-pill" v-if="offer_dialog_offer.subject_long_name">{{ offer_dialog_offer.subject_long_name }}</span>
+                </div>
+
+                <div class="tutoring-users-offer-dialog__grid">
+                    <section class="tutoring-users-offer-dialog__panel">
+                        <div class="tutoring-users-offer-dialog__label">Beschreibung</div>
+                        <div class="tutoring-users-offer-dialog__text" style="white-space: pre-line">
+                            {{ offer_dialog_offer.description || 'Keine Beschreibung' }}
+                        </div>
+                    </section>
+
+                    <section class="tutoring-users-offer-dialog__panel">
+                        <div class="tutoring-users-offer-dialog__label">Klassen</div>
+                        <div class="tutoring-users-offer-dialog__class-list" v-if="offerClassLabels(offer_dialog_offer).length">
+                            <span class="tutoring-users-offer-pill" v-for="label in offerClassLabels(offer_dialog_offer)" :key="label">{{ label }}</span>
+                        </div>
+                        <div class="tutoring-users-offer-dialog__text" v-else>Keine Angaben</div>
+                    </section>
+
+                    <section class="tutoring-users-offer-dialog__panel">
+                        <div class="tutoring-users-offer-dialog__label">Unterricht</div>
+                        <div class="tutoring-users-offer-dialog__stack">
+                            <div>
+                                {{ offer_dialog_offer.is_group ? `Gruppenangebot (max. ${offer_dialog_offer.max_group_members || '-'} Teilnehmer)` : 'Einzelunterricht' }}
+                            </div>
+                            <div>{{ formatOfferPrice(offer_dialog_offer.price_per_hour) }} pro Stunde</div>
+                        </div>
+                    </section>
+
+                    <section class="tutoring-users-offer-dialog__panel">
+                        <div class="tutoring-users-offer-dialog__label">Freigabe / Mentor</div>
+                        <div class="tutoring-users-offer-dialog__stack">
+                            <div v-if="!offer_dialog_offer.must_be_accepted">Automatisch freigegeben</div>
+                            <div v-else>
+                                {{ offer_dialog_offer.is_accepted ? `Genehmigt (${offer_dialog_offer.accepted_at || ''})` : 'Nicht genehmigt' }}
+                            </div>
+                            <div v-if="offer_dialog_offer.email_mentor">Mentor: {{ offer_dialog_offer.email_mentor }}</div>
+                        </div>
+                    </section>
+
+                    <section class="tutoring-users-offer-dialog__panel">
+                        <div class="tutoring-users-offer-dialog__label">Status</div>
+                        <div class="tutoring-users-offer-dialog__stack">
+                            <div>{{ offer_dialog_offer.is_active ? 'Online' : 'Offline' }}</div>
+                            <div v-if="offer_dialog_offer.active_until">Aktiv bis: {{ offer_dialog_offer.active_until }}</div>
+                            <div>Klicks: {{ offer_dialog_offer.click_count ?? 0 }}</div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+
+            <div class="tutoring-users-offer-dialog__actions">
+                <div class="tutoring-users-offer-dialog__action-buttons" v-if="offer_dialog_offer">
+                    <v-btn
+                        :color="offer_dialog_offer.is_accepted ? 'warning' : 'success'"
+                        variant="tonal"
+                        rounded="lg"
+                        :prepend-icon="offer_dialog_offer.is_accepted ? 'mdi-help' : 'mdi-check'"
+                        :loading="offer_dialog_saving"
+                        :disabled="offer_dialog_saving"
+                        @click="setDialogOfferAccepted(!offer_dialog_offer.is_accepted)">
+                        {{ offer_dialog_offer.is_accepted ? 'Nicht genehmigt' : 'Genehmigt' }}
+                    </v-btn>
+
+                    <v-btn
+                        :color="offer_dialog_offer.is_active ? 'warning' : 'success'"
+                        variant="tonal"
+                        rounded="lg"
+                        :prepend-icon="offer_dialog_offer.is_active ? 'mdi-cloud-off' : 'mdi-cloud'"
+                        :loading="offer_dialog_saving"
+                        :disabled="offer_dialog_saving || (!offer_dialog_offer.is_active && !offer_dialog_offer.is_accepted)"
+                        @click="setDialogOfferOnline(!offer_dialog_offer.is_active)">
+                        {{ offer_dialog_offer.is_active ? 'Offline' : 'Online' }}
+                    </v-btn>
+                </div>
+
+                <v-btn color="primary" rounded="lg" prepend-icon="mdi-close" @click="closeOfferDialog">Schließen</v-btn>
+            </div>
+        </v-card>
+    </v-dialog>
 </template>
 
 <script>
@@ -276,6 +381,7 @@ import Pagination from '@/pages/components/Pagination.vue'
 
 // SPECIFIC
 
+import { useOfferStore } from '@/stores/admin/tutoring/OfferStore'
 import { useTutoringUserStore } from '@/stores/admin/tutoring/UserStore'
 import { useUserStore } from '@/stores/admin/UserStore20'
 
@@ -288,6 +394,7 @@ export default {
 
     async beforeMount() {
         this.adminStore = useAdminStore()
+        this.offerStore = useOfferStore()
         this.tutoringUserStore = useTutoringUserStore()
         this.userStore = useUserStore()
         await this.tutoringUserStore.index()
@@ -298,6 +405,7 @@ export default {
     data() {
         return {
             adminStore: null,
+            offerStore: null,
             tutoringUserStore: null,
             userStore: null,
 
@@ -305,6 +413,10 @@ export default {
             upload_file: null,
             is_uploading: false,
             expanded_offer_users: [],
+            offer_dialog_open: false,
+            offer_dialog_offer: null,
+            offer_dialog_user: null,
+            offer_dialog_saving: false,
         }
     },
 
@@ -394,6 +506,83 @@ export default {
             this.expanded_offer_users = this.expanded_offer_users.includes(userId)
                 ? this.expanded_offer_users.filter((id) => id !== userId)
                 : [...this.expanded_offer_users, userId]
+        },
+        openOfferDialog(user, offer) {
+            this.offer_dialog_user = {
+                id: user.id,
+                first_name: user.first_name,
+                last_name: user.last_name,
+                schoolclass: user.schoolclass,
+                email: user.email,
+            }
+            this.offer_dialog_offer = JSON.parse(JSON.stringify(offer))
+            this.offer_dialog_open = true
+        },
+        closeOfferDialog() {
+            this.offer_dialog_open = false
+            this.offer_dialog_offer = null
+            this.offer_dialog_user = null
+        },
+        async refreshUsersAndSyncOfferDialog() {
+            const page = this.meta?.current_page || 1
+            const dialogUserId = this.offer_dialog_user?.id
+            const dialogOfferId = this.offer_dialog_offer?.id
+
+            await this.tutoringUserStore.index(page)
+
+            if (!dialogUserId || !dialogOfferId) return
+
+            const user = this.users.find((u) => u.id === dialogUserId)
+            const offer = user?.tutoring_offers?.find((o) => o.id === dialogOfferId)
+
+            if (!user || !offer) {
+                this.closeOfferDialog()
+                return
+            }
+
+            this.offer_dialog_user = {
+                id: user.id,
+                first_name: user.first_name,
+                last_name: user.last_name,
+                schoolclass: user.schoolclass,
+                email: user.email,
+            }
+            this.offer_dialog_offer = JSON.parse(JSON.stringify(offer))
+        },
+        async setDialogOfferAccepted(accepted) {
+            if (!this.offer_dialog_offer?.id) return
+            this.offer_dialog_saving = true
+            try {
+                if (!(await this.offerStore.toggleAccepted(this.offer_dialog_offer.id, accepted))) return
+                await this.refreshUsersAndSyncOfferDialog()
+            } finally {
+                this.offer_dialog_saving = false
+            }
+        },
+        async setDialogOfferOnline(isActive) {
+            if (!this.offer_dialog_offer?.id) return
+            if (isActive && !this.offer_dialog_offer?.is_accepted) return
+            this.offer_dialog_saving = true
+            try {
+                if (!(await this.offerStore.toggleActive(this.offer_dialog_offer.id, isActive))) return
+                await this.refreshUsersAndSyncOfferDialog()
+            } finally {
+                this.offer_dialog_saving = false
+            }
+        },
+        offerClassLabels(offer) {
+            const classes = offer?.classes || {}
+            return Object.entries(classes)
+                .filter(([, value]) => !!value)
+                .map(([key]) => Number(key))
+                .filter((num) => Number.isFinite(num) && num > 0)
+                .sort((a, b) => a - b)
+                .map((num) => `${num}. Klasse`)
+        },
+        formatOfferPrice(value) {
+            const num = Number(value)
+            if (!Number.isFinite(num)) return `${value ?? '-'} Euro`
+            return `${num.toFixed(2).replace('.', ',')} Euro`
         },
         onUserClick(id) {
             this.selected_users = this.selected_users.includes(id)

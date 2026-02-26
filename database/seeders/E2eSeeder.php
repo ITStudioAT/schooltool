@@ -324,7 +324,7 @@ class E2eSeeder extends Seeder
             'max_group_members' => 2,
             'must_be_accepted' => false,
             'email_mentor' => null,
-            'accepted_at' => now()->toDateString(),
+            'accepted_at' => now(),
             'click_count' => 0,
             'visible_for_other_schools' => false,
         ]);
