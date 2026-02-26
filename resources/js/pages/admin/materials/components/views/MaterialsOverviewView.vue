@@ -76,8 +76,9 @@
             <MaterialsSubjectsContentsTree
                 v-else
                 :items="subjectsContentsOverviewItems"
-                :action-busy="isLoading || isDeletingId !== null || isSavingEdit"
+                :action-busy="isLoading || isDeletingId !== null || isSavingEdit || isSavingCreate"
                 :enable-share-buttons="enableShareButtons"
+                :enable-create-buttons="!readOnlyMaterialActions"
                 :show-share-indicators="enableShareButtons"
                 :share-indicator-color-fn="shareIndicatorColor"
                 :status-color-fn="statusColor"
@@ -85,7 +86,8 @@
                 :subject-group-style-fn="subjectGroupStyle"
                 :topic-group-style-fn="topicGroupStyle"
                 @open-material="openDetailDialog"
-                @open-share="openShareDialog" />
+                @open-share="openShareDialog"
+                @open-create="openCreateDialogFromTree" />
         </template>
 
         <template v-else-if="hasCards">
@@ -382,6 +384,41 @@
         :reset-delete-flow-fn="resetDetailDeleteFlow"
         :confirm-delete-fn="confirmDeleteFromDetail"
         :open-edit-fn="openEditFromDetail" />
+
+    <v-dialog v-model="createDialogOpen" max-width="640" persistent>
+        <MaterialsCreateInlineForm
+            :title="createForm.title"
+            :description="createForm.description"
+            :material-type="createForm.type"
+            :pending-attachments="createForm.pendingAttachments"
+            :max-upload-size-kb="maxUploadSizeKb"
+            :type-options="typeOptions"
+            :can-manage-types="canManageTypeValues"
+            :status="createForm.status"
+            :status-options="statusOptions"
+            :classifications="createForm.classifications"
+            :classification-tree="classificationTree"
+            :classification-editor-visible="createClassificationEditorVisible"
+            :classification-toggleable="true"
+            :is-saving="isSavingCreate"
+            form-title="Neues Material"
+            :form-subline="createDialogSubline"
+            save-label="Speichern"
+            cancel-label="Abbrechen"
+            @update:title="createForm.title = $event"
+            @update:description="createForm.description = $event"
+            @update:materialType="createForm.type = $event"
+            @update:pendingAttachments="createForm.pendingAttachments = $event"
+            @remove-temp-upload="removeCreateTempUpload"
+            @upload-error="notifyUploadError"
+            @add-files="addCreatePendingAttachments"
+            @update:status="createForm.status = $event"
+            @update:classifications="createForm.classifications = $event"
+            @update:classificationEditorVisible="createClassificationEditorVisible = $event"
+            @manage-types="openTypeManager"
+            @save="saveCreate"
+            @cancel="closeCreateDialog" />
+    </v-dialog>
 
     <v-dialog v-model="editDialogOpen" max-width="640" persistent>
         <MaterialsCreateInlineForm
@@ -733,8 +770,10 @@ export default {
         return {
             materialCardStore: null,
             isLoading: false,
+            isSavingCreate: false,
             isSavingEdit: false,
             isDeletingId: null,
+            createDialogOpen: false,
             editDialogOpen: false,
             attachmentDialogOpen: false,
             attachmentDialogCardId: null,
@@ -756,7 +795,9 @@ export default {
             typeFilter: '',
             statusFilter: '',
             typeManagerDialogOpen: false,
+            createClassificationEditorVisible: false,
             editClassificationEditorVisible: false,
+            createForm: createDefaultEditForm(),
             editForm: createDefaultEditForm(),
             downloadingAttachmentIds: [],
             previewingAttachmentIds: [],
@@ -926,8 +967,19 @@ export default {
             }
             return this.shownListedAttachmentSizeLabel
         },
+        canSaveCreate() {
+            return String(this.createForm.title || '').trim().length > 0
+        },
         canSaveEdit() {
             return String(this.editForm.title || '').trim().length > 0
+        },
+        createDialogSubline() {
+            const rows = this.normalizeClassifications(this.createForm.classifications)
+            if (!rows.length) return 'Gib einen Titel ein, dann kann gespeichert werden.'
+            const row = rows[0]
+            const parts = [row.subject, row.topic, row.unit].filter((value) => String(value || '').trim() !== '')
+            if (!parts.length) return 'Gib einen Titel ein, dann kann gespeichert werden.'
+            return `Vorausgewählte Zuordnung: ${parts.join(' / ')}`
         },
         defaultStatusValue() {
             return String(this.statusOptions?.[0]?.value || '').trim() || 'inbox'
@@ -1311,6 +1363,26 @@ export default {
             this.shareAssignmentsError = ''
             this.shareDialogOpen = true
             this.loadShareAssignments()
+        },
+        openCreateDialogFromTree(payload = {}) {
+            if (this.readOnlyMaterialActions) return
+            if (this.isLoading || this.isSavingCreate || this.isSavingEdit || this.isDeletingId !== null) return
+
+            const subject = String(payload?.subject || '').trim()
+            const topic = String(payload?.topic || '').trim()
+            const unit = String(payload?.unit || '').trim()
+
+            this.createForm = createDefaultEditForm()
+            this.createForm.status = this.defaultStatusValue
+            this.createForm.classifications = [
+                {
+                    subject,
+                    topic,
+                    unit,
+                },
+            ]
+            this.createClassificationEditorVisible = true
+            this.createDialogOpen = true
         },
         shareIndicatorKey(scopeType, scopeId) {
             const type = String(scopeType || '').trim()
@@ -2526,6 +2598,12 @@ export default {
 
             this.editForm.pendingAttachments = this.mergeUniquePendingAttachments(this.editForm.pendingAttachments, incoming, 'picker')
         },
+        addCreatePendingAttachments(files) {
+            const incoming = Array.isArray(files) ? files : []
+            if (!incoming.length) return
+
+            this.createForm.pendingAttachments = this.mergeUniquePendingAttachments(this.createForm.pendingAttachments, incoming, 'picker')
+        },
         notifyUploadError(message) {
             const text = String(message || '').trim()
             const notification = useNotificationStore()
@@ -2536,6 +2614,11 @@ export default {
             })
         },
         async removeEditTempUpload(uploadId) {
+            const value = String(uploadId || '').trim()
+            if (!value) return
+            await this.materialCardStore.deleteTempUpload(value, false)
+        },
+        async removeCreateTempUpload(uploadId) {
             const value = String(uploadId || '').trim()
             if (!value) return
             await this.materialCardStore.deleteTempUpload(value, false)
@@ -2686,6 +2769,15 @@ export default {
             this.editClassificationEditorVisible = false
             this.editDialogOpen = true
         },
+        async closeCreateDialog() {
+            if (this.isSavingCreate) return
+
+            await this.cleanupPendingTempUploads(this.createForm.pendingAttachments)
+            this.createDialogOpen = false
+            this.createClassificationEditorVisible = false
+            this.createForm = createDefaultEditForm()
+            this.createForm.status = this.defaultStatusValue
+        },
         startEditDeleteFlow() {
             const cardId = Number(this.editForm?.id)
             if (!Number.isFinite(cardId) || cardId <= 0) return
@@ -2790,6 +2882,56 @@ export default {
 
             if (updated) {
                 await this.closeEditDialog(true)
+                await this.loadCards(null, { forceFilterCountRefresh: true })
+            }
+        },
+        async saveCreate() {
+            if (!this.canSaveCreate || this.isSavingCreate || this.isSavingEdit || this.isDeletingId !== null) return
+
+            this.isSavingCreate = true
+            const title = String(this.createForm.title || '').trim()
+            const classifications = this.normalizeClassifications(this.createForm.classifications)
+
+            const saved = await this.materialCardStore.quickStore({
+                title,
+                source_text: this.toNullable(this.createForm.description),
+                type: this.toNullable(this.createForm.type),
+                status: this.toNullable(this.createForm.status) || this.defaultStatusValue,
+                classifications,
+            })
+
+            if (saved?.id) {
+                const pendingAttachments = this.toPendingAttachments(this.createForm.pendingAttachments)
+                for (const attachment of pendingAttachments) {
+                    if (attachment.attachmentType === 'link' && this.normalizeUrl(attachment.url)) {
+                        const normalizedUrl = this.normalizeUrl(attachment.url)
+                        const normalizedName = this.toNullable(attachment.title) || this.defaultLinkTitle(attachment.url)
+                        await this.materialCardStore.addLinkAttachment(saved.id, {
+                            url: normalizedUrl,
+                            name: normalizedName,
+                        })
+
+                        if (attachment.storeImageFile === true) {
+                            await this.materialCardStore.addImageUrlAttachment(saved.id, normalizedUrl, normalizedName)
+                        }
+                        continue
+                    }
+
+                    if (attachment.tempUpload) {
+                        await this.materialCardStore.addTempFileAttachment(saved.id, attachment.tempUpload, this.toNullable(attachment.title) || attachment.fileName || '')
+                        continue
+                    }
+
+                    if (attachment.file instanceof File) {
+                        await this.materialCardStore.addFileAttachment(saved.id, attachment.file, this.toNullable(attachment.title) || attachment.file.name || '')
+                    }
+                }
+            }
+
+            this.isSavingCreate = false
+
+            if (saved) {
+                await this.closeCreateDialog()
                 await this.loadCards(null, { forceFilterCountRefresh: true })
             }
         },

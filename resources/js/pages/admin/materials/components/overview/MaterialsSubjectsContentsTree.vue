@@ -6,10 +6,10 @@
                 :key="`overview-subjects-subject-${subject.id || subject.name}`"
                 class="overview-subjects-item">
                 <div class="overview-subjects-group" :style="subjectGroupStyleFn(subject)">
-                    <div class="overview-subjects-node-row">
-                        <div class="overview-subjects-node overview-subjects-node--subject">
-                            <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
-                            <span>{{ subject.name }}</span>
+                        <div class="overview-subjects-node-row">
+                            <div class="overview-subjects-node overview-subjects-node--subject">
+                                <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
+                                <span>{{ subject.name }}</span>
                             <v-icon
                                 v-if="showShareIndicator('subject', subject.id)"
                                 size="16"
@@ -17,6 +17,20 @@
                                 :color="shareIndicatorColorFn('subject', subject.id)"
                                 class="ml-1" />
                         </div>
+                        <v-btn
+                            v-if="enableCreateButtons"
+                            size="x-small"
+                            color="primary"
+                            variant="tonal"
+                            icon="mdi-plus"
+                            :title="'Neues Material in Fach anlegen'"
+                            :disabled="actionBusy"
+                            @click="$emit('open-create', {
+                                level: 'subject',
+                                subject: String(subject.name || '').trim(),
+                                topic: '',
+                                unit: '',
+                            })" />
                         <v-btn
                             v-if="enableShareButtons"
                             size="x-small"
@@ -109,6 +123,20 @@
                                         class="ml-1" />
                                 </div>
                                 <v-btn
+                                    v-if="enableCreateButtons"
+                                    size="x-small"
+                                    color="primary"
+                                    variant="tonal"
+                                    icon="mdi-plus"
+                                    :title="'Neues Material in Thema anlegen'"
+                                    :disabled="actionBusy"
+                                    @click="$emit('open-create', {
+                                        level: 'topic',
+                                        subject: String(subject.name || '').trim(),
+                                        topic: String(topic.name || '').trim(),
+                                        unit: '',
+                                    })" />
+                                <v-btn
                                     v-if="enableShareButtons"
                                     size="x-small"
                                     color="primary"
@@ -198,6 +226,20 @@
                                                 :color="shareIndicatorColorFn('unit', unit.id)"
                                                 class="ml-1" />
                                         </div>
+                                        <v-btn
+                                            v-if="enableCreateButtons"
+                                            size="x-small"
+                                            color="primary"
+                                            variant="tonal"
+                                            icon="mdi-plus"
+                                            :title="'Neues Material in Unterpunkt anlegen'"
+                                            :disabled="actionBusy"
+                                            @click="$emit('open-create', {
+                                                level: 'unit',
+                                                subject: String(subject.name || '').trim(),
+                                                topic: String(topic.name || '').trim(),
+                                                unit: String(unit.name || '').trim(),
+                                            })" />
                                         <v-btn
                                             v-if="enableShareButtons"
                                             size="x-small"
@@ -297,6 +339,10 @@ export default {
             type: Boolean,
             default: false,
         },
+        enableCreateButtons: {
+            type: Boolean,
+            default: true,
+        },
         showShareIndicators: {
             type: Boolean,
             default: false,
@@ -322,7 +368,7 @@ export default {
             required: true,
         },
     },
-    emits: ['open-material', 'open-share'],
+    emits: ['open-material', 'open-share', 'open-create'],
     methods: {
         showShareIndicator(level, id) {
             if (!this.showShareIndicators) return false
