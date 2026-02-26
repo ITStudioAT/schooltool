@@ -97,10 +97,16 @@ export const useOfferStore = defineStore('AdminTutoringOfferStore', {
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
-                this.answer = await axios.delete(`/api/admin/tutoring/offers/${data.id}`, {})
+                const ids = Array.isArray(data) ? data.map((id) => Number(id)).filter((id) => id > 0) : null
+
+                if (ids && ids.length > 0) {
+                    this.answer = await axios.post(`/api/admin/tutoring/delete_offers`, { ids })
+                } else {
+                    this.answer = await axios.delete(`/api/admin/tutoring/offers/${data.id}`, {})
+                }
 
                 notification.notify({
-                    message: 'Das Angebot wurden gelöscht.',
+                    message: ids ? `${ids.length} Angebot(e) wurden gelöscht.` : 'Das Angebot wurden gelöscht.',
                     type: 'success',
                     timeout: 3000,
                 })
@@ -119,12 +125,15 @@ export const useOfferStore = defineStore('AdminTutoringOfferStore', {
             }
         },
 
-        async toggleAccepted(id) {
+        async toggleAccepted(idOrIds, accepted = null) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
-                const response = await axios.post(`/api/admin/tutoring/toggle_accepted_offer`, { id })
+                const ids = Array.isArray(idOrIds) ? idOrIds.map((id) => Number(id)).filter((id) => id > 0) : null
+                const payload = ids ? { ids } : { id: Number(idOrIds) }
+                if (typeof accepted === 'boolean') payload.accepted = accepted
+                const response = await axios.post(`/api/admin/tutoring/toggle_accepted_offer`, payload)
                 return true
             } catch (error) {
                 notification.notify({
@@ -162,12 +171,15 @@ export const useOfferStore = defineStore('AdminTutoringOfferStore', {
             }
         },
 
-        async toggleActive(id) {
+        async toggleActive(idOrIds, isActive = null) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
-                const response = await axios.post(`/api/admin/tutoring/toggle_active_offer`, { id })
+                const ids = Array.isArray(idOrIds) ? idOrIds.map((id) => Number(id)).filter((id) => id > 0) : null
+                const payload = ids ? { ids } : { id: Number(idOrIds) }
+                if (typeof isActive === 'boolean') payload.is_active = isActive
+                const response = await axios.post(`/api/admin/tutoring/toggle_active_offer`, payload)
                 return true
             } catch (error) {
                 notification.notify({

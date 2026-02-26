@@ -10,6 +10,7 @@ use App\Models\TutoringOffer;
 use App\Models\User;
 use App\Services\TutoringOfferService;
 use Barryvdh\Debugbar\Facades\Debugbar;
+use Illuminate\Support\Collection;
 use Illuminate\Http\Request;
 
 class OfferController extends Controller
@@ -113,6 +114,10 @@ class OfferController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
+        if ((int) $offer->school_id !== (int) $auth_user->school_id) {
+            abort(403, 'Das Angebot gehört nicht zu deiner Schule.');
+        }
+
         if ($offer->requests()->exists()) abort(409, 'Das Angebot kann nicht gelöscht werden, da Anfragen existieren.');
 
         $service->sendOfferDeletedToStudent($offer);
@@ -122,6 +127,55 @@ class OfferController extends Controller
         return response()->noContent();
     }
 
+    public function deleteOffers(Request $request, TutoringOfferService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer', 'exists:tutoring_offers,id'],
+        ]);
+
+        $ids = collect($validated['ids'])
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            abort(422, 'Keine gültigen Angebote ausgewählt.');
+        }
+
+        $offers = TutoringOffer::where('school_id', $auth_user->school_id)
+            ->whereIn('id', $ids)
+            ->get();
+
+        if ($offers->count() !== $ids->count()) {
+            abort(403, 'Mindestens ein Angebot gehört nicht zu deiner Schule.');
+        }
+
+        $blockingOfferIds = $offers
+            ->filter(fn (TutoringOffer $offer) => $offer->requests()->exists())
+            ->pluck('id')
+            ->values();
+
+        if ($blockingOfferIds->isNotEmpty()) {
+            abort(409, 'Mindestens ein Angebot kann nicht gelöscht werden, da Anfragen existieren. IDs: ' . $blockingOfferIds->implode(', '));
+        }
+
+        foreach ($offers as $offer) {
+            $service->sendOfferDeletedToStudent($offer);
+            $offer->delete();
+        }
+
+        return response()->json([
+            'deleted_count' => $offers->count(),
+            'ids' => $ids,
+        ], 200);
+    }
+
     public function toggleAcceptedOffer(Request $request, TutoringOfferService $service)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin', 'teacher'])) {
@@ -129,21 +183,43 @@ class OfferController extends Controller
         }
 
         $validated = $request->validate([
-            'id' => 'required|integer|exists:tutoring_offers,id',
+            'id' => ['nullable', 'integer', 'exists:tutoring_offers,id'],
+            'ids' => ['nullable', 'array', 'min:1'],
+            'ids.*' => ['integer', 'exists:tutoring_offers,id'],
+            'accepted' => ['nullable', 'boolean'],
         ]);
 
-        $offer = TutoringOffer::findOrFail($validated['id']);
+        $ids = $this->resolveOfferIdsFromRequest($validated);
+        $offers = $this->loadSchoolOffersOrAbort($auth_user->school_id, $ids);
+        $forceAccepted = array_key_exists('accepted', $validated) ? (bool) $validated['accepted'] : null;
 
-        if ($offer->accepted_at) {
-            $offer->accepted_at = null;
-            $offer->is_active = false;
-            $service->sendConfirmRefuseEmail('reject', $offer->id);
-        } else {
-            $offer->accepted_at = now();
-            $service->sendConfirmRefuseEmail('confirm', $offer->id);
+        $changedCount = 0;
+        foreach ($offers as $offer) {
+            $wasAccepted = (bool) $offer->accepted_at;
+            $shouldAccept = is_bool($forceAccepted) ? $forceAccepted : ! $wasAccepted;
+
+            if ($shouldAccept === $wasAccepted) {
+                continue;
+            }
+
+            if ($shouldAccept) {
+                $offer->accepted_at = now();
+                $service->sendConfirmRefuseEmail('confirm', $offer->id);
+            } else {
+                $offer->accepted_at = null;
+                $offer->is_active = false;
+                $service->sendConfirmRefuseEmail('reject', $offer->id);
+            }
+
+            $offer->save();
+            $changedCount++;
         }
-        $offer->save();
-        return response()->noContent();
+
+        return response()->json([
+            'updated_count' => $changedCount,
+            'selected_count' => $offers->count(),
+            'ids' => $offers->pluck('id')->values(),
+        ], 200);
     }
 
     public function toggleActiveOffer(Request $request)
@@ -153,15 +229,32 @@ class OfferController extends Controller
         }
 
         $validated = $request->validate([
-            'id' => 'required|integer|exists:tutoring_offers,id',
-
+            'id' => ['nullable', 'integer', 'exists:tutoring_offers,id'],
+            'ids' => ['nullable', 'array', 'min:1'],
+            'ids.*' => ['integer', 'exists:tutoring_offers,id'],
+            'is_active' => ['nullable', 'boolean'],
         ]);
 
-        $offer = TutoringOffer::findOrFail($validated['id']);
+        $ids = $this->resolveOfferIdsFromRequest($validated);
+        $offers = $this->loadSchoolOffersOrAbort($auth_user->school_id, $ids);
+        $forceActive = array_key_exists('is_active', $validated) ? (bool) $validated['is_active'] : null;
 
-        $offer->is_active = !$offer->is_active;
-        $offer->save();
-        return response()->noContent();
+        $changedCount = 0;
+        foreach ($offers as $offer) {
+            $newState = is_bool($forceActive) ? $forceActive : ! (bool) $offer->is_active;
+            if ((bool) $offer->is_active === $newState) {
+                continue;
+            }
+            $offer->is_active = $newState;
+            $offer->save();
+            $changedCount++;
+        }
+
+        return response()->json([
+            'updated_count' => $changedCount,
+            'selected_count' => $offers->count(),
+            'ids' => $offers->pluck('id')->values(),
+        ], 200);
     }
 
     public function getStats(Request $request)
@@ -190,5 +283,38 @@ class OfferController extends Controller
             ->count();
 
         return response()->json($data, 200);
+    }
+
+    private function resolveOfferIdsFromRequest(array $validated): Collection
+    {
+        $ids = collect($validated['ids'] ?? []);
+        if (isset($validated['id'])) {
+            $ids->push((int) $validated['id']);
+        }
+
+        $ids = $ids
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            abort(422, 'Keine gültigen Angebote ausgewählt.');
+        }
+
+        return $ids;
+    }
+
+    private function loadSchoolOffersOrAbort(int $schoolId, Collection $ids): Collection
+    {
+        $offers = TutoringOffer::where('school_id', $schoolId)
+            ->whereIn('id', $ids)
+            ->get();
+
+        if ($offers->count() !== $ids->count()) {
+            abort(403, 'Mindestens ein Angebot gehört nicht zu deiner Schule.');
+        }
+
+        return $offers;
     }
 }

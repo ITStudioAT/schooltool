@@ -1,5 +1,44 @@
 /* tov = Tutoring Overview cards */
 
+/* --- Card header spacing (eyebrow + title) --- */
+
+.tov-card-heading {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.tov-card-heading .admin-card-eyebrow {
+    margin: 0;
+}
+
+.tov-card-heading .admin-card-title {
+    margin: 0 !important;
+}
+
+/* --- Statistik KPI stack spacing --- */
+
+.tov-stats-grid {
+    display: grid;
+    gap: 12px !important;
+}
+
+.tov-stats-grid .kpi-card {
+    padding: 10px 12px;
+    border-radius: 14px;
+}
+
+.tov-stats-grid .kpi-label {
+    font-size: 0.74rem;
+    line-height: 1.1;
+}
+
+.tov-stats-grid .kpi-value {
+    margin-top: 4px;
+    font-size: 1.05rem;
+    line-height: 1.05;
+}
+
 /* --- Filter bar --- */
 
 .tov-filter-groups {

@@ -522,18 +522,64 @@ class UserController extends Controller
         }
 
         $validated = $request->validate([
-            'user_id' => 'required|integer|exists:users,id',
+            'user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'user_ids' => ['nullable', 'array', 'min:1'],
+            'user_ids.*' => ['integer', 'exists:users,id'],
+            'is_active' => ['nullable', 'boolean'],
         ]);
 
-        $user = User::findOrFail($validated['user_id']);
-        if ($user->hasRole(['super_admin', 'admin'])) {
+        $userIds = collect($validated['user_ids'] ?? []);
+        if (isset($validated['user_id'])) {
+            $userIds->push((int) $validated['user_id']);
+        }
+        $userIds = $userIds
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($userIds->isEmpty()) {
+            abort(422, 'Keine Benutzer ausgewählt.');
+        }
+
+        $usersQuery = User::whereIn('id', $userIds);
+        if (! $auth_user->hasRole('super_admin')) {
+            $usersQuery->where('school_id', $auth_user->school_id);
+        }
+
+        $users = $usersQuery->get();
+        if ($users->count() !== $userIds->count()) {
+            abort(403, 'Mindestens ein Benutzer wurde nicht gefunden oder gehört nicht zu deiner Schule.');
+        }
+
+        $protectedUser = $users->first(fn ($user) => $user->hasRole(['super_admin', 'admin']));
+        if ($protectedUser) {
             abort(403, 'Der Super-Admin oder Admin kann nicht deaktiviert werden');
         }
-        $user->is_active = !$user->is_active;
-        $user->save();
 
-        $service->informUserToBeBlockedOrNot($user);
+        $forceActive = array_key_exists('is_active', $validated) ? (bool) $validated['is_active'] : null;
+        $changedCount = 0;
 
-        return response()->json(new UserResource($user), 200);
+        foreach ($users as $user) {
+            $newState = is_bool($forceActive) ? $forceActive : ! (bool) $user->is_active;
+            if ((bool) $user->is_active === $newState) {
+                continue;
+            }
+
+            $user->is_active = $newState;
+            $user->save();
+            $service->informUserToBeBlockedOrNot($user);
+            $changedCount++;
+        }
+
+        if ($users->count() === 1) {
+            return response()->json(new UserResource($users->first()), 200);
+        }
+
+        return response()->json([
+            'updated_count' => $changedCount,
+            'selected_count' => $users->count(),
+            'ids' => $users->pluck('id')->values(),
+        ], 200);
     }
 }

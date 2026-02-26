@@ -109,12 +109,15 @@ export const useUserStore = defineStore('AdminUser20Store', {
             }
         },
 
-        async toggleIsActive(user_id) {
+        async toggleIsActive(userIdOrIds, isActive = null) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
             try {
-                this.answer = await axios.post(`/api/admin/users20/toggle_is_active`, { user_id })
+                const userIds = Array.isArray(userIdOrIds) ? userIdOrIds.map((id) => Number(id)).filter((id) => id > 0) : null
+                const payload = userIds ? { user_ids: userIds } : { user_id: Number(userIdOrIds) }
+                if (typeof isActive === 'boolean') payload.is_active = isActive
+                this.answer = await axios.post(`/api/admin/users20/toggle_is_active`, payload)
                 return true
             } catch (error) {
                 notification.notify({

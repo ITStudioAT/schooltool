@@ -116,30 +116,31 @@
                     <!-- Aktionen -->
                     <section class="admin-card ai-glass-panel">
                         <div class="admin-card-head mb-2">
-                            <div>
+                            <div class="tov-card-heading">
                                 <div class="admin-card-eyebrow">Aktionen</div>
                                 <h3 class="admin-card-title">Angebot verwalten</h3>
                             </div>
                         </div>
                         <div class="kpi-sub" style="margin-top: -2px">Verfügbare Schritte für die aktuelle Auswahl.</div>
 
-                        <template v-if="selected_offers.length == 1">
+                        <template v-if="selected_offers.length >= 1">
+                            <div class="kpi-sub mt-2">{{ selected_offers.length }} ausgewählt</div>
                             <div class="d-grid ga-2 mt-3">
-                                <v-btn block variant="tonal" rounded="lg" color="warning" class="text-caption" prepend-icon="mdi-help" @click="doRecordtoggleAccepted(selectedOffer.id)" v-if="selectedOffer.accepted_at">Nicht genehm.</v-btn>
-                                <v-btn block variant="tonal" rounded="lg" color="success" class="text-caption" prepend-icon="mdi-check" @click="doRecordtoggleAccepted(selectedOffer.id)" v-if="!selectedOffer.accepted_at">Genehmigen</v-btn>
+                                <v-btn block variant="tonal" rounded="lg" color="warning" class="text-caption" prepend-icon="mdi-help" @click="setSelectedOffersAccepted(false)" v-if="canBulkRejectOffers">Nicht genehm.</v-btn>
+                                <v-btn block variant="tonal" rounded="lg" color="success" class="text-caption" prepend-icon="mdi-check" @click="setSelectedOffersAccepted(true)" v-if="canBulkAcceptOffers">Genehmigen</v-btn>
                             </div>
 
                             <v-divider class="my-3 opacity-30" />
                             <div class="d-grid ga-2">
-                                <v-btn block variant="tonal" rounded="lg" color="error" class="text-caption" prepend-icon="mdi-lock" @click="toggleIsActive(selectedOffer?.user?.id)" v-if="selectedOffer?.user?.is_active">Sperren</v-btn>
-                                <v-btn block variant="tonal" rounded="lg" color="success" class="text-caption" prepend-icon="mdi-lock-open" @click="toggleIsActive(selectedOffer?.user?.id)" v-if="!selectedOffer?.user?.is_active">Entsperren</v-btn>
+                                <v-btn block variant="tonal" rounded="lg" color="error" class="text-caption" prepend-icon="mdi-lock" @click="setSelectedUsersActive(false)" v-if="canBulkBlockUsers">Sperren</v-btn>
+                                <v-btn block variant="tonal" rounded="lg" color="success" class="text-caption" prepend-icon="mdi-lock-open" @click="setSelectedUsersActive(true)" v-if="canBulkUnblockUsers">Entsperren</v-btn>
                             </div>
 
-                            <template v-if="selectedOffer.accepted_at">
+                            <template v-if="selectionHasAcceptedOffers">
                                 <v-divider class="my-3 opacity-30" />
                                 <div class="d-grid ga-2">
-                                    <v-btn block variant="tonal" rounded="lg" color="warning" class="text-caption" prepend-icon="mdi-cloud-off" @click="doRecordtoggleActive(selectedOffer.id)" v-if="selectedOffer.is_active">Offline</v-btn>
-                                    <v-btn block variant="tonal" rounded="lg" color="success" class="text-caption" prepend-icon="mdi-cloud" @click="doRecordtoggleActive(selectedOffer.id)" v-if="!selectedOffer.is_active">Online</v-btn>
+                                    <v-btn block variant="tonal" rounded="lg" color="warning" class="text-caption" prepend-icon="mdi-cloud-off" @click="setSelectedOffersOnline(false)" v-if="canBulkSetOffline">Offline</v-btn>
+                                    <v-btn block variant="tonal" rounded="lg" color="success" class="text-caption" prepend-icon="mdi-cloud" @click="setSelectedOffersOnline(true)" v-if="canBulkSetOnline">Online</v-btn>
                                 </div>
                             </template>
 
@@ -147,23 +148,26 @@
                             <div class="d-grid ga-2">
                                 <v-btn block variant="tonal" rounded="lg" color="warning" class="text-caption" prepend-icon="mdi-delete" @click="delete_level++" v-if="delete_level == 0">Löschen</v-btn>
                                 <v-btn block variant="tonal" rounded="lg" color="success" class="text-caption" prepend-icon="mdi-delete-off" @click="delete_level = 0" v-if="delete_level == 1">Abbruch</v-btn>
-                                <v-btn block variant="tonal" rounded="lg" color="error" class="text-caption mt-2" prepend-icon="mdi-delete" @click="doDelete(selectedOffer)" v-if="delete_level == 1">Löschen</v-btn>
+                                <v-btn block variant="tonal" rounded="lg" color="error" class="text-caption mt-2" prepend-icon="mdi-delete" @click="deleteSelectedOffers" v-if="delete_level == 1">Löschen</v-btn>
+                            </div>
+
+                            <div class="kpi-sub mt-3" v-if="showMixedSelectionHint">
+                                Gemischte Auswahl: Einige Aktionen sind nur verfügbar, wenn alle ausgewählten Angebote denselben Status haben.
                             </div>
                         </template>
 
-                        <div v-else-if="selected_offers.length > 1" class="kpi-sub mt-3">{{ selected_offers.length }} Angebote ausgewählt. Für Aktionen bitte genau ein Angebot wählen.</div>
                         <div v-else class="kpi-sub mt-3">Kein Angebot ausgewählt.</div>
                     </section>
 
                     <!-- Statistik -->
                     <section class="admin-card ai-glass-panel" v-if="stats">
                         <div class="admin-card-head mb-2">
-                            <div>
+                            <div class="tov-card-heading">
                                 <div class="admin-card-eyebrow">Übersicht</div>
                                 <h3 class="admin-card-title">Statistik</h3>
                             </div>
                         </div>
-                        <div class="d-grid ga-2">
+                        <div class="d-grid ga-2 tov-stats-grid">
                             <div class="kpi-card ai-glass-panel">
                                 <div class="kpi-label">Angebote gesamt</div>
                                 <div class="kpi-value">{{ stats.count }}</div>
@@ -365,6 +369,43 @@ export default {
             const offer = this.offers.find((offer) => offer.id === id)
             return offer
         },
+        selectedOffersList() {
+            const selectedIds = new Set((this.selected_offers || []).map((id) => Number(id)))
+            return (this.offers || []).filter((offer) => selectedIds.has(Number(offer.id)))
+        },
+        selectedOfferUserIds() {
+            return [...new Set(this.selectedOffersList.map((offer) => Number(offer?.user?.id || 0)).filter((id) => id > 0))]
+        },
+        canBulkAcceptOffers() {
+            return this.selectedOffersList.length > 0 && this.selectedOffersList.every((offer) => !offer.accepted_at)
+        },
+        canBulkRejectOffers() {
+            return this.selectedOffersList.length > 0 && this.selectedOffersList.every((offer) => !!offer.accepted_at)
+        },
+        selectionHasAcceptedOffers() {
+            return this.selectedOffersList.some((offer) => !!offer.accepted_at)
+        },
+        canBulkSetOffline() {
+            return this.selectedOffersList.length > 0 && this.selectedOffersList.every((offer) => !!offer.accepted_at && !!offer.is_active)
+        },
+        canBulkSetOnline() {
+            return this.selectedOffersList.length > 0 && this.selectedOffersList.every((offer) => !!offer.accepted_at && !offer.is_active)
+        },
+        canBulkBlockUsers() {
+            if (this.selectedOffersList.length === 0 || this.selectedOfferUserIds.length === 0) return false
+            return this.selectedOffersList.every((offer) => !!offer?.user?.is_active)
+        },
+        canBulkUnblockUsers() {
+            if (this.selectedOffersList.length === 0 || this.selectedOfferUserIds.length === 0) return false
+            return this.selectedOffersList.every((offer) => !offer?.user?.is_active)
+        },
+        showMixedSelectionHint() {
+            if (this.selectedOffersList.length <= 1) return false
+            return !this.canBulkAcceptOffers
+                && !this.canBulkRejectOffers
+                || (!this.canBulkBlockUsers && !this.canBulkUnblockUsers)
+                || (this.selectionHasAcceptedOffers && !this.canBulkSetOffline && !this.canBulkSetOnline)
+        },
 
         selectedClasses() {
             return Object.entries(this.selectedOffer.classes || {})
@@ -385,6 +426,10 @@ export default {
     watch: {},
 
     methods: {
+        async refreshOverviewData() {
+            await this.offerStore.index(this.meta?.current_page || 1)
+            await this.offerStore.getStats()
+        },
         async toggleIsActive(user_id) {
             await this.userStore.toggleIsActive(user_id)
             await this.offerStore.index(this.meta.current_page)
@@ -406,6 +451,38 @@ export default {
             await this.offerStore.toggleActive(id)
             await this.offerStore.index(this.meta.current_page)
             await this.offerStore.getStats()
+        },
+        async setSelectedOffersAccepted(accepted) {
+            const ids = this.selectedOffersList.map((offer) => offer.id)
+            if (!ids.length) return
+            this.delete_level = 0
+            if (!(await this.offerStore.toggleAccepted(ids, accepted))) return
+            this.selected_offers = []
+            await this.refreshOverviewData()
+        },
+        async setSelectedUsersActive(isActive) {
+            const userIds = this.selectedOfferUserIds
+            if (!userIds.length) return
+            this.delete_level = 0
+            if (!(await this.userStore.toggleIsActive(userIds, isActive))) return
+            this.selected_offers = []
+            await this.refreshOverviewData()
+        },
+        async setSelectedOffersOnline(isActive) {
+            const ids = this.selectedOffersList.map((offer) => offer.id)
+            if (!ids.length) return
+            this.delete_level = 0
+            if (!(await this.offerStore.toggleActive(ids, isActive))) return
+            this.selected_offers = []
+            await this.refreshOverviewData()
+        },
+        async deleteSelectedOffers() {
+            const ids = this.selectedOffersList.map((offer) => offer.id)
+            if (!ids.length) return
+            this.delete_level = 0
+            if (!(await this.offerStore.delete(ids))) return
+            this.selected_offers = []
+            await this.refreshOverviewData()
         },
 
         async toggleAccepted(status) {
