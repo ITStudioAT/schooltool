@@ -36,6 +36,22 @@ class UserResource extends JsonResource
             'login_at' => $this->login_at ? Carbon::parse($this->login_at)->format('d.m.Y  H:i') : null,
             'login_ip' => $this->login_ip,
             'roles' => $this->roles->sortBy('name')->pluck('name')->values(),
+            'tutoring_offers_count' => $this->when(isset($this->tutoring_offers_count), (int) $this->tutoring_offers_count),
+            'tutoring_offers' => $this->whenLoaded('tutoringOffers', function () {
+                return $this->tutoringOffers
+                    ->map(function ($offer) {
+                        return [
+                            'id' => $offer->id,
+                            'title' => $offer->title,
+                            'subject_short_name' => $offer->subject?->short_name,
+                            'subject_long_name' => $offer->subject?->long_name,
+                            'is_active' => (bool) $offer->is_active,
+                            'is_accepted' => (bool) $offer->accepted_at,
+                            'accepted_at' => $offer->accepted_at ? Carbon::parse($offer->accepted_at)->format('d.m.Y H:i') : null,
+                        ];
+                    })
+                    ->values();
+            }),
         ];
     }
 }

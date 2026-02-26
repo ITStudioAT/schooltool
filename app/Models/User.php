@@ -250,6 +250,11 @@ class User extends Authenticatable
         return $this->hasMany(MaterialCard::class);
     }
 
+    public function tutoringOffers(): HasMany
+    {
+        return $this->hasMany(TutoringOffer::class, 'user_id');
+    }
+
     public function shouldDelete(): bool
     {
 

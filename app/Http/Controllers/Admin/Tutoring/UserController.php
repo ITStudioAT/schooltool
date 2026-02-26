@@ -28,6 +28,13 @@ class UserController extends Controller
         $selected_filter = $validated['selected_filter'] ?? null;
 
         $users = User::bySchoolAndRole($auth_user->school_id, 'tutoring_user')
+            ->with([
+                'tutoringOffers' => function ($query) {
+                    $query->with('subject')
+                        ->orderByDesc('created_at');
+                },
+            ])
+            ->withCount('tutoringOffers')
             ->when($search_string, function ($query, $search_string) {
                 $query->where(function ($q) use ($search_string) {
                     $q->where('last_name', 'like', "%{$search_string}%")

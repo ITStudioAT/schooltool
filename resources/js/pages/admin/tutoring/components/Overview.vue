@@ -5,7 +5,7 @@
             <div class="admin-card-head crud-head mb-4">
                 <div>
                     <div class="admin-card-eyebrow">Freigabe</div>
-                    <h2 class="admin-card-title crud-title">Freizugebende Angebote</h2>
+                    <h2 class="admin-card-title crud-title">Angebote</h2>
                 </div>
                 <div class="admin-kpi-grid crud-kpis" v-if="stats">
                     <div class="kpi-card ai-glass-panel">
@@ -30,8 +30,26 @@
                                 </div>
                                 <div class="d-flex flex-row flex-wrap align-center ga-1 tov-filter-options">
                                     <v-btn :color="select_accepted == 'all' ? 'primary' : 'secondary'" variant="tonal" rounded="pill" size="small" class="text-caption tov-filter-btn" @click="toggleAccepted('all')" :disabled="action != ''">Alle</v-btn>
-                                    <v-btn :color="select_accepted == 'no' ? 'primary' : 'secondary'" variant="tonal" rounded="pill" size="small" class="text-caption tov-filter-btn" @click="toggleAccepted('no')" :disabled="action != ''">Nur Offene</v-btn>
-                                    <v-btn :color="select_accepted == 'yes' ? 'primary' : 'secondary'" variant="tonal" rounded="pill" size="small" class="text-caption tov-filter-btn" @click="toggleAccepted('yes')" :disabled="action != ''">Nur Genehmigte</v-btn>
+                                    <v-btn
+                                        :color="select_accepted == 'no' ? 'warning' : 'secondary'"
+                                        variant="tonal"
+                                        rounded="pill"
+                                        size="small"
+                                        class="text-caption tov-filter-btn tov-filter-btn--open"
+                                        @click="toggleAccepted('no')"
+                                        :disabled="action != ''">
+                                        Nur Offene
+                                    </v-btn>
+                                    <v-btn
+                                        :color="select_accepted == 'yes' ? 'success' : 'secondary'"
+                                        variant="tonal"
+                                        rounded="pill"
+                                        size="small"
+                                        class="text-caption tov-filter-btn tov-filter-btn--accepted"
+                                        @click="toggleAccepted('yes')"
+                                        :disabled="action != ''">
+                                        Nur Genehmigte
+                                    </v-btn>
                                 </div>
                             </div>
                             <div class="tov-filter-group">
@@ -41,8 +59,8 @@
                                 </div>
                                 <div class="d-flex flex-row flex-wrap align-center ga-1 tov-filter-options">
                                     <v-btn :color="select_online == 'all' ? 'primary' : 'secondary'" variant="tonal" rounded="pill" size="small" class="text-caption tov-filter-btn" @click="toggleOnline('all')" :disabled="action != ''">Alle</v-btn>
-                                    <v-btn :color="select_online == 'yes' ? 'primary' : 'secondary'" variant="tonal" rounded="pill" size="small" class="text-caption tov-filter-btn" @click="toggleOnline('yes')" :disabled="action != ''">Nur Online</v-btn>
-                                    <v-btn :color="select_online == 'no' ? 'primary' : 'secondary'" variant="tonal" rounded="pill" size="small" class="text-caption tov-filter-btn" @click="toggleOnline('no')" :disabled="action != ''">Nur Offline</v-btn>
+                                    <v-btn :color="select_online == 'yes' ? 'success' : 'secondary'" variant="tonal" rounded="pill" size="small" class="text-caption tov-filter-btn" @click="toggleOnline('yes')" :disabled="action != ''">Nur Online</v-btn>
+                                    <v-btn :color="select_online == 'no' ? 'warning' : 'secondary'" variant="tonal" rounded="pill" size="small" class="text-caption tov-filter-btn" @click="toggleOnline('no')" :disabled="action != ''">Nur Offline</v-btn>
                                 </div>
                             </div>
                             <div class="tov-filter-group">
@@ -108,6 +126,10 @@
                                 </div>
                             </div>
                         </div>
+                    </div>
+
+                    <div class="crud-pagination mt-3" v-if="meta">
+                        <Pagination :meta="meta" :store="offerStore" selected_field="selected_offers" />
                     </div>
                 </section>
 
@@ -343,7 +365,7 @@ export default {
         this.offerStore = useOfferStore()
         this.select_only_me_concerning = true
         this.selected_offers = []
-        this.select_accepted = 'no'
+        this.select_accepted = 'all'
         await this.offerStore.getStats()
         await this.offerStore.index()
     },

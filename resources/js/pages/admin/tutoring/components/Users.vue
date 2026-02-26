@@ -1,5 +1,5 @@
 <template>
-    <v-col cols="12" md="10" xl="9" v-if="users">
+    <v-col cols="12" md="10" xl="9" v-if="users && action != 'create_user' && action != 'edit_user'">
         <section class="admin-card ai-glass-panel tutoring-users-card" :class="{ 'is-disabled': action != '' }">
             <div class="admin-card-head mb-3">
                 <div class="tov-card-heading">
@@ -68,31 +68,71 @@
                     <div class="empty-state" v-if="users.length === 0">Keine Benutzer gefunden.</div>
 
                     <div v-else class="tutoring-users-records">
-                        <div
-                            v-for="item in users"
-                            :key="item.id"
-                            class="tutoring-users-list-row"
-                            :class="{ 'is-selected': selected_users.includes(item.id) }"
-                            @click="onUserClick(item.id)">
-                            <div class="tutoring-users-select">
-                                <v-icon
-                                    size="18"
-                                    :icon="selected_users.includes(item.id) ? 'mdi-checkbox-marked-circle' : 'mdi-checkbox-blank-circle-outline'"
-                                    :color="selected_users.includes(item.id) ? 'primary' : 'grey-darken-1'" />
-                            </div>
-
-                            <div class="tutoring-users-item-icons">
-                                <v-icon color="error" size="small" icon="mdi-lock" v-if="!item.is_active" />
-                                <v-icon icon="mdi-email" color="warning" v-if="!item.email_verified_at" size="small" />
-                                <v-icon icon="mdi-help" color="warning" v-if="!item.confirmed_at" size="small" />
-                            </div>
-
-                            <div class="tutoring-users-item-copy">
-                                <div class="tutoring-users-item-name">
-                                    {{ item.last_name + ' ' + item.first_name }}
-                                    <span class="tutoring-users-item-class" v-if="item.schoolclass">({{ item.schoolclass }})</span>
+                        <div v-for="item in users" :key="item.id" class="tutoring-users-row-stack">
+                            <div
+                                class="tutoring-users-list-row"
+                                :class="{ 'is-selected': selected_users.includes(item.id) }"
+                                @click="onUserClick(item.id)">
+                                <div class="tutoring-users-select">
+                                    <v-icon
+                                        size="18"
+                                        :icon="selected_users.includes(item.id) ? 'mdi-checkbox-marked-circle' : 'mdi-checkbox-blank-circle-outline'"
+                                        :color="selected_users.includes(item.id) ? 'primary' : 'grey-darken-1'" />
                                 </div>
-                                <div class="tutoring-users-item-mail">{{ item.email }}</div>
+
+                                <div class="tutoring-users-item-icons">
+                                    <v-icon color="error" size="small" icon="mdi-lock" v-if="!item.is_active" />
+                                    <v-icon icon="mdi-email" color="warning" v-if="!item.email_verified_at" size="small" />
+                                    <v-icon icon="mdi-help" color="warning" v-if="!item.confirmed_at" size="small" />
+                                </div>
+
+                                <div class="tutoring-users-item-copy">
+                                    <div class="tutoring-users-item-name">
+                                        {{ item.last_name + ' ' + item.first_name }}
+                                        <span class="tutoring-users-item-class" v-if="item.schoolclass">({{ item.schoolclass }})</span>
+                                    </div>
+                                    <div class="tutoring-users-item-meta">
+                                        <div class="tutoring-users-item-mail">{{ item.email }}</div>
+                                        <button
+                                            type="button"
+                                            class="tutoring-users-offer-count"
+                                            :class="{ 'is-expanded': expanded_offer_users.includes(item.id) }"
+                                            @click.stop="toggleOffersExpand(item.id)">
+                                            <v-icon size="13" icon="mdi-account-school-outline" />
+                                            <span>{{ item.tutoring_offers_count ?? 0 }} Angebot<span v-if="(item.tutoring_offers_count ?? 0) !== 1">e</span></span>
+                                            <v-icon
+                                                size="13"
+                                                :icon="expanded_offer_users.includes(item.id) ? 'mdi-chevron-up' : 'mdi-chevron-down'" />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="tutoring-users-offers-expand" v-if="expanded_offer_users.includes(item.id)">
+                                <div class="tutoring-users-offers-empty" v-if="!item.tutoring_offers || item.tutoring_offers.length === 0">
+                                    Keine Angebote vorhanden.
+                                </div>
+
+                                <div class="tutoring-users-offers-list" v-else>
+                                    <div v-for="offer in item.tutoring_offers" :key="offer.id" class="tutoring-users-offer-item">
+                                        <div class="tutoring-users-offer-item__head">
+                                            <div class="tutoring-users-offer-item__title">
+                                                {{ offer.subject_short_name ? offer.subject_short_name + ': ' : '' }}{{ offer.title }}
+                                            </div>
+                                            <div class="tutoring-users-offer-item__status">
+                                                <v-icon size="14" color="success" icon="mdi-check" v-if="offer.is_accepted" />
+                                                <v-icon size="14" color="warning" icon="mdi-help" v-else />
+                                                <v-icon size="14" color="success" icon="mdi-cloud" v-if="offer.is_active" />
+                                                <v-icon size="14" color="warning" icon="mdi-cloud-off" v-else />
+                                            </div>
+                                        </div>
+                                        <div class="tutoring-users-offer-item__meta">
+                                            <span v-if="offer.subject_long_name">{{ offer.subject_long_name }}</span>
+                                            <span v-if="offer.accepted_at">Genehmigt: {{ offer.accepted_at }}</span>
+                                            <span v-else>Nicht genehmigt</span>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -264,6 +304,7 @@ export default {
             is_valid: false,
             upload_file: null,
             is_uploading: false,
+            expanded_offer_users: [],
         }
     },
 
@@ -272,7 +313,11 @@ export default {
         ...mapWritableState(useTutoringUserStore, ['users', 'meta', 'selected_users', 'search_string', 'data', 'answer', 'role', 'count_deletable_users', 'selected_filter']),
     },
 
-    watch: {},
+    watch: {
+        users() {
+            this.expanded_offer_users = []
+        },
+    },
 
     methods: {
         async cleanUsers() {
@@ -344,6 +389,11 @@ export default {
         },
         unselectAll() {
             this.selected_users = []
+        },
+        toggleOffersExpand(userId) {
+            this.expanded_offer_users = this.expanded_offer_users.includes(userId)
+                ? this.expanded_offer_users.filter((id) => id !== userId)
+                : [...this.expanded_offer_users, userId]
         },
         onUserClick(id) {
             this.selected_users = this.selected_users.includes(id)

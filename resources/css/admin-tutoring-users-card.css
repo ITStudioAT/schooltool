@@ -114,6 +114,11 @@
     padding: 6px;
 }
 
+.tutoring-users-row-stack {
+    display: grid;
+    gap: 6px;
+}
+
 .tutoring-users-list-row {
     cursor: pointer;
     display: flex;
@@ -191,6 +196,108 @@
     line-height: 1.2;
     word-break: break-word;
     margin-top: 2px;
+}
+
+.tutoring-users-item-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 2px;
+}
+
+.tutoring-users-offer-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(16, 38, 58, 0.07);
+    background: rgba(255, 255, 255, 0.76);
+    color: rgba(16, 38, 58, 0.8);
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.1;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.tutoring-users-offer-count:hover {
+    background: rgba(57, 73, 171, 0.06);
+    border-color: rgba(57, 73, 171, 0.16);
+    transform: translateY(-1px);
+}
+
+.tutoring-users-offer-count.is-expanded {
+    background: rgba(57, 73, 171, 0.09);
+    border-color: rgba(57, 73, 171, 0.2);
+}
+
+.tutoring-users-offers-expand {
+    margin-left: 34px;
+    border-radius: 12px;
+    border: 1px solid rgba(46, 104, 171, 0.16);
+    background: linear-gradient(180deg, rgba(236, 244, 255, 0.92), rgba(229, 239, 252, 0.9));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    padding: 8px;
+}
+
+.tutoring-users-offers-empty {
+    color: rgba(16, 38, 58, 0.68);
+    font-size: 0.8rem;
+}
+
+.tutoring-users-offers-list {
+    display: grid;
+    gap: 6px;
+}
+
+.tutoring-users-offer-item {
+    border-radius: 10px;
+    border: 1px solid rgba(46, 104, 171, 0.1);
+    background: rgba(255, 255, 255, 0.88);
+    padding: 8px 9px;
+}
+
+.tutoring-users-offer-item__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.tutoring-users-offer-item__title {
+    color: #10263a;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.tutoring-users-offer-item__status {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    padding-top: 1px;
+}
+
+.tutoring-users-offer-item__meta {
+    margin-top: 4px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    color: rgba(16, 38, 58, 0.68);
+    font-size: 0.75rem;
+    line-height: 1.2;
+}
+
+.tutoring-users-offer-item__meta > span {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border-radius: 999px;
+    border: 1px solid rgba(16, 38, 58, 0.06);
+    background: rgba(255, 255, 255, 0.76);
 }
 
 .tutoring-users-pagination {
@@ -302,5 +409,14 @@
 
     .tutoring-users-item-mail {
         text-align: left;
+    }
+
+    .tutoring-users-item-meta {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .tutoring-users-offers-expand {
+        margin-left: 0;
     }
 }
