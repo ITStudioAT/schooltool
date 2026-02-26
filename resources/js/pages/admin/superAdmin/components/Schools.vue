@@ -81,29 +81,34 @@
                             <v-btn block color="primary" variant="flat" rounded="lg" prepend-icon="mdi-plus" @click="createSchool">
                                 Hinzufügen
                             </v-btn>
-
-                            <v-btn
-                                v-if="selected_schools.length == 1"
-                                block
-                                color="primary"
-                                variant="tonal"
-                                rounded="lg"
-                                prepend-icon="mdi-pencil"
-                                @click="editSchool(selected_schools[0])">
-                                Ändern
-                            </v-btn>
-
-                            <v-btn
-                                v-if="selected_schools.length >= 1"
-                                block
-                                color="warning"
-                                variant="tonal"
-                                rounded="lg"
-                                prepend-icon="mdi-delete"
-                                @click="deleteSchool">
-                                Löschen
-                            </v-btn>
                         </div>
+
+                        <template v-if="selected_schools.length >= 1">
+                            <v-divider class="my-3 opacity-30" />
+                            <div class="d-grid ga-3">
+                                <v-btn
+                                    v-if="selected_schools.length == 1"
+                                    block
+                                    color="primary"
+                                    variant="tonal"
+                                    rounded="lg"
+                                    prepend-icon="mdi-pencil"
+                                    @click="editSchool(selected_schools[0])">
+                                    Ändern
+                                </v-btn>
+
+                                <v-btn
+                                    block
+                                    color="warning"
+                                    variant="tonal"
+                                    rounded="lg"
+                                    class="mt-2"
+                                    prepend-icon="mdi-delete"
+                                    @click="deleteSchool">
+                                    Löschen
+                                </v-btn>
+                            </div>
+                        </template>
                     </section>
 
                 </aside>
