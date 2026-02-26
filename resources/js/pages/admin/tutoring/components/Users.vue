@@ -1,157 +1,229 @@
 <template>
-    <v-col cols="12" md="6" xl="4" v-if="users">
-        <its-grid-box color="primary" title="Benutzer" class="w-100" :disabled="action != ''">
-            <div class="d-flex flex-row align-start">
-                <v-card tile flat color="transparent" class="w-100">
-                    <v-card-text>
-                        <!-- SEARCHFIELD -->
-                        <SearchField :store="tutoringUserStore" selected_field="selected_users" />
-
-                        <!-- Abwählen / Auswählen-->
-                        <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2 mt-2" :disabled="action != ''">
-                            <v-btn color="primary" slim flat tile class="text-caption" @click="selectAll">Alle auswählen [{{ users.length - selected_users.length }}]</v-btn>
-                            <v-btn color="primary" slim flat tile class="text-caption" @click="unselectAll">Alle abwählen [{{ selected_users.length }}]</v-btn>
-                        </v-card>
-
-                        <!-- Andere Selektionen: -->
-                        <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2 mt-2" :disabled="action != ''">
-                            <v-btn :color="selected_filter == null ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleFilter(null)">Alle</v-btn>
-                            <v-btn :color="selected_filter == 'confirmation' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleFilter('confirmation')">
-                                Bestätigung ausstehend
-                            </v-btn>
-                            <v-btn :color="selected_filter == 'email' ? 'primary' : 'secondary'" slim flat tile class="text-caption" @click="toggleFilter('email')">
-                                E-Mail nicht bestätigt
-                            </v-btn>
-                        </v-card>
-
-                        <!-- RECORDS -->
-                        <v-list dense variant="elevated" select-strategy="leaf" v-model:selected="selected_users" color="success-lighten-2">
-                            <v-list-item dense v-for="item in users" :key="item.id" :value="item.id">
-                                <template v-slot:title>
-                                    <div class="w-100">
-                                        <div class="text-body-1 d-flex flex-row align-center justify-space-between w-100">
-                                            <div class="d-flex flex-row align-center ga-2">
-                                                <v-icon color="error" size="small" icon="mdi-lock" v-if="!item.is_active" />
-                                                <div class="d-flex flex-row align-center ga-2">
-                                                    <v-icon icon="mdi-email" color="warning" v-if="!item.email_verified_at" size="small" />
-                                                    <v-icon icon="mdi-help" color="warning" v-if="!item.confirmed_at" size="small" />
-                                                    {{ item.last_name + ' ' + item.first_name }}
-                                                </div>
-                                            </div>
-                                            <div class="text-rigtht text-body-2">{{ item.email }}</div>
-                                        </div>
-                                    </div>
-                                </template>
-                            </v-list-item>
-                        </v-list>
-
-                        <!-- PAGINATION-->
-                        <Pagination :meta="meta" :store="tutoringUserStore" selected_field="selected_users" />
-                    </v-card-text>
-                </v-card>
-
-                <!-- MENÜ -->
-                <v-card tile flat color="transparent" style="width: 150px" class="d-flex flex-column ga-2">
-                    <!-- AUSWAHl EGAL -->
-                    <div class="d-flex flex-column ga-2">
-                        <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-plus" @click="createUser">Hinzufügen</v-btn>
-
-                        <!-- Bereinigen -->
-                        <v-card tile flat color="transparent" class="d-flex flex-column ga-2" v-if="count_deletable_users > 0">
-                            <!-- AUSWAHl EGAL -->
-                            <div class="text-body-1 font-weight-medium">Bereinigung Benutzer</div>
-                            <div class="text-caption">Sie können alle Benutzer löschen, bei denen die E-Mail nicht bestätigt wurde (vermutlich falsche E-Mail).</div>
-                            <div>Anzahl: {{ count_deletable_users }}</div>
-                            <div class="d-flex flex-column ga-2">
-                                <v-btn block tile flat color="warning" class="text-caption" prepend-icon="mdi-vacuum" @click="cleanUsers">Bereinigen</v-btn>
-                            </div>
-                        </v-card>
-                    </div>
-                    <!-- GENAU 1 ELEMENT AUSGEWÄHLT -->
-                    <div class="d-flex flex-column ga-2" v-if="selected_users.length == 1">
-                        <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-pencil" @click="editUser(selected_users[0])">Ändern</v-btn>
-                        <v-btn
-                            block
-                            tile
-                            flat
-                            color="error"
-                            class="text-caption"
-                            prepend-icon="mdi-lock"
-                            @click="toggleIsActive(selected_users[0])"
-                            v-if="selectedUser(selected_users[0]).is_active">
-                            Sperren
-                        </v-btn>
-                        <v-btn
-                            block
-                            tile
-                            flat
-                            color="success"
-                            class="text-caption"
-                            prepend-icon="mdi-lock-open"
-                            @click="toggleIsActive(selected_users[0])"
-                            v-if="!selectedUser(selected_users[0]).is_active">
-                            Entsperren
-                        </v-btn>
-                    </div>
-                    <!-- MINDEST 1 ELEMENT AUSGEWÄHLT -->
-                    <div class="d-flex flex-column ga-2" v-if="selected_users.length >= 1">
-                        <v-btn block tile flat color="success" class="text-caption" prepend-icon="mdi-check" @click="confirmUsers(selected_users)">Bestätigen</v-btn>
-                        <v-btn block tile flat color="warning" class="text-caption" prepend-icon="mdi-delete" @click="deleteUser">Löschen</v-btn>
-                    </div>
-                </v-card>
+    <v-col cols="12" md="10" xl="9" v-if="users">
+        <section class="admin-card ai-glass-panel tutoring-users-card" :class="{ 'is-disabled': action != '' }">
+            <div class="admin-card-head mb-3">
+                <div class="tov-card-heading">
+                    <div class="admin-card-eyebrow">Nachhilfe</div>
+                    <h2 class="admin-card-title">Benutzer</h2>
+                </div>
             </div>
-        </its-grid-box>
+
+            <div class="kpi-sub mb-4">Verwalte Nachhilfe-Benutzer:innen, Auswahl-Filter und Freigabe-/Sperr-Aktionen.</div>
+
+            <div class="tutoring-users-layout">
+                <section class="tutoring-users-panel tutoring-users-main">
+                    <div class="tutoring-users-search-panel">
+                        <SearchField :store="tutoringUserStore" selected_field="selected_users" />
+                    </div>
+
+                    <div class="tutoring-users-filter-groups">
+                        <div class="tutoring-users-filter-group">
+                            <div class="tutoring-users-filter-group__head">
+                                <div class="tutoring-users-filter-group__label">Auswahl</div>
+                                <div class="tutoring-users-filter-group__count">{{ selected_users.length }}/{{ users.length }}</div>
+                            </div>
+                            <div class="tutoring-users-filter-group__actions">
+                                <v-btn
+                                    color="primary"
+                                    variant="tonal"
+                                    rounded="pill"
+                                    size="small"
+                                    class="tutoring-users-filter-btn"
+                                    @click="selectAll"
+                                    :disabled="action != '' || users.length === 0 || selected_users.length === users.length">
+                                    Alle auswählen
+                                </v-btn>
+                                <v-btn
+                                    color="secondary"
+                                    variant="tonal"
+                                    rounded="pill"
+                                    size="small"
+                                    class="tutoring-users-filter-btn"
+                                    @click="unselectAll"
+                                    :disabled="action != '' || selected_users.length === 0">
+                                    Alle abwählen
+                                </v-btn>
+                            </div>
+                        </div>
+
+                        <div class="tutoring-users-filter-group">
+                            <div class="tutoring-users-filter-group__head">
+                                <div class="tutoring-users-filter-group__label">Filter</div>
+                                <v-icon size="14" icon="mdi-filter-variant" />
+                            </div>
+                            <div class="tutoring-users-filter-group__actions">
+                                <v-btn :color="selected_filter == null ? 'primary' : 'secondary'" variant="tonal" rounded="pill" size="small" class="tutoring-users-filter-btn" @click="toggleFilter(null)">
+                                    Alle
+                                </v-btn>
+                                <v-btn :color="selected_filter == 'confirmation' ? 'primary' : 'secondary'" variant="tonal" rounded="pill" size="small" class="tutoring-users-filter-btn" @click="toggleFilter('confirmation')">
+                                    Bestätigung ausstehend
+                                </v-btn>
+                                <v-btn :color="selected_filter == 'email' ? 'primary' : 'secondary'" variant="tonal" rounded="pill" size="small" class="tutoring-users-filter-btn" @click="toggleFilter('email')">
+                                    E-Mail nicht bestätigt
+                                </v-btn>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="empty-state" v-if="users.length === 0">Keine Benutzer gefunden.</div>
+
+                    <div v-else class="tutoring-users-records">
+                        <div
+                            v-for="item in users"
+                            :key="item.id"
+                            class="tutoring-users-list-row"
+                            :class="{ 'is-selected': selected_users.includes(item.id) }"
+                            @click="onUserClick(item.id)">
+                            <div class="tutoring-users-select">
+                                <v-icon
+                                    size="18"
+                                    :icon="selected_users.includes(item.id) ? 'mdi-checkbox-marked-circle' : 'mdi-checkbox-blank-circle-outline'"
+                                    :color="selected_users.includes(item.id) ? 'primary' : 'grey-darken-1'" />
+                            </div>
+
+                            <div class="tutoring-users-item-icons">
+                                <v-icon color="error" size="small" icon="mdi-lock" v-if="!item.is_active" />
+                                <v-icon icon="mdi-email" color="warning" v-if="!item.email_verified_at" size="small" />
+                                <v-icon icon="mdi-help" color="warning" v-if="!item.confirmed_at" size="small" />
+                            </div>
+
+                            <div class="tutoring-users-item-copy">
+                                <div class="tutoring-users-item-name">
+                                    {{ item.last_name + ' ' + item.first_name }}
+                                    <span class="tutoring-users-item-class" v-if="item.schoolclass">({{ item.schoolclass }})</span>
+                                </div>
+                                <div class="tutoring-users-item-mail">{{ item.email }}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tutoring-users-pagination">
+                        <Pagination :meta="meta" :store="tutoringUserStore" selected_field="selected_users" />
+                    </div>
+                </section>
+
+                <aside class="tutoring-users-side-stack">
+                    <section class="tutoring-users-panel">
+                        <div class="tutoring-users-panel__head">
+                            <div class="tutoring-users-panel__title">Aktionen</div>
+                        </div>
+                        <div class="kpi-sub" style="margin-top: -2px">Verfügbare Schritte für die aktuelle Auswahl.</div>
+                        <div class="kpi-sub mt-2">{{ selected_users.length }} ausgewählt</div>
+
+                        <div class="tutoring-users-card-menu mt-3">
+                            <v-btn block color="primary" variant="tonal" rounded="lg" prepend-icon="mdi-plus" @click="createUser">Hinzufügen</v-btn>
+                        </div>
+
+                        <template v-if="selected_users.length == 1">
+                            <v-divider class="my-3 opacity-30" />
+                            <div class="tutoring-users-card-menu">
+                                <v-btn block color="primary" variant="tonal" rounded="lg" prepend-icon="mdi-pencil" @click="editUser(selected_users[0])">Ändern</v-btn>
+                                <v-btn
+                                    block
+                                    color="error"
+                                    variant="tonal"
+                                    rounded="lg"
+                                    prepend-icon="mdi-lock"
+                                    @click="toggleIsActive(selected_users[0])"
+                                    v-if="selectedUser(selected_users[0]).is_active">
+                                    Sperren
+                                </v-btn>
+                                <v-btn
+                                    block
+                                    color="success"
+                                    variant="tonal"
+                                    rounded="lg"
+                                    prepend-icon="mdi-lock-open"
+                                    @click="toggleIsActive(selected_users[0])"
+                                    v-if="!selectedUser(selected_users[0]).is_active">
+                                    Entsperren
+                                </v-btn>
+                            </div>
+                        </template>
+
+                        <template v-if="selected_users.length >= 1">
+                            <v-divider class="my-3 opacity-30" />
+                            <div class="tutoring-users-card-menu">
+                                <v-btn block color="success" variant="tonal" rounded="lg" prepend-icon="mdi-check" @click="confirmUsers(selected_users)">Bestätigen</v-btn>
+                                <v-btn block color="warning" variant="tonal" rounded="lg" prepend-icon="mdi-delete" @click="deleteUser">Löschen</v-btn>
+                            </div>
+                        </template>
+                    </section>
+
+                    <section class="tutoring-users-panel" v-if="count_deletable_users > 0">
+                        <div class="tutoring-users-panel__head">
+                            <div class="tutoring-users-panel__title">Bereinigung Benutzer</div>
+                        </div>
+                        <div class="kpi-sub">Nicht bestätigte E-Mail-Adressen können gesammelt entfernt werden.</div>
+                        <div class="tutoring-users-clean-count">{{ count_deletable_users }}</div>
+                        <div class="tutoring-users-card-menu">
+                            <v-btn block color="warning" variant="tonal" rounded="lg" prepend-icon="mdi-vacuum" @click="cleanUsers">Bereinigen</v-btn>
+                        </div>
+                    </section>
+                </aside>
+            </div>
+        </section>
     </v-col>
+
     <!-- Neuer Benutzer / Benutzer ändern -->
-    <v-col cols="12" md="6" xl="4" v-if="action == 'create_user' || action == 'edit_user'">
-        <its-grid-box color="primary" :title="data.id ? 'Benutzer ändern' : 'Neuer Benutzer'" class="w-100">
-            <v-form ref="form" v-model="is_valid" @submit.prevent="saveUser(data)" class="mb-4">
-                <v-row dense>
-                    <v-col cols="12">
-                        <v-text-field autofocus v-model="data.last_name" label="Nachname" :rules="[required(), maxLength(255)]" />
-                    </v-col>
-                    <v-col cols="12">
-                        <v-text-field v-model="data.first_name" label="Vorname" :rules="[maxLength(255)]" />
-                    </v-col>
-                    <v-col cols="12">
-                        <v-text-field v-model="data.email" label="E-Mail" :rules="[mail(), maxLength(255)]" />
-                    </v-col>
-                    <v-col cols="12">
-                        <v-text-field v-model="data.schoolclass" label="Schulklasse" :rules="[required(), maxLength(10)]" />
-                    </v-col>
-                    <v-radio-group v-model="data.sex" :rules="[required()]">
+    <v-col cols="12" md="8" xl="6" v-if="action == 'create_user' || action == 'edit_user'">
+        <section class="admin-card ai-glass-panel tutoring-users-form-card">
+            <div class="admin-card-head mb-3">
+                <div class="tov-card-heading">
+                    <div class="admin-card-eyebrow">Benutzer</div>
+                    <h2 class="admin-card-title">{{ data.id ? 'Benutzer ändern' : 'Neuer Benutzer' }}</h2>
+                </div>
+            </div>
+
+            <v-form ref="form" v-model="is_valid" @submit.prevent="saveUser(data)" class="tutoring-users-form">
+                <div class="tutoring-users-form-section">
+                    <v-text-field autofocus v-model="data.last_name" label="Nachname" :rules="[required(), maxLength(255)]" />
+                    <v-text-field v-model="data.first_name" label="Vorname" :rules="[maxLength(255)]" />
+                    <v-text-field v-model="data.email" label="E-Mail" :rules="[mail(), maxLength(255)]" />
+                    <v-text-field v-model="data.schoolclass" label="Schulklasse" :rules="[required(), maxLength(10)]" />
+                </div>
+
+                <div class="tutoring-users-form-section">
+                    <div class="tutoring-users-form-label">Geschlecht</div>
+                    <v-radio-group v-model="data.sex" :rules="[required()]" hide-details="auto">
                         <v-radio label="Männlich" value="m" color="blue"></v-radio>
                         <v-radio label="Weiblich" value="f" color="pink"></v-radio>
                         <v-radio label="Divers" value="d" color="yellow"></v-radio>
                     </v-radio-group>
-                </v-row>
-                <v-row>
-                    <v-col cols="12">
-                        <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between" :disabled="is_uploading">
-                            <v-btn color="warning" flat tile @click="abort">Abbruch</v-btn>
-                            <v-btn color="success" flat tile type="submit">Speichern</v-btn>
-                        </v-card>
-                    </v-col>
-                </v-row>
+                </div>
+
+                <div class="tutoring-users-card-menu" :class="{ 'is-disabled': is_uploading }">
+                    <v-btn color="warning" rounded="lg" prepend-icon="mdi-close" @click="abort">Abbruch</v-btn>
+                    <v-btn color="success" rounded="lg" prepend-icon="mdi-content-save" type="submit">Speichern</v-btn>
+                </div>
             </v-form>
-        </its-grid-box>
+        </section>
     </v-col>
+
     <!-- Löschen -->
-    <v-col cols="12" md="6" xl="4" v-if="action == 'delete_user'">
-        <its-grid-box color="primary" title="Löschen" class="w-100">
-            <v-form ref="form" v-model="is_valid" @submit.prevent="doDeleteUsers(selected_users)">
-                <v-card tile flat color="transparent" class="text-body-1">
+    <v-col cols="12" md="8" xl="6" v-if="action == 'delete_user'">
+        <section class="admin-card ai-glass-panel tutoring-users-form-card">
+            <div class="admin-card-head mb-3">
+                <div class="tov-card-heading">
+                    <div class="admin-card-eyebrow">Benutzer</div>
+                    <h2 class="admin-card-title">Löschen</h2>
+                </div>
+            </div>
+
+            <v-form ref="form" v-model="is_valid" @submit.prevent="doDeleteUsers(selected_users)" class="tutoring-users-form">
+                <div class="tutoring-users-delete-box">
                     <div v-if="selected_users.length == 1">Es soll ein Benutzer gelöscht werden. Sind Sie sicher, dass Sie den markierten Benutzer löschen möchten?</div>
                     <div v-if="selected_users.length > 1">
                         Es sollen {{ selected_users.length }} Benutzer gelöscht werden. Sind Sie sicher, dass Sie die markierten Benutzer löschen möchten?
                     </div>
-                </v-card>
-                <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between mt-4">
-                    <v-btn color="success" flat tile @click="action = ''">Abbruch</v-btn>
-                    <v-btn color="error" flat tile type="submit">Löschen</v-btn>
-                </v-card>
+                </div>
+
+                <div class="tutoring-users-card-menu">
+                    <v-btn color="success" rounded="lg" prepend-icon="mdi-close" @click="action = ''">Abbruch</v-btn>
+                    <v-btn color="error" rounded="lg" prepend-icon="mdi-delete" type="submit">Löschen</v-btn>
+                </div>
             </v-form>
-        </its-grid-box>
+        </section>
     </v-col>
 </template>
 
@@ -159,11 +231,8 @@
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
-import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
-import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import SearchField from '@/pages/components/SearchField.vue'
 import Pagination from '@/pages/components/Pagination.vue'
-import FileUpload from '@/pages/components/FileUpload.vue'
 
 // SPECIFIC
 
@@ -175,7 +244,7 @@ export default {
         return useValidationRulesSetup()
     },
 
-    components: { Pagination, SearchField, ItsMenuButton, ItsGridBox, FileUpload },
+    components: { Pagination, SearchField },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -276,6 +345,14 @@ export default {
         unselectAll() {
             this.selected_users = []
         },
+        onUserClick(id) {
+            this.selected_users = this.selected_users.includes(id)
+                ? this.selected_users.filter((selectedId) => selectedId !== id)
+                : [...this.selected_users, id]
+        },
     },
 }
 </script>
+<style scoped src="@/../css/admin-index-page.css"></style>
+<style scoped src="@/../css/admin-tutoring-overview-cards.css"></style>
+<style scoped src="@/../css/admin-tutoring-users-card.css"></style>
