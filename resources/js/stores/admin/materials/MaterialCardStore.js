@@ -450,6 +450,73 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             }
         },
 
+        async restoreLastDeleted() {
+            return this.restoreDeletedById(null)
+        },
+
+        async restoreDeletedById(cardId = null) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const normalizedId = Number(cardId)
+                const url = Number.isFinite(normalizedId) && normalizedId > 0
+                    ? '/api/admin/materials/cards/restore-deleted/' + normalizedId
+                    : '/api/admin/materials/cards/restore-last-deleted'
+                const response = await axios.post(url)
+                this.selected_card = response.data
+                this.syncClassificationTreeFromCard(this.selected_card)
+                await this.loadConfig()
+                notification.notify({
+                    message: 'Gelöschtes Material wiederhergestellt.',
+                    type: 'success',
+                    timeout: 2500,
+                })
+                return response.data
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Wiederherstellung des zuletzt gelöschten Materials fehlgeschlagen.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async getDeletedRestoreList() {
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.get('/api/admin/materials/cards/deleted-restore-list')
+                return {
+                    items: Array.isArray(response.data?.data) ? response.data.data : [],
+                    limit: Math.max(1, Number(response.data?.meta?.limit || 1) || 1),
+                }
+            } catch (error) {
+                const notification = useNotificationStore()
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Hinweise zu gelöschten Materialien konnten nicht geladen werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return {
+                    items: [],
+                    limit: 1,
+                }
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async getLastDeletedRestoreInfo() {
+            const result = await this.getDeletedRestoreList()
+            return result.items[0] || null
+        },
+
         async addLinkAttachment(cardId, data) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()

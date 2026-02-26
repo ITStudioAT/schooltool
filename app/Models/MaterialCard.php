@@ -6,10 +6,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class MaterialCard extends Model
 {
     use HasFactory;
+    use SoftDeletes;
 
     public const STATUS_INBOX = 'inbox';
     public const STATUS_IN_PROGRESS = 'in_progress';

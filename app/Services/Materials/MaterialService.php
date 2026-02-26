@@ -156,14 +156,104 @@ class MaterialService
     public function deleteCard(MaterialCard $card): void
     {
         $card->loadMissing('attachments', 'classifications');
+        $restoreLimit = $this->restorableDeletedCardsLimit();
+        $this->trimRestorableDeletedCardsForUser((int) $card->user_id, max(0, $restoreLimit - 1));
 
-        foreach ($card->attachments as $attachment) {
-            if ($attachment->attachment_type === MaterialCardAttachment::TYPE_FILE && $attachment->file_path) {
-                Storage::delete($attachment->file_path);
+        DB::transaction(function () use ($card) {
+            foreach ($card->attachments as $attachment) {
+                $attachment->delete();
             }
+
+            $card->delete();
+        });
+    }
+
+    public function restoreLastDeletedCard(User $user): ?MaterialCard
+    {
+        $restoreLimit = $this->restorableDeletedCardsLimit();
+        if ($restoreLimit < 1) {
+            return null;
         }
 
-        $card->delete();
+        /** @var MaterialCard|null $card */
+        $card = MaterialCard::onlyTrashed()
+            ->where('user_id', $user->id)
+            ->orderByDesc('deleted_at')
+            ->first();
+
+        if (! $card) {
+            return null;
+        }
+
+        DB::transaction(function () use ($card) {
+            $card->restore();
+
+            MaterialCardAttachment::onlyTrashed()
+                ->where('material_card_id', $card->id)
+                ->restore();
+        });
+
+        return $card->fresh($this->cardRelations());
+    }
+
+    public function restoreDeletedCard(User $user, int $cardId): ?MaterialCard
+    {
+        if ($cardId <= 0 || $this->restorableDeletedCardsLimit() < 1) {
+            return null;
+        }
+
+        /** @var MaterialCard|null $card */
+        $card = MaterialCard::onlyTrashed()
+            ->where('user_id', $user->id)
+            ->where('id', $cardId)
+            ->first();
+
+        if (! $card) {
+            return null;
+        }
+
+        DB::transaction(function () use ($card) {
+            $card->restore();
+
+            MaterialCardAttachment::onlyTrashed()
+                ->where('material_card_id', $card->id)
+                ->restore();
+        });
+
+        return $card->fresh($this->cardRelations());
+    }
+
+    public function deletedCardsRestoreList(User $user): array
+    {
+        $limit = $this->restorableDeletedCardsLimit();
+        if ($limit < 1) {
+            return [];
+        }
+
+        $cards = MaterialCard::onlyTrashed()
+            ->where('user_id', $user->id)
+            ->orderByDesc('deleted_at')
+            ->limit($limit)
+            ->get();
+
+        if ($cards->isEmpty()) {
+            return [];
+        }
+
+        $counts = MaterialCardAttachment::onlyTrashed()
+            ->whereIn('material_card_id', $cards->pluck('id')->all())
+            ->selectRaw('material_card_id, COUNT(*) as aggregate_count')
+            ->groupBy('material_card_id')
+            ->pluck('aggregate_count', 'material_card_id');
+
+        return $cards->map(function (MaterialCard $card) use ($counts) {
+            return [
+                'id' => (int) $card->id,
+                'title' => trim((string) ($card->title ?? '')),
+                'attachments_count' => (int) ($counts[(int) $card->id] ?? 0),
+                'deleted_at' => $card->deleted_at?->toDateTimeString(),
+            ];
+        })->values()->all();
     }
 
     public function addFileAttachment(MaterialCard $card, UploadedFile $file, ?string $name = null): MaterialCardAttachment
@@ -436,7 +526,7 @@ class MaterialService
             Storage::delete($attachment->file_path);
         }
 
-        $attachment->delete();
+        $attachment->forceDelete();
 
         if ($card) {
             $this->keywordService->rebuild($card->fresh($this->cardRelations()));
@@ -2443,6 +2533,49 @@ class MaterialService
             'classifications.topic',
             'classifications.unit',
         ];
+    }
+
+    private function restorableDeletedCardsLimit(): int
+    {
+        return max(1, (int) config('schooltool.materials_restore_deleted_cards_limit', 5));
+    }
+
+    private function trimRestorableDeletedCardsForUser(int $userId, int $keepCount): void
+    {
+        $keep = max(0, $keepCount);
+        $deletedCards = MaterialCard::onlyTrashed()
+            ->where('user_id', $userId)
+            ->orderByDesc('deleted_at')
+            ->orderByDesc('id')
+            ->get();
+
+        if ($deletedCards->count() <= $keep) {
+            return;
+        }
+
+        $cardsToPurge = $deletedCards->slice($keep)->values();
+        foreach ($cardsToPurge as $deletedCard) {
+            $this->purgeDeletedCard($deletedCard);
+        }
+    }
+
+    private function purgeDeletedCard(MaterialCard $deletedCard): void
+    {
+        $attachments = MaterialCardAttachment::withTrashed()
+            ->where('material_card_id', $deletedCard->id)
+            ->get();
+
+        foreach ($attachments as $attachment) {
+            if ($attachment->attachment_type === MaterialCardAttachment::TYPE_FILE && $attachment->file_path) {
+                Storage::delete($attachment->file_path);
+            }
+        }
+
+        foreach ($attachments as $attachment) {
+            $attachment->forceDelete();
+        }
+
+        $deletedCard->forceDelete();
     }
 
     private function supportsClassificationTables(): bool

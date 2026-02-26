@@ -51,6 +51,73 @@
             {{ displayedMaterials }}/{{ totalMaterials }} Material{{ totalMaterials === 1 ? '' : 'ien' }} angezeigt.
             <span class="ml-2">• Speicher: angezeigt {{ shownListedAttachmentSizeLabel }} / alle {{ allListedAttachmentSizeLabel }}</span>
         </v-alert>
+        <v-alert
+            v-if="deletedMaterialRestoreItems.length > 0 && !deletedMaterialRestoreHidden"
+            type="warning"
+            variant="tonal"
+            class="mb-4">
+            <div class="d-flex flex-column ga-3">
+                <div class="d-flex flex-column flex-md-row align-md-center ga-2">
+                    <div class="flex-grow-1">
+                        Gelöschte Materialien (wiederherstellbar, max. {{ deletedMaterialRestoreLimit }}).
+                    </div>
+                    <div class="d-flex ga-2">
+                        <v-btn
+                            size="small"
+                            variant="text"
+                            :disabled="isRestoringLastDeletedMaterial"
+                            @click="hideDeletedMaterialRestoreList">
+                            Ausblenden
+                        </v-btn>
+                    </div>
+                </div>
+
+                <v-list class="bg-transparent pa-0">
+                    <v-list-item
+                        v-for="item in deletedMaterialRestoreItems"
+                        :key="`deleted-restore-item-${item.id}`"
+                        class="px-0 py-2">
+                        <div class="d-flex flex-column flex-md-row align-md-center ga-2 w-100">
+                            <div class="flex-grow-1">
+                                <div class="text-body-2 font-weight-medium">
+                                    {{ item.title || 'Material' }}
+                                </div>
+                                <div class="text-caption text-medium-emphasis">
+                                    Gelöscht: {{ item.deletedAt ? formatDateTime(item.deletedAt) : 'unbekannt' }}
+                                    <span v-if="Number(item.attachmentsCount || 0) > 0">
+                                        • {{ Number(item.attachmentsCount || 0) }} Anhang{{ Number(item.attachmentsCount || 0) === 1 ? '' : 'e' }}
+                                    </span>
+                                    <span v-else>• keine Anhänge</span>
+                                </div>
+                            </div>
+                            <div>
+                                <v-btn
+                                    size="small"
+                                    color="warning"
+                                    variant="flat"
+                                    prepend-icon="mdi-restore"
+                                    :loading="isRestoringLastDeletedMaterial && Number(restoringDeletedMaterialId || 0) === Number(item.id || 0)"
+                                    :disabled="isLoading || isSavingEdit || isDeletingId !== null || (isRestoringLastDeletedMaterial && Number(restoringDeletedMaterialId || 0) !== Number(item.id || 0))"
+                                    @click="restoreDeletedMaterial(item)">
+                                    Wiederherstellen
+                                </v-btn>
+                            </div>
+                        </div>
+                    </v-list-item>
+                </v-list>
+            </div>
+        </v-alert>
+        <div v-if="deletedMaterialRestoreItems.length > 0 && deletedMaterialRestoreHidden" class="mb-4 d-flex justify-end">
+            <v-btn
+                size="small"
+                color="warning"
+                variant="outlined"
+                prepend-icon="mdi-eye-outline"
+                :disabled="isRestoringLastDeletedMaterial"
+                @click="showDeletedMaterialRestoreList">
+                Restore-Liste einblenden
+            </v-btn>
+        </div>
         <MaterialsOverviewSortBar v-if="!isSubjectsContentsOverview" :overview-sort-mode="overviewSortMode" @update:overview-sort-mode="setOverviewSortMode" />
 
         <v-skeleton-loader v-if="isLoading && !hasCards" type="list-item-three-line@4" />
@@ -76,9 +143,10 @@
             <MaterialsSubjectsContentsTree
                 v-else
                 :items="subjectsContentsOverviewItems"
-                :action-busy="isLoading || isDeletingId !== null || isSavingEdit || isSavingCreate"
+                :action-busy="isLoading || isDeletingId !== null || isSavingEdit || isSavingCreate || isRemovingTreeClassification"
                 :enable-share-buttons="enableShareButtons"
                 :enable-create-buttons="!readOnlyMaterialActions"
+                :enable-remove-buttons="!readOnlyMaterialActions"
                 :show-share-indicators="enableShareButtons"
                 :share-indicator-color-fn="shareIndicatorColor"
                 :status-color-fn="statusColor"
@@ -88,7 +156,8 @@
                 @open-material="openDetailDialog"
                 @open-share="openShareDialog"
                 @open-create="openCreateDialogFromTree"
-                @open-attachments="openAttachmentManager" />
+                @open-attachments="openAttachmentManager"
+                @remove-classification="removeClassificationFromTree" />
         </template>
 
         <template v-else-if="hasCards">
@@ -456,18 +525,9 @@
             @cancel="closeEditDialog">
             <template #extra-content>
                 <div class="mt-4 d-flex flex-wrap justify-end ga-2">
-                    <template v-if="editDeleteStep === 0">
-                        <v-btn color="warning" variant="tonal" prepend-icon="mdi-delete" :disabled="isSavingEdit || isDeletingEditedMaterial" @click="startEditDeleteFlow">
-                            Material löschen
-                        </v-btn>
-                    </template>
-
-                    <template v-else>
-                        <v-btn color="success" variant="tonal" prepend-icon="mdi-delete-off" :disabled="isDeletingEditedMaterial" @click="resetEditDeleteFlow">Abbrechen</v-btn>
-                        <v-btn color="error" variant="flat" prepend-icon="mdi-delete" :loading="isDeletingEditedMaterial" :disabled="isSavingEdit" @click="confirmDeleteFromEdit">
-                            Löschen
-                        </v-btn>
-                    </template>
+                    <v-btn color="warning" variant="tonal" prepend-icon="mdi-delete" :disabled="isSavingEdit || isDeletingEditedMaterial" @click="startEditDeleteFlow">
+                        Material löschen
+                    </v-btn>
                 </div>
 
                 <div class="mt-4">
@@ -634,6 +694,71 @@
         </MaterialsCreateInlineForm>
     </v-dialog>
 
+    <v-dialog v-model="editDeleteConfirmDialogOpen" max-width="760" persistent>
+        <v-card rounded="xl">
+            <v-card-title class="d-flex align-center ga-2">
+                <span class="text-h6">Material wirklich löschen?</span>
+                <v-spacer />
+                <v-btn
+                    icon="mdi-close"
+                    variant="text"
+                    :disabled="isDeletingEditedMaterial || editDeleteConfirmDialogLoading"
+                    @click="resetEditDeleteFlow" />
+            </v-card-title>
+
+            <v-card-text>
+                <v-alert type="warning" variant="tonal" class="mb-4">
+                    Das Material wird dauerhaft gelöscht. Vorhandene Anhänge werden ebenfalls gelöscht.
+                </v-alert>
+
+                <div class="text-subtitle-2 mb-1">Material</div>
+                <div class="text-body-2 mb-4">{{ editDeleteConfirmMaterialTitle || editForm.title || 'Ohne Titel' }}</div>
+
+                <div class="text-subtitle-2 mb-2">Anhänge, die mit gelöscht werden</div>
+
+                <v-progress-linear v-if="editDeleteConfirmDialogLoading" indeterminate color="warning" rounded class="mb-3" />
+
+                <v-alert v-else-if="!editDeleteConfirmAttachmentRows.length" type="info" variant="tonal" class="mb-0">
+                    Keine Anhänge vorhanden.
+                </v-alert>
+
+                <v-list v-else class="bg-transparent pa-0">
+                    <v-list-item
+                        v-for="row in editDeleteConfirmAttachmentRows"
+                        :key="`edit-delete-confirm-attachment-${row.id}`"
+                        class="px-0 py-2">
+                        <div class="d-flex flex-column ga-1 w-100">
+                            <div class="text-body-2 font-weight-medium">
+                                {{ attachmentDisplayName(row) }}
+                            </div>
+                            <div class="text-caption text-medium-emphasis">
+                                {{ attachmentTypeAndSizeLabel(row) }}
+                            </div>
+                        </div>
+                    </v-list-item>
+                </v-list>
+            </v-card-text>
+
+            <v-card-actions class="px-6 pb-6 pt-2 d-flex flex-wrap justify-end ga-2">
+                <v-btn
+                    variant="text"
+                    :disabled="isDeletingEditedMaterial || editDeleteConfirmDialogLoading"
+                    @click="resetEditDeleteFlow">
+                    Abbrechen
+                </v-btn>
+                <v-btn
+                    color="error"
+                    variant="flat"
+                    prepend-icon="mdi-delete"
+                    :loading="isDeletingEditedMaterial"
+                    :disabled="isSavingEdit || editDeleteConfirmDialogLoading"
+                    @click="confirmDeleteFromEdit">
+                    Ja, Material und Anhänge löschen
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
+
     <v-dialog v-model="textAttachmentEditorOpen" max-width="920" persistent>
         <v-card rounded="xl">
             <v-card-title class="d-flex align-center ga-2">
@@ -773,6 +898,7 @@ export default {
             isLoading: false,
             isSavingCreate: false,
             isSavingEdit: false,
+            isRemovingTreeClassification: false,
             isDeletingId: null,
             createDialogOpen: false,
             editDialogOpen: false,
@@ -809,6 +935,15 @@ export default {
             detailDialogCard: null,
             detailDeleteStep: 0,
             editDeleteStep: 0,
+            editDeleteConfirmDialogOpen: false,
+            editDeleteConfirmDialogLoading: false,
+            editDeleteConfirmMaterialTitle: '',
+            editDeleteConfirmAttachmentRows: [],
+            deletedMaterialRestoreItems: [],
+            deletedMaterialRestoreHidden: false,
+            deletedMaterialRestoreLimit: 5,
+            isRestoringLastDeletedMaterial: false,
+            restoringDeletedMaterialId: null,
             returnToDetailOnEditCancel: false,
             detailCardForEditReturn: null,
             attachmentDeleteArmedIds: [],
@@ -1345,6 +1480,7 @@ export default {
         this.typeFilter = String(this.materialCardStore?.filters?.type || '').trim()
         this.statusFilter = String(this.materialCardStore?.filters?.status || '').trim()
         await this.loadCards()
+        await this.refreshLastDeletedMaterialRestoreInfo()
     },
     methods: {
         openShareDialog(target = {}) {
@@ -1758,7 +1894,7 @@ export default {
                 if (!Number.isFinite(cardId) || cardId <= 0) continue
                 if (hasActiveFilters && !this.cardMatchesFilterSet(card, normalizedFilters)) continue
 
-                const material = {
+                const materialBase = {
                     id: cardId,
                     title: this.materialSortTitle(card),
                     icon: this.sourceIcon(card),
@@ -1769,11 +1905,26 @@ export default {
                 }
 
                 const rows = this.normalizeClassifications(card?.classifications)
+                const classificationsCount = rows.length
                 for (const row of rows) {
                     const subjectName = this.normalizeFilterText(row?.subject)
                     const topicName = this.normalizeFilterText(row?.topic)
                     const unitName = this.normalizeFilterText(row?.unit)
                     if (!subjectName) continue
+                    const material = {
+                        ...materialBase,
+                        classificationRow: {
+                            subject: subjectName,
+                            topic: topicName,
+                            unit: unitName,
+                        },
+                        classificationsCount,
+                        canRemoveClassification: classificationsCount >= 2,
+                        removeClassificationTitle:
+                            classificationsCount >= 2
+                                ? 'Diese Zuordnung entfernen'
+                                : 'Nicht möglich: Material hat nur 1 Zuordnung.',
+                    }
 
                     const subjectNode = ensureSubject(subjectName)
                     if (!topicName) {
@@ -1859,6 +2010,92 @@ export default {
             }
 
             return subjects
+        },
+        classificationRowKey(row) {
+            const subject = this.normalizeFilterText(row?.subject).toLocaleLowerCase()
+            const topic = this.normalizeFilterText(row?.topic).toLocaleLowerCase()
+            const unit = this.normalizeFilterText(row?.unit).toLocaleLowerCase()
+            if (!subject) return ''
+            return `${subject}|${topic}|${unit}`
+        },
+        buildMaterialUpdatePayload(card, classifications) {
+            return {
+                title: String(card?.title || '').trim(),
+                source_url: this.toNullable(card?.source_url),
+                source_text: this.toNullable(card?.source_text),
+                classifications: this.normalizeClassifications(classifications),
+                area: this.toNullable(card?.area),
+                unit: this.toNullable(card?.unit),
+                type: this.toNullable(card?.type),
+                status: this.toNullable(card?.status) || this.defaultStatusValue,
+                notes: this.toNullable(card?.notes),
+            }
+        },
+        notifyTreeClassificationRemoval(message, type = 'warning') {
+            const notification = useNotificationStore()
+            notification.notify({
+                message: String(message || 'Zuordnung konnte nicht entfernt werden.'),
+                type,
+                timeout: 3000,
+            })
+        },
+        async removeClassificationFromTree(material) {
+            if (this.readOnlyMaterialActions) return
+            if (this.isLoading || this.isSavingEdit || this.isSavingCreate || this.isDeletingId !== null || this.isRemovingTreeClassification) return
+
+            const cardId = Number(material?.id)
+            if (!Number.isFinite(cardId) || cardId <= 0) return
+
+            const targetRow = {
+                subject: this.normalizeFilterText(material?.classificationRow?.subject),
+                topic: this.normalizeFilterText(material?.classificationRow?.topic),
+                unit: this.normalizeFilterText(material?.classificationRow?.unit),
+            }
+            if (!targetRow.subject) return
+
+            const hintedCount = Number(material?.classificationsCount || 0)
+            if (Number.isFinite(hintedCount) && hintedCount < 2) {
+                this.notifyTreeClassificationRemoval('Zuordnung entfernen geht nur, wenn mindestens 2 Zuordnungen vorhanden sind.')
+                return
+            }
+
+            this.isRemovingTreeClassification = true
+            try {
+                const loaded = await this.materialCardStore.show(cardId)
+                if (!loaded) return
+
+                const card = this.materialCardStore?.selected_card
+                if (Number(card?.id) !== cardId) return
+
+                const rows = this.normalizeClassifications(card?.classifications)
+                if (rows.length < 2) {
+                    this.notifyTreeClassificationRemoval('Zuordnung entfernen geht nur, wenn mindestens 2 Zuordnungen vorhanden sind.')
+                    return
+                }
+
+                const targetKey = this.classificationRowKey(targetRow)
+                const nextRows = rows.filter((row) => this.classificationRowKey(row) !== targetKey)
+
+                if (nextRows.length === rows.length) {
+                    this.notifyTreeClassificationRemoval('Die ausgewählte Zuordnung wurde nicht gefunden.', 'error')
+                    return
+                }
+                if (nextRows.length < 1) {
+                    this.notifyTreeClassificationRemoval('Die letzte Zuordnung kann nicht entfernt werden.')
+                    return
+                }
+
+                const updated = await this.materialCardStore.update(cardId, this.buildMaterialUpdatePayload(card, nextRows))
+                if (!updated) return
+
+                if (this.detailDialogOpen && Number(this.detailDialogCard?.id) === cardId) {
+                    this.detailDialogCard = this.sanitizeDialogCard(updated)
+                }
+                this.mergeCardIntoOverview(updated)
+                await this.loadCards(null, { forceFilterCountRefresh: true })
+            } finally {
+                this.isRemovingTreeClassification = false
+            }
         },
         buildSubjectsContentsOverviewSnapshotKey() {
             const filters = this.buildSubjectsContentsOverviewFilters()
@@ -2767,6 +3004,10 @@ export default {
             this.attachmentDeleteArmedIds = []
             this.attachmentNameEditingIds = []
             this.editDeleteStep = 0
+            this.editDeleteConfirmDialogOpen = false
+            this.editDeleteConfirmDialogLoading = false
+            this.editDeleteConfirmMaterialTitle = ''
+            this.editDeleteConfirmAttachmentRows = []
             this.editClassificationEditorVisible = false
             this.editDialogOpen = true
         },
@@ -2779,29 +3020,113 @@ export default {
             this.createForm = createDefaultEditForm()
             this.createForm.status = this.defaultStatusValue
         },
-        startEditDeleteFlow() {
+        async startEditDeleteFlow() {
             const cardId = Number(this.editForm?.id)
             if (!Number.isFinite(cardId) || cardId <= 0) return
             if (this.isSavingEdit || this.isDeletingEditedMaterial) return
+
             this.editDeleteStep = 1
+            this.editDeleteConfirmDialogOpen = true
+            this.editDeleteConfirmDialogLoading = true
+            this.editDeleteConfirmMaterialTitle = String(this.editForm?.title || '').trim()
+            this.editDeleteConfirmAttachmentRows = this.toAttachmentRows(this.attachmentRows)
+
+            try {
+                const loaded = await this.materialCardStore.show(cardId)
+                if (!loaded) return
+                if (!this.editDeleteConfirmDialogOpen) return
+                if (Number(this.editForm?.id) !== cardId) return
+
+                const selectedCard = this.materialCardStore?.selected_card
+                if (Number(selectedCard?.id) !== cardId) return
+
+                this.mergeCardIntoOverview(selectedCard)
+                this.attachmentRows = this.toAttachmentRows(selectedCard?.attachments)
+                this.editDeleteConfirmMaterialTitle = String(selectedCard?.title || '').trim()
+                this.editDeleteConfirmAttachmentRows = this.toAttachmentRows(selectedCard?.attachments)
+            } finally {
+                this.editDeleteConfirmDialogLoading = false
+            }
         },
         resetEditDeleteFlow() {
             if (this.isDeletingEditedMaterial) return
             this.editDeleteStep = 0
+            this.editDeleteConfirmDialogOpen = false
+            this.editDeleteConfirmDialogLoading = false
+        },
+        async refreshLastDeletedMaterialRestoreInfo() {
+            if (!this.materialCardStore || typeof this.materialCardStore.getDeletedRestoreList !== 'function') return
+
+            const result = await this.materialCardStore.getDeletedRestoreList()
+            const items = Array.isArray(result?.items) ? result.items : []
+            this.deletedMaterialRestoreLimit = Math.max(1, Number(result?.limit || this.deletedMaterialRestoreLimit || 5) || 5)
+
+            if (items.length === 0) {
+                this.deletedMaterialRestoreItems = []
+                this.deletedMaterialRestoreHidden = false
+                return
+            }
+
+            this.deletedMaterialRestoreItems = items.map((item) => ({
+                id: Number(item?.id || 0) || null,
+                title: String(item?.title || '').trim(),
+                attachmentsCount: Math.max(0, Number(item?.attachments_count ?? item?.attachmentsCount ?? 0) || 0),
+                deletedAt: String(item?.deleted_at ?? item?.deletedAt ?? '').trim(),
+            })).filter((item) => Number.isFinite(Number(item.id)) && Number(item.id) > 0)
+        },
+        hideDeletedMaterialRestoreList() {
+            if (this.isRestoringLastDeletedMaterial) return
+            if (!Array.isArray(this.deletedMaterialRestoreItems) || this.deletedMaterialRestoreItems.length === 0) return
+            this.deletedMaterialRestoreHidden = true
+        },
+        showDeletedMaterialRestoreList() {
+            if (this.isRestoringLastDeletedMaterial) return
+            if (!Array.isArray(this.deletedMaterialRestoreItems) || this.deletedMaterialRestoreItems.length === 0) return
+            this.deletedMaterialRestoreHidden = false
+        },
+        async restoreDeletedMaterial(item = null) {
+            if (this.isRestoringLastDeletedMaterial) return
+            if (!Array.isArray(this.deletedMaterialRestoreItems) || this.deletedMaterialRestoreItems.length === 0) return
+            if (this.isLoading || this.isSavingEdit || this.isDeletingId !== null) return
+
+            const targetId = Number(item?.id || this.deletedMaterialRestoreItems[0]?.id || 0)
+            if (!Number.isFinite(targetId) || targetId <= 0) return
+
+            this.isRestoringLastDeletedMaterial = true
+            this.restoringDeletedMaterialId = targetId
+            try {
+                const restored = await this.materialCardStore.restoreDeletedById(targetId)
+                if (!restored) {
+                    await this.refreshLastDeletedMaterialRestoreInfo()
+                    return
+                }
+
+                this.mergeCardIntoOverview(restored)
+                this.deletedMaterialRestoreHidden = false
+                await this.loadCards(null, { forceFilterCountRefresh: true })
+                await this.refreshLastDeletedMaterialRestoreInfo()
+            } finally {
+                this.isRestoringLastDeletedMaterial = false
+                this.restoringDeletedMaterialId = null
+            }
         },
         async confirmDeleteFromEdit() {
             const cardId = Number(this.editForm?.id)
             if (!Number.isFinite(cardId) || cardId <= 0) return
-            if (this.isSavingEdit || this.isDeletingEditedMaterial || this.editDeleteStep !== 1) return
+            if (this.isSavingEdit || this.isDeletingEditedMaterial || !this.editDeleteConfirmDialogOpen) return
 
             this.isDeletingId = cardId
             const deleted = await this.materialCardStore.destroy(cardId)
             this.isDeletingId = null
             this.editDeleteStep = 0
+            this.editDeleteConfirmDialogOpen = false
+            this.editDeleteConfirmDialogLoading = false
 
             if (deleted) {
                 await this.closeEditDialog(false)
                 await this.loadCards(null, { forceFilterCountRefresh: true })
+                this.deletedMaterialRestoreHidden = false
+                await this.refreshLastDeletedMaterialRestoreInfo()
             }
         },
         async closeEditDialog(restoreDetail = true) {
@@ -2821,6 +3146,10 @@ export default {
             this.attachmentDeleteArmedIds = []
             this.attachmentNameEditingIds = []
             this.editDeleteStep = 0
+            this.editDeleteConfirmDialogOpen = false
+            this.editDeleteConfirmDialogLoading = false
+            this.editDeleteConfirmMaterialTitle = ''
+            this.editDeleteConfirmAttachmentRows = []
             this.returnToDetailOnEditCancel = false
             this.detailCardForEditReturn = null
 

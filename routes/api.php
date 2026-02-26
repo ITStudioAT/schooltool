@@ -263,6 +263,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/materials/cards', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'index']);
         Route::post('/admin/materials/cards', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'store']);
         Route::post('/admin/materials/cards/quick_store', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'quickStore']);
+        Route::get('/admin/materials/cards/deleted-restore-list', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'deletedRestoreList']);
+        Route::get('/admin/materials/cards/last-deleted-restore-info', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'lastDeletedRestoreInfo']);
+        Route::post('/admin/materials/cards/restore-last-deleted', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'restoreLastDeleted']);
+        Route::post('/admin/materials/cards/restore-deleted/{card_id}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'restoreDeletedById'])->whereNumber('card_id');
         Route::get('/admin/materials/cards/{material_card}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'show']);
         Route::put('/admin/materials/cards/{material_card}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'update']);
         Route::delete('/admin/materials/cards/{material_card}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'destroy']);

@@ -67,6 +67,65 @@ class MaterialController extends Controller
         return response()->json(new MaterialCardResource($this->loadCardForResponse($card)), 200);
     }
 
+    public function restoreLastDeleted(MaterialService $service)
+    {
+        $authUser = $this->authorizeForMaterials();
+
+        $card = $service->restoreLastDeletedCard($authUser);
+        if (! $card) {
+            return response()->json([
+                'message' => 'Kein zuletzt gelöschtes Material zum Wiederherstellen vorhanden.',
+            ], 404);
+        }
+
+        return response()->json(new MaterialCardResource($this->loadCardForResponse($card)), 200);
+    }
+
+    public function restoreDeletedById(int $card_id, MaterialService $service)
+    {
+        $authUser = $this->authorizeForMaterials();
+
+        $card = $service->restoreDeletedCard($authUser, $card_id);
+        if (! $card) {
+            return response()->json([
+                'message' => 'Das gelöschte Material konnte nicht wiederhergestellt werden.',
+            ], 404);
+        }
+
+        return response()->json(new MaterialCardResource($this->loadCardForResponse($card)), 200);
+    }
+
+    public function lastDeletedRestoreInfo(MaterialService $service)
+    {
+        $authUser = $this->authorizeForMaterials();
+
+        $items = $service->deletedCardsRestoreList($authUser);
+        $info = $items[0] ?? null;
+        if (! $info) {
+            return response()->json([
+                'message' => 'Kein wiederherstellbares zuletzt gelöschtes Material vorhanden.',
+            ], 404);
+        }
+
+        return response()->json([
+            'data' => $info,
+        ], 200);
+    }
+
+    public function deletedRestoreList(MaterialService $service)
+    {
+        $authUser = $this->authorizeForMaterials();
+
+        $items = $service->deletedCardsRestoreList($authUser);
+
+        return response()->json([
+            'data' => $items,
+            'meta' => [
+                'limit' => max(1, (int) config('schooltool.materials_restore_deleted_cards_limit', 5)),
+            ],
+        ], 200);
+    }
+
     public function show(MaterialCard $material_card)
     {
         $authUser = $this->authorizeForMaterials();

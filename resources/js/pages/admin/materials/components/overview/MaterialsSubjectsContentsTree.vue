@@ -80,6 +80,18 @@
                                 class="overview-subjects-material-status">
                                 {{ statusLabelFn(material.status) }}
                             </v-chip>
+                            <v-btn
+                                v-if="enableRemoveButtons && material.canRemoveClassification !== false"
+                                size="x-small"
+                                color="warning"
+                                variant="text"
+                                density="comfortable"
+                                prepend-icon="mdi-link-off"
+                                :disabled="actionBusy"
+                                title="Zuordnung entfernen"
+                                @click="removeClassification(material)">
+                                Entfernen
+                            </v-btn>
                             <v-icon
                                 v-if="showShareIndicator('material', material.id)"
                                 size="14"
@@ -189,6 +201,18 @@
                                         class="overview-subjects-material-status">
                                         {{ statusLabelFn(material.status) }}
                                     </v-chip>
+                                    <v-btn
+                                        v-if="enableRemoveButtons && material.canRemoveClassification !== false"
+                                        size="x-small"
+                                        color="warning"
+                                        variant="text"
+                                        density="comfortable"
+                                        prepend-icon="mdi-link-off"
+                                        :disabled="actionBusy"
+                                        title="Zuordnung entfernen"
+                                        @click="removeClassification(material)">
+                                        Entfernen
+                                    </v-btn>
                                     <v-icon
                                         v-if="showShareIndicator('material', material.id)"
                                         size="14"
@@ -297,6 +321,18 @@
                                                 class="overview-subjects-material-status">
                                                 {{ statusLabelFn(material.status) }}
                                             </v-chip>
+                                            <v-btn
+                                                v-if="enableRemoveButtons && material.canRemoveClassification !== false"
+                                                size="x-small"
+                                                color="warning"
+                                                variant="text"
+                                                density="comfortable"
+                                                prepend-icon="mdi-link-off"
+                                                :disabled="actionBusy"
+                                                title="Zuordnung entfernen"
+                                                @click="removeClassification(material)">
+                                                Entfernen
+                                            </v-btn>
                                             <v-icon
                                                 v-if="showShareIndicator('material', material.id)"
                                                 size="14"
@@ -355,6 +391,10 @@ export default {
             type: Boolean,
             default: true,
         },
+        enableRemoveButtons: {
+            type: Boolean,
+            default: false,
+        },
         showShareIndicators: {
             type: Boolean,
             default: false,
@@ -380,7 +420,7 @@ export default {
             required: true,
         },
     },
-    emits: ['open-material', 'open-share', 'open-create', 'open-attachments'],
+    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'remove-classification'],
     methods: {
         showShareIndicator(level, id) {
             if (!this.showShareIndicators) return false
@@ -396,6 +436,10 @@ export default {
                 title: String(material?.title || '').trim(),
                 attachments: Array.isArray(material?.attachments) ? material.attachments : undefined,
             })
+        },
+        removeClassification(material) {
+            if (material?.canRemoveClassification === false) return
+            this.$emit('remove-classification', material)
         },
     },
 }

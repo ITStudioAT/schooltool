@@ -171,37 +171,6 @@
             </v-card-text>
 
             <v-card-actions class="px-6 pb-6 pt-2 d-flex flex-wrap justify-end ga-2">
-                <template v-if="!readOnlyMaterialActions && deleteStep === 0">
-                    <v-btn
-                        color="warning"
-                        variant="tonal"
-                        prepend-icon="mdi-delete"
-                        :disabled="loading || isDeleting || isSavingEdit"
-                        @click="startDeleteFlowFn">
-                        Löschen
-                    </v-btn>
-                </template>
-
-                <template v-else-if="!readOnlyMaterialActions">
-                    <v-btn
-                        color="success"
-                        variant="tonal"
-                        prepend-icon="mdi-delete-off"
-                        :disabled="isDeleting"
-                        @click="resetDeleteFlowFn">
-                        Abbrechen
-                    </v-btn>
-                    <v-btn
-                        color="error"
-                        variant="flat"
-                        prepend-icon="mdi-delete"
-                        :loading="isDeleting"
-                        :disabled="loading || isSavingEdit"
-                        @click="confirmDeleteFn">
-                        Löschen
-                    </v-btn>
-                </template>
-
                 <v-btn
                     variant="text"
                     :disabled="loading || isDeleting || isSavingEdit"

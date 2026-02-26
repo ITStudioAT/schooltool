@@ -14,6 +14,7 @@ return [
     'tutoring_active' => (bool) env('TUTORING_ACTIVE', false),
     'teaching_active' => (bool) env('TEACHING_ACTIVE', false),
     'materials_active' => (bool) env('MATERIALS_ACTIVE', false),
+    'materials_restore_deleted_cards_limit' => (int) env('MATERIALS_RESTORE_DELETED_CARDS_LIMIT', 5),
     'materials_default_types' => [
         'Arbeitsblatt',
         'Merkblatt',
