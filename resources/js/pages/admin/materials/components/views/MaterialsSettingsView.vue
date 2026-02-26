@@ -1,25 +1,27 @@
 <template>
     <v-card class="materials-shell pa-4 pa-md-8" rounded="xl" elevation="0">
-        <div class="text-h4 font-weight-bold mb-2">Einstellungen</div>
-        <div class="text-subtitle-1 subline mb-4">Wähle einen Bereich aus.</div>
+        <template v-if="!standalone">
+            <div class="text-h4 font-weight-bold mb-2">Einstellungen</div>
+            <div class="text-subtitle-1 subline mb-4">Wähle einen Bereich aus.</div>
 
-        <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap ga-2 w-100 mb-5">
-            <v-btn
-                v-for="item in visibleMenuItems"
-                :key="`materials-settings-${item.value}`"
-                rounded="pill"
-                size="small"
-                variant="flat"
-                :prepend-icon="item.icon"
-                :disabled="isAnySettingsEditActive && selectedAction !== item.value"
-                :class="[
-                    'settings-menu-btn',
-                    { 'settings-menu-btn--active': selectedAction === item.value },
-                ]"
-                @click="selectedAction = item.value">
-                {{ item.label }}
-            </v-btn>
-        </v-card>
+            <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap ga-2 w-100 mb-5">
+                <v-btn
+                    v-for="item in visibleMenuItems"
+                    :key="`materials-settings-${item.value}`"
+                    rounded="pill"
+                    size="small"
+                    variant="flat"
+                    :prepend-icon="item.icon"
+                    :disabled="isAnySettingsEditActive && selectedAction !== item.value"
+                    :class="[
+                        'settings-menu-btn',
+                        { 'settings-menu-btn--active': selectedAction === item.value },
+                    ]"
+                    @click="selectedAction = item.value">
+                    {{ item.label }}
+                </v-btn>
+            </v-card>
+        </template>
 
         <v-card variant="outlined" class="pa-4">
             <div class="text-h6 font-weight-bold mb-2">{{ selectedItemLabel }}</div>
@@ -855,6 +857,10 @@ export default {
             type: String,
             default: null,
         },
+        standalone: {
+            type: Boolean,
+            default: false,
+        },
     },
     components: {
         MaterialTypeManagerDialog,
@@ -869,7 +875,6 @@ export default {
             statusManagerDialogOpen: false,
             menuItems: [
                 { value: 'overview_settings', label: 'Übersicht', icon: 'mdi-view-dashboard-outline' },
-                { value: 'subjects', label: 'Fächer', icon: 'mdi-book-education-outline' },
                 { value: 'materials_types', label: 'Materialtypen', icon: 'mdi-shape-outline' },
                 { value: 'status_values', label: 'Statuswerte', icon: 'mdi-flag-outline' },
             ],
@@ -1427,9 +1432,13 @@ export default {
             const action = this.normalizeTreeName(this.initialSelectedAction)
             const subjectAction = this.normalizeTreeName(this.initialSelectedSubjectAction)
 
-            const availableActions = Array.isArray(this.visibleMenuItems) ? this.visibleMenuItems.map((item) => item.value) : []
-            if (action && availableActions.includes(action)) {
+            if (this.standalone && action) {
                 this.selectedAction = action
+            } else {
+                const availableActions = Array.isArray(this.visibleMenuItems) ? this.visibleMenuItems.map((item) => item.value) : []
+                if (action && availableActions.includes(action)) {
+                    this.selectedAction = action
+                }
             }
 
             if (this.selectedAction !== 'subjects') {

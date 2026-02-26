@@ -26,6 +26,18 @@
 
         <v-btn
             class="materials-menu-btn"
+            :class="{ 'materials-menu-btn--active': modelValue === 'subjects' }"
+            rounded="pill"
+            size="large"
+            variant="flat"
+            prepend-icon="mdi-book-education-outline"
+            :disabled="disabled"
+            @click="$emit('update:modelValue', 'subjects')">
+            Fächer
+        </v-btn>
+
+        <v-btn
+            class="materials-menu-btn"
             :class="{ 'materials-menu-btn--active': modelValue === 'new_material' }"
             rounded="pill"
             size="large"
