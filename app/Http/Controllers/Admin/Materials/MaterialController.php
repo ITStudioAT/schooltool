@@ -95,6 +95,20 @@ class MaterialController extends Controller
         return response()->json(new MaterialCardResource($this->loadCardForResponse($card)), 200);
     }
 
+    public function purgeDeletedById(int $card_id, MaterialService $service)
+    {
+        $authUser = $this->authorizeForMaterials();
+
+        $deleted = $service->purgeDeletedCardById($authUser, $card_id);
+        if (! $deleted) {
+            return response()->json([
+                'message' => 'Das gelöschte Material konnte nicht endgültig gelöscht werden.',
+            ], 404);
+        }
+
+        return response()->noContent();
+    }
+
     public function lastDeletedRestoreInfo(MaterialService $service)
     {
         $authUser = $this->authorizeForMaterials();

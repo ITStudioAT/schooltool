@@ -5,6 +5,7 @@ namespace App\Services\Materials;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
 use App\Models\MaterialCardClassification;
+use App\Models\MaterialCardDeletedClassification;
 use App\Models\MaterialStatus;
 use App\Models\MaterialSubject;
 use App\Models\MaterialTopic;
@@ -155,11 +156,13 @@ class MaterialService
 
     public function deleteCard(MaterialCard $card): void
     {
-        $card->loadMissing('attachments', 'classifications');
+        $card->loadMissing('attachments', 'classifications.subject', 'classifications.topic', 'classifications.unit');
         $restoreLimit = $this->restorableDeletedCardsLimit();
         $this->trimRestorableDeletedCardsForUser((int) $card->user_id, max(0, $restoreLimit - 1));
 
         DB::transaction(function () use ($card) {
+            $this->storeDeletedClassificationSnapshot($card);
+
             foreach ($card->attachments as $attachment) {
                 $attachment->delete();
             }
@@ -185,12 +188,14 @@ class MaterialService
             return null;
         }
 
-        DB::transaction(function () use ($card) {
+        DB::transaction(function () use ($card, $user) {
             $card->restore();
 
             MaterialCardAttachment::onlyTrashed()
                 ->where('material_card_id', $card->id)
                 ->restore();
+
+            $this->restoreClassificationPathForRestoredCard($card, $user);
         });
 
         return $card->fresh($this->cardRelations());
@@ -212,15 +217,40 @@ class MaterialService
             return null;
         }
 
-        DB::transaction(function () use ($card) {
+        DB::transaction(function () use ($card, $user) {
             $card->restore();
 
             MaterialCardAttachment::onlyTrashed()
                 ->where('material_card_id', $card->id)
                 ->restore();
+
+            $this->restoreClassificationPathForRestoredCard($card, $user);
         });
 
         return $card->fresh($this->cardRelations());
+    }
+
+    public function purgeDeletedCardById(User $user, int $cardId): bool
+    {
+        if ($cardId <= 0) {
+            return false;
+        }
+
+        /** @var MaterialCard|null $card */
+        $card = MaterialCard::onlyTrashed()
+            ->where('user_id', $user->id)
+            ->where('id', $cardId)
+            ->first();
+
+        if (! $card) {
+            return false;
+        }
+
+        DB::transaction(function () use ($card) {
+            $this->forceDeleteDeletedCard($card);
+        });
+
+        return true;
     }
 
     public function deletedCardsRestoreList(User $user): array
@@ -254,6 +284,219 @@ class MaterialService
                 'deleted_at' => $card->deleted_at?->toDateTimeString(),
             ];
         })->values()->all();
+    }
+
+    private function storeDeletedClassificationSnapshot(MaterialCard $card): void
+    {
+        if (! $this->supportsDeletedClassificationSnapshots()) {
+            return;
+        }
+
+        $rows = $this->classificationSnapshotRowsFromCard($card);
+
+        MaterialCardDeletedClassification::query()
+            ->where('material_card_id', $card->id)
+            ->delete();
+
+        if ($rows === []) {
+            return;
+        }
+
+        $first = $rows[0];
+        $card->update([
+            'subject' => $first['subject'],
+            'area' => $first['topic'] !== '' ? $first['topic'] : null,
+            'unit' => $first['unit'] !== '' ? $first['unit'] : null,
+        ]);
+
+        $now = now();
+        $payload = array_map(function (array $row) use ($card, $now): array {
+            return [
+                'material_card_id' => (int) $card->id,
+                'subject_name' => $row['subject'],
+                'topic_name' => $row['topic'] !== '' ? $row['topic'] : null,
+                'unit_name' => $row['unit'] !== '' ? $row['unit'] : null,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }, $rows);
+
+        MaterialCardDeletedClassification::query()->insert($payload);
+    }
+
+    private function classificationSnapshotRowsFromCard(MaterialCard $card): array
+    {
+        $rows = [];
+        $seen = [];
+
+        foreach ($card->classifications as $classification) {
+            $subject = $this->normalizeName($classification->subject?->name);
+            $topic = $this->normalizeName($classification->topic?->name);
+            $unit = $this->normalizeName($classification->unit?->name);
+
+            if ($subject === '') {
+                continue;
+            }
+
+            if ($topic === '') {
+                $unit = '';
+            }
+
+            $key = mb_strtolower($subject . '|' . $topic . '|' . $unit);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+
+            $rows[] = [
+                'subject' => $subject,
+                'topic' => $topic,
+                'unit' => $unit,
+            ];
+        }
+
+        if ($rows !== []) {
+            return $rows;
+        }
+
+        $subject = $this->normalizeName($card->subject);
+        if ($subject === '') {
+            return [];
+        }
+
+        $topic = $this->normalizeName($card->area);
+        $unit = $this->normalizeName($card->unit);
+        if ($topic === '') {
+            $unit = '';
+        }
+
+        return [[
+            'subject' => $subject,
+            'topic' => $topic,
+            'unit' => $unit,
+        ]];
+    }
+
+    private function restoreClassificationPathForRestoredCard(MaterialCard $card, User $user): void
+    {
+        if (! $this->supportsClassificationTables()) {
+            return;
+        }
+
+        $snapshotRows = $this->deletedClassificationSnapshotRowsForCard($card);
+        if ($snapshotRows !== []) {
+            $this->replaceCardClassificationsFromRows($card, $user, $snapshotRows);
+
+            MaterialCardDeletedClassification::query()
+                ->where('material_card_id', $card->id)
+                ->delete();
+
+            return;
+        }
+
+        $hasClassifications = MaterialCardClassification::query()
+            ->where('material_card_id', $card->id)
+            ->exists();
+
+        if ($hasClassifications) {
+            return;
+        }
+
+        $subject = $this->normalizeName($card->subject);
+        if ($subject === '') {
+            return;
+        }
+
+        $topic = $this->normalizeName($card->area);
+        $unit = $this->normalizeName($card->unit);
+        if ($topic === '') {
+            $unit = '';
+        }
+
+        $this->replaceCardClassificationsFromRows($card, $user, [[
+            'subject' => $subject,
+            'topic' => $topic,
+            'unit' => $unit,
+        ]]);
+    }
+
+    private function deletedClassificationSnapshotRowsForCard(MaterialCard $card): array
+    {
+        if (! $this->supportsDeletedClassificationSnapshots()) {
+            return [];
+        }
+
+        $rows = [];
+        $seen = [];
+
+        $snapshots = MaterialCardDeletedClassification::query()
+            ->where('material_card_id', $card->id)
+            ->orderBy('id')
+            ->get();
+
+        foreach ($snapshots as $snapshot) {
+            $subject = $this->normalizeName($snapshot->subject_name);
+            $topic = $this->normalizeName($snapshot->topic_name);
+            $unit = $this->normalizeName($snapshot->unit_name);
+
+            if ($subject === '') {
+                continue;
+            }
+
+            if ($topic === '') {
+                $unit = '';
+            }
+
+            $key = mb_strtolower($subject . '|' . $topic . '|' . $unit);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+
+            $rows[] = [
+                'subject' => $subject,
+                'topic' => $topic,
+                'unit' => $unit,
+            ];
+        }
+
+        return $rows;
+    }
+
+    private function replaceCardClassificationsFromRows(MaterialCard $card, User $user, array $rows): void
+    {
+        if ($rows === []) {
+            return;
+        }
+
+        $card->classifications()->delete();
+
+        foreach ($rows as $row) {
+            $subject = $this->firstOrCreateSubject($user, $row['subject']);
+
+            $topic = null;
+            $unit = null;
+            if ($row['topic'] !== '') {
+                $topic = $this->firstOrCreateTopic($subject, $row['topic']);
+
+                if ($row['unit'] !== '') {
+                    $unit = $this->firstOrCreateUnit($topic, $row['unit']);
+                }
+            }
+
+            $card->classifications()->create([
+                'subject_id' => $subject->id,
+                'topic_id' => $topic?->id,
+                'unit_id' => $unit?->id,
+            ]);
+        }
+
+        $first = $rows[0];
+        $card->update([
+            'subject' => $first['subject'],
+            'area' => $first['topic'] !== '' ? $first['topic'] : null,
+            'unit' => $first['unit'] !== '' ? $first['unit'] : null,
+        ]);
     }
 
     public function addFileAttachment(MaterialCard $card, UploadedFile $file, ?string $name = null): MaterialCardAttachment
@@ -1019,6 +1262,7 @@ class MaterialService
                 ->values();
 
         $inUse = (! $topicIds->isEmpty() || ! $unitIds->isEmpty()) && MaterialCardClassification::query()
+            ->whereHas('materialCard')
             ->where(function ($query) use ($topicIds, $unitIds) {
                 if (! $topicIds->isEmpty()) {
                     $query->whereIn('topic_id', $topicIds->all());
@@ -1135,6 +1379,7 @@ class MaterialService
             ->values();
 
         $inUse = ! $unitIds->isEmpty() && MaterialCardClassification::query()
+            ->whereHas('materialCard')
             ->whereIn('unit_id', $unitIds->all())
             ->exists();
 
@@ -1235,6 +1480,7 @@ class MaterialService
         $this->assertUnitBelongsToUser($user, $unit);
 
         $inUse = MaterialCardClassification::query()
+            ->whereHas('materialCard')
             ->where('unit_id', $unit->id)
             ->exists();
 
@@ -1666,6 +1912,7 @@ class MaterialService
         $usageRows = $subjectIds->isEmpty() && $topicIds->isEmpty() && $unitIds->isEmpty()
             ? collect()
             : MaterialCardClassification::query()
+                ->whereHas('materialCard')
                 ->where(function ($query) use ($subjectIds, $topicIds, $unitIds) {
                     if (! $subjectIds->isEmpty()) {
                         $query->whereIn('subject_id', $subjectIds->all());
@@ -2555,11 +2802,11 @@ class MaterialService
 
         $cardsToPurge = $deletedCards->slice($keep)->values();
         foreach ($cardsToPurge as $deletedCard) {
-            $this->purgeDeletedCard($deletedCard);
+            $this->forceDeleteDeletedCard($deletedCard);
         }
     }
 
-    private function purgeDeletedCard(MaterialCard $deletedCard): void
+    private function forceDeleteDeletedCard(MaterialCard $deletedCard): void
     {
         $attachments = MaterialCardAttachment::withTrashed()
             ->where('material_card_id', $deletedCard->id)
@@ -2584,6 +2831,12 @@ class MaterialService
             && Schema::hasTable('material_topics')
             && Schema::hasTable('material_units')
             && Schema::hasTable('material_card_classifications');
+    }
+
+    private function supportsDeletedClassificationSnapshots(): bool
+    {
+        return $this->supportsClassificationTables()
+            && Schema::hasTable('material_card_deleted_classifications');
     }
 
     private function supportsClassificationSortOrder(): bool

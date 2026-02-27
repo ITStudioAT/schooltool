@@ -6,12 +6,21 @@ import MaterialsInboxView from '@/pages/admin/materials/components/views/Materia
 vi.mock('axios', () => ({
     default: {
         get: vi.fn(),
+        post: vi.fn(),
     },
 }))
 
 const vuetifyStubs = {
     'v-card': { template: '<div><slot /></div>' },
     VCard: { template: '<div><slot /></div>' },
+    'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+    VDialog: { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+    'v-card-title': { template: '<div><slot /></div>' },
+    VCardTitle: { template: '<div><slot /></div>' },
+    'v-card-text': { template: '<div><slot /></div>' },
+    VCardText: { template: '<div><slot /></div>' },
+    'v-card-actions': { template: '<div><slot /></div>' },
+    VCardActions: { template: '<div><slot /></div>' },
     'v-alert': { template: '<div role="alert"><slot /></div>' },
     VAlert: { template: '<div role="alert"><slot /></div>' },
     'v-list': { template: '<div><slot /></div>' },
@@ -51,6 +60,7 @@ describe('MaterialsInboxView', () => {
 
     beforeEach(() => {
         axiosMock.get.mockReset()
+        axiosMock.post.mockReset()
     })
 
     it('renders users who shared something with me', async () => {
@@ -182,31 +192,88 @@ describe('MaterialsInboxView', () => {
     })
 
     it('does not render hierarchy card toggle for material scope items', async () => {
-        axiosMock.get.mockResolvedValue({
-            data: {
-                data: [
-                    {
-                        id: 21,
-                        label: 'Muster Max',
-                        email: 'max@test.local',
-                        shared_rules_count: 1,
-                        shared_items: [
+        axiosMock.get.mockImplementation((url: string) => {
+            if (url === '/api/admin/materials/shares/inbox-users') {
+                return Promise.resolve({
+                    data: {
+                        data: [
                             {
-                                rule_id: 501,
-                                scope_type: 'material',
-                                scope_label: 'Material',
-                                scope_object_label: 'Arbeitsblatt 1',
-                                scope_path_label: 'Mathematik - Algebra - Brueche',
-                                permission: 'read_only',
-                                permission_label: 'NUR LESEN',
-                                hierarchy: [],
-                                updated_at: '2026-02-26T09:30:00+00:00',
+                                id: 21,
+                                label: 'Muster Max',
+                                email: 'max@test.local',
+                                shared_rules_count: 1,
+                                shared_items: [
+                                    {
+                                        rule_id: 501,
+                                        scope_type: 'material',
+                                        scope_label: 'Material',
+                                        scope_object_label: 'Arbeitsblatt 1',
+                                        scope_path_label: 'Mathematik - Algebra - Brueche',
+                                        permission: 'read_only',
+                                        permission_label: 'NUR LESEN',
+                                        is_imported: true,
+                                        hierarchy: [
+                                            {
+                                                id: 1,
+                                                name: 'Mathematik',
+                                                topics: [
+                                                    {
+                                                        id: 2,
+                                                        name: 'Algebra',
+                                                        units: [
+                                                            {
+                                                                id: 3,
+                                                                name: 'Brueche',
+                                                                materials: [
+                                                                    {
+                                                                        id: 501,
+                                                                        title: 'Arbeitsblatt 1',
+                                                                        icon: 'mdi-link-variant',
+                                                                        type_label: 'Link',
+                                                                        type_color: '#1f6f8b',
+                                                                        attachments_count: 2,
+                                                                        status: 'done',
+                                                                        status_label: 'ok',
+                                                                        status_color: '#2e7d32',
+                                                                    },
+                                                                ],
+                                                            },
+                                                        ],
+                                                    },
+                                                ],
+                                            },
+                                        ],
+                                        updated_at: '2026-02-26T09:30:00+00:00',
+                                    },
+                                ],
+                            },
+                        ],
+                        meta: { needs_migration: false },
+                    },
+                })
+            }
+            if (url === '/api/admin/materials/config') {
+                return Promise.resolve({
+                    data: {
+                        classification_tree: [
+                            {
+                                id: 11,
+                                name: 'Mathematik',
+                                topics: [
+                                    {
+                                        id: 12,
+                                        name: 'Algebra',
+                                        units: [
+                                            { id: 13, name: 'Brueche' },
+                                        ],
+                                    },
+                                ],
                             },
                         ],
                     },
-                ],
-                meta: { needs_migration: false },
-            },
+                })
+            }
+            return Promise.reject(new Error('unexpected url'))
         })
 
         renderMaterialsInboxView()
@@ -216,6 +283,101 @@ describe('MaterialsInboxView', () => {
         })
 
         expect(screen.queryByRole('button', { name: 'Anzeigen' })).not.toBeInTheDocument()
+        expect(screen.queryByText('Merken')).not.toBeInTheDocument()
+        expect(screen.queryByText('Mehr')).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Einfächern' })).toBeInTheDocument()
+        expect(screen.getByText('Link')).toBeInTheDocument()
+        expect(screen.getByText('2')).toBeInTheDocument()
+        expect(screen.getByText('ok')).toBeInTheDocument()
+        expect(screen.getByText('Eingefächert')).toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Einfächern' }))
+
+        await waitFor(() => {
+            expect(screen.getByText('Fächer')).toBeInTheDocument()
+        })
+        expect(screen.getByText('Themen')).toBeInTheDocument()
+        expect(screen.getByText('Einheiten')).toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Mathematik' }))
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: 'Hier einfächern' })).toBeInTheDocument()
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Algebra' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Brueche' }))
+        expect(screen.getByRole('button', { name: 'Hier einfächern' })).toBeInTheDocument()
+    })
+
+    it('shows original option in einfächern dialog when no subjects exist', async () => {
+        axiosMock.get.mockImplementation((url: string) => {
+            if (url === '/api/admin/materials/shares/inbox-users') {
+                return Promise.resolve({
+                    data: {
+                        data: [
+                            {
+                                id: 41,
+                                label: 'No Subject User',
+                                email: 'nosubject@test.local',
+                                shared_rules_count: 1,
+                                shared_items: [
+                                    {
+                                        rule_id: 901,
+                                        scope_type: 'material',
+                                        scope_label: 'Material',
+                                        scope_object_label: 'Dokument A',
+                                        scope_path_label: 'Pfad',
+                                        permission: 'read_only',
+                                        permission_label: 'NUR LESEN',
+                                        hierarchy: [
+                                            {
+                                                id: 1,
+                                                name: 'Fach',
+                                                topics: [{ id: 2, name: 'Thema', units: [{ id: 3, name: 'Unit', materials: [{ id: 7, title: 'Dokument A' }] }] }],
+                                            },
+                                        ],
+                                        updated_at: '',
+                                    },
+                                ],
+                            },
+                        ],
+                        meta: { needs_migration: false },
+                    },
+                })
+            }
+            if (url === '/api/admin/materials/config') {
+                return Promise.resolve({ data: { classification_tree: [] } })
+            }
+            return Promise.reject(new Error('unexpected url'))
+        })
+        axiosMock.post.mockResolvedValue({
+            data: {
+                message: 'Material als Original eingefügt.',
+                data: { id: 77, title: 'Dokument A', attachments_count: 0 },
+            },
+        })
+
+        renderMaterialsInboxView()
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: 'Einfächern' })).toBeInTheDocument()
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Einfächern' }))
+
+        await waitFor(() => {
+            expect(screen.getByText(/Es sind noch keine Fächer vorhanden/i)).toBeInTheDocument()
+        })
+        expect(screen.getByRole('button', { name: 'Als Original einfügen' })).toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Als Original einfügen' }))
+
+        await waitFor(() => {
+            expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/shares/inbox/material-original-copy', {
+                rule_id: 901,
+                material_id: 7,
+            })
+        })
     })
 
     it('topic scope hides subject level and omits "Ohne Einheit" for direct topic materials', async () => {

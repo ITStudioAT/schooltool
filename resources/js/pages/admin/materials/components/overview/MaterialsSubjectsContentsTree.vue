@@ -11,14 +11,14 @@
                                 <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
                                 <span>{{ subject.name }}</span>
                             <v-icon
-                                v-if="showShareIndicator('subject', subject.id)"
+                                v-if="hasPersistedNodeId(subject.id) && showShareIndicator('subject', subject.id)"
                                 size="16"
                                 icon="mdi-share-variant"
                                 :color="shareIndicatorColorFn('subject', subject.id)"
                                 class="ml-1" />
                         </div>
                         <v-btn
-                            v-if="enableCreateButtons"
+                            v-if="enableCreateButtons && hasPersistedNodeId(subject.id)"
                             size="x-small"
                             color="primary"
                             variant="tonal"
@@ -32,7 +32,7 @@
                                 unit: '',
                             })" />
                         <v-btn
-                            v-if="enableShareButtons"
+                            v-if="enableShareButtons && hasPersistedNodeId(subject.id)"
                             size="x-small"
                             color="primary"
                             variant="outlined"
@@ -132,14 +132,14 @@
                                     <v-icon size="14" icon="mdi-book-open-page-variant-outline" class="mr-2" />
                                     <span>{{ topic.name }}</span>
                                     <v-icon
-                                        v-if="showShareIndicator('topic', topic.id)"
+                                        v-if="hasPersistedNodeId(topic.id) && showShareIndicator('topic', topic.id)"
                                         size="15"
                                         icon="mdi-share-variant"
                                         :color="shareIndicatorColorFn('topic', topic.id)"
                                         class="ml-1" />
                                 </div>
                                 <v-btn
-                                    v-if="enableCreateButtons"
+                                    v-if="enableCreateButtons && hasPersistedNodeId(topic.id)"
                                     size="x-small"
                                     color="primary"
                                     variant="tonal"
@@ -153,7 +153,7 @@
                                         unit: '',
                                     })" />
                                 <v-btn
-                                    v-if="enableShareButtons"
+                                    v-if="enableShareButtons && hasPersistedNodeId(topic.id)"
                                     size="x-small"
                                     color="primary"
                                     variant="outlined"
@@ -252,14 +252,14 @@
                                             <v-icon size="13" icon="mdi-circle-medium" class="mr-1" />
                                             <span>{{ unit.name }}</span>
                                             <v-icon
-                                                v-if="showShareIndicator('unit', unit.id)"
+                                                v-if="hasPersistedNodeId(unit.id) && showShareIndicator('unit', unit.id)"
                                                 size="14"
                                                 icon="mdi-share-variant"
                                                 :color="shareIndicatorColorFn('unit', unit.id)"
                                                 class="ml-1" />
                                         </div>
                                         <v-btn
-                                            v-if="enableCreateButtons"
+                                            v-if="enableCreateButtons && hasPersistedNodeId(unit.id)"
                                             size="x-small"
                                             color="primary"
                                             variant="tonal"
@@ -273,7 +273,7 @@
                                                 unit: String(unit.name || '').trim(),
                                             })" />
                                         <v-btn
-                                            v-if="enableShareButtons"
+                                            v-if="enableShareButtons && hasPersistedNodeId(unit.id)"
                                             size="x-small"
                                             color="primary"
                                             variant="outlined"
@@ -422,6 +422,10 @@ export default {
     },
     emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'remove-classification'],
     methods: {
+        hasPersistedNodeId(id) {
+            const nodeId = Number(id)
+            return Number.isFinite(nodeId) && nodeId > 0
+        },
         showShareIndicator(level, id) {
             if (!this.showShareIndicators) return false
             const color = String(this.shareIndicatorColorFn?.(level, id) || '').trim()

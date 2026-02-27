@@ -6,8 +6,10 @@ use App\Models\MaterialShareTarget;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
 use App\Models\MaterialCardClassification;
+use App\Models\MaterialStatus;
 use App\Models\MaterialSubject;
 use App\Models\MaterialTopic;
+use App\Models\MaterialType;
 use App\Models\MaterialUnit;
 use App\Models\School;
 use App\Models\SchoolLicence;
@@ -17,6 +19,7 @@ use App\Models\UserGroup;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -239,6 +242,7 @@ test('inbox users aggregates creators who shared with current user', function ()
     expect((string) $response->json('data.0.shared_items.0.scope_path_label'))->toContain(' - ');
     expect((string) $response->json('data.0.shared_items.0.permission'))->toBe(MaterialShareTarget::PERMISSION_READ_WRITE);
     expect((string) $response->json('data.0.shared_items.0.permission_label'))->toBe('LESEN/SCHREIBEN');
+    expect((bool) $response->json('data.0.shared_items.0.is_imported'))->toBeFalse();
     expect((string) $response->json('data.0.shared_items.0.hierarchy.0.name'))->toBe('Mathematik');
     expect((string) $response->json('data.0.shared_items.0.hierarchy.0.topics.0.name'))->toBe('Algebra');
     expect((string) $response->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.name'))->toBe('Brüche');
@@ -259,6 +263,7 @@ test('inbox users aggregates creators who shared with current user', function ()
     expect((string) $response->json('data.1.shared_items.0.scope_path_label'))->toContain(' - ');
     expect((string) $response->json('data.1.shared_items.0.permission'))->toBe(MaterialShareTarget::PERMISSION_READ_ONLY);
     expect((string) $response->json('data.1.shared_items.0.permission_label'))->toBe('NUR LESEN');
+    expect((bool) $response->json('data.1.shared_items.0.is_imported'))->toBeFalse();
 
     $ids = collect($response->json('data'))->pluck('id')->map(fn ($id) => (int) $id);
     expect($ids->contains((int) $this->materialsAdmin->id))->toBeFalse();
@@ -322,6 +327,326 @@ test('inbox users includes cross-school direct user shares', function () {
     expect((string) $response->json('data.0.shared_items.0.scope_path_label'))->toBe('Alle Fächer - Alle Themen - Alle Einheiten');
     expect((string) $response->json('data.0.shared_items.0.permission'))->toBe(MaterialShareTarget::PERMISSION_READ_ONLY);
     expect((string) $response->json('data.0.shared_items.0.permission_label'))->toBe('NUR LESEN');
+});
+
+test('can copy shared material as original into own workspace with taxonomy type status and attachments', function () {
+    $materialsLicence = Licence::query()->firstWhere('name', 'Materialientool');
+    expect($materialsLicence)->not->toBeNull();
+
+    $recipientSchool = School::factory()->create(['is_selectable' => true]);
+    $recipientYear = Schoolyear::factory()->create(['school_id' => $recipientSchool->id]);
+    SchoolLicence::query()->create([
+        'school_id' => $recipientSchool->id,
+        'licence_id' => $materialsLicence->id,
+        'valid_until' => now()->addYear(),
+    ]);
+
+    $recipient = User::factory()->create([
+        'school_id' => $recipientSchool->id,
+        'schoolyear_id' => $recipientYear->id,
+        'first_name' => 'Kron',
+        'last_name' => 'Guenther',
+        'email' => 'guenther.kron@bildung.gv.at',
+    ]);
+    $recipient->assignRole('materials_admin');
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'first_name' => 'Christian',
+        'last_name' => 'Doppler',
+        'email' => 'christian.doppler@cdgym.at',
+    ]);
+
+    $sourceSubject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Biologie',
+        'sort_order' => 1,
+    ]);
+    $sourceTopic = MaterialTopic::query()->create([
+        'subject_id' => $sourceSubject->id,
+        'name' => 'Zelle',
+        'sort_order' => 1,
+    ]);
+    $sourceUnit = MaterialUnit::query()->create([
+        'topic_id' => $sourceTopic->id,
+        'name' => 'Mikroskopie',
+        'sort_order' => 1,
+    ]);
+
+    $sourceType = 'Arbeitsblatt';
+    if (Schema::hasTable('material_types')) {
+        $typeData = [
+            'school_id' => $this->school->id,
+            'name' => $sourceType,
+        ];
+        if (Schema::hasColumn('material_types', 'user_id')) {
+            $typeData['user_id'] = $creator->id;
+        }
+        if (Schema::hasColumn('material_types', 'icon')) {
+            $typeData['icon'] = 'mdi-file-document-outline';
+        }
+        if (Schema::hasColumn('material_types', 'color')) {
+            $typeData['color'] = '#1f6f8b';
+        }
+        MaterialType::query()->create($typeData);
+    }
+
+    $sourceStatusValue = 'review_pending';
+    if (Schema::hasTable('material_statuses')) {
+        $statusData = [
+            'school_id' => $this->school->id,
+            'value' => $sourceStatusValue,
+            'label' => 'Review',
+        ];
+        if (Schema::hasColumn('material_statuses', 'color')) {
+            $statusData['color'] = '#2e7d32';
+        }
+        MaterialStatus::query()->create($statusData);
+    }
+
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Zellaufbau Arbeitsblatt',
+        'source_url' => 'https://example.org/zelle',
+        'source_text' => 'Zellaufbau Grundwissen',
+        'type' => $sourceType,
+        'status' => $sourceStatusValue,
+        'notes' => 'Quelle intern',
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'subject_id' => $sourceSubject->id,
+        'topic_id' => $sourceTopic->id,
+        'unit_id' => $sourceUnit->id,
+    ]);
+
+    $disk = (string) config('filesystems.default', 'local');
+    Storage::fake($disk);
+    Storage::disk($disk)->put('materials/source/zelle.pdf', 'pdf-content-zelle');
+
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'zelle.pdf',
+        'file_path' => 'materials/source/zelle.pdf',
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 1024,
+    ]);
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_LINK,
+        'name' => 'Quelle',
+        'url' => 'https://wikipedia.org/wiki/Zelle_(Biologie)',
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_MATERIAL,
+        'scope_id' => $sourceCard->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $recipient->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $this->actingAs($recipient, 'sanctum');
+
+    $response = $this->postJson('/api/admin/materials/shares/inbox/material-original-copy', [
+        'rule_id' => $rule->id,
+        'material_id' => $sourceCard->id,
+    ])
+        ->assertStatus(200)
+        ->assertJsonPath('message', 'Material als Original eingefügt.');
+
+    $newCardId = (int) $response->json('data.id');
+    expect($newCardId)->toBeGreaterThan(0);
+
+    $newCard = MaterialCard::query()
+        ->with(['attachments', 'classifications.subject', 'classifications.topic', 'classifications.unit'])
+        ->find($newCardId);
+    expect($newCard)->not->toBeNull();
+    expect((int) $newCard->user_id)->toBe((int) $recipient->id);
+    expect((int) $newCard->school_id)->toBe((int) $recipientSchool->id);
+    expect((string) $newCard->title)->toBe('Zellaufbau Arbeitsblatt');
+    expect((string) $newCard->type)->toBe($sourceType);
+    expect((string) $newCard->status)->toBe($sourceStatusValue);
+
+    expect((string) $newCard->classifications[0]->subject?->name)->toBe('Biologie');
+    expect((string) $newCard->classifications[0]->topic?->name)->toBe('Zelle');
+    expect((string) $newCard->classifications[0]->unit?->name)->toBe('Mikroskopie');
+
+    expect($newCard->attachments->count())->toBe(2);
+    $newFileAttachment = $newCard->attachments->firstWhere('attachment_type', MaterialCardAttachment::TYPE_FILE);
+    $newLinkAttachment = $newCard->attachments->firstWhere('attachment_type', MaterialCardAttachment::TYPE_LINK);
+    expect($newFileAttachment)->not->toBeNull();
+    expect($newLinkAttachment)->not->toBeNull();
+    Storage::disk($disk)->assertExists((string) $newFileAttachment->file_path);
+    expect(Storage::disk($disk)->get((string) $newFileAttachment->file_path))->toBe('pdf-content-zelle');
+    expect((string) $newLinkAttachment->url)->toBe('https://wikipedia.org/wiki/Zelle_(Biologie)');
+
+    if (Schema::hasTable('material_types')) {
+        $typeQuery = MaterialType::query()
+            ->where('school_id', $recipientSchool->id)
+            ->where('name', $sourceType);
+        if (Schema::hasColumn('material_types', 'user_id')) {
+            $typeQuery->where('user_id', $recipient->id);
+        }
+        expect($typeQuery->exists())->toBeTrue();
+    }
+
+    if (Schema::hasTable('material_statuses')) {
+        $status = MaterialStatus::query()
+            ->where('school_id', $recipientSchool->id)
+            ->where('value', $sourceStatusValue)
+            ->first();
+        expect($status)->not->toBeNull();
+        expect((string) $status->label)->toBe('Review');
+    }
+
+    $inboxAfterCopy = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertStatus(200);
+    expect((bool) $inboxAfterCopy->json('data.0.shared_items.0.is_imported'))->toBeTrue();
+});
+
+test('copy as original keeps existing target type and status definitions', function () {
+    $materialsLicence = Licence::query()->firstWhere('name', 'Materialientool');
+    expect($materialsLicence)->not->toBeNull();
+
+    $recipientSchool = School::factory()->create(['is_selectable' => true]);
+    $recipientYear = Schoolyear::factory()->create(['school_id' => $recipientSchool->id]);
+    SchoolLicence::query()->create([
+        'school_id' => $recipientSchool->id,
+        'licence_id' => $materialsLicence->id,
+        'valid_until' => now()->addYear(),
+    ]);
+
+    $recipient = User::factory()->create([
+        'school_id' => $recipientSchool->id,
+        'schoolyear_id' => $recipientYear->id,
+        'email' => 'target@test.local',
+    ]);
+    $recipient->assignRole('materials_admin');
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'source@test.local',
+    ]);
+
+    $typeName = 'Merkblatt';
+    if (Schema::hasTable('material_types')) {
+        $targetTypeData = [
+            'school_id' => $recipientSchool->id,
+            'name' => $typeName,
+        ];
+        if (Schema::hasColumn('material_types', 'user_id')) {
+            $targetTypeData['user_id'] = $recipient->id;
+        }
+        if (Schema::hasColumn('material_types', 'icon')) {
+            $targetTypeData['icon'] = 'mdi-star';
+        }
+        if (Schema::hasColumn('material_types', 'color')) {
+            $targetTypeData['color'] = '#111111';
+        }
+        MaterialType::query()->create($targetTypeData);
+
+        $sourceTypeData = [
+            'school_id' => $this->school->id,
+            'name' => $typeName,
+        ];
+        if (Schema::hasColumn('material_types', 'user_id')) {
+            $sourceTypeData['user_id'] = $creator->id;
+        }
+        if (Schema::hasColumn('material_types', 'icon')) {
+            $sourceTypeData['icon'] = 'mdi-bell';
+        }
+        if (Schema::hasColumn('material_types', 'color')) {
+            $sourceTypeData['color'] = '#abcdef';
+        }
+        MaterialType::query()->create($sourceTypeData);
+    }
+
+    $statusValue = 'custom_done';
+    if (Schema::hasTable('material_statuses')) {
+        $targetStatusData = [
+            'school_id' => $recipientSchool->id,
+            'value' => $statusValue,
+            'label' => 'Target Status',
+        ];
+        $sourceStatusData = [
+            'school_id' => $this->school->id,
+            'value' => $statusValue,
+            'label' => 'Source Status',
+        ];
+        if (Schema::hasColumn('material_statuses', 'color')) {
+            $targetStatusData['color'] = '#111111';
+            $sourceStatusData['color'] = '#abcdef';
+        }
+        MaterialStatus::query()->create($targetStatusData);
+        MaterialStatus::query()->create($sourceStatusData);
+    }
+
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Merkblatt Quelle',
+        'type' => $typeName,
+        'status' => $statusValue,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_MATERIAL,
+        'scope_id' => $sourceCard->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $recipient->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $this->actingAs($recipient, 'sanctum');
+
+    $this->postJson('/api/admin/materials/shares/inbox/material-original-copy', [
+        'rule_id' => $rule->id,
+        'material_id' => $sourceCard->id,
+    ])->assertStatus(200);
+
+    if (Schema::hasTable('material_types')) {
+        $targetType = MaterialType::query()
+            ->where('school_id', $recipientSchool->id)
+            ->where('name', $typeName)
+            ->when(Schema::hasColumn('material_types', 'user_id'), fn ($query) => $query->where('user_id', $recipient->id))
+            ->first();
+        expect($targetType)->not->toBeNull();
+        if (Schema::hasColumn('material_types', 'icon')) {
+            expect((string) $targetType->icon)->toBe('mdi-star');
+        }
+        if (Schema::hasColumn('material_types', 'color')) {
+            expect((string) $targetType->color)->toBe('#111111');
+        }
+    }
+
+    if (Schema::hasTable('material_statuses')) {
+        $targetStatus = MaterialStatus::query()
+            ->where('school_id', $recipientSchool->id)
+            ->where('value', $statusValue)
+            ->first();
+        expect($targetStatus)->not->toBeNull();
+        expect((string) $targetStatus->label)->toBe('Target Status');
+        if (Schema::hasColumn('material_statuses', 'color')) {
+            expect((string) $targetStatus->color)->toBe('#111111');
+        }
+    }
 });
 
 test('materials admin can create workspace everyone share and list it', function () {

@@ -468,6 +468,98 @@ test('teacher cannot delete unit when used by materials', function () {
     $this->assertDatabaseHas('material_units', ['id' => $unit->id]);
 });
 
+test('teacher can delete subject when only soft-deleted topic usage exists', function () {
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->teacher->id,
+        'name' => 'Geografie',
+    ]);
+    $topic = $subject->topics()->create(['name' => 'Klima']);
+
+    $card = MaterialCard::query()->create([
+        'school_id' => $this->teacher->school_id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Gelöschte Karte',
+        'status' => 'inbox',
+    ]);
+
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $card->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => null,
+    ]);
+
+    $card->delete();
+
+    $this->actingAs($this->teacher, 'sanctum');
+    $this->deleteJson('/api/admin/materials/subjects/' . $subject->id)
+        ->assertStatus(204);
+
+    $this->assertDatabaseMissing('material_subjects', ['id' => $subject->id]);
+});
+
+test('teacher can delete topic when only soft-deleted unit usage exists', function () {
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->teacher->id,
+        'name' => 'Kunst',
+    ]);
+    $topic = $subject->topics()->create(['name' => 'Malerei']);
+    $unit = $topic->units()->create(['name' => 'Aquarell']);
+
+    $card = MaterialCard::query()->create([
+        'school_id' => $this->teacher->school_id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Gelöschte Karte',
+        'status' => 'inbox',
+    ]);
+
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $card->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => $unit->id,
+    ]);
+
+    $card->delete();
+
+    $this->actingAs($this->teacher, 'sanctum');
+    $this->deleteJson('/api/admin/materials/topics/' . $topic->id)
+        ->assertStatus(204);
+
+    $this->assertDatabaseMissing('material_topics', ['id' => $topic->id]);
+});
+
+test('teacher can delete unit when only soft-deleted unit usage exists', function () {
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->teacher->id,
+        'name' => 'Musik',
+    ]);
+    $topic = $subject->topics()->create(['name' => 'Rhythmus']);
+    $unit = $topic->units()->create(['name' => 'Taktarten']);
+
+    $card = MaterialCard::query()->create([
+        'school_id' => $this->teacher->school_id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Gelöschte Karte',
+        'status' => 'inbox',
+    ]);
+
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $card->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => $unit->id,
+    ]);
+
+    $card->delete();
+
+    $this->actingAs($this->teacher, 'sanctum');
+    $this->deleteJson('/api/admin/materials/units/' . $unit->id)
+        ->assertStatus(204);
+
+    $this->assertDatabaseMissing('material_units', ['id' => $unit->id]);
+});
+
 test('config marks used taxonomy items as not deletable', function () {
     $subject = MaterialSubject::query()->create([
         'user_id' => $this->teacher->id,
@@ -508,6 +600,49 @@ test('config marks used taxonomy items as not deletable', function () {
     $unitNode = collect($topicNode['units'] ?? [])->firstWhere('id', $unit->id);
     expect($unitNode)->not->toBeNull()
         ->and((bool) ($unitNode['can_delete'] ?? true))->toBeFalse();
+});
+
+test('config ignores soft-deleted cards when evaluating taxonomy usage', function () {
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->teacher->id,
+        'name' => 'Physik',
+    ]);
+    $topic = $subject->topics()->create(['name' => 'Optik']);
+    $unit = $topic->units()->create(['name' => 'Linsen']);
+
+    $card = MaterialCard::query()->create([
+        'school_id' => $this->teacher->school_id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Gelöschte Karte',
+        'status' => 'inbox',
+    ]);
+
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $card->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => $unit->id,
+    ]);
+
+    $card->delete();
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $response = $this->getJson('/api/admin/materials/config')
+        ->assertStatus(200);
+
+    $tree = collect($response->json('classification_tree', []));
+    $subjectNode = $tree->firstWhere('id', $subject->id);
+    expect($subjectNode)->not->toBeNull()
+        ->and((bool) ($subjectNode['can_delete'] ?? false))->toBeTrue();
+
+    $topicNode = collect($subjectNode['topics'] ?? [])->firstWhere('id', $topic->id);
+    expect($topicNode)->not->toBeNull()
+        ->and((bool) ($topicNode['can_delete'] ?? false))->toBeTrue();
+
+    $unitNode = collect($topicNode['units'] ?? [])->firstWhere('id', $unit->id);
+    expect($unitNode)->not->toBeNull()
+        ->and((bool) ($unitNode['can_delete'] ?? false))->toBeTrue();
 });
 
 test('config keeps topic deletable without unit usage while subject follows lower-level usage', function () {
@@ -1305,4 +1440,131 @@ test('teacher can delete own card', function () {
         ->assertStatus(204);
 
     expect(MaterialCard::where('id', $card->id)->exists())->toBeFalse();
+});
+
+test('teacher can permanently delete a previously deleted card', function () {
+    Storage::fake('local');
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->teacher->id,
+        'name' => 'Mathematik',
+    ]);
+    $topic = $subject->topics()->create(['name' => 'Algebra']);
+    $unit = $topic->units()->create(['name' => 'Gleichungen']);
+
+    $card = MaterialCard::query()->create([
+        'school_id' => $this->teacher->school_id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Final löschen',
+        'status' => 'inbox',
+    ]);
+
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $card->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => $unit->id,
+    ]);
+
+    $filePath = 'materials/test/final-loeschen.pdf';
+    Storage::disk('local')->put($filePath, 'pdf-content');
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'final-loeschen.pdf',
+        'file_path' => $filePath,
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 11,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->deleteJson('/api/admin/materials/cards/' . $card->id)
+        ->assertStatus(204);
+
+    expect(MaterialCard::onlyTrashed()->where('id', $card->id)->exists())->toBeTrue();
+    $this->assertDatabaseHas('material_card_deleted_classifications', [
+        'material_card_id' => $card->id,
+    ]);
+
+    $this->deleteJson('/api/admin/materials/cards/deleted/' . $card->id)
+        ->assertStatus(204);
+
+    expect(MaterialCard::withTrashed()->where('id', $card->id)->exists())->toBeFalse();
+    $this->assertDatabaseMissing('material_card_deleted_classifications', [
+        'material_card_id' => $card->id,
+    ]);
+    Storage::disk('local')->assertMissing($filePath);
+});
+
+test('restore deleted card recreates taxonomy path when original path was deleted', function () {
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->teacher->id,
+        'name' => 'Biologie',
+    ]);
+    $topic = $subject->topics()->create(['name' => 'Zelle']);
+    $unit = $topic->units()->create(['name' => 'Mikroskopie']);
+
+    $card = MaterialCard::query()->create([
+        'school_id' => $this->teacher->school_id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Restore Test',
+        'status' => 'inbox',
+    ]);
+
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $card->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => $unit->id,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->deleteJson('/api/admin/materials/cards/' . $card->id)
+        ->assertStatus(204);
+
+    $this->assertDatabaseHas('material_card_deleted_classifications', [
+        'material_card_id' => $card->id,
+        'subject_name' => 'Biologie',
+        'topic_name' => 'Zelle',
+        'unit_name' => 'Mikroskopie',
+    ]);
+
+    $this->deleteJson('/api/admin/materials/subjects/' . $subject->id)
+        ->assertStatus(204);
+
+    $this->postJson('/api/admin/materials/cards/restore-deleted/' . $card->id)
+        ->assertStatus(200)
+        ->assertJsonFragment([
+            'subject' => 'Biologie',
+            'topic' => 'Zelle',
+            'unit' => 'Mikroskopie',
+        ]);
+
+    $newSubject = MaterialSubject::query()
+        ->where('user_id', $this->teacher->id)
+        ->where('name', 'Biologie')
+        ->first();
+
+    expect($newSubject)->not->toBeNull();
+
+    $newTopic = $newSubject->topics()->where('name', 'Zelle')->first();
+    expect($newTopic)->not->toBeNull();
+
+    $newUnit = $newTopic->units()->where('name', 'Mikroskopie')->first();
+    expect($newUnit)->not->toBeNull();
+
+    $classification = MaterialCardClassification::query()
+        ->where('material_card_id', $card->id)
+        ->first();
+
+    expect($classification)->not->toBeNull()
+        ->and((int) $classification->subject_id)->toBe((int) $newSubject->id)
+        ->and((int) $classification->topic_id)->toBe((int) $newTopic->id)
+        ->and((int) $classification->unit_id)->toBe((int) $newUnit->id);
+
+    $this->assertDatabaseMissing('material_card_deleted_classifications', [
+        'material_card_id' => $card->id,
+    ]);
 });

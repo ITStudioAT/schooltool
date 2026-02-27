@@ -517,6 +517,43 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             return result.items[0] || null
         },
 
+        async purgeDeletedById(cardId) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const normalizedId = Number(cardId)
+
+            if (!Number.isFinite(normalizedId) || normalizedId <= 0) {
+                notification.notify({
+                    message: 'Ungültiges gelöschtes Material.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return false
+            }
+
+            adminStore.is_loading++
+            try {
+                await axios.delete('/api/admin/materials/cards/deleted/' + normalizedId)
+                await this.loadConfig()
+                notification.notify({
+                    message: 'Gelöschtes Material endgültig gelöscht.',
+                    type: 'success',
+                    timeout: 2500,
+                })
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Endgültiges Löschen des Materials fehlgeschlagen.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
         async addLinkAttachment(cardId, data) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()

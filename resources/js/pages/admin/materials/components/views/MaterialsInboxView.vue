@@ -78,11 +78,46 @@
                                                     {{ item.permission_label }}
                                                 </v-chip>
                                             </div>
-                                            <div class="inbox-shared-object-title">
+                                            <div
+                                                v-if="item.scope_type !== 'material' || !item.materialPreview"
+                                                class="inbox-shared-object-title">
                                                 {{ item.scope_object_label }}
                                             </div>
                                             <div class="inbox-shared-object-path">
                                                 {{ item.scope_path_label }}
+                                            </div>
+                                            <div
+                                                v-if="item.scope_type === 'material' && item.materialPreview"
+                                                class="inbox-material-overview-line">
+                                                <v-icon
+                                                    size="14"
+                                                    :icon="item.materialPreview.icon || 'mdi-file-document-outline'"
+                                                    :color="item.materialPreview.typeColor || undefined" />
+                                                <span class="inbox-hierarchy-material-title">{{ item.materialPreview.title }}</span>
+                                                <v-chip
+                                                    v-if="item.materialPreview.typeLabel"
+                                                    size="x-small"
+                                                    variant="outlined"
+                                                    :color="item.materialPreview.typeColor || 'primary'">
+                                                    {{ item.materialPreview.typeLabel }}
+                                                </v-chip>
+                                                <span v-if="item.materialPreview.attachmentsCount > 0" class="inbox-hierarchy-material-count">
+                                                    <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
+                                                    {{ item.materialPreview.attachmentsCount }}
+                                                </span>
+                                                <v-chip
+                                                    size="x-small"
+                                                    variant="tonal"
+                                                    :color="item.materialPreview.statusColor || materialStatusColor(item.materialPreview.status)">
+                                                    {{ item.materialPreview.statusLabel || materialStatusLabel(item.materialPreview.status) }}
+                                                </v-chip>
+                                                <v-chip
+                                                    v-if="item.is_imported"
+                                                    size="x-small"
+                                                    variant="flat"
+                                                    color="success">
+                                                    Eingefächert
+                                                </v-chip>
                                             </div>
                                             <v-card
                                                 v-if="item.scope_type !== 'material' && isHierarchyOpen(user.id, item.rule_id)"
@@ -218,18 +253,35 @@
                                         </div>
                                         <div class="inbox-shared-object-actions">
                                             <v-btn
-                                                v-if="item.scope_type !== 'material'"
+                                                v-if="item.scope_type === 'material'"
+                                                size="small"
+                                                variant="tonal"
+                                                color="primary"
+                                                @click.stop="openEinfachernDialog(item)">
+                                                Einfächern
+                                            </v-btn>
+                                            <v-btn
+                                                v-else
                                                 size="small"
                                                 variant="tonal"
                                                 color="primary"
                                                 @click.stop="toggleHierarchy(user.id, item.rule_id)">
                                                 {{ isHierarchyOpen(user.id, item.rule_id) ? 'Schließen' : 'Anzeigen' }}
                                             </v-btn>
-                                            <v-btn v-else size="small" variant="tonal" color="primary" @click.stop="onDummyObjectAction(item, 'open')">Öffnen</v-btn>
-                                            <v-btn size="small" variant="tonal" color="warning" @click.stop="onDummyObjectAction(item, 'bookmark')">
+                                            <v-btn
+                                                v-if="item.scope_type !== 'material'"
+                                                size="small"
+                                                variant="tonal"
+                                                color="warning"
+                                                @click.stop="onDummyObjectAction(item, 'bookmark')">
                                                 Merken
                                             </v-btn>
-                                            <v-btn size="small" variant="tonal" color="secondary" @click.stop="onDummyObjectAction(item, 'more')">
+                                            <v-btn
+                                                v-if="item.scope_type !== 'material'"
+                                                size="small"
+                                                variant="tonal"
+                                                color="secondary"
+                                                @click.stop="onDummyObjectAction(item, 'more')">
                                                 Mehr
                                             </v-btn>
                                         </div>
@@ -246,6 +298,124 @@
                 </v-list-item>
             </v-list>
         </v-card>
+
+        <v-dialog
+            v-model="einfachernDialog.open"
+            persistent
+            max-width="960">
+            <v-card rounded="lg">
+                <v-card-title class="d-flex align-center justify-space-between ga-2">
+                    <span>Einfächern</span>
+                    <v-chip size="small" variant="tonal" color="primary">
+                        {{ einfachernDialog.materialTitle || 'Material' }}
+                    </v-chip>
+                </v-card-title>
+                <v-card-text>
+                    <v-alert
+                        v-if="einfachernDialog.error"
+                        type="error"
+                        variant="tonal"
+                        class="mb-3">
+                        {{ einfachernDialog.error }}
+                    </v-alert>
+
+                    <div v-if="einfachernDialog.loading" class="text-body-2 text-medium-emphasis py-4">
+                        Lade Fächer ...
+                    </div>
+
+                    <template v-else>
+                        <div v-if="einfachernDialog.tree.length === 0" class="einfachern-empty">
+                            <div class="text-body-2 text-medium-emphasis">
+                                Es sind noch keine Fächer vorhanden.
+                            </div>
+                            <v-btn
+                                size="small"
+                                variant="tonal"
+                                color="primary"
+                                :loading="einfachernDialog.submitting"
+                                @click="onOriginalEinfuegen">
+                                Als Original einfügen
+                            </v-btn>
+                        </div>
+
+                        <div v-else class="einfachern-columns">
+                            <div class="einfachern-column">
+                                <div class="einfachern-column-title">Fächer</div>
+                                <div class="einfachern-list">
+                                    <v-btn
+                                        v-for="subject in einfachernDialog.tree"
+                                        :key="`einfachern-subject-${subject.id || subject.name}`"
+                                        size="small"
+                                        block
+                                        :variant="Number(einfachernDialog.subjectId) === Number(subject.id) ? 'flat' : 'tonal'"
+                                        :color="Number(einfachernDialog.subjectId) === Number(subject.id) ? 'primary' : 'secondary'"
+                                        class="justify-start"
+                                        @click="selectEinfachernSubject(subject)">
+                                        {{ subject.name }}
+                                    </v-btn>
+                                </div>
+                            </div>
+                            <div class="einfachern-column">
+                                <div class="einfachern-column-title">Themen</div>
+                                <div v-if="einfachernTopics.length === 0" class="text-caption text-medium-emphasis">
+                                    Kein Thema ausgewählt.
+                                </div>
+                                <div v-else class="einfachern-list">
+                                    <v-btn
+                                        v-for="topic in einfachernTopics"
+                                        :key="`einfachern-topic-${topic.id || topic.name}`"
+                                        size="small"
+                                        block
+                                        :variant="Number(einfachernDialog.topicId) === Number(topic.id) ? 'flat' : 'tonal'"
+                                        :color="Number(einfachernDialog.topicId) === Number(topic.id) ? 'primary' : 'secondary'"
+                                        class="justify-start"
+                                        @click="selectEinfachernTopic(topic)">
+                                        {{ topic.name }}
+                                    </v-btn>
+                                </div>
+                            </div>
+                            <div class="einfachern-column">
+                                <div class="einfachern-column-title">Einheiten</div>
+                                <div v-if="einfachernUnits.length === 0" class="text-caption text-medium-emphasis">
+                                    Keine Einheit ausgewählt.
+                                </div>
+                                <div v-else class="einfachern-list">
+                                    <v-btn
+                                        v-for="unit in einfachernUnits"
+                                        :key="`einfachern-unit-${unit.id || unit.name}`"
+                                        size="small"
+                                        block
+                                        :variant="Number(einfachernDialog.unitId) === Number(unit.id) ? 'flat' : 'tonal'"
+                                        :color="Number(einfachernDialog.unitId) === Number(unit.id) ? 'primary' : 'secondary'"
+                                        class="justify-start"
+                                        @click="selectEinfachernUnit(unit)">
+                                        {{ unit.name }}
+                                    </v-btn>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </v-card-text>
+                <v-card-actions class="d-flex justify-space-between">
+                    <div class="text-caption text-medium-emphasis">
+                        {{ einfachernSelectionLabel }}
+                    </div>
+                    <div class="d-flex ga-2">
+                        <v-btn
+                            v-if="einfachernSelectedTarget"
+                            size="small"
+                            variant="tonal"
+                            color="primary"
+                            @click="onDummyHierEinfachern">
+                            Hier einfächern
+                        </v-btn>
+                        <v-btn size="small" variant="text" @click="closeEinfachernDialog">
+                            Schließen
+                        </v-btn>
+                    </div>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </v-card>
 </template>
 
@@ -259,12 +429,74 @@ export default {
             isLoading: false,
             users: [],
             openHierarchyCards: {},
+            einfachernDialog: {
+                open: false,
+                loading: false,
+                submitting: false,
+                error: '',
+                ruleId: 0,
+                materialId: 0,
+                materialTitle: '',
+                tree: [],
+                subjectId: 0,
+                topicId: 0,
+                unitId: 0,
+            },
             needsMigration: false,
             errorMessage: '',
         }
     },
     mounted() {
         this.loadInboxUsers()
+    },
+    computed: {
+        einfachernSelectedSubject() {
+            return this.einfachernDialog.tree.find((subject) => Number(subject?.id || 0) === Number(this.einfachernDialog.subjectId || 0)) || null
+        },
+        einfachernTopics() {
+            return Array.isArray(this.einfachernSelectedSubject?.topics) ? this.einfachernSelectedSubject.topics : []
+        },
+        einfachernSelectedTopic() {
+            return this.einfachernTopics.find((topic) => Number(topic?.id || 0) === Number(this.einfachernDialog.topicId || 0)) || null
+        },
+        einfachernUnits() {
+            return Array.isArray(this.einfachernSelectedTopic?.units) ? this.einfachernSelectedTopic.units : []
+        },
+        einfachernSelectedUnit() {
+            return this.einfachernUnits.find((unit) => Number(unit?.id || 0) === Number(this.einfachernDialog.unitId || 0)) || null
+        },
+        einfachernSelectedTarget() {
+            if (this.einfachernSelectedUnit) {
+                return {
+                    level: 'unit',
+                    id: Number(this.einfachernSelectedUnit.id || 0),
+                    label: String(this.einfachernSelectedUnit.name || '').trim() || 'Einheit',
+                }
+            }
+            if (this.einfachernSelectedTopic) {
+                return {
+                    level: 'topic',
+                    id: Number(this.einfachernSelectedTopic.id || 0),
+                    label: String(this.einfachernSelectedTopic.name || '').trim() || 'Thema',
+                }
+            }
+            if (this.einfachernSelectedSubject) {
+                return {
+                    level: 'subject',
+                    id: Number(this.einfachernSelectedSubject.id || 0),
+                    label: String(this.einfachernSelectedSubject.name || '').trim() || 'Fach',
+                }
+            }
+            return null
+        },
+        einfachernSelectionLabel() {
+            const labels = [
+                String(this.einfachernSelectedSubject?.name || '').trim(),
+                String(this.einfachernSelectedTopic?.name || '').trim(),
+                String(this.einfachernSelectedUnit?.name || '').trim(),
+            ].filter((value) => value !== '')
+            return labels.length > 0 ? labels.join(' - ') : 'Kein Ziel ausgewählt.'
+        },
     },
     methods: {
         async loadInboxUsers() {
@@ -289,6 +521,7 @@ export default {
                             scope_path_label: String(item?.scope_path_label || '').trim() || 'Fach - Thema - Einheit',
                             permission: String(item?.permission || '').trim() || 'read_only',
                             permission_label: String(item?.permission_label || '').trim() || 'NUR LESEN',
+                            is_imported: !!item?.is_imported,
                             hierarchy: Array.isArray(item?.hierarchy)
                                 ? item.hierarchy.map((subject) => ({
                                     id: Number(subject?.id || 0),
@@ -321,6 +554,7 @@ export default {
                                         : [],
                                 }))
                                 : [],
+                            materialPreview: this.extractFirstHierarchyMaterial(item?.hierarchy),
                             updated_at: String(item?.updated_at || '').trim(),
                         })).filter((item) => item.rule_id > 0)
                         : [],
@@ -371,6 +605,116 @@ export default {
                 ...this.openHierarchyCards,
                 [key]: !this.openHierarchyCards[key],
             }
+        },
+        async openEinfachernDialog(item) {
+            const preview = item?.materialPreview || null
+            this.einfachernDialog.open = true
+            this.einfachernDialog.error = ''
+            this.einfachernDialog.ruleId = Number(item?.rule_id || 0)
+            this.einfachernDialog.materialId = Number(preview?.id || 0)
+            this.einfachernDialog.materialTitle = String(preview?.title || item?.scope_object_label || 'Material').trim() || 'Material'
+            this.einfachernDialog.subjectId = 0
+            this.einfachernDialog.topicId = 0
+            this.einfachernDialog.unitId = 0
+            await this.loadEinfachernTree()
+        },
+        closeEinfachernDialog() {
+            this.einfachernDialog.open = false
+            this.einfachernDialog.submitting = false
+        },
+        async loadEinfachernTree() {
+            this.einfachernDialog.loading = true
+            this.einfachernDialog.error = ''
+            try {
+                const response = await axios.get('/api/admin/materials/config')
+                const rawTree = Array.isArray(response?.data?.classification_tree) ? response.data.classification_tree : []
+                this.einfachernDialog.tree = rawTree.map((subject) => ({
+                    id: Number(subject?.id || 0),
+                    name: String(subject?.name || '').trim() || 'Fach',
+                    topics: Array.isArray(subject?.topics)
+                        ? subject.topics.map((topic) => ({
+                            id: Number(topic?.id || 0),
+                            name: String(topic?.name || '').trim() || 'Thema',
+                            units: Array.isArray(topic?.units)
+                                ? topic.units.map((unit) => ({
+                                    id: Number(unit?.id || 0),
+                                    name: String(unit?.name || '').trim() || 'Einheit',
+                                }))
+                                : [],
+                        }))
+                        : [],
+                })).filter((subject) => Number(subject.id || 0) > 0)
+            } catch (error) {
+                this.einfachernDialog.tree = []
+                this.einfachernDialog.error = error?.response?.data?.message || 'Fächer konnten nicht geladen werden.'
+            } finally {
+                this.einfachernDialog.loading = false
+            }
+        },
+        selectEinfachernSubject(subject) {
+            this.einfachernDialog.subjectId = Number(subject?.id || 0)
+            this.einfachernDialog.topicId = 0
+            this.einfachernDialog.unitId = 0
+        },
+        selectEinfachernTopic(topic) {
+            this.einfachernDialog.topicId = Number(topic?.id || 0)
+            this.einfachernDialog.unitId = 0
+        },
+        selectEinfachernUnit(unit) {
+            this.einfachernDialog.unitId = Number(unit?.id || 0)
+        },
+        onDummyHierEinfachern() {
+            // Placeholder for future classification action.
+        },
+        async onOriginalEinfuegen() {
+            const ruleId = Number(this.einfachernDialog.ruleId || 0)
+            const materialId = Number(this.einfachernDialog.materialId || 0)
+            if (ruleId <= 0 || materialId <= 0 || this.einfachernDialog.submitting) return
+
+            this.einfachernDialog.submitting = true
+            this.einfachernDialog.error = ''
+            try {
+                await axios.post('/api/admin/materials/shares/inbox/material-original-copy', {
+                    rule_id: ruleId,
+                    material_id: materialId,
+                })
+                this.closeEinfachernDialog()
+                await this.loadInboxUsers()
+            } catch (error) {
+                this.einfachernDialog.error = error?.response?.data?.message || 'Original konnte nicht eingefügt werden.'
+            } finally {
+                this.einfachernDialog.submitting = false
+            }
+        },
+        extractFirstHierarchyMaterial(hierarchy) {
+            if (!Array.isArray(hierarchy)) return null
+
+            for (const subject of hierarchy) {
+                const topics = Array.isArray(subject?.topics) ? subject.topics : []
+                for (const topic of topics) {
+                    const units = Array.isArray(topic?.units) ? topic.units : []
+                    for (const unit of units) {
+                        const materials = Array.isArray(unit?.materials) ? unit.materials : []
+                        if (materials.length > 0) {
+                            const material = materials[0]
+                            return {
+                                id: Number(material?.id || 0),
+                                title: String(material?.title || '').trim() || 'Material',
+                                icon: String(material?.icon || '').trim(),
+                                type: String(material?.type || '').trim(),
+                                typeLabel: String(material?.type_label || material?.typeLabel || material?.type || '').trim(),
+                                typeColor: String(material?.type_color || material?.typeColor || '').trim(),
+                                status: String(material?.status || '').trim(),
+                                statusLabel: String(material?.status_label || material?.statusLabel || '').trim(),
+                                statusColor: String(material?.status_color || material?.statusColor || '').trim(),
+                                attachmentsCount: Math.max(0, Number(material?.attachments_count ?? material?.attachmentsCount ?? 0) || 0),
+                            }
+                        }
+                    }
+                }
+            }
+
+            return null
         },
         materialStatusLabel(status) {
             const normalized = String(status || '').trim().toLocaleLowerCase()
@@ -528,9 +872,55 @@ export default {
     line-height: 1.2;
 }
 
+.inbox-material-overview-line {
+    margin-top: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.einfachern-empty {
+    display: grid;
+    gap: 10px;
+    justify-items: start;
+}
+
+.einfachern-columns {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.einfachern-column {
+    border: 1px solid rgba(35, 61, 76, 0.16);
+    border-radius: 10px;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.7);
+    min-height: 160px;
+}
+
+.einfachern-column-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #1f6f8b;
+    margin-bottom: 8px;
+}
+
+.einfachern-list {
+    display: grid;
+    gap: 6px;
+}
+
 .inbox-shared-object-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+}
+
+@media (max-width: 960px) {
+    .einfachern-columns {
+        grid-template-columns: 1fr;
+    }
 }
 </style>

@@ -65,7 +65,7 @@
                         <v-btn
                             size="small"
                             variant="text"
-                            :disabled="isRestoringLastDeletedMaterial"
+                            :disabled="isRestoringLastDeletedMaterial || isPurgingDeletedMaterial"
                             @click="hideDeletedMaterialRestoreList">
                             Ausblenden
                         </v-btn>
@@ -91,16 +91,28 @@
                                 </div>
                             </div>
                             <div>
-                                <v-btn
-                                    size="small"
-                                    color="warning"
-                                    variant="flat"
-                                    prepend-icon="mdi-restore"
-                                    :loading="isRestoringLastDeletedMaterial && Number(restoringDeletedMaterialId || 0) === Number(item.id || 0)"
-                                    :disabled="isLoading || isSavingEdit || isDeletingId !== null || (isRestoringLastDeletedMaterial && Number(restoringDeletedMaterialId || 0) !== Number(item.id || 0))"
-                                    @click="restoreDeletedMaterial(item)">
-                                    Wiederherstellen
-                                </v-btn>
+                                <div class="d-flex flex-wrap ga-2 justify-end">
+                                    <v-btn
+                                        size="small"
+                                        color="warning"
+                                        variant="flat"
+                                        prepend-icon="mdi-restore"
+                                        :loading="isRestoringLastDeletedMaterial && Number(restoringDeletedMaterialId || 0) === Number(item.id || 0)"
+                                        :disabled="isLoading || isSavingEdit || isDeletingId !== null || isPurgingDeletedMaterial || (isRestoringLastDeletedMaterial && Number(restoringDeletedMaterialId || 0) !== Number(item.id || 0))"
+                                        @click="restoreDeletedMaterial(item)">
+                                        Wiederherstellen
+                                    </v-btn>
+                                    <v-btn
+                                        size="small"
+                                        color="error"
+                                        variant="outlined"
+                                        prepend-icon="mdi-delete-forever-outline"
+                                        :loading="isPurgingDeletedMaterial && Number(purgingDeletedMaterialId || 0) === Number(item.id || 0)"
+                                        :disabled="isLoading || isSavingEdit || isDeletingId !== null || isRestoringLastDeletedMaterial || (isPurgingDeletedMaterial && Number(purgingDeletedMaterialId || 0) !== Number(item.id || 0))"
+                                        @click="purgeDeletedMaterial(item)">
+                                        Endgültig löschen
+                                    </v-btn>
+                                </div>
                             </div>
                         </div>
                     </v-list-item>
@@ -113,7 +125,7 @@
                 color="warning"
                 variant="outlined"
                 prepend-icon="mdi-eye-outline"
-                :disabled="isRestoringLastDeletedMaterial"
+                :disabled="isRestoringLastDeletedMaterial || isPurgingDeletedMaterial"
                 @click="showDeletedMaterialRestoreList">
                 Restore-Liste einblenden
             </v-btn>
@@ -940,10 +952,12 @@ export default {
             editDeleteConfirmMaterialTitle: '',
             editDeleteConfirmAttachmentRows: [],
             deletedMaterialRestoreItems: [],
-            deletedMaterialRestoreHidden: false,
+            deletedMaterialRestoreHidden: true,
             deletedMaterialRestoreLimit: 5,
             isRestoringLastDeletedMaterial: false,
             restoringDeletedMaterialId: null,
+            isPurgingDeletedMaterial: false,
+            purgingDeletedMaterialId: null,
             returnToDetailOnEditCancel: false,
             detailCardForEditReturn: null,
             attachmentDeleteArmedIds: [],
@@ -1904,13 +1918,16 @@ export default {
                     attachmentsCount: this.normalizeMaterialAttachmentCount(card),
                 }
 
-                const rows = this.normalizeClassifications(card?.classifications)
-                const classificationsCount = rows.length
+                const persistedRows = this.normalizeClassifications(card?.classifications)
+                const rows = persistedRows.length > 0 ? persistedRows : this.fallbackClassificationsForOverviewCard(card)
+                const classificationsCount = persistedRows.length
+                const hasPersistedClassifications = classificationsCount > 0
                 for (const row of rows) {
                     const subjectName = this.normalizeFilterText(row?.subject)
                     const topicName = this.normalizeFilterText(row?.topic)
                     const unitName = this.normalizeFilterText(row?.unit)
                     if (!subjectName) continue
+                    const canRemoveClassification = hasPersistedClassifications && classificationsCount >= 2
                     const material = {
                         ...materialBase,
                         classificationRow: {
@@ -1919,11 +1936,12 @@ export default {
                             unit: unitName,
                         },
                         classificationsCount,
-                        canRemoveClassification: classificationsCount >= 2,
-                        removeClassificationTitle:
-                            classificationsCount >= 2
-                                ? 'Diese Zuordnung entfernen'
-                                : 'Nicht möglich: Material hat nur 1 Zuordnung.',
+                        canRemoveClassification,
+                        removeClassificationTitle: canRemoveClassification
+                            ? 'Diese Zuordnung entfernen'
+                            : hasPersistedClassifications
+                              ? 'Nicht möglich: Material hat nur 1 Zuordnung.'
+                              : 'Nicht möglich: Material hat keine gespeicherte Zuordnung.',
                     }
 
                     const subjectNode = ensureSubject(subjectName)
@@ -2010,6 +2028,21 @@ export default {
             }
 
             return subjects
+        },
+        fallbackClassificationsForOverviewCard(card) {
+            const subject = this.normalizeFilterText(card?.subject)
+            const topic = this.normalizeFilterText(card?.area)
+            let unit = this.normalizeFilterText(card?.unit)
+
+            if (subject !== '') {
+                if (topic === '') {
+                    unit = ''
+                }
+
+                return [{ subject, topic, unit }]
+            }
+
+            return [{ subject: 'Nicht zugeordnet', topic: '', unit: '' }]
         },
         classificationRowKey(row) {
             const subject = this.normalizeFilterText(row?.subject).toLocaleLowerCase()
@@ -3063,7 +3096,7 @@ export default {
 
             if (items.length === 0) {
                 this.deletedMaterialRestoreItems = []
-                this.deletedMaterialRestoreHidden = false
+                this.deletedMaterialRestoreHidden = true
                 return
             }
 
@@ -3075,17 +3108,17 @@ export default {
             })).filter((item) => Number.isFinite(Number(item.id)) && Number(item.id) > 0)
         },
         hideDeletedMaterialRestoreList() {
-            if (this.isRestoringLastDeletedMaterial) return
+            if (this.isRestoringLastDeletedMaterial || this.isPurgingDeletedMaterial) return
             if (!Array.isArray(this.deletedMaterialRestoreItems) || this.deletedMaterialRestoreItems.length === 0) return
             this.deletedMaterialRestoreHidden = true
         },
         showDeletedMaterialRestoreList() {
-            if (this.isRestoringLastDeletedMaterial) return
+            if (this.isRestoringLastDeletedMaterial || this.isPurgingDeletedMaterial) return
             if (!Array.isArray(this.deletedMaterialRestoreItems) || this.deletedMaterialRestoreItems.length === 0) return
             this.deletedMaterialRestoreHidden = false
         },
         async restoreDeletedMaterial(item = null) {
-            if (this.isRestoringLastDeletedMaterial) return
+            if (this.isRestoringLastDeletedMaterial || this.isPurgingDeletedMaterial) return
             if (!Array.isArray(this.deletedMaterialRestoreItems) || this.deletedMaterialRestoreItems.length === 0) return
             if (this.isLoading || this.isSavingEdit || this.isDeletingId !== null) return
 
@@ -3102,12 +3135,34 @@ export default {
                 }
 
                 this.mergeCardIntoOverview(restored)
-                this.deletedMaterialRestoreHidden = false
                 await this.loadCards(null, { forceFilterCountRefresh: true })
                 await this.refreshLastDeletedMaterialRestoreInfo()
             } finally {
                 this.isRestoringLastDeletedMaterial = false
                 this.restoringDeletedMaterialId = null
+            }
+        },
+        async purgeDeletedMaterial(item = null) {
+            if (this.isRestoringLastDeletedMaterial || this.isPurgingDeletedMaterial) return
+            if (!Array.isArray(this.deletedMaterialRestoreItems) || this.deletedMaterialRestoreItems.length === 0) return
+            if (this.isLoading || this.isSavingEdit || this.isDeletingId !== null) return
+
+            const targetId = Number(item?.id || this.deletedMaterialRestoreItems[0]?.id || 0)
+            if (!Number.isFinite(targetId) || targetId <= 0) return
+
+            this.isPurgingDeletedMaterial = true
+            this.purgingDeletedMaterialId = targetId
+            try {
+                const purged = await this.materialCardStore.purgeDeletedById(targetId)
+                if (!purged) {
+                    await this.refreshLastDeletedMaterialRestoreInfo()
+                    return
+                }
+
+                await this.refreshLastDeletedMaterialRestoreInfo()
+            } finally {
+                this.isPurgingDeletedMaterial = false
+                this.purgingDeletedMaterialId = null
             }
         },
         async confirmDeleteFromEdit() {
@@ -3125,7 +3180,6 @@ export default {
             if (deleted) {
                 await this.closeEditDialog(false)
                 await this.loadCards(null, { forceFilterCountRefresh: true })
-                this.deletedMaterialRestoreHidden = false
                 await this.refreshLastDeletedMaterialRestoreInfo()
             }
         },

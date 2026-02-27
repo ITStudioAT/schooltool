@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Admin\Materials;
 use App\Http\Controllers\Controller;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
+use App\Models\MaterialCardClassification;
+use App\Models\MaterialInboxImport;
 use App\Models\MaterialShareRule;
 use App\Models\MaterialShareTarget;
 use App\Models\MaterialStatus;
@@ -15,9 +17,14 @@ use App\Models\MaterialUnit;
 use App\Models\School;
 use App\Models\User;
 use App\Models\UserGroup;
+use App\Services\Materials\MaterialKeywordService;
+use App\Services\Materials\MaterialService;
 use Illuminate\Support\Collection;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -34,6 +41,8 @@ class MaterialShareController extends Controller
     private ?bool $hasMaterialTypesTableCache = null;
 
     private ?bool $hasMaterialStatusesTableCache = null;
+
+    private ?bool $hasMaterialInboxImportsTableCache = null;
 
     private ?bool $materialTypesUserScopedCache = null;
 
@@ -151,9 +160,11 @@ class MaterialShareController extends Controller
             ->orderByDesc('updated_at')
             ->get(['id', 'school_id', 'scope_type', 'scope_id', 'created_by_user_id', 'updated_at']);
 
+        $importedMaterialKeys = $this->resolveImportedInboxMaterialKeys($authUserId);
+
         $users = $matchingRules
             ->groupBy(fn (MaterialShareRule $rule) => (int) $rule->created_by_user_id)
-            ->map(function ($creatorRules) use ($authUserId, $schoolId, $memberGroupIds) {
+            ->map(function ($creatorRules) use ($authUserId, $schoolId, $memberGroupIds, $importedMaterialKeys) {
                 $firstRule = $creatorRules->first();
                 $creator = $firstRule?->creator;
                 if (! $creator) {
@@ -167,7 +178,7 @@ class MaterialShareController extends Controller
                     ->first()?->updated_at;
                 $sharedItems = $creatorRules
                     ->sortByDesc(fn (MaterialShareRule $rule) => optional($rule->updated_at)?->getTimestamp() ?? 0)
-                    ->map(function (MaterialShareRule $rule) use ($authUserId, $schoolId, $memberGroupIds) {
+                    ->map(function (MaterialShareRule $rule) use ($authUserId, $schoolId, $memberGroupIds, $importedMaterialKeys) {
                         $permission = $this->resolveRulePermissionForUser($rule, $authUserId, $schoolId, $memberGroupIds);
                         [$scopeLabel, $scopeObjectLabel] = $this->resolveScopeLabels($rule, (int) $rule->school_id);
                         $scopeLabel = (string) $rule->scope_type === MaterialShareRule::SCOPE_ALL ? 'Workspace' : $scopeLabel;
@@ -179,6 +190,7 @@ class MaterialShareController extends Controller
                             'scope_path_label' => $this->resolveScopePathLabel($rule),
                             'permission' => $permission,
                             'permission_label' => mb_strtoupper($this->permissionLabel($permission)),
+                            'is_imported' => $this->isRuleMaterialImported($rule, $importedMaterialKeys),
                             'hierarchy' => $this->resolveScopeHierarchy($rule),
                             'updated_at' => optional($rule->updated_at)?->toIso8601String(),
                         ];
@@ -208,6 +220,470 @@ class MaterialShareController extends Controller
                 'total' => $users->count(),
             ],
         ]);
+    }
+
+    public function copyInboxMaterialAsOriginal(
+        Request $request,
+        MaterialService $materialService,
+        MaterialKeywordService $keywordService,
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'material_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $materialId = (int) ($data['material_id'] ?? 0);
+        $authUserId = (int) $authUser->id;
+        $authSchoolId = (int) $authUser->school_id;
+
+        $memberGroupIds = UserGroup::query()
+            ->whereHas('members', fn ($query) => $query->where('users.id', $authUserId))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values();
+
+        $rule = $this->resolveAccessibleInboxRule($ruleId, $authUserId, $authSchoolId, $memberGroupIds);
+        if (! $rule) {
+            abort(404, 'Freigabe wurde nicht gefunden.');
+        }
+
+        if ((string) $rule->scope_type !== MaterialShareRule::SCOPE_MATERIAL || (int) ($rule->scope_id ?? 0) !== $materialId) {
+            throw ValidationException::withMessages([
+                'material_id' => ['Original-Einfügen ist nur für direkt geteilte Materialien möglich.'],
+            ]);
+        }
+
+        $sourceCard = MaterialCard::query()
+            ->where('school_id', (int) $rule->school_id)
+            ->with([
+                'attachments',
+                'classifications.subject:id,name',
+                'classifications.topic:id,name',
+                'classifications.unit:id,name',
+            ])
+            ->find($materialId);
+
+        if (! $sourceCard) {
+            abort(404, 'Geteiltes Material wurde nicht gefunden.');
+        }
+
+        $sourceTypeMeta = $this->resolveMaterialTypeMeta(
+            schoolId: (int) ($sourceCard->school_id ?? 0),
+            userId: (int) ($sourceCard->user_id ?? 0),
+            typeValue: trim((string) ($sourceCard->type ?? '')),
+        );
+        $sourceStatusMeta = $this->resolveMaterialStatusMeta(
+            schoolId: (int) ($sourceCard->school_id ?? 0),
+            statusValue: trim((string) ($sourceCard->status ?? MaterialCard::STATUS_INBOX)),
+        );
+
+        $newCard = DB::transaction(function () use (
+            $authUser,
+            $sourceCard,
+            $sourceTypeMeta,
+            $sourceStatusMeta,
+            $materialService,
+            $keywordService,
+            $rule,
+            $ruleId,
+        ) {
+            $targetType = $this->ensureTargetMaterialType(
+                targetUser: $authUser,
+                sourceType: trim((string) ($sourceCard->type ?? '')),
+                sourceTypeMeta: $sourceTypeMeta,
+            );
+            $targetStatus = $this->ensureTargetMaterialStatus(
+                targetUser: $authUser,
+                sourceStatus: trim((string) ($sourceCard->status ?? MaterialCard::STATUS_INBOX)),
+                sourceStatusMeta: $sourceStatusMeta,
+            );
+
+            $classifications = $this->sourceClassificationsForOriginalInsert($sourceCard);
+
+            $createdCard = $materialService->createCard($authUser, [
+                'title' => trim((string) ($sourceCard->title ?? '')) !== '' ? (string) $sourceCard->title : 'Material',
+                'source_url' => $sourceCard->source_url,
+                'source_text' => $sourceCard->source_text,
+                'type' => $targetType,
+                'status' => $targetStatus,
+                'notes' => $sourceCard->notes,
+                'classifications' => $classifications,
+            ]);
+
+            $this->cloneSourceAttachmentsToCard($sourceCard, $createdCard);
+            $keywordService->rebuild($createdCard->fresh());
+
+            if ($this->hasMaterialInboxImportsTable()) {
+                MaterialInboxImport::query()->updateOrCreate(
+                    [
+                        'target_user_id' => (int) $authUser->id,
+                        'source_school_id' => (int) $rule->school_id,
+                        'source_material_id' => (int) $sourceCard->id,
+                    ],
+                    [
+                        'target_material_card_id' => (int) $createdCard->id,
+                        'source_rule_id' => $ruleId,
+                        'imported_at' => now(),
+                    ]
+                );
+            }
+
+            return $createdCard->fresh([
+                'attachments',
+                'classifications.subject',
+                'classifications.topic',
+                'classifications.unit',
+            ]);
+        });
+
+        return response()->json([
+            'message' => 'Material als Original eingefügt.',
+            'data' => [
+                'id' => (int) $newCard->id,
+                'title' => (string) ($newCard->title ?? ''),
+                'attachments_count' => (int) $newCard->attachments->count(),
+            ],
+        ]);
+    }
+
+    private function resolveAccessibleInboxRule(
+        int $ruleId,
+        int $authUserId,
+        int $authSchoolId,
+        Collection $memberGroupIds,
+    ): ?MaterialShareRule {
+        if ($ruleId <= 0) {
+            return null;
+        }
+
+        return MaterialShareRule::query()
+            ->whereKey($ruleId)
+            ->where('is_active', true)
+            ->whereNotNull('created_by_user_id')
+            ->where('created_by_user_id', '!=', $authUserId)
+            ->where(function ($query) use ($authUserId, $authSchoolId, $memberGroupIds) {
+                $query->whereHas('targets', function ($targetQuery) use ($authUserId) {
+                    $targetQuery
+                        ->where('target_type', MaterialShareTarget::TARGET_USER)
+                        ->where('user_id', $authUserId);
+                })->orWhereHas('targets', function ($targetQuery) {
+                    $targetQuery
+                        ->where('target_type', MaterialShareTarget::TARGET_EVERYONE)
+                        ->where('audience_scope', MaterialShareTarget::AUDIENCE_SCOPE_GLOBAL);
+                })->orWhere(function ($schoolWideQuery) use ($authSchoolId) {
+                    $schoolWideQuery
+                        ->where('school_id', $authSchoolId)
+                        ->whereHas('targets', function ($targetQuery) {
+                            $targetQuery
+                                ->where('target_type', MaterialShareTarget::TARGET_EVERYONE)
+                                ->where('audience_scope', MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL);
+                        });
+                });
+
+                if ($memberGroupIds->isNotEmpty()) {
+                    $query->orWhereHas('targets', function ($targetQuery) use ($memberGroupIds) {
+                        $targetQuery
+                            ->where('target_type', MaterialShareTarget::TARGET_GROUP)
+                            ->whereIn('user_group_id', $memberGroupIds->all());
+                    });
+                }
+            })
+            ->with(['targets'])
+            ->first();
+    }
+
+    /**
+     * @return array<string,bool>
+     */
+    private function resolveImportedInboxMaterialKeys(int $targetUserId): array
+    {
+        if ($targetUserId <= 0 || ! $this->hasMaterialInboxImportsTable()) {
+            return [];
+        }
+
+        $imports = MaterialInboxImport::query()
+            ->where('target_user_id', $targetUserId)
+            ->get(['source_school_id', 'source_material_id']);
+
+        $keys = [];
+        foreach ($imports as $import) {
+            $sourceSchoolId = (int) ($import->source_school_id ?? 0);
+            $sourceMaterialId = (int) ($import->source_material_id ?? 0);
+            if ($sourceSchoolId <= 0 || $sourceMaterialId <= 0) {
+                continue;
+            }
+
+            $keys[$this->materialImportKey($sourceSchoolId, $sourceMaterialId)] = true;
+        }
+
+        return $keys;
+    }
+
+    private function isRuleMaterialImported(MaterialShareRule $rule, array $importedKeys): bool
+    {
+        if ((string) $rule->scope_type !== MaterialShareRule::SCOPE_MATERIAL) {
+            return false;
+        }
+
+        $sourceSchoolId = (int) ($rule->school_id ?? 0);
+        $sourceMaterialId = (int) ($rule->scope_id ?? 0);
+        if ($sourceSchoolId <= 0 || $sourceMaterialId <= 0) {
+            return false;
+        }
+
+        return isset($importedKeys[$this->materialImportKey($sourceSchoolId, $sourceMaterialId)]);
+    }
+
+    private function materialImportKey(int $sourceSchoolId, int $sourceMaterialId): string
+    {
+        return $sourceSchoolId . ':' . $sourceMaterialId;
+    }
+
+    private function ensureTargetMaterialType(
+        User $targetUser,
+        string $sourceType,
+        array $sourceTypeMeta,
+    ): ?string {
+        $normalizedType = trim($sourceType);
+        if ($normalizedType === '') {
+            return null;
+        }
+        $normalizedType = mb_substr($normalizedType, 0, 255);
+
+        if (! $this->hasMaterialTypesTable()) {
+            return $normalizedType;
+        }
+
+        $isUserScoped = $this->materialTypesAreUserScoped();
+        $existingType = MaterialType::query()
+            ->when($isUserScoped, fn ($query) => $query->where('user_id', (int) $targetUser->id))
+            ->when(! $isUserScoped, fn ($query) => $query->where('school_id', (int) $targetUser->school_id))
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($normalizedType)])
+            ->first();
+
+        if ($existingType) {
+            return trim((string) ($existingType->name ?? '')) ?: $normalizedType;
+        }
+
+        $createData = [
+            'school_id' => (int) $targetUser->school_id,
+            'name' => $normalizedType,
+        ];
+        if ($isUserScoped) {
+            $createData['user_id'] = (int) $targetUser->id;
+        }
+
+        if ($this->materialTypesHasIconColumn()) {
+            $icon = trim((string) ($sourceTypeMeta['icon'] ?? ''));
+            if ($icon !== '') {
+                $createData['icon'] = $icon;
+            }
+        }
+        if ($this->materialTypesHasColorColumn()) {
+            $color = $this->normalizeColor((string) ($sourceTypeMeta['color'] ?? ''));
+            if ($color !== null) {
+                $createData['color'] = $color;
+            }
+        }
+
+        $createdType = MaterialType::query()->create($createData);
+
+        return trim((string) ($createdType->name ?? '')) ?: $normalizedType;
+    }
+
+    private function ensureTargetMaterialStatus(
+        User $targetUser,
+        string $sourceStatus,
+        array $sourceStatusMeta,
+    ): string {
+        $statusValue = trim($sourceStatus);
+        if ($statusValue === '') {
+            $statusValue = MaterialCard::STATUS_INBOX;
+        }
+        $statusValue = mb_substr($statusValue, 0, 255);
+
+        if (! $this->hasMaterialStatusesTable()) {
+            return $statusValue;
+        }
+
+        $existingStatus = MaterialStatus::query()
+            ->where('school_id', (int) $targetUser->school_id)
+            ->whereRaw('LOWER(value) = ?', [mb_strtolower($statusValue)])
+            ->first();
+
+        if ($existingStatus) {
+            return trim((string) ($existingStatus->value ?? '')) ?: $statusValue;
+        }
+
+        $statusLabel = trim((string) ($sourceStatusMeta['label'] ?? ''));
+        if ($statusLabel === '') {
+            $statusLabel = $statusValue;
+        }
+        $statusLabel = mb_substr($statusLabel, 0, 255);
+
+        $createData = [
+            'school_id' => (int) $targetUser->school_id,
+            'value' => $statusValue,
+            'label' => $statusLabel,
+        ];
+
+        if ($this->materialStatusesHasColorColumn()) {
+            $color = $this->normalizeColor((string) ($sourceStatusMeta['color'] ?? ''));
+            if ($color !== null) {
+                $createData['color'] = $color;
+            }
+        }
+
+        MaterialStatus::query()->create($createData);
+
+        return $statusValue;
+    }
+
+    private function sourceClassificationsForOriginalInsert(MaterialCard $sourceCard): array
+    {
+        $rows = [];
+        $seen = [];
+        $classifications = $sourceCard->classifications instanceof Collection ? $sourceCard->classifications : collect();
+
+        foreach ($classifications as $classification) {
+            if (! $classification instanceof MaterialCardClassification) {
+                continue;
+            }
+
+            $subject = trim((string) ($classification->subject?->name ?? ''));
+            $topic = trim((string) ($classification->topic?->name ?? ''));
+            $unit = trim((string) ($classification->unit?->name ?? ''));
+
+            if ($subject === '') {
+                continue;
+            }
+            if ($topic === '') {
+                $unit = '';
+            }
+
+            $key = mb_strtolower($subject . '|' . $topic . '|' . $unit);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+
+            $rows[] = [
+                'subject' => $subject,
+                'topic' => $topic,
+                'unit' => $unit,
+            ];
+        }
+
+        if (count($rows) > 0) {
+            return $rows;
+        }
+
+        $subject = trim((string) ($sourceCard->subject ?? ''));
+        $topic = trim((string) ($sourceCard->area ?? ''));
+        $unit = trim((string) ($sourceCard->unit ?? ''));
+        if ($subject === '') {
+            return [];
+        }
+        if ($topic === '') {
+            $unit = '';
+        }
+
+        return [[
+            'subject' => $subject,
+            'topic' => $topic,
+            'unit' => $unit,
+        ]];
+    }
+
+    private function cloneSourceAttachmentsToCard(MaterialCard $sourceCard, MaterialCard $targetCard): void
+    {
+        $attachments = $sourceCard->attachments instanceof Collection ? $sourceCard->attachments : collect();
+        if ($attachments->isEmpty()) {
+            return;
+        }
+
+        $diskName = (string) config('filesystems.default', 'local');
+        $disk = Storage::disk($diskName);
+
+        foreach ($attachments as $sourceAttachment) {
+            if (! $sourceAttachment instanceof MaterialCardAttachment) {
+                continue;
+            }
+
+            $attachmentType = (string) ($sourceAttachment->attachment_type ?? '');
+            if ($attachmentType === MaterialCardAttachment::TYPE_LINK) {
+                $targetCard->attachments()->create([
+                    'attachment_type' => MaterialCardAttachment::TYPE_LINK,
+                    'name' => $sourceAttachment->name,
+                    'url' => $sourceAttachment->url,
+                    'source_url' => $sourceAttachment->source_url,
+                    'downloaded_at' => $sourceAttachment->downloaded_at,
+                ]);
+                continue;
+            }
+
+            if ($attachmentType !== MaterialCardAttachment::TYPE_FILE) {
+                continue;
+            }
+
+            $sourcePath = trim((string) ($sourceAttachment->file_path ?? ''));
+            if ($sourcePath === '' || ! $disk->exists($sourcePath)) {
+                continue;
+            }
+
+            $targetPath = $this->copiedAttachmentStoragePath($targetCard, $sourceAttachment);
+            $copied = $disk->copy($sourcePath, $targetPath);
+            if (! $copied) {
+                continue;
+            }
+
+            $targetCard->attachments()->create([
+                'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+                'name' => $sourceAttachment->name,
+                'file_path' => $targetPath,
+                'mime_type' => $sourceAttachment->mime_type,
+                'size_bytes' => $sourceAttachment->size_bytes,
+                'source_url' => $sourceAttachment->source_url,
+                'downloaded_at' => $sourceAttachment->downloaded_at,
+            ]);
+        }
+    }
+
+    private function copiedAttachmentStoragePath(MaterialCard $targetCard, MaterialCardAttachment $sourceAttachment): string
+    {
+        $now = now();
+        $directory = implode('/', [
+            'materials',
+            'schools',
+            (string) $targetCard->school_id,
+            'users',
+            (string) $targetCard->user_id,
+            'cards',
+            (string) $targetCard->id,
+            $now->format('Y'),
+            $now->format('m'),
+        ]);
+
+        $nameSource = trim((string) ($sourceAttachment->name ?: basename((string) ($sourceAttachment->file_path ?? ''))));
+        $extension = strtolower((string) pathinfo($nameSource, PATHINFO_EXTENSION));
+        if ($extension === '') {
+            $extension = strtolower((string) pathinfo((string) ($sourceAttachment->file_path ?? ''), PATHINFO_EXTENSION));
+        }
+
+        $basename = trim((string) pathinfo($nameSource, PATHINFO_FILENAME));
+        $slug = Str::slug($basename, '-');
+        if ($slug === '') {
+            $slug = 'file';
+        }
+        $slug = mb_substr($slug, 0, 120);
+
+        $filename = (string) Str::uuid() . '-' . $slug . ($extension !== '' ? '.' . $extension : '');
+
+        return $directory . '/' . $filename;
     }
 
     private function resolveScopePathLabel(MaterialShareRule $rule): string
@@ -790,6 +1266,15 @@ class MaterialShareController extends Controller
         }
 
         return $this->hasMaterialStatusesTableCache;
+    }
+
+    private function hasMaterialInboxImportsTable(): bool
+    {
+        if ($this->hasMaterialInboxImportsTableCache === null) {
+            $this->hasMaterialInboxImportsTableCache = Schema::hasTable('material_inbox_imports');
+        }
+
+        return $this->hasMaterialInboxImportsTableCache;
     }
 
     private function materialTypesAreUserScoped(): bool

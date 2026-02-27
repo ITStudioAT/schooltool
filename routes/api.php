@@ -235,6 +235,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::middleware(['auth:sanctum', 'api-allowed:admin,materials_admin,materials_moderator', 'tool-licensed:Materialientool'])->group(function () {
         Route::get('/admin/materials/shares', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'index']);
         Route::get('/admin/materials/shares/inbox-users', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'inboxUsers']);
+        Route::post('/admin/materials/shares/inbox/material-original-copy', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'copyInboxMaterialAsOriginal']);
         Route::patch('/admin/materials/shares/{material_share_rule}', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'updateRule']);
         Route::get('/admin/materials/shares/lookup-users', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'lookupUsers']);
         Route::get('/admin/materials/shares/lookup-schools', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'lookupSchools']);
@@ -268,6 +269,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/materials/cards/last-deleted-restore-info', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'lastDeletedRestoreInfo']);
         Route::post('/admin/materials/cards/restore-last-deleted', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'restoreLastDeleted']);
         Route::post('/admin/materials/cards/restore-deleted/{card_id}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'restoreDeletedById'])->whereNumber('card_id');
+        Route::delete('/admin/materials/cards/deleted/{card_id}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'purgeDeletedById'])->whereNumber('card_id');
         Route::get('/admin/materials/cards/{material_card}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'show']);
         Route::put('/admin/materials/cards/{material_card}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'update']);
         Route::delete('/admin/materials/cards/{material_card}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'destroy']);
