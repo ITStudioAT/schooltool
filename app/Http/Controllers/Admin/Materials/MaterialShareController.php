@@ -12,6 +12,7 @@ use App\Models\MaterialUnit;
 use App\Models\School;
 use App\Models\User;
 use App\Models\UserGroup;
+use Illuminate\Support\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
@@ -63,6 +64,262 @@ class MaterialShareController extends Controller
                 'active_count' => $rules->where('is_active', true)->count(),
             ],
         ]);
+    }
+
+    public function inboxUsers()
+    {
+        $authUser = $this->materialsShareUser();
+
+        if (! $this->shareTablesAvailable()) {
+            return response()->json([
+                'data' => [],
+                'meta' => [
+                    'needs_migration' => true,
+                    'total' => 0,
+                ],
+            ]);
+        }
+
+        $schoolId = (int) $authUser->school_id;
+        $authUserId = (int) $authUser->id;
+
+        $memberGroupIds = UserGroup::query()
+            ->whereHas('members', fn ($query) => $query->where('users.id', $authUserId))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values();
+
+        $matchingRules = MaterialShareRule::query()
+            ->where('is_active', true)
+            ->whereNotNull('created_by_user_id')
+            ->where('created_by_user_id', '!=', $authUserId)
+            ->where(function ($query) use ($authUserId, $schoolId, $memberGroupIds) {
+                $query->whereHas('targets', function ($targetQuery) use ($authUserId) {
+                    $targetQuery
+                        ->where('target_type', MaterialShareTarget::TARGET_USER)
+                        ->where('user_id', $authUserId);
+                })->orWhereHas('targets', function ($targetQuery) {
+                    $targetQuery
+                        ->where('target_type', MaterialShareTarget::TARGET_EVERYONE)
+                        ->where('audience_scope', MaterialShareTarget::AUDIENCE_SCOPE_GLOBAL);
+                })->orWhere(function ($schoolWideQuery) use ($schoolId) {
+                    $schoolWideQuery
+                        ->where('school_id', $schoolId)
+                        ->whereHas('targets', function ($targetQuery) {
+                            $targetQuery
+                                ->where('target_type', MaterialShareTarget::TARGET_EVERYONE)
+                                ->where('audience_scope', MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL);
+                        });
+                });
+
+                if ($memberGroupIds->isNotEmpty()) {
+                    $query->orWhereHas('targets', function ($targetQuery) use ($memberGroupIds) {
+                        $targetQuery
+                            ->where('target_type', MaterialShareTarget::TARGET_GROUP)
+                            ->whereIn('user_group_id', $memberGroupIds->all());
+                    });
+                }
+            })
+            ->with([
+                'creator:id,school_id,first_name,last_name,email',
+                'creator.selectedSchool:id,long_name,short_name',
+                'targets:id,material_share_rule_id,target_type,audience_scope,permission,user_group_id,user_id',
+            ])
+            ->orderByDesc('updated_at')
+            ->get(['id', 'school_id', 'scope_type', 'scope_id', 'created_by_user_id', 'updated_at']);
+
+        $users = $matchingRules
+            ->groupBy(fn (MaterialShareRule $rule) => (int) $rule->created_by_user_id)
+            ->map(function ($creatorRules) use ($authUserId, $schoolId, $memberGroupIds) {
+                $firstRule = $creatorRules->first();
+                $creator = $firstRule?->creator;
+                if (! $creator) {
+                    return null;
+                }
+
+                $name = trim((string) (($creator->last_name ?? '').' '.($creator->first_name ?? '')));
+                $schoolLabel = trim((string) ($creator->selectedSchool?->long_name ?: $creator->selectedSchool?->short_name ?: ''));
+                $lastSharedAt = $creatorRules
+                    ->sortByDesc(fn (MaterialShareRule $rule) => optional($rule->updated_at)?->getTimestamp() ?? 0)
+                    ->first()?->updated_at;
+                $sharedItems = $creatorRules
+                    ->sortByDesc(fn (MaterialShareRule $rule) => optional($rule->updated_at)?->getTimestamp() ?? 0)
+                    ->map(function (MaterialShareRule $rule) use ($authUserId, $schoolId, $memberGroupIds) {
+                        $permission = $this->resolveRulePermissionForUser($rule, $authUserId, $schoolId, $memberGroupIds);
+                        [$scopeLabel, $scopeObjectLabel] = $this->resolveScopeLabels($rule, (int) $rule->school_id);
+                        return [
+                            'rule_id' => (int) $rule->id,
+                            'scope_type' => (string) $rule->scope_type,
+                            'scope_label' => $scopeLabel,
+                            'scope_object_label' => $scopeObjectLabel,
+                            'scope_path_label' => $this->resolveScopePathLabel($rule),
+                            'permission' => $permission,
+                            'permission_label' => mb_strtoupper($this->permissionLabel($permission)),
+                            'updated_at' => optional($rule->updated_at)?->toIso8601String(),
+                        ];
+                    })
+                    ->values();
+
+                return [
+                    'id' => (int) $creator->id,
+                    'label' => $name !== '' ? $name : ($creator->email ?: 'Benutzer'),
+                    'first_name' => (string) ($creator->first_name ?? ''),
+                    'last_name' => (string) ($creator->last_name ?? ''),
+                    'email' => (string) ($creator->email ?? ''),
+                    'school_label' => $schoolLabel !== '' ? $schoolLabel : null,
+                    'shared_rules_count' => (int) $creatorRules->count(),
+                    'shared_items' => $sharedItems,
+                    'last_shared_at' => $lastSharedAt ? $lastSharedAt->toIso8601String() : null,
+                ];
+            })
+            ->filter()
+            ->sortByDesc(fn (array $row) => strtotime((string) ($row['last_shared_at'] ?? '')) ?: 0)
+            ->values();
+
+        return response()->json([
+            'data' => $users,
+            'meta' => [
+                'needs_migration' => false,
+                'total' => $users->count(),
+            ],
+        ]);
+    }
+
+    private function resolveScopePathLabel(MaterialShareRule $rule): string
+    {
+        $scopeType = (string) $rule->scope_type;
+        $scopeId = (int) ($rule->scope_id ?? 0);
+
+        if ($scopeType === MaterialShareRule::SCOPE_ALL) {
+            return 'Alle Fächer - Alle Themen - Alle Einheiten';
+        }
+
+        if ($scopeType === MaterialShareRule::SCOPE_SUBJECT) {
+            $subject = $scopeId > 0 ? MaterialSubject::query()->find($scopeId) : null;
+            $subjectName = trim((string) ($subject?->name ?: 'Fach'));
+            return $subjectName . ' - Alle Themen - Alle Einheiten';
+        }
+
+        if ($scopeType === MaterialShareRule::SCOPE_TOPIC) {
+            $topic = $scopeId > 0
+                ? MaterialTopic::query()->with('subject:id,name')->find($scopeId)
+                : null;
+            $subjectName = trim((string) ($topic?->subject?->name ?: 'Fach'));
+            $topicName = trim((string) ($topic?->name ?: 'Thema'));
+            return $subjectName . ' - ' . $topicName . ' - Alle Einheiten';
+        }
+
+        if ($scopeType === MaterialShareRule::SCOPE_UNIT) {
+            $unit = $scopeId > 0
+                ? MaterialUnit::query()->with('topic.subject:id,name')->find($scopeId)
+                : null;
+            $subjectName = trim((string) ($unit?->topic?->subject?->name ?: 'Fach'));
+            $topicName = trim((string) ($unit?->topic?->name ?: 'Thema'));
+            $unitName = trim((string) ($unit?->name ?: 'Einheit'));
+            return $subjectName . ' - ' . $topicName . ' - ' . $unitName;
+        }
+
+        if ($scopeType === MaterialShareRule::SCOPE_MATERIAL) {
+            $card = $scopeId > 0
+                ? MaterialCard::query()
+                    ->where('school_id', (int) $rule->school_id)
+                    ->with([
+                        'classifications.subject:id,name',
+                        'classifications.topic:id,name',
+                        'classifications.unit:id,name',
+                    ])
+                    ->find($scopeId)
+                : null;
+
+            if (! $card) {
+                return 'Fach - Thema - Einheit';
+            }
+
+            $classificationPaths = collect($card->classifications ?? [])
+                ->map(function ($classification) {
+                    $subjectName = trim((string) ($classification?->subject?->name ?: 'Fach'));
+                    $topicName = trim((string) ($classification?->topic?->name ?: 'Thema'));
+                    $unitName = trim((string) ($classification?->unit?->name ?: 'Einheit'));
+                    return $subjectName . ' - ' . $topicName . ' - ' . $unitName;
+                })
+                ->filter()
+                ->unique()
+                ->values();
+
+            if ($classificationPaths->isNotEmpty()) {
+                return $classificationPaths->implode(' | ');
+            }
+
+            $subjectName = trim((string) ($card->subject ?? ''));
+            $topicName = trim((string) ($card->area ?? ''));
+            $unitName = trim((string) ($card->unit ?? ''));
+            if ($subjectName !== '' || $topicName !== '' || $unitName !== '') {
+                return ($subjectName !== '' ? $subjectName : 'Fach')
+                    . ' - '
+                    . ($topicName !== '' ? $topicName : 'Thema')
+                    . ' - '
+                    . ($unitName !== '' ? $unitName : 'Einheit');
+            }
+
+            return 'Fach - Thema - Einheit';
+        }
+
+        return 'Fach - Thema - Einheit';
+    }
+
+    private function resolveRulePermissionForUser(
+        MaterialShareRule $rule,
+        int $authUserId,
+        int $authUserSchoolId,
+        Collection $memberGroupIds,
+    ): string {
+        $bestRank = 0;
+        $bestPermission = MaterialShareTarget::PERMISSION_READ_ONLY;
+
+        $targets = $rule->targets instanceof Collection ? $rule->targets : collect();
+        foreach ($targets as $target) {
+            if (! $target instanceof MaterialShareTarget) {
+                continue;
+            }
+
+            $applies = false;
+            if ((string) $target->target_type === MaterialShareTarget::TARGET_USER) {
+                $applies = (int) ($target->user_id ?? 0) === $authUserId;
+            } elseif ((string) $target->target_type === MaterialShareTarget::TARGET_EVERYONE) {
+                $audienceScope = (string) ($target->audience_scope ?? '');
+                if ($audienceScope === MaterialShareTarget::AUDIENCE_SCOPE_GLOBAL) {
+                    $applies = true;
+                } elseif ($audienceScope === MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL) {
+                    $applies = (int) $rule->school_id === $authUserSchoolId;
+                }
+            } elseif ((string) $target->target_type === MaterialShareTarget::TARGET_GROUP) {
+                $groupId = (int) ($target->user_group_id ?? 0);
+                $applies = $groupId > 0 && $memberGroupIds->contains($groupId);
+            }
+
+            if (! $applies) {
+                continue;
+            }
+
+            $permission = (string) ($target->permission ?: MaterialShareTarget::PERMISSION_READ_ONLY);
+            $rank = $this->permissionRank($permission);
+            if ($rank > $bestRank) {
+                $bestRank = $rank;
+                $bestPermission = $permission;
+            }
+        }
+
+        return $bestPermission;
+    }
+
+    private function permissionRank(string $permission): int
+    {
+        return match ($permission) {
+            MaterialShareTarget::PERMISSION_FULL_ACCESS => 3,
+            MaterialShareTarget::PERMISSION_READ_WRITE => 2,
+            MaterialShareTarget::PERMISSION_READ_ONLY => 1,
+            default => 0,
+        };
     }
 
     public function lookupUsers(Request $request)

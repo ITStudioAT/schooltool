@@ -234,6 +234,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     /* SANCTUM - admin, materials_admin, materials_moderator */
     Route::middleware(['auth:sanctum', 'api-allowed:admin,materials_admin,materials_moderator', 'tool-licensed:Materialientool'])->group(function () {
         Route::get('/admin/materials/shares', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'index']);
+        Route::get('/admin/materials/shares/inbox-users', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'inboxUsers']);
         Route::patch('/admin/materials/shares/{material_share_rule}', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'updateRule']);
         Route::get('/admin/materials/shares/lookup-users', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'lookupUsers']);
         Route::get('/admin/materials/shares/lookup-schools', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'lookupSchools']);

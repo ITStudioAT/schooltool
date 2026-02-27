@@ -14,6 +14,18 @@
 
         <v-btn
             class="materials-menu-btn"
+            :class="{ 'materials-menu-btn--active': modelValue === 'inbox' }"
+            rounded="pill"
+            size="large"
+            variant="flat"
+            prepend-icon="mdi-inbox-outline"
+            :disabled="disabled"
+            @click="$emit('update:modelValue', 'inbox')">
+            Inbox
+        </v-btn>
+
+        <v-btn
+            class="materials-menu-btn"
             :class="{ 'materials-menu-btn--active': modelValue === 'shares' }"
             rounded="pill"
             size="large"

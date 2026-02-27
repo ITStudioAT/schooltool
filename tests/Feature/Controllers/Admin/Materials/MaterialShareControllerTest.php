@@ -87,6 +87,195 @@ test('shares index denies regular user role', function () {
         ->assertStatus(403);
 });
 
+test('inbox users aggregates creators who shared with current user', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $creatorA = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'first_name' => 'Alice',
+        'last_name' => 'Alpha',
+        'email' => 'alice.alpha@test.local',
+    ]);
+    $creatorB = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'first_name' => 'Bob',
+        'last_name' => 'Beta',
+        'email' => 'bob.beta@test.local',
+    ]);
+
+    $sharedGroup = UserGroup::query()->create([
+        'school_id' => $this->school->id,
+        'type' => UserGroup::TYPE_MATERIALS,
+        'name' => 'Inbox Gruppe',
+        'created_by_user_id' => $creatorB->id,
+    ]);
+    $sharedGroup->members()->attach($this->materialsAdmin->id, [
+        'added_by_user_id' => $creatorB->id,
+    ]);
+
+    $ruleA1 = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creatorA->id,
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'scope_id' => null,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $ruleA1->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $ruleA2 = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creatorA->id,
+        'scope_type' => MaterialShareRule::SCOPE_SUBJECT,
+        'scope_id' => 99,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $ruleA2->id,
+        'target_type' => MaterialShareTarget::TARGET_EVERYONE,
+        'audience_scope' => MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL,
+        'permission' => MaterialShareTarget::PERMISSION_READ_WRITE,
+    ]);
+
+    $ruleB1 = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creatorB->id,
+        'scope_type' => MaterialShareRule::SCOPE_TOPIC,
+        'scope_id' => 123,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $ruleB1->id,
+        'target_type' => MaterialShareTarget::TARGET_GROUP,
+        'user_group_id' => $sharedGroup->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $selfRule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $this->materialsAdmin->id,
+        'scope_type' => MaterialShareRule::SCOPE_UNIT,
+        'scope_id' => 77,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $selfRule->id,
+        'target_type' => MaterialShareTarget::TARGET_EVERYONE,
+        'audience_scope' => MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $inactiveRule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creatorB->id,
+        'scope_type' => MaterialShareRule::SCOPE_MATERIAL,
+        'scope_id' => 555,
+        'is_active' => false,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $inactiveRule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $ruleA1->forceFill(['updated_at' => Carbon::parse('2026-02-25 08:00:00')])->saveQuietly();
+    $ruleB1->forceFill(['updated_at' => Carbon::parse('2026-02-25 09:00:00')])->saveQuietly();
+    $ruleA2->forceFill(['updated_at' => Carbon::parse('2026-02-25 10:00:00')])->saveQuietly();
+
+    $response = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertStatus(200)
+        ->assertJsonPath('meta.needs_migration', false)
+        ->assertJsonPath('meta.total', 2);
+
+    expect((string) $response->json('data.0.school_label'))->not->toBe('');
+    expect((int) $response->json('data.0.id'))->toBe((int) $creatorA->id);
+    expect((int) $response->json('data.0.shared_rules_count'))->toBe(2);
+    expect($response->json('data.0.shared_items'))->toBeArray();
+    expect(count($response->json('data.0.shared_items')))->toBe(2);
+    expect((string) $response->json('data.0.shared_items.0.scope_type'))->toBe(MaterialShareRule::SCOPE_SUBJECT);
+    expect((string) $response->json('data.0.shared_items.0.scope_path_label'))->toContain(' - ');
+    expect((string) $response->json('data.0.shared_items.0.permission'))->toBe(MaterialShareTarget::PERMISSION_READ_WRITE);
+    expect((string) $response->json('data.0.shared_items.0.permission_label'))->toBe('LESEN/SCHREIBEN');
+
+    expect((int) $response->json('data.1.id'))->toBe((int) $creatorB->id);
+    expect((int) $response->json('data.1.shared_rules_count'))->toBe(1);
+    expect(count($response->json('data.1.shared_items')))->toBe(1);
+    expect((string) $response->json('data.1.shared_items.0.scope_type'))->toBe(MaterialShareRule::SCOPE_TOPIC);
+    expect((string) $response->json('data.1.shared_items.0.scope_path_label'))->toContain(' - ');
+    expect((string) $response->json('data.1.shared_items.0.permission'))->toBe(MaterialShareTarget::PERMISSION_READ_ONLY);
+    expect((string) $response->json('data.1.shared_items.0.permission_label'))->toBe('NUR LESEN');
+
+    $ids = collect($response->json('data'))->pluck('id')->map(fn ($id) => (int) $id);
+    expect($ids->contains((int) $this->materialsAdmin->id))->toBeFalse();
+});
+
+test('inbox users includes cross-school direct user shares', function () {
+    $materialsLicence = Licence::query()->firstWhere('name', 'Materialientool');
+    expect($materialsLicence)->not->toBeNull();
+
+    $otherSchool = School::factory()->create(['is_selectable' => true]);
+    $otherYear = Schoolyear::factory()->create(['school_id' => $otherSchool->id]);
+    SchoolLicence::query()->create([
+        'school_id' => $otherSchool->id,
+        'licence_id' => $materialsLicence->id,
+        'valid_until' => now()->addYear(),
+    ]);
+
+    $recipient = User::factory()->create([
+        'school_id' => $otherSchool->id,
+        'schoolyear_id' => $otherYear->id,
+        'first_name' => 'Guenther',
+        'last_name' => 'Kron',
+        'email' => 'guenther.kron@bildung.gv.at',
+    ]);
+    $recipient->assignRole('materials_admin');
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'first_name' => 'Christian',
+        'last_name' => 'Doppler',
+        'email' => 'christian.doppler@cdgym.at',
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'scope_id' => null,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $recipient->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $this->actingAs($recipient, 'sanctum');
+
+    $response = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertStatus(200)
+        ->assertJsonPath('meta.needs_migration', false)
+        ->assertJsonPath('meta.total', 1);
+
+    expect((int) $response->json('data.0.id'))->toBe((int) $creator->id);
+    expect((int) $response->json('data.0.shared_rules_count'))->toBe(1);
+    expect((string) $response->json('data.0.school_label'))->not->toBe('');
+    expect(count($response->json('data.0.shared_items')))->toBe(1);
+    expect((string) $response->json('data.0.shared_items.0.scope_type'))->toBe(MaterialShareRule::SCOPE_ALL);
+    expect((string) $response->json('data.0.shared_items.0.scope_path_label'))->toBe('Alle Fächer - Alle Themen - Alle Einheiten');
+    expect((string) $response->json('data.0.shared_items.0.permission'))->toBe(MaterialShareTarget::PERMISSION_READ_ONLY);
+    expect((string) $response->json('data.0.shared_items.0.permission_label'))->toBe('NUR LESEN');
+});
+
 test('materials admin can create workspace everyone share and list it', function () {
     $this->actingAs($this->materialsAdmin, 'sanctum');
 
@@ -698,6 +887,19 @@ test('shares index returns needs migration meta when share tables are missing', 
     Schema::dropIfExists('material_share_rules');
 
     $this->getJson('/api/admin/materials/shares')
+        ->assertStatus(200)
+        ->assertJsonPath('meta.needs_migration', true)
+        ->assertJsonPath('meta.total', 0)
+        ->assertJsonCount(0, 'data');
+});
+
+test('inbox users endpoint returns needs migration meta when share tables are missing', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    Schema::dropIfExists('material_share_targets');
+    Schema::dropIfExists('material_share_rules');
+
+    $this->getJson('/api/admin/materials/shares/inbox-users')
         ->assertStatus(200)
         ->assertJsonPath('meta.needs_migration', true)
         ->assertJsonPath('meta.total', 0)

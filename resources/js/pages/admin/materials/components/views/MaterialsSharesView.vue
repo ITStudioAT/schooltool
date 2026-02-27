@@ -269,10 +269,14 @@ export default {
         },
         targetChipLabel(target) {
             const baseLabel = String(target?.label || '-').trim() || '-'
-            const isOtherSchoolUser = String(target?.target_type || '') === 'user' && !!target?.meta?.is_other_school
+            const isUser = String(target?.target_type || '') === 'user'
+            const isOtherSchoolUser = isUser && !!target?.meta?.is_other_school
             const schoolLabel = String(target?.meta?.school_label || '').trim()
-            if (!isOtherSchoolUser || schoolLabel === '') return baseLabel
-            return `${baseLabel} · ${schoolLabel}`
+            const email = String(target?.meta?.email || '').trim()
+            const showEmail = isUser && email !== '' && email !== baseLabel
+            let label = showEmail ? `${baseLabel} (${email})` : baseLabel
+            if (isOtherSchoolUser && schoolLabel !== '') label += ` · ${schoolLabel}`
+            return label
         },
         permissionRank(permission) {
             const normalized = String(permission || '').trim()
