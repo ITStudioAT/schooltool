@@ -4,10 +4,13 @@ namespace App\Http\Controllers\Admin\Materials;
 
 use App\Http\Controllers\Controller;
 use App\Models\MaterialCard;
+use App\Models\MaterialCardAttachment;
 use App\Models\MaterialShareRule;
 use App\Models\MaterialShareTarget;
+use App\Models\MaterialStatus;
 use App\Models\MaterialSubject;
 use App\Models\MaterialTopic;
+use App\Models\MaterialType;
 use App\Models\MaterialUnit;
 use App\Models\School;
 use App\Models\User;
@@ -20,6 +23,26 @@ use Illuminate\Validation\ValidationException;
 
 class MaterialShareController extends Controller
 {
+    /** @var array<string,array<string,array{label:string,icon:string,color:?string}>> */
+    private array $materialTypeMetaCache = [];
+
+    /** @var array<int,array<string,array{label:string,color:string}>> */
+    private array $materialStatusMetaCache = [];
+
+    private ?bool $hasMaterialAttachmentsTableCache = null;
+
+    private ?bool $hasMaterialTypesTableCache = null;
+
+    private ?bool $hasMaterialStatusesTableCache = null;
+
+    private ?bool $materialTypesUserScopedCache = null;
+
+    private ?bool $materialTypesHasIconColumnCache = null;
+
+    private ?bool $materialTypesHasColorColumnCache = null;
+
+    private ?bool $materialStatusesHasColorColumnCache = null;
+
     public function index(Request $request)
     {
         $authUser = $this->materialsShareUser();
@@ -147,6 +170,7 @@ class MaterialShareController extends Controller
                     ->map(function (MaterialShareRule $rule) use ($authUserId, $schoolId, $memberGroupIds) {
                         $permission = $this->resolveRulePermissionForUser($rule, $authUserId, $schoolId, $memberGroupIds);
                         [$scopeLabel, $scopeObjectLabel] = $this->resolveScopeLabels($rule, (int) $rule->school_id);
+                        $scopeLabel = (string) $rule->scope_type === MaterialShareRule::SCOPE_ALL ? 'Workspace' : $scopeLabel;
                         return [
                             'rule_id' => (int) $rule->id,
                             'scope_type' => (string) $rule->scope_type,
@@ -155,6 +179,7 @@ class MaterialShareController extends Controller
                             'scope_path_label' => $this->resolveScopePathLabel($rule),
                             'permission' => $permission,
                             'permission_label' => mb_strtoupper($this->permissionLabel($permission)),
+                            'hierarchy' => $this->resolveScopeHierarchy($rule),
                             'updated_at' => optional($rule->updated_at)?->toIso8601String(),
                         ];
                     })
@@ -265,6 +290,542 @@ class MaterialShareController extends Controller
         }
 
         return 'Fach - Thema - Einheit';
+    }
+
+    private function resolveScopeHierarchy(MaterialShareRule $rule): array
+    {
+        $scopeType = (string) $rule->scope_type;
+        $scopeId = (int) ($rule->scope_id ?? 0);
+
+        $cardsQuery = MaterialCard::query()
+            ->where('school_id', (int) $rule->school_id)
+            ->with([
+                'classifications.subject:id,name',
+                'classifications.topic:id,name',
+                'classifications.unit:id,name',
+            ])
+            ->orderBy('title')
+            ->orderBy('id');
+
+        if ($this->hasMaterialAttachmentsTable()) {
+            $cardsQuery
+                ->withCount('attachments')
+                ->withCount([
+                    'attachments as file_attachments_count' => fn ($query) => $query->where('attachment_type', MaterialCardAttachment::TYPE_FILE),
+                ]);
+        }
+
+        if ($scopeType === MaterialShareRule::SCOPE_MATERIAL) {
+            if ($scopeId <= 0) {
+                return [];
+            }
+            $cardsQuery->whereKey($scopeId);
+        } elseif ($scopeType === MaterialShareRule::SCOPE_SUBJECT) {
+            if ($scopeId <= 0) {
+                return [];
+            }
+            $cardsQuery->whereHas('classifications', fn ($query) => $query->where('subject_id', $scopeId));
+        } elseif ($scopeType === MaterialShareRule::SCOPE_TOPIC) {
+            if ($scopeId <= 0) {
+                return [];
+            }
+            $cardsQuery->whereHas('classifications', fn ($query) => $query->where('topic_id', $scopeId));
+        } elseif ($scopeType === MaterialShareRule::SCOPE_UNIT) {
+            if ($scopeId <= 0) {
+                return [];
+            }
+            $cardsQuery->whereHas('classifications', fn ($query) => $query->where('unit_id', $scopeId));
+        }
+
+        $cards = $cardsQuery->get([
+            'id',
+            'school_id',
+            'user_id',
+            'title',
+            'subject',
+            'area',
+            'unit',
+            'type',
+            'status',
+            'source_url',
+            'source_text',
+            'notes',
+        ]);
+        if ($cards->isEmpty()) {
+            return [];
+        }
+
+        $subjects = [];
+
+        foreach ($cards as $card) {
+            $cardRows = $this->classificationRowsForCardAndScope($card, $scopeType, $scopeId);
+            if (empty($cardRows)) {
+                continue;
+            }
+            $materialPayload = $this->serializeHierarchyMaterial($card);
+
+            $seenPaths = [];
+            foreach ($cardRows as $row) {
+                $pathKey = mb_strtolower(
+                    (string) $row['subject_name']
+                    . '|'
+                    . (string) $row['topic_name']
+                    . '|'
+                    . (string) $row['unit_name']
+                );
+                if (isset($seenPaths[$pathKey])) {
+                    continue;
+                }
+                $seenPaths[$pathKey] = true;
+
+                $subjectKey = (string) ($row['subject_id'] ?? 0) . '|' . $row['subject_name'];
+                if (!isset($subjects[$subjectKey])) {
+                    $subjects[$subjectKey] = [
+                        'id' => $row['subject_id'],
+                        'name' => $row['subject_name'],
+                        'topics' => [],
+                    ];
+                }
+
+                $topicKey = (string) ($row['topic_id'] ?? 0) . '|' . $row['topic_name'];
+                if (!isset($subjects[$subjectKey]['topics'][$topicKey])) {
+                    $subjects[$subjectKey]['topics'][$topicKey] = [
+                        'id' => $row['topic_id'],
+                        'name' => $row['topic_name'],
+                        'units' => [],
+                    ];
+                }
+
+                $unitKey = (string) ($row['unit_id'] ?? 0) . '|' . $row['unit_name'];
+                if (!isset($subjects[$subjectKey]['topics'][$topicKey]['units'][$unitKey])) {
+                    $subjects[$subjectKey]['topics'][$topicKey]['units'][$unitKey] = [
+                        'id' => $row['unit_id'],
+                        'name' => $row['unit_name'],
+                        'materials' => [],
+                    ];
+                }
+
+                $materialId = (int) ($card->id ?? 0);
+                $subjects[$subjectKey]['topics'][$topicKey]['units'][$unitKey]['materials'][$materialId] = $materialPayload;
+            }
+        }
+
+        $subjectRows = collect($subjects)->map(function (array $subject) {
+            $topicRows = collect($subject['topics'] ?? [])->map(function (array $topic) {
+                $unitRows = collect($topic['units'] ?? [])->map(function (array $unit) {
+                    $materials = collect($unit['materials'] ?? [])
+                        ->sortBy(fn (array $material) => mb_strtolower((string) ($material['title'] ?? '')))
+                        ->values();
+
+                    return [
+                        'id' => $unit['id'],
+                        'name' => $unit['name'],
+                        'materials' => $materials->all(),
+                    ];
+                })
+                    ->sortBy(fn (array $unit) => mb_strtolower((string) ($unit['name'] ?? '')))
+                    ->values();
+
+                return [
+                    'id' => $topic['id'],
+                    'name' => $topic['name'],
+                    'units' => $unitRows->all(),
+                ];
+            })
+                ->sortBy(fn (array $topic) => mb_strtolower((string) ($topic['name'] ?? '')))
+                ->values();
+
+            return [
+                'id' => $subject['id'],
+                'name' => $subject['name'],
+                'topics' => $topicRows->all(),
+            ];
+        })
+            ->sortBy(fn (array $subject) => mb_strtolower((string) ($subject['name'] ?? '')))
+            ->values();
+
+        return $subjectRows->all();
+    }
+
+    private function classificationRowsForCardAndScope(MaterialCard $card, string $scopeType, int $scopeId): array
+    {
+        $rows = [];
+        $classifications = $card->classifications instanceof Collection ? $card->classifications : collect();
+
+        foreach ($classifications as $classification) {
+            $subjectId = (int) ($classification->subject_id ?? 0);
+            $topicId = (int) ($classification->topic_id ?? 0);
+            $unitId = (int) ($classification->unit_id ?? 0);
+
+            if ($scopeType === MaterialShareRule::SCOPE_SUBJECT && $scopeId > 0 && $subjectId !== $scopeId) {
+                continue;
+            }
+            if ($scopeType === MaterialShareRule::SCOPE_TOPIC && $scopeId > 0 && $topicId !== $scopeId) {
+                continue;
+            }
+            if ($scopeType === MaterialShareRule::SCOPE_UNIT && $scopeId > 0 && $unitId !== $scopeId) {
+                continue;
+            }
+
+            $rows[] = [
+                'subject_id' => $subjectId > 0 ? $subjectId : null,
+                'subject_name' => trim((string) ($classification->subject?->name ?? '')),
+                'topic_id' => $topicId > 0 ? $topicId : null,
+                'topic_name' => trim((string) ($classification->topic?->name ?? '')),
+                'unit_id' => $unitId > 0 ? $unitId : null,
+                'unit_name' => trim((string) ($classification->unit?->name ?? '')),
+            ];
+        }
+
+        if (count($rows) === 0 && in_array($scopeType, [MaterialShareRule::SCOPE_ALL, MaterialShareRule::SCOPE_MATERIAL], true)) {
+            $rows[] = [
+                'subject_id' => null,
+                'subject_name' => trim((string) ($card->subject ?? '')),
+                'topic_id' => null,
+                'topic_name' => trim((string) ($card->area ?? '')),
+                'unit_id' => null,
+                'unit_name' => trim((string) ($card->unit ?? '')),
+            ];
+        }
+
+        return array_map(function (array $row) {
+            return [
+                'subject_id' => $row['subject_id'],
+                'subject_name' => $this->normalizeHierarchyName($row['subject_name'] ?? '', 'Ohne Fach'),
+                'topic_id' => $row['topic_id'],
+                'topic_name' => $this->normalizeHierarchyName($row['topic_name'] ?? '', 'Ohne Thema'),
+                'unit_id' => $row['unit_id'],
+                'unit_name' => $this->normalizeHierarchyName($row['unit_name'] ?? '', 'Ohne Einheit'),
+            ];
+        }, $rows);
+    }
+
+    private function normalizeHierarchyName(?string $value, string $fallback): string
+    {
+        $name = trim((string) ($value ?? ''));
+        return $name !== '' ? $name : $fallback;
+    }
+
+    private function serializeHierarchyMaterial(MaterialCard $card): array
+    {
+        $materialId = (int) ($card->id ?? 0);
+        $materialTitle = trim((string) ($card->title ?? 'Material'));
+        $typeValue = trim((string) ($card->type ?? ''));
+        $statusValue = trim((string) ($card->status ?: MaterialCard::STATUS_INBOX));
+        if ($statusValue === '') {
+            $statusValue = MaterialCard::STATUS_INBOX;
+        }
+
+        $attachmentsCount = max(0, (int) ($card->attachments_count ?? 0));
+        $fileAttachmentsCount = max(0, (int) ($card->file_attachments_count ?? 0));
+
+        $typeMeta = $this->resolveMaterialTypeMeta(
+            schoolId: (int) ($card->school_id ?? 0),
+            userId: (int) ($card->user_id ?? 0),
+            typeValue: $typeValue,
+        );
+        $statusMeta = $this->resolveMaterialStatusMeta(
+            schoolId: (int) ($card->school_id ?? 0),
+            statusValue: $statusValue,
+        );
+
+        return [
+            'id' => $materialId,
+            'title' => $materialTitle !== '' ? $materialTitle : 'Material',
+            'icon' => $this->resolveHierarchyMaterialIcon($card, $typeMeta['icon'], $attachmentsCount, $fileAttachmentsCount),
+            'type' => $typeValue !== '' ? $typeValue : null,
+            'type_label' => $typeMeta['label'] !== '' ? $typeMeta['label'] : ($typeValue !== '' ? $typeValue : null),
+            'type_color' => $typeMeta['color'],
+            'status' => $statusValue,
+            'status_label' => $statusMeta['label'],
+            'status_color' => $statusMeta['color'],
+            'attachments_count' => $attachmentsCount,
+        ];
+    }
+
+    /**
+     * @return array{label:string,icon:string,color:?string}
+     */
+    private function resolveMaterialTypeMeta(int $schoolId, int $userId, string $typeValue): array
+    {
+        $normalizedType = trim($typeValue);
+        if ($normalizedType === '') {
+            return [
+                'label' => '',
+                'icon' => '',
+                'color' => null,
+            ];
+        }
+
+        $key = mb_strtolower($normalizedType);
+        $map = $this->materialTypeMetaMap($schoolId, $userId);
+        if (isset($map[$key])) {
+            return $map[$key];
+        }
+
+        return [
+            'label' => $normalizedType,
+            'icon' => '',
+            'color' => null,
+        ];
+    }
+
+    /**
+     * @return array<string,array{label:string,icon:string,color:?string}>
+     */
+    private function materialTypeMetaMap(int $schoolId, int $userId): array
+    {
+        if (! $this->hasMaterialTypesTable()) {
+            return [];
+        }
+
+        $isUserScoped = $this->materialTypesAreUserScoped();
+        if ($isUserScoped && $userId <= 0) {
+            return [];
+        }
+        if (! $isUserScoped && $schoolId <= 0) {
+            return [];
+        }
+
+        $cacheKey = $isUserScoped ? ('user:' . $userId) : ('school:' . $schoolId);
+        if (array_key_exists($cacheKey, $this->materialTypeMetaCache)) {
+            return $this->materialTypeMetaCache[$cacheKey];
+        }
+
+        $hasIconColumn = $this->materialTypesHasIconColumn();
+        $hasColorColumn = $this->materialTypesHasColorColumn();
+
+        $columns = ['name'];
+        if ($hasIconColumn) {
+            $columns[] = 'icon';
+        }
+        if ($hasColorColumn) {
+            $columns[] = 'color';
+        }
+
+        $query = MaterialType::query();
+        if ($isUserScoped) {
+            $query->where('user_id', $userId);
+        } else {
+            $query->where('school_id', $schoolId);
+        }
+
+        $rows = $query->orderBy('name')->get($columns);
+
+        $map = [];
+        foreach ($rows as $row) {
+            $name = trim((string) ($row->name ?? ''));
+            if ($name === '') {
+                continue;
+            }
+
+            $lowerName = mb_strtolower($name);
+            $icon = $hasIconColumn ? trim((string) ($row->icon ?? '')) : '';
+            $color = $hasColorColumn ? $this->normalizeColor((string) ($row->color ?? '')) : null;
+
+            $map[$lowerName] = [
+                'label' => $name,
+                'icon' => $icon,
+                'color' => $color,
+            ];
+        }
+
+        $this->materialTypeMetaCache[$cacheKey] = $map;
+
+        return $map;
+    }
+
+    /**
+     * @return array{label:string,color:string}
+     */
+    private function resolveMaterialStatusMeta(int $schoolId, string $statusValue): array
+    {
+        $normalizedStatus = trim($statusValue);
+        if ($normalizedStatus === '') {
+            return $this->defaultMaterialStatusMeta(MaterialCard::STATUS_INBOX);
+        }
+
+        $lowerStatus = mb_strtolower($normalizedStatus);
+        $map = $this->materialStatusMetaMap($schoolId);
+        if (isset($map[$lowerStatus])) {
+            return $map[$lowerStatus];
+        }
+
+        return $this->defaultMaterialStatusMeta($normalizedStatus);
+    }
+
+    /**
+     * @return array<string,array{label:string,color:string}>
+     */
+    private function materialStatusMetaMap(int $schoolId): array
+    {
+        if ($schoolId <= 0 || ! $this->hasMaterialStatusesTable()) {
+            return [];
+        }
+
+        if (array_key_exists($schoolId, $this->materialStatusMetaCache)) {
+            return $this->materialStatusMetaCache[$schoolId];
+        }
+
+        $hasColorColumn = $this->materialStatusesHasColorColumn();
+        $columns = ['value', 'label'];
+        if ($hasColorColumn) {
+            $columns[] = 'color';
+        }
+
+        $rows = MaterialStatus::query()
+            ->where('school_id', $schoolId)
+            ->orderBy('id')
+            ->get($columns);
+
+        $map = [];
+        foreach ($rows as $row) {
+            $value = trim((string) ($row->value ?? ''));
+            if ($value === '') {
+                continue;
+            }
+
+            $lowerValue = mb_strtolower($value);
+            $label = trim((string) ($row->label ?? ''));
+            if ($label === '') {
+                $label = $this->defaultMaterialStatusMeta($value)['label'];
+            }
+
+            $configuredColor = $hasColorColumn ? $this->normalizeColor((string) ($row->color ?? '')) : null;
+            $color = $configuredColor ?: $this->defaultMaterialStatusMeta($value)['color'];
+
+            $map[$lowerValue] = [
+                'label' => $label,
+                'color' => $color,
+            ];
+        }
+
+        $this->materialStatusMetaCache[$schoolId] = $map;
+
+        return $map;
+    }
+
+    /**
+     * @return array{label:string,color:string}
+     */
+    private function defaultMaterialStatusMeta(string $statusValue): array
+    {
+        return match (mb_strtolower(trim($statusValue))) {
+            MaterialCard::STATUS_INBOX => ['label' => 'Neu/Idee', 'color' => 'secondary'],
+            MaterialCard::STATUS_IN_PROGRESS => ['label' => 'In Arbeit', 'color' => 'warning'],
+            MaterialCard::STATUS_DONE => ['label' => 'ok', 'color' => 'success'],
+            MaterialCard::STATUS_UPDATE_NEEDED => ['label' => 'Änderung nötig', 'color' => 'error'],
+            default => ['label' => 'Unbekannt', 'color' => 'primary'],
+        };
+    }
+
+    private function resolveHierarchyMaterialIcon(
+        MaterialCard $card,
+        string $typeIcon,
+        int $attachmentsCount,
+        int $fileAttachmentsCount,
+    ): string {
+        $icon = trim($typeIcon);
+        if ($icon !== '') {
+            return $icon;
+        }
+
+        if ($fileAttachmentsCount > 0) {
+            return 'mdi-file-upload-outline';
+        }
+
+        if (trim((string) ($card->source_url ?? '')) !== '') {
+            return 'mdi-link-variant';
+        }
+
+        $hasTextContent = trim((string) ($card->source_text ?? '')) !== ''
+            || trim((string) ($card->notes ?? '')) !== '';
+        if ($hasTextContent) {
+            return 'mdi-note-text-outline';
+        }
+
+        if ($attachmentsCount > 0) {
+            return 'mdi-paperclip';
+        }
+
+        return 'mdi-file-document-outline';
+    }
+
+    private function normalizeColor(string $value): ?string
+    {
+        $color = trim($value);
+        if (! preg_match('/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/', $color)) {
+            return null;
+        }
+
+        if (strlen($color) === 4) {
+            return strtolower('#' . $color[1] . $color[1] . $color[2] . $color[2] . $color[3] . $color[3]);
+        }
+
+        return strtolower($color);
+    }
+
+    private function hasMaterialAttachmentsTable(): bool
+    {
+        if ($this->hasMaterialAttachmentsTableCache === null) {
+            $this->hasMaterialAttachmentsTableCache = Schema::hasTable('material_card_attachments');
+        }
+
+        return $this->hasMaterialAttachmentsTableCache;
+    }
+
+    private function hasMaterialTypesTable(): bool
+    {
+        if ($this->hasMaterialTypesTableCache === null) {
+            $this->hasMaterialTypesTableCache = Schema::hasTable('material_types');
+        }
+
+        return $this->hasMaterialTypesTableCache;
+    }
+
+    private function hasMaterialStatusesTable(): bool
+    {
+        if ($this->hasMaterialStatusesTableCache === null) {
+            $this->hasMaterialStatusesTableCache = Schema::hasTable('material_statuses');
+        }
+
+        return $this->hasMaterialStatusesTableCache;
+    }
+
+    private function materialTypesAreUserScoped(): bool
+    {
+        if ($this->materialTypesUserScopedCache === null) {
+            $this->materialTypesUserScopedCache = $this->hasMaterialTypesTable() && Schema::hasColumn('material_types', 'user_id');
+        }
+
+        return $this->materialTypesUserScopedCache;
+    }
+
+    private function materialTypesHasIconColumn(): bool
+    {
+        if ($this->materialTypesHasIconColumnCache === null) {
+            $this->materialTypesHasIconColumnCache = $this->hasMaterialTypesTable() && Schema::hasColumn('material_types', 'icon');
+        }
+
+        return $this->materialTypesHasIconColumnCache;
+    }
+
+    private function materialTypesHasColorColumn(): bool
+    {
+        if ($this->materialTypesHasColorColumnCache === null) {
+            $this->materialTypesHasColorColumnCache = $this->hasMaterialTypesTable() && Schema::hasColumn('material_types', 'color');
+        }
+
+        return $this->materialTypesHasColorColumnCache;
+    }
+
+    private function materialStatusesHasColorColumn(): bool
+    {
+        if ($this->materialStatusesHasColorColumnCache === null) {
+            $this->materialStatusesHasColorColumnCache = $this->hasMaterialStatusesTable() && Schema::hasColumn('material_statuses', 'color');
+        }
+
+        return $this->materialStatusesHasColorColumnCache;
     }
 
     private function resolveRulePermissionForUser(

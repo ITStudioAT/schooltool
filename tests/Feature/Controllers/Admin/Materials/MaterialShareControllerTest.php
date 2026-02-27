@@ -4,6 +4,8 @@ use App\Models\Licence;
 use App\Models\MaterialShareRule;
 use App\Models\MaterialShareTarget;
 use App\Models\MaterialCard;
+use App\Models\MaterialCardAttachment;
+use App\Models\MaterialCardClassification;
 use App\Models\MaterialSubject;
 use App\Models\MaterialTopic;
 use App\Models\MaterialUnit;
@@ -115,6 +117,40 @@ test('inbox users aggregates creators who shared with current user', function ()
         'added_by_user_id' => $creatorB->id,
     ]);
 
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $creatorA->id,
+        'name' => 'Mathematik',
+        'sort_order' => 1,
+    ]);
+    $topic = MaterialTopic::query()->create([
+        'subject_id' => $subject->id,
+        'name' => 'Algebra',
+        'sort_order' => 1,
+    ]);
+    $unit = MaterialUnit::query()->create([
+        'topic_id' => $topic->id,
+        'name' => 'Brüche',
+        'sort_order' => 1,
+    ]);
+    $card = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creatorA->id,
+        'title' => 'Bruchrechnen Blatt',
+        'type' => 'Arbeitsblatt',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'bruch.pdf',
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $card->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => $unit->id,
+    ]);
+
     $ruleA1 = MaterialShareRule::query()->create([
         'school_id' => $this->school->id,
         'created_by_user_id' => $creatorA->id,
@@ -133,7 +169,7 @@ test('inbox users aggregates creators who shared with current user', function ()
         'school_id' => $this->school->id,
         'created_by_user_id' => $creatorA->id,
         'scope_type' => MaterialShareRule::SCOPE_SUBJECT,
-        'scope_id' => 99,
+        'scope_id' => $subject->id,
         'is_active' => true,
     ]);
     MaterialShareTarget::query()->create([
@@ -147,7 +183,7 @@ test('inbox users aggregates creators who shared with current user', function ()
         'school_id' => $this->school->id,
         'created_by_user_id' => $creatorB->id,
         'scope_type' => MaterialShareRule::SCOPE_TOPIC,
-        'scope_id' => 123,
+        'scope_id' => $topic->id,
         'is_active' => true,
     ]);
     MaterialShareTarget::query()->create([
@@ -203,6 +239,18 @@ test('inbox users aggregates creators who shared with current user', function ()
     expect((string) $response->json('data.0.shared_items.0.scope_path_label'))->toContain(' - ');
     expect((string) $response->json('data.0.shared_items.0.permission'))->toBe(MaterialShareTarget::PERMISSION_READ_WRITE);
     expect((string) $response->json('data.0.shared_items.0.permission_label'))->toBe('LESEN/SCHREIBEN');
+    expect((string) $response->json('data.0.shared_items.0.hierarchy.0.name'))->toBe('Mathematik');
+    expect((string) $response->json('data.0.shared_items.0.hierarchy.0.topics.0.name'))->toBe('Algebra');
+    expect((string) $response->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.name'))->toBe('Brüche');
+    expect((string) $response->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.materials.0.title'))->toBe('Bruchrechnen Blatt');
+    expect((string) $response->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.materials.0.icon'))->toBe('mdi-file-upload-outline');
+    expect((string) $response->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.materials.0.type'))->toBe('Arbeitsblatt');
+    expect((string) $response->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.materials.0.type_label'))->toBe('Arbeitsblatt');
+    expect($response->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.materials.0.type_color'))->toBeNull();
+    expect((int) $response->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.materials.0.attachments_count'))->toBe(1);
+    expect((string) $response->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.materials.0.status'))->toBe(MaterialCard::STATUS_INBOX);
+    expect((string) $response->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.materials.0.status_label'))->toBe('Neu/Idee');
+    expect((string) $response->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.materials.0.status_color'))->toBe('secondary');
 
     expect((int) $response->json('data.1.id'))->toBe((int) $creatorB->id);
     expect((int) $response->json('data.1.shared_rules_count'))->toBe(1);
