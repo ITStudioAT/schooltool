@@ -191,6 +191,68 @@ describe('MaterialsInboxView', () => {
         expect(await screen.findByText('Inbox kaputt')).toBeInTheDocument()
     })
 
+    it('filters inbox entries by new and imported materials', async () => {
+        axiosMock.get.mockResolvedValue({
+            data: {
+                data: [
+                    {
+                        id: 61,
+                        label: 'Filter User',
+                        school_label: 'BG Test',
+                        email: 'filter@test.local',
+                        shared_rules_count: 2,
+                        shared_items: [
+                            {
+                                rule_id: 1001,
+                                scope_type: 'material',
+                                scope_label: 'Material',
+                                scope_object_label: 'Neues Material',
+                                scope_path_label: 'Mathematik - Thema - Unit',
+                                permission: 'read_only',
+                                permission_label: 'NUR LESEN',
+                                is_imported: false,
+                                hierarchy: [],
+                                updated_at: '',
+                            },
+                            {
+                                rule_id: 1002,
+                                scope_type: 'material',
+                                scope_label: 'Material',
+                                scope_object_label: 'Eingefächertes Material',
+                                scope_path_label: 'Deutsch - Thema - Unit',
+                                permission: 'read_only',
+                                permission_label: 'NUR LESEN',
+                                is_imported: true,
+                                hierarchy: [],
+                                updated_at: '',
+                            },
+                        ],
+                    },
+                ],
+                meta: { needs_migration: false },
+            },
+        })
+
+        renderMaterialsInboxView()
+
+        await waitFor(() => {
+            expect(screen.getByText('Neues Material')).toBeInTheDocument()
+        })
+        expect(screen.getByText('Eingefächertes Material')).toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Neue Materialien' }))
+        expect(screen.getByText('Neues Material')).toBeInTheDocument()
+        expect(screen.queryByText('Eingefächertes Material')).not.toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Eingefächerte Materialien' }))
+        expect(screen.queryByText('Neues Material')).not.toBeInTheDocument()
+        expect(screen.getByText('Eingefächertes Material')).toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Alle' }))
+        expect(screen.getByText('Neues Material')).toBeInTheDocument()
+        expect(screen.getByText('Eingefächertes Material')).toBeInTheDocument()
+    })
+
     it('does not render hierarchy card toggle for material scope items', async () => {
         axiosMock.get.mockImplementation((url: string) => {
             if (url === '/api/admin/materials/shares/inbox-users') {

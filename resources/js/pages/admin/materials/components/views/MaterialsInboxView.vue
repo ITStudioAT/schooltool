@@ -16,6 +16,29 @@
                 </v-btn>
             </div>
         </div>
+        <div class="d-flex align-center flex-wrap ga-2 mb-4 inbox-filter-actions">
+            <v-btn
+                size="small"
+                color="primary"
+                :variant="inboxMaterialFilter === 'all' ? 'flat' : 'outlined'"
+                @click="setInboxMaterialFilter('all')">
+                Alle
+            </v-btn>
+            <v-btn
+                size="small"
+                color="primary"
+                :variant="inboxMaterialFilter === 'new' ? 'flat' : 'outlined'"
+                @click="setInboxMaterialFilter('new')">
+                Neue Materialien
+            </v-btn>
+            <v-btn
+                size="small"
+                color="primary"
+                :variant="inboxMaterialFilter === 'imported' ? 'flat' : 'outlined'"
+                @click="setInboxMaterialFilter('imported')">
+                Eingefächerte Materialien
+            </v-btn>
+        </div>
 
         <v-alert
             v-if="needsMigration"
@@ -58,12 +81,17 @@
                     <v-expansion-panels v-if="user.shared_items.length > 0" class="inbox-shared-panels">
                         <v-expansion-panel>
                             <v-expansion-panel-title>
-                                Anzeigen, was geteilt wurde ({{ user.shared_items.length }})
+                                Anzeigen, was geteilt wurde ({{ filteredSharedItems(user).length }})
                             </v-expansion-panel-title>
                             <v-expansion-panel-text>
                                 <div class="inbox-shared-list">
                                     <div
-                                        v-for="item in user.shared_items"
+                                        v-if="filteredSharedItems(user).length === 0"
+                                        class="text-caption text-medium-emphasis">
+                                        Keine Einträge für den gewählten Filter.
+                                    </div>
+                                    <div
+                                        v-for="item in filteredSharedItems(user)"
                                         :key="`inbox-user-${user.id}-rule-${item.rule_id}`"
                                         class="inbox-shared-object-card">
                                         <div class="inbox-shared-object-head">
@@ -429,6 +457,7 @@ export default {
             isLoading: false,
             users: [],
             openHierarchyCards: {},
+            inboxMaterialFilter: 'all',
             einfachernDialog: {
                 open: false,
                 loading: false,
@@ -499,6 +528,24 @@ export default {
         },
     },
     methods: {
+        setInboxMaterialFilter(mode) {
+            const normalized = String(mode || '').trim()
+            if (normalized !== 'all' && normalized !== 'new' && normalized !== 'imported') {
+                this.inboxMaterialFilter = 'all'
+                return
+            }
+            this.inboxMaterialFilter = normalized
+        },
+        filteredSharedItems(user) {
+            const list = Array.isArray(user?.shared_items) ? user.shared_items : []
+            if (this.inboxMaterialFilter === 'imported') {
+                return list.filter((item) => !!item?.is_imported)
+            }
+            if (this.inboxMaterialFilter === 'new') {
+                return list.filter((item) => !item?.is_imported)
+            }
+            return list
+        },
         async loadInboxUsers() {
             this.isLoading = true
             this.errorMessage = ''
