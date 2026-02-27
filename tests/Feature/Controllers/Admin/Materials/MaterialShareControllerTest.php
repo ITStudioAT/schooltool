@@ -514,6 +514,142 @@ test('can copy shared material as original into own workspace with taxonomy type
     expect((bool) $inboxAfterCopy->json('data.0.shared_items.0.is_imported'))->toBeTrue();
 });
 
+test('can einfächern shared material into selected target taxonomy', function () {
+    $materialsLicence = Licence::query()->firstWhere('name', 'Materialientool');
+    expect($materialsLicence)->not->toBeNull();
+
+    $recipientSchool = School::factory()->create(['is_selectable' => true]);
+    $recipientYear = Schoolyear::factory()->create(['school_id' => $recipientSchool->id]);
+    SchoolLicence::query()->create([
+        'school_id' => $recipientSchool->id,
+        'licence_id' => $materialsLicence->id,
+        'valid_until' => now()->addYear(),
+    ]);
+
+    $recipient = User::factory()->create([
+        'school_id' => $recipientSchool->id,
+        'schoolyear_id' => $recipientYear->id,
+        'first_name' => 'Empfaenger',
+        'last_name' => 'Test',
+        'email' => 'recipient-einfachern@test.local',
+    ]);
+    $recipient->assignRole('materials_admin');
+
+    $targetSubject = MaterialSubject::query()->create([
+        'user_id' => $recipient->id,
+        'name' => 'Deutsch',
+        'sort_order' => 1,
+    ]);
+    $targetTopic = MaterialTopic::query()->create([
+        'subject_id' => $targetSubject->id,
+        'name' => 'Literatur',
+        'sort_order' => 1,
+    ]);
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'first_name' => 'Quelle',
+        'last_name' => 'User',
+        'email' => 'source-einfachern@test.local',
+    ]);
+
+    $sourceSubject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Biologie',
+        'sort_order' => 1,
+    ]);
+    $sourceTopic = MaterialTopic::query()->create([
+        'subject_id' => $sourceSubject->id,
+        'name' => 'Zelle',
+        'sort_order' => 1,
+    ]);
+    $sourceUnit = MaterialUnit::query()->create([
+        'topic_id' => $sourceTopic->id,
+        'name' => 'Mikroskopie',
+        'sort_order' => 1,
+    ]);
+
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Geteiltes Dokument',
+        'source_text' => 'Inhalt',
+        'type' => 'Arbeitsblatt',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'subject_id' => $sourceSubject->id,
+        'topic_id' => $sourceTopic->id,
+        'unit_id' => $sourceUnit->id,
+    ]);
+
+    $disk = (string) config('filesystems.default', 'local');
+    Storage::fake($disk);
+    Storage::disk($disk)->put('materials/source/einfachern.pdf', 'einfachern-content');
+
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'einfachern.pdf',
+        'file_path' => 'materials/source/einfachern.pdf',
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 512,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_MATERIAL,
+        'scope_id' => $sourceCard->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $recipient->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $this->actingAs($recipient, 'sanctum');
+
+    $response = $this->postJson('/api/admin/materials/shares/inbox/material-insert', [
+        'rule_id' => $rule->id,
+        'material_id' => $sourceCard->id,
+        'target_level' => 'topic',
+        'target_id' => $targetTopic->id,
+    ])
+        ->assertStatus(200)
+        ->assertJsonPath('message', 'Material eingefächert.');
+
+    $newCardId = (int) $response->json('data.id');
+    expect($newCardId)->toBeGreaterThan(0);
+
+    $newCard = MaterialCard::query()
+        ->with(['attachments', 'classifications.subject', 'classifications.topic', 'classifications.unit'])
+        ->find($newCardId);
+    expect($newCard)->not->toBeNull();
+    expect((int) $newCard->user_id)->toBe((int) $recipient->id);
+    expect((int) $newCard->school_id)->toBe((int) $recipientSchool->id);
+    expect((string) $newCard->title)->toBe('Geteiltes Dokument');
+
+    expect($newCard->classifications->count())->toBe(1);
+    expect((string) $newCard->classifications[0]->subject?->name)->toBe('Deutsch');
+    expect((string) $newCard->classifications[0]->topic?->name)->toBe('Literatur');
+    expect($newCard->classifications[0]->unit_id)->toBeNull();
+
+    expect($newCard->attachments->count())->toBe(1);
+    $newFileAttachment = $newCard->attachments->firstWhere('attachment_type', MaterialCardAttachment::TYPE_FILE);
+    expect($newFileAttachment)->not->toBeNull();
+    Storage::disk($disk)->assertExists((string) $newFileAttachment->file_path);
+    expect(Storage::disk($disk)->get((string) $newFileAttachment->file_path))->toBe('einfachern-content');
+
+    $inboxAfterInsert = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertStatus(200);
+    expect((bool) $inboxAfterInsert->json('data.0.shared_items.0.is_imported'))->toBeTrue();
+});
+
 test('copy as original keeps existing target type and status definitions', function () {
     $materialsLicence = Licence::query()->firstWhere('name', 'Materialientool');
     expect($materialsLicence)->not->toBeNull();

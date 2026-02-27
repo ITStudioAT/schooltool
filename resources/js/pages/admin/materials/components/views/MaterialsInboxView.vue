@@ -434,7 +434,9 @@
                             size="small"
                             variant="tonal"
                             color="primary"
-                            @click="onDummyHierEinfachern">
+                            :loading="einfachernDialog.submitting"
+                            :disabled="einfachernDialog.submitting"
+                            @click="onHierEinfachern">
                             Hier einfächern
                         </v-btn>
                         <v-btn size="small" variant="text" @click="closeEinfachernDialog">
@@ -710,8 +712,29 @@ export default {
         selectEinfachernUnit(unit) {
             this.einfachernDialog.unitId = Number(unit?.id || 0)
         },
-        onDummyHierEinfachern() {
-            // Placeholder for future classification action.
+        async onHierEinfachern() {
+            const ruleId = Number(this.einfachernDialog.ruleId || 0)
+            const materialId = Number(this.einfachernDialog.materialId || 0)
+            const target = this.einfachernSelectedTarget
+
+            if (ruleId <= 0 || materialId <= 0 || this.einfachernDialog.submitting || !target) return
+
+            this.einfachernDialog.submitting = true
+            this.einfachernDialog.error = ''
+            try {
+                await axios.post('/api/admin/materials/shares/inbox/material-insert', {
+                    rule_id: ruleId,
+                    material_id: materialId,
+                    target_level: String(target.level || '').trim(),
+                    target_id: Number(target.id || 0),
+                })
+                this.closeEinfachernDialog()
+                await this.loadInboxUsers()
+            } catch (error) {
+                this.einfachernDialog.error = error?.response?.data?.message || 'Material konnte nicht eingefächert werden.'
+            } finally {
+                this.einfachernDialog.submitting = false
+            }
         },
         async onOriginalEinfuegen() {
             const ruleId = Number(this.einfachernDialog.ruleId || 0)

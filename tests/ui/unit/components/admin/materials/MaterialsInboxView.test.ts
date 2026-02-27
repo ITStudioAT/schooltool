@@ -254,6 +254,13 @@ describe('MaterialsInboxView', () => {
     })
 
     it('does not render hierarchy card toggle for material scope items', async () => {
+        axiosMock.post.mockResolvedValue({
+            data: {
+                message: 'Material eingefächert.',
+                data: { id: 88, title: 'Arbeitsblatt 1', attachments_count: 2 },
+            },
+        })
+
         axiosMock.get.mockImplementation((url: string) => {
             if (url === '/api/admin/materials/shares/inbox-users') {
                 return Promise.resolve({
@@ -369,6 +376,16 @@ describe('MaterialsInboxView', () => {
         await fireEvent.click(screen.getByRole('button', { name: 'Algebra' }))
         await fireEvent.click(screen.getByRole('button', { name: 'Brueche' }))
         expect(screen.getByRole('button', { name: 'Hier einfächern' })).toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Hier einfächern' }))
+        await waitFor(() => {
+            expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/shares/inbox/material-insert', {
+                rule_id: 501,
+                material_id: 501,
+                target_level: 'unit',
+                target_id: 13,
+            })
+        })
     })
 
     it('shows original option in einfächern dialog when no subjects exist', async () => {

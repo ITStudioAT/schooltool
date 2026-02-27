@@ -350,6 +350,223 @@ class MaterialShareController extends Controller
         ]);
     }
 
+    public function insertInboxMaterial(
+        Request $request,
+        MaterialService $materialService,
+        MaterialKeywordService $keywordService,
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'material_id' => ['required', 'integer', 'min:1'],
+            'target_level' => ['required', 'string', Rule::in(['subject', 'topic', 'unit'])],
+            'target_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $materialId = (int) ($data['material_id'] ?? 0);
+        $targetLevel = trim((string) ($data['target_level'] ?? ''));
+        $targetId = (int) ($data['target_id'] ?? 0);
+        $authUserId = (int) $authUser->id;
+        $authSchoolId = (int) $authUser->school_id;
+
+        $memberGroupIds = UserGroup::query()
+            ->whereHas('members', fn ($query) => $query->where('users.id', $authUserId))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values();
+
+        $rule = $this->resolveAccessibleInboxRule($ruleId, $authUserId, $authSchoolId, $memberGroupIds);
+        if (! $rule) {
+            abort(404, 'Freigabe wurde nicht gefunden.');
+        }
+
+        if ((string) $rule->scope_type !== MaterialShareRule::SCOPE_MATERIAL || (int) ($rule->scope_id ?? 0) !== $materialId) {
+            throw ValidationException::withMessages([
+                'material_id' => ['Einfächern ist nur für direkt geteilte Materialien möglich.'],
+            ]);
+        }
+
+        $sourceCard = MaterialCard::query()
+            ->where('school_id', (int) $rule->school_id)
+            ->with([
+                'attachments',
+                'classifications.subject:id,name',
+                'classifications.topic:id,name',
+                'classifications.unit:id,name',
+            ])
+            ->find($materialId);
+
+        if (! $sourceCard) {
+            abort(404, 'Geteiltes Material wurde nicht gefunden.');
+        }
+
+        $targetClassification = $this->resolveTargetClassificationForInsert(
+            user: $authUser,
+            targetLevel: $targetLevel,
+            targetId: $targetId,
+        );
+        if (! $targetClassification) {
+            throw ValidationException::withMessages([
+                'target_id' => ['Ziel für Einfächern wurde nicht gefunden.'],
+            ]);
+        }
+
+        $sourceTypeMeta = $this->resolveMaterialTypeMeta(
+            schoolId: (int) ($sourceCard->school_id ?? 0),
+            userId: (int) ($sourceCard->user_id ?? 0),
+            typeValue: trim((string) ($sourceCard->type ?? '')),
+        );
+        $sourceStatusMeta = $this->resolveMaterialStatusMeta(
+            schoolId: (int) ($sourceCard->school_id ?? 0),
+            statusValue: trim((string) ($sourceCard->status ?? MaterialCard::STATUS_INBOX)),
+        );
+
+        $newCard = DB::transaction(function () use (
+            $authUser,
+            $sourceCard,
+            $sourceTypeMeta,
+            $sourceStatusMeta,
+            $materialService,
+            $keywordService,
+            $rule,
+            $ruleId,
+            $targetClassification,
+        ) {
+            $targetType = $this->ensureTargetMaterialType(
+                targetUser: $authUser,
+                sourceType: trim((string) ($sourceCard->type ?? '')),
+                sourceTypeMeta: $sourceTypeMeta,
+            );
+            $targetStatus = $this->ensureTargetMaterialStatus(
+                targetUser: $authUser,
+                sourceStatus: trim((string) ($sourceCard->status ?? MaterialCard::STATUS_INBOX)),
+                sourceStatusMeta: $sourceStatusMeta,
+            );
+
+            $createdCard = $materialService->createCard($authUser, [
+                'title' => trim((string) ($sourceCard->title ?? '')) !== '' ? (string) $sourceCard->title : 'Material',
+                'source_url' => $sourceCard->source_url,
+                'source_text' => $sourceCard->source_text,
+                'type' => $targetType,
+                'status' => $targetStatus,
+                'notes' => $sourceCard->notes,
+                'classifications' => [$targetClassification],
+            ]);
+
+            $this->cloneSourceAttachmentsToCard($sourceCard, $createdCard);
+            $keywordService->rebuild($createdCard->fresh());
+
+            if ($this->hasMaterialInboxImportsTable()) {
+                MaterialInboxImport::query()->updateOrCreate(
+                    [
+                        'target_user_id' => (int) $authUser->id,
+                        'source_school_id' => (int) $rule->school_id,
+                        'source_material_id' => (int) $sourceCard->id,
+                    ],
+                    [
+                        'target_material_card_id' => (int) $createdCard->id,
+                        'source_rule_id' => $ruleId,
+                        'imported_at' => now(),
+                    ]
+                );
+            }
+
+            return $createdCard->fresh([
+                'attachments',
+                'classifications.subject',
+                'classifications.topic',
+                'classifications.unit',
+            ]);
+        });
+
+        return response()->json([
+            'message' => 'Material eingefächert.',
+            'data' => [
+                'id' => (int) $newCard->id,
+                'title' => (string) ($newCard->title ?? ''),
+                'attachments_count' => (int) $newCard->attachments->count(),
+            ],
+        ]);
+    }
+
+    private function resolveTargetClassificationForInsert(User $user, string $targetLevel, int $targetId): ?array
+    {
+        if ($targetId <= 0) {
+            return null;
+        }
+
+        if ($targetLevel === 'subject') {
+            $subject = MaterialSubject::query()
+                ->where('user_id', (int) $user->id)
+                ->find($targetId);
+
+            if (! $subject) {
+                return null;
+            }
+
+            $subjectName = trim((string) ($subject->name ?? ''));
+            if ($subjectName === '') {
+                return null;
+            }
+
+            return [
+                'subject' => $subjectName,
+                'topic' => '',
+                'unit' => '',
+            ];
+        }
+
+        if ($targetLevel === 'topic') {
+            $topic = MaterialTopic::query()
+                ->with('subject:id,user_id,name')
+                ->find($targetId);
+
+            if (! $topic || (int) ($topic->subject?->user_id ?? 0) !== (int) $user->id) {
+                return null;
+            }
+
+            $subjectName = trim((string) ($topic->subject?->name ?? ''));
+            $topicName = trim((string) ($topic->name ?? ''));
+            if ($subjectName === '' || $topicName === '') {
+                return null;
+            }
+
+            return [
+                'subject' => $subjectName,
+                'topic' => $topicName,
+                'unit' => '',
+            ];
+        }
+
+        if ($targetLevel === 'unit') {
+            $unit = MaterialUnit::query()
+                ->with('topic.subject:id,user_id,name')
+                ->find($targetId);
+
+            if (! $unit || (int) ($unit->topic?->subject?->user_id ?? 0) !== (int) $user->id) {
+                return null;
+            }
+
+            $subjectName = trim((string) ($unit->topic?->subject?->name ?? ''));
+            $topicName = trim((string) ($unit->topic?->name ?? ''));
+            $unitName = trim((string) ($unit->name ?? ''));
+            if ($subjectName === '' || $topicName === '' || $unitName === '') {
+                return null;
+            }
+
+            return [
+                'subject' => $subjectName,
+                'topic' => $topicName,
+                'unit' => $unitName,
+            ];
+        }
+
+        return null;
+    }
+
     private function resolveAccessibleInboxRule(
         int $ruleId,
         int $authUserId,
