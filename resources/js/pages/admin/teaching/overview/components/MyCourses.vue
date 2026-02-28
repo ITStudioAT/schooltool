@@ -5,6 +5,8 @@
         </template>
         <!-- AKTIONS-LEISTE -->
         <div class="d-flex align-center w-100 mt-2">
+            <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" title="Fach anlegen" @click="newCourse" />
+            <v-spacer />
             <v-btn
                 v-if="selected_course"
                 size="small"
@@ -12,8 +14,6 @@
                 color="primary"
                 prepend-icon="mdi-close"
                 @click="clearSelectedCourse">Schließen</v-btn>
-            <v-spacer />
-            <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" title="Fach anlegen" @click="newCourse" />
         </div>
 
         <!-- ALLE KURSE ANZEIGEN -->

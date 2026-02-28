@@ -39,7 +39,7 @@
                     </v-btn-toggle>
                 </div>
 
-                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form && !show_star_form">
+                <v-card variant="outlined" class="mt-4" v-if="!show_behaviour_form && !show_star_form">
                     <v-card-text v-if="!is_editing">
                         <div class="text-body-2 course-comment" v-if="selected_comment" v-html="commentHtml"></div>
                         <div class="text-body-2" v-else>Kein Kommentar vorhanden.</div>
@@ -62,111 +62,8 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form && !show_star_form">
-                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
-                        <v-icon size="18">mdi-star</v-icon>
-                        Sterne
-                        <v-chip v-if="studentStars.length" size="x-small" color="amber-darken-2" variant="flat">{{ studentStars.length }}</v-chip>
-                        <v-spacer />
-                        <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newStarEntry" />
-                    </v-card-title>
-                    <v-divider />
-                    <v-card-text class="pa-0">
-                        <v-list density="compact">
-                            <v-list-item v-for="star in studentStars" :key="star.id">
-                                <div class="star-row d-flex align-center ga-2 w-100">
-                                    <v-chip size="x-small" color="amber-darken-2" variant="tonal">
-                                        <v-icon start size="14">mdi-star</v-icon>1
-                                    </v-chip>
-                                    <v-chip v-if="star.date" size="x-small" variant="tonal" color="primary">{{ formatDate(star.date) }}</v-chip>
-                                    <div class="star-description text-caption flex-grow-1">{{ star.comment }}</div>
-                                    <div class="star-actions d-flex align-center ga-1">
-                                        <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editStarEntry(star)" />
-                                        <v-btn v-if="delete_star_id !== star.id" icon="mdi-delete" size="x-small" color="warning" variant="tonal" @click="delete_star_id = star.id" />
-                                        <v-btn v-if="delete_star_id === star.id" icon="mdi-delete-off" size="x-small" color="success" variant="tonal" @click="delete_star_id = null" />
-                                        <v-btn v-if="delete_star_id === star.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteStarEntry(star.id)" />
-                                    </div>
-                                </div>
-                            </v-list-item>
-                            <v-list-item v-if="!studentStars.length">
-                                <v-list-item-title class="text-caption text-medium-emphasis">Noch keine Sterne vorhanden.</v-list-item-title>
-                            </v-list-item>
-                        </v-list>
-                    </v-card-text>
-                </v-card>
 
-                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form && !show_star_form">
-                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
-                        <v-icon size="18">mdi-bell</v-icon>
-                        Verständigungen
-                        <v-chip v-if="filteredNotificationEntries?.length" size="x-small" color="secondary" variant="flat">
-                            {{ filteredNotificationEntries.length }}
-                        </v-chip>
-                        <v-spacer />
-                        <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newNotificationEntry" />
-                    </v-card-title>
-                    <v-divider />
-                    <v-card-text class="pa-0">
-                        <v-list density="compact">
-                            <template v-for="item in filteredNotificationEntriesGrouped" :key="item.key">
-                                <v-list-item v-if="item.kind === 'header'">
-                                    <div class="entry-row d-flex align-center ga-2 w-100">
-                                        <v-divider />
-                                        <span class="text-caption text-medium-emphasis text-no-wrap font-weight-bold">{{ item.label }}</span>
-                                        <v-divider />
-                                    </div>
-                                </v-list-item>
-                                <v-list-item v-else>
-                                    <div class="entry-row d-flex align-center ga-2 w-100">
-                                        <v-chip v-if="item.entry.date" size="x-small" variant="tonal" color="primary">
-                                            {{ formatDate(item.entry.date) }}
-                                        </v-chip>
-                                        <v-chip v-if="item.entry.type" size="x-small" variant="outlined" color="secondary">
-                                            {{ notificationTypeLabel(item.entry.type) }}
-                                        </v-chip>
-                                        <v-chip v-if="item.entry.due_date && !item.entry.done_date" size="x-small" variant="tonal" :color="dueDateColor(item.entry.due_date)">
-                                            Fällig bis {{ formatDate(item.entry.due_date) }}
-                                        </v-chip>
-                                        <v-chip v-if="item.entry.done_date" size="x-small" variant="tonal" color="success">
-                                            Erledigt {{ formatDate(item.entry.done_date) }}
-                                        </v-chip>
-                                        <div class="text-caption flex-grow-1">
-                                            {{ item.entry.description || '' }}
-                                        </div>
-                                        <v-btn
-                                            v-if="!item.entry.done_date"
-                                            icon="mdi-check"
-                                            size="x-small"
-                                            color="success"
-                                            variant="tonal"
-                                            @click="completeNotificationToday(item.entry)" />
-                                        <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editNotificationEntry(item.entry)" />
-                                        <v-btn
-                                            v-if="delete_notification_id !== item.entry.id"
-                                            icon="mdi-delete"
-                                            size="x-small"
-                                            color="warning"
-                                            variant="tonal"
-                                            @click="delete_notification_id = item.entry.id" />
-                                        <v-btn
-                                            v-if="delete_notification_id === item.entry.id"
-                                            icon="mdi-delete-off"
-                                            size="x-small"
-                                            color="success"
-                                            variant="tonal"
-                                            @click="delete_notification_id = null" />
-                                        <v-btn v-if="delete_notification_id === item.entry.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteNotificationEntry(item.entry)" />
-                                    </div>
-                                </v-list-item>
-                            </template>
-                            <v-list-item v-if="!filteredNotificationEntries?.length">
-                                <v-list-item-title class="text-caption text-medium-emphasis">Keine Verständigungen vorhanden.</v-list-item-title>
-                            </v-list-item>
-                        </v-list>
-                    </v-card-text>
-                </v-card>
-
-                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form && !show_star_form">
+                <v-card variant="outlined" class="mt-4" v-if="!show_behaviour_form && !show_star_form">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-clipboard-text</v-icon>
                         Einträge
@@ -456,7 +353,7 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form && !show_star_form">
+                <v-card variant="outlined" class="mt-4" v-if="!show_behaviour_form && !show_star_form">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-account-alert</v-icon>
                         Verhaltens-Einträge
@@ -522,7 +419,111 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form && !show_star_form">
+                <v-card variant="outlined" class="mt-4" v-if="!show_behaviour_form && !show_star_form">
+                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                        <v-icon size="18">mdi-star</v-icon>
+                        Sterne
+                        <v-chip v-if="studentStars.length" size="x-small" color="amber-darken-2" variant="flat">{{ studentStars.length }}</v-chip>
+                        <v-spacer />
+                        <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newStarEntry" />
+                    </v-card-title>
+                    <v-divider />
+                    <v-card-text class="pa-0">
+                        <v-list density="compact">
+                            <v-list-item v-for="star in studentStars" :key="star.id">
+                                <div class="star-row d-flex align-center ga-2 w-100">
+                                    <v-chip size="x-small" color="amber-darken-2" variant="tonal">
+                                        <v-icon start size="14">mdi-star</v-icon>1
+                                    </v-chip>
+                                    <v-chip v-if="star.date" size="x-small" variant="tonal" color="primary">{{ formatDate(star.date) }}</v-chip>
+                                    <div class="star-description text-caption flex-grow-1">{{ star.comment }}</div>
+                                    <div class="star-actions d-flex align-center ga-1">
+                                        <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editStarEntry(star)" />
+                                        <v-btn v-if="delete_star_id !== star.id" icon="mdi-delete" size="x-small" color="warning" variant="tonal" @click="delete_star_id = star.id" />
+                                        <v-btn v-if="delete_star_id === star.id" icon="mdi-delete-off" size="x-small" color="success" variant="tonal" @click="delete_star_id = null" />
+                                        <v-btn v-if="delete_star_id === star.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteStarEntry(star.id)" />
+                                    </div>
+                                </div>
+                            </v-list-item>
+                            <v-list-item v-if="!studentStars.length">
+                                <v-list-item-title class="text-caption text-medium-emphasis">Noch keine Sterne vorhanden.</v-list-item-title>
+                            </v-list-item>
+                        </v-list>
+                    </v-card-text>
+                </v-card>
+
+                <v-card variant="outlined" class="mt-4" v-if="!show_behaviour_form && !show_star_form">
+                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                        <v-icon size="18">mdi-bell</v-icon>
+                        Verständigungen
+                        <v-chip v-if="filteredNotificationEntries?.length" size="x-small" color="secondary" variant="flat">
+                            {{ filteredNotificationEntries.length }}
+                        </v-chip>
+                        <v-spacer />
+                        <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newNotificationEntry" />
+                    </v-card-title>
+                    <v-divider />
+                    <v-card-text class="pa-0">
+                        <v-list density="compact">
+                            <template v-for="item in filteredNotificationEntriesGrouped" :key="item.key">
+                                <v-list-item v-if="item.kind === 'header'">
+                                    <div class="entry-row d-flex align-center ga-2 w-100">
+                                        <v-divider />
+                                        <span class="text-caption text-medium-emphasis text-no-wrap font-weight-bold">{{ item.label }}</span>
+                                        <v-divider />
+                                    </div>
+                                </v-list-item>
+                                <v-list-item v-else>
+                                    <div class="entry-row d-flex align-center ga-2 w-100">
+                                        <v-chip v-if="item.entry.date" size="x-small" variant="tonal" color="primary">
+                                            {{ formatDate(item.entry.date) }}
+                                        </v-chip>
+                                        <v-chip v-if="item.entry.type" size="x-small" variant="outlined" color="secondary">
+                                            {{ notificationTypeLabel(item.entry.type) }}
+                                        </v-chip>
+                                        <v-chip v-if="item.entry.due_date && !item.entry.done_date" size="x-small" variant="tonal" :color="dueDateColor(item.entry.due_date)">
+                                            Fällig bis {{ formatDate(item.entry.due_date) }}
+                                        </v-chip>
+                                        <v-chip v-if="item.entry.done_date" size="x-small" variant="tonal" color="success">
+                                            Erledigt {{ formatDate(item.entry.done_date) }}
+                                        </v-chip>
+                                        <div class="text-caption flex-grow-1">
+                                            {{ item.entry.description || '' }}
+                                        </div>
+                                        <v-btn
+                                            v-if="!item.entry.done_date"
+                                            icon="mdi-check"
+                                            size="x-small"
+                                            color="success"
+                                            variant="tonal"
+                                            @click="completeNotificationToday(item.entry)" />
+                                        <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editNotificationEntry(item.entry)" />
+                                        <v-btn
+                                            v-if="delete_notification_id !== item.entry.id"
+                                            icon="mdi-delete"
+                                            size="x-small"
+                                            color="warning"
+                                            variant="tonal"
+                                            @click="delete_notification_id = item.entry.id" />
+                                        <v-btn
+                                            v-if="delete_notification_id === item.entry.id"
+                                            icon="mdi-delete-off"
+                                            size="x-small"
+                                            color="success"
+                                            variant="tonal"
+                                            @click="delete_notification_id = null" />
+                                        <v-btn v-if="delete_notification_id === item.entry.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteNotificationEntry(item.entry)" />
+                                    </div>
+                                </v-list-item>
+                            </template>
+                            <v-list-item v-if="!filteredNotificationEntries?.length">
+                                <v-list-item-title class="text-caption text-medium-emphasis">Keine Verständigungen vorhanden.</v-list-item-title>
+                            </v-list-item>
+                        </v-list>
+                    </v-card-text>
+                </v-card>
+
+                <v-card variant="outlined" class="mt-4" v-if="!show_behaviour_form && !show_star_form">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-school</v-icon>
                         Semesternoten
@@ -560,7 +561,7 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4" v-if="!show_entry_form && !show_behaviour_form && !show_star_form">
+                <v-card variant="outlined" class="mt-4" v-if="!show_behaviour_form && !show_star_form">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-account-alert</v-icon>
                         Verhaltensnoten
@@ -636,22 +637,54 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4" v-if="show_entry_form">
-                    <v-card-text>
-                        <v-form ref="entryForm" @submit.prevent="saveEntry">
-                            <div class="text-subtitle-1 mb-2">Neuer Eintrag</div>
-                            <v-select v-model="entry_form.type" label="Typ" :items="workTypeItems" item-title="title" item-value="value" clearable />
-                            <v-select v-model="entry_form.grade" label="Note" :items="gradeItemsForType" item-title="title" item-value="value" clearable />
-                            <v-date-input v-model="entry_form.date" label="Datum" />
-                            <v-textarea v-model="entry_form.description" label="Beschreibung" rows="3" :counter="1024" :maxlength="1024" />
-
-                            <div class="d-flex flex-row align-center justify-space-between mt-4">
-                                <v-btn color="warning" flat tile @click="abortEntry">Abbruch</v-btn>
-                                <v-btn color="success" flat tile type="submit">{{ entry_form.id ? 'Aktualisieren' : 'Speichern' }}</v-btn>
-                            </div>
-                        </v-form>
-                    </v-card-text>
-                </v-card>
+                <v-dialog v-model="show_entry_form" persistent max-width="500">
+                    <v-card>
+                        <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                            <v-icon size="18">mdi-clipboard-text</v-icon>
+                            {{ entry_form.id ? 'Eintrag bearbeiten' : 'Neuer Eintrag' }}
+                            <v-spacer />
+                            <v-btn icon="mdi-close" size="x-small" variant="text" @click="abortEntry" />
+                        </v-card-title>
+                        <v-divider />
+                        <v-card-text>
+                            <v-form ref="entryForm" @submit.prevent="saveEntry">
+                                <div class="text-caption text-medium-emphasis mb-1 mt-2">Typ</div>
+                                <div class="d-flex flex-wrap ga-1 mb-4">
+                                    <v-btn
+                                        v-for="item in workTypeItems"
+                                        :key="item.value"
+                                        :variant="entry_form.type === item.value ? 'flat' : 'tonal'"
+                                        :color="entry_form.type === item.value ? 'primary' : 'default'"
+                                        size="small"
+                                        @click="selectEntryType(item.value)">
+                                        {{ item.value }}
+                                    </v-btn>
+                                </div>
+                                <div class="text-caption text-medium-emphasis mb-1">Note</div>
+                                <div class="d-flex flex-wrap ga-1 mb-4" v-if="gradeItemsForType.length">
+                                    <v-btn
+                                        v-for="item in gradeItemsForType"
+                                        :key="item.value"
+                                        :variant="entry_form.grade === item.value ? 'flat' : 'tonal'"
+                                        :color="entry_form.grade === item.value ? 'success' : 'default'"
+                                        size="small"
+                                        @click="entry_form.grade = entry_form.grade === item.value ? null : item.value">
+                                        {{ item.value }}
+                                    </v-btn>
+                                </div>
+                                <div v-else class="text-caption text-medium-emphasis mb-4">Bitte zuerst Typ wählen</div>
+                                <v-date-input v-model="entry_form.date" label="Datum" />
+                                <v-textarea v-model="entry_form.description" label="Beschreibung" rows="3" :counter="1024" :maxlength="1024" />
+                            </v-form>
+                        </v-card-text>
+                        <v-divider />
+                        <v-card-actions>
+                            <v-btn color="warning" variant="tonal" @click="abortEntry">Abbruch</v-btn>
+                            <v-spacer />
+                            <v-btn color="success" variant="tonal" @click="saveEntry">{{ entry_form.id ? 'Aktualisieren' : 'Speichern' }}</v-btn>
+                        </v-card-actions>
+                    </v-card>
+                </v-dialog>
 
                 <v-card variant="outlined" class="mt-4" v-if="show_star_form">
                     <v-card-text>
@@ -1353,6 +1386,15 @@ export default {
         abortEntry() {
             this.show_entry_form = false
             this.entry_form = this.emptyEntryForm()
+        },
+        selectEntryType(value) {
+            if (this.entry_form.type === value) {
+                this.entry_form.type = null
+                this.entry_form.grade = null
+            } else {
+                this.entry_form.type = value
+                this.entry_form.grade = null
+            }
         },
         async saveEntry() {
             if (!this.selected_course || !this.selected_course_student) return

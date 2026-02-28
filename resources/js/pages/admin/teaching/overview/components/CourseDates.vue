@@ -480,12 +480,14 @@ export default {
             return courseDate.date === this.toDateString(today)
         },
         courseDateRowClass(courseDate) {
-            if (this.selected_courseDate?.id === courseDate.id) return 'bg-secondary-lighten-5'
             if (this.hasStatus(courseDate, 'pruefung')) return 'course-date-row--exam'
             if (this.hasStatus(courseDate, 'free')) return 'course-date-row--free'
             return ''
         },
         courseDateHighlightStyle(courseDate) {
+            if (this.selected_courseDate?.id === courseDate.id) {
+                return { backgroundColor: '#fff3e0', borderLeft: '5px solid #e65100' }
+            }
             if (this.highlightedDateId !== courseDate.id) return {}
             if (this.isDateToday(courseDate)) {
                 return { backgroundColor: '#bbdefb', borderLeft: '5px solid #1565c0' }
