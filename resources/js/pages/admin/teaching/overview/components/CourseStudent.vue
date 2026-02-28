@@ -39,7 +39,7 @@
                     </v-btn-toggle>
                 </div>
 
-                <v-card variant="outlined" class="mt-4" v-if="!show_behaviour_form && !show_star_form">
+                <v-card variant="outlined" class="mt-4">
                     <v-card-text v-if="!is_editing">
                         <div class="text-body-2 course-comment" v-if="selected_comment" v-html="commentHtml"></div>
                         <div class="text-body-2" v-else>Kein Kommentar vorhanden.</div>
@@ -63,7 +63,7 @@
                 </v-card>
 
 
-                <v-card variant="outlined" class="mt-4" v-if="!show_behaviour_form && !show_star_form">
+                <v-card variant="outlined" class="mt-4">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-clipboard-text</v-icon>
                         Einträge
@@ -353,7 +353,7 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4" v-if="!show_behaviour_form && !show_star_form">
+                <v-card variant="outlined" class="mt-4">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-account-alert</v-icon>
                         Verhaltens-Einträge
@@ -419,7 +419,7 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4" v-if="!show_behaviour_form && !show_star_form">
+                <v-card variant="outlined" class="mt-4">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-star</v-icon>
                         Sterne
@@ -452,7 +452,7 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4" v-if="!show_behaviour_form && !show_star_form">
+                <v-card variant="outlined" class="mt-4">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-bell</v-icon>
                         Verständigungen
@@ -523,7 +523,7 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4" v-if="!show_behaviour_form && !show_star_form">
+                <v-card variant="outlined" class="mt-4">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-school</v-icon>
                         Semesternoten
@@ -561,7 +561,7 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4" v-if="!show_behaviour_form && !show_star_form">
+                <v-card variant="outlined" class="mt-4">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-account-alert</v-icon>
                         Verhaltensnoten
@@ -599,43 +599,66 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4" v-if="show_behaviour_form">
-                    <v-card-text>
-                        <v-form ref="behaviourForm" @submit.prevent="saveBehaviourEntry">
-                            <div class="text-subtitle-1 mb-2">{{ behaviour_form.id ? entryFormTitleEdit : entryFormTitleNew }}</div>
-                            <v-select v-model="behaviour_form.type" label="Typ" :items="entryTypeItems" item-title="title" item-value="value" clearable />
-                            <v-date-input v-model="behaviour_form.date" label="Datum" />
-                            <v-textarea v-model="behaviour_form.description" label="Beschreibung" rows="3" :counter="1024" :maxlength="1024" />
-                            <div v-if="showDueFields" class="d-flex flex-column ga-2">
-                                <v-switch v-model="behaviour_form.is_due" label="Fällig" color="warning" hide-details />
-                                <template v-if="behaviour_form.is_due">
-                                    <v-date-input v-model="behaviour_form.due_date" label="Fällig bis" />
-                                    <div class="d-flex flex-wrap ga-1 mt-1">
-                                        <v-chip size="x-small" variant="outlined" class="cursor-pointer" @click="setDueInAWeek">In einer Woche</v-chip>
-                                        <v-chip
-                                            size="x-small"
-                                            variant="outlined"
-                                            class="cursor-pointer"
-                                            :disabled="!nextCourseLessonDate"
-                                            @click="setDueNextLesson">
-                                            Nächste Unterrichtseinheit<span v-if="nextCourseLessonDate">: {{ formatDate(nextCourseLessonDate) }}</span>
-                                        </v-chip>
-                                    </div>
-                                    <v-checkbox v-model="behaviour_form.is_done" label="Erledigt" color="success" hide-details density="compact" class="mt-1" />
-                                    <v-date-input v-if="behaviour_form.is_done" v-model="behaviour_form.done_date" label="Erledigt am" />
-                                </template>
-                            </div>
-                            <v-alert v-if="behaviourFormFrontendError" type="warning" class="mt-2">
-                                {{ behaviourFormFrontendError }}
-                            </v-alert>
-
-                            <div class="d-flex flex-row align-center justify-space-between mt-4">
-                                <v-btn color="warning" flat tile @click="abortBehaviourEntry">Abbruch</v-btn>
-                                <v-btn color="success" flat tile type="submit" :disabled="!canSaveBehaviourForm">{{ behaviour_form.id ? 'Aktualisieren' : 'Speichern' }}</v-btn>
-                            </div>
-                        </v-form>
-                    </v-card-text>
-                </v-card>
+                <v-dialog v-model="show_behaviour_form" persistent max-width="500">
+                    <v-card>
+                        <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                            <v-icon size="18">mdi-account-alert</v-icon>
+                            {{ behaviour_form.id ? entryFormTitleEdit : entryFormTitleNew }}
+                            <v-spacer />
+                            <v-btn icon="mdi-close" size="x-small" variant="text" @click="abortBehaviourEntry" />
+                        </v-card-title>
+                        <v-divider />
+                        <v-card-text>
+                            <v-form ref="behaviourForm" @submit.prevent="saveBehaviourEntry">
+                                <div class="text-caption text-medium-emphasis mb-1 mt-2">Typ</div>
+                                <div class="d-flex flex-wrap ga-1 mb-1">
+                                    <v-btn
+                                        v-for="item in entryTypeItems"
+                                        :key="item.value"
+                                        :variant="behaviour_form.type === item.value ? 'flat' : 'tonal'"
+                                        :color="behaviour_form.type === item.value ? 'warning' : 'default'"
+                                        size="small"
+                                        @click="behaviour_form.type = behaviour_form.type === item.value ? null : item.value">
+                                        {{ item.value }}
+                                    </v-btn>
+                                </div>
+                                <div class="text-caption text-warning mb-3" style="min-height: 1.2em;">
+                                    {{ entryTypeItems.find(i => i.value === behaviour_form.type)?.title ?? '' }}
+                                </div>
+                                <v-date-input v-model="behaviour_form.date" label="Datum" />
+                                <v-textarea v-model="behaviour_form.description" label="Beschreibung" rows="3" :counter="1024" :maxlength="1024" />
+                                <div v-if="showDueFields" class="d-flex flex-column ga-2 mt-2">
+                                    <v-switch v-model="behaviour_form.is_due" label="Fällig" color="warning" hide-details />
+                                    <template v-if="behaviour_form.is_due">
+                                        <v-date-input v-model="behaviour_form.due_date" label="Fällig bis" />
+                                        <div class="d-flex flex-wrap ga-1 mt-1">
+                                            <v-chip size="x-small" variant="outlined" class="cursor-pointer" @click="setDueInAWeek">In einer Woche</v-chip>
+                                            <v-chip
+                                                size="x-small"
+                                                variant="outlined"
+                                                class="cursor-pointer"
+                                                :disabled="!nextCourseLessonDate"
+                                                @click="setDueNextLesson">
+                                                Nächste Unterrichtseinheit<span v-if="nextCourseLessonDate">: {{ formatDate(nextCourseLessonDate) }}</span>
+                                            </v-chip>
+                                        </div>
+                                        <v-checkbox v-model="behaviour_form.is_done" label="Erledigt" color="success" hide-details density="compact" class="mt-1" />
+                                        <v-date-input v-if="behaviour_form.is_done" v-model="behaviour_form.done_date" label="Erledigt am" />
+                                    </template>
+                                </div>
+                                <v-alert v-if="behaviourFormFrontendError" type="warning" class="mt-2">
+                                    {{ behaviourFormFrontendError }}
+                                </v-alert>
+                            </v-form>
+                        </v-card-text>
+                        <v-divider />
+                        <v-card-actions>
+                            <v-btn color="warning" variant="tonal" @click="abortBehaviourEntry">Abbruch</v-btn>
+                            <v-spacer />
+                            <v-btn color="success" variant="tonal" :disabled="!canSaveBehaviourForm" @click="saveBehaviourEntry">{{ behaviour_form.id ? 'Aktualisieren' : 'Speichern' }}</v-btn>
+                        </v-card-actions>
+                    </v-card>
+                </v-dialog>
 
                 <v-dialog v-model="show_entry_form" persistent max-width="500">
                     <v-card>
@@ -649,7 +672,7 @@
                         <v-card-text>
                             <v-form ref="entryForm" @submit.prevent="saveEntry">
                                 <div class="text-caption text-medium-emphasis mb-1 mt-2">Typ</div>
-                                <div class="d-flex flex-wrap ga-1 mb-4">
+                                <div class="d-flex flex-wrap ga-1 mb-1">
                                     <v-btn
                                         v-for="item in workTypeItems"
                                         :key="item.value"
@@ -660,8 +683,11 @@
                                         {{ item.value }}
                                     </v-btn>
                                 </div>
+                                <div class="text-caption text-primary mb-3" style="min-height: 1.2em;">
+                                    {{ workTypeItems.find(i => i.value === entry_form.type)?.title ?? '' }}
+                                </div>
                                 <div class="text-caption text-medium-emphasis mb-1">Note</div>
-                                <div class="d-flex flex-wrap ga-1 mb-4" v-if="gradeItemsForType.length">
+                                <div class="d-flex flex-wrap ga-1 mb-1" v-if="gradeItemsForType.length">
                                     <v-btn
                                         v-for="item in gradeItemsForType"
                                         :key="item.value"
@@ -671,6 +697,9 @@
                                         @click="entry_form.grade = entry_form.grade === item.value ? null : item.value">
                                         {{ item.value }}
                                     </v-btn>
+                                </div>
+                                <div class="text-caption text-success mb-3" style="min-height: 1.2em;" v-if="gradeItemsForType.length">
+                                    {{ gradeItemsForType.find(i => i.value === entry_form.grade)?.title ?? '' }}
                                 </div>
                                 <div v-else class="text-caption text-medium-emphasis mb-4">Bitte zuerst Typ wählen</div>
                                 <v-date-input v-model="entry_form.date" label="Datum" />
@@ -686,20 +715,30 @@
                     </v-card>
                 </v-dialog>
 
-                <v-card variant="outlined" class="mt-4" v-if="show_star_form">
-                    <v-card-text>
-                        <v-form ref="starForm" @submit.prevent="saveStarEntry">
-                            <div class="text-subtitle-1 mb-2">{{ star_form.id ? 'Stern bearbeiten' : 'Stern vergeben' }}</div>
-                            <v-date-input v-model="star_form.date" label="Datum" />
-                            <v-textarea v-model="star_form.comment" label="Kommentar" rows="3" :counter="1024" :maxlength="1024" />
-                            <v-alert v-if="starFormFrontendError" type="warning" class="mt-2">{{ starFormFrontendError }}</v-alert>
-                            <div class="d-flex flex-row align-center justify-space-between mt-4">
-                                <v-btn color="warning" flat tile @click="abortStarEntry">Abbruch</v-btn>
-                                <v-btn color="success" flat tile type="submit" :disabled="!!starFormFrontendError">{{ star_form.id ? 'Aktualisieren' : 'Speichern' }}</v-btn>
-                            </div>
-                        </v-form>
-                    </v-card-text>
-                </v-card>
+                <v-dialog v-model="show_star_form" persistent max-width="500">
+                    <v-card>
+                        <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                            <v-icon size="18">mdi-star</v-icon>
+                            {{ star_form.id ? 'Stern bearbeiten' : 'Stern vergeben' }}
+                            <v-spacer />
+                            <v-btn icon="mdi-close" size="x-small" variant="text" @click="abortStarEntry" />
+                        </v-card-title>
+                        <v-divider />
+                        <v-card-text>
+                            <v-form ref="starForm" @submit.prevent="saveStarEntry">
+                                <v-date-input v-model="star_form.date" label="Datum" class="mt-2" />
+                                <v-textarea v-model="star_form.comment" label="Kommentar" rows="3" :counter="1024" :maxlength="1024" />
+                                <v-alert v-if="starFormFrontendError" type="warning" class="mt-2">{{ starFormFrontendError }}</v-alert>
+                            </v-form>
+                        </v-card-text>
+                        <v-divider />
+                        <v-card-actions>
+                            <v-btn color="warning" variant="tonal" @click="abortStarEntry">Abbruch</v-btn>
+                            <v-spacer />
+                            <v-btn color="success" variant="tonal" :disabled="!!starFormFrontendError" @click="saveStarEntry">{{ star_form.id ? 'Aktualisieren' : 'Speichern' }}</v-btn>
+                        </v-card-actions>
+                    </v-card>
+                </v-dialog>
             </v-card-text>
         </v-card>
     </ItsGridBox>

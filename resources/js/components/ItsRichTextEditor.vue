@@ -1,5 +1,5 @@
 <template>
-    <div class="its-rich-text-editor">
+    <div class="its-rich-text-editor" @keydown.stop>
         <div class="toolbar d-flex flex-wrap ga-1 mb-2">
             <v-btn-group density="compact" variant="outlined">
                 <v-btn
