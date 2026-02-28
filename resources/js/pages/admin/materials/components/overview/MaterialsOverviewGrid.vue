@@ -112,6 +112,20 @@
                         @click="$emit('open-edit', card)">
                         <v-icon icon="mdi-pencil-outline" />
                     </v-btn>
+
+                    <v-btn
+                        v-if="showEditAction && card.is_linked"
+                        icon
+                        size="small"
+                        rounded="circle"
+                        color="warning"
+                        variant="outlined"
+                        class="overview-grid-action-btn"
+                        :title="'Link entfernen'"
+                        :disabled="actionDisabled"
+                        @click="$emit('unlink-link', card)">
+                        <v-icon icon="mdi-link-off" />
+                    </v-btn>
                 </v-card-actions>
             </v-card>
         </v-col>
@@ -136,7 +150,7 @@ export default {
         previewFn: functionProp,
         formatDateTimeFn: functionProp,
     },
-    emits: ['open-detail', 'open-edit', 'open-attachments'],
+    emits: ['open-detail', 'open-edit', 'open-attachments', 'unlink-link'],
     methods: {
         linkedPermissionChipColor(permission) {
             const normalized = String(permission || '').trim()

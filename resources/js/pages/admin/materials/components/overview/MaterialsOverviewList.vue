@@ -119,6 +119,16 @@
                         :title="'Bearbeiten'"
                         :disabled="actionDisabled"
                         @click="$emit('open-edit', card)" />
+
+                    <v-btn
+                        v-if="showEditAction && card.is_linked"
+                        icon="mdi-link-off"
+                        size="small"
+                        color="warning"
+                        variant="outlined"
+                        :title="'Link entfernen'"
+                        :disabled="actionDisabled"
+                        @click="$emit('unlink-link', card)" />
                 </div>
             </template>
         </v-list-item>
@@ -146,7 +156,7 @@ export default {
         attachmentChipLabelFn: functionProp,
         formatDateTimeFn: functionProp,
     },
-    emits: ['open-detail', 'open-edit', 'open-attachments', 'download-attachment'],
+    emits: ['open-detail', 'open-edit', 'open-attachments', 'download-attachment', 'unlink-link'],
     methods: {
         linkedPermissionChipColor(permission) {
             const normalized = String(permission || '').trim()

@@ -4,12 +4,12 @@
             :hide-overview-mode-toggle="hideOverviewModeToggle"
             :overview-view-mode="overviewViewMode"
             :is-loading="isLoading"
-            :action-disabled="isDeletingId !== null || isSavingEdit"
+            :action-disabled="isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null"
             @update:overview-view-mode="setOverviewMode"
             @refresh="loadCards" />
 
         <MaterialsOverviewFilters
-            :action-disabled="isLoading || isDeletingId !== null || isSavingEdit"
+            :action-disabled="isLoading || isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null"
             :badge-count-content="badgeCountContent"
             :subject-all-count="subjectAllCount"
             :has-active-subject-filter="hasActiveSubjectFilter"
@@ -155,7 +155,7 @@
             <MaterialsSubjectsContentsTree
                 v-else
                 :items="subjectsContentsOverviewItems"
-                :action-busy="isLoading || isDeletingId !== null || isSavingEdit || isSavingCreate || isRemovingTreeClassification"
+                :action-busy="isLoading || isDeletingId !== null || isSavingEdit || isSavingCreate || isRemovingTreeClassification || isUnlinkingId !== null || isUnlinkingUnitId !== null"
                 :enable-share-buttons="enableShareButtons"
                 :enable-create-buttons="!readOnlyMaterialActions"
                 :enable-remove-buttons="!readOnlyMaterialActions"
@@ -169,14 +169,16 @@
                 @open-share="openShareDialog"
                 @open-create="openCreateDialogFromTree"
                 @open-attachments="openAttachmentManager"
-                @remove-classification="removeClassificationFromTree" />
+                @remove-classification="removeClassificationFromTree"
+                @unlink-linked-material="unlinkLinkedCard"
+                @unlink-linked-unit="unlinkLinkedUnit" />
         </template>
 
         <template v-else-if="hasCards">
             <MaterialsOverviewGrid
                 v-if="isCompactOverview"
                 :cards="sortedCards"
-                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null"
                 :show-edit-action="!readOnlyMaterialActions"
                 :card-background-style-fn="cardBackgroundStyle"
                 :status-color-fn="statusColor"
@@ -188,12 +190,13 @@
                 :format-date-time-fn="formatDateTime"
                 @open-detail="openDetailDialog"
                 @open-edit="openEditDialog"
-                @open-attachments="openAttachmentManager" />
+                @open-attachments="openAttachmentManager"
+                @unlink-link="unlinkLinkedCard" />
 
             <MaterialsOverviewAlphaList
                 v-else-if="isAlphabeticOverview"
                 :cards="sortedCards"
-                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null"
                 :show-edit-action="!readOnlyMaterialActions"
                 :card-background-style-fn="cardBackgroundStyle"
                 :status-color-fn="statusColor"
@@ -203,12 +206,13 @@
                 :alphabetic-assignment-line-fn="alphabeticAssignmentLine"
                 @open-detail="openDetailDialog"
                 @open-edit="openEditDialog"
-                @open-attachments="openAttachmentManager" />
+                @open-attachments="openAttachmentManager"
+                @unlink-link="unlinkLinkedCard" />
 
             <MaterialsOverviewList
                 v-else
                 :cards="sortedCards"
-                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null"
                 :show-edit-action="!readOnlyMaterialActions"
                 :card-background-style-fn="cardBackgroundStyle"
                 :status-color-fn="statusColor"
@@ -224,14 +228,15 @@
                 @open-detail="openDetailDialog"
                 @open-edit="openEditDialog"
                 @open-attachments="openAttachmentManager"
-                @download-attachment="downloadAttachment" />
+                @download-attachment="downloadAttachment"
+                @unlink-link="unlinkLinkedCard" />
 
             <MaterialsOverviewPagination
                 :current-page="currentMetaPage"
                 :last-page="lastMetaPage"
                 :has-previous-page="hasPreviousPage"
                 :has-next-page="hasNextPage"
-                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null"
                 @first="goToFirstPage"
                 @previous="goToPreviousPage"
                 @next="goToNextPage"
@@ -926,6 +931,8 @@ export default {
             isSavingEdit: false,
             isRemovingTreeClassification: false,
             isDeletingId: null,
+            isUnlinkingId: null,
+            isUnlinkingUnitId: null,
             createDialogOpen: false,
             editDialogOpen: false,
             attachmentDialogOpen: false,
@@ -1532,9 +1539,7 @@ export default {
         }
 
         this.materialCardStore = useMaterialCardStore()
-        if (!this.materialCardStore.config) {
-            await this.materialCardStore.loadConfig()
-        }
+        await this.materialCardStore.loadConfig()
         this.subjectFilter = String(this.materialCardStore?.filters?.subject || '').trim()
         this.topicFilter = String(this.materialCardStore?.filters?.topic || '').trim()
         this.unitFilter = String(this.materialCardStore?.filters?.unit || '').trim()
@@ -1625,6 +1630,12 @@ export default {
             const normalized = this.normalizeLinkedPermission(card?.linked_permission)
             if (normalized !== '') return normalized
             return card?.is_linked === true ? 'read_only' : ''
+        },
+        linkedPermissionLabelForPermission(permission) {
+            const normalized = this.normalizeLinkedPermission(permission)
+            if (normalized === 'full_access') return 'VOLLZUGRIFF'
+            if (normalized === 'read_write') return 'LESEN/SCHREIBEN'
+            return 'NUR LESEN'
         },
         cardAllowsFieldEditing(card) {
             const permission = this.linkedPermissionForCard(card)
@@ -1863,9 +1874,14 @@ export default {
                                     const unitId = Number(unitNode?.id)
                                     const unitName = this.normalizeFilterText(unitNode?.name)
                                     if (!unitName) return null
+                                    const unitLinkedPermission = this.normalizeLinkedPermission(unitNode?.linked_permission)
+                                    const unitIsLinked = unitNode?.is_linked === true || unitLinkedPermission !== ''
                                     return {
                                         id: Number.isFinite(unitId) && unitId > 0 ? unitId : null,
                                         name: unitName,
+                                        isLinked: unitIsLinked,
+                                        linkedPermission: unitLinkedPermission,
+                                        linkedPermissionLabel: String(unitNode?.linked_permission_label || '').trim(),
                                     }
                                 })
                                 .filter(Boolean)
@@ -1961,19 +1977,37 @@ export default {
                 subject.topics = topics
                 return created
             }
-            const ensureUnit = (topic, name) => {
+            const ensureUnit = (topic, name, unitId = null) => {
                 const normalizedName = this.normalizeFilterText(name)
                 if (!topic || !normalizedName) return null
                 const units = Array.isArray(topic.units) ? topic.units : []
-                const key = normalizedName.toLocaleLowerCase()
-                const existing = units.find((unit) => this.normalizeFilterText(unit?.name).toLocaleLowerCase() === key)
-                if (existing) return existing
+                const normalizedUnitId = Number(unitId)
+                if (Number.isFinite(normalizedUnitId) && normalizedUnitId > 0) {
+                    const existingById = units.find((unit) => Number(unit?.id || 0) === normalizedUnitId)
+                    if (existingById) return existingById
+                    const existingPlaceholder = units.find((unit) => {
+                        const currentId = Number(unit?.id || 0)
+                        if (Number.isFinite(currentId) && currentId > 0) return false
+                        return this.normalizeFilterText(unit?.name).toLocaleLowerCase() === normalizedName.toLocaleLowerCase()
+                    })
+                    if (existingPlaceholder) {
+                        existingPlaceholder.id = normalizedUnitId
+                        return existingPlaceholder
+                    }
+                } else {
+                    const key = normalizedName.toLocaleLowerCase()
+                    const existing = units.find((unit) => this.normalizeFilterText(unit?.name).toLocaleLowerCase() === key)
+                    if (existing) return existing
+                }
 
                 const created = {
-                    id: null,
+                    id: Number.isFinite(normalizedUnitId) && normalizedUnitId > 0 ? normalizedUnitId : null,
                     name: normalizedName,
                     materials: [],
                     _materialIds: new Set(),
+                    isLinked: false,
+                    linkedPermission: '',
+                    linkedPermissionLabel: '',
                 }
                 units.push(created)
                 topic.units = units
@@ -2010,15 +2044,25 @@ export default {
                 const rows = persistedRows.length > 0 ? persistedRows : this.fallbackClassificationsForOverviewCard(card)
                 const classificationsCount = persistedRows.length
                 const hasPersistedClassifications = classificationsCount > 0
+                const linkedPermission = this.linkedPermissionForCard(card)
+                const canUnlinkLinkedMaterial = materialBase.isLinked && (linkedPermission === 'read_write' || linkedPermission === 'full_access')
                 for (const row of rows) {
+                    const classificationId = Number(row?.id ?? row?.classificationId ?? row?.classification_id ?? 0)
+                    const subjectId = Number(row?.subjectId ?? row?.subject_id ?? 0)
+                    const topicId = Number(row?.topicId ?? row?.topic_id ?? 0)
+                    const unitId = Number(row?.unitId ?? row?.unit_id ?? 0)
                     const subjectName = this.normalizeFilterText(row?.subject)
                     const topicName = this.normalizeFilterText(row?.topic)
                     const unitName = this.normalizeFilterText(row?.unit)
                     if (!subjectName) continue
-                    const canRemoveClassification = hasPersistedClassifications && classificationsCount >= 2
+                    const canRemoveClassification = hasPersistedClassifications && (classificationsCount >= 2 || canUnlinkLinkedMaterial)
                     const material = {
                         ...materialBase,
                         classificationRow: {
+                            id: Number.isFinite(classificationId) && classificationId > 0 ? classificationId : null,
+                            subjectId: Number.isFinite(subjectId) && subjectId > 0 ? subjectId : null,
+                            topicId: Number.isFinite(topicId) && topicId > 0 ? topicId : null,
+                            unitId: Number.isFinite(unitId) && unitId > 0 ? unitId : null,
                             subject: subjectName,
                             topic: topicName,
                             unit: unitName,
@@ -2027,6 +2071,8 @@ export default {
                         canRemoveClassification,
                         removeClassificationTitle: canRemoveClassification
                             ? 'Diese Zuordnung entfernen'
+                            : canUnlinkLinkedMaterial
+                              ? 'Verlinktes Material kann über die letzte Zuordnung entkoppelt werden.'
                             : hasPersistedClassifications
                               ? 'Nicht möglich: Material hat nur 1 Zuordnung.'
                               : 'Nicht möglich: Material hat keine gespeicherte Zuordnung.',
@@ -2044,7 +2090,7 @@ export default {
                         continue
                     }
 
-                    const unitNode = ensureUnit(topicNode, unitName)
+                    const unitNode = ensureUnit(topicNode, unitName, unitId)
                     pushMaterial(unitNode, material)
                 }
             }
@@ -2127,17 +2173,30 @@ export default {
                     unit = ''
                 }
 
-                return [{ subject, topic, unit }]
+                return [{ id: null, subjectId: null, topicId: null, unitId: null, subject, topic, unit }]
             }
 
-            return [{ subject: 'Nicht zugeordnet', topic: '', unit: '' }]
+            return [{ id: null, subjectId: null, topicId: null, unitId: null, subject: 'Nicht zugeordnet', topic: '', unit: '' }]
         },
         classificationRowKey(row) {
+            const classificationId = Number(row?.id ?? row?.classificationId ?? row?.classification_id ?? 0)
+            if (Number.isFinite(classificationId) && classificationId > 0) {
+                return `classification:${classificationId}`
+            }
+
+            const subjectId = Number(row?.subjectId ?? row?.subject_id ?? 0)
+            const topicId = Number(row?.topicId ?? row?.topic_id ?? 0)
+            const unitId = Number(row?.unitId ?? row?.unit_id ?? 0)
             const subject = this.normalizeFilterText(row?.subject).toLocaleLowerCase()
             const topic = this.normalizeFilterText(row?.topic).toLocaleLowerCase()
             const unit = this.normalizeFilterText(row?.unit).toLocaleLowerCase()
             if (!subject) return ''
-            return `${subject}|${topic}|${unit}`
+
+            if ((Number.isFinite(subjectId) && subjectId > 0) || (Number.isFinite(topicId) && topicId > 0) || (Number.isFinite(unitId) && unitId > 0)) {
+                return `ids:${subjectId}|${topicId}|${unitId}|${subject}|${topic}|${unit}`
+            }
+
+            return `names:${subject}|${topic}|${unit}`
         },
         buildMaterialUpdatePayload(card, classifications) {
             return {
@@ -2168,6 +2227,10 @@ export default {
             if (!Number.isFinite(cardId) || cardId <= 0) return
 
             const targetRow = {
+                id: Number(material?.classificationRow?.id || 0),
+                subjectId: Number(material?.classificationRow?.subjectId || 0),
+                topicId: Number(material?.classificationRow?.topicId || 0),
+                unitId: Number(material?.classificationRow?.unitId || 0),
                 subject: this.normalizeFilterText(material?.classificationRow?.subject),
                 topic: this.normalizeFilterText(material?.classificationRow?.topic),
                 unit: this.normalizeFilterText(material?.classificationRow?.unit),
@@ -2175,7 +2238,8 @@ export default {
             if (!targetRow.subject) return
 
             const hintedCount = Number(material?.classificationsCount || 0)
-            if (Number.isFinite(hintedCount) && hintedCount < 2) {
+            const allowLinkedUnlink = material?.isLinked === true && this.cardAllowsFieldEditing(material)
+            if (Number.isFinite(hintedCount) && hintedCount < 2 && !allowLinkedUnlink) {
                 this.notifyTreeClassificationRemoval('Zuordnung entfernen geht nur, wenn mindestens 2 Zuordnungen vorhanden sind.')
                 return
             }
@@ -2189,7 +2253,8 @@ export default {
                 if (Number(card?.id) !== cardId) return
 
                 const rows = this.normalizeClassifications(card?.classifications)
-                if (rows.length < 2) {
+                const allowLoadedLinkedUnlink = card?.is_linked === true && this.cardAllowsFieldEditing(card)
+                if (rows.length < 2 && !allowLoadedLinkedUnlink) {
                     this.notifyTreeClassificationRemoval('Zuordnung entfernen geht nur, wenn mindestens 2 Zuordnungen vorhanden sind.')
                     return
                 }
@@ -2201,7 +2266,7 @@ export default {
                     this.notifyTreeClassificationRemoval('Die ausgewählte Zuordnung wurde nicht gefunden.', 'error')
                     return
                 }
-                if (nextRows.length < 1) {
+                if (nextRows.length < 1 && !allowLoadedLinkedUnlink) {
                     this.notifyTreeClassificationRemoval('Die letzte Zuordnung kann nicht entfernt werden.')
                     return
                 }
@@ -2256,6 +2321,8 @@ export default {
             this.isLoadingSubjectsContentsOverview = true
 
             try {
+                await this.materialCardStore.loadConfig()
+                if (requestId !== this.subjectsContentsOverviewRequestId) return
                 const filters = this.buildSubjectsContentsOverviewFilters()
                 const cards = await this.materialCardStore.listAllCardsSnapshot(filters)
                 if (requestId !== this.subjectsContentsOverviewRequestId) return
@@ -3103,6 +3170,85 @@ export default {
             if (deleted) {
                 this.closeDetailDialog()
                 await this.loadCards(null, { forceFilterCountRefresh: true })
+            }
+        },
+        async unlinkLinkedCard(card) {
+            if (this.readOnlyMaterialActions) return
+            if (
+                this.isLoading ||
+                this.isSavingCreate ||
+                this.isSavingEdit ||
+                this.isDeletingId !== null ||
+                this.isRemovingTreeClassification ||
+                this.isUnlinkingId !== null ||
+                this.isUnlinkingUnitId !== null
+            ) return
+
+            const cardId = Number(card?.id)
+            if (!Number.isFinite(cardId) || cardId <= 0) return
+
+            const linkedPermission = this.normalizeLinkedPermission(card?.linked_permission ?? card?.linkedPermission)
+            const isLinked = card?.is_linked === true || card?.isLinked === true || linkedPermission !== ''
+            if (!isLinked) return
+
+            this.isUnlinkingId = cardId
+            try {
+                const unlinkedCard = await this.materialCardStore.unlink(cardId)
+                if (!unlinkedCard) return
+
+                if (this.detailDialogOpen && Number(this.detailDialogCard?.id || 0) === cardId) {
+                    this.closeDetailDialog()
+                }
+                if (this.editDialogOpen && Number(this.editForm?.id || 0) === cardId) {
+                    await this.closeEditDialog()
+                }
+                if (this.isSubjectsContentsOverview) {
+                    this.subjectsContentsOverviewItems = this.buildSubjectsContentsOverviewItems(this.cards, this.buildSubjectsContentsOverviewFilters())
+                }
+            } finally {
+                this.isUnlinkingId = null
+            }
+        },
+        async unlinkLinkedUnit(unit) {
+            if (this.readOnlyMaterialActions) return
+            if (
+                this.isLoading ||
+                this.isSavingCreate ||
+                this.isSavingEdit ||
+                this.isDeletingId !== null ||
+                this.isRemovingTreeClassification ||
+                this.isUnlinkingId !== null ||
+                this.isUnlinkingUnitId !== null
+            ) return
+
+            const unitId = Number(unit?.id)
+            if (!Number.isFinite(unitId) || unitId <= 0) return
+
+            const linkedPermission = this.normalizeLinkedPermission(unit?.linkedPermission ?? unit?.linked_permission)
+            const isLinked = unit?.isLinked === true || unit?.is_linked === true || linkedPermission !== ''
+            if (!isLinked) return
+
+            this.isUnlinkingUnitId = unitId
+            try {
+                const result = await this.materialCardStore.unlinkUnit(unitId)
+                if (!result) return
+
+                const removedCardIds = Array.isArray(result.removedCardIds)
+                    ? result.removedCardIds.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0)
+                    : []
+
+                if (removedCardIds.length > 0) {
+                    if (this.detailDialogOpen && removedCardIds.includes(Number(this.detailDialogCard?.id || 0))) {
+                        this.closeDetailDialog()
+                    }
+                    if (this.editDialogOpen && removedCardIds.includes(Number(this.editForm?.id || 0))) {
+                        await this.closeEditDialog()
+                    }
+                }
+
+                await this.loadCards(null, { forceFilterCountRefresh: true })
+            } finally {
+                this.isUnlinkingUnitId = null
             }
         },
         openEditDialog(card) {

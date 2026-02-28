@@ -237,13 +237,15 @@ class MaterialClassificationController extends Controller
         $authUser = $this->authorizeForClassificationManagement();
         $validated = $request->validated()['data'];
         $topicId = (int) ($validated['topic_id'] ?? 0);
+        $allowDuplicate = (bool) ($validated['allow_duplicate'] ?? false);
 
         $topic = MaterialTopic::query()->findOrFail($topicId);
 
         $unit = $service->createUnit(
             $authUser,
             $topic,
-            (string) ($validated['name'] ?? '')
+            (string) ($validated['name'] ?? ''),
+            $allowDuplicate
         );
 
         return response()->json([

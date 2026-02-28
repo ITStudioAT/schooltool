@@ -6,11 +6,14 @@ use App\Models\MaterialCardClassification;
 use App\Models\MaterialInboxImport;
 use App\Models\MaterialShareRule;
 use App\Models\MaterialShareTarget;
+use App\Models\MaterialTopic;
 use App\Models\Licence;
 use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\MaterialSubject;
 use App\Models\MaterialType;
+use App\Models\MaterialUnit;
+use App\Models\MaterialUnitInboxImport;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
@@ -325,6 +328,50 @@ test('teacher can create and rename subject topic and unit in own taxonomy', fun
         'topic_id' => $topicId,
         'name' => 'Lineare Systeme',
     ]);
+});
+
+test('teacher can create duplicate unit names when allow_duplicate is true', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $subjectResponse = $this->postJson('/api/admin/materials/subjects', [
+        'data' => ['name' => 'Mathematik'],
+    ])->assertStatus(200);
+    $subjectId = (int) $subjectResponse->json('data.id');
+
+    $topicResponse = $this->postJson('/api/admin/materials/topics', [
+        'data' => [
+            'subject_id' => $subjectId,
+            'name' => 'Algebra',
+        ],
+    ])->assertStatus(200);
+    $topicId = (int) $topicResponse->json('data.id');
+
+    $firstUnitResponse = $this->postJson('/api/admin/materials/units', [
+        'data' => [
+            'topic_id' => $topicId,
+            'name' => 'Lineare Gleichungen',
+            'allow_duplicate' => true,
+        ],
+    ])->assertStatus(200);
+    $firstUnitId = (int) $firstUnitResponse->json('data.id');
+    expect($firstUnitId)->toBeGreaterThan(0);
+
+    $secondUnitResponse = $this->postJson('/api/admin/materials/units', [
+        'data' => [
+            'topic_id' => $topicId,
+            'name' => 'Lineare Gleichungen',
+            'allow_duplicate' => true,
+        ],
+    ])->assertStatus(200);
+    $secondUnitId = (int) $secondUnitResponse->json('data.id');
+    expect($secondUnitId)->toBeGreaterThan(0);
+    expect($secondUnitId)->not->toBe($firstUnitId);
+
+    $duplicateCount = \App\Models\MaterialUnit::query()
+        ->where('topic_id', $topicId)
+        ->where('name', 'Lineare Gleichungen')
+        ->count();
+    expect($duplicateCount)->toBe(2);
 });
 
 test('teacher cannot rename subject from another user taxonomy', function () {
@@ -1219,6 +1266,15 @@ test('linked material with nur lesen blocks edit delete and attachment mutations
         schoolyear: $this->schoolyear,
         permission: MaterialShareTarget::PERMISSION_READ_ONLY,
     );
+    $importBeforeUnlink = MaterialInboxImport::query()
+        ->where('target_user_id', (int) $this->teacher->id)
+        ->where('target_material_card_id', (int) $card->id)
+        ->where('import_mode', MaterialInboxImport::MODE_LINK)
+        ->latest('id')
+        ->first();
+    expect($importBeforeUnlink)->not->toBeNull();
+    $ruleId = (int) ($importBeforeUnlink?->source_rule_id ?? 0);
+    expect($ruleId)->toBeGreaterThan(0);
 
     $attachment = MaterialCardAttachment::query()->create([
         'material_card_id' => $card->id,
@@ -1248,6 +1304,193 @@ test('linked material with nur lesen blocks edit delete and attachment mutations
 
     $this->deleteJson('/api/admin/materials/cards/' . $card->id)
         ->assertStatus(403);
+});
+
+test('linked material can be unlinked from materials overview endpoint', function () {
+    if (!Schema::hasTable('material_inbox_imports') || !Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+        $this->markTestSkipped('Linked inbox import mode is not available.');
+    }
+
+    $card = createLinkedImportedCard(
+        targetUser: $this->teacher,
+        school: $this->school,
+        schoolyear: $this->schoolyear,
+        permission: MaterialShareTarget::PERMISSION_READ_ONLY,
+    );
+    $importBeforeUnlink = MaterialInboxImport::query()
+        ->where('target_user_id', (int) $this->teacher->id)
+        ->where('target_material_card_id', (int) $card->id)
+        ->where('import_mode', MaterialInboxImport::MODE_LINK)
+        ->latest('id')
+        ->first();
+    expect($importBeforeUnlink)->not->toBeNull();
+    $ruleId = (int) ($importBeforeUnlink?->source_rule_id ?? 0);
+    expect($ruleId)->toBeGreaterThan(0);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->postJson('/api/admin/materials/cards/' . $card->id . '/unlink')
+        ->assertStatus(200)
+        ->assertJsonPath('message', 'Link entfernt.')
+        ->assertJsonPath('data.id', (int) $card->id)
+        ->assertJsonPath('data.removed', true);
+
+    $this->assertDatabaseMissing('material_inbox_imports', [
+        'target_user_id' => (int) $this->teacher->id,
+        'target_material_card_id' => (int) $card->id,
+        'import_mode' => MaterialInboxImport::MODE_LINK,
+    ]);
+
+    $this->assertDatabaseMissing('material_cards', [
+        'id' => (int) $card->id,
+        'user_id' => (int) $this->teacher->id,
+    ]);
+
+    $this->getJson('/api/admin/materials/cards/' . $card->id)
+        ->assertStatus(404);
+
+    $cardsResponse = $this->getJson('/api/admin/materials/cards')
+        ->assertStatus(200);
+
+    $listedCardIds = collect($cardsResponse->json('data'))->pluck('id')->map(fn ($id) => (int) $id)->all();
+    expect($listedCardIds)->not->toContain((int) $card->id);
+
+    $inboxUsers = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertStatus(200);
+    $sharedItems = collect($inboxUsers->json('data'))
+        ->flatMap(fn ($userRow) => is_array($userRow['shared_items'] ?? null) ? $userRow['shared_items'] : [])
+        ->values();
+    $matchingInboxEntry = $sharedItems
+        ->first(fn ($entry) => (int) ($entry['rule_id'] ?? 0) === $ruleId);
+    expect($matchingInboxEntry)->not->toBeNull();
+    expect((bool) ($matchingInboxEntry['is_imported'] ?? true))->toBeFalse();
+});
+
+test('linked unit can be unlinked from materials overview endpoint and removes linked materials', function () {
+    if (
+        !Schema::hasTable('material_inbox_imports')
+        || !Schema::hasColumn('material_inbox_imports', 'import_mode')
+        || !Schema::hasTable('material_unit_inbox_imports')
+    ) {
+        $this->markTestSkipped('Linked unit inbox import tables are not available.');
+    }
+
+    $cardA = createLinkedImportedCard(
+        targetUser: $this->teacher,
+        school: $this->school,
+        schoolyear: $this->schoolyear,
+        permission: MaterialShareTarget::PERMISSION_READ_ONLY,
+    );
+    $cardB = createLinkedImportedCard(
+        targetUser: $this->teacher,
+        school: $this->school,
+        schoolyear: $this->schoolyear,
+        permission: MaterialShareTarget::PERMISSION_READ_WRITE,
+    );
+
+    $importA = MaterialInboxImport::query()
+        ->where('target_user_id', (int) $this->teacher->id)
+        ->where('target_material_card_id', (int) $cardA->id)
+        ->where('import_mode', MaterialInboxImport::MODE_LINK)
+        ->latest('id')
+        ->first();
+    expect($importA)->not->toBeNull();
+    $ruleId = (int) ($importA?->source_rule_id ?? 0);
+    expect($ruleId)->toBeGreaterThan(0);
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => (int) $this->teacher->id,
+        'name' => 'Lehrplaene',
+    ]);
+    $topic = MaterialTopic::query()->create([
+        'subject_id' => (int) $subject->id,
+        'name' => 'AHS - Tagesschule',
+    ]);
+    $unit = MaterialUnit::query()->create([
+        'topic_id' => (int) $topic->id,
+        'name' => 'Informatik',
+    ]);
+
+    MaterialCardClassification::query()->create([
+        'material_card_id' => (int) $cardA->id,
+        'subject_id' => (int) $subject->id,
+        'topic_id' => (int) $topic->id,
+        'unit_id' => (int) $unit->id,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => (int) $cardB->id,
+        'subject_id' => (int) $subject->id,
+        'topic_id' => (int) $topic->id,
+        'unit_id' => (int) $unit->id,
+    ]);
+
+    MaterialUnitInboxImport::query()->create([
+        'target_user_id' => (int) $this->teacher->id,
+        'target_unit_id' => (int) $unit->id,
+        'source_rule_id' => $ruleId,
+        'source_school_id' => (int) $this->school->id,
+        'source_unit_id' => 9001,
+        'imported_at' => now(),
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $response = $this->postJson('/api/admin/materials/units/' . $unit->id . '/unlink')
+        ->assertStatus(200)
+        ->assertJsonPath('message', 'Link entfernt.')
+        ->assertJsonPath('data.id', (int) $unit->id)
+        ->assertJsonPath('data.removed', true)
+        ->assertJsonPath('data.removed_unit', true);
+
+    $removedCardIds = collect($response->json('data.removed_card_ids'))
+        ->map(fn ($value) => (int) $value)
+        ->all();
+    expect($removedCardIds)->toContain((int) $cardA->id);
+    expect($removedCardIds)->toContain((int) $cardB->id);
+
+    $this->assertDatabaseMissing('material_unit_inbox_imports', [
+        'target_user_id' => (int) $this->teacher->id,
+        'target_unit_id' => (int) $unit->id,
+    ]);
+
+    $this->assertDatabaseMissing('material_inbox_imports', [
+        'target_user_id' => (int) $this->teacher->id,
+        'target_material_card_id' => (int) $cardA->id,
+        'import_mode' => MaterialInboxImport::MODE_LINK,
+    ]);
+    $this->assertDatabaseMissing('material_inbox_imports', [
+        'target_user_id' => (int) $this->teacher->id,
+        'target_material_card_id' => (int) $cardB->id,
+        'import_mode' => MaterialInboxImport::MODE_LINK,
+    ]);
+
+    $this->assertDatabaseMissing('material_cards', [
+        'id' => (int) $cardA->id,
+        'user_id' => (int) $this->teacher->id,
+    ]);
+    $this->assertDatabaseMissing('material_cards', [
+        'id' => (int) $cardB->id,
+        'user_id' => (int) $this->teacher->id,
+    ]);
+    $this->assertDatabaseMissing('material_units', [
+        'id' => (int) $unit->id,
+    ]);
+
+    $cardsResponse = $this->getJson('/api/admin/materials/cards')
+        ->assertStatus(200);
+    $listedCardIds = collect($cardsResponse->json('data'))->pluck('id')->map(fn ($id) => (int) $id)->all();
+    expect($listedCardIds)->not->toContain((int) $cardA->id);
+    expect($listedCardIds)->not->toContain((int) $cardB->id);
+
+    $inboxUsers = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertStatus(200);
+    $sharedItems = collect($inboxUsers->json('data'))
+        ->flatMap(fn ($userRow) => is_array($userRow['shared_items'] ?? null) ? $userRow['shared_items'] : [])
+        ->values();
+    $matchingInboxEntry = $sharedItems
+        ->first(fn ($entry) => (int) ($entry['rule_id'] ?? 0) === $ruleId);
+    expect($matchingInboxEntry)->not->toBeNull();
+    expect((bool) ($matchingInboxEntry['is_imported'] ?? true))->toBeFalse();
 });
 
 test('linked material with lesen schreiben allows edit and append but blocks delete operations', function () {

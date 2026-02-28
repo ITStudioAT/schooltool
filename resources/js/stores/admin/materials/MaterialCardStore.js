@@ -449,6 +449,83 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                 adminStore.is_loading--
             }
         },
+        async unlink(id) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.post('/api/admin/materials/cards/' + id + '/unlink')
+                const cardId = Number(response?.data?.data?.id || id || 0)
+                if (cardId > 0) {
+                    this.cards = this.cards.filter((row) => Number(row?.id || 0) !== cardId)
+                    if (Number(this.selected_card?.id || 0) === cardId) {
+                        this.selected_card = null
+                    }
+                }
+
+                notification.notify({
+                    message: response?.data?.message || 'Link entfernt.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+                return { id: cardId, removed: true }
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Link konnte nicht entfernt werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+        async unlinkUnit(id) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.post('/api/admin/materials/units/' + id + '/unlink')
+                const unitId = Number(response?.data?.data?.id || id || 0)
+                const removedCardIds = Array.isArray(response?.data?.data?.removed_card_ids)
+                    ? response.data.data.removed_card_ids
+                          .map((value) => Number(value))
+                          .filter((value) => Number.isFinite(value) && value > 0)
+                    : []
+
+                if (removedCardIds.length > 0) {
+                    this.cards = this.cards.filter((row) => !removedCardIds.includes(Number(row?.id || 0)))
+                    if (removedCardIds.includes(Number(this.selected_card?.id || 0))) {
+                        this.selected_card = null
+                    }
+                }
+
+                await this.loadConfig()
+                notification.notify({
+                    message: response?.data?.message || 'Link entfernt.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return {
+                    id: unitId,
+                    removed: true,
+                    removedUnit: response?.data?.data?.removed_unit === true,
+                    removedCardIds,
+                }
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Link konnte nicht entfernt werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
 
         async restoreLastDeleted() {
             return this.restoreDeletedById(null)

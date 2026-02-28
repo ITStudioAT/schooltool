@@ -18,6 +18,7 @@ class MaterialUnitStoreRequest extends FormRequest
         return [
             'data.topic_id' => $this->topicIdRules(),
             'data.name' => ['required', 'string', 'max:255'],
+            'data.allow_duplicate' => ['nullable', 'boolean'],
         ];
     }
 
@@ -32,4 +33,3 @@ class MaterialUnitStoreRequest extends FormRequest
         return $rules;
     }
 }
-

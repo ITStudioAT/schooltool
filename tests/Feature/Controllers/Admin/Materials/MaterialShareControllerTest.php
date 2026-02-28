@@ -12,6 +12,7 @@ use App\Models\MaterialSubject;
 use App\Models\MaterialTopic;
 use App\Models\MaterialType;
 use App\Models\MaterialUnit;
+use App\Models\MaterialUnitInboxImport;
 use App\Models\School;
 use App\Models\SchoolLicence;
 use App\Models\Schoolyear;
@@ -1079,6 +1080,140 @@ test('can einfächern material from unit-scoped share when selected material bel
         'target_id' => $targetTopic->id,
     ])->assertStatus(422)
         ->assertJsonValidationErrors(['material_id']);
+});
+
+test('unit einfächern as link marks destination unit as linked independent from material aggregation', function () {
+    if (!Schema::hasTable('material_inbox_imports') || !Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+        $this->markTestSkipped('Linked inbox import mode is not available.');
+    }
+    if (!Schema::hasTable('material_unit_inbox_imports')) {
+        $this->markTestSkipped('Linked unit inbox import table is not available.');
+    }
+
+    $materialsLicence = Licence::query()->firstWhere('name', 'Materialientool');
+    expect($materialsLicence)->not->toBeNull();
+
+    $recipientSchool = School::factory()->create(['is_selectable' => true]);
+    $recipientYear = Schoolyear::factory()->create(['school_id' => $recipientSchool->id]);
+    SchoolLicence::query()->create([
+        'school_id' => $recipientSchool->id,
+        'licence_id' => $materialsLicence->id,
+        'valid_until' => now()->addYear(),
+    ]);
+
+    $recipient = User::factory()->create([
+        'school_id' => $recipientSchool->id,
+        'schoolyear_id' => $recipientYear->id,
+        'email' => 'recipient-unit-link-mark@test.local',
+    ]);
+    $recipient->assignRole('materials_admin');
+
+    $targetSubject = MaterialSubject::query()->create([
+        'user_id' => $recipient->id,
+        'name' => 'Deutsch',
+        'sort_order' => 1,
+    ]);
+    $targetTopic = MaterialTopic::query()->create([
+        'subject_id' => $targetSubject->id,
+        'name' => 'Literatur',
+        'sort_order' => 1,
+    ]);
+    $targetUnit = MaterialUnit::query()->create([
+        'topic_id' => $targetTopic->id,
+        'name' => 'Kapitel 1',
+        'sort_order' => 1,
+    ]);
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'source-unit-link-mark@test.local',
+    ]);
+    $sourceSubject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Mathe',
+        'sort_order' => 1,
+    ]);
+    $sourceTopic = MaterialTopic::query()->create([
+        'subject_id' => $sourceSubject->id,
+        'name' => 'Algebra',
+        'sort_order' => 1,
+    ]);
+    $sourceUnit = MaterialUnit::query()->create([
+        'topic_id' => $sourceTopic->id,
+        'name' => 'Kapitel 1',
+        'sort_order' => 1,
+    ]);
+
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Einheiten-Link-Material',
+        'source_text' => 'A',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'subject_id' => $sourceSubject->id,
+        'topic_id' => $sourceTopic->id,
+        'unit_id' => $sourceUnit->id,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_UNIT,
+        'scope_id' => $sourceUnit->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $recipient->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_WRITE,
+    ]);
+
+    $this->actingAs($recipient, 'sanctum');
+
+    $insertResponse = $this->postJson('/api/admin/materials/shares/inbox/material-insert', [
+        'rule_id' => $rule->id,
+        'material_id' => $sourceCard->id,
+        'target_level' => 'unit',
+        'target_id' => $targetUnit->id,
+        'import_mode' => 'link',
+        'source_unit_id' => $sourceUnit->id,
+    ])->assertStatus(200);
+
+    $newCardId = (int) $insertResponse->json('data.id');
+    expect($newCardId)->toBeGreaterThan(0);
+
+    $this->assertDatabaseHas('material_unit_inbox_imports', [
+        'target_user_id' => $recipient->id,
+        'target_unit_id' => $targetUnit->id,
+        'source_rule_id' => $rule->id,
+        'source_school_id' => $this->school->id,
+        'source_unit_id' => $sourceUnit->id,
+    ]);
+
+    $configResponse = $this->getJson('/api/admin/materials/config')
+        ->assertStatus(200);
+
+    $tree = collect($configResponse->json('classification_tree', []));
+    $subjectNode = $tree->firstWhere('id', $targetSubject->id);
+    expect($subjectNode)->not->toBeNull();
+    $topicNode = collect($subjectNode['topics'] ?? [])->firstWhere('id', $targetTopic->id);
+    expect($topicNode)->not->toBeNull();
+    $unitNode = collect($topicNode['units'] ?? [])->firstWhere('id', $targetUnit->id);
+    expect($unitNode)->not->toBeNull();
+    expect((bool) ($unitNode['is_linked'] ?? false))->toBeTrue();
+    expect((string) ($unitNode['linked_permission'] ?? ''))->toBe(MaterialShareTarget::PERMISSION_READ_WRITE);
+    expect((string) ($unitNode['linked_permission_label'] ?? ''))->toBe('LESEN/SCHREIBEN');
+
+    $importRow = MaterialUnitInboxImport::query()
+        ->where('target_user_id', $recipient->id)
+        ->where('target_unit_id', $targetUnit->id)
+        ->first();
+    expect($importRow)->not->toBeNull();
 });
 
 test('link then copy of same shared material keeps linked card flagged as link', function () {

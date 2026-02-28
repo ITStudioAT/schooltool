@@ -523,6 +523,7 @@ export default {
                 materials: [],
                 sourceTopicName: '',
                 sourceUnitName: '',
+                sourceUnitId: 0,
                 tree: [],
                 subjectId: 0,
                 topicId: 0,
@@ -718,6 +719,7 @@ export default {
             this.einfachernDialog.materials = [preview]
             this.einfachernDialog.sourceTopicName = ''
             this.einfachernDialog.sourceUnitName = ''
+            this.einfachernDialog.sourceUnitId = 0
             this.einfachernDialog.subjectId = 0
             this.einfachernDialog.topicId = 0
             this.einfachernDialog.unitId = 0
@@ -741,6 +743,7 @@ export default {
             this.einfachernDialog.materials = materials
             this.einfachernDialog.sourceTopicName = String(topic?.name || '').trim()
             this.einfachernDialog.sourceUnitName = unitName
+            this.einfachernDialog.sourceUnitId = Number(unit?.id || 0)
             this.einfachernDialog.subjectId = 0
             this.einfachernDialog.topicId = 0
             this.einfachernDialog.unitId = 0
@@ -819,12 +822,14 @@ export default {
                 }
 
                 for (const materialId of materialIds) {
+                    const sourceUnitId = dialogMode === 'unit' ? Number(this.einfachernDialog.sourceUnitId || 0) : 0
                     await axios.post('/api/admin/materials/shares/inbox/material-insert', {
                         rule_id: ruleId,
                         material_id: materialId,
                         target_level: String(finalTarget.level || '').trim(),
                         target_id: Number(finalTarget.id || 0),
                         import_mode: importMode,
+                        ...(sourceUnitId > 0 ? { source_unit_id: sourceUnitId } : {}),
                     })
                 }
                 this.closeEinfachernDialog()
@@ -842,7 +847,7 @@ export default {
             if (!target) return null
 
             if (String(target.level || '').trim() === 'topic') {
-                const unitId = await this.ensureUnitForTopic(Number(target.id || 0), sourceUnitName)
+                const unitId = await this.ensureUnitForTopic(Number(target.id || 0), sourceUnitName, true)
                 if (unitId > 0) {
                     return { level: 'unit', id: unitId }
                 }
@@ -854,7 +859,7 @@ export default {
                 if (topicId <= 0) {
                     return target
                 }
-                const unitId = await this.ensureUnitForTopic(topicId, sourceUnitName)
+                const unitId = await this.ensureUnitForTopic(topicId, sourceUnitName, true)
                 if (unitId > 0) {
                     return { level: 'unit', id: unitId }
                 }
@@ -893,23 +898,26 @@ export default {
             subject.topics = [...(Array.isArray(subject.topics) ? subject.topics : []), nextTopic]
             return topicId
         },
-        async ensureUnitForTopic(topicId, unitName) {
+        async ensureUnitForTopic(topicId, unitName, allowDuplicate = false) {
             const normalizedUnitName = String(unitName || '').trim()
             if (topicId <= 0 || normalizedUnitName === '') return 0
 
             const { topic } = this.findTopicById(topicId)
             if (!topic) return 0
 
-            const existingUnit = (Array.isArray(topic?.units) ? topic.units : [])
-                .find((entry) => String(entry?.name || '').trim().toLocaleLowerCase() === normalizedUnitName.toLocaleLowerCase())
-            if (Number(existingUnit?.id || 0) > 0) {
-                return Number(existingUnit.id || 0)
+            if (!allowDuplicate) {
+                const existingUnit = (Array.isArray(topic?.units) ? topic.units : [])
+                    .find((entry) => String(entry?.name || '').trim().toLocaleLowerCase() === normalizedUnitName.toLocaleLowerCase())
+                if (Number(existingUnit?.id || 0) > 0) {
+                    return Number(existingUnit.id || 0)
+                }
             }
 
             const response = await axios.post('/api/admin/materials/units', {
                 data: {
                     topic_id: topicId,
                     name: normalizedUnitName,
+                    allow_duplicate: allowDuplicate,
                 },
             })
             const unitId = Number(response?.data?.data?.id || 0)

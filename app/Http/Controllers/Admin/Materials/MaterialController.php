@@ -18,11 +18,16 @@ use App\Http\Resources\Admin\Materials\MaterialCardResource;
 use App\Http\Resources\Admin\PaginateResource;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
+use App\Models\MaterialCardClassification;
+use App\Models\MaterialInboxImport;
 use App\Models\MaterialShareTarget;
+use App\Models\MaterialUnit;
+use App\Models\MaterialUnitInboxImport;
 use App\Models\User;
 use App\Services\Materials\MaterialAttachmentPreviewService;
 use App\Services\Materials\MaterialService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -175,6 +180,149 @@ class MaterialController extends Controller
         $service->deleteCard($material_card);
 
         return response()->noContent();
+    }
+
+    public function unlink(MaterialCard $material_card, MaterialService $service)
+    {
+        $authUser = $this->authorizeForMaterials();
+        $this->assertIsOwner($authUser->id, $material_card->user_id);
+
+        if (! Schema::hasTable('material_inbox_imports') || ! Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+            abort(409, 'Link-Funktion ist erst nach aktueller Migration verfügbar.');
+        }
+
+        $removed = MaterialInboxImport::query()
+            ->where('target_user_id', (int) $authUser->id)
+            ->where('target_material_card_id', (int) $material_card->id)
+            ->where('import_mode', MaterialInboxImport::MODE_LINK)
+            ->delete();
+
+        if ($removed <= 0) {
+            abort(422, 'Material ist nicht als Link verknüpft.');
+        }
+
+        MaterialInboxImport::query()
+            ->where('target_user_id', (int) $authUser->id)
+            ->where('target_material_card_id', (int) $material_card->id)
+            ->delete();
+
+        $service->deleteCard($material_card);
+        $service->purgeDeletedCardById($authUser, (int) $material_card->id);
+
+        return response()->json([
+            'message' => 'Link entfernt.',
+            'data' => [
+                'id' => (int) $material_card->id,
+                'removed' => true,
+            ],
+        ], 200);
+    }
+
+    public function unlinkUnit(MaterialUnit $material_unit, MaterialService $service)
+    {
+        $authUser = $this->authorizeForMaterials();
+        $this->assertUnitBelongsToOwner($authUser->id, $material_unit);
+
+        if (! Schema::hasTable('material_unit_inbox_imports')) {
+            abort(409, 'Link-Funktion für Einheiten ist erst nach aktueller Migration verfügbar.');
+        }
+
+        if (! Schema::hasTable('material_inbox_imports') || ! Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+            abort(409, 'Link-Funktion ist erst nach aktueller Migration verfügbar.');
+        }
+
+        $linkedUnitImportExists = MaterialUnitInboxImport::query()
+            ->where('target_user_id', (int) $authUser->id)
+            ->where('target_unit_id', (int) $material_unit->id)
+            ->exists();
+
+        if (! $linkedUnitImportExists) {
+            abort(422, 'Einheit ist nicht als Link verknüpft.');
+        }
+
+        $unitId = (int) $material_unit->id;
+        $ownerId = (int) $authUser->id;
+        $unitCardIds = MaterialCardClassification::query()
+            ->where('unit_id', $unitId)
+            ->whereHas('materialCard', fn ($query) => $query->where('user_id', $ownerId))
+            ->pluck('material_card_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values();
+
+        $linkedCardIds = $unitCardIds->isEmpty()
+            ? collect()
+            : MaterialInboxImport::query()
+                ->where('target_user_id', $ownerId)
+                ->where('import_mode', MaterialInboxImport::MODE_LINK)
+                ->whereIn('target_material_card_id', $unitCardIds->all())
+                ->pluck('target_material_card_id')
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn (int $id) => $id > 0)
+                ->unique()
+                ->values();
+
+        $removedCardIds = [];
+        $removedUnit = false;
+
+        DB::transaction(function () use (
+            $authUser,
+            $service,
+            $ownerId,
+            $unitId,
+            $linkedCardIds,
+            &$removedCardIds,
+            &$removedUnit
+        ) {
+            if ($linkedCardIds->isNotEmpty()) {
+                MaterialInboxImport::query()
+                    ->where('target_user_id', $ownerId)
+                    ->whereIn('target_material_card_id', $linkedCardIds->all())
+                    ->delete();
+
+                $cards = MaterialCard::query()
+                    ->where('user_id', $ownerId)
+                    ->whereIn('id', $linkedCardIds->all())
+                    ->get();
+
+                foreach ($cards as $card) {
+                    $cardId = (int) $card->id;
+                    $service->deleteCard($card);
+                    $service->purgeDeletedCardById($authUser, $cardId);
+                    $removedCardIds[] = $cardId;
+                }
+            }
+
+            MaterialUnitInboxImport::query()
+                ->where('target_user_id', $ownerId)
+                ->where('target_unit_id', $unitId)
+                ->delete();
+
+            $unitStillUsed = MaterialCardClassification::query()
+                ->where('unit_id', $unitId)
+                ->whereHas('materialCard', fn ($query) => $query->where('user_id', $ownerId))
+                ->exists();
+
+            if (! $unitStillUsed) {
+                MaterialUnit::query()
+                    ->whereKey($unitId)
+                    ->delete();
+                $removedUnit = true;
+            }
+        });
+
+        sort($removedCardIds);
+
+        return response()->json([
+            'message' => 'Link entfernt.',
+            'data' => [
+                'id' => $unitId,
+                'removed' => true,
+                'removed_unit' => $removedUnit,
+                'removed_card_ids' => array_values(array_unique($removedCardIds)),
+            ],
+        ], 200);
     }
 
     public function storeLinkAttachment(
@@ -492,6 +640,15 @@ class MaterialController extends Controller
     {
         if ($authUserId !== $ownerId) {
             abort(403, 'Sie dürfen nur eigene Materialkarten verwalten.');
+        }
+    }
+
+    private function assertUnitBelongsToOwner(int $authUserId, MaterialUnit $unit): void
+    {
+        $unit->loadMissing('topic.subject');
+        $ownerId = (int) ($unit->topic?->subject?->user_id ?? 0);
+        if ($ownerId !== $authUserId) {
+            abort(403, 'Sie dürfen nur eigene Einheiten verwalten.');
         }
     }
 

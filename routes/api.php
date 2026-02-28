@@ -263,6 +263,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/materials/units/{material_unit}/move', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'moveUnit']);
         Route::post('/admin/materials/units/{material_unit}/move-to-topic', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'moveUnitToTopic']);
         Route::post('/admin/materials/units/{material_unit}/convert-to-topic', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'convertUnitToTopic']);
+        Route::post('/admin/materials/units/{material_unit}/unlink', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'unlinkUnit']);
         Route::put('/admin/materials/user-settings', [\App\Http\Controllers\Admin\Materials\MaterialUserSettingsController::class, 'update']);
         Route::get('/admin/materials/cards', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'index']);
         Route::post('/admin/materials/cards', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'store']);
@@ -274,6 +275,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/admin/materials/cards/deleted/{card_id}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'purgeDeletedById'])->whereNumber('card_id');
         Route::get('/admin/materials/cards/{material_card}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'show']);
         Route::put('/admin/materials/cards/{material_card}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'update']);
+        Route::post('/admin/materials/cards/{material_card}/unlink', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'unlink']);
         Route::delete('/admin/materials/cards/{material_card}', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'destroy']);
         Route::post('/admin/materials/cards/{material_card}/attachments/link', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'storeLinkAttachment']);
         Route::post('/admin/materials/cards/{material_card}/attachments/image-url', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'storeRemoteImageAttachment']);

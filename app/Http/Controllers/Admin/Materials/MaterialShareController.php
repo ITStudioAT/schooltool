@@ -14,6 +14,7 @@ use App\Models\MaterialSubject;
 use App\Models\MaterialTopic;
 use App\Models\MaterialType;
 use App\Models\MaterialUnit;
+use App\Models\MaterialUnitInboxImport;
 use App\Models\School;
 use App\Models\User;
 use App\Models\UserGroup;
@@ -45,6 +46,8 @@ class MaterialShareController extends Controller
     private ?bool $hasMaterialInboxImportsTableCache = null;
 
     private ?bool $materialInboxImportsHasImportModeColumnCache = null;
+
+    private ?bool $hasMaterialUnitInboxImportsTableCache = null;
 
     private ?bool $materialTypesUserScopedCache = null;
 
@@ -357,6 +360,7 @@ class MaterialShareController extends Controller
             'target_level' => ['required', 'string', Rule::in(['subject', 'topic', 'unit'])],
             'target_id' => ['required', 'integer', 'min:1'],
             'import_mode' => ['nullable', 'string', Rule::in([MaterialInboxImport::MODE_COPY, MaterialInboxImport::MODE_LINK])],
+            'source_unit_id' => ['nullable', 'integer', 'min:1'],
         ]);
 
         $ruleId = (int) ($data['rule_id'] ?? 0);
@@ -364,11 +368,15 @@ class MaterialShareController extends Controller
         $targetLevel = trim((string) ($data['target_level'] ?? ''));
         $targetId = (int) ($data['target_id'] ?? 0);
         $importMode = trim((string) ($data['import_mode'] ?? MaterialInboxImport::MODE_COPY));
+        $requestedSourceUnitId = (int) ($data['source_unit_id'] ?? 0);
         if (! in_array($importMode, [MaterialInboxImport::MODE_COPY, MaterialInboxImport::MODE_LINK], true)) {
             $importMode = MaterialInboxImport::MODE_COPY;
         }
         if ($importMode === MaterialInboxImport::MODE_LINK && ! $this->materialInboxImportsHasImportModeColumn()) {
             abort(409, 'Link-Modus erfordert eine aktuelle Migration der Inbox-Imports.');
+        }
+        if ($importMode === MaterialInboxImport::MODE_LINK && $targetLevel === 'unit' && ! $this->hasMaterialUnitInboxImportsTable()) {
+            abort(409, 'Link-Modus für Einheiten erfordert eine aktuelle Migration.');
         }
         $authUserId = (int) $authUser->id;
         $authSchoolId = (int) $authUser->school_id;
@@ -411,6 +419,11 @@ class MaterialShareController extends Controller
             schoolId: (int) ($sourceCard->school_id ?? 0),
             statusValue: trim((string) ($sourceCard->status ?? MaterialCard::STATUS_INBOX)),
         );
+        $sourceUnitIdForUnitImport = $this->resolveSourceUnitIdForInsert(
+            rule: $rule,
+            sourceCard: $sourceCard,
+            requestedSourceUnitId: $requestedSourceUnitId,
+        );
 
         $newCard = DB::transaction(function () use (
             $authUser,
@@ -423,6 +436,9 @@ class MaterialShareController extends Controller
             $ruleId,
             $targetClassification,
             $importMode,
+            $targetLevel,
+            $targetId,
+            $sourceUnitIdForUnitImport,
         ) {
             $targetType = $this->ensureTargetMaterialType(
                 targetUser: $authUser,
@@ -464,6 +480,27 @@ class MaterialShareController extends Controller
                         'target_material_card_id' => (int) $createdCard->id,
                     ],
                     $importPayload
+                );
+            }
+
+            if (
+                $importMode === MaterialInboxImport::MODE_LINK
+                && $targetLevel === 'unit'
+                && $targetId > 0
+                && $sourceUnitIdForUnitImport > 0
+                && $this->hasMaterialUnitInboxImportsTable()
+            ) {
+                MaterialUnitInboxImport::query()->updateOrCreate(
+                    [
+                        'target_user_id' => (int) $authUser->id,
+                        'target_unit_id' => $targetId,
+                    ],
+                    [
+                        'source_rule_id' => $ruleId,
+                        'source_school_id' => (int) $rule->school_id,
+                        'source_unit_id' => $sourceUnitIdForUnitImport,
+                        'imported_at' => now(),
+                    ],
                 );
             }
 
@@ -653,6 +690,34 @@ class MaterialShareController extends Controller
         }
 
         return $query->first();
+    }
+
+    private function resolveSourceUnitIdForInsert(
+        MaterialShareRule $rule,
+        MaterialCard $sourceCard,
+        int $requestedSourceUnitId = 0,
+    ): int {
+        $scopeType = trim((string) ($rule->scope_type ?? ''));
+        $scopeId = (int) ($rule->scope_id ?? 0);
+        if ($scopeType === MaterialShareRule::SCOPE_UNIT && $scopeId > 0) {
+            return $scopeId;
+        }
+
+        $classifications = $sourceCard->classifications instanceof Collection ? $sourceCard->classifications : collect();
+        $availableUnitIds = $classifications
+            ->map(fn ($classification) => (int) ($classification->unit_id ?? 0))
+            ->filter(fn (int $unitId) => $unitId > 0)
+            ->values();
+
+        if ($availableUnitIds->isEmpty()) {
+            return 0;
+        }
+
+        if ($requestedSourceUnitId > 0 && $availableUnitIds->contains($requestedSourceUnitId)) {
+            return $requestedSourceUnitId;
+        }
+
+        return (int) $availableUnitIds->first();
     }
 
     /**
@@ -1555,6 +1620,15 @@ class MaterialShareController extends Controller
         }
 
         return $this->materialInboxImportsHasImportModeColumnCache;
+    }
+
+    private function hasMaterialUnitInboxImportsTable(): bool
+    {
+        if ($this->hasMaterialUnitInboxImportsTableCache === null) {
+            $this->hasMaterialUnitInboxImportsTableCache = Schema::hasTable('material_unit_inbox_imports');
+        }
+
+        return $this->hasMaterialUnitInboxImportsTableCache;
     }
 
     private function materialTypesAreUserScoped(): bool

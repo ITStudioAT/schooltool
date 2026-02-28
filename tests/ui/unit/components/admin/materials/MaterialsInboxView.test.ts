@@ -529,11 +529,23 @@ describe('MaterialsInboxView', () => {
             }
             return Promise.reject(new Error('unexpected url'))
         })
-        axiosMock.post.mockResolvedValue({
-            data: {
-                message: 'Material eingefächert.',
-                data: { id: 4001, title: 'Neu', attachments_count: 0 },
-            },
+        axiosMock.post.mockImplementation((url: string) => {
+            if (url === '/api/admin/materials/units') {
+                return Promise.resolve({
+                    data: {
+                        data: { id: 230, topic_id: 22, name: 'Kapitel 1' },
+                    },
+                })
+            }
+            if (url === '/api/admin/materials/shares/inbox/material-insert') {
+                return Promise.resolve({
+                    data: {
+                        message: 'Material eingefächert.',
+                        data: { id: 4001, title: 'Neu', attachments_count: 0 },
+                    },
+                })
+            }
+            return Promise.reject(new Error('unexpected post url'))
         })
 
         renderMaterialsInboxView()
@@ -563,20 +575,152 @@ describe('MaterialsInboxView', () => {
         await fireEvent.click(screen.getByRole('button', { name: 'Als Kopie einfächern' }))
 
         await waitFor(() => {
-            expect(axiosMock.post).toHaveBeenNthCalledWith(1, '/api/admin/materials/shares/inbox/material-insert', {
-                rule_id: 920,
-                material_id: 701,
-                target_level: 'unit',
-                target_id: 23,
-                import_mode: 'copy',
+            expect(axiosMock.post).toHaveBeenNthCalledWith(1, '/api/admin/materials/units', {
+                data: {
+                    topic_id: 22,
+                    name: 'Kapitel 1',
+                    allow_duplicate: true,
+                },
             })
         })
         expect(axiosMock.post).toHaveBeenNthCalledWith(2, '/api/admin/materials/shares/inbox/material-insert', {
             rule_id: 920,
-            material_id: 702,
+            material_id: 701,
             target_level: 'unit',
-            target_id: 23,
+            target_id: 230,
             import_mode: 'copy',
+            source_unit_id: 3,
+        })
+        expect(axiosMock.post).toHaveBeenNthCalledWith(3, '/api/admin/materials/shares/inbox/material-insert', {
+                rule_id: 920,
+                material_id: 702,
+                target_level: 'unit',
+                target_id: 230,
+                import_mode: 'copy',
+                source_unit_id: 3,
+            })
+        })
+    })
+
+    it('supports unit-level einfächern as link and forwards link import mode', async () => {
+        axiosMock.get.mockImplementation((url: string) => {
+            if (url === '/api/admin/materials/shares/inbox-users') {
+                return Promise.resolve({
+                    data: {
+                        data: [
+                            {
+                                id: 53,
+                                label: 'Unit Source',
+                                email: 'unit-link@test.local',
+                                shared_rules_count: 1,
+                                shared_items: [
+                                    {
+                                        rule_id: 930,
+                                        scope_type: 'unit',
+                                        scope_label: 'Einheit',
+                                        scope_object_label: 'Kapitel 1',
+                                        scope_path_label: 'Mathematik - Algebra - Kapitel 1',
+                                        permission: 'read_only',
+                                        permission_label: 'NUR LESEN',
+                                        hierarchy: [
+                                            {
+                                                id: 1,
+                                                name: 'Mathematik',
+                                                topics: [
+                                                    {
+                                                        id: 2,
+                                                        name: 'Algebra',
+                                                        units: [
+                                                            {
+                                                                id: 3,
+                                                                name: 'Kapitel 1',
+                                                                materials: [{ id: 801, title: 'Material Link' }],
+                                                            },
+                                                        ],
+                                                    },
+                                                ],
+                                            },
+                                        ],
+                                        updated_at: '',
+                                    },
+                                ],
+                            },
+                        ],
+                        meta: { needs_migration: false },
+                    },
+                })
+            }
+            if (url === '/api/admin/materials/config') {
+                return Promise.resolve({
+                    data: {
+                        classification_tree: [
+                            {
+                                id: 31,
+                                name: 'Deutsch',
+                                topics: [{ id: 32, name: 'Literatur', units: [] }],
+                            },
+                        ],
+                    },
+                })
+            }
+            return Promise.reject(new Error('unexpected url'))
+        })
+        axiosMock.post.mockImplementation((url: string) => {
+            if (url === '/api/admin/materials/units') {
+                return Promise.resolve({
+                    data: {
+                        data: { id: 330, topic_id: 32, name: 'Kapitel 1' },
+                    },
+                })
+            }
+            if (url === '/api/admin/materials/shares/inbox/material-insert') {
+                return Promise.resolve({
+                    data: {
+                        message: 'Material als Link eingefächert.',
+                        data: { id: 5001, title: 'Material Link', attachments_count: 0 },
+                    },
+                })
+            }
+            return Promise.reject(new Error('unexpected post url'))
+        })
+
+        renderMaterialsInboxView()
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: 'Anzeigen' })).toBeInTheDocument()
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+        await waitFor(() => {
+            expect(screen.getByText('Material Link')).toBeInTheDocument()
+        })
+
+        await fireEvent.click(screen.getAllByRole('button', { name: 'Einfächern' })[0])
+
+        await waitFor(() => {
+            expect(screen.getByText('Fächer')).toBeInTheDocument()
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Deutsch' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Literatur' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Als Link einfächern' }))
+
+        await waitFor(() => {
+            expect(axiosMock.post).toHaveBeenNthCalledWith(1, '/api/admin/materials/units', {
+                data: {
+                    topic_id: 32,
+                    name: 'Kapitel 1',
+                    allow_duplicate: true,
+                },
+            })
+        })
+        expect(axiosMock.post).toHaveBeenNthCalledWith(2, '/api/admin/materials/shares/inbox/material-insert', {
+            rule_id: 930,
+            material_id: 801,
+            target_level: 'unit',
+            target_id: 330,
+            import_mode: 'link',
+            source_unit_id: 3,
         })
     })
 

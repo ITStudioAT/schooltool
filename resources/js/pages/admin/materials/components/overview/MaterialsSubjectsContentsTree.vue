@@ -100,6 +100,18 @@
                                 @click="removeClassification(material)">
                                 Entfernen
                             </v-btn>
+                            <v-btn
+                                v-if="enableRemoveButtons && material.isLinked"
+                                size="x-small"
+                                color="warning"
+                                variant="text"
+                                density="comfortable"
+                                prepend-icon="mdi-link-off"
+                                :disabled="actionBusy"
+                                title="Link entfernen"
+                                @click="$emit('unlink-linked-material', material)">
+                                Link entfernen
+                            </v-btn>
                             <v-icon
                                 v-if="showShareIndicator('material', material.id)"
                                 size="14"
@@ -229,6 +241,18 @@
                                         @click="removeClassification(material)">
                                         Entfernen
                                     </v-btn>
+                                    <v-btn
+                                        v-if="enableRemoveButtons && material.isLinked"
+                                        size="x-small"
+                                        color="warning"
+                                        variant="text"
+                                        density="comfortable"
+                                        prepend-icon="mdi-link-off"
+                                        :disabled="actionBusy"
+                                        title="Link entfernen"
+                                        @click="$emit('unlink-linked-material', material)">
+                                        Link entfernen
+                                    </v-btn>
                                     <v-icon
                                         v-if="showShareIndicator('material', material.id)"
                                         size="14"
@@ -265,8 +289,20 @@
                                     class="overview-subjects-item">
                                     <div class="overview-subjects-node-row">
                                         <div class="overview-subjects-node overview-subjects-node--unit">
-                                            <v-icon size="13" icon="mdi-circle-medium" class="mr-1" />
+                                            <v-icon
+                                                size="13"
+                                                :icon="unit.isLinked ? 'mdi-link-variant' : 'mdi-circle-medium'"
+                                                :color="unit.isLinked ? linkedPermissionChipColor(unit.linkedPermission) : undefined"
+                                                class="mr-1" />
                                             <span>{{ unit.name }}</span>
+                                            <v-chip
+                                                v-if="unit.isLinked"
+                                                size="x-small"
+                                                variant="outlined"
+                                                :color="linkedPermissionChipColor(unit.linkedPermission)"
+                                                class="overview-subjects-material-type">
+                                                {{ linkedPermissionLabel(unit) }}
+                                            </v-chip>
                                             <v-icon
                                                 v-if="hasPersistedNodeId(unit.id) && showShareIndicator('unit', unit.id)"
                                                 size="14"
@@ -275,7 +311,7 @@
                                                 class="ml-1" />
                                         </div>
                                         <v-btn
-                                            v-if="enableCreateButtons && hasPersistedNodeId(unit.id)"
+                                            v-if="enableCreateButtons && hasPersistedNodeId(unit.id) && canCreateMaterialInUnit(unit)"
                                             size="x-small"
                                             color="primary"
                                             variant="tonal"
@@ -296,6 +332,18 @@
                                             prepend-icon="mdi-share-variant-outline"
                                             @click="$emit('open-share', { level: 'unit', id: unit.id, label: unit.name, parentLabel: `${subject.name} / ${topic.name}` })">
                                             Freigabe
+                                        </v-btn>
+                                        <v-btn
+                                            v-if="enableRemoveButtons && hasPersistedNodeId(unit.id) && unit.isLinked"
+                                            size="x-small"
+                                            color="warning"
+                                            variant="text"
+                                            density="comfortable"
+                                            prepend-icon="mdi-link-off"
+                                            :disabled="actionBusy"
+                                            title="Link entfernen (ganze Einheit)"
+                                            @click="$emit('unlink-linked-unit', unit)">
+                                            Link entfernen
                                         </v-btn>
                                     </div>
 
@@ -356,6 +404,18 @@
                                                 title="Zuordnung entfernen"
                                                 @click="removeClassification(material)">
                                                 Entfernen
+                                            </v-btn>
+                                            <v-btn
+                                                v-if="enableRemoveButtons && material.isLinked"
+                                                size="x-small"
+                                                color="warning"
+                                                variant="text"
+                                                density="comfortable"
+                                                prepend-icon="mdi-link-off"
+                                                :disabled="actionBusy"
+                                                title="Link entfernen"
+                                                @click="$emit('unlink-linked-material', material)">
+                                                Link entfernen
                                             </v-btn>
                                             <v-icon
                                                 v-if="showShareIndicator('material', material.id)"
@@ -444,13 +504,26 @@ export default {
             required: true,
         },
     },
-    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'remove-classification'],
+    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'remove-classification', 'unlink-linked-material', 'unlink-linked-unit'],
     methods: {
         linkedPermissionChipColor(permission) {
             const normalized = String(permission || '').trim()
             if (normalized === 'full_access') return 'error'
             if (normalized === 'read_write') return 'warning'
             return 'primary'
+        },
+        normalizeLinkedPermission(permission) {
+            const normalized = String(permission || '').trim()
+            if (normalized === 'full_access') return 'full_access'
+            if (normalized === 'read_write') return 'read_write'
+            if (normalized === 'read_only') return 'read_only'
+            return ''
+        },
+        canCreateMaterialInUnit(unit) {
+            if (unit?.isLinked !== true) return true
+            const permission = this.normalizeLinkedPermission(unit?.linkedPermission)
+            if (permission === '') return false
+            return permission !== 'read_only'
         },
         linkedPermissionLabel(material) {
             const normalizedLabel = String(material?.linkedPermissionLabel || '').trim()
