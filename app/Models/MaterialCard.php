@@ -60,6 +60,11 @@ class MaterialCard extends Model
         return $this->hasMany(MaterialCardClassification::class, 'material_card_id');
     }
 
+    public function inboxImports(): HasMany
+    {
+        return $this->hasMany(MaterialInboxImport::class, 'target_material_card_id')->orderByDesc('id');
+    }
+
     public static function statusValues(): array
     {
         return [

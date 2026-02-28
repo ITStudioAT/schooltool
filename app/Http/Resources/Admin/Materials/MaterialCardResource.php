@@ -2,6 +2,8 @@
 
 namespace App\Http\Resources\Admin\Materials;
 
+use App\Models\MaterialInboxImport;
+use App\Models\MaterialShareTarget;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -24,6 +26,10 @@ class MaterialCardResource extends JsonResource
             'notes' => $this->notes,
             'keywords' => $this->keywords ?? [],
             'classifications' => $this->classificationRows(),
+            'is_linked' => $this->isLinkedCard(),
+            'inbox_import_mode' => $this->inboxImportMode(),
+            'linked_permission' => $this->linkedPermission(),
+            'linked_permission_label' => $this->linkedPermissionLabel(),
             'attachments' => MaterialCardAttachmentResource::collection($this->whenLoaded('attachments')),
             'attachments_count' => $this->when(
                 $this->relationLoaded('attachments'),
@@ -57,5 +63,55 @@ class MaterialCardResource extends JsonResource
         })->filter(fn ($row) => $row['subject'] !== '' || $row['topic'] !== '' || $row['unit'] !== '')
             ->values()
             ->all();
+    }
+
+    private function inboxImportMode(): ?string
+    {
+        if (! $this->relationLoaded('inboxImports')) {
+            return null;
+        }
+
+        foreach ($this->inboxImports as $import) {
+            $mode = trim((string) ($import->import_mode ?? ''));
+            if ($mode === MaterialInboxImport::MODE_LINK || $mode === MaterialInboxImport::MODE_COPY) {
+                return $mode;
+            }
+        }
+
+        return null;
+    }
+
+    private function isLinkedCard(): bool
+    {
+        return $this->inboxImportMode() === MaterialInboxImport::MODE_LINK;
+    }
+
+    private function linkedPermission(): ?string
+    {
+        $permission = trim((string) ($this->linked_permission ?? ''));
+        if (in_array($permission, MaterialShareTarget::PERMISSIONS, true)) {
+            return $permission;
+        }
+
+        if ($this->isLinkedCard()) {
+            return MaterialShareTarget::PERMISSION_READ_ONLY;
+        }
+
+        return null;
+    }
+
+    private function linkedPermissionLabel(): ?string
+    {
+        $label = trim((string) ($this->linked_permission_label ?? ''));
+        if ($label !== '') {
+            return $label;
+        }
+
+        return match ($this->linkedPermission()) {
+            MaterialShareTarget::PERMISSION_FULL_ACCESS => 'VOLLZUGRIFF',
+            MaterialShareTarget::PERMISSION_READ_WRITE => 'LESEN/SCHREIBEN',
+            MaterialShareTarget::PERMISSION_READ_ONLY => 'NUR LESEN',
+            default => null,
+        };
     }
 }

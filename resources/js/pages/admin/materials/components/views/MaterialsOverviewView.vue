@@ -256,7 +256,7 @@
             <v-card-text>
                 <div class="attachment-pond-wrap mb-3" @dragover.capture="onAttachmentDragOver" @drop.capture="onAttachmentDrop">
                     <file-pond
-                        v-if="csrfToken"
+                        v-if="csrfToken && attachmentDialogCanAppendContent"
                         ref="attachmentPond"
                         name="file"
                         :allow-multiple="false"
@@ -274,11 +274,21 @@
                         @processfileerror="onAttachmentPondProcessFileError"
                         @error="onAttachmentPondProcessFileError" />
 
-                    <v-alert v-else type="warning" variant="tonal" class="mb-0">Upload-Token fehlt. Bitte Seite neu laden.</v-alert>
+                    <v-alert v-else-if="attachmentDialogCanAppendContent" type="warning" variant="tonal" class="mb-0">Upload-Token fehlt. Bitte Seite neu laden.</v-alert>
                 </div>
 
-                <div class="text-caption text-medium-emphasis mb-1">Maximale Uploadgröße je Datei: {{ maxUploadSizeLabel }}</div>
-                <div class="text-caption text-medium-emphasis mb-3">Du kannst auch einen Web-Link oder ein Web-Bild hierher ziehen.</div>
+                <template v-if="attachmentDialogCanAppendContent">
+                    <div class="text-caption text-medium-emphasis mb-1">Maximale Uploadgröße je Datei: {{ maxUploadSizeLabel }}</div>
+                    <div class="text-caption text-medium-emphasis mb-3">Du kannst auch einen Web-Link oder ein Web-Bild hierher ziehen.</div>
+                </template>
+                <v-alert
+                    v-else
+                    type="info"
+                    variant="tonal"
+                    density="compact"
+                    class="mb-3">
+                    Anhänge hinzufügen ist für dieses verlinkte Material nicht erlaubt.
+                </v-alert>
 
                 <v-alert v-if="!attachmentRows.length" type="info" variant="tonal" class="mb-0">Keine Anhänge vorhanden.</v-alert>
 
@@ -322,7 +332,7 @@
                                         variant="outlined"
                                         density="comfortable"
                                         hide-details="auto"
-                                        :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
+                                        :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id) || !attachmentDialogCanEditFields"
                                         @update:modelValue="updateAttachmentDraft(row.id, $event)"
                                         @keyup.enter="saveAttachmentName(row)" />
                                     <div v-else class="attachment-name-readonly-row">
@@ -335,7 +345,7 @@
                                             density="comfortable"
                                             color="primary"
                                             variant="text"
-                                            :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
+                                            :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id) || !attachmentDialogCanEditFields"
                                             @click="startAttachmentNameEdit(row.id)" />
                                     </div>
                                 </div>
@@ -348,7 +358,7 @@
                                         variant="tonal"
                                         prepend-icon="mdi-content-save"
                                         :loading="isAttachmentSaving(row.id)"
-                                        :disabled="!canSaveAttachmentName(row) || isAttachmentDeleting(row.id)"
+                                        :disabled="!canSaveAttachmentName(row) || isAttachmentDeleting(row.id) || !attachmentDialogCanEditFields"
                                         @click="saveAttachmentName(row)">
                                         Speichern
                                     </v-btn>
@@ -360,7 +370,7 @@
                                         color="primary"
                                         variant="tonal"
                                         :title="'Text bearbeiten'"
-                                        :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id) || textAttachmentEditorSaving"
+                                        :disabled="isAttachmentSaving(row.id) || isAttachmentDeleting(row.id) || textAttachmentEditorSaving || !attachmentDialogCanEditFields"
                                         @click="openTextAttachmentEditor(row)" />
 
                                     <v-btn
@@ -414,7 +424,7 @@
                                         :variant="isAttachmentDeleteArmed(row.id) ? 'flat' : 'tonal'"
                                         :title="isAttachmentDeleteArmed(row.id) ? 'Jetzt löschen' : 'Löschen'"
                                         :loading="isAttachmentDeleting(row.id)"
-                                        :disabled="isAttachmentSaving(row.id)"
+                                        :disabled="isAttachmentSaving(row.id) || !attachmentDialogCanDeleteAttachments"
                                         @click="removeAttachment(row)" />
                                     <v-btn
                                         v-if="isAttachmentDeleteArmed(row.id)"
@@ -423,7 +433,7 @@
                                         color="success"
                                         variant="text"
                                         :title="'Widerrufen'"
-                                        :disabled="isAttachmentDeleting(row.id) || isAttachmentSaving(row.id)"
+                                        :disabled="isAttachmentDeleting(row.id) || isAttachmentSaving(row.id) || !attachmentDialogCanDeleteAttachments"
                                         @click="cancelAttachmentDelete(row.id)" />
                                 </div>
                             </div>
@@ -518,9 +528,11 @@
             :classification-editor-visible="editClassificationEditorVisible"
             :classification-toggleable="true"
             :is-saving="isSavingEdit"
+            :is-read-only="isEditLinkedReadOnly"
+            :show-content-tools="canEditLinkedAppendContent"
             form-title="Material bearbeiten"
             form-subline="Titel und Beschreibung bearbeiten."
-            save-label="Speichern"
+            :save-label="editSaveButtonLabel"
             cancel-label="Abbrechen"
             @update:title="editForm.title = $event"
             @update:description="editForm.description = $event"
@@ -533,11 +545,11 @@
             @update:classifications="editForm.classifications = $event"
             @update:classificationEditorVisible="editClassificationEditorVisible = $event"
             @manage-types="openTypeManager"
-            @save="saveEdit"
+            @save="handleEditSave"
             @cancel="closeEditDialog">
             <template #extra-content>
                 <div class="mt-4 d-flex flex-wrap justify-end ga-2">
-                    <v-btn color="warning" variant="tonal" prepend-icon="mdi-delete" :disabled="isSavingEdit || isDeletingEditedMaterial" @click="startEditDeleteFlow">
+                    <v-btn color="warning" variant="tonal" prepend-icon="mdi-delete" :disabled="isSavingEdit || isDeletingEditedMaterial || !canEditLinkedDeleteMaterial" @click="startEditDeleteFlow">
                         Material löschen
                     </v-btn>
                 </div>
@@ -593,7 +605,7 @@
                                             variant="outlined"
                                             density="comfortable"
                                             hide-details="auto"
-                                            :disabled="isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
+                                            :disabled="isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id) || isEditLinkedReadOnly"
                                             @update:modelValue="updateAttachmentDraft(row.id, $event)"
                                             @keyup.enter="saveAttachmentName(row)" />
                                         <div v-else class="attachment-name-readonly-row">
@@ -606,7 +618,7 @@
                                                 density="comfortable"
                                                 color="primary"
                                                 variant="text"
-                                                :disabled="isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id)"
+                                                :disabled="isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id) || isEditLinkedReadOnly"
                                                 @click="startAttachmentNameEdit(row.id)" />
                                         </div>
                                     </div>
@@ -619,7 +631,7 @@
                                             variant="tonal"
                                             prepend-icon="mdi-content-save"
                                             :loading="isAttachmentSaving(row.id)"
-                                            :disabled="isSavingEdit || !canSaveAttachmentName(row) || isAttachmentDeleting(row.id)"
+                                            :disabled="isSavingEdit || !canSaveAttachmentName(row) || isAttachmentDeleting(row.id) || isEditLinkedReadOnly"
                                             @click="saveAttachmentName(row)">
                                             Speichern
                                         </v-btn>
@@ -631,7 +643,7 @@
                                             color="primary"
                                             variant="tonal"
                                             :title="'Text bearbeiten'"
-                                            :disabled="isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id) || textAttachmentEditorSaving"
+                                            :disabled="isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id) || textAttachmentEditorSaving || isEditLinkedReadOnly"
                                             @click="openTextAttachmentEditor(row)" />
 
                                         <v-btn
@@ -685,7 +697,7 @@
                                             :variant="isAttachmentDeleteArmed(row.id) ? 'flat' : 'tonal'"
                                             :title="isAttachmentDeleteArmed(row.id) ? 'Jetzt löschen' : 'Löschen'"
                                             :loading="isAttachmentDeleting(row.id)"
-                                            :disabled="isSavingEdit || isAttachmentSaving(row.id)"
+                                            :disabled="isSavingEdit || isAttachmentSaving(row.id) || !canEditLinkedDeleteAttachments"
                                             @click="removeAttachment(row)" />
                                         <v-btn
                                             v-if="isAttachmentDeleteArmed(row.id)"
@@ -694,7 +706,7 @@
                                             color="success"
                                             variant="text"
                                             :title="'Widerrufen'"
-                                            :disabled="isSavingEdit || isAttachmentDeleting(row.id) || isAttachmentSaving(row.id)"
+                                            :disabled="isSavingEdit || isAttachmentDeleting(row.id) || isAttachmentSaving(row.id) || !canEditLinkedDeleteAttachments"
                                             @click="cancelAttachmentDelete(row.id)" />
                                     </div>
                                 </div>
@@ -862,6 +874,8 @@ const createDefaultEditForm = () => ({
     type: '',
     status: '',
     notes: '',
+    is_linked: false,
+    linked_permission: '',
 })
 
 export default {
@@ -1122,6 +1136,45 @@ export default {
         },
         canSaveEdit() {
             return String(this.editForm.title || '').trim().length > 0
+        },
+        normalizedEditLinkedPermission() {
+            return this.normalizeLinkedPermission(this.editForm?.linked_permission)
+        },
+        isEditLinkedMaterial() {
+            return this.normalizeLinkedPermission(this.editForm?.linked_permission) !== ''
+                || this.editForm?.is_linked === true
+        },
+        isEditLinkedReadOnly() {
+            return this.isEditLinkedMaterial && this.normalizedEditLinkedPermission === 'read_only'
+        },
+        canEditLinkedAppendContent() {
+            if (!this.isEditLinkedMaterial) return true
+            return this.normalizedEditLinkedPermission === 'read_write'
+                || this.normalizedEditLinkedPermission === 'full_access'
+        },
+        canEditLinkedDeleteAttachments() {
+            if (!this.isEditLinkedMaterial) return true
+            return this.normalizedEditLinkedPermission === 'full_access'
+        },
+        canEditLinkedDeleteMaterial() {
+            return !this.isEditLinkedMaterial
+        },
+        editSaveButtonLabel() {
+            return this.isEditLinkedReadOnly ? 'Ende' : 'Speichern'
+        },
+        attachmentDialogCard() {
+            const cardId = Number(this.attachmentDialogCardId)
+            if (!Number.isFinite(cardId) || cardId <= 0) return null
+            return this.cards.find((card) => Number(card?.id) === cardId) || null
+        },
+        attachmentDialogCanEditFields() {
+            return this.cardAllowsFieldEditing(this.attachmentDialogCard)
+        },
+        attachmentDialogCanAppendContent() {
+            return this.cardAllowsAttachmentAppend(this.attachmentDialogCard)
+        },
+        attachmentDialogCanDeleteAttachments() {
+            return this.cardAllowsAttachmentDelete(this.attachmentDialogCard)
         },
         createDialogSubline() {
             const rows = this.normalizeClassifications(this.createForm.classifications)
@@ -1560,6 +1613,38 @@ export default {
             if (!key) return ''
             return String(this.shareIndicatorMap?.[key]?.color || '')
         },
+        normalizeLinkedPermission(permission) {
+            const normalized = String(permission || '').trim()
+            if (normalized === 'full_access') return 'full_access'
+            if (normalized === 'read_write') return 'read_write'
+            if (normalized === 'read_only') return 'read_only'
+            return ''
+        },
+        linkedPermissionForCard(card) {
+            if (!card || typeof card !== 'object') return ''
+            const normalized = this.normalizeLinkedPermission(card?.linked_permission)
+            if (normalized !== '') return normalized
+            return card?.is_linked === true ? 'read_only' : ''
+        },
+        cardAllowsFieldEditing(card) {
+            const permission = this.linkedPermissionForCard(card)
+            return permission === '' || permission === 'read_write' || permission === 'full_access'
+        },
+        cardAllowsAttachmentAppend(card) {
+            return this.cardAllowsFieldEditing(card)
+        },
+        cardAllowsAttachmentDelete(card) {
+            const permission = this.linkedPermissionForCard(card)
+            return permission === '' || permission === 'full_access'
+        },
+        notifyLinkedPermissionRestriction(message) {
+            const notification = useNotificationStore()
+            notification.notify({
+                message: String(message || '').trim() || 'Für dieses verlinkte Material ist diese Aktion nicht erlaubt.',
+                type: 'warning',
+                timeout: 3000,
+            })
+        },
         async loadShareIndicators() {
             if (!this.enableShareButtons) {
                 this.shareIndicatorMap = {}
@@ -1912,6 +1997,9 @@ export default {
                     id: cardId,
                     title: this.materialSortTitle(card),
                     icon: this.sourceIcon(card),
+                    isLinked: !!card?.is_linked,
+                    linkedPermission: String(card?.linked_permission || '').trim(),
+                    linkedPermissionLabel: String(card?.linked_permission_label || '').trim(),
                     typeLabel: this.normalizeMaterialTypeLabel(card),
                     typeColor: this.typeColor(card?.type),
                     status: String(card?.status || this.defaultStatusValue || '').trim(),
@@ -2686,6 +2774,7 @@ export default {
             }
         },
         onAttachmentDragOver(event) {
+            if (!this.attachmentDialogCanAppendContent) return
             const dt = event?.dataTransfer
             if (!dt) return
 
@@ -2698,6 +2787,7 @@ export default {
             }
         },
         async onAttachmentDrop(event) {
+            if (!this.attachmentDialogCanAppendContent) return
             const dt = event?.dataTransfer
             if (!dt) return
 
@@ -2864,6 +2954,10 @@ export default {
             return list
         },
         addEditPendingAttachments(files) {
+            if (!this.canEditLinkedAppendContent) {
+                this.notifyLinkedPermissionRestriction('Bei NUR LESEN können keine neuen Inhalte hinzugefügt werden.')
+                return
+            }
             const incoming = Array.isArray(files) ? files : []
             if (!incoming.length) return
 
@@ -3031,6 +3125,8 @@ export default {
                 type: card?.type || '',
                 status: card?.status || this.defaultStatusValue,
                 notes: card?.notes || '',
+                is_linked: card?.is_linked === true,
+                linked_permission: this.normalizeLinkedPermission(card?.linked_permission),
             }
             this.attachmentDialogCardId = Number(card?.id) || null
             this.attachmentRows = this.toAttachmentRows(card?.attachments)
@@ -3057,6 +3153,10 @@ export default {
             const cardId = Number(this.editForm?.id)
             if (!Number.isFinite(cardId) || cardId <= 0) return
             if (this.isSavingEdit || this.isDeletingEditedMaterial) return
+            if (!this.canEditLinkedDeleteMaterial) {
+                this.notifyLinkedPermissionRestriction('Verlinkte Materialien können nicht gelöscht werden.')
+                return
+            }
 
             this.editDeleteStep = 1
             this.editDeleteConfirmDialogOpen = true
@@ -3169,6 +3269,7 @@ export default {
             const cardId = Number(this.editForm?.id)
             if (!Number.isFinite(cardId) || cardId <= 0) return
             if (this.isSavingEdit || this.isDeletingEditedMaterial || !this.editDeleteConfirmDialogOpen) return
+            if (!this.canEditLinkedDeleteMaterial) return
 
             this.isDeletingId = cardId
             const deleted = await this.materialCardStore.destroy(cardId)
@@ -3215,8 +3316,20 @@ export default {
             if (!this.canManageTypeValues) return
             this.typeManagerDialogOpen = true
         },
+        async handleEditSave() {
+            if (this.isEditLinkedReadOnly) {
+                await this.closeEditDialog(true)
+                return
+            }
+
+            await this.saveEdit()
+        },
         async saveEdit() {
             if (!this.canSaveEdit || this.isSavingEdit || this.isDeletingEditedMaterial || !this.editForm.id) return
+            if (this.isEditLinkedReadOnly) {
+                await this.closeEditDialog(true)
+                return
+            }
 
             this.isSavingEdit = true
             const classifications = this.normalizeClassifications(this.editForm.classifications)
@@ -3348,6 +3461,10 @@ export default {
             return result
         },
         sourceIcon(card) {
+            if (card?.is_linked) {
+                return 'mdi-link-variant'
+            }
+
             const cardType = String(card?.type || '').trim()
             if (cardType) {
                 const typeOption = this.typeOptions.find((option) => {
@@ -3654,6 +3771,10 @@ ${content}
             if (!Number.isFinite(id) || id <= 0) return
             if (!this.isEditableTextAttachment(row)) return
             if (this.textAttachmentEditorSaving) return
+            if (!this.attachmentDialogCanEditFields) {
+                this.notifyLinkedPermissionRestriction('Dieses verlinkte Material ist auf NUR LESEN gesetzt.')
+                return
+            }
 
             this.textAttachmentEditorOpen = true
             this.textAttachmentEditorLoading = true
@@ -3697,6 +3818,7 @@ ${content}
             if (!Number.isFinite(attachmentId) || attachmentId <= 0) return
             if (!Number.isFinite(cardId) || cardId <= 0) return
             if (this.textAttachmentEditorSaving || this.textAttachmentEditorLoading) return
+            if (!this.attachmentDialogCanEditFields) return
 
             if (!this.editorHtmlHasVisibleText(this.textAttachmentEditorBodyHtml)) {
                 this.textAttachmentEditorError = 'Bitte zuerst Text eingeben.'
@@ -3799,6 +3921,7 @@ ${content}
                 this.onAttachmentPondProcessFileError(error)
                 return
             }
+            if (!this.attachmentDialogCanAppendContent) return
 
             const cardId = Number(this.attachmentDialogCardId)
             if (!Number.isFinite(cardId) || cardId <= 0) return
@@ -3998,6 +4121,7 @@ ${content}
             this.attachmentNameEditingIds = this.attachmentNameEditingIds.filter((item) => item !== id)
         },
         startAttachmentNameEdit(attachmentId) {
+            if (!this.attachmentDialogCanEditFields) return
             this.markAttachmentNameEditing(attachmentId, true)
         },
         markAttachmentDeleteArmed(attachmentId, isArmed) {
@@ -4084,6 +4208,7 @@ ${content}
             const id = Number(row?.id)
             const cardId = Number(this.attachmentDialogCardId)
             if (!Number.isFinite(id) || id <= 0 || !Number.isFinite(cardId) || cardId <= 0) return
+            if (!this.attachmentDialogCanEditFields) return
             if (this.isAttachmentSaving(id) || this.isAttachmentDeleting(id)) return
             if (!this.isAttachmentNameEditing(id)) return
             if (!this.canSaveAttachmentName(row)) return
@@ -4118,6 +4243,10 @@ ${content}
             const id = Number(row?.id)
             const cardId = Number(this.attachmentDialogCardId)
             if (!Number.isFinite(id) || id <= 0 || !Number.isFinite(cardId) || cardId <= 0) return
+            if (!this.attachmentDialogCanDeleteAttachments) {
+                this.notifyLinkedPermissionRestriction('Anhänge dürfen nur mit VOLLZUGRIFF gelöscht werden.')
+                return
+            }
             if (this.isAttachmentDeleting(id) || this.isAttachmentSaving(id)) return
             if (!this.isAttachmentDeleteArmed(id)) {
                 this.markAttachmentDeleteArmed(id, true)

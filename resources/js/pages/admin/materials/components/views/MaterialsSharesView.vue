@@ -89,15 +89,42 @@
                                 <div class="font-weight-medium">{{ row.scope_object_label }}</div>
                             </td>
                             <td>
-                                <div class="d-flex flex-wrap ga-1">
-                                    <v-chip
+                                <div class="d-flex flex-wrap ga-2">
+                                    <div
                                         v-for="target in row.targets"
                                         :key="`share-target-${row.id}-${target.id}`"
-                                        :color="targetChipColor(target)"
-                                        variant="flat"
-                                        size="x-small">
-                                        {{ targetChipLabel(target) }}
-                                    </v-chip>
+                                        class="share-target-pill d-flex align-center flex-wrap ga-1">
+                                        <v-chip
+                                            :color="targetChipColor(target)"
+                                            variant="flat"
+                                            size="x-small">
+                                            {{ targetChipLabel(target) }}
+                                        </v-chip>
+                                        <v-menu location="bottom end">
+                                            <template #activator="{ props: permissionMenuActivatorProps }">
+                                                <v-chip
+                                                    v-bind="permissionMenuActivatorProps"
+                                                    :color="permissionColor(target.permission)"
+                                                    variant="tonal"
+                                                    size="x-small"
+                                                    append-icon="mdi-chevron-down"
+                                                    :disabled="isTargetBusy(target.id)">
+                                                    {{ permissionLabel(target.permission) }}
+                                                </v-chip>
+                                            </template>
+                                            <v-list density="comfortable" style="min-width: 220px;">
+                                                <v-list-subheader>Berechtigung ändern</v-list-subheader>
+                                                <v-list-item
+                                                    v-for="option in permissionOptions"
+                                                    :key="`share-target-permission-${target.id}-${option.value}`"
+                                                    :active="normalizePermission(target.permission) === option.value"
+                                                    :disabled="isTargetBusy(target.id)"
+                                                    @click="updateTargetPermission(row, target, option.value)">
+                                                    <v-list-item-title>{{ option.label }}</v-list-item-title>
+                                                </v-list-item>
+                                            </v-list>
+                                        </v-menu>
+                                    </div>
                                 </div>
                             </td>
                             <td>
@@ -193,6 +220,7 @@ export default {
             needsMigration: false,
             errorMessage: '',
             statusBusyIds: [],
+            targetBusyIds: [],
             workspaceShareDialogOpen: false,
             workspaceShareAssignmentsLoading: false,
             workspaceShareAssignmentsError: '',
@@ -228,6 +256,13 @@ export default {
 
             return bestColor
         },
+        permissionOptions() {
+            return [
+                { value: 'full_access', label: 'VOLLZUGRIFF' },
+                { value: 'read_write', label: 'LESEN/SCHREIBEN' },
+                { value: 'read_only', label: 'NUR LESEN' },
+            ]
+        },
     },
     mounted() {
         this.loadShares()
@@ -261,11 +296,22 @@ export default {
             }).format(date)
         },
         targetChipColor(target) {
-            const byPermission = ({ full_access: 'error', read_write: 'warning', read_only: 'primary' })[String(target?.permission || '').trim()]
-            if (byPermission) return byPermission
             if (target?.target_type === 'everyone') return 'success'
             if (target?.target_type === 'group') return 'primary'
             return 'secondary'
+        },
+        normalizePermission(permission) {
+            const normalized = String(permission || '').trim()
+            if (normalized === 'full_access') return 'full_access'
+            if (normalized === 'read_write') return 'read_write'
+            if (normalized === 'read_only') return 'read_only'
+            return 'read_only'
+        },
+        permissionLabel(permission) {
+            const normalized = this.normalizePermission(permission)
+            if (normalized === 'full_access') return 'VOLLZUGRIFF'
+            if (normalized === 'read_write') return 'LESEN/SCHREIBEN'
+            return 'NUR LESEN'
         },
         targetChipLabel(target) {
             const baseLabel = String(target?.label || '-').trim() || '-'
@@ -279,17 +325,20 @@ export default {
             return label
         },
         permissionRank(permission) {
-            const normalized = String(permission || '').trim()
+            const normalized = this.normalizePermission(permission)
             if (normalized === 'full_access') return 3
             if (normalized === 'read_write') return 2
             if (normalized === 'read_only') return 1
             return 0
         },
         permissionColor(permission) {
-            return ({ full_access: 'error', read_write: 'warning', read_only: 'primary' })[String(permission || '').trim()] || ''
+            return ({ full_access: 'error', read_write: 'warning', read_only: 'primary' })[this.normalizePermission(permission)] || 'primary'
         },
         isStatusBusy(id) {
             return this.statusBusyIds.includes(Number(id))
+        },
+        isTargetBusy(id) {
+            return this.targetBusyIds.includes(Number(id))
         },
         pushStatusBusy(id) {
             const normalized = Number(id)
@@ -298,9 +347,27 @@ export default {
                 this.statusBusyIds = [...this.statusBusyIds, normalized]
             }
         },
+        pushTargetBusy(id) {
+            const normalized = Number(id)
+            if (!Number.isFinite(normalized)) return
+            if (!this.targetBusyIds.includes(normalized)) {
+                this.targetBusyIds = [...this.targetBusyIds, normalized]
+            }
+        },
         popStatusBusy(id) {
             const normalized = Number(id)
             this.statusBusyIds = this.statusBusyIds.filter((entry) => entry !== normalized)
+        },
+        popTargetBusy(id) {
+            const normalized = Number(id)
+            this.targetBusyIds = this.targetBusyIds.filter((entry) => entry !== normalized)
+        },
+        replaceRuleInCollections(updatedRule) {
+            const ruleId = Number(updatedRule?.id || 0)
+            if (ruleId <= 0) return
+            const mergeRule = (entry) => (Number(entry?.id || 0) === ruleId ? updatedRule : entry)
+            this.rows = this.rows.map(mergeRule)
+            this.workspaceShareAssignments = this.workspaceShareAssignments.map(mergeRule)
         },
         async updateRuleActive(row, nextValue) {
             const ruleId = Number(row?.id || 0)
@@ -314,7 +381,7 @@ export default {
                 })
                 const updated = response.data?.rule
                 if (updated && Number(updated.id || 0) === ruleId) {
-                    this.rows = this.rows.map((entry) => (Number(entry.id || 0) === ruleId ? updated : entry))
+                    this.replaceRuleInCollections(updated)
                 } else {
                     this.rows = this.rows.map((entry) =>
                         Number(entry.id || 0) === ruleId
@@ -326,6 +393,48 @@ export default {
                 this.errorMessage = error?.response?.data?.message || 'Freigabe-Status konnte nicht gespeichert werden.'
             } finally {
                 this.popStatusBusy(ruleId)
+            }
+        },
+        async updateTargetPermission(row, target, nextPermission) {
+            const ruleId = Number(row?.id || 0)
+            const targetId = Number(target?.id || 0)
+            const permission = this.normalizePermission(nextPermission)
+            const currentPermission = this.normalizePermission(target?.permission)
+            if (ruleId <= 0 || targetId <= 0) return
+            if (permission === currentPermission) return
+
+            this.pushTargetBusy(targetId)
+            this.errorMessage = ''
+
+            try {
+                const response = await axios.patch(`/api/admin/materials/shares/targets/${targetId}`, {
+                    permission,
+                })
+                const updatedRule = response.data?.rule
+                if (updatedRule && Number(updatedRule?.id || 0) === ruleId) {
+                    this.replaceRuleInCollections(updatedRule)
+                    return
+                }
+
+                this.rows = this.rows.map((entry) => {
+                    if (Number(entry?.id || 0) !== ruleId) return entry
+                    const targets = Array.isArray(entry?.targets)
+                        ? entry.targets.map((entryTarget) =>
+                              Number(entryTarget?.id || 0) === targetId
+                                  ? {
+                                        ...entryTarget,
+                                        permission,
+                                        permission_label: this.permissionLabel(permission),
+                                    }
+                                  : entryTarget
+                          )
+                        : []
+                    return { ...entry, targets }
+                })
+            } catch (error) {
+                this.errorMessage = error?.response?.data?.message || 'Berechtigung konnte nicht gespeichert werden.'
+            } finally {
+                this.popTargetBusy(targetId)
             }
         },
         openWorkspaceShareDialog() {

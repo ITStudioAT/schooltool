@@ -44,6 +44,8 @@ class MaterialShareController extends Controller
 
     private ?bool $hasMaterialInboxImportsTableCache = null;
 
+    private ?bool $materialInboxImportsHasImportModeColumnCache = null;
+
     private ?bool $materialTypesUserScopedCache = null;
 
     private ?bool $materialTypesHasIconColumnCache = null;
@@ -251,24 +253,11 @@ class MaterialShareController extends Controller
             abort(404, 'Freigabe wurde nicht gefunden.');
         }
 
-        if ((string) $rule->scope_type !== MaterialShareRule::SCOPE_MATERIAL || (int) ($rule->scope_id ?? 0) !== $materialId) {
-            throw ValidationException::withMessages([
-                'material_id' => ['Original-Einfügen ist nur für direkt geteilte Materialien möglich.'],
-            ]);
-        }
-
-        $sourceCard = MaterialCard::query()
-            ->where('school_id', (int) $rule->school_id)
-            ->with([
-                'attachments',
-                'classifications.subject:id,name',
-                'classifications.topic:id,name',
-                'classifications.unit:id,name',
-            ])
-            ->find($materialId);
-
+        $sourceCard = $this->resolveInboxSourceCardForRule($rule, $materialId);
         if (! $sourceCard) {
-            abort(404, 'Geteiltes Material wurde nicht gefunden.');
+            throw ValidationException::withMessages([
+                'material_id' => ['Geteiltes Material wurde nicht gefunden oder gehört nicht zur Freigabe.'],
+            ]);
         }
 
         $sourceTypeMeta = $this->resolveMaterialTypeMeta(
@@ -318,17 +307,21 @@ class MaterialShareController extends Controller
             $keywordService->rebuild($createdCard->fresh());
 
             if ($this->hasMaterialInboxImportsTable()) {
+                $importPayload = [
+                    'source_rule_id' => $ruleId,
+                    'source_school_id' => (int) $rule->school_id,
+                    'source_material_id' => (int) $sourceCard->id,
+                    'imported_at' => now(),
+                ];
+                if ($this->materialInboxImportsHasImportModeColumn()) {
+                    $importPayload['import_mode'] = MaterialInboxImport::MODE_COPY;
+                }
                 MaterialInboxImport::query()->updateOrCreate(
                     [
                         'target_user_id' => (int) $authUser->id,
-                        'source_school_id' => (int) $rule->school_id,
-                        'source_material_id' => (int) $sourceCard->id,
-                    ],
-                    [
                         'target_material_card_id' => (int) $createdCard->id,
-                        'source_rule_id' => $ruleId,
-                        'imported_at' => now(),
-                    ]
+                    ],
+                    $importPayload
                 );
             }
 
@@ -363,12 +356,20 @@ class MaterialShareController extends Controller
             'material_id' => ['required', 'integer', 'min:1'],
             'target_level' => ['required', 'string', Rule::in(['subject', 'topic', 'unit'])],
             'target_id' => ['required', 'integer', 'min:1'],
+            'import_mode' => ['nullable', 'string', Rule::in([MaterialInboxImport::MODE_COPY, MaterialInboxImport::MODE_LINK])],
         ]);
 
         $ruleId = (int) ($data['rule_id'] ?? 0);
         $materialId = (int) ($data['material_id'] ?? 0);
         $targetLevel = trim((string) ($data['target_level'] ?? ''));
         $targetId = (int) ($data['target_id'] ?? 0);
+        $importMode = trim((string) ($data['import_mode'] ?? MaterialInboxImport::MODE_COPY));
+        if (! in_array($importMode, [MaterialInboxImport::MODE_COPY, MaterialInboxImport::MODE_LINK], true)) {
+            $importMode = MaterialInboxImport::MODE_COPY;
+        }
+        if ($importMode === MaterialInboxImport::MODE_LINK && ! $this->materialInboxImportsHasImportModeColumn()) {
+            abort(409, 'Link-Modus erfordert eine aktuelle Migration der Inbox-Imports.');
+        }
         $authUserId = (int) $authUser->id;
         $authSchoolId = (int) $authUser->school_id;
 
@@ -383,24 +384,11 @@ class MaterialShareController extends Controller
             abort(404, 'Freigabe wurde nicht gefunden.');
         }
 
-        if ((string) $rule->scope_type !== MaterialShareRule::SCOPE_MATERIAL || (int) ($rule->scope_id ?? 0) !== $materialId) {
-            throw ValidationException::withMessages([
-                'material_id' => ['Einfächern ist nur für direkt geteilte Materialien möglich.'],
-            ]);
-        }
-
-        $sourceCard = MaterialCard::query()
-            ->where('school_id', (int) $rule->school_id)
-            ->with([
-                'attachments',
-                'classifications.subject:id,name',
-                'classifications.topic:id,name',
-                'classifications.unit:id,name',
-            ])
-            ->find($materialId);
-
+        $sourceCard = $this->resolveInboxSourceCardForRule($rule, $materialId);
         if (! $sourceCard) {
-            abort(404, 'Geteiltes Material wurde nicht gefunden.');
+            throw ValidationException::withMessages([
+                'material_id' => ['Geteiltes Material wurde nicht gefunden oder gehört nicht zur Freigabe.'],
+            ]);
         }
 
         $targetClassification = $this->resolveTargetClassificationForInsert(
@@ -434,6 +422,7 @@ class MaterialShareController extends Controller
             $rule,
             $ruleId,
             $targetClassification,
+            $importMode,
         ) {
             $targetType = $this->ensureTargetMaterialType(
                 targetUser: $authUser,
@@ -460,17 +449,21 @@ class MaterialShareController extends Controller
             $keywordService->rebuild($createdCard->fresh());
 
             if ($this->hasMaterialInboxImportsTable()) {
+                $importPayload = [
+                    'source_rule_id' => $ruleId,
+                    'source_school_id' => (int) $rule->school_id,
+                    'source_material_id' => (int) $sourceCard->id,
+                    'imported_at' => now(),
+                ];
+                if ($this->materialInboxImportsHasImportModeColumn()) {
+                    $importPayload['import_mode'] = $importMode;
+                }
                 MaterialInboxImport::query()->updateOrCreate(
                     [
                         'target_user_id' => (int) $authUser->id,
-                        'source_school_id' => (int) $rule->school_id,
-                        'source_material_id' => (int) $sourceCard->id,
-                    ],
-                    [
                         'target_material_card_id' => (int) $createdCard->id,
-                        'source_rule_id' => $ruleId,
-                        'imported_at' => now(),
-                    ]
+                    ],
+                    $importPayload
                 );
             }
 
@@ -483,7 +476,9 @@ class MaterialShareController extends Controller
         });
 
         return response()->json([
-            'message' => 'Material eingefächert.',
+            'message' => $importMode === MaterialInboxImport::MODE_LINK
+                ? 'Material als Link eingefächert.'
+                : 'Material eingefächert.',
             'data' => [
                 'id' => (int) $newCard->id,
                 'title' => (string) ($newCard->title ?? ''),
@@ -613,6 +608,53 @@ class MaterialShareController extends Controller
             ->first();
     }
 
+    private function resolveInboxSourceCardForRule(MaterialShareRule $rule, int $materialId): ?MaterialCard
+    {
+        if ($materialId <= 0) {
+            return null;
+        }
+
+        $scopeType = (string) $rule->scope_type;
+        $scopeId = (int) ($rule->scope_id ?? 0);
+        $creatorUserId = (int) ($rule->created_by_user_id ?? 0);
+
+        $query = MaterialCard::query()
+            ->where('school_id', (int) $rule->school_id)
+            ->whereKey($materialId)
+            ->when($creatorUserId > 0, fn ($inner) => $inner->where('user_id', $creatorUserId))
+            ->with([
+                'attachments',
+                'classifications.subject:id,name',
+                'classifications.topic:id,name',
+                'classifications.unit:id,name',
+            ]);
+
+        if ($scopeType === MaterialShareRule::SCOPE_MATERIAL) {
+            if ($scopeId <= 0 || $scopeId !== $materialId) {
+                return null;
+            }
+        } elseif ($scopeType === MaterialShareRule::SCOPE_SUBJECT) {
+            if ($scopeId <= 0) {
+                return null;
+            }
+            $query->whereHas('classifications', fn ($inner) => $inner->where('subject_id', $scopeId));
+        } elseif ($scopeType === MaterialShareRule::SCOPE_TOPIC) {
+            if ($scopeId <= 0) {
+                return null;
+            }
+            $query->whereHas('classifications', fn ($inner) => $inner->where('topic_id', $scopeId));
+        } elseif ($scopeType === MaterialShareRule::SCOPE_UNIT) {
+            if ($scopeId <= 0) {
+                return null;
+            }
+            $query->whereHas('classifications', fn ($inner) => $inner->where('unit_id', $scopeId));
+        } elseif ($scopeType !== MaterialShareRule::SCOPE_ALL) {
+            return null;
+        }
+
+        return $query->first();
+    }
+
     /**
      * @return array<string,bool>
      */
@@ -624,6 +666,7 @@ class MaterialShareController extends Controller
 
         $imports = MaterialInboxImport::query()
             ->where('target_user_id', $targetUserId)
+            ->whereHas('targetMaterialCard', fn ($query) => $query->where('user_id', $targetUserId))
             ->get(['source_school_id', 'source_material_id']);
 
         $keys = [];
@@ -938,9 +981,11 @@ class MaterialShareController extends Controller
         }
 
         if ($scopeType === MaterialShareRule::SCOPE_MATERIAL) {
+            $creatorUserId = (int) ($rule->created_by_user_id ?? 0);
             $card = $scopeId > 0
                 ? MaterialCard::query()
                     ->where('school_id', (int) $rule->school_id)
+                    ->when($creatorUserId > 0, fn ($query) => $query->where('user_id', $creatorUserId))
                     ->with([
                         'classifications.subject:id,name',
                         'classifications.topic:id,name',
@@ -989,6 +1034,7 @@ class MaterialShareController extends Controller
     {
         $scopeType = (string) $rule->scope_type;
         $scopeId = (int) ($rule->scope_id ?? 0);
+        $creatorUserId = (int) ($rule->created_by_user_id ?? 0);
 
         $cardsQuery = MaterialCard::query()
             ->where('school_id', (int) $rule->school_id)
@@ -999,6 +1045,10 @@ class MaterialShareController extends Controller
             ])
             ->orderBy('title')
             ->orderBy('id');
+
+        if ($creatorUserId > 0) {
+            $cardsQuery->where('user_id', $creatorUserId);
+        }
 
         if ($this->hasMaterialAttachmentsTable()) {
             $cardsQuery
@@ -1494,6 +1544,19 @@ class MaterialShareController extends Controller
         return $this->hasMaterialInboxImportsTableCache;
     }
 
+    private function materialInboxImportsHasImportModeColumn(): bool
+    {
+        if (! $this->hasMaterialInboxImportsTable()) {
+            return false;
+        }
+
+        if ($this->materialInboxImportsHasImportModeColumnCache === null) {
+            $this->materialInboxImportsHasImportModeColumnCache = Schema::hasColumn('material_inbox_imports', 'import_mode');
+        }
+
+        return $this->materialInboxImportsHasImportModeColumnCache;
+    }
+
     private function materialTypesAreUserScoped(): bool
     {
         if ($this->materialTypesUserScopedCache === null) {
@@ -1786,6 +1849,7 @@ class MaterialShareController extends Controller
 
         $rule = MaterialShareRule::query()
             ->where('school_id', (int) $authUser->school_id)
+            ->where('created_by_user_id', (int) $authUser->id)
             ->where('scope_type', $scopeType)
             ->where('scope_id', $scopeId)
             ->orderByDesc('id')
@@ -1808,6 +1872,7 @@ class MaterialShareController extends Controller
 
         $target = $this->findExistingTargetForScope(
             schoolId: (int) $authUser->school_id,
+            creatorUserId: (int) $authUser->id,
             scopeType: $scopeType,
             scopeId: $scopeId,
             targetType: $targetType,
@@ -1871,6 +1936,41 @@ class MaterialShareController extends Controller
         ]);
     }
 
+    public function updateTarget(Request $request, MaterialShareTarget $material_share_target)
+    {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $material_share_target->loadMissing('rule');
+        $rule = $material_share_target->rule;
+
+        if (! $rule || (int) $rule->school_id !== (int) $authUser->school_id) {
+            abort(404, 'Freigabe-Ziel nicht gefunden.');
+        }
+
+        $data = $request->validate([
+            'permission' => ['required', 'string', Rule::in(MaterialShareTarget::PERMISSIONS)],
+        ]);
+
+        $material_share_target->permission = (string) $data['permission'];
+        $material_share_target->save();
+        $rule->touch();
+
+        $rule->refresh()->load([
+            'creator:id,first_name,last_name,email',
+            'targets',
+            'targets.group:id,school_id,type,name,created_by_user_id',
+            'targets.user:id,school_id,first_name,last_name,email',
+            'targets.user.selectedSchool:id,long_name,short_name',
+        ]);
+
+        return response()->json([
+            'message' => 'Freigabe-Berechtigung gespeichert.',
+            'rule' => $this->serializeRule($rule, (int) $authUser->school_id),
+            'target_id' => (int) $material_share_target->id,
+        ]);
+    }
+
     public function updateRule(Request $request, MaterialShareRule $material_share_rule)
     {
         $authUser = $this->materialsShareUser();
@@ -1926,6 +2026,7 @@ class MaterialShareController extends Controller
 
     private function findExistingTargetForScope(
         int $schoolId,
+        int $creatorUserId,
         string $scopeType,
         ?int $scopeId,
         string $targetType,
@@ -1938,9 +2039,10 @@ class MaterialShareController extends Controller
             ->when($targetType === MaterialShareTarget::TARGET_EVERYONE, fn ($query) => $query->where('audience_scope', $audienceScope))
             ->when($targetType === MaterialShareTarget::TARGET_USER, fn ($query) => $query->where('user_id', $userId))
             ->when($targetType === MaterialShareTarget::TARGET_GROUP, fn ($query) => $query->where('user_group_id', $groupId))
-            ->whereHas('rule', function ($query) use ($schoolId, $scopeType, $scopeId) {
+            ->whereHas('rule', function ($query) use ($schoolId, $creatorUserId, $scopeType, $scopeId) {
                 $query
                     ->where('school_id', $schoolId)
+                    ->where('created_by_user_id', $creatorUserId)
                     ->where('scope_type', $scopeType)
                     ->where('scope_id', $scopeId);
             })
@@ -2074,6 +2176,7 @@ class MaterialShareController extends Controller
                 'Material',
                 MaterialCard::query()
                     ->where('school_id', $schoolId)
+                    ->when((int) ($rule->created_by_user_id ?? 0) > 0, fn ($query) => $query->where('user_id', (int) $rule->created_by_user_id))
                     ->find($scopeId)?->title ?: 'Material #'.$scopeId,
             ],
             default => [$this->scopeTypeLabel($scopeType), '#'.$scopeId],

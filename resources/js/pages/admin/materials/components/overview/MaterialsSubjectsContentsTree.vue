@@ -56,6 +56,14 @@
                                 {{ material.title }}
                             </button>
                             <v-chip
+                                v-if="material.isLinked"
+                                size="x-small"
+                                variant="outlined"
+                                :color="linkedPermissionChipColor(material.linkedPermission)"
+                                class="overview-subjects-material-type">
+                                {{ linkedPermissionLabel(material) }}
+                            </v-chip>
+                            <v-chip
                                 v-if="material.typeLabel"
                                 size="x-small"
                                 variant="outlined"
@@ -177,6 +185,14 @@
                                         {{ material.title }}
                                     </button>
                                     <v-chip
+                                        v-if="material.isLinked"
+                                        size="x-small"
+                                        variant="outlined"
+                                        :color="linkedPermissionChipColor(material.linkedPermission)"
+                                        class="overview-subjects-material-type">
+                                        {{ linkedPermissionLabel(material) }}
+                                    </v-chip>
+                                    <v-chip
                                         v-if="material.typeLabel"
                                         size="x-small"
                                         variant="outlined"
@@ -296,6 +312,14 @@
                                                 @click="$emit('open-material', { id: material.id })">
                                                 {{ material.title }}
                                             </button>
+                                            <v-chip
+                                                v-if="material.isLinked"
+                                                size="x-small"
+                                                variant="outlined"
+                                                :color="linkedPermissionChipColor(material.linkedPermission)"
+                                                class="overview-subjects-material-type">
+                                                {{ linkedPermissionLabel(material) }}
+                                            </v-chip>
                                             <v-chip
                                                 v-if="material.typeLabel"
                                                 size="x-small"
@@ -422,6 +446,21 @@ export default {
     },
     emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'remove-classification'],
     methods: {
+        linkedPermissionChipColor(permission) {
+            const normalized = String(permission || '').trim()
+            if (normalized === 'full_access') return 'error'
+            if (normalized === 'read_write') return 'warning'
+            return 'primary'
+        },
+        linkedPermissionLabel(material) {
+            const normalizedLabel = String(material?.linkedPermissionLabel || '').trim()
+            if (normalizedLabel !== '') return normalizedLabel
+
+            const permission = String(material?.linkedPermission || '').trim()
+            if (permission === 'full_access') return 'VOLLZUGRIFF'
+            if (permission === 'read_write') return 'LESEN/SCHREIBEN'
+            return 'NUR LESEN'
+        },
         hasPersistedNodeId(id) {
             const nodeId = Number(id)
             return Number.isFinite(nodeId) && nodeId > 0

@@ -18,6 +18,8 @@ use App\Http\Resources\Admin\Materials\MaterialCardResource;
 use App\Http\Resources\Admin\PaginateResource;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
+use App\Models\MaterialShareTarget;
+use App\Models\User;
 use App\Services\Materials\MaterialAttachmentPreviewService;
 use App\Services\Materials\MaterialService;
 use Illuminate\Http\Request;
@@ -140,21 +142,26 @@ class MaterialController extends Controller
         ], 200);
     }
 
-    public function show(MaterialCard $material_card)
+    public function show(MaterialCard $material_card, MaterialService $service)
     {
         $authUser = $this->authorizeForMaterials();
         $this->assertIsOwner($authUser->id, $material_card->user_id);
+        $service->syncLinkedInboxCardForUser($authUser, $material_card);
+        $card = $this->loadCardForResponse($material_card);
+        $service->hydrateLinkedPermissionMetadata($authUser, collect([$card]));
 
-        return response()->json(new MaterialCardResource($this->loadCardForResponse($material_card)), 200);
+        return response()->json(new MaterialCardResource($card), 200);
     }
 
     public function update(MaterialCardUpdateRequest $request, MaterialCard $material_card, MaterialService $service)
     {
         $authUser = $this->authorizeForMaterials();
         $this->assertIsOwner($authUser->id, $material_card->user_id);
+        $this->assertLinkedCardAllowsEdit($service, $authUser, $material_card);
         $validated = $request->validated()['data'];
 
         $card = $service->updateCard($material_card, $validated, $authUser);
+        $service->propagateLinkedWritableCardFromTarget($authUser, $card);
 
         return response()->json(new MaterialCardResource($this->loadCardForResponse($card)), 200);
     }
@@ -163,6 +170,7 @@ class MaterialController extends Controller
     {
         $authUser = $this->authorizeForMaterials();
         $this->assertIsOwner($authUser->id, $material_card->user_id);
+        $this->assertLinkedCardAllowsMaterialDelete($service, $authUser, $material_card);
 
         $service->deleteCard($material_card);
 
@@ -176,6 +184,7 @@ class MaterialController extends Controller
     ) {
         $authUser = $this->authorizeForMaterials();
         $this->assertIsOwner($authUser->id, $material_card->user_id);
+        $this->assertLinkedCardAllowsAttachmentAppend($service, $authUser, $material_card);
         $validated = $request->validated()['data'];
 
         $attachment = $service->addLinkAttachment(
@@ -183,6 +192,7 @@ class MaterialController extends Controller
             $validated['url'],
             $validated['name'] ?? null
         );
+        $service->propagateLinkedWritableCardFromTarget($authUser, $material_card);
 
         return response()->json(new MaterialCardAttachmentResource($attachment), 200);
     }
@@ -194,6 +204,7 @@ class MaterialController extends Controller
     ) {
         $authUser = $this->authorizeForMaterials();
         $this->assertIsOwner($authUser->id, $material_card->user_id);
+        $this->assertLinkedCardAllowsAttachmentAppend($service, $authUser, $material_card);
         $validated = $request->validated()['data'];
 
         $attachment = $service->addImageAttachmentFromUrl(
@@ -201,6 +212,7 @@ class MaterialController extends Controller
             (string) ($validated['url'] ?? ''),
             isset($validated['name']) ? (string) $validated['name'] : null
         );
+        $service->propagateLinkedWritableCardFromTarget($authUser, $material_card);
 
         return response()->json(new MaterialCardAttachmentResource($attachment), 200);
     }
@@ -212,6 +224,7 @@ class MaterialController extends Controller
     ) {
         $authUser = $this->authorizeForMaterials();
         $this->assertIsOwner($authUser->id, $material_card->user_id);
+        $this->assertLinkedCardAllowsAttachmentAppend($service, $authUser, $material_card);
         $validated = $request->validated();
 
         $attachment = $service->addFileAttachment(
@@ -219,6 +232,7 @@ class MaterialController extends Controller
             $validated['file'],
             $validated['name'] ?? null
         );
+        $service->propagateLinkedWritableCardFromTarget($authUser, $material_card);
 
         return response()->json(new MaterialCardAttachmentResource($attachment), 200);
     }
@@ -230,6 +244,7 @@ class MaterialController extends Controller
     ) {
         $authUser = $this->authorizeForMaterials();
         $this->assertIsOwner($authUser->id, $material_card->user_id);
+        $this->assertLinkedCardAllowsAttachmentAppend($service, $authUser, $material_card);
         $validated = $request->validated()['data'];
 
         $attachment = $service->addFileAttachmentFromTempUpload(
@@ -238,6 +253,7 @@ class MaterialController extends Controller
             (string) ($validated['upload_id'] ?? ''),
             isset($validated['name']) ? (string) $validated['name'] : null
         );
+        $service->propagateLinkedWritableCardFromTarget($authUser, $material_card);
 
         return response()->json(new MaterialCardAttachmentResource($attachment), 200);
     }
@@ -247,8 +263,10 @@ class MaterialController extends Controller
         $authUser = $this->authorizeForMaterials();
         $material_card_attachment->loadMissing('materialCard');
         $this->assertIsOwner($authUser->id, (int) $material_card_attachment->materialCard->user_id);
+        $this->assertLinkedCardAllowsAttachmentDelete($service, $authUser, $material_card_attachment->materialCard);
 
         $service->deleteAttachment($material_card_attachment);
+        $service->propagateLinkedWritableCardFromTarget($authUser, $material_card_attachment->materialCard);
 
         return response()->noContent();
     }
@@ -261,9 +279,11 @@ class MaterialController extends Controller
         $authUser = $this->authorizeForMaterials();
         $material_card_attachment->loadMissing('materialCard');
         $this->assertIsOwner($authUser->id, (int) $material_card_attachment->materialCard->user_id);
+        $this->assertLinkedCardAllowsEdit($service, $authUser, $material_card_attachment->materialCard);
         $validated = $request->validated()['data'];
 
         $attachment = $service->updateAttachmentName($material_card_attachment, $validated['name']);
+        $service->propagateLinkedWritableCardFromTarget($authUser, $material_card_attachment->materialCard);
 
         return response()->json(new MaterialCardAttachmentResource($attachment), 200);
     }
@@ -293,6 +313,7 @@ class MaterialController extends Controller
         $authUser = $this->authorizeForMaterials();
         $material_card_attachment->loadMissing('materialCard');
         $this->assertIsOwner($authUser->id, (int) $material_card_attachment->materialCard->user_id);
+        $this->assertLinkedCardAllowsEdit($service, $authUser, $material_card_attachment->materialCard);
         $validated = $request->validated()['data'];
 
         $attachment = $service->updateEditableTextAttachmentContent(
@@ -300,6 +321,7 @@ class MaterialController extends Controller
             (string) ($validated['content_html'] ?? ''),
             isset($validated['name']) ? (string) $validated['name'] : null
         );
+        $service->propagateLinkedWritableCardFromTarget($authUser, $material_card_attachment->materialCard);
 
         return response()->json(new MaterialCardAttachmentResource($attachment), 200);
     }
@@ -473,18 +495,70 @@ class MaterialController extends Controller
         }
     }
 
+    private function linkedPermissionForCard(MaterialService $service, User $authUser, MaterialCard $card): ?string
+    {
+        $permission = trim((string) ($service->linkedPermissionForCard($authUser, $card) ?? ''));
+        if (! in_array($permission, MaterialShareTarget::PERMISSIONS, true)) {
+            return null;
+        }
+
+        return $permission;
+    }
+
+    private function assertLinkedCardAllowsEdit(MaterialService $service, User $authUser, MaterialCard $card): void
+    {
+        $permission = $this->linkedPermissionForCard($service, $authUser, $card);
+        if ($permission === MaterialShareTarget::PERMISSION_READ_ONLY) {
+            abort(403, 'Dieses verlinkte Material ist auf NUR LESEN gesetzt.');
+        }
+    }
+
+    private function assertLinkedCardAllowsAttachmentAppend(MaterialService $service, User $authUser, MaterialCard $card): void
+    {
+        $permission = $this->linkedPermissionForCard($service, $authUser, $card);
+        if ($permission === MaterialShareTarget::PERMISSION_READ_ONLY) {
+            abort(403, 'Bei verlinkten Materialien mit NUR LESEN können keine Anhänge hinzugefügt werden.');
+        }
+    }
+
+    private function assertLinkedCardAllowsAttachmentDelete(MaterialService $service, User $authUser, MaterialCard $card): void
+    {
+        $permission = $this->linkedPermissionForCard($service, $authUser, $card);
+        if ($permission !== null && $permission !== MaterialShareTarget::PERMISSION_FULL_ACCESS) {
+            abort(403, 'Anhänge verlinkter Materialien dürfen nur mit VOLLZUGRIFF gelöscht werden.');
+        }
+    }
+
+    private function assertLinkedCardAllowsMaterialDelete(MaterialService $service, User $authUser, MaterialCard $card): void
+    {
+        $permission = $this->linkedPermissionForCard($service, $authUser, $card);
+        if ($permission !== null) {
+            abort(403, 'Verlinkte Materialien können nicht gelöscht werden.');
+        }
+    }
+
     private function loadCardForResponse(MaterialCard $card): MaterialCard
     {
         if (Schema::hasTable('material_card_classifications')) {
-            return $card->loadMissing(
+            $relations = [
                 'attachments',
                 'classifications.subject',
                 'classifications.topic',
-                'classifications.unit'
-            );
+                'classifications.unit',
+            ];
+            if (Schema::hasTable('material_inbox_imports')) {
+                $relations[] = 'inboxImports';
+            }
+
+            return $card->loadMissing(...$relations);
         }
 
-        return $card->loadMissing('attachments');
+        $relations = ['attachments'];
+        if (Schema::hasTable('material_inbox_imports')) {
+            $relations[] = 'inboxImports';
+        }
+
+        return $card->loadMissing(...$relations);
     }
 
     private function isHtmlAttachment(MaterialCardAttachment $attachment): bool

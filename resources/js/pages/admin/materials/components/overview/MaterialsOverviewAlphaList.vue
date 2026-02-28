@@ -27,6 +27,14 @@
                 </v-chip>
 
                 <v-chip
+                    v-if="card.is_linked"
+                    size="small"
+                    variant="outlined"
+                    :color="linkedPermissionChipColor(card.linked_permission)">
+                    {{ linkedPermissionLabel(card) }}
+                </v-chip>
+
+                <v-chip
                     v-if="card.attachments_count"
                     size="small"
                     variant="flat"
@@ -98,6 +106,23 @@ export default {
         alphabeticAssignmentLineFn: functionProp,
     },
     emits: ['open-detail', 'open-edit', 'open-attachments'],
+    methods: {
+        linkedPermissionChipColor(permission) {
+            const normalized = String(permission || '').trim()
+            if (normalized === 'full_access') return 'error'
+            if (normalized === 'read_write') return 'warning'
+            return 'primary'
+        },
+        linkedPermissionLabel(card) {
+            const normalizedLabel = String(card?.linked_permission_label || '').trim()
+            if (normalizedLabel !== '') return normalizedLabel
+
+            const permission = String(card?.linked_permission || '').trim()
+            if (permission === 'full_access') return 'VOLLZUGRIFF'
+            if (permission === 'read_write') return 'LESEN/SCHREIBEN'
+            return 'NUR LESEN'
+        },
+    },
 }
 </script>
 

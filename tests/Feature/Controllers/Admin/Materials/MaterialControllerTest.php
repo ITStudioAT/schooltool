@@ -3,6 +3,9 @@
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
 use App\Models\MaterialCardClassification;
+use App\Models\MaterialInboxImport;
+use App\Models\MaterialShareRule;
+use App\Models\MaterialShareTarget;
 use App\Models\Licence;
 use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
@@ -15,6 +18,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 
@@ -67,6 +71,62 @@ beforeEach(function () {
         'valid_until' => now()->addYear(),
     ]);
 });
+
+function createLinkedImportedCard(User $targetUser, School $school, Schoolyear $schoolyear, string $permission): MaterialCard
+{
+    $sourceUser = User::factory()->create([
+        'school_id' => $school->id,
+        'schoolyear_id' => $schoolyear->id,
+        'email' => 'source-' . uniqid() . '@materials.test',
+    ]);
+
+    $sourceCard = MaterialCard::factory()->create([
+        'school_id' => $school->id,
+        'user_id' => $sourceUser->id,
+        'title' => 'Geteiltes Original',
+        'status' => MaterialCard::STATUS_INBOX,
+        'keywords' => [],
+    ]);
+
+    $targetCard = MaterialCard::factory()->create([
+        'school_id' => $school->id,
+        'user_id' => $targetUser->id,
+        'title' => 'Verlinkte Kopie',
+        'status' => MaterialCard::STATUS_INBOX,
+        'keywords' => [],
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $school->id,
+        'created_by_user_id' => $sourceUser->id,
+        'scope_type' => MaterialShareRule::SCOPE_MATERIAL,
+        'scope_id' => $sourceCard->id,
+        'is_active' => true,
+    ]);
+
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $targetUser->id,
+        'permission' => $permission,
+    ]);
+
+    $importData = [
+        'target_user_id' => (int) $targetUser->id,
+        'target_material_card_id' => (int) $targetCard->id,
+        'source_rule_id' => (int) $rule->id,
+        'source_school_id' => (int) $school->id,
+        'source_material_id' => (int) $sourceCard->id,
+        'imported_at' => now(),
+    ];
+    if (Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+        $importData['import_mode'] = MaterialInboxImport::MODE_LINK;
+    }
+
+    MaterialInboxImport::query()->create($importData);
+
+    return $targetCard->fresh();
+}
 
 test('requires authentication', function () {
     $this->getJson('/api/admin/materials/config')
@@ -1146,6 +1206,194 @@ test('owner protection blocks update from another teacher', function () {
             'status' => 'done',
         ],
     ])->assertStatus(403);
+});
+
+test('linked material with nur lesen blocks edit delete and attachment mutations', function () {
+    if (!Schema::hasTable('material_inbox_imports') || !Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+        $this->markTestSkipped('Linked inbox import mode is not available.');
+    }
+
+    $card = createLinkedImportedCard(
+        targetUser: $this->teacher,
+        school: $this->school,
+        schoolyear: $this->schoolyear,
+        permission: MaterialShareTarget::PERMISSION_READ_ONLY,
+    );
+
+    $attachment = MaterialCardAttachment::query()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_LINK,
+        'name' => 'Bestehend',
+        'url' => 'https://example.org/existing',
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->putJson('/api/admin/materials/cards/' . $card->id, [
+        'data' => [
+            'title' => 'Geändert',
+            'status' => MaterialCard::STATUS_DONE,
+        ],
+    ])->assertStatus(403);
+
+    $this->postJson('/api/admin/materials/cards/' . $card->id . '/attachments/link', [
+        'data' => [
+            'url' => 'https://example.org/new',
+            'name' => 'Neu',
+        ],
+    ])->assertStatus(403);
+
+    $this->deleteJson('/api/admin/materials/attachments/' . $attachment->id)
+        ->assertStatus(403);
+
+    $this->deleteJson('/api/admin/materials/cards/' . $card->id)
+        ->assertStatus(403);
+});
+
+test('linked material with lesen schreiben allows edit and append but blocks delete operations', function () {
+    if (!Schema::hasTable('material_inbox_imports') || !Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+        $this->markTestSkipped('Linked inbox import mode is not available.');
+    }
+
+    $card = createLinkedImportedCard(
+        targetUser: $this->teacher,
+        school: $this->school,
+        schoolyear: $this->schoolyear,
+        permission: MaterialShareTarget::PERMISSION_READ_WRITE,
+    );
+
+    $attachment = MaterialCardAttachment::query()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_LINK,
+        'name' => 'Bestehend',
+        'url' => 'https://example.org/existing',
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->putJson('/api/admin/materials/cards/' . $card->id, [
+        'data' => [
+            'title' => 'Geändert',
+            'status' => MaterialCard::STATUS_DONE,
+        ],
+    ])->assertStatus(200)
+        ->assertJsonPath('title', 'Geändert');
+
+    $indexAfterUpdate = $this->getJson('/api/admin/materials/cards')
+        ->assertStatus(200);
+
+    $updatedCardRow = collect($indexAfterUpdate->json('data'))
+        ->first(fn ($row) => (int) ($row['id'] ?? 0) === (int) $card->id);
+    expect((string) ($updatedCardRow['title'] ?? ''))->toBe('Geändert');
+
+    $import = MaterialInboxImport::query()
+        ->where('target_material_card_id', (int) $card->id)
+        ->latest('id')
+        ->first();
+    expect($import)->not->toBeNull();
+
+    $sourceCard = MaterialCard::query()->find((int) ($import?->source_material_id ?? 0));
+    expect($sourceCard)->not->toBeNull();
+    expect((string) ($sourceCard?->title ?? ''))->toBe('Geändert');
+
+    $this->postJson('/api/admin/materials/cards/' . $card->id . '/attachments/link', [
+        'data' => [
+            'url' => 'https://example.org/new',
+            'name' => 'Neu',
+        ],
+    ])->assertStatus(200);
+
+    $this->deleteJson('/api/admin/materials/attachments/' . $attachment->id)
+        ->assertStatus(403);
+
+    $this->deleteJson('/api/admin/materials/cards/' . $card->id)
+        ->assertStatus(403);
+});
+
+test('linked material with lesen schreiben keeps source attachments visible in destination on equal timestamps', function () {
+    if (!Schema::hasTable('material_inbox_imports') || !Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+        $this->markTestSkipped('Linked inbox import mode is not available.');
+    }
+
+    $card = createLinkedImportedCard(
+        targetUser: $this->teacher,
+        school: $this->school,
+        schoolyear: $this->schoolyear,
+        permission: MaterialShareTarget::PERMISSION_READ_WRITE,
+    );
+
+    $import = MaterialInboxImport::query()
+        ->where('target_material_card_id', (int) $card->id)
+        ->latest('id')
+        ->first();
+    expect($import)->not->toBeNull();
+
+    $sourceCard = MaterialCard::query()->find((int) ($import?->source_material_id ?? 0));
+    expect($sourceCard)->not->toBeNull();
+
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => (int) ($sourceCard?->id ?? 0),
+        'attachment_type' => MaterialCardAttachment::TYPE_LINK,
+        'name' => 'Quelle',
+        'url' => 'https://example.org/source',
+    ]);
+
+    MaterialCard::query()
+        ->whereIn('id', [(int) ($sourceCard?->id ?? 0), (int) $card->id])
+        ->update(['updated_at' => now()->startOfSecond()]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->getJson('/api/admin/materials/cards/' . $card->id)
+        ->assertStatus(200)
+        ->assertJsonPath('attachments.0.name', 'Quelle')
+        ->assertJsonPath('attachments.0.url', 'https://example.org/source');
+});
+
+test('linked material with vollzugriff allows attachment delete but still blocks material delete', function () {
+    if (!Schema::hasTable('material_inbox_imports') || !Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+        $this->markTestSkipped('Linked inbox import mode is not available.');
+    }
+
+    $card = createLinkedImportedCard(
+        targetUser: $this->teacher,
+        school: $this->school,
+        schoolyear: $this->schoolyear,
+        permission: MaterialShareTarget::PERMISSION_FULL_ACCESS,
+    );
+
+    $attachment = MaterialCardAttachment::query()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_LINK,
+        'name' => 'Bestehend',
+        'url' => 'https://example.org/existing',
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->putJson('/api/admin/materials/cards/' . $card->id, [
+        'data' => [
+            'title' => 'Geändert',
+            'status' => MaterialCard::STATUS_DONE,
+        ],
+    ])->assertStatus(200)
+        ->assertJsonPath('title', 'Geändert');
+
+    $this->postJson('/api/admin/materials/cards/' . $card->id . '/attachments/link', [
+        'data' => [
+            'url' => 'https://example.org/new',
+            'name' => 'Neu',
+        ],
+    ])->assertStatus(200);
+
+    $this->deleteJson('/api/admin/materials/attachments/' . $attachment->id)
+        ->assertNoContent();
+    $this->assertDatabaseMissing('material_card_attachments', [
+        'id' => $attachment->id,
+    ]);
+
+    $this->deleteJson('/api/admin/materials/cards/' . $card->id)
+        ->assertStatus(403);
 });
 
 test('adding link attachment stores attachment and refreshes keywords', function () {

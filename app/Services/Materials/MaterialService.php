@@ -6,6 +6,9 @@ use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
 use App\Models\MaterialCardClassification;
 use App\Models\MaterialCardDeletedClassification;
+use App\Models\MaterialInboxImport;
+use App\Models\MaterialShareRule;
+use App\Models\MaterialShareTarget;
 use App\Models\MaterialStatus;
 use App\Models\MaterialSubject;
 use App\Models\MaterialTopic;
@@ -13,8 +16,10 @@ use App\Models\MaterialType;
 use App\Models\MaterialUnit;
 use App\Models\SchoolTool;
 use App\Models\User;
+use App\Models\UserGroup;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
@@ -27,6 +32,10 @@ class MaterialService
     private const DEFAULT_MAX_UPLOAD_SIZE_KB = 20480;
     private const DEFAULT_MATERIALS_PAGINATION_NUMBER = 30;
     private const DEFAULT_TYPE_ICON = 'mdi-file-document-outline';
+
+    private ?bool $hasMaterialInboxImportsTableCache = null;
+
+    private ?bool $materialInboxImportsHasImportModeColumnCache = null;
 
     public function __construct(
         private readonly MaterialKeywordService $keywordService,
@@ -53,6 +62,8 @@ class MaterialService
 
     public function listForUser(User $user, array $filters): LengthAwarePaginator
     {
+        $this->syncLinkedInboxImportsForUser($user);
+
         $query = MaterialCard::query()
             ->where('user_id', $user->id)
             ->with($this->cardRelations())
@@ -100,7 +111,210 @@ class MaterialService
             $query->where('type', $type);
         }
 
-        return $query->paginate($this->materialsPaginationNumberForUser($user));
+        $cards = $query->paginate($this->materialsPaginationNumberForUser($user));
+        $this->hydrateLinkedPermissionMetadata($user, $cards->getCollection());
+
+        return $cards;
+    }
+
+    public function hydrateLinkedPermissionMetadata(User $user, Collection $cards): void
+    {
+        if ($cards->isEmpty() || ! $this->supportsLinkedInboxImports()) {
+            return;
+        }
+
+        $importsByCardId = [];
+        $ruleIds = [];
+
+        foreach ($cards as $card) {
+            if (! $card instanceof MaterialCard || ! $card->relationLoaded('inboxImports')) {
+                continue;
+            }
+
+            $import = $card->inboxImports
+                ->first(fn (MaterialInboxImport $row) => trim((string) ($row->import_mode ?? '')) === MaterialInboxImport::MODE_LINK);
+            if (! $import) {
+                continue;
+            }
+
+            $cardId = (int) ($card->id ?? 0);
+            if ($cardId <= 0) {
+                continue;
+            }
+
+            $importsByCardId[$cardId] = $import;
+            $ruleId = (int) ($import->source_rule_id ?? 0);
+            if ($ruleId > 0) {
+                $ruleIds[] = $ruleId;
+            }
+        }
+
+        if ($importsByCardId === []) {
+            return;
+        }
+
+        $ruleMap = MaterialShareRule::query()
+            ->whereIn('id', array_values(array_unique($ruleIds)))
+            ->with(['targets:id,material_share_rule_id,target_type,audience_scope,permission,user_group_id,user_id'])
+            ->get()
+            ->keyBy(fn (MaterialShareRule $rule) => (int) $rule->id);
+
+        $memberGroupSet = $this->memberGroupSetForUser($user);
+
+        foreach ($cards as $card) {
+            if (! $card instanceof MaterialCard) {
+                continue;
+            }
+
+            $cardId = (int) ($card->id ?? 0);
+            $import = $importsByCardId[$cardId] ?? null;
+            if (! $import instanceof MaterialInboxImport) {
+                continue;
+            }
+
+            $permission = MaterialShareTarget::PERMISSION_READ_ONLY;
+            $ruleId = (int) ($import->source_rule_id ?? 0);
+            $rule = $ruleId > 0 ? $ruleMap->get($ruleId) : null;
+            if ($rule instanceof MaterialShareRule) {
+                $permission = $this->resolveLinkedPermissionForUser(
+                    rule: $rule,
+                    userId: (int) $user->id,
+                    schoolId: (int) $user->school_id,
+                    memberGroupSet: $memberGroupSet,
+                );
+            }
+
+            $card->setAttribute('linked_permission', $permission);
+            $card->setAttribute('linked_permission_label', $this->linkedPermissionLabel($permission));
+        }
+    }
+
+    public function linkedPermissionForCard(User $user, MaterialCard $card): ?string
+    {
+        if ((int) ($card->user_id ?? 0) !== (int) $user->id) {
+            return null;
+        }
+
+        if (! $this->supportsLinkedInboxImports()) {
+            return null;
+        }
+
+        $import = MaterialInboxImport::query()
+            ->where('target_user_id', (int) $user->id)
+            ->where('target_material_card_id', (int) $card->id)
+            ->where('import_mode', MaterialInboxImport::MODE_LINK)
+            ->latest('id')
+            ->first(['source_rule_id']);
+
+        if (! $import) {
+            return null;
+        }
+
+        $ruleId = (int) ($import->source_rule_id ?? 0);
+        if ($ruleId <= 0) {
+            return MaterialShareTarget::PERMISSION_READ_ONLY;
+        }
+
+        $rule = MaterialShareRule::query()
+            ->whereKey($ruleId)
+            ->with(['targets:id,material_share_rule_id,target_type,audience_scope,permission,user_group_id,user_id'])
+            ->first();
+
+        if (! $rule) {
+            return MaterialShareTarget::PERMISSION_READ_ONLY;
+        }
+
+        return $this->resolveLinkedPermissionForUser(
+            rule: $rule,
+            userId: (int) $user->id,
+            schoolId: (int) $user->school_id,
+            memberGroupSet: $this->memberGroupSetForUser($user),
+        );
+    }
+
+    public function syncLinkedInboxCardForUser(User $user, MaterialCard $card): void
+    {
+        if ((int) ($card->user_id ?? 0) !== (int) $user->id) {
+            return;
+        }
+
+        $this->syncLinkedInboxImportsForUser($user, [(int) $card->id]);
+    }
+
+    public function propagateLinkedWritableCardFromTarget(User $user, MaterialCard $targetCard): void
+    {
+        if ((int) ($targetCard->user_id ?? 0) !== (int) $user->id) {
+            return;
+        }
+
+        if (! $this->supportsLinkedInboxImports()) {
+            return;
+        }
+
+        $import = MaterialInboxImport::query()
+            ->where('target_user_id', (int) $user->id)
+            ->where('target_material_card_id', (int) $targetCard->id)
+            ->where('import_mode', MaterialInboxImport::MODE_LINK)
+            ->latest('id')
+            ->first(['source_rule_id', 'source_school_id', 'source_material_id']);
+
+        if (! $import) {
+            return;
+        }
+
+        $permission = MaterialShareTarget::PERMISSION_READ_ONLY;
+        $ruleId = (int) ($import->source_rule_id ?? 0);
+        if ($ruleId > 0) {
+            $rule = MaterialShareRule::query()
+                ->whereKey($ruleId)
+                ->with(['targets:id,material_share_rule_id,target_type,audience_scope,permission,user_group_id,user_id'])
+                ->first();
+
+            if ($rule) {
+                $permission = $this->resolveLinkedPermissionForUser(
+                    rule: $rule,
+                    userId: (int) $user->id,
+                    schoolId: (int) $user->school_id,
+                    memberGroupSet: $this->memberGroupSetForUser($user),
+                );
+            }
+        }
+
+        if (! in_array($permission, [MaterialShareTarget::PERMISSION_READ_WRITE, MaterialShareTarget::PERMISSION_FULL_ACCESS], true)) {
+            return;
+        }
+
+        $sourceSchoolId = (int) ($import->source_school_id ?? 0);
+        $sourceMaterialId = (int) ($import->source_material_id ?? 0);
+        if ($sourceSchoolId <= 0 || $sourceMaterialId <= 0) {
+            return;
+        }
+
+        $sourceCard = MaterialCard::query()
+            ->where('school_id', $sourceSchoolId)
+            ->whereKey($sourceMaterialId)
+            ->with('attachments')
+            ->first();
+
+        if (! $sourceCard) {
+            return;
+        }
+
+        $targetFresh = MaterialCard::query()
+            ->where('user_id', (int) $user->id)
+            ->whereKey((int) $targetCard->id)
+            ->with('attachments')
+            ->first();
+
+        if (! $targetFresh) {
+            return;
+        }
+
+        if (! $this->linkedCardNeedsSync($sourceCard, $targetFresh)) {
+            return;
+        }
+
+        $this->syncLinkedSourceCardFromTarget($sourceCard, $targetFresh);
     }
 
     public function createCard(User $user, array $data): MaterialCard
@@ -2770,16 +2984,395 @@ class MaterialService
 
     private function cardRelations(): array
     {
-        if (! $this->supportsClassificationTables()) {
-            return ['attachments'];
+        $relations = ['attachments'];
+
+        if ($this->supportsMaterialInboxImports()) {
+            $relations[] = 'inboxImports';
         }
 
-        return [
-            'attachments',
-            'classifications.subject',
-            'classifications.topic',
-            'classifications.unit',
-        ];
+        if (! $this->supportsClassificationTables()) {
+            return $relations;
+        }
+
+        $relations[] = 'classifications.subject';
+        $relations[] = 'classifications.topic';
+        $relations[] = 'classifications.unit';
+
+        return $relations;
+    }
+
+    private function syncLinkedInboxImportsForUser(User $user, array $targetCardIds = []): void
+    {
+        if (! $this->supportsLinkedInboxImports()) {
+            return;
+        }
+
+        $normalizedTargetIds = collect($targetCardIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        $importsQuery = MaterialInboxImport::query()
+            ->where('target_user_id', (int) $user->id)
+            ->where('import_mode', MaterialInboxImport::MODE_LINK);
+
+        if ($normalizedTargetIds !== []) {
+            $importsQuery->whereIn('target_material_card_id', $normalizedTargetIds);
+        }
+
+        $imports = $importsQuery->get([
+            'id',
+            'target_user_id',
+            'target_material_card_id',
+            'source_rule_id',
+            'source_school_id',
+            'source_material_id',
+            'import_mode',
+        ]);
+
+        if ($imports->isEmpty()) {
+            return;
+        }
+
+        $ruleMap = MaterialShareRule::query()
+            ->whereIn(
+                'id',
+                $imports->pluck('source_rule_id')
+                    ->map(fn ($id) => (int) $id)
+                    ->filter(fn (int $id) => $id > 0)
+                    ->unique()
+                    ->values()
+                    ->all()
+            )
+            ->with(['targets:id,material_share_rule_id,target_type,audience_scope,permission,user_group_id,user_id'])
+            ->get()
+            ->keyBy(fn (MaterialShareRule $rule) => (int) $rule->id);
+
+        $memberGroupSet = $this->memberGroupSetForUser($user);
+
+        $targetCards = MaterialCard::query()
+            ->where('user_id', (int) $user->id)
+            ->whereIn('id', $imports->pluck('target_material_card_id')->map(fn ($id) => (int) $id)->all())
+            ->with('attachments')
+            ->get()
+            ->keyBy(fn (MaterialCard $card) => (int) $card->id);
+
+        $sourceCardsByKey = [];
+        $sourceGroups = $imports->groupBy(fn (MaterialInboxImport $import) => (int) ($import->source_school_id ?? 0));
+        foreach ($sourceGroups as $sourceSchoolId => $group) {
+            $schoolId = (int) $sourceSchoolId;
+            if ($schoolId <= 0) {
+                continue;
+            }
+
+            $sourceIds = $group->pluck('source_material_id')
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn (int $id) => $id > 0)
+                ->unique()
+                ->values()
+                ->all();
+            if ($sourceIds === []) {
+                continue;
+            }
+
+            $sourceCards = MaterialCard::query()
+                ->where('school_id', $schoolId)
+                ->whereIn('id', $sourceIds)
+                ->with('attachments')
+                ->get();
+
+            foreach ($sourceCards as $sourceCard) {
+                $key = $this->inboxSourceCardKey((int) $sourceCard->school_id, (int) $sourceCard->id);
+                $sourceCardsByKey[$key] = $sourceCard;
+            }
+        }
+
+        foreach ($imports as $import) {
+            $targetCardId = (int) ($import->target_material_card_id ?? 0);
+            $targetCard = $targetCards->get($targetCardId);
+            if (! $targetCard) {
+                continue;
+            }
+
+            $sourceKey = $this->inboxSourceCardKey((int) ($import->source_school_id ?? 0), (int) ($import->source_material_id ?? 0));
+            $sourceCard = $sourceCardsByKey[$sourceKey] ?? null;
+            if (! $sourceCard) {
+                continue;
+            }
+
+            $permission = MaterialShareTarget::PERMISSION_READ_ONLY;
+            $ruleId = (int) ($import->source_rule_id ?? 0);
+            $rule = $ruleId > 0 ? $ruleMap->get($ruleId) : null;
+            if ($rule instanceof MaterialShareRule) {
+                $permission = $this->resolveLinkedPermissionForUser(
+                    rule: $rule,
+                    userId: (int) $user->id,
+                    schoolId: (int) $user->school_id,
+                    memberGroupSet: $memberGroupSet,
+                );
+            }
+
+            if (! $this->linkedCardNeedsSync($targetCard, $sourceCard)) {
+                continue;
+            }
+
+            if ($permission !== MaterialShareTarget::PERMISSION_READ_ONLY) {
+                $targetUpdatedAt = $targetCard->updated_at;
+                $sourceUpdatedAt = $sourceCard->updated_at;
+                $targetIsNewer = $targetUpdatedAt && (! $sourceUpdatedAt || $targetUpdatedAt->gt($sourceUpdatedAt));
+
+                if ($targetIsNewer) {
+                    $this->syncLinkedSourceCardFromTarget($sourceCard, $targetCard);
+                    continue;
+                }
+            }
+
+            $this->syncLinkedCardFromSource($targetCard, $sourceCard);
+        }
+    }
+
+    private function linkedCardNeedsSync(MaterialCard $targetCard, MaterialCard $sourceCard): bool
+    {
+        $fields = ['title', 'source_url', 'source_text', 'type', 'status', 'notes'];
+        foreach ($fields as $field) {
+            $targetValue = $this->normalizeNullableText($targetCard->{$field} ?? null);
+            $sourceValue = $this->normalizeNullableText($sourceCard->{$field} ?? null);
+            if ($targetValue !== $sourceValue) {
+                return true;
+            }
+        }
+
+        $targetSignature = $this->attachmentsSignature(is_array($targetCard->attachments) ? $targetCard->attachments : $targetCard->attachments->all());
+        $sourceSignature = $this->attachmentsSignature(is_array($sourceCard->attachments) ? $sourceCard->attachments : $sourceCard->attachments->all());
+
+        return $targetSignature !== $sourceSignature;
+    }
+
+    private function syncLinkedCardFromSource(MaterialCard $targetCard, MaterialCard $sourceCard): void
+    {
+        DB::transaction(function () use ($targetCard, $sourceCard) {
+            $targetCard->update([
+                'title' => trim((string) ($sourceCard->title ?? '')) !== '' ? (string) $sourceCard->title : 'Material',
+                'source_url' => $this->normalizeNullableText($sourceCard->source_url),
+                'source_text' => $this->normalizeNullableText($sourceCard->source_text),
+                'type' => $this->normalizeOptionalName($sourceCard->type),
+                'status' => trim((string) ($sourceCard->status ?? '')),
+                'notes' => $this->normalizeNullableText($sourceCard->notes),
+            ]);
+
+            $this->replaceCardAttachmentsFromSource($targetCard, $sourceCard);
+            $this->keywordService->rebuild($targetCard->fresh($this->cardRelations()));
+        });
+    }
+
+    private function syncLinkedSourceCardFromTarget(MaterialCard $sourceCard, MaterialCard $targetCard): void
+    {
+        DB::transaction(function () use ($sourceCard, $targetCard) {
+            $sourceCard->update([
+                'title' => trim((string) ($targetCard->title ?? '')) !== '' ? (string) $targetCard->title : 'Material',
+                'source_url' => $this->normalizeNullableText($targetCard->source_url),
+                'source_text' => $this->normalizeNullableText($targetCard->source_text),
+                'type' => $this->normalizeOptionalName($targetCard->type),
+                'status' => trim((string) ($targetCard->status ?? '')),
+                'notes' => $this->normalizeNullableText($targetCard->notes),
+            ]);
+
+            $this->replaceCardAttachmentsFromSource($sourceCard, $targetCard);
+            $this->keywordService->rebuild($sourceCard->fresh($this->cardRelations()));
+        });
+    }
+
+    private function replaceCardAttachmentsFromSource(MaterialCard $targetCard, MaterialCard $sourceCard): void
+    {
+        $targetCard->loadMissing('attachments');
+        $sourceCard->loadMissing('attachments');
+
+        foreach ($targetCard->attachments as $targetAttachment) {
+            if ($targetAttachment->attachment_type === MaterialCardAttachment::TYPE_FILE && $targetAttachment->file_path) {
+                Storage::delete($targetAttachment->file_path);
+            }
+            $targetAttachment->forceDelete();
+        }
+
+        $disk = Storage::disk(config('filesystems.default'));
+        foreach ($sourceCard->attachments as $sourceAttachment) {
+            $attachmentType = trim((string) ($sourceAttachment->attachment_type ?? ''));
+
+            if ($attachmentType === MaterialCardAttachment::TYPE_LINK) {
+                $targetCard->attachments()->create([
+                    'attachment_type' => MaterialCardAttachment::TYPE_LINK,
+                    'name' => $sourceAttachment->name,
+                    'url' => $sourceAttachment->url,
+                    'source_url' => $sourceAttachment->source_url,
+                    'mime_type' => $sourceAttachment->mime_type,
+                    'size_bytes' => $sourceAttachment->size_bytes,
+                    'downloaded_at' => $sourceAttachment->downloaded_at,
+                ]);
+                continue;
+            }
+
+            if ($attachmentType !== MaterialCardAttachment::TYPE_FILE) {
+                continue;
+            }
+
+            $sourcePath = trim((string) ($sourceAttachment->file_path ?? ''));
+            if ($sourcePath === '' || ! $disk->exists($sourcePath)) {
+                continue;
+            }
+
+            $nameSource = trim((string) ($sourceAttachment->name ?: basename($sourcePath)));
+            if ($nameSource === '') {
+                $nameSource = 'file';
+            }
+            $targetPath = $this->materialAttachmentDirectory($targetCard) . '/' . $this->materialAttachmentStoredFileNameFromOriginalName($nameSource);
+            $copied = $disk->copy($sourcePath, $targetPath);
+            if (! $copied) {
+                continue;
+            }
+
+            $targetCard->attachments()->create([
+                'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+                'name' => $sourceAttachment->name,
+                'file_path' => $targetPath,
+                'mime_type' => $sourceAttachment->mime_type,
+                'size_bytes' => $sourceAttachment->size_bytes,
+                'source_url' => $sourceAttachment->source_url,
+                'downloaded_at' => $sourceAttachment->downloaded_at,
+            ]);
+        }
+    }
+
+    private function attachmentsSignature(array $attachments): string
+    {
+        $rows = array_map(function ($attachment) {
+            $type = trim((string) ($attachment->attachment_type ?? ''));
+            return [
+                'type' => $type,
+                'name' => trim((string) ($attachment->name ?? '')),
+                'url' => trim((string) ($attachment->url ?? '')),
+                'source_url' => trim((string) ($attachment->source_url ?? '')),
+                'mime_type' => trim((string) ($attachment->mime_type ?? '')),
+                'size_bytes' => (int) ($attachment->size_bytes ?? 0),
+            ];
+        }, $attachments);
+
+        usort($rows, function (array $left, array $right): int {
+            return json_encode($left, JSON_UNESCAPED_UNICODE) <=> json_encode($right, JSON_UNESCAPED_UNICODE);
+        });
+
+        return hash('sha256', json_encode($rows, JSON_UNESCAPED_UNICODE));
+    }
+
+    private function inboxSourceCardKey(int $schoolId, int $cardId): string
+    {
+        return $schoolId . ':' . $cardId;
+    }
+
+    private function normalizeNullableText(mixed $value): ?string
+    {
+        $text = trim((string) ($value ?? ''));
+        return $text !== '' ? $text : null;
+    }
+
+    /**
+     * @param array<int,true> $memberGroupSet
+     */
+    private function resolveLinkedPermissionForUser(
+        MaterialShareRule $rule,
+        int $userId,
+        int $schoolId,
+        array $memberGroupSet,
+    ): string {
+        $bestPermission = MaterialShareTarget::PERMISSION_READ_ONLY;
+        $bestRank = $this->linkedPermissionRank($bestPermission);
+
+        foreach ($rule->targets as $target) {
+            $targetType = trim((string) ($target->target_type ?? ''));
+
+            $matches = false;
+            if ($targetType === MaterialShareTarget::TARGET_USER) {
+                $matches = (int) ($target->user_id ?? 0) === $userId;
+            } elseif ($targetType === MaterialShareTarget::TARGET_EVERYONE) {
+                $audienceScope = trim((string) ($target->audience_scope ?? ''));
+                $matches = $audienceScope === MaterialShareTarget::AUDIENCE_SCOPE_GLOBAL
+                    || ($audienceScope === MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL && (int) ($rule->school_id ?? 0) === $schoolId);
+            } elseif ($targetType === MaterialShareTarget::TARGET_GROUP) {
+                $matches = isset($memberGroupSet[(int) ($target->user_group_id ?? 0)]);
+            }
+
+            if (! $matches) {
+                continue;
+            }
+
+            $permission = trim((string) ($target->permission ?? MaterialShareTarget::PERMISSION_READ_ONLY));
+            $rank = $this->linkedPermissionRank($permission);
+            if ($rank > $bestRank) {
+                $bestRank = $rank;
+                $bestPermission = $permission;
+            }
+        }
+
+        return $bestPermission;
+    }
+
+    private function linkedPermissionRank(string $permission): int
+    {
+        return match ($permission) {
+            MaterialShareTarget::PERMISSION_FULL_ACCESS => 3,
+            MaterialShareTarget::PERMISSION_READ_WRITE => 2,
+            MaterialShareTarget::PERMISSION_READ_ONLY => 1,
+            default => 0,
+        };
+    }
+
+    private function linkedPermissionLabel(string $permission): string
+    {
+        return match ($permission) {
+            MaterialShareTarget::PERMISSION_FULL_ACCESS => 'VOLLZUGRIFF',
+            MaterialShareTarget::PERMISSION_READ_WRITE => 'LESEN/SCHREIBEN',
+            MaterialShareTarget::PERMISSION_READ_ONLY => 'NUR LESEN',
+            default => mb_strtoupper(trim((string) $permission)),
+        };
+    }
+
+    /**
+     * @return array<int,true>
+     */
+    private function memberGroupSetForUser(User $user): array
+    {
+        $memberGroupIds = UserGroup::query()
+            ->whereHas('members', fn ($query) => $query->where('users.id', (int) $user->id))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->values()
+            ->all();
+
+        return array_fill_keys($memberGroupIds, true);
+    }
+
+    private function supportsMaterialInboxImports(): bool
+    {
+        if ($this->hasMaterialInboxImportsTableCache === null) {
+            $this->hasMaterialInboxImportsTableCache = Schema::hasTable('material_inbox_imports');
+        }
+
+        return $this->hasMaterialInboxImportsTableCache;
+    }
+
+    private function supportsLinkedInboxImports(): bool
+    {
+        if (! $this->supportsMaterialInboxImports()) {
+            return false;
+        }
+
+        if ($this->materialInboxImportsHasImportModeColumnCache === null) {
+            $this->materialInboxImportsHasImportModeColumnCache = Schema::hasColumn('material_inbox_imports', 'import_mode');
+        }
+
+        return $this->materialInboxImportsHasImportModeColumnCache;
     }
 
     private function restorableDeletedCardsLimit(): int

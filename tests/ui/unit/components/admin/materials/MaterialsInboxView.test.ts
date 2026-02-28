@@ -370,20 +370,22 @@ describe('MaterialsInboxView', () => {
 
         await fireEvent.click(screen.getByRole('button', { name: 'Mathematik' }))
         await waitFor(() => {
-            expect(screen.getByRole('button', { name: 'Hier einfächern' })).toBeInTheDocument()
+            expect(screen.getByRole('button', { name: 'Als Kopie einfächern' })).toBeInTheDocument()
         })
+        expect(screen.getByRole('button', { name: 'Als Link einfächern' })).toBeInTheDocument()
 
         await fireEvent.click(screen.getByRole('button', { name: 'Algebra' }))
         await fireEvent.click(screen.getByRole('button', { name: 'Brueche' }))
-        expect(screen.getByRole('button', { name: 'Hier einfächern' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Als Kopie einfächern' })).toBeInTheDocument()
 
-        await fireEvent.click(screen.getByRole('button', { name: 'Hier einfächern' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Als Kopie einfächern' }))
         await waitFor(() => {
             expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/shares/inbox/material-insert', {
                 rule_id: 501,
                 material_id: 501,
                 target_level: 'unit',
                 target_id: 13,
+                import_mode: 'copy',
             })
         })
     })
@@ -456,6 +458,125 @@ describe('MaterialsInboxView', () => {
                 rule_id: 901,
                 material_id: 7,
             })
+        })
+    })
+
+    it('supports unit-level einfächern for all materials inside the selected unit', async () => {
+        axiosMock.get.mockImplementation((url: string) => {
+            if (url === '/api/admin/materials/shares/inbox-users') {
+                return Promise.resolve({
+                    data: {
+                        data: [
+                            {
+                                id: 52,
+                                label: 'Unit Source',
+                                email: 'unit@test.local',
+                                shared_rules_count: 1,
+                                shared_items: [
+                                    {
+                                        rule_id: 920,
+                                        scope_type: 'unit',
+                                        scope_label: 'Einheit',
+                                        scope_object_label: 'Kapitel 1',
+                                        scope_path_label: 'Mathematik - Algebra - Kapitel 1',
+                                        permission: 'read_only',
+                                        permission_label: 'NUR LESEN',
+                                        hierarchy: [
+                                            {
+                                                id: 1,
+                                                name: 'Mathematik',
+                                                topics: [
+                                                    {
+                                                        id: 2,
+                                                        name: 'Algebra',
+                                                        units: [
+                                                            {
+                                                                id: 3,
+                                                                name: 'Kapitel 1',
+                                                                materials: [
+                                                                    { id: 701, title: 'Material A' },
+                                                                    { id: 702, title: 'Material B' },
+                                                                ],
+                                                            },
+                                                        ],
+                                                    },
+                                                ],
+                                            },
+                                        ],
+                                        updated_at: '',
+                                    },
+                                ],
+                            },
+                        ],
+                        meta: { needs_migration: false },
+                    },
+                })
+            }
+            if (url === '/api/admin/materials/config') {
+                return Promise.resolve({
+                    data: {
+                        classification_tree: [
+                            {
+                                id: 21,
+                                name: 'Deutsch',
+                                topics: [
+                                    { id: 22, name: 'Literatur', units: [{ id: 23, name: 'Kapitel 1' }] },
+                                ],
+                            },
+                        ],
+                    },
+                })
+            }
+            return Promise.reject(new Error('unexpected url'))
+        })
+        axiosMock.post.mockResolvedValue({
+            data: {
+                message: 'Material eingefächert.',
+                data: { id: 4001, title: 'Neu', attachments_count: 0 },
+            },
+        })
+
+        renderMaterialsInboxView()
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: 'Anzeigen' })).toBeInTheDocument()
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+        await waitFor(() => {
+            expect(screen.getByText('Material A')).toBeInTheDocument()
+        })
+
+        const einfButtons = screen.getAllByRole('button', { name: 'Einfächern' })
+        expect(einfButtons.length).toBe(3)
+
+        await fireEvent.click(einfButtons[0])
+
+        await waitFor(() => {
+            expect(screen.getByText('Fächer')).toBeInTheDocument()
+        })
+        expect(screen.queryByText('Einheiten')).not.toBeInTheDocument()
+        expect(screen.getByText('Einheit: Kapitel 1')).toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Deutsch' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Literatur' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Als Kopie einfächern' }))
+
+        await waitFor(() => {
+            expect(axiosMock.post).toHaveBeenNthCalledWith(1, '/api/admin/materials/shares/inbox/material-insert', {
+                rule_id: 920,
+                material_id: 701,
+                target_level: 'unit',
+                target_id: 23,
+                import_mode: 'copy',
+            })
+        })
+        expect(axiosMock.post).toHaveBeenNthCalledWith(2, '/api/admin/materials/shares/inbox/material-insert', {
+            rule_id: 920,
+            material_id: 702,
+            target_level: 'unit',
+            target_id: 23,
+            import_mode: 'copy',
         })
     })
 

@@ -6,6 +6,7 @@ use App\Models\MaterialShareTarget;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
 use App\Models\MaterialCardClassification;
+use App\Models\MaterialInboxImport;
 use App\Models\MaterialStatus;
 use App\Models\MaterialSubject;
 use App\Models\MaterialTopic;
@@ -153,6 +154,19 @@ test('inbox users aggregates creators who shared with current user', function ()
         'topic_id' => $topic->id,
         'unit_id' => $unit->id,
     ]);
+    $creatorBCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creatorB->id,
+        'title' => 'Nicht von Alice',
+        'type' => 'Arbeitsblatt',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $creatorBCard->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => $unit->id,
+    ]);
 
     $ruleA1 = MaterialShareRule::query()->create([
         'school_id' => $this->school->id,
@@ -247,6 +261,7 @@ test('inbox users aggregates creators who shared with current user', function ()
     expect((string) $response->json('data.0.shared_items.0.hierarchy.0.topics.0.name'))->toBe('Algebra');
     expect((string) $response->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.name'))->toBe('Brüche');
     expect((string) $response->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.materials.0.title'))->toBe('Bruchrechnen Blatt');
+    expect(count($response->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.materials')))->toBe(1);
     expect((string) $response->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.materials.0.icon'))->toBe('mdi-file-upload-outline');
     expect((string) $response->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.materials.0.type'))->toBe('Arbeitsblatt');
     expect((string) $response->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.materials.0.type_label'))->toBe('Arbeitsblatt');
@@ -264,6 +279,7 @@ test('inbox users aggregates creators who shared with current user', function ()
     expect((string) $response->json('data.1.shared_items.0.permission'))->toBe(MaterialShareTarget::PERMISSION_READ_ONLY);
     expect((string) $response->json('data.1.shared_items.0.permission_label'))->toBe('NUR LESEN');
     expect((bool) $response->json('data.1.shared_items.0.is_imported'))->toBeFalse();
+    expect((string) $response->json('data.1.shared_items.0.hierarchy.0.topics.0.units.0.materials.0.title'))->toBe('Nicht von Alice');
 
     $ids = collect($response->json('data'))->pluck('id')->map(fn ($id) => (int) $id);
     expect($ids->contains((int) $this->materialsAdmin->id))->toBeFalse();
@@ -327,6 +343,164 @@ test('inbox users includes cross-school direct user shares', function () {
     expect((string) $response->json('data.0.shared_items.0.scope_path_label'))->toBe('Alle Fächer - Alle Themen - Alle Einheiten');
     expect((string) $response->json('data.0.shared_items.0.permission'))->toBe(MaterialShareTarget::PERMISSION_READ_ONLY);
     expect((string) $response->json('data.0.shared_items.0.permission_label'))->toBe('NUR LESEN');
+});
+
+test('inbox imported flag is false when imported target card is soft-deleted', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'source-import-flag@test.local',
+    ]);
+
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Shared Import Flag',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_MATERIAL,
+        'scope_id' => $sourceCard->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $targetImportedCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->materialsAdmin->id,
+        'title' => 'Imported Copy',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+
+    $importData = [
+        'target_user_id' => (int) $this->materialsAdmin->id,
+        'target_material_card_id' => (int) $targetImportedCard->id,
+        'source_rule_id' => (int) $rule->id,
+        'source_school_id' => (int) $this->school->id,
+        'source_material_id' => (int) $sourceCard->id,
+        'imported_at' => now(),
+    ];
+    if (Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+        $importData['import_mode'] = MaterialInboxImport::MODE_COPY;
+    }
+    MaterialInboxImport::query()->create($importData);
+
+    $beforeDelete = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertStatus(200);
+    expect((bool) $beforeDelete->json('data.0.shared_items.0.is_imported'))->toBeTrue();
+
+    $targetImportedCard->delete();
+
+    $afterDelete = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertStatus(200);
+    expect((bool) $afterDelete->json('data.0.shared_items.0.is_imported'))->toBeFalse();
+});
+
+test('inbox keeps shared material hierarchy live-linked after source updates', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'first_name' => 'Live',
+        'last_name' => 'Author',
+        'email' => 'live.author@test.local',
+    ]);
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Altes Fach',
+        'sort_order' => 1,
+    ]);
+    $topic = MaterialTopic::query()->create([
+        'subject_id' => $subject->id,
+        'name' => 'Altes Thema',
+        'sort_order' => 1,
+    ]);
+    $unit = MaterialUnit::query()->create([
+        'topic_id' => $topic->id,
+        'name' => 'Alte Einheit',
+        'sort_order' => 1,
+    ]);
+
+    $card = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Altes Material',
+        'type' => 'Arbeitsblatt',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $card->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => $unit->id,
+    ]);
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'v1.pdf',
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_MATERIAL,
+        'scope_id' => $card->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $firstInbox = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertStatus(200);
+
+    expect((string) $firstInbox->json('data.0.shared_items.0.scope_object_label'))->toBe('Altes Material');
+    expect((string) $firstInbox->json('data.0.shared_items.0.scope_path_label'))->toContain('Altes Fach - Altes Thema - Alte Einheit');
+    expect((string) $firstInbox->json('data.0.shared_items.0.hierarchy.0.name'))->toBe('Altes Fach');
+    expect((string) $firstInbox->json('data.0.shared_items.0.hierarchy.0.topics.0.name'))->toBe('Altes Thema');
+    expect((string) $firstInbox->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.name'))->toBe('Alte Einheit');
+    expect((string) $firstInbox->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.materials.0.title'))->toBe('Altes Material');
+    expect((int) $firstInbox->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.materials.0.attachments_count'))->toBe(1);
+
+    $card->title = 'Neues Material';
+    $card->save();
+    $subject->name = 'Neues Fach';
+    $subject->save();
+    $topic->name = 'Neues Thema';
+    $topic->save();
+    $unit->name = 'Neue Einheit';
+    $unit->save();
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'v2.pdf',
+    ]);
+
+    $updatedInbox = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertStatus(200);
+
+    expect((string) $updatedInbox->json('data.0.shared_items.0.scope_object_label'))->toBe('Neues Material');
+    expect((string) $updatedInbox->json('data.0.shared_items.0.scope_path_label'))->toContain('Neues Fach - Neues Thema - Neue Einheit');
+    expect((string) $updatedInbox->json('data.0.shared_items.0.hierarchy.0.name'))->toBe('Neues Fach');
+    expect((string) $updatedInbox->json('data.0.shared_items.0.hierarchy.0.topics.0.name'))->toBe('Neues Thema');
+    expect((string) $updatedInbox->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.name'))->toBe('Neue Einheit');
+    expect((string) $updatedInbox->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.materials.0.title'))->toBe('Neues Material');
+    expect((int) $updatedInbox->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.materials.0.attachments_count'))->toBe(2);
 });
 
 test('can copy shared material as original into own workspace with taxonomy type status and attachments', function () {
@@ -644,10 +818,361 @@ test('can einfächern shared material into selected target taxonomy', function (
     expect($newFileAttachment)->not->toBeNull();
     Storage::disk($disk)->assertExists((string) $newFileAttachment->file_path);
     expect(Storage::disk($disk)->get((string) $newFileAttachment->file_path))->toBe('einfachern-content');
+    if (Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+        $this->assertDatabaseHas('material_inbox_imports', [
+            'target_user_id' => $recipient->id,
+            'source_school_id' => $this->school->id,
+            'source_material_id' => $sourceCard->id,
+            'target_material_card_id' => $newCardId,
+            'import_mode' => MaterialInboxImport::MODE_COPY,
+        ]);
+    }
 
     $inboxAfterInsert = $this->getJson('/api/admin/materials/shares/inbox-users')
         ->assertStatus(200);
     expect((bool) $inboxAfterInsert->json('data.0.shared_items.0.is_imported'))->toBeTrue();
+});
+
+test('can einfächern shared material as link and overview marks it as linked with live updates', function () {
+    $materialsLicence = Licence::query()->firstWhere('name', 'Materialientool');
+    expect($materialsLicence)->not->toBeNull();
+
+    $recipientSchool = School::factory()->create(['is_selectable' => true]);
+    $recipientYear = Schoolyear::factory()->create(['school_id' => $recipientSchool->id]);
+    SchoolLicence::query()->create([
+        'school_id' => $recipientSchool->id,
+        'licence_id' => $materialsLicence->id,
+        'valid_until' => now()->addYear(),
+    ]);
+
+    $recipient = User::factory()->create([
+        'school_id' => $recipientSchool->id,
+        'schoolyear_id' => $recipientYear->id,
+        'email' => 'recipient-link@test.local',
+    ]);
+    $recipient->assignRole('materials_admin');
+
+    $targetSubject = MaterialSubject::query()->create([
+        'user_id' => $recipient->id,
+        'name' => 'Deutsch',
+        'sort_order' => 1,
+    ]);
+    $targetTopic = MaterialTopic::query()->create([
+        'subject_id' => $targetSubject->id,
+        'name' => 'Literatur',
+        'sort_order' => 1,
+    ]);
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'source-link@test.local',
+    ]);
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Verlinktes Dokument',
+        'source_text' => 'Version 1',
+        'type' => 'Arbeitsblatt',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_LINK,
+        'name' => 'Quelle',
+        'url' => 'https://example.org/v1',
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_MATERIAL,
+        'scope_id' => $sourceCard->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $recipient->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $this->actingAs($recipient, 'sanctum');
+
+    $response = $this->postJson('/api/admin/materials/shares/inbox/material-insert', [
+        'rule_id' => $rule->id,
+        'material_id' => $sourceCard->id,
+        'target_level' => 'topic',
+        'target_id' => $targetTopic->id,
+        'import_mode' => 'link',
+    ])
+        ->assertStatus(200)
+        ->assertJsonPath('message', 'Material als Link eingefächert.');
+
+    $linkedCardId = (int) $response->json('data.id');
+    expect($linkedCardId)->toBeGreaterThan(0);
+    if (Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+        $this->assertDatabaseHas('material_inbox_imports', [
+            'target_user_id' => $recipient->id,
+            'source_school_id' => $this->school->id,
+            'source_material_id' => $sourceCard->id,
+            'target_material_card_id' => $linkedCardId,
+            'import_mode' => MaterialInboxImport::MODE_LINK,
+        ]);
+    }
+
+    $initialCards = $this->getJson('/api/admin/materials/cards')
+        ->assertStatus(200);
+    expect((bool) $initialCards->json('data.0.is_linked'))->toBeTrue();
+    expect((string) $initialCards->json('data.0.linked_permission'))->toBe(MaterialShareTarget::PERMISSION_READ_ONLY);
+    expect((string) $initialCards->json('data.0.linked_permission_label'))->toBe('NUR LESEN');
+    expect((string) $initialCards->json('data.0.title'))->toBe('Verlinktes Dokument');
+
+    $sourceCard->update([
+        'title' => 'Verlinktes Dokument V2',
+        'source_text' => 'Version 2',
+    ]);
+    MaterialCardAttachment::query()
+        ->where('material_card_id', $sourceCard->id)
+        ->delete();
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_LINK,
+        'name' => 'Quelle',
+        'url' => 'https://example.org/v2',
+    ]);
+
+    $updatedCards = $this->getJson('/api/admin/materials/cards')
+        ->assertStatus(200);
+    expect((bool) $updatedCards->json('data.0.is_linked'))->toBeTrue();
+    expect((string) $updatedCards->json('data.0.linked_permission'))->toBe(MaterialShareTarget::PERMISSION_READ_ONLY);
+    expect((string) $updatedCards->json('data.0.linked_permission_label'))->toBe('NUR LESEN');
+    expect((string) $updatedCards->json('data.0.title'))->toBe('Verlinktes Dokument V2');
+    expect((string) $updatedCards->json('data.0.source_text'))->toBe('Version 2');
+    expect((string) $updatedCards->json('data.0.attachments.0.url'))->toBe('https://example.org/v2');
+});
+
+test('can einfächern material from unit-scoped share when selected material belongs to that unit', function () {
+    $materialsLicence = Licence::query()->firstWhere('name', 'Materialientool');
+    expect($materialsLicence)->not->toBeNull();
+
+    $recipientSchool = School::factory()->create(['is_selectable' => true]);
+    $recipientYear = Schoolyear::factory()->create(['school_id' => $recipientSchool->id]);
+    SchoolLicence::query()->create([
+        'school_id' => $recipientSchool->id,
+        'licence_id' => $materialsLicence->id,
+        'valid_until' => now()->addYear(),
+    ]);
+
+    $recipient = User::factory()->create([
+        'school_id' => $recipientSchool->id,
+        'schoolyear_id' => $recipientYear->id,
+        'email' => 'recipient-unit-scope@test.local',
+    ]);
+    $recipient->assignRole('materials_admin');
+
+    $targetSubject = MaterialSubject::query()->create([
+        'user_id' => $recipient->id,
+        'name' => 'Deutsch',
+        'sort_order' => 1,
+    ]);
+    $targetTopic = MaterialTopic::query()->create([
+        'subject_id' => $targetSubject->id,
+        'name' => 'Literatur',
+        'sort_order' => 1,
+    ]);
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'source-unit-scope@test.local',
+    ]);
+
+    $sourceSubject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Mathe',
+        'sort_order' => 1,
+    ]);
+    $sourceTopic = MaterialTopic::query()->create([
+        'subject_id' => $sourceSubject->id,
+        'name' => 'Algebra',
+        'sort_order' => 1,
+    ]);
+    $sourceUnit = MaterialUnit::query()->create([
+        'topic_id' => $sourceTopic->id,
+        'name' => 'Kapitel 1',
+        'sort_order' => 1,
+    ]);
+    $otherUnit = MaterialUnit::query()->create([
+        'topic_id' => $sourceTopic->id,
+        'name' => 'Kapitel 2',
+        'sort_order' => 2,
+    ]);
+
+    $cardInsideScope = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'In Scope',
+        'source_text' => 'A',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $cardInsideScope->id,
+        'subject_id' => $sourceSubject->id,
+        'topic_id' => $sourceTopic->id,
+        'unit_id' => $sourceUnit->id,
+    ]);
+
+    $cardOutsideScope = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Out of Scope',
+        'source_text' => 'B',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $cardOutsideScope->id,
+        'subject_id' => $sourceSubject->id,
+        'topic_id' => $sourceTopic->id,
+        'unit_id' => $otherUnit->id,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_UNIT,
+        'scope_id' => $sourceUnit->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $recipient->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $this->actingAs($recipient, 'sanctum');
+
+    $insideResponse = $this->postJson('/api/admin/materials/shares/inbox/material-insert', [
+        'rule_id' => $rule->id,
+        'material_id' => $cardInsideScope->id,
+        'target_level' => 'topic',
+        'target_id' => $targetTopic->id,
+    ])->assertStatus(200);
+
+    $insertedId = (int) $insideResponse->json('data.id');
+    expect($insertedId)->toBeGreaterThan(0);
+
+    $insertedCard = MaterialCard::query()
+        ->with(['classifications.subject', 'classifications.topic', 'classifications.unit'])
+        ->find($insertedId);
+    expect($insertedCard)->not->toBeNull();
+    expect((string) $insertedCard->title)->toBe('In Scope');
+    expect((string) $insertedCard->classifications[0]->subject?->name)->toBe('Deutsch');
+    expect((string) $insertedCard->classifications[0]->topic?->name)->toBe('Literatur');
+    expect($insertedCard->classifications[0]->unit_id)->toBeNull();
+
+    $this->postJson('/api/admin/materials/shares/inbox/material-insert', [
+        'rule_id' => $rule->id,
+        'material_id' => $cardOutsideScope->id,
+        'target_level' => 'topic',
+        'target_id' => $targetTopic->id,
+    ])->assertStatus(422)
+        ->assertJsonValidationErrors(['material_id']);
+});
+
+test('link then copy of same shared material keeps linked card flagged as link', function () {
+    $materialsLicence = Licence::query()->firstWhere('name', 'Materialientool');
+    expect($materialsLicence)->not->toBeNull();
+
+    $recipientSchool = School::factory()->create(['is_selectable' => true]);
+    $recipientYear = Schoolyear::factory()->create(['school_id' => $recipientSchool->id]);
+    SchoolLicence::query()->create([
+        'school_id' => $recipientSchool->id,
+        'licence_id' => $materialsLicence->id,
+        'valid_until' => now()->addYear(),
+    ]);
+
+    $recipient = User::factory()->create([
+        'school_id' => $recipientSchool->id,
+        'schoolyear_id' => $recipientYear->id,
+        'email' => 'recipient-link-copy@test.local',
+    ]);
+    $recipient->assignRole('materials_admin');
+
+    $targetSubject = MaterialSubject::query()->create([
+        'user_id' => $recipient->id,
+        'name' => 'Deutsch',
+        'sort_order' => 1,
+    ]);
+    $targetTopic = MaterialTopic::query()->create([
+        'subject_id' => $targetSubject->id,
+        'name' => 'Literatur',
+        'sort_order' => 1,
+    ]);
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'source-link-copy@test.local',
+    ]);
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Shared Link/Copy',
+        'source_text' => 'Original',
+        'type' => 'Arbeitsblatt',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_MATERIAL,
+        'scope_id' => $sourceCard->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $recipient->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $this->actingAs($recipient, 'sanctum');
+
+    $linkInsert = $this->postJson('/api/admin/materials/shares/inbox/material-insert', [
+        'rule_id' => $rule->id,
+        'material_id' => $sourceCard->id,
+        'target_level' => 'topic',
+        'target_id' => $targetTopic->id,
+        'import_mode' => 'link',
+    ])->assertStatus(200);
+    $linkedCardId = (int) $linkInsert->json('data.id');
+    expect($linkedCardId)->toBeGreaterThan(0);
+
+    $copyInsert = $this->postJson('/api/admin/materials/shares/inbox/material-insert', [
+        'rule_id' => $rule->id,
+        'material_id' => $sourceCard->id,
+        'target_level' => 'topic',
+        'target_id' => $targetTopic->id,
+        'import_mode' => 'copy',
+    ])->assertStatus(200);
+    $copiedCardId = (int) $copyInsert->json('data.id');
+    expect($copiedCardId)->toBeGreaterThan(0);
+    expect($copiedCardId)->not->toBe($linkedCardId);
+
+    $linkedShow = $this->getJson('/api/admin/materials/cards/' . $linkedCardId)
+        ->assertStatus(200);
+    expect((bool) $linkedShow->json('is_linked'))->toBeTrue();
+    expect((string) $linkedShow->json('linked_permission'))->toBe(MaterialShareTarget::PERMISSION_READ_ONLY);
+    expect((string) $linkedShow->json('linked_permission_label'))->toBe('NUR LESEN');
+
+    $copyShow = $this->getJson('/api/admin/materials/cards/' . $copiedCardId)
+        ->assertStatus(200);
+    expect((bool) $copyShow->json('is_linked'))->toBeFalse();
+    expect($copyShow->json('linked_permission'))->toBeNull();
+    expect($copyShow->json('linked_permission_label'))->toBeNull();
 });
 
 test('copy as original keeps existing target type and status definitions', function () {
@@ -853,6 +1378,39 @@ test('storing same workspace everyone target updates permission instead of creat
     ]);
 });
 
+test('same scope by different sharers creates separate share rules', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $first = $this->postJson('/api/admin/materials/shares/targets', workspaceEveryonePayload(
+        MaterialShareTarget::PERMISSION_READ_ONLY,
+        MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL
+    ))->assertStatus(200);
+
+    $firstRuleId = (int) $first->json('rule.id');
+
+    $this->actingAs($this->materialsModerator, 'sanctum');
+    $second = $this->postJson('/api/admin/materials/shares/targets', workspaceEveryonePayload(
+        MaterialShareTarget::PERMISSION_READ_WRITE,
+        MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL
+    ))->assertStatus(200);
+
+    $secondRuleId = (int) $second->json('rule.id');
+
+    expect($firstRuleId)->toBeGreaterThan(0);
+    expect($secondRuleId)->toBeGreaterThan(0);
+    expect($secondRuleId)->not->toBe($firstRuleId);
+
+    expect(MaterialShareRule::query()->count())->toBe(2);
+    $this->assertDatabaseHas('material_share_rules', [
+        'id' => $firstRuleId,
+        'created_by_user_id' => $this->materialsAdmin->id,
+    ]);
+    $this->assertDatabaseHas('material_share_rules', [
+        'id' => $secondRuleId,
+        'created_by_user_id' => $this->materialsModerator->id,
+    ]);
+});
+
 test('materials moderator can toggle share rule active state and remove last target', function () {
     $this->actingAs($this->materialsModerator, 'sanctum');
 
@@ -886,6 +1444,33 @@ test('materials moderator can toggle share rule active state and remove last tar
     ]);
     $this->assertDatabaseMissing('material_share_rules', [
         'id' => $ruleId,
+    ]);
+});
+
+test('materials admin can update share target permission', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $store = $this->postJson('/api/admin/materials/shares/targets', workspaceEveryonePayload(
+        MaterialShareTarget::PERMISSION_READ_ONLY,
+        MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL
+    ))->assertStatus(200);
+
+    $ruleId = (int) $store->json('rule.id');
+    $targetId = (int) $store->json('target_id');
+
+    $this->patchJson('/api/admin/materials/shares/targets/' . $targetId, [
+        'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
+    ])
+        ->assertStatus(200)
+        ->assertJsonPath('message', 'Freigabe-Berechtigung gespeichert.')
+        ->assertJsonPath('rule.id', $ruleId)
+        ->assertJsonPath('target_id', $targetId)
+        ->assertJsonPath('rule.targets.0.id', $targetId)
+        ->assertJsonPath('rule.targets.0.permission', MaterialShareTarget::PERMISSION_FULL_ACCESS);
+
+    $this->assertDatabaseHas('material_share_targets', [
+        'id' => $targetId,
+        'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
     ]);
 });
 
@@ -1085,6 +1670,10 @@ test('cannot patch or delete shares from another school', function () {
         'is_active' => false,
     ])->assertStatus(404);
 
+    $this->patchJson('/api/admin/materials/shares/targets/' . $target->id, [
+        'permission' => MaterialShareTarget::PERMISSION_READ_WRITE,
+    ])->assertStatus(404);
+
     $this->deleteJson('/api/admin/materials/shares/targets/' . $target->id)
         ->assertStatus(404);
 });
@@ -1222,6 +1811,27 @@ test('update rule validates boolean is_active', function () {
     ])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['is_active']);
+});
+
+test('update target validates permission', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $store = $this->postJson('/api/admin/materials/shares/targets', workspaceEveryonePayload(
+        MaterialShareTarget::PERMISSION_READ_ONLY,
+        MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL
+    ))->assertStatus(200);
+
+    $targetId = (int) $store->json('target_id');
+
+    $this->patchJson('/api/admin/materials/shares/targets/' . $targetId, [])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['permission']);
+
+    $this->patchJson('/api/admin/materials/shares/targets/' . $targetId, [
+        'permission' => 'invalid',
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['permission']);
 });
 
 test('index reports active count and sorts by updated_at descending', function () {

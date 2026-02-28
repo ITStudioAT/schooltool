@@ -6,7 +6,7 @@
 
         <div class="d-flex align-center justify-space-between flex-wrap ga-2 mb-2">
             <div class="d-flex align-center flex-wrap ga-2">
-                <v-menu location="bottom end">
+                <v-menu location="bottom end" :disabled="isReadOnly">
                     <template #activator="{ props: statusMenuActivatorProps }">
                         <v-chip
                             v-bind="statusMenuActivatorProps"
@@ -14,7 +14,8 @@
                             variant="flat"
                             :color="currentStatusColor"
                             append-icon="mdi-chevron-down"
-                            class="status-chip">
+                            class="status-chip"
+                            :disabled="isReadOnly">
                             {{ currentStatusLabel }}
                         </v-chip>
                     </template>
@@ -31,7 +32,7 @@
                     </v-list>
                 </v-menu>
 
-                <v-menu location="bottom end">
+                <v-menu location="bottom end" :disabled="isReadOnly">
                     <template #activator="{ props: typeMenuActivatorProps }">
                         <v-chip
                             v-bind="typeMenuActivatorProps"
@@ -39,7 +40,8 @@
                             :variant="normalizedMaterialTypeValue ? 'flat' : 'tonal'"
                             :color="currentMaterialTypeColor"
                             append-icon="mdi-chevron-down"
-                            class="type-chip">
+                            class="type-chip"
+                            :disabled="isReadOnly">
                             {{ currentMaterialTypeLabel }}
                         </v-chip>
                     </template>
@@ -101,6 +103,7 @@
             clearable
             required
             :autofocus="autofocusTitle"
+            :disabled="isReadOnly"
             hide-details="auto"
             @update:modelValue="$emit('update:title', $event)" />
 
@@ -114,6 +117,7 @@
             auto-grow
             hide-details="auto"
             class="mt-3"
+            :disabled="isReadOnly"
             @update:modelValue="$emit('update:description', $event)" />
 
         <div class="mt-2">
@@ -125,6 +129,7 @@
                         size="x-small"
                         variant="tonal"
                         color="primary"
+                        :disabled="isReadOnly"
                         @click="addClassificationAndOpenEditor" />
                 </div>
             </div>
@@ -141,6 +146,7 @@
                         :variant="classificationEditorVisible && activeClassificationIndex === item.index ? 'flat' : 'outlined'"
                         color="primary"
                         class="assigned-chip"
+                        :disabled="isReadOnly"
                         @click="openClassificationEditor(item.index)">
                         {{ item.label }}
                     </v-chip>
@@ -165,7 +171,7 @@
                                     size="x-small"
                                     variant="text"
                                     color="primary"
-                                    :disabled="isSaving || classificationCreateSaving"
+                                    :disabled="isReadOnly || isSaving || classificationCreateSaving"
                                     :title="'Fach hinzufügen'"
                                     @click="openClassificationCreateField('subject')" />
                             </div>
@@ -179,7 +185,7 @@
                                     density="comfortable"
                                     hide-details="auto"
                                     class="classification-inline-create-field"
-                                    :disabled="isSaving || classificationCreateSaving"
+                                    :disabled="isReadOnly || isSaving || classificationCreateSaving"
                                     @update:modelValue="classificationCreateValue = normalizeText($event)"
                                     @keyup.enter="submitClassificationCreateField"
                                     @keydown.esc="cancelClassificationCreateField" />
@@ -189,19 +195,20 @@
                                     variant="flat"
                                     color="primary"
                                     :loading="classificationCreateSaving"
-                                    :disabled="!canSubmitClassificationCreate"
+                                    :disabled="isReadOnly || !canSubmitClassificationCreate"
                                     @click="submitClassificationCreateField" />
                                 <v-btn
                                     icon="mdi-close"
                                     size="small"
                                     variant="text"
                                     color="warning"
-                                    :disabled="classificationCreateSaving"
+                                    :disabled="isReadOnly || classificationCreateSaving"
                                     @click="cancelClassificationCreateField" />
                             </div>
                             <v-chip-group
                                 :model-value="normalizedClassificationDraft.subject"
                                 column
+                                :disabled="isReadOnly"
                                 selected-class="classification-option-chip--selected"
                                 @update:modelValue="updateClassificationDraftField('subject', $event)">
                                 <v-chip
@@ -231,7 +238,7 @@
                                     size="x-small"
                                     variant="text"
                                     color="primary"
-                                    :disabled="isSaving || classificationCreateSaving || !canOpenTopicCreate"
+                                    :disabled="isReadOnly || isSaving || classificationCreateSaving || !canOpenTopicCreate"
                                     :title="canOpenTopicCreate ? 'Thema hinzufügen' : 'Zuerst Fach wählen'"
                                     @click="openClassificationCreateField('topic')" />
                             </div>
@@ -245,7 +252,7 @@
                                     density="comfortable"
                                     hide-details="auto"
                                     class="classification-inline-create-field"
-                                    :disabled="isSaving || classificationCreateSaving"
+                                    :disabled="isReadOnly || isSaving || classificationCreateSaving"
                                     @update:modelValue="classificationCreateValue = normalizeText($event)"
                                     @keyup.enter="submitClassificationCreateField"
                                     @keydown.esc="cancelClassificationCreateField" />
@@ -255,20 +262,20 @@
                                     variant="flat"
                                     color="primary"
                                     :loading="classificationCreateSaving"
-                                    :disabled="!canSubmitClassificationCreate"
+                                    :disabled="isReadOnly || !canSubmitClassificationCreate"
                                     @click="submitClassificationCreateField" />
                                 <v-btn
                                     icon="mdi-close"
                                     size="small"
                                     variant="text"
                                     color="warning"
-                                    :disabled="classificationCreateSaving"
+                                    :disabled="isReadOnly || classificationCreateSaving"
                                     @click="cancelClassificationCreateField" />
                             </div>
                             <v-chip-group
                                 :model-value="normalizedClassificationDraft.topic"
                                 column
-                                :disabled="!normalizeText(normalizedClassificationDraft.subject)"
+                                :disabled="isReadOnly || !normalizeText(normalizedClassificationDraft.subject)"
                                 selected-class="classification-option-chip--selected"
                                 @update:modelValue="updateClassificationDraftField('topic', $event)">
                                 <v-chip
@@ -298,7 +305,7 @@
                                     size="x-small"
                                     variant="text"
                                     color="primary"
-                                    :disabled="isSaving || classificationCreateSaving || !canOpenUnitCreate"
+                                    :disabled="isReadOnly || isSaving || classificationCreateSaving || !canOpenUnitCreate"
                                     :title="canOpenUnitCreate ? 'Bereich hinzufügen' : 'Zuerst Thema wählen'"
                                     @click="openClassificationCreateField('unit')" />
                             </div>
@@ -312,7 +319,7 @@
                                     density="comfortable"
                                     hide-details="auto"
                                     class="classification-inline-create-field"
-                                    :disabled="isSaving || classificationCreateSaving"
+                                    :disabled="isReadOnly || isSaving || classificationCreateSaving"
                                     @update:modelValue="classificationCreateValue = normalizeText($event)"
                                     @keyup.enter="submitClassificationCreateField"
                                     @keydown.esc="cancelClassificationCreateField" />
@@ -322,20 +329,20 @@
                                     variant="flat"
                                     color="primary"
                                     :loading="classificationCreateSaving"
-                                    :disabled="!canSubmitClassificationCreate"
+                                    :disabled="isReadOnly || !canSubmitClassificationCreate"
                                     @click="submitClassificationCreateField" />
                                 <v-btn
                                     icon="mdi-close"
                                     size="small"
                                     variant="text"
                                     color="warning"
-                                    :disabled="classificationCreateSaving"
+                                    :disabled="isReadOnly || classificationCreateSaving"
                                     @click="cancelClassificationCreateField" />
                             </div>
                             <v-chip-group
                                 :model-value="normalizedClassificationDraft.unit"
                                 column
-                                :disabled="!normalizeText(normalizedClassificationDraft.topic)"
+                                :disabled="isReadOnly || !normalizeText(normalizedClassificationDraft.topic)"
                                 selected-class="classification-option-chip--selected"
                                 @update:modelValue="updateClassificationDraftField('unit', $event)">
                                 <v-chip
@@ -363,7 +370,7 @@
                                     color="error"
                                     class="classification-action-btn"
                                     :title="'Zuordnung löschen'"
-                                    :disabled="isSaving || classificationCreateSaving || isClassificationRowEmpty(entry.row)"
+                                    :disabled="isReadOnly || isSaving || classificationCreateSaving || isClassificationRowEmpty(entry.row)"
                                     @click="removeClassificationRow(entry.index)" />
                                 <v-btn
                                     icon="mdi-close"
@@ -378,7 +385,7 @@
                                     variant="flat"
                                     color="primary"
                                     class="classification-action-btn"
-                                    :disabled="!canApplyClassificationDraft"
+                                    :disabled="isReadOnly || !canApplyClassificationDraft"
                                     @click="applyClassificationDraft" />
                             </div>
                         </v-col>
@@ -387,7 +394,7 @@
             </transition>
         </div>
 
-        <div class="mt-3">
+        <div v-if="showContentTools" class="mt-3">
             <div class="text-subtitle-2 mb-2">Inhalt hinzufügen</div>
             <div class="d-flex flex-wrap ga-2">
                 <v-btn
@@ -683,6 +690,14 @@ export default {
             type: Number,
             default: 20480,
         },
+        isReadOnly: {
+            type: Boolean,
+            default: false,
+        },
+        showContentTools: {
+            type: Boolean,
+            default: true,
+        },
     },
     emits: ['update:title', 'update:description', 'update:materialType', 'update:pendingAttachments', 'add-files', 'remove-temp-upload', 'upload-error', 'update:status', 'update:classifications', 'update:classificationEditorVisible', 'manage-types', 'save', 'cancel'],
     data() {
@@ -818,6 +833,7 @@ export default {
             }
         },
         canSave() {
+            if (this.isReadOnly) return true
             return String(this.title || '').trim().length > 0
         },
         canAddTextAttachment() {
@@ -1029,17 +1045,21 @@ export default {
                 || current.unit !== draft.unit
         },
         canApplyClassificationDraft() {
+            if (this.isReadOnly) return false
             const index = Number(this.activeClassificationIndex)
             return Number.isInteger(index) && index >= 0 && this.hasClassificationDraftChanges
         },
         canOpenTopicCreate() {
+            if (this.isReadOnly) return false
             return this.normalizeText(this.normalizedClassificationDraft.subject) !== ''
         },
         canOpenUnitCreate() {
+            if (this.isReadOnly) return false
             return this.normalizeText(this.normalizedClassificationDraft.subject) !== ''
                 && this.normalizeText(this.normalizedClassificationDraft.topic) !== ''
         },
         canSubmitClassificationCreate() {
+            if (this.isReadOnly) return false
             if (this.isSaving || this.classificationCreateSaving) return false
             const field = this.normalizeText(this.classificationCreateField).toLocaleLowerCase()
             const name = this.normalizeText(this.classificationCreateValue)
@@ -1069,6 +1089,7 @@ export default {
         openClassificationCreateField(field) {
             const key = this.normalizeText(field).toLocaleLowerCase()
             if (!['subject', 'topic', 'unit'].includes(key)) return
+            if (this.isReadOnly) return
             if (this.isSaving || this.classificationCreateSaving) return
             if (key === 'topic' && !this.canOpenTopicCreate) return
             if (key === 'unit' && !this.canOpenUnitCreate) return
@@ -1089,6 +1110,7 @@ export default {
         async submitClassificationCreateField() {
             const field = this.normalizeText(this.classificationCreateField).toLocaleLowerCase()
             const name = this.normalizeText(this.classificationCreateValue)
+            if (this.isReadOnly) return
             if (!['subject', 'topic', 'unit'].includes(field)) return
             if (!name || !this.canSubmitClassificationCreate) return
 
@@ -1172,7 +1194,7 @@ export default {
             return `Text ${stamp}`
         },
         openTextAttachmentDialog() {
-            if (this.isSaving) return
+            if (this.isSaving || !this.showContentTools) return
             if (!this.normalizeText(this.textAttachmentDraftTitle)) {
                 this.textAttachmentDraftTitle = this.ensureHtmlAttachmentName(this.defaultTextAttachmentTitle())
             }
@@ -1268,6 +1290,7 @@ ${bodyHtml}
 </html>`
         },
         appendTextAttachment() {
+            if (!this.showContentTools) return
             const rawTitle = this.normalizeText(this.textAttachmentDraftTitle) || this.defaultTextAttachmentTitle()
             const title = this.ensureHtmlAttachmentName(rawTitle)
             const content = String(this.textAttachmentDraftContent || '').trim()
@@ -1387,6 +1410,7 @@ ${bodyHtml}
             }
         },
         onAttachmentDragOver(event) {
+            if (!this.showContentTools) return
             const dt = event?.dataTransfer
             if (!dt) return
 
@@ -1400,6 +1424,7 @@ ${bodyHtml}
             }
         },
         onAttachmentDrop(event) {
+            if (!this.showContentTools) return
             const dt = event?.dataTransfer
             if (!dt) return
 
@@ -1769,7 +1794,7 @@ ${bodyHtml}
             }
         },
         async importAttachmentsFromClipboard() {
-            if (this.isSaving) return
+            if (this.isSaving || !this.showContentTools) return
 
             // Reliable mode: one click arms paste capture, then user presses STRG+V.
             if (!this.clipboardPasteArmed) {
@@ -1781,6 +1806,7 @@ ${bodyHtml}
             this.focusClipboardPasteField()
         },
         onAttachmentPaste(event) {
+            if (!this.showContentTools) return false
             const data = event?.clipboardData
             if (!data) return false
 
@@ -1944,6 +1970,7 @@ ${bodyHtml}
             this.$emit('update:pendingAttachments', nextRows)
         },
         beforeAddFile(fileItem) {
+            if (!this.showContentTools) return false
             const size = Number(fileItem?.file?.size || fileItem?.size || 0)
             if (!Number.isFinite(size) || size <= 0) return true
 
@@ -1955,6 +1982,7 @@ ${bodyHtml}
             return true
         },
         onProcessFile(error, fileItem) {
+            if (!this.showContentTools) return
             if (error) {
                 this.onProcessFileError(error)
                 return
@@ -2048,6 +2076,7 @@ ${bodyHtml}
             )
         },
         updatePendingAttachmentTitle(index, value) {
+            if (!this.showContentTools) return
             const rows = this.toPendingAttachments(this.pendingAttachments)
             if (index < 0 || index >= rows.length) return
 
@@ -2100,6 +2129,7 @@ ${bodyHtml}
             this.pendingAttachmentDeleteArmedKeys = this.pendingAttachmentDeleteArmedKeys.filter((key) => keySet.has(key))
         },
         removePendingAttachment(index) {
+            if (!this.showContentTools) return
             const rows = this.toPendingAttachments(this.pendingAttachments)
             if (index < 0 || index >= rows.length) return
 
@@ -2214,6 +2244,7 @@ ${bodyHtml}
         updateClassificationDraftField(field, value) {
             const key = String(field || '')
             if (!['subject', 'topic', 'unit'].includes(key)) return
+            if (this.isReadOnly) return
             if (this.classificationCreateField && this.classificationCreateField !== key && !this.classificationCreateSaving) {
                 this.cancelClassificationCreateField()
             }
@@ -2249,6 +2280,7 @@ ${bodyHtml}
             this.classificationDraftDirty = true
         },
         applyClassificationDraft() {
+            if (this.isReadOnly) return
             const index = Number(this.activeClassificationIndex)
             if (!Number.isInteger(index) || index < 0) return
 
@@ -2271,6 +2303,7 @@ ${bodyHtml}
             this.$emit('update:classifications', rows)
         },
         updateClassificationField(index, field, value) {
+            if (this.isReadOnly) return
             const rows = this.toClassificationRows(this.classifications)
             while (rows.length <= index) {
                 rows.push(this.emptyClassificationRow())
@@ -2299,6 +2332,7 @@ ${bodyHtml}
             this.$emit('update:classifications', rows)
         },
         addClassificationAndOpenEditor() {
+            if (this.isReadOnly) return
             const rows = this.toClassificationRows(this.classifications)
             let targetIndex = rows.findIndex((row) => this.isClassificationRowEmpty(row))
             if (targetIndex < 0) {
@@ -2329,6 +2363,7 @@ ${bodyHtml}
             this.$emit('update:classificationEditorVisible', false)
         },
         openClassificationEditor(index) {
+            if (this.isReadOnly) return
             const rows = this.visibleClassificationRows
             const parsedIndex = Number(index)
             let safeIndex = Number.isInteger(parsedIndex) ? parsedIndex : 0
@@ -2346,6 +2381,7 @@ ${bodyHtml}
             this.$emit('update:classificationEditorVisible', true)
         },
         removeClassificationRow(index) {
+            if (this.isReadOnly) return
             const rows = this.toClassificationRows(this.classifications)
             rows.splice(index, 1)
             const nextRows = rows.length ? rows : [this.emptyClassificationRow()]
@@ -2357,13 +2393,16 @@ ${bodyHtml}
             this.$emit('update:classifications', normalizedRows)
         },
         selectStatus(value) {
+            if (this.isReadOnly) return
             this.$emit('update:status', this.normalizeText(value))
         },
         selectMaterialType(value) {
+            if (this.isReadOnly) return
             const normalized = this.normalizeText(value)
             this.$emit('update:materialType', normalized)
         },
         openTypeManager() {
+            if (this.isReadOnly) return
             this.$emit('manage-types')
         },
         focusTitle() {

@@ -10,12 +10,16 @@ class MaterialInboxImport extends Model
 {
     use HasFactory;
 
+    public const MODE_COPY = 'copy';
+    public const MODE_LINK = 'link';
+
     protected $fillable = [
         'target_user_id',
         'target_material_card_id',
         'source_rule_id',
         'source_school_id',
         'source_material_id',
+        'import_mode',
         'imported_at',
     ];
 
@@ -38,4 +42,3 @@ class MaterialInboxImport extends Model
         return $this->belongsTo(MaterialShareRule::class, 'source_rule_id');
     }
 }
-
