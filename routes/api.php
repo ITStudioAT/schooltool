@@ -254,6 +254,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::put('/admin/materials/topics/{material_topic}', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'updateTopic']);
         Route::delete('/admin/materials/topics/{material_topic}', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'destroyTopic']);
         Route::post('/admin/materials/topics/{material_topic}/move', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'moveTopic']);
+        Route::post('/admin/materials/topics/{material_topic}/unlink', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'unlinkTopic']);
         Route::post('/admin/materials/topics/{material_topic}/move-to-subject', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'moveTopicToSubject']);
         Route::post('/admin/materials/topics/{material_topic}/convert-to-subject', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'convertTopicToSubject']);
         Route::post('/admin/materials/topics/{material_topic}/convert-to-unit', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'convertTopicToUnit']);

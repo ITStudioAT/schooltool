@@ -2,6 +2,41 @@ import { describe, expect, it } from 'vitest'
 import MaterialsOverviewView from '@/pages/admin/materials/components/views/MaterialsOverviewView.vue'
 
 describe('MaterialsOverviewView', () => {
+    it('keeps linked topic metadata from classification tree in subjects overview', () => {
+        const methods = (MaterialsOverviewView as any)?.methods || {}
+        const vm: any = {
+            ...methods,
+            typeOptions: [],
+            statusOptions: [],
+            defaultStatusValue: 'inbox',
+            classificationTree: [
+                {
+                    id: 10,
+                    name: 'Deutsch',
+                    topics: [
+                        {
+                            id: 20,
+                            name: 'Literatur',
+                            is_linked: true,
+                            linked_permission: 'read_only',
+                            linked_permission_label: 'NUR LESEN',
+                            units: [],
+                        },
+                    ],
+                },
+            ],
+        }
+
+        const items = methods.buildSubjectsContentsOverviewItems.call(vm, [], {})
+        expect(items).toHaveLength(1)
+
+        const topic = items[0]?.topics?.[0]
+        expect(topic).toBeTruthy()
+        expect(topic.isLinked).toBe(true)
+        expect(topic.linkedPermission).toBe('read_only')
+        expect(topic.linkedPermissionLabel).toBe('NUR LESEN')
+    })
+
     it('keeps duplicate unit names separated by unit_id in subjects overview', () => {
         const methods = (MaterialsOverviewView as any)?.methods || {}
         const vm: any = {

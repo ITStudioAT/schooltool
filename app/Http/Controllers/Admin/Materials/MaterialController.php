@@ -21,6 +21,8 @@ use App\Models\MaterialCardAttachment;
 use App\Models\MaterialCardClassification;
 use App\Models\MaterialInboxImport;
 use App\Models\MaterialShareTarget;
+use App\Models\MaterialTopic;
+use App\Models\MaterialTopicInboxImport;
 use App\Models\MaterialUnit;
 use App\Models\MaterialUnitInboxImport;
 use App\Models\User;
@@ -320,6 +322,129 @@ class MaterialController extends Controller
                 'id' => $unitId,
                 'removed' => true,
                 'removed_unit' => $removedUnit,
+                'removed_card_ids' => array_values(array_unique($removedCardIds)),
+            ],
+        ], 200);
+    }
+
+    public function unlinkTopic(MaterialTopic $material_topic, MaterialService $service)
+    {
+        $authUser = $this->authorizeForMaterials();
+        $this->assertTopicBelongsToOwner($authUser->id, $material_topic);
+
+        if (! Schema::hasTable('material_topic_inbox_imports')) {
+            abort(409, 'Link-Funktion für Themen ist erst nach aktueller Migration verfügbar.');
+        }
+
+        if (! Schema::hasTable('material_inbox_imports') || ! Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+            abort(409, 'Link-Funktion ist erst nach aktueller Migration verfügbar.');
+        }
+
+        $linkedTopicImportExists = MaterialTopicInboxImport::query()
+            ->where('target_user_id', (int) $authUser->id)
+            ->where('target_topic_id', (int) $material_topic->id)
+            ->exists();
+
+        if (! $linkedTopicImportExists) {
+            abort(422, 'Thema ist nicht als Link verknüpft.');
+        }
+
+        $topicId = (int) $material_topic->id;
+        $ownerId = (int) $authUser->id;
+        $topicCardIds = MaterialCardClassification::query()
+            ->where('topic_id', $topicId)
+            ->whereHas('materialCard', fn ($query) => $query->where('user_id', $ownerId))
+            ->pluck('material_card_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values();
+
+        $linkedCardIds = $topicCardIds->isEmpty()
+            ? collect()
+            : MaterialInboxImport::query()
+                ->where('target_user_id', $ownerId)
+                ->where('import_mode', MaterialInboxImport::MODE_LINK)
+                ->whereIn('target_material_card_id', $topicCardIds->all())
+                ->pluck('target_material_card_id')
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn (int $id) => $id > 0)
+                ->unique()
+                ->values();
+
+        $removedCardIds = [];
+        $removedTopic = false;
+
+        DB::transaction(function () use (
+            $authUser,
+            $service,
+            $ownerId,
+            $topicId,
+            $linkedCardIds,
+            &$removedCardIds,
+            &$removedTopic
+        ) {
+            if ($linkedCardIds->isNotEmpty()) {
+                MaterialInboxImport::query()
+                    ->where('target_user_id', $ownerId)
+                    ->whereIn('target_material_card_id', $linkedCardIds->all())
+                    ->delete();
+
+                $cards = MaterialCard::query()
+                    ->where('user_id', $ownerId)
+                    ->whereIn('id', $linkedCardIds->all())
+                    ->get();
+
+                foreach ($cards as $card) {
+                    $cardId = (int) $card->id;
+                    $service->deleteCard($card);
+                    $service->purgeDeletedCardById($authUser, $cardId);
+                    $removedCardIds[] = $cardId;
+                }
+            }
+
+            if (Schema::hasTable('material_unit_inbox_imports')) {
+                $topicUnitIds = MaterialUnit::query()
+                    ->where('topic_id', $topicId)
+                    ->pluck('id')
+                    ->map(fn ($id) => (int) $id)
+                    ->filter(fn (int $id) => $id > 0)
+                    ->values();
+
+                if ($topicUnitIds->isNotEmpty()) {
+                    MaterialUnitInboxImport::query()
+                        ->where('target_user_id', $ownerId)
+                        ->whereIn('target_unit_id', $topicUnitIds->all())
+                        ->delete();
+                }
+            }
+
+            MaterialTopicInboxImport::query()
+                ->where('target_user_id', $ownerId)
+                ->where('target_topic_id', $topicId)
+                ->delete();
+
+            $topicStillUsed = MaterialCardClassification::query()
+                ->where('topic_id', $topicId)
+                ->whereHas('materialCard', fn ($query) => $query->where('user_id', $ownerId))
+                ->exists();
+
+            if (! $topicStillUsed) {
+                MaterialTopic::query()
+                    ->whereKey($topicId)
+                    ->delete();
+                $removedTopic = true;
+            }
+        });
+
+        sort($removedCardIds);
+
+        return response()->json([
+            'message' => 'Link entfernt.',
+            'data' => [
+                'id' => $topicId,
+                'removed' => true,
+                'removed_topic' => $removedTopic,
                 'removed_card_ids' => array_values(array_unique($removedCardIds)),
             ],
         ], 200);
@@ -649,6 +774,15 @@ class MaterialController extends Controller
         $ownerId = (int) ($unit->topic?->subject?->user_id ?? 0);
         if ($ownerId !== $authUserId) {
             abort(403, 'Sie dürfen nur eigene Einheiten verwalten.');
+        }
+    }
+
+    private function assertTopicBelongsToOwner(int $authUserId, MaterialTopic $topic): void
+    {
+        $topic->loadMissing('subject');
+        $ownerId = (int) ($topic->subject?->user_id ?? 0);
+        if ($ownerId !== $authUserId) {
+            abort(403, 'Sie dürfen nur eigene Themen verwalten.');
         }
     }
 

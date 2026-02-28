@@ -4,12 +4,12 @@
             :hide-overview-mode-toggle="hideOverviewModeToggle"
             :overview-view-mode="overviewViewMode"
             :is-loading="isLoading"
-            :action-disabled="isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null"
+            :action-disabled="isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null"
             @update:overview-view-mode="setOverviewMode"
             @refresh="loadCards" />
 
         <MaterialsOverviewFilters
-            :action-disabled="isLoading || isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null"
+            :action-disabled="isLoading || isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null"
             :badge-count-content="badgeCountContent"
             :subject-all-count="subjectAllCount"
             :has-active-subject-filter="hasActiveSubjectFilter"
@@ -155,7 +155,7 @@
             <MaterialsSubjectsContentsTree
                 v-else
                 :items="subjectsContentsOverviewItems"
-                :action-busy="isLoading || isDeletingId !== null || isSavingEdit || isSavingCreate || isRemovingTreeClassification || isUnlinkingId !== null || isUnlinkingUnitId !== null"
+                :action-busy="isLoading || isDeletingId !== null || isSavingEdit || isSavingCreate || isRemovingTreeClassification || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null"
                 :enable-share-buttons="enableShareButtons"
                 :enable-create-buttons="!readOnlyMaterialActions"
                 :enable-remove-buttons="!readOnlyMaterialActions"
@@ -170,6 +170,7 @@
                 @open-create="openCreateDialogFromTree"
                 @open-attachments="openAttachmentManager"
                 @unlink-linked-material="unlinkLinkedCard"
+                @unlink-linked-topic="unlinkLinkedTopic"
                 @unlink-linked-unit="unlinkLinkedUnit" />
         </template>
 
@@ -177,7 +178,7 @@
             <MaterialsOverviewGrid
                 v-if="isCompactOverview"
                 :cards="sortedCards"
-                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null"
+                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null"
                 :show-edit-action="!readOnlyMaterialActions"
                 :card-background-style-fn="cardBackgroundStyle"
                 :status-color-fn="statusColor"
@@ -195,7 +196,7 @@
             <MaterialsOverviewAlphaList
                 v-else-if="isAlphabeticOverview"
                 :cards="sortedCards"
-                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null"
+                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null"
                 :show-edit-action="!readOnlyMaterialActions"
                 :card-background-style-fn="cardBackgroundStyle"
                 :status-color-fn="statusColor"
@@ -211,7 +212,7 @@
             <MaterialsOverviewList
                 v-else
                 :cards="sortedCards"
-                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null"
+                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null"
                 :show-edit-action="!readOnlyMaterialActions"
                 :card-background-style-fn="cardBackgroundStyle"
                 :status-color-fn="statusColor"
@@ -235,7 +236,7 @@
                 :last-page="lastMetaPage"
                 :has-previous-page="hasPreviousPage"
                 :has-next-page="hasNextPage"
-                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null"
+                :action-disabled="isLoading || isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null"
                 @first="goToFirstPage"
                 @previous="goToPreviousPage"
                 @next="goToNextPage"
@@ -932,6 +933,7 @@ export default {
             isDeletingId: null,
             isUnlinkingId: null,
             isUnlinkingUnitId: null,
+            isUnlinkingTopicId: null,
             createDialogOpen: false,
             editDialogOpen: false,
             attachmentDialogOpen: false,
@@ -1867,6 +1869,8 @@ export default {
                             const topicId = Number(topicNode?.id)
                             const topicName = this.normalizeFilterText(topicNode?.name)
                             if (!topicName) return null
+                            const topicLinkedPermission = this.normalizeLinkedPermission(topicNode?.linked_permission)
+                            const topicIsLinked = topicNode?.is_linked === true || topicLinkedPermission !== ''
 
                             const units = (Array.isArray(topicNode?.units) ? topicNode.units : [])
                                 .map((unitNode) => {
@@ -1888,6 +1892,9 @@ export default {
                             return {
                                 id: Number.isFinite(topicId) && topicId > 0 ? topicId : null,
                                 name: topicName,
+                                isLinked: topicIsLinked,
+                                linkedPermission: topicLinkedPermission,
+                                linkedPermissionLabel: String(topicNode?.linked_permission_label || '').trim(),
                                 units,
                             }
                         })
@@ -1968,6 +1975,9 @@ export default {
                 const created = {
                     id: null,
                     name: normalizedName,
+                    isLinked: false,
+                    linkedPermission: '',
+                    linkedPermissionLabel: '',
                     materials: [],
                     _materialIds: new Set(),
                     units: [],
@@ -3195,7 +3205,8 @@ export default {
                 this.isDeletingId !== null ||
                 this.isRemovingTreeClassification ||
                 this.isUnlinkingId !== null ||
-                this.isUnlinkingUnitId !== null
+                this.isUnlinkingUnitId !== null ||
+                this.isUnlinkingTopicId !== null
             ) return
 
             const cardId = Number(card?.id)
@@ -3232,7 +3243,8 @@ export default {
                 this.isDeletingId !== null ||
                 this.isRemovingTreeClassification ||
                 this.isUnlinkingId !== null ||
-                this.isUnlinkingUnitId !== null
+                this.isUnlinkingUnitId !== null ||
+                this.isUnlinkingTopicId !== null
             ) return
 
             const unitId = Number(unit?.id)
@@ -3263,6 +3275,49 @@ export default {
                 await this.loadCards(null, { forceFilterCountRefresh: true })
             } finally {
                 this.isUnlinkingUnitId = null
+            }
+        },
+        async unlinkLinkedTopic(topic) {
+            if (this.readOnlyMaterialActions) return
+            if (
+                this.isLoading ||
+                this.isSavingCreate ||
+                this.isSavingEdit ||
+                this.isDeletingId !== null ||
+                this.isRemovingTreeClassification ||
+                this.isUnlinkingId !== null ||
+                this.isUnlinkingUnitId !== null ||
+                this.isUnlinkingTopicId !== null
+            ) return
+
+            const topicId = Number(topic?.id)
+            if (!Number.isFinite(topicId) || topicId <= 0) return
+
+            const linkedPermission = this.normalizeLinkedPermission(topic?.linkedPermission ?? topic?.linked_permission)
+            const isLinked = topic?.isLinked === true || topic?.is_linked === true || linkedPermission !== ''
+            if (!isLinked) return
+
+            this.isUnlinkingTopicId = topicId
+            try {
+                const result = await this.materialCardStore.unlinkTopic(topicId)
+                if (!result) return
+
+                const removedCardIds = Array.isArray(result.removedCardIds)
+                    ? result.removedCardIds.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0)
+                    : []
+
+                if (removedCardIds.length > 0) {
+                    if (this.detailDialogOpen && removedCardIds.includes(Number(this.detailDialogCard?.id || 0))) {
+                        this.closeDetailDialog()
+                    }
+                    if (this.editDialogOpen && removedCardIds.includes(Number(this.editForm?.id || 0))) {
+                        await this.closeEditDialog()
+                    }
+                }
+
+                await this.loadCards(null, { forceFilterCountRefresh: true })
+            } finally {
+                this.isUnlinkingTopicId = null
             }
         },
         openEditDialog(card) {

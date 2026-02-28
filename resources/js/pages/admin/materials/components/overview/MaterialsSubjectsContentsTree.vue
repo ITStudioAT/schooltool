@@ -137,8 +137,20 @@
                             :style="topicGroupStyleFn(subject)">
                             <div class="overview-subjects-node-row">
                                 <div class="overview-subjects-node overview-subjects-node--topic">
-                                    <v-icon size="14" icon="mdi-book-open-page-variant-outline" class="mr-2" />
+                                    <v-icon
+                                        size="14"
+                                        :icon="topic.isLinked ? 'mdi-link-variant' : 'mdi-book-open-page-variant-outline'"
+                                        :color="topic.isLinked ? linkedPermissionChipColor(topic.linkedPermission) : undefined"
+                                        class="mr-2" />
                                     <span>{{ topic.name }}</span>
+                                    <v-chip
+                                        v-if="topic.isLinked"
+                                        size="x-small"
+                                        variant="outlined"
+                                        :color="linkedPermissionChipColor(topic.linkedPermission)"
+                                        class="overview-subjects-material-type">
+                                        {{ linkedPermissionLabel(topic) }}
+                                    </v-chip>
                                     <v-icon
                                         v-if="hasPersistedNodeId(topic.id) && showShareIndicator('topic', topic.id)"
                                         size="15"
@@ -147,7 +159,7 @@
                                         class="ml-1" />
                                 </div>
                                 <v-btn
-                                    v-if="enableCreateButtons && hasPersistedNodeId(topic.id)"
+                                    v-if="enableCreateButtons && hasPersistedNodeId(topic.id) && canCreateMaterialInTopic(topic)"
                                     size="x-small"
                                     color="primary"
                                     variant="tonal"
@@ -168,6 +180,18 @@
                                     prepend-icon="mdi-share-variant-outline"
                                     @click="$emit('open-share', { level: 'topic', id: topic.id, label: topic.name, parentLabel: subject.name })">
                                     Freigabe
+                                </v-btn>
+                                <v-btn
+                                    v-if="enableRemoveButtons && hasPersistedNodeId(topic.id) && topic.isLinked"
+                                    size="x-small"
+                                    color="warning"
+                                    variant="text"
+                                    density="comfortable"
+                                    prepend-icon="mdi-link-off"
+                                    :disabled="actionBusy"
+                                    title="Link entfernen (ganzes Thema)"
+                                    @click="$emit('unlink-linked-topic', topic)">
+                                    Link entfernen
                                 </v-btn>
                             </div>
 
@@ -468,7 +492,7 @@ export default {
             required: true,
         },
     },
-    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'unlink-linked-material', 'unlink-linked-unit'],
+    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'unlink-linked-material', 'unlink-linked-topic', 'unlink-linked-unit'],
     methods: {
         linkedPermissionChipColor(permission) {
             const normalized = String(permission || '').trim()
@@ -486,6 +510,12 @@ export default {
         canCreateMaterialInUnit(unit) {
             if (unit?.isLinked !== true) return true
             const permission = this.normalizeLinkedPermission(unit?.linkedPermission)
+            if (permission === '') return false
+            return permission !== 'read_only'
+        },
+        canCreateMaterialInTopic(topic) {
+            if (topic?.isLinked !== true) return true
+            const permission = this.normalizeLinkedPermission(topic?.linkedPermission)
             if (permission === '') return false
             return permission !== 'read_only'
         },

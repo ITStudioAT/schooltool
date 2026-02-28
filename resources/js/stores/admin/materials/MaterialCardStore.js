@@ -575,6 +575,51 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                 adminStore.is_loading--
             }
         },
+        async unlinkTopic(id) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.post('/api/admin/materials/topics/' + id + '/unlink')
+                const topicId = Number(response?.data?.data?.id || id || 0)
+                const removedCardIds = Array.isArray(response?.data?.data?.removed_card_ids)
+                    ? response.data.data.removed_card_ids
+                          .map((value) => Number(value))
+                          .filter((value) => Number.isFinite(value) && value > 0)
+                    : []
+
+                if (removedCardIds.length > 0) {
+                    this.cards = this.cards.filter((row) => !removedCardIds.includes(Number(row?.id || 0)))
+                    if (removedCardIds.includes(Number(this.selected_card?.id || 0))) {
+                        this.selected_card = null
+                    }
+                }
+
+                await this.loadConfig()
+                notification.notify({
+                    message: response?.data?.message || 'Link entfernt.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return {
+                    id: topicId,
+                    removed: true,
+                    removedTopic: response?.data?.data?.removed_topic === true,
+                    removedCardIds,
+                }
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Link konnte nicht entfernt werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
 
         async restoreLastDeleted() {
             return this.restoreDeletedById(null)

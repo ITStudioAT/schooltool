@@ -326,7 +326,7 @@
                                                             size="x-small"
                                                             variant="text"
                                                             color="primary"
-                                                            :disabled="isSavingSubjectCatalog || !topic.id"
+                                                            :disabled="isSavingSubjectCatalog || !topic.id || !canEditTopicNode(topic)"
                                                             @click="openReclassifyDialogForTopic(subject, topic)" />
                                                         <v-btn
                                                             icon="mdi-chevron-up"
@@ -345,10 +345,10 @@
                                                             size="x-small"
                                                             variant="text"
                                                             color="primary"
-                                                            :disabled="isSavingSubjectCatalog || !topic.id"
+                                                            :disabled="isSavingSubjectCatalog || !topic.id || !canEditTopicNode(topic)"
                                                             @click="startRenameTopic(topic)" />
                                                         <v-btn
-                                                            v-if="topic.canDelete"
+                                                            v-if="topic.canDelete && canEditTopicNode(topic)"
                                                             icon="mdi-delete-outline"
                                                             size="x-small"
                                                             variant="text"
@@ -408,7 +408,7 @@
                                                         <button
                                                             type="button"
                                                             class="subjects-tree-new-btn"
-                                                            :disabled="isSavingSubjectCatalog"
+                                                            :disabled="isSavingSubjectCatalog || !canEditTopicNode(topic)"
                                                             @click="startCreateUnit(topic)">
                                                             <span class="subjects-tree-node subjects-tree-node--new">
                                                                 <v-icon size="12" icon="mdi-plus" class="mr-1" />
@@ -994,6 +994,9 @@ export default {
                             const topicName = this.normalizeTreeName(topicNode?.name)
                             if (!topicName) return null
                             const topicCanDelete = topicNode?.can_delete !== false
+                            const topicIsLinked = topicNode?.is_linked === true || topicNode?.isLinked === true
+                            const topicLinkedPermission = this.normalizeLinkedPermission(topicNode?.linked_permission ?? topicNode?.linkedPermission)
+                            const topicLinkedPermissionLabel = this.normalizeTreeName(topicNode?.linked_permission_label ?? topicNode?.linkedPermissionLabel)
 
                             const unitNodes = Array.isArray(topicNode?.units) ? topicNode.units : []
                             const units = unitNodes
@@ -1020,6 +1023,9 @@ export default {
                                 id: Number.isFinite(topicId) && topicId > 0 ? topicId : null,
                                 name: topicName,
                                 canDelete: topicCanDelete,
+                                isLinked: topicIsLinked,
+                                linkedPermission: topicLinkedPermission,
+                                linkedPermissionLabel: topicLinkedPermissionLabel || '',
                                 units,
                             }
                         })
@@ -1485,6 +1491,33 @@ export default {
 
             return null
         },
+        findTopicNodeById(topicId) {
+            const id = Number(topicId)
+            if (!Number.isFinite(id) || id <= 0) return null
+
+            const subjects = Array.isArray(this.subjectTreeItems) ? this.subjectTreeItems : []
+            for (const subject of subjects) {
+                const topics = Array.isArray(subject?.topics) ? subject.topics : []
+                const topic = topics.find((entry) => Number(entry?.id) === id)
+                if (topic) return topic
+            }
+
+            return null
+        },
+        isTopicReadOnlyLinked(topic) {
+            if (topic?.isLinked !== true) return false
+            return this.normalizeLinkedPermission(topic?.linkedPermission) === 'read_only'
+        },
+        canEditTopicNode(topic) {
+            const topicId = Number(topic?.id)
+            if (!Number.isFinite(topicId) || topicId <= 0) return false
+            return !this.isTopicReadOnlyLinked(topic)
+        },
+        canEditTopicById(topicId) {
+            const topic = this.findTopicNodeById(topicId)
+            if (!topic) return false
+            return this.canEditTopicNode(topic)
+        },
         isUnitReadOnlyLinked(unit) {
             if (unit?.isLinked !== true) return false
             return this.normalizeLinkedPermission(unit?.linkedPermission) === 'read_only'
@@ -1924,6 +1957,7 @@ export default {
             this.focusSubjectCatalogEditorInput()
         },
         startRenameTopic(topic) {
+            if (!this.canEditTopicNode(topic)) return
             const topicId = Number(topic?.id)
             if (!Number.isFinite(topicId) || topicId <= 0) return
             this.subjectCatalogEditor = {
@@ -1937,6 +1971,7 @@ export default {
             this.focusSubjectCatalogEditorInput()
         },
         startCreateUnit(topic) {
+            if (!this.canEditTopicNode(topic)) return
             const topicId = Number(topic?.id)
             if (!Number.isFinite(topicId) || topicId <= 0) return
             this.subjectCatalogEditor = {
@@ -1980,6 +2015,7 @@ export default {
             const topicId = Number(topic?.id)
             const topics = Array.isArray(subject?.topics) ? subject.topics : []
             return Number.isFinite(topicId) && topicId > 0
+                && this.canEditTopicNode(topic)
                 && topics.length > 1
                 && Number(topicIndex) > 0
         },
@@ -1988,6 +2024,7 @@ export default {
             const index = Number(topicIndex)
             const topics = Array.isArray(subject?.topics) ? subject.topics : []
             return Number.isFinite(topicId) && topicId > 0
+                && this.canEditTopicNode(topic)
                 && topics.length > 1
                 && Number.isInteger(index)
                 && index >= 0
@@ -2026,6 +2063,7 @@ export default {
             const topicId = Number(topic?.id)
             const normalizedDirection = String(direction || '').toLowerCase()
             if (!Number.isFinite(topicId) || topicId <= 0) return
+            if (!this.canEditTopicById(topicId)) return
             if (!['up', 'down'].includes(normalizedDirection)) return
 
             await this.withSubjectCatalogSaving(() =>
@@ -2083,6 +2121,7 @@ export default {
             }
         },
         openReclassifyDialogForTopic(subject, topic) {
+            if (!this.canEditTopicNode(topic)) return
             const sourceId = Number(topic?.id)
             const sourceSubjectId = Number(subject?.id)
             if (!Number.isFinite(sourceId) || sourceId <= 0 || this.isSavingSubjectCatalog) return

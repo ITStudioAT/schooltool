@@ -854,7 +854,174 @@ describe('MaterialsInboxView', () => {
         expect(screen.getByText('Material Reload')).toBeInTheDocument()
     })
 
-    it('topic scope hides subject level and omits "Ohne Einheit" for direct topic materials', async () => {
+    it('supports topic-level bulk einfächern and forwards source_topic_id for link mode', async () => {
+        axiosMock.get.mockImplementation((url: string) => {
+            if (url === '/api/admin/materials/shares/inbox-users') {
+                return Promise.resolve({
+                    data: {
+                        data: [
+                            {
+                                id: 81,
+                                label: 'Topic Source',
+                                email: 'topic-bulk@test.local',
+                                shared_rules_count: 1,
+                                shared_items: [
+                                    {
+                                        rule_id: 980,
+                                        scope_type: 'topic',
+                                        scope_label: 'Thema',
+                                        scope_object_label: 'Algebra',
+                                        scope_path_label: 'Mathematik - Algebra - Alle Einheiten',
+                                        permission: 'read_write',
+                                        permission_label: 'LESEN/SCHREIBEN',
+                                        hierarchy: [
+                                            {
+                                                id: 11,
+                                                name: 'Mathematik',
+                                                topics: [
+                                                    {
+                                                        id: 2,
+                                                        name: 'Algebra',
+                                                        units: [
+                                                            {
+                                                                id: 301,
+                                                                name: 'Kapitel 1',
+                                                                materials: [
+                                                                    { id: 701, title: 'Material A' },
+                                                                    { id: 702, title: 'Material B' },
+                                                                ],
+                                                            },
+                                                            {
+                                                                id: 0,
+                                                                name: 'Ohne Einheit',
+                                                                materials: [{ id: 703, title: 'Direkt am Topic' }],
+                                                            },
+                                                        ],
+                                                    },
+                                                ],
+                                            },
+                                        ],
+                                        updated_at: '',
+                                    },
+                                ],
+                            },
+                        ],
+                        meta: { needs_migration: false },
+                    },
+                })
+            }
+            if (url === '/api/admin/materials/config') {
+                return Promise.resolve({
+                    data: {
+                        classification_tree: [
+                            {
+                                id: 21,
+                                name: 'Deutsch',
+                                topics: [],
+                            },
+                        ],
+                    },
+                })
+            }
+            return Promise.reject(new Error('unexpected url'))
+        })
+
+        axiosMock.post.mockImplementation((url: string) => {
+            if (url === '/api/admin/materials/topics') {
+                return Promise.resolve({
+                    data: {
+                        data: { id: 220, subject_id: 21, name: 'Algebra' },
+                    },
+                })
+            }
+            if (url === '/api/admin/materials/units') {
+                return Promise.resolve({
+                    data: {
+                        data: { id: 230, topic_id: 220, name: 'Kapitel 1' },
+                    },
+                })
+            }
+            if (url === '/api/admin/materials/shares/inbox/material-insert') {
+                return Promise.resolve({
+                    data: {
+                        message: 'Material als Link eingefächert.',
+                        data: { id: 9100, title: 'Neu', attachments_count: 0 },
+                    },
+                })
+            }
+            return Promise.reject(new Error('unexpected post url'))
+        })
+
+        renderMaterialsInboxView()
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: 'Anzeigen' })).toBeInTheDocument()
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+        await waitFor(() => {
+            expect(screen.getByText('Material A')).toBeInTheDocument()
+        })
+
+        await fireEvent.click(screen.getAllByRole('button', { name: 'Einfächern' })[0])
+        await waitFor(() => {
+            expect(screen.getByText('Thema: Algebra')).toBeInTheDocument()
+        })
+        expect(screen.queryByText('Themen')).not.toBeInTheDocument()
+        expect(screen.queryByText('Einheiten')).not.toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Deutsch' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Als Link einfächern' }))
+
+        await waitFor(() => {
+            expect(axiosMock.post).toHaveBeenNthCalledWith(1, '/api/admin/materials/topics', {
+                data: {
+                    subject_id: 21,
+                    name: 'Algebra',
+                    allow_duplicate: true,
+                },
+            })
+        })
+        await waitFor(() => {
+            expect(axiosMock.post).toHaveBeenNthCalledWith(2, '/api/admin/materials/units', {
+                data: {
+                    topic_id: 220,
+                    name: 'Kapitel 1',
+                    allow_duplicate: true,
+                },
+            })
+        })
+        await waitFor(() => {
+            expect(axiosMock.post).toHaveBeenNthCalledWith(3, '/api/admin/materials/shares/inbox/material-insert', {
+                rule_id: 980,
+                material_id: 701,
+                target_level: 'unit',
+                target_id: 230,
+                import_mode: 'link',
+                source_unit_id: 301,
+                source_topic_id: 2,
+            })
+            expect(axiosMock.post).toHaveBeenNthCalledWith(4, '/api/admin/materials/shares/inbox/material-insert', {
+                rule_id: 980,
+                material_id: 702,
+                target_level: 'unit',
+                target_id: 230,
+                import_mode: 'link',
+                source_unit_id: 301,
+                source_topic_id: 2,
+            })
+            expect(axiosMock.post).toHaveBeenNthCalledWith(5, '/api/admin/materials/shares/inbox/material-insert', {
+                rule_id: 980,
+                material_id: 703,
+                target_level: 'topic',
+                target_id: 220,
+                import_mode: 'link',
+                source_topic_id: 2,
+            })
+        })
+    })
+
+    it('topic scope shows subject line and omits "Ohne Einheit" for direct topic materials', async () => {
         axiosMock.get.mockResolvedValue({
             data: {
                 data: [
@@ -916,7 +1083,7 @@ describe('MaterialsInboxView', () => {
             expect(screen.getByText('Direkt am Topic')).toBeInTheDocument()
         })
 
-        expect(screen.queryByText('SubjectHiddenOnly')).not.toBeInTheDocument()
+        expect(screen.getByText('SubjectHiddenOnly')).toBeInTheDocument()
         expect(screen.queryByText('Ohne Einheit')).not.toBeInTheDocument()
     })
 })

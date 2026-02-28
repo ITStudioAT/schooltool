@@ -18,6 +18,7 @@ class MaterialTopicStoreRequest extends FormRequest
         return [
             'data.subject_id' => $this->subjectIdRules(),
             'data.name' => ['required', 'string', 'max:255'],
+            'data.allow_duplicate' => ['nullable', 'boolean'],
         ];
     }
 
@@ -32,4 +33,3 @@ class MaterialTopicStoreRequest extends FormRequest
         return $rules;
     }
 }
-

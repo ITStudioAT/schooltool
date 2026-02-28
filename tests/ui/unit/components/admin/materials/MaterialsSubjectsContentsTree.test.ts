@@ -39,6 +39,30 @@ function renderTree(items: any[], options: { enableRemoveButtons?: boolean } = {
 }
 
 describe('MaterialsSubjectsContentsTree', () => {
+    it('renders linked permission chip on a linked topic', () => {
+        renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [
+                    {
+                        id: 11,
+                        name: 'Algebra',
+                        isLinked: true,
+                        linkedPermission: 'read_only',
+                        linkedPermissionLabel: '',
+                        materials: [],
+                        units: [],
+                    },
+                ],
+            },
+        ])
+
+        expect(screen.getByText('Algebra')).toBeInTheDocument()
+        expect(screen.getByText('NUR LESEN')).toBeInTheDocument()
+    })
+
     it('renders linked permission chip on a linked unit', () => {
         renderTree([
             {
@@ -103,5 +127,35 @@ describe('MaterialsSubjectsContentsTree', () => {
         const events = emitted('unlink-linked-unit') || []
         expect(events.length).toBe(1)
         expect((events[0]?.[0] as any)?.id).toBe(111)
+    })
+
+    it('emits unlink-linked-topic when the linked topic button is clicked', async () => {
+        const { emitted } = renderTree(
+            [
+                {
+                    id: 1,
+                    name: 'Mathematik',
+                    materials: [],
+                    topics: [
+                        {
+                            id: 11,
+                            name: 'Algebra',
+                            isLinked: true,
+                            linkedPermission: 'read_write',
+                            linkedPermissionLabel: 'LESEN/SCHREIBEN',
+                            materials: [],
+                            units: [],
+                        },
+                    ],
+                },
+            ],
+            { enableRemoveButtons: true }
+        )
+
+        await fireEvent.click(screen.getByText('Link entfernen'))
+
+        const events = emitted('unlink-linked-topic') || []
+        expect(events.length).toBe(1)
+        expect((events[0]?.[0] as any)?.id).toBe(11)
     })
 })

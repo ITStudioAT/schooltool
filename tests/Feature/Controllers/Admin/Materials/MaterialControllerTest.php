@@ -7,6 +7,7 @@ use App\Models\MaterialInboxImport;
 use App\Models\MaterialShareRule;
 use App\Models\MaterialShareTarget;
 use App\Models\MaterialTopic;
+use App\Models\MaterialTopicInboxImport;
 use App\Models\Licence;
 use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
@@ -372,6 +373,42 @@ test('teacher can create duplicate unit names when allow_duplicate is true', fun
         ->where('name', 'Lineare Gleichungen')
         ->count();
     expect($duplicateCount)->toBe(2);
+});
+
+test('teacher can post topic with allow_duplicate and reuses existing topic name', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $subjectResponse = $this->postJson('/api/admin/materials/subjects', [
+        'data' => ['name' => 'Mathematik'],
+    ])->assertStatus(200);
+    $subjectId = (int) $subjectResponse->json('data.id');
+
+    $firstTopicResponse = $this->postJson('/api/admin/materials/topics', [
+        'data' => [
+            'subject_id' => $subjectId,
+            'name' => 'Algebra',
+            'allow_duplicate' => true,
+        ],
+    ])->assertStatus(200);
+    $firstTopicId = (int) $firstTopicResponse->json('data.id');
+    expect($firstTopicId)->toBeGreaterThan(0);
+
+    $secondTopicResponse = $this->postJson('/api/admin/materials/topics', [
+        'data' => [
+            'subject_id' => $subjectId,
+            'name' => 'Algebra',
+            'allow_duplicate' => true,
+        ],
+    ])->assertStatus(200);
+    $secondTopicId = (int) $secondTopicResponse->json('data.id');
+    expect($secondTopicId)->toBeGreaterThan(0);
+    expect($secondTopicId)->toBe($firstTopicId);
+
+    $duplicateCount = \App\Models\MaterialTopic::query()
+        ->where('subject_id', $subjectId)
+        ->where('name', 'Algebra')
+        ->count();
+    expect($duplicateCount)->toBe(1);
 });
 
 test('teacher cannot rename subject from another user taxonomy', function () {
@@ -1474,6 +1511,137 @@ test('linked unit can be unlinked from materials overview endpoint and removes l
     ]);
     $this->assertDatabaseMissing('material_units', [
         'id' => (int) $unit->id,
+    ]);
+
+    $cardsResponse = $this->getJson('/api/admin/materials/cards')
+        ->assertStatus(200);
+    $listedCardIds = collect($cardsResponse->json('data'))->pluck('id')->map(fn ($id) => (int) $id)->all();
+    expect($listedCardIds)->not->toContain((int) $cardA->id);
+    expect($listedCardIds)->not->toContain((int) $cardB->id);
+
+    $inboxUsers = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertStatus(200);
+    $sharedItems = collect($inboxUsers->json('data'))
+        ->flatMap(fn ($userRow) => is_array($userRow['shared_items'] ?? null) ? $userRow['shared_items'] : [])
+        ->values();
+    $matchingInboxEntry = $sharedItems
+        ->first(fn ($entry) => (int) ($entry['rule_id'] ?? 0) === $ruleId);
+    expect($matchingInboxEntry)->not->toBeNull();
+    expect((bool) ($matchingInboxEntry['is_imported'] ?? true))->toBeFalse();
+});
+
+test('linked topic can be unlinked from materials overview endpoint and removes linked materials', function () {
+    if (
+        !Schema::hasTable('material_inbox_imports')
+        || !Schema::hasColumn('material_inbox_imports', 'import_mode')
+        || !Schema::hasTable('material_topic_inbox_imports')
+    ) {
+        $this->markTestSkipped('Linked topic inbox import tables are not available.');
+    }
+
+    $cardA = createLinkedImportedCard(
+        targetUser: $this->teacher,
+        school: $this->school,
+        schoolyear: $this->schoolyear,
+        permission: MaterialShareTarget::PERMISSION_READ_ONLY,
+    );
+    $cardB = createLinkedImportedCard(
+        targetUser: $this->teacher,
+        school: $this->school,
+        schoolyear: $this->schoolyear,
+        permission: MaterialShareTarget::PERMISSION_READ_WRITE,
+    );
+
+    $importA = MaterialInboxImport::query()
+        ->where('target_user_id', (int) $this->teacher->id)
+        ->where('target_material_card_id', (int) $cardA->id)
+        ->where('import_mode', MaterialInboxImport::MODE_LINK)
+        ->latest('id')
+        ->first();
+    expect($importA)->not->toBeNull();
+    $ruleId = (int) ($importA?->source_rule_id ?? 0);
+    expect($ruleId)->toBeGreaterThan(0);
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => (int) $this->teacher->id,
+        'name' => 'Lehrplaene',
+    ]);
+    $topic = MaterialTopic::query()->create([
+        'subject_id' => (int) $subject->id,
+        'name' => 'AHS - Tagesschule',
+    ]);
+    $unitA = MaterialUnit::query()->create([
+        'topic_id' => (int) $topic->id,
+        'name' => 'Informatik A',
+    ]);
+    $unitB = MaterialUnit::query()->create([
+        'topic_id' => (int) $topic->id,
+        'name' => 'Informatik B',
+    ]);
+
+    MaterialCardClassification::query()->create([
+        'material_card_id' => (int) $cardA->id,
+        'subject_id' => (int) $subject->id,
+        'topic_id' => (int) $topic->id,
+        'unit_id' => (int) $unitA->id,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => (int) $cardB->id,
+        'subject_id' => (int) $subject->id,
+        'topic_id' => (int) $topic->id,
+        'unit_id' => (int) $unitB->id,
+    ]);
+
+    MaterialTopicInboxImport::query()->create([
+        'target_user_id' => (int) $this->teacher->id,
+        'target_topic_id' => (int) $topic->id,
+        'source_rule_id' => $ruleId,
+        'source_school_id' => (int) $this->school->id,
+        'source_topic_id' => 9001,
+        'imported_at' => now(),
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $response = $this->postJson('/api/admin/materials/topics/' . $topic->id . '/unlink')
+        ->assertStatus(200)
+        ->assertJsonPath('message', 'Link entfernt.')
+        ->assertJsonPath('data.id', (int) $topic->id)
+        ->assertJsonPath('data.removed', true)
+        ->assertJsonPath('data.removed_topic', true);
+
+    $removedCardIds = collect($response->json('data.removed_card_ids'))
+        ->map(fn ($value) => (int) $value)
+        ->all();
+    expect($removedCardIds)->toContain((int) $cardA->id);
+    expect($removedCardIds)->toContain((int) $cardB->id);
+
+    $this->assertDatabaseMissing('material_topic_inbox_imports', [
+        'target_user_id' => (int) $this->teacher->id,
+        'target_topic_id' => (int) $topic->id,
+    ]);
+
+    $this->assertDatabaseMissing('material_inbox_imports', [
+        'target_user_id' => (int) $this->teacher->id,
+        'target_material_card_id' => (int) $cardA->id,
+        'import_mode' => MaterialInboxImport::MODE_LINK,
+    ]);
+    $this->assertDatabaseMissing('material_inbox_imports', [
+        'target_user_id' => (int) $this->teacher->id,
+        'target_material_card_id' => (int) $cardB->id,
+        'import_mode' => MaterialInboxImport::MODE_LINK,
+    ]);
+
+    $this->assertDatabaseMissing('material_cards', [
+        'id' => (int) $cardA->id,
+        'user_id' => (int) $this->teacher->id,
+    ]);
+    $this->assertDatabaseMissing('material_cards', [
+        'id' => (int) $cardB->id,
+        'user_id' => (int) $this->teacher->id,
+    ]);
+    $this->assertDatabaseMissing('material_topics', [
+        'id' => (int) $topic->id,
     ]);
 
     $cardsResponse = $this->getJson('/api/admin/materials/cards')

@@ -173,7 +173,18 @@
                                                                 v-for="topic in subject.topics"
                                                                 :key="`hier-topic-scope-topic-${item.rule_id}-${topic.id || topic.name}`"
                                                                 class="inbox-hierarchy-topic inbox-hierarchy-topic--root">
-                                                                <div class="inbox-hierarchy-context-line">{{ subject.name }} / {{ topic.name }}</div>
+                                                                <div class="inbox-hierarchy-context-line">{{ subject.name }}</div>
+                                                                <div class="inbox-hierarchy-unit-head">
+                                                                    <div class="inbox-hierarchy-topic-title">{{ topic.name }}</div>
+                                                                    <v-btn
+                                                                        size="x-small"
+                                                                        variant="tonal"
+                                                                        color="primary"
+                                                                        :disabled="!topicHasAnyMaterials(topic)"
+                                                                        @click.stop="openTopicEinfachernDialog(item, topic)">
+                                                                        Einfächern
+                                                                    </v-btn>
+                                                                </div>
                                                                 <div
                                                                     v-for="unit in topic.units"
                                                                     :key="`hier-topic-scope-unit-${item.rule_id}-${unit.id || unit.name}`"
@@ -349,7 +360,7 @@
                                                 {{ isHierarchyOpen(user.id, item.rule_id) ? 'Schließen' : 'Anzeigen' }}
                                             </v-btn>
                                             <v-btn
-                                                v-if="item.scope_type !== 'material'"
+                                                v-if="item.scope_type !== 'material' && item.scope_type !== 'unit'"
                                                 size="small"
                                                 variant="tonal"
                                                 color="warning"
@@ -357,7 +368,7 @@
                                                 Merken
                                             </v-btn>
                                             <v-btn
-                                                v-if="item.scope_type !== 'material'"
+                                                v-if="item.scope_type !== 'material' && item.scope_type !== 'unit'"
                                                 size="small"
                                                 variant="tonal"
                                                 color="secondary"
@@ -436,7 +447,7 @@
                                     </v-btn>
                                 </div>
                             </div>
-                            <div class="einfachern-column">
+                            <div v-if="einfachernAllowsTopicTarget" class="einfachern-column">
                                 <div class="einfachern-column-title">Themen</div>
                                 <div v-if="einfachernTopics.length === 0" class="text-caption text-medium-emphasis">
                                     Kein Thema ausgewählt.
@@ -535,6 +546,7 @@ export default {
                 mode: 'material',
                 materials: [],
                 sourceTopicName: '',
+                sourceTopicId: 0,
                 sourceUnitName: '',
                 sourceUnitId: 0,
                 tree: [],
@@ -569,7 +581,12 @@ export default {
             return this.einfachernUnits.find((unit) => Number(unit?.id || 0) === Number(this.einfachernDialog.unitId || 0)) || null
         },
         einfachernAllowsUnitTarget() {
-            return String(this.einfachernDialog.mode || '').trim().toLocaleLowerCase() !== 'unit'
+            const mode = String(this.einfachernDialog.mode || '').trim().toLocaleLowerCase()
+            return mode !== 'unit' && mode !== 'topic'
+        },
+        einfachernAllowsTopicTarget() {
+            const mode = String(this.einfachernDialog.mode || '').trim().toLocaleLowerCase()
+            return mode !== 'topic'
         },
         einfachernSelectedTarget() {
             if (this.einfachernAllowsUnitTarget && this.einfachernSelectedUnit) {
@@ -579,7 +596,7 @@ export default {
                     label: String(this.einfachernSelectedUnit.name || '').trim() || 'Einheit',
                 }
             }
-            if (this.einfachernSelectedTopic) {
+            if (this.einfachernAllowsTopicTarget && this.einfachernSelectedTopic) {
                 return {
                     level: 'topic',
                     id: Number(this.einfachernSelectedTopic.id || 0),
@@ -598,7 +615,7 @@ export default {
         einfachernSelectionLabel() {
             const labels = [
                 String(this.einfachernSelectedSubject?.name || '').trim(),
-                String(this.einfachernSelectedTopic?.name || '').trim(),
+                this.einfachernAllowsTopicTarget ? String(this.einfachernSelectedTopic?.name || '').trim() : '',
                 this.einfachernAllowsUnitTarget ? String(this.einfachernSelectedUnit?.name || '').trim() : '',
             ].filter((value) => value !== '')
             return labels.length > 0 ? labels.join(' - ') : 'Kein Ziel ausgewählt.'
@@ -726,6 +743,10 @@ export default {
             const id = Number(unit?.id || 0)
             return id <= 0 && name === 'ohne einheit'
         },
+        topicHasAnyMaterials(topic) {
+            const units = Array.isArray(topic?.units) ? topic.units : []
+            return units.some((unit) => Array.isArray(unit?.materials) && unit.materials.length > 0)
+        },
         userPanelKey(userId) {
             return `${Number(userId || 0)}`
         },
@@ -766,6 +787,7 @@ export default {
             this.einfachernDialog.materialTitle = String(preview?.title || item?.scope_object_label || 'Material').trim() || 'Material'
             this.einfachernDialog.materials = [preview]
             this.einfachernDialog.sourceTopicName = ''
+            this.einfachernDialog.sourceTopicId = 0
             this.einfachernDialog.sourceUnitName = ''
             this.einfachernDialog.sourceUnitId = 0
             this.einfachernDialog.subjectId = 0
@@ -790,8 +812,54 @@ export default {
             this.einfachernDialog.materialTitle = `Einheit: ${unitName}`
             this.einfachernDialog.materials = materials
             this.einfachernDialog.sourceTopicName = String(topic?.name || '').trim()
+            this.einfachernDialog.sourceTopicId = Number(topic?.id || 0)
             this.einfachernDialog.sourceUnitName = unitName
             this.einfachernDialog.sourceUnitId = Number(unit?.id || 0)
+            this.einfachernDialog.subjectId = 0
+            this.einfachernDialog.topicId = 0
+            this.einfachernDialog.unitId = 0
+            await this.loadEinfachernTree()
+        },
+        async openTopicEinfachernDialog(item, topic) {
+            const topicId = Number(topic?.id || 0)
+            if (topicId <= 0) return
+
+            const materials = []
+            const seen = new Set()
+            const units = Array.isArray(topic?.units) ? topic.units : []
+            for (const unit of units) {
+                const sourceUnitId = Number(unit?.id || 0)
+                const sourceUnitName = String(unit?.name || '').trim()
+                const unitMaterials = Array.isArray(unit?.materials) ? unit.materials : []
+                for (const material of unitMaterials) {
+                    const normalized = this.normalizeHierarchyMaterial(material)
+                    const materialId = Number(normalized?.id || 0)
+                    if (materialId <= 0) continue
+                    const key = `${materialId}:${Math.max(0, sourceUnitId)}`
+                    if (seen.has(key)) continue
+                    seen.add(key)
+                    materials.push({
+                        ...normalized,
+                        sourceUnitId,
+                        sourceUnitName: sourceUnitId > 0 ? (sourceUnitName || 'Einheit') : '',
+                    })
+                }
+            }
+
+            if (materials.length === 0) return
+
+            const topicName = String(topic?.name || '').trim() || 'Thema'
+            this.einfachernDialog.open = true
+            this.einfachernDialog.error = ''
+            this.einfachernDialog.mode = 'topic'
+            this.einfachernDialog.ruleId = Number(item?.rule_id || 0)
+            this.einfachernDialog.materialId = Number(materials[0]?.id || 0)
+            this.einfachernDialog.materialTitle = `Thema: ${topicName}`
+            this.einfachernDialog.materials = materials
+            this.einfachernDialog.sourceTopicName = topicName
+            this.einfachernDialog.sourceTopicId = topicId
+            this.einfachernDialog.sourceUnitName = ''
+            this.einfachernDialog.sourceUnitId = 0
             this.einfachernDialog.subjectId = 0
             this.einfachernDialog.topicId = 0
             this.einfachernDialog.unitId = 0
@@ -848,36 +916,66 @@ export default {
             const target = this.einfachernSelectedTarget
             const dialogMode = String(this.einfachernDialog.mode || '').trim().toLocaleLowerCase()
             const importMode = String(mode || '').trim().toLocaleLowerCase() === 'link' ? 'link' : 'copy'
-            const materialIds = (
-                dialogMode === 'unit'
+            const materials = (
+                dialogMode === 'unit' || dialogMode === 'topic'
                     ? this.einfachernDialog.materials
                     : [{ id: this.einfachernDialog.materialId }]
             )
-                .map((material) => Number(material?.id || 0))
-                .filter((id) => id > 0)
-                .filter((id, index, list) => list.indexOf(id) === index)
+                .map((material) => ({
+                    id: Number(material?.id || 0),
+                    sourceUnitId: Number(material?.sourceUnitId || 0),
+                    sourceUnitName: String(material?.sourceUnitName || '').trim(),
+                }))
+                .filter((material) => material.id > 0)
+                .filter((material, index, list) =>
+                    list.findIndex((entry) => entry.id === material.id && entry.sourceUnitId === material.sourceUnitId) === index
+                )
 
-            if (ruleId <= 0 || materialIds.length === 0 || this.einfachernDialog.submitting || !target) return
+            if (ruleId <= 0 || materials.length === 0 || this.einfachernDialog.submitting || !target) return
 
             this.einfachernDialog.submitting = true
             this.einfachernDialog.error = ''
             try {
                 const finalTarget = dialogMode === 'unit'
                     ? await this.resolveUnitBulkTarget(target)
-                    : target
+                    : dialogMode === 'topic'
+                        ? await this.resolveTopicBulkTarget(target)
+                        : target
                 if (!finalTarget || Number(finalTarget?.id || 0) <= 0) {
                     throw new Error('target_not_found')
                 }
 
-                for (const materialId of materialIds) {
-                    const sourceUnitId = dialogMode === 'unit' ? Number(this.einfachernDialog.sourceUnitId || 0) : 0
+                const topicUnitTargets = new Map()
+                for (const material of materials) {
+                    let targetLevel = String(finalTarget.level || '').trim()
+                    let targetId = Number(finalTarget.id || 0)
+                    const sourceUnitId = dialogMode === 'unit'
+                        ? Number(this.einfachernDialog.sourceUnitId || 0)
+                        : Number(material?.sourceUnitId || 0)
+                    const sourceTopicId = dialogMode === 'topic' ? Number(this.einfachernDialog.sourceTopicId || 0) : 0
+
+                    if (dialogMode === 'topic' && sourceUnitId > 0) {
+                        const cacheKey = `${sourceUnitId}`
+                        if (!topicUnitTargets.has(cacheKey)) {
+                            const sourceUnitName = String(material?.sourceUnitName || '').trim() || 'Einheit'
+                            const resolvedUnitId = await this.ensureUnitForTopic(targetId, sourceUnitName, true)
+                            if (resolvedUnitId <= 0) {
+                                throw new Error('target_not_found')
+                            }
+                            topicUnitTargets.set(cacheKey, resolvedUnitId)
+                        }
+                        targetLevel = 'unit'
+                        targetId = Number(topicUnitTargets.get(cacheKey) || 0)
+                    }
+
                     await axios.post('/api/admin/materials/shares/inbox/material-insert', {
                         rule_id: ruleId,
-                        material_id: materialId,
-                        target_level: String(finalTarget.level || '').trim(),
-                        target_id: Number(finalTarget.id || 0),
+                        material_id: Number(material?.id || 0),
+                        target_level: targetLevel,
+                        target_id: targetId,
                         import_mode: importMode,
                         ...(sourceUnitId > 0 ? { source_unit_id: sourceUnitId } : {}),
+                        ...(sourceTopicId > 0 ? { source_topic_id: sourceTopicId } : {}),
                     })
                 }
                 this.closeEinfachernDialog()
@@ -903,7 +1001,7 @@ export default {
             }
 
             if (String(target.level || '').trim() === 'subject') {
-                const topicId = await this.ensureTopicForSubject(Number(target.id || 0), sourceTopicName)
+                const topicId = await this.ensureTopicForSubject(Number(target.id || 0), sourceTopicName, false)
                 if (topicId <= 0) {
                     return target
                 }
@@ -916,23 +1014,44 @@ export default {
 
             return target
         },
-        async ensureTopicForSubject(subjectId, topicName) {
+        async resolveTopicBulkTarget(initialTarget) {
+            const target = initialTarget || null
+            const sourceTopicName = String(this.einfachernDialog.sourceTopicName || '').trim() || 'Thema'
+            if (!target) return null
+
+            if (String(target.level || '').trim() === 'topic') {
+                return { level: 'topic', id: Number(target.id || 0) }
+            }
+
+            if (String(target.level || '').trim() === 'subject') {
+                const topicId = await this.ensureTopicForSubject(Number(target.id || 0), sourceTopicName, true)
+                if (topicId > 0) {
+                    return { level: 'topic', id: topicId }
+                }
+            }
+
+            return target
+        },
+        async ensureTopicForSubject(subjectId, topicName, allowDuplicate = false) {
             const normalizedTopicName = String(topicName || '').trim()
             if (subjectId <= 0 || normalizedTopicName === '') return 0
 
             const subject = this.einfachernDialog.tree.find((entry) => Number(entry?.id || 0) === Number(subjectId)) || null
             if (!subject) return 0
 
-            const existingTopic = (Array.isArray(subject?.topics) ? subject.topics : [])
-                .find((entry) => String(entry?.name || '').trim().toLocaleLowerCase() === normalizedTopicName.toLocaleLowerCase())
-            if (Number(existingTopic?.id || 0) > 0) {
-                return Number(existingTopic.id || 0)
+            if (!allowDuplicate) {
+                const existingTopic = (Array.isArray(subject?.topics) ? subject.topics : [])
+                    .find((entry) => String(entry?.name || '').trim().toLocaleLowerCase() === normalizedTopicName.toLocaleLowerCase())
+                if (Number(existingTopic?.id || 0) > 0) {
+                    return Number(existingTopic.id || 0)
+                }
             }
 
             const response = await axios.post('/api/admin/materials/topics', {
                 data: {
                     subject_id: subjectId,
                     name: normalizedTopicName,
+                    allow_duplicate: !!allowDuplicate,
                 },
             })
             const topicId = Number(response?.data?.data?.id || 0)
@@ -1170,6 +1289,13 @@ export default {
     font-size: 0.8rem;
     font-weight: 600;
     color: #3a5668;
+}
+
+.inbox-hierarchy-topic-title {
+    margin-top: 2px;
+    font-size: 0.84rem;
+    font-weight: 700;
+    color: #2f4b5c;
 }
 
 .inbox-hierarchy-unit-head {

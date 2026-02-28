@@ -11,6 +11,7 @@ use App\Models\MaterialShareRule;
 use App\Models\MaterialShareTarget;
 use App\Models\MaterialStatus;
 use App\Models\MaterialSubject;
+use App\Models\MaterialTopicInboxImport;
 use App\Models\MaterialTopic;
 use App\Models\MaterialType;
 use App\Models\MaterialUnit;
@@ -39,6 +40,8 @@ class MaterialService
     private ?bool $materialInboxImportsHasImportModeColumnCache = null;
 
     private ?bool $hasMaterialUnitInboxImportsTableCache = null;
+
+    private ?bool $hasMaterialTopicInboxImportsTableCache = null;
 
     public function __construct(
         private readonly MaterialKeywordService $keywordService,
@@ -1534,7 +1537,7 @@ class MaterialService
         return true;
     }
 
-    public function createTopic(User $user, MaterialSubject $subject, string $name): MaterialTopic
+    public function createTopic(User $user, MaterialSubject $subject, string $name, bool $allowDuplicate = false): MaterialTopic
     {
         if (! $this->supportsClassificationTables()) {
             throw ValidationException::withMessages([
@@ -1549,6 +1552,26 @@ class MaterialService
             throw ValidationException::withMessages([
                 'data.name' => 'Bitte einen gültigen Themennamen angeben.',
             ]);
+        }
+
+        if ($allowDuplicate) {
+            $existingTopic = MaterialTopic::query()
+                ->where('subject_id', (int) $subject->id)
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower($normalized)])
+                ->first();
+            if ($existingTopic instanceof MaterialTopic) {
+                return $existingTopic->fresh();
+            }
+
+            $data = [
+                'subject_id' => (int) $subject->id,
+                'name' => $normalized,
+            ];
+            if ($this->supportsClassificationSortOrder()) {
+                $data['sort_order'] = $this->nextTopicSortOrder((int) $subject->id);
+            }
+
+            return MaterialTopic::query()->create($data)->fresh();
         }
 
         return $this->firstOrCreateTopic($subject, $normalized);
@@ -2180,9 +2203,10 @@ class MaterialService
             }
         }
 
+        $linkedTopicMetaMap = $this->linkedTopicMetaMapForUser($user, $topicIds->all());
         $linkedUnitMetaMap = $this->linkedUnitMetaMapForUser($user, $unitIds->all());
 
-        return $subjects->map(function (MaterialSubject $subject) use ($usedSubjectIds, $usedTopicIds, $usedUnitIds, $linkedUnitMetaMap) {
+        return $subjects->map(function (MaterialSubject $subject) use ($usedSubjectIds, $usedTopicIds, $usedUnitIds, $linkedTopicMetaMap, $linkedUnitMetaMap) {
             $subjectTopicIds = $subject->topics
                 ->pluck('id')
                 ->map(fn ($id) => (int) $id)
@@ -2200,18 +2224,23 @@ class MaterialService
                 'id' => $subject->id,
                 'name' => $subject->name,
                 'can_delete' => ! $subjectHasUsage,
-                'topics' => $subject->topics->map(function (MaterialTopic $topic) use ($usedTopicIds, $usedUnitIds, $linkedUnitMetaMap) {
+                'topics' => $subject->topics->map(function (MaterialTopic $topic) use ($usedTopicIds, $usedUnitIds, $linkedTopicMetaMap, $linkedUnitMetaMap) {
                     $topicUnitIds = $topic->units
                         ->pluck('id')
                         ->map(fn ($id) => (int) $id)
                         ->filter(fn ($id) => $id > 0);
 
                     $topicHasUsage = $topicUnitIds->contains(fn ($id) => isset($usedUnitIds[$id]));
+                    $topicId = (int) $topic->id;
+                    $linkedTopicMeta = $linkedTopicMetaMap[$topicId] ?? null;
 
                     return [
                         'id' => $topic->id,
                         'name' => $topic->name,
                         'can_delete' => ! $topicHasUsage,
+                        'is_linked' => (bool) ($linkedTopicMeta['is_linked'] ?? false),
+                        'linked_permission' => $linkedTopicMeta['linked_permission'] ?? null,
+                        'linked_permission_label' => $linkedTopicMeta['linked_permission_label'] ?? null,
                         'units' => $topic->units->map(function (MaterialUnit $unit) use ($usedUnitIds, $linkedUnitMetaMap) {
                             $unitId = (int) $unit->id;
                             $linkedMeta = $linkedUnitMetaMap[$unitId] ?? null;
@@ -2294,6 +2323,79 @@ class MaterialService
             $nextRank = $this->linkedPermissionRank($permission);
             if (! isset($result[$targetUnitId]) || $nextRank >= $currentRank) {
                 $result[$targetUnitId] = [
+                    'is_linked' => true,
+                    'linked_permission' => $permission,
+                    'linked_permission_label' => $this->linkedPermissionLabel($permission),
+                ];
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param array<int,int> $topicIds
+     * @return array<int,array{is_linked:bool,linked_permission:?string,linked_permission_label:?string}>
+     */
+    private function linkedTopicMetaMapForUser(User $user, array $topicIds): array
+    {
+        $ids = collect($topicIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty() || ! $this->supportsMaterialTopicInboxImports()) {
+            return [];
+        }
+
+        $imports = MaterialTopicInboxImport::query()
+            ->where('target_user_id', (int) $user->id)
+            ->whereIn('target_topic_id', $ids->all())
+            ->get(['target_topic_id', 'source_rule_id']);
+
+        if ($imports->isEmpty()) {
+            return [];
+        }
+
+        $ruleIds = $imports
+            ->pluck('source_rule_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values();
+
+        $rulesById = $ruleIds->isEmpty()
+            ? collect()
+            : MaterialShareRule::query()
+                ->whereIn('id', $ruleIds->all())
+                ->where('is_active', true)
+                ->with(['targets:id,material_share_rule_id,target_type,audience_scope,permission,user_group_id,user_id'])
+                ->get()
+                ->keyBy('id');
+
+        $memberGroupSet = $this->memberGroupSetForUser($user);
+        $schoolId = (int) $user->school_id;
+        $userId = (int) $user->id;
+
+        $result = [];
+        foreach ($imports as $import) {
+            $targetTopicId = (int) ($import->target_topic_id ?? 0);
+            if ($targetTopicId <= 0) {
+                continue;
+            }
+
+            $permission = MaterialShareTarget::PERMISSION_READ_ONLY;
+            $sourceRuleId = (int) ($import->source_rule_id ?? 0);
+            $rule = $sourceRuleId > 0 ? $rulesById->get($sourceRuleId) : null;
+            if ($rule instanceof MaterialShareRule) {
+                $permission = $this->resolveLinkedPermissionForUser($rule, $userId, $schoolId, $memberGroupSet);
+            }
+
+            $currentRank = $this->linkedPermissionRank($result[$targetTopicId]['linked_permission'] ?? '');
+            $nextRank = $this->linkedPermissionRank($permission);
+            if (! isset($result[$targetTopicId]) || $nextRank >= $currentRank) {
+                $result[$targetTopicId] = [
                     'is_linked' => true,
                     'linked_permission' => $permission,
                     'linked_permission_label' => $this->linkedPermissionLabel($permission),
@@ -3467,6 +3569,15 @@ class MaterialService
         }
 
         return $this->hasMaterialUnitInboxImportsTableCache;
+    }
+
+    private function supportsMaterialTopicInboxImports(): bool
+    {
+        if ($this->hasMaterialTopicInboxImportsTableCache === null) {
+            $this->hasMaterialTopicInboxImportsTableCache = Schema::hasTable('material_topic_inbox_imports');
+        }
+
+        return $this->hasMaterialTopicInboxImportsTableCache;
     }
 
     private function supportsLinkedInboxImports(): bool
