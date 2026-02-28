@@ -3,8 +3,14 @@ import { fireEvent, render, screen } from '@testing-library/vue'
 import MaterialsSubjectsContentsTree from '@/pages/admin/materials/components/overview/MaterialsSubjectsContentsTree.vue'
 
 const vuetifyStubs = {
-    'v-btn': { template: '<button type="button" @click="$emit(\'click\')"><slot /></button>' },
-    VBtn: { template: '<button type="button" @click="$emit(\'click\')"><slot /></button>' },
+    'v-btn': {
+        emits: ['click'],
+        template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+    },
+    VBtn: {
+        emits: ['click'],
+        template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+    },
     'v-chip': { template: '<span><slot /></span>' },
     VChip: { template: '<span><slot /></span>' },
     'v-icon': { template: '<i><slot /></i>' },

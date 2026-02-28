@@ -7,7 +7,8 @@
         v-if="selected_course"
         :disabled="action != '' && action != 'edit_description'">
         <template #header-actions>
-            <v-btn icon="mdi-eye-off-outline" size="x-small" variant="text" density="compact" title="Ausblenden" @click="show_infos = false" />
+            <v-btn v-if="action !== 'edit_description'" icon="mdi-pencil" size="small" variant="tonal" @click="editDescription" />
+            <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" @click="show_infos = false" />
         </template>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2" v-if="action != 'edit_description'">
@@ -46,9 +47,6 @@
                 <div class="text-body-2 course-description" v-if="selected_course.description" v-html="descriptionHtml"></div>
                 <div class="text-body-2" v-else>Keine Fachinfos vorhanden.</div>
 
-                <div class="w-100 text-right">
-                    <v-btn flat tile size="small" color="primary" icon="mdi-pencil" @click="editDescription" />
-                </div>
             </v-card-text>
             <v-card-text v-if="action == 'edit_description'">
                 <v-form ref="form" @submit.prevent="saveDescription">

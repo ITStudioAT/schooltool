@@ -2654,6 +2654,7 @@ test('shares index returns needs migration meta when share tables are missing', 
     $this->actingAs($this->materialsAdmin, 'sanctum');
 
     Schema::dropIfExists('material_share_targets');
+    Schema::dropIfExists('material_unit_inbox_imports');
     Schema::dropIfExists('material_share_rules');
 
     $this->getJson('/api/admin/materials/shares')
@@ -2667,6 +2668,7 @@ test('inbox users endpoint returns needs migration meta when share tables are mi
     $this->actingAs($this->materialsAdmin, 'sanctum');
 
     Schema::dropIfExists('material_share_targets');
+    Schema::dropIfExists('material_unit_inbox_imports');
     Schema::dropIfExists('material_share_rules');
 
     $this->getJson('/api/admin/materials/shares/inbox-users')
@@ -2680,6 +2682,7 @@ test('share mutation and lookup endpoints return 409 when share tables are missi
     $this->actingAs($this->materialsAdmin, 'sanctum');
 
     Schema::dropIfExists('material_share_targets');
+    Schema::dropIfExists('material_unit_inbox_imports');
     Schema::dropIfExists('material_share_rules');
 
     $this->getJson('/api/admin/materials/shares/lookup-users?search=test')

@@ -128,4 +128,152 @@ describe('MaterialsSettingsView unit edit guards', () => {
         expect(ctx.canEditUnitNode(readOnlyUnit)).toBe(false)
         expect(methods.canMoveUnitDown.call(ctx, topic, readOnlyUnit, 0)).toBe(true)
     })
+
+    it('can edit lookup by id matches read-only link permissions', () => {
+        const ctx = buildContext()
+
+        expect(ctx.canEditUnitById(30)).toBe(false)
+        expect(ctx.canEditUnitById(31)).toBe(true)
+        expect(ctx.canEditUnitById(32)).toBe(true)
+        expect(ctx.canEditUnitById(9999)).toBe(false)
+    })
+
+    it('blocks reclassify dialog open for linked read-only units', () => {
+        const ctx = buildContext()
+        const subject = ctx.subjectTreeItems[0]
+        const topic = subject.topics[0]
+        const readOnlyUnit = topic.units.find((entry: any) => Number(entry.id) === 30)
+        ctx.reclassifyDialog = {
+            open: false,
+            kind: '',
+            mode: '',
+            sourceId: null,
+            sourceName: '',
+            sourceSubjectId: null,
+            sourceTopicId: null,
+            targetSubjectId: null,
+            targetTopicId: null,
+            newSubjectName: '',
+            newTopicName: '',
+        }
+
+        methods.openReclassifyDialogForUnit.call(ctx, subject, topic, readOnlyUnit)
+        expect(ctx.reclassifyDialog.open).toBe(false)
+        expect(ctx.reclassifyDialog.sourceId).toBeNull()
+    })
+
+    it('moves linked read-only units inside topic ordering', async () => {
+        const ctx = buildContext()
+        const topic = ctx.subjectTreeItems[0].topics[0]
+        const readOnlyUnit = topic.units.find((entry: any) => Number(entry.id) === 30)
+        ctx.materialCardStore.moveUnit = vi.fn(async () => true)
+        ctx.withSubjectCatalogSaving = vi.fn(async (task: Function) => task())
+
+        await methods.moveUnit.call(ctx, readOnlyUnit, 'down')
+
+        expect(ctx.materialCardStore.moveUnit).toHaveBeenCalledWith(30, 'down')
+        expect(ctx.withSubjectCatalogSaving).toHaveBeenCalledTimes(1)
+    })
+
+    it('confirmDeleteEntry blocks deletion for linked read-only units', async () => {
+        const ctx = buildContext()
+        ctx.deleteConfirmDialog = {
+            open: true,
+            kind: 'unit',
+            id: 30,
+            label: 'ReadOnly Unit',
+        }
+        ctx.materialCardStore.deleteUnit = vi.fn(async () => true)
+        ctx.withSubjectCatalogSaving = vi.fn(async (task: Function) => task())
+        ctx.cancelDeleteConfirm = vi.fn()
+        ctx.resetSubjectCatalogEditor = vi.fn()
+
+        await methods.confirmDeleteEntry.call(ctx)
+
+        expect(ctx.materialCardStore.deleteUnit).not.toHaveBeenCalled()
+        expect(ctx.withSubjectCatalogSaving).not.toHaveBeenCalled()
+        expect(ctx.cancelDeleteConfirm).not.toHaveBeenCalled()
+    })
+
+    it('saveSubjectCatalogEditor blocks rename for linked read-only units', async () => {
+        const ctx = buildContext()
+        ctx.canSaveSubjectCatalogEditor = true
+        ctx.subjectCatalogEditor = {
+            mode: 'rename_unit',
+            name: 'Renamed ReadOnly',
+            subjectId: null,
+            topicId: null,
+            unitId: 30,
+            parentLabel: '',
+        }
+        ctx.materialCardStore.updateUnit = vi.fn(async () => true)
+        ctx.withSubjectCatalogSaving = vi.fn(async (task: Function) => task())
+        ctx.resetSubjectCatalogEditor = vi.fn()
+
+        await methods.saveSubjectCatalogEditor.call(ctx)
+
+        expect(ctx.materialCardStore.updateUnit).not.toHaveBeenCalled()
+        expect(ctx.resetSubjectCatalogEditor).not.toHaveBeenCalled()
+    })
+
+    it('saveSubjectCatalogEditor allows rename for writable linked units', async () => {
+        const ctx = buildContext()
+        ctx.canSaveSubjectCatalogEditor = true
+        ctx.subjectCatalogEditor = {
+            mode: 'rename_unit',
+            name: 'Renamed Writable',
+            subjectId: null,
+            topicId: null,
+            unitId: 31,
+            parentLabel: '',
+        }
+        ctx.materialCardStore.updateUnit = vi.fn(async () => true)
+        ctx.withSubjectCatalogSaving = vi.fn(async (task: Function) => task())
+        ctx.resetSubjectCatalogEditor = vi.fn()
+
+        await methods.saveSubjectCatalogEditor.call(ctx)
+
+        expect(ctx.materialCardStore.updateUnit).toHaveBeenCalledWith(31, 'Renamed Writable')
+        expect(ctx.resetSubjectCatalogEditor).toHaveBeenCalledTimes(1)
+    })
+
+    it('openReclassifyDialogForUnit allows writable linked units', () => {
+        const ctx = buildContext()
+        const subject = ctx.subjectTreeItems[0]
+        const topic = subject.topics[0]
+        const writableLinkedUnit = topic.units.find((entry: any) => Number(entry.id) === 31)
+        Object.defineProperty(ctx, 'reclassifyTargetTopicItems', {
+            configurable: true,
+            enumerable: true,
+            get: () => [{ id: 20, name: 'Grundlagen' }],
+        })
+
+        methods.openReclassifyDialogForUnit.call(ctx, subject, topic, writableLinkedUnit)
+
+        expect(ctx.reclassifyDialog.open).toBe(true)
+        expect(ctx.reclassifyDialog.kind).toBe('unit')
+        expect(ctx.reclassifyDialog.sourceId).toBe(31)
+        expect(ctx.reclassifyDialog.sourceSubjectId).toBe(10)
+        expect(ctx.reclassifyDialog.sourceTopicId).toBe(20)
+    })
+
+    it('confirmDeleteEntry allows deletion for writable linked units', async () => {
+        const ctx = buildContext()
+        ctx.deleteConfirmDialog = {
+            open: true,
+            kind: 'unit',
+            id: 31,
+            label: 'Writable Linked Unit',
+        }
+        ctx.materialCardStore.deleteUnit = vi.fn(async () => true)
+        ctx.withSubjectCatalogSaving = vi.fn(async (task: Function) => task())
+        ctx.cancelDeleteConfirm = vi.fn()
+        ctx.resetSubjectCatalogEditor = vi.fn()
+
+        await methods.confirmDeleteEntry.call(ctx)
+
+        expect(ctx.materialCardStore.deleteUnit).toHaveBeenCalledWith(31)
+        expect(ctx.withSubjectCatalogSaving).toHaveBeenCalledTimes(1)
+        expect(ctx.cancelDeleteConfirm).toHaveBeenCalledTimes(1)
+    })
 })

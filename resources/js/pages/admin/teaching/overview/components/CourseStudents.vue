@@ -1,7 +1,7 @@
 <template>
     <ItsGridBox color="primary" :title="'Schüler:innen – ' + selected_course.title + ' (' + selectedCourseClasses + ')'" icon="mdi-invoice-list" class="w-100" v-if="selected_course" :disabled="action != ''">
         <template #header-actions>
-            <v-btn icon="mdi-eye-off-outline" size="x-small" variant="text" density="compact" title="Ausblenden" @click="show_students = false" />
+            <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" @click="show_students = false" />
         </template>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">

@@ -1,7 +1,7 @@
 <template>
     <ItsGridBox color="primary" title="Stundenplan" icon="mdi-calendar-clock" class="w-100" :disabled="action != ''">
         <template #header-actions>
-            <v-btn icon="mdi-eye-off-outline" size="x-small" variant="text" density="compact" title="Ausblenden" @click="show_timetable = false" />
+            <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" @click="show_timetable = false" />
         </template>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">

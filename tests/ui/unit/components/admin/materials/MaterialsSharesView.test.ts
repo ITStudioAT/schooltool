@@ -23,6 +23,26 @@ const vuetifyStubs = {
     VAlert: { template: '<div role="alert"><slot /></div>' },
     'v-chip': { template: '<span><slot /></span>' },
     VChip: { template: '<span><slot /></span>' },
+    'v-list': { template: '<div><slot /></div>' },
+    VList: { template: '<div><slot /></div>' },
+    'v-list-item': {
+        emits: ['click'],
+        template: '<div @click="$emit(\'click\', $event)"><slot /></div>',
+    },
+    VListItem: {
+        emits: ['click'],
+        template: '<div @click="$emit(\'click\', $event)"><slot /></div>',
+    },
+    'v-list-item-title': { template: '<div><slot /></div>' },
+    VListItemTitle: { template: '<div><slot /></div>' },
+    'v-list-subheader': { template: '<div><slot /></div>' },
+    VListSubheader: { template: '<div><slot /></div>' },
+    'v-menu': {
+        template: '<div><slot name="activator" :props="{}" /><slot /></div>',
+    },
+    VMenu: {
+        template: '<div><slot name="activator" :props="{}" /><slot /></div>',
+    },
     'v-switch': { template: '<input type="checkbox" />' },
     VSwitch: { template: '<input type="checkbox" />' },
     'v-table': { template: '<table><slot /></table>' },

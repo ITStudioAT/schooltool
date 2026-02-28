@@ -12,13 +12,26 @@
             <v-list>
                 <template v-for="(item, i) in config.menu" :key="i">
                     <!-- route item -->
-                    <v-list-item v-if="item.to" :exact="false" :title="item.title" :prepend-icon="item.icon" :to="item.to" :disabled="is_navigation_locked || !item.is_active || is_loading > 0">
+                    <v-list-item
+                        v-if="item.to"
+                        :exact="false"
+                        :title="item.title"
+                        :prepend-icon="item.icon"
+                        :to="item.to"
+                        :disabled="isMenuInteractionDisabled || !item.is_active"
+                        @click.capture="startNavigationLock(item.to)">
                         <template v-if="item.status_icon" #append>
                             <v-icon :icon="item.status_icon" :color="item.status_color || 'warning'" :title="item.status_title || ''" size="small" />
                         </template>
                     </v-list-item>
                     <!-- click item -->
-                    <v-list-item v-else-if="item.click" :exact="false" :title="item.title" :prepend-icon="item.icon" :disabled="is_navigation_locked || is_loading > 0" @click="callItemClick(item)" />
+                    <v-list-item
+                        v-else-if="item.click"
+                        :exact="false"
+                        :title="item.title"
+                        :prepend-icon="item.icon"
+                        :disabled="isMenuInteractionDisabled"
+                        @click="callItemClick(item)" />
                 </template>
             </v-list>
         </v-navigation-drawer>
@@ -85,11 +98,17 @@ export default {
         return {
             adminStore: null,
             admins: ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin'],
+            is_route_navigation_pending: false,
+            removeRouteAfterEachHook: null,
+            removeRouteErrorHook: null,
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'is_loading', 'show_navigation_drawer', 'is_navigation_locked', 'load_config']),
+        isMenuInteractionDisabled() {
+            return this.is_navigation_locked || this.is_loading > 0 || this.is_route_navigation_pending
+        },
         isImpersonating() {
             return !!this.config?.impersonation?.is_impersonating
         },
@@ -121,6 +140,7 @@ export default {
     },
 
     async beforeMount() {
+        this.registerRouteNavigationHooks()
         await axios.get('/sanctum/csrf-cookie')
         this.adminStore = useAdminStore()
         this.adminStore.is_loading++
@@ -128,8 +148,28 @@ export default {
         await this.adminStore.loadConfig()
         this.adminStore.is_loading--
     },
+    unmounted() {
+        if (typeof this.removeRouteAfterEachHook === 'function') this.removeRouteAfterEachHook()
+        if (typeof this.removeRouteErrorHook === 'function') this.removeRouteErrorHook()
+    },
 
     methods: {
+        registerRouteNavigationHooks() {
+            if (!this.$router) return
+            this.removeRouteAfterEachHook = this.$router.afterEach(() => {
+                this.is_route_navigation_pending = false
+            })
+            this.removeRouteErrorHook = this.$router.onError(() => {
+                this.is_route_navigation_pending = false
+            })
+        },
+        startNavigationLock(target) {
+            if (this.isMenuInteractionDisabled) return
+            const resolvedTarget = this.$router?.resolve(target)?.fullPath || ''
+            const currentRoute = this.$route?.fullPath || ''
+            if (!resolvedTarget || resolvedTarget === currentRoute) return
+            this.is_route_navigation_pending = true
+        },
         async logout() {
             await this.adminStore.executeLogout()
             await this.$nextTick()

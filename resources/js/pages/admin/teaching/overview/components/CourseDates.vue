@@ -6,20 +6,14 @@
         v-if="selected_course"
         :disabled="action != '' && action != 'new_course_dates' && action != 'edit_course_date_content'">
         <template #title>
-            <div class="d-flex align-center ga-2 flex-grow-1">
-                <div>Termine – {{ selected_course.title }} ({{ selectedCourseClasses }})</div>
-            </div>
+            <div>Termine – {{ selected_course.title }} ({{ selectedCourseClasses }})</div>
         </template>
         <template #header-actions>
-            <v-btn icon="mdi-eye-off-outline" size="x-small" variant="text" density="compact" title="Ausblenden" @click="show_dates = false" />
+            <v-btn icon="mdi-plus" size="small" variant="tonal" @click="newDates" :disabled="isEditingContent || action === 'new_course_dates'" />
+            <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" @click="show_dates = false" />
         </template>
         <v-card tile flat color="transparent" class="w-100" :disabled="action != ''">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
-                <!-- Neue Termine -->
-                <div class="d-flex justify-end">
-                    <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newDates" :disabled="isEditingContent" />
-                </div>
-
                 <div v-if="semesterCount === 2" class="d-flex flex-wrap align-center ga-2 mt-2">
                     <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">
                         <v-btn :value="1" size="small">1. Sem</v-btn>
@@ -57,7 +51,7 @@
                         :disabled="isEditingContent && editing_content_id !== courseDate.id"
                         :class="courseDateRowClass(courseDate)"
                         :style="courseDateHighlightStyle(courseDate)">
-                        <div class="d-flex flex-column ga-2 w-100">
+                        <div class="d-flex flex-column ga-2 w-100 cursor-pointer" @click="selectCourseDate(courseDate)">
                             <div class="course-date-row d-flex align-center ga-2 w-100">
                                 <v-chip
                                     v-if="highlightedDateId === courseDate.id"
@@ -89,14 +83,25 @@
                                         {{ courseDate.free_reason }}
                                     </v-chip>
                                 </div>
-                                <div class="course-date-actions d-flex align-center ga-1">
+                                <div class="course-date-actions d-flex align-center ga-1" @click.stop>
                                     <v-chip
+                                        v-if="hasStatus(courseDate, 'free')"
                                         size="x-small"
-                                        :color="hasStatus(courseDate, 'free') ? 'success' : 'default'"
-                                        :variant="hasStatus(courseDate, 'free') ? 'flat' : 'outlined'"
+                                        color="success"
+                                        variant="flat"
                                         title="Systemverwaltet (Ferien/Freier Tag)">
                                         E
                                     </v-chip>
+                                    <v-btn
+                                        v-else
+                                        size="x-small"
+                                        :color="hasStatus(courseDate, 'entfaellt') ? 'success' : 'default'"
+                                        :variant="hasStatus(courseDate, 'entfaellt') ? 'flat' : 'outlined'"
+                                        :disabled="isEditingContent"
+                                        title="Entfällt (kursspezifisch)"
+                                        @click="toggleStatus(courseDate, 'entfaellt')">
+                                        E
+                                    </v-btn>
                                     <v-btn
                                         size="x-small"
                                         :color="hasStatus(courseDate, 'pruefung') ? 'warning' : 'default'"
@@ -145,7 +150,7 @@
                                         @click="deleteDate(courseDate)" />
                                 </div>
                             </div>
-                            <div v-if="isContentVisible(courseDate.id)" class="pl-6 pr-2 pb-2">
+                            <div v-if="isContentVisible(courseDate.id)" class="pl-6 pr-2 pb-2" @click.stop>
                                 <div v-if="editing_content_id !== courseDate.id">
                                     <div v-if="courseDate.content" class="text-caption content-readonly" v-html="contentHtml(courseDate.content)"></div>
                                 </div>
@@ -482,6 +487,7 @@ export default {
         courseDateRowClass(courseDate) {
             if (this.hasStatus(courseDate, 'pruefung')) return 'course-date-row--exam'
             if (this.hasStatus(courseDate, 'free')) return 'course-date-row--free'
+            if (this.hasStatus(courseDate, 'entfaellt')) return 'course-date-row--entfaellt'
             return ''
         },
         courseDateHighlightStyle(courseDate) {
@@ -499,18 +505,17 @@ export default {
             this.selected_courseDate = courseDate
         },
         async toggleStatus(courseDate, status) {
-            if (status !== 'pruefung') return
+            const userStatuses = ['pruefung', 'entfaellt']
+            if (!userStatuses.includes(status)) return
             const currentStatus = Array.isArray(courseDate.status) ? [...courseDate.status] : []
-            const currentPruefungOnly = currentStatus.filter((item) => item === 'pruefung')
-            const index = currentPruefungOnly.indexOf(status)
-
+            const newStatus = currentStatus.filter((item) => userStatuses.includes(item))
+            const index = newStatus.indexOf(status)
             if (index === -1) {
-                currentPruefungOnly.push(status)
+                newStatus.push(status)
             } else {
-                currentPruefungOnly.splice(index, 1)
+                newStatus.splice(index, 1)
             }
-
-            await this.courseDateStore.updateStatus(courseDate.id, currentPruefungOnly)
+            await this.courseDateStore.updateStatus(courseDate.id, newStatus)
             await this.courseStore.index()
         },
         toggleContents() {
@@ -654,6 +659,11 @@ export default {
 }
 
 .course-date-row--free {
+    background-color: #c8e6c9 !important;
+    border-left: 4px solid #4caf50;
+}
+
+.course-date-row--entfaellt {
     background-color: #c8e6c9 !important;
     border-left: 4px solid #4caf50;
 }

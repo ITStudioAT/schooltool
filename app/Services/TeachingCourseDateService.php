@@ -173,7 +173,7 @@ class TeachingCourseDateService
     {
         $items = is_array($status) ? $status : [];
 
-        return array_values(array_unique(array_filter($items, fn ($item) => in_array($item, ['free', 'pruefung'], true))));
+        return array_values(array_unique(array_filter($items, fn ($item) => in_array($item, ['free', 'pruefung', 'entfaellt'], true))));
     }
 
     public function stripAttendanceMetaFromStatus($status): array

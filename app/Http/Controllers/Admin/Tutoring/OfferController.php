@@ -183,8 +183,8 @@ class OfferController extends Controller
         }
 
         $validated = $request->validate([
-            'id' => ['nullable', 'integer', 'exists:tutoring_offers,id'],
-            'ids' => ['nullable', 'array', 'min:1'],
+            'id' => ['nullable', 'required_without:ids', 'integer', 'exists:tutoring_offers,id'],
+            'ids' => ['nullable', 'required_without:id', 'array', 'min:1'],
             'ids.*' => ['integer', 'exists:tutoring_offers,id'],
             'accepted' => ['nullable', 'boolean'],
         ]);
@@ -215,11 +215,7 @@ class OfferController extends Controller
             $changedCount++;
         }
 
-        return response()->json([
-            'updated_count' => $changedCount,
-            'selected_count' => $offers->count(),
-            'ids' => $offers->pluck('id')->values(),
-        ], 200);
+        return response()->noContent();
     }
 
     public function toggleActiveOffer(Request $request)
@@ -229,8 +225,8 @@ class OfferController extends Controller
         }
 
         $validated = $request->validate([
-            'id' => ['nullable', 'integer', 'exists:tutoring_offers,id'],
-            'ids' => ['nullable', 'array', 'min:1'],
+            'id' => ['nullable', 'required_without:ids', 'integer', 'exists:tutoring_offers,id'],
+            'ids' => ['nullable', 'required_without:id', 'array', 'min:1'],
             'ids.*' => ['integer', 'exists:tutoring_offers,id'],
             'is_active' => ['nullable', 'boolean'],
         ]);
@@ -250,11 +246,7 @@ class OfferController extends Controller
             $changedCount++;
         }
 
-        return response()->json([
-            'updated_count' => $changedCount,
-            'selected_count' => $offers->count(),
-            'ids' => $offers->pluck('id')->values(),
-        ], 200);
+        return response()->noContent();
     }
 
     public function getStats(Request $request)

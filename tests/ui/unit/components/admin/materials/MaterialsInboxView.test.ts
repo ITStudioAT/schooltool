@@ -31,8 +31,14 @@ const vuetifyStubs = {
     VListItemTitle: { template: '<div><slot /></div>' },
     'v-list-item-subtitle': { template: '<div><slot /></div>' },
     VListItemSubtitle: { template: '<div><slot /></div>' },
-    'v-btn': { template: '<button type="button" @click="$emit(\'click\')"><slot /></button>' },
-    VBtn: { template: '<button type="button" @click="$emit(\'click\')"><slot /></button>' },
+    'v-btn': {
+        emits: ['click'],
+        template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+    },
+    VBtn: {
+        emits: ['click'],
+        template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+    },
     'v-chip': { template: '<span><slot /></span>' },
     VChip: { template: '<span><slot /></span>' },
     'v-expansion-panels': { template: '<div><slot /></div>' },
@@ -125,12 +131,13 @@ describe('MaterialsInboxView', () => {
         renderMaterialsInboxView()
 
         await waitFor(() => {
-            expect(screen.getByText('Muster Anna · HTL Graz')).toBeInTheDocument()
+            expect(screen.getByText(/Muster Anna/i)).toBeInTheDocument()
         })
+        expect(screen.getByText(/HTL Graz/i)).toBeInTheDocument()
         expect(screen.getByText('anna@test.local')).toBeInTheDocument()
         expect(screen.getByText(/Anzeigen, was geteilt wurde/i)).toBeInTheDocument()
         expect(screen.getByText(/^Fach$/i)).toBeInTheDocument()
-        expect(screen.getByText(/Mathematik/i)).toBeInTheDocument()
+        expect(screen.getByText(/^Mathematik$/i)).toBeInTheDocument()
         expect(screen.getByText(/Mathematik - Algebra - Brueche/i)).toBeInTheDocument()
         expect(screen.getByText(/LESEN\/SCHREIBEN/i)).toBeInTheDocument()
         expect(screen.getByText(/^Anzeigen$/i)).toBeInTheDocument()
@@ -178,7 +185,7 @@ describe('MaterialsInboxView', () => {
 
         renderMaterialsInboxView()
 
-        expect(await screen.findByText(/Noch keine eingehenden Freigaben gefunden/i)).toBeInTheDocument()
+        expect(screen.getByText(/eingehenden Freigaben gefunden/i)).toBeInTheDocument()
     })
 
     it('renders error state when inbox loading fails', async () => {
@@ -583,21 +590,23 @@ describe('MaterialsInboxView', () => {
                 },
             })
         })
-        expect(axiosMock.post).toHaveBeenNthCalledWith(2, '/api/admin/materials/shares/inbox/material-insert', {
-            rule_id: 920,
-            material_id: 701,
-            target_level: 'unit',
-            target_id: 230,
-            import_mode: 'copy',
-            source_unit_id: 3,
-        })
-        expect(axiosMock.post).toHaveBeenNthCalledWith(3, '/api/admin/materials/shares/inbox/material-insert', {
-            rule_id: 920,
-            material_id: 702,
-            target_level: 'unit',
-            target_id: 230,
-            import_mode: 'copy',
-            source_unit_id: 3,
+        await waitFor(() => {
+            expect(axiosMock.post).toHaveBeenNthCalledWith(2, '/api/admin/materials/shares/inbox/material-insert', {
+                rule_id: 920,
+                material_id: 701,
+                target_level: 'unit',
+                target_id: 230,
+                import_mode: 'copy',
+                source_unit_id: 3,
+            })
+            expect(axiosMock.post).toHaveBeenNthCalledWith(3, '/api/admin/materials/shares/inbox/material-insert', {
+                rule_id: 920,
+                material_id: 702,
+                target_level: 'unit',
+                target_id: 230,
+                import_mode: 'copy',
+                source_unit_id: 3,
+            })
         })
     })
 

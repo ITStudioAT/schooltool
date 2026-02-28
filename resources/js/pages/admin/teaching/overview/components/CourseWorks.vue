@@ -6,23 +6,16 @@
         v-if="selected_course"
         :disabled="action != '' && action != 'new_course_work' && action != 'edit_course_work'">
         <template #title>
-            <div class="d-flex align-center ga-2 flex-grow-1">
-                <div>Arbeiten – {{ selected_course.title }} ({{ selectedCourseClasses }})</div>
-                <v-spacer />
-                <v-btn v-if="action === 'new_course_work' || action === 'edit_course_work'" icon="mdi-close" size="x-small" color="warning" variant="flat" @click="abortEdit" :disabled="is_saving" />
-                <v-btn v-if="action === 'new_course_work' || action === 'edit_course_work'" icon="mdi-content-save" size="x-small" color="success" variant="flat" @click="saveWork(false)" :disabled="is_saving" />
-            </div>
+            <div>Arbeiten – {{ selected_course.title }} ({{ selectedCourseClasses }})</div>
         </template>
         <template #header-actions>
-            <v-btn icon="mdi-eye-off-outline" size="x-small" variant="text" density="compact" title="Ausblenden" @click="show_works = false" />
+            <v-btn v-if="action !== 'new_course_work' && action !== 'edit_course_work'" icon="mdi-plus" size="small" variant="tonal" @click="newWork" :disabled="!hasStudents" />
+            <v-btn v-if="action === 'new_course_work' || action === 'edit_course_work'" icon="mdi-close" size="small" color="warning" variant="tonal" @click="abortEdit" :disabled="is_saving" />
+            <v-btn v-if="action === 'new_course_work' || action === 'edit_course_work'" icon="mdi-content-save" size="small" color="success" variant="tonal" @click="saveWork(false)" :disabled="is_saving" />
+            <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" @click="show_works = false" />
         </template>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
-                <!-- Neue Arbeit -->
-                <div class="d-flex justify-end">
-                    <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newWork" :disabled="action === 'edit_course_work' || !hasStudents" />
-                </div>
-
                 <div v-if="semesterCount === 2" class="d-flex flex-wrap align-center ga-2 mt-2">
                     <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">
                         <v-btn :value="1" size="small">1. Sem</v-btn>
@@ -83,8 +76,22 @@
         <v-card tile flat color="transparent" class="w-100" v-if="action === 'new_course_work' || action === 'edit_course_work'">
             <v-form ref="form" v-model="is_valid" @submit.prevent class="mb-4">
                 <v-card-text>
-                    <v-select v-model="work_form.type" label="Typ" :items="workTypeItems" item-title="title" item-value="value" clearable />
-                    <v-text-field v-model="work_form.title" label="Titel" class="mt-4" />
+                    <div class="text-caption text-medium-emphasis mb-1">Typ</div>
+                    <div class="d-flex flex-wrap ga-1 mb-1">
+                        <v-btn
+                            v-for="item in workTypeItems"
+                            :key="item.value"
+                            :variant="work_form.type === item.value ? 'flat' : 'tonal'"
+                            :color="work_form.type === item.value ? 'primary' : 'default'"
+                            size="small"
+                            @click="work_form.type = work_form.type === item.value ? null : item.value">
+                            {{ item.value }}
+                        </v-btn>
+                    </div>
+                    <div class="text-caption text-primary mb-4" style="min-height: 1.2em;">
+                        {{ workTypeItems.find(i => i.value === work_form.type)?.title ?? '' }}
+                    </div>
+                    <v-text-field v-model="work_form.title" label="Titel" />
                     <v-date-input v-model="work_form.date_for_all_groups" label="Datum (für alle Gruppen)" />
                     <div class="d-flex flex-wrap ga-1 mt-1" v-if="nextDates.length">
                         <v-chip v-for="date in nextDates" :key="date.id" size="x-small" variant="outlined" class="cursor-pointer" @click="selectDate(date.date)">

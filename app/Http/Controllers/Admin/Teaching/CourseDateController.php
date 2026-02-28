@@ -99,7 +99,7 @@ class CourseDateController extends Controller
             'hours' => 'nullable|array',
             'content' => 'nullable|string|max:4096',
             'status' => 'nullable|array',
-            'status.*' => 'string|in:pruefung',
+            'status.*' => 'string|in:pruefung,entfaellt',
             'attendance' => 'nullable|array',
             'attendance.*' => 'boolean',
             'attendance_checked' => 'nullable|boolean',
@@ -141,7 +141,7 @@ class CourseDateController extends Controller
 
         $validated = $request->validate([
             'status' => 'nullable|array',
-            'status.*' => 'string|in:pruefung',
+            'status.*' => 'string|in:pruefung,entfaellt',
             'attendance' => 'nullable|array',
             'attendance.*' => 'boolean',
             'attendance_checked' => 'nullable|boolean',
