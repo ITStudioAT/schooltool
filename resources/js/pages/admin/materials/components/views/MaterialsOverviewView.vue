@@ -169,7 +169,6 @@
                 @open-share="openShareDialog"
                 @open-create="openCreateDialogFromTree"
                 @open-attachments="openAttachmentManager"
-                @remove-classification="removeClassificationFromTree"
                 @unlink-linked-material="unlinkLinkedCard"
                 @unlink-linked-unit="unlinkLinkedUnit" />
         </template>
@@ -1996,8 +1995,19 @@ export default {
                     }
                 } else {
                     const key = normalizedName.toLocaleLowerCase()
-                    const existing = units.find((unit) => this.normalizeFilterText(unit?.name).toLocaleLowerCase() === key)
-                    if (existing) return existing
+                    const sameNameUnits = units.filter((unit) => this.normalizeFilterText(unit?.name).toLocaleLowerCase() === key)
+                    if (sameNameUnits.length === 1) {
+                        return sameNameUnits[0]
+                    }
+                    if (sameNameUnits.length > 1) {
+                        const preferred = [...sameNameUnits].sort((left, right) => {
+                            const leftCount = Array.isArray(left?.materials) ? left.materials.length : 0
+                            const rightCount = Array.isArray(right?.materials) ? right.materials.length : 0
+                            if (leftCount !== rightCount) return leftCount - rightCount
+                            return Number(left?.id || 0) - Number(right?.id || 0)
+                        })[0]
+                        if (preferred) return preferred
+                    }
                 }
 
                 const created = {
@@ -2040,7 +2050,7 @@ export default {
                     attachmentsCount: this.normalizeMaterialAttachmentCount(card),
                 }
 
-                const persistedRows = this.normalizeClassifications(card?.classifications)
+                const persistedRows = this.normalizeOverviewClassifications(card?.classifications)
                 const rows = persistedRows.length > 0 ? persistedRows : this.fallbackClassificationsForOverviewCard(card)
                 const classificationsCount = persistedRows.length
                 const hasPersistedClassifications = classificationsCount > 0
@@ -3070,6 +3080,10 @@ export default {
                 ...card,
                 classifications: Array.isArray(card.classifications)
                     ? card.classifications.map((row) => ({
+                          id: Number(row?.id || 0) > 0 ? Number(row.id) : null,
+                          subject_id: Number(row?.subject_id || row?.subjectId || 0) > 0 ? Number(row?.subject_id || row?.subjectId) : null,
+                          topic_id: Number(row?.topic_id || row?.topicId || 0) > 0 ? Number(row?.topic_id || row?.topicId) : null,
+                          unit_id: Number(row?.unit_id || row?.unitId || 0) > 0 ? Number(row?.unit_id || row?.unitId) : null,
                           subject: String(row?.subject || '').trim(),
                           topic: String(row?.topic || '').trim(),
                           unit: String(row?.unit || '').trim(),
@@ -3602,6 +3616,63 @@ export default {
                 if (seen.has(key)) continue
                 seen.add(key)
                 result.push({ subject, topic, unit })
+            }
+
+            return result
+        },
+        normalizeOverviewClassifications(value) {
+            const input = Array.isArray(value) ? value : []
+            const result = []
+            const seen = new Set()
+
+            for (const row of input) {
+                if (!row || typeof row !== 'object') continue
+
+                const classificationId = Number(row?.id ?? row?.classificationId ?? row?.classification_id ?? 0)
+                const subjectId = Number(row?.subjectId ?? row?.subject_id ?? 0)
+                let topicId = Number(row?.topicId ?? row?.topic_id ?? 0)
+                let unitId = Number(row?.unitId ?? row?.unit_id ?? 0)
+
+                const subject = String(row?.subject ?? '')
+                    .trim()
+                    .slice(0, 255)
+                const topic = String(row?.topic ?? '')
+                    .trim()
+                    .slice(0, 255)
+                let unit = String(row?.unit ?? '')
+                    .trim()
+                    .slice(0, 255)
+                if (!subject) continue
+                if (!topic) {
+                    topicId = 0
+                    unitId = 0
+                    unit = ''
+                } else if (!unit) {
+                    unitId = 0
+                }
+
+                const normalizedSubjectId = Number.isFinite(subjectId) && subjectId > 0 ? Math.round(subjectId) : null
+                const normalizedTopicId = Number.isFinite(topicId) && topicId > 0 ? Math.round(topicId) : null
+                const normalizedUnitId = Number.isFinite(unitId) && unitId > 0 ? Math.round(unitId) : null
+                const normalizedClassificationId = Number.isFinite(classificationId) && classificationId > 0 ? Math.round(classificationId) : null
+
+                const key = normalizedClassificationId !== null
+                    ? `classification:${normalizedClassificationId}`
+                    : normalizedSubjectId !== null || normalizedTopicId !== null || normalizedUnitId !== null
+                      ? `ids:${normalizedSubjectId || 0}|${normalizedTopicId || 0}|${normalizedUnitId || 0}`
+                      : `names:${subject.toLocaleLowerCase()}|${topic.toLocaleLowerCase()}|${unit.toLocaleLowerCase()}`
+                if (seen.has(key)) continue
+                seen.add(key)
+
+                result.push({
+                    id: normalizedClassificationId,
+                    subject_id: normalizedSubjectId,
+                    topic_id: normalizedTopicId,
+                    unit_id: normalizedUnitId,
+                    subject,
+                    topic,
+                    unit,
+                })
             }
 
             return result

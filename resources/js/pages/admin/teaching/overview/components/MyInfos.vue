@@ -1,8 +1,11 @@
 <template>
     <ItsGridBox color="primary" title="Infos" icon="mdi-information-outline" class="w-100">
+        <template #header-actions>
+            <v-btn icon="mdi-eye-off-outline" size="x-small" variant="text" density="compact" title="Ausblenden" @click="show_my_infos = false" />
+        </template>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
-                <v-card variant="outlined" class="mt-2">
+                <v-card variant="outlined" class="mt-2" v-if="openNotifications.length">
                     <v-card-title class="text-subtitle-2 d-flex align-center ga-2 flex-wrap">
                         <v-icon size="18">mdi-bell-alert</v-icon>
                         Offene Verständigungen (alle Fächer)
@@ -134,7 +137,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'action_2']),
-        ...mapWritableState(useCourseStore, ['courses', 'selected_course', 'selected_course_id', 'selected_course_student']),
+        ...mapWritableState(useCourseStore, ['courses', 'selected_course', 'selected_course_id', 'selected_course_student', 'show_my_infos']),
         myCourses() {
             const userId = this.config?.user?.id
             const list = Array.isArray(this.courses) ? this.courses : []

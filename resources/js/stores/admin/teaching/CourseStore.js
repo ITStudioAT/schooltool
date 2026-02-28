@@ -14,6 +14,8 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             previous_show_infos: null,
             previous_show_dates: null,
             show_my_courses: true,
+            show_timetable: true,
+            show_my_infos: true,
             show_students: true,
             show_infos: true,
             show_works: true,

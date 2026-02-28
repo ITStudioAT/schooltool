@@ -40,7 +40,7 @@
                 <MyCourses />
             </v-col>
         </v-row>
-        <v-row v-if="show_my_courses && !selected_course && action != 'teaching_course_new_or_edit'" :style="action_2 == 'course_student_view' ? 'pointer-events:none; opacity:0.6' : ''">
+        <v-row v-if="show_my_courses && show_timetable && !selected_course && action != 'teaching_course_new_or_edit'" :style="action_2 == 'course_student_view' ? 'pointer-events:none; opacity:0.6' : ''">
             <v-col>
                 <MyTimetable />
             </v-col>
@@ -60,7 +60,7 @@
         </v-row>
     </v-col>
 
-    <v-col cols="12" md="6" xl="4" v-if="show_my_courses && !selected_course && action != 'teaching_course_new_or_edit'">
+    <v-col cols="12" md="6" xl="4" v-if="show_my_courses && show_my_infos && !selected_course && action != 'teaching_course_new_or_edit'">
         <v-row>
             <v-col>
                 <MyInfos />
@@ -135,6 +135,8 @@ export default {
             'selected_course',
             'selected_course_id',
             'show_my_courses',
+            'show_timetable',
+            'show_my_infos',
             'show_students',
             'show_infos',
             'show_works',

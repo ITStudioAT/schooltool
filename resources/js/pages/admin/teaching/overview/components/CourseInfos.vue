@@ -6,9 +6,12 @@
         class="w-100"
         v-if="selected_course"
         :disabled="action != '' && action != 'edit_description'">
+        <template #header-actions>
+            <v-btn icon="mdi-eye-off-outline" size="x-small" variant="text" density="compact" title="Ausblenden" @click="show_infos = false" />
+        </template>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2" v-if="action != 'edit_description'">
-                <v-card variant="outlined" class="mt-2">
+                <v-card variant="outlined" class="mt-2" v-if="openNotifications.length">
                     <v-card-title class="text-subtitle-2 d-flex align-center ga-2 flex-wrap">
                         <v-icon size="18">mdi-bell-alert</v-icon>
                         Offene Verständigungen
@@ -111,7 +114,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
-        ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course']),
+        ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'show_infos']),
 
         schemaName() {
             const schemaId = this.selected_course?.teaching_schema_id

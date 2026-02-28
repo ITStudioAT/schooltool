@@ -2,11 +2,13 @@
     <v-sheet class="mb-2">
         <v-card flat rounded="0" :color="color ? color : 'secondary'" class="h-100 py-0" :disabled="disabled">
             <v-card-title>
-                <div class="d-flex flex-row ga-2">
+                <div class="d-flex flex-row ga-2 align-center">
                     <v-icon :icon="icon" v-if="icon" />
                     <slot name="title">
                         <div v-if="title">{{ title }}</div>
                     </slot>
+                    <v-spacer />
+                    <slot name="header-actions" />
                 </div>
                 <div class="text-caption" v-if="subtitle">{{ subtitle }}</div>
             </v-card-title>

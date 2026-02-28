@@ -1,19 +1,20 @@
 <template>
     <ItsGridBox color="primary" title="Meine Fächer" icon="mdi-invoice-list" class="w-100" :disabled="action != ''">
-        <!-- KURS ANLEGEN -->
-        <v-card tile flat color="transparent" class="mt-4">
-            <div class="d-flex align-start w-100">
-                <its-menu-button title="Fach" subtitle="anlegen" icon="mdi-plus-circle-multiple" color="primary" @click="newCourse" />
-                <v-spacer />
-                <v-btn
-                    icon="mdi-close-circle"
-                    size="small"
-                    variant="flat"
-                    color="error"
-                    v-if="selected_course"
-                    @click="clearSelectedCourse" />
-            </div>
-        </v-card>
+        <template #header-actions>
+            <v-btn icon="mdi-eye-off-outline" size="x-small" variant="text" density="compact" title="Ausblenden" @click="show_my_courses = false" />
+        </template>
+        <!-- AKTIONS-LEISTE -->
+        <div class="d-flex align-center w-100 mt-2">
+            <v-btn
+                v-if="selected_course"
+                size="small"
+                variant="outlined"
+                color="primary"
+                prepend-icon="mdi-close"
+                @click="clearSelectedCourse">Schließen</v-btn>
+            <v-spacer />
+            <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" title="Fach anlegen" @click="newCourse" />
+        </div>
 
         <!-- ALLE KURSE ANZEIGEN -->
         <v-card tile flat color="transparent" class="w-100">
@@ -319,7 +320,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
-        ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'selected_course_id', 'selected_course_student']),
+        ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'selected_course_id', 'selected_course_student', 'show_my_courses']),
         schemaItems() {
             return (this.teachingStore?.schemas || []).map((s) => ({ title: s.name, value: s.id })).sort((a, b) => a.title.localeCompare(b.title))
         },

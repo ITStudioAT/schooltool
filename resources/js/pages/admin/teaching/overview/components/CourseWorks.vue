@@ -7,26 +7,21 @@
         :disabled="action != '' && action != 'new_course_work' && action != 'edit_course_work'">
         <template #title>
             <div class="d-flex align-center ga-2 flex-grow-1">
-                <div>Arbeiten</div>
+                <div>Arbeiten – {{ selected_course.title }} ({{ selectedCourseClasses }})</div>
                 <v-spacer />
                 <v-btn v-if="action === 'new_course_work' || action === 'edit_course_work'" icon="mdi-close" size="x-small" color="warning" variant="flat" @click="abortEdit" :disabled="is_saving" />
                 <v-btn v-if="action === 'new_course_work' || action === 'edit_course_work'" icon="mdi-content-save" size="x-small" color="success" variant="flat" @click="saveWork(false)" :disabled="is_saving" />
             </div>
         </template>
+        <template #header-actions>
+            <v-btn icon="mdi-eye-off-outline" size="x-small" variant="text" density="compact" title="Ausblenden" @click="show_works = false" />
+        </template>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
-                <!-- Anzeige ausgewählter Kurs -->
-                <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between">
-                    <div>
-                        <div class="text-body-1 font-weight-medium">{{ selected_course.title }}</div>
-                        <div class="d-flex flex-wrap ga-1 mt-1">
-                            <v-chip v-for="cls in selected_course.classes" :key="cls" size="small" variant="tonal">
-                                {{ cls }}
-                            </v-chip>
-                        </div>
-                    </div>
+                <!-- Neue Arbeit -->
+                <div class="d-flex justify-end">
                     <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newWork" :disabled="action === 'edit_course_work' || !hasStudents" />
-                </v-card>
+                </div>
 
                 <div v-if="semesterCount === 2" class="d-flex flex-wrap align-center ga-2 mt-2">
                     <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">
@@ -39,14 +34,14 @@
         </v-card>
 
         <!-- Arbeiten (Anzeige) -->
-        <v-card variant="outlined" class="mt-4" v-if="action !== 'new_course_work' && action !== 'edit_course_work'">
+        <v-card variant="outlined" class="mt-4" v-if="filteredCourseWorks?.length && action !== 'new_course_work' && action !== 'edit_course_work'">
             <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                 <v-icon size="18">mdi-clipboard-text</v-icon>
                 Arbeiten
-                <v-chip v-if="filteredCourseWorks?.length" size="x-small" color="primary" variant="tonal">
+                <v-chip size="x-small" color="primary" variant="tonal">
                     {{ filteredCourseWorks.length }}
                 </v-chip>
-                <v-chip v-if="courseWorks?.length && courseWorks.length !== (filteredCourseWorks?.length || 0)" size="x-small" color="secondary" variant="outlined">
+                <v-chip v-if="courseWorks?.length && courseWorks.length !== filteredCourseWorks.length" size="x-small" color="secondary" variant="outlined">
                     Gesamt {{ courseWorks.length }}
                 </v-chip>
             </v-card-title>
@@ -71,20 +66,18 @@
                             </div>
                         </div>
                     </v-list-item>
-                    <v-list-item v-if="!filteredCourseWorks?.length && hasStudents && !courseWorks?.length">
-                        <v-list-item-title class="text-caption text-medium-emphasis">Keine Arbeiten vorhanden.</v-list-item-title>
-                    </v-list-item>
-                    <v-list-item v-if="!filteredCourseWorks?.length && hasStudents && courseWorks?.length">
-                        <v-list-item-title class="text-caption text-warning">
-                            Es gibt {{ courseWorks.length }} Arbeit(en), sie sind aktuell durch den Semester-Filter ausgeblendet.
-                        </v-list-item-title>
-                    </v-list-item>
-                    <v-list-item v-if="!hasStudents">
-                        <v-list-item-title class="text-caption text-warning">Keine Schüler:innen im Kurs. Bitte zuerst Schüler:innen hinzufügen.</v-list-item-title>
-                    </v-list-item>
                 </v-list>
             </v-card-text>
         </v-card>
+        <div v-if="!filteredCourseWorks?.length && hasStudents && !courseWorks?.length && action !== 'new_course_work' && action !== 'edit_course_work'" class="text-caption text-medium-emphasis mt-2">
+            Keine Arbeiten vorhanden
+        </div>
+        <div v-if="!filteredCourseWorks?.length && hasStudents && courseWorks?.length && action !== 'new_course_work' && action !== 'edit_course_work'" class="text-caption text-warning mt-2">
+            Es gibt {{ courseWorks.length }} Arbeit(en), aktuell durch den Semester-Filter ausgeblendet.
+        </div>
+        <div v-if="!hasStudents && action !== 'new_course_work' && action !== 'edit_course_work'" class="text-caption text-warning mt-2">
+            Keine Schüler:innen im Kurs. Bitte zuerst Schüler:innen hinzufügen.
+        </div>
 
         <!-- NEUE/BEARBEITEN ARBEIT (TEMPLATE) -->
         <v-card tile flat color="transparent" class="w-100" v-if="action === 'new_course_work' || action === 'edit_course_work'">
@@ -431,9 +424,16 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
-        ...mapWritableState(useCourseStore, ['selected_course', 'selected_course_student', 'show_infos', 'show_dates']),
+        ...mapWritableState(useCourseStore, ['selected_course', 'selected_course_student', 'show_infos', 'show_dates', 'show_works']),
         ...mapWritableState(useCourseWorkStore, ['courseWorks', 'selected_courseWork']),
         ...mapWritableState(useTeachingStore, ['settings']),
+        selectedCourseClasses() {
+            if (!this.selected_course?.classes?.length) return ''
+            if (typeof this.selected_course.classes === 'string') {
+                return this.selected_course.classes.replace(/,/g, ', ')
+            }
+            return this.selected_course.classes.join(', ')
+        },
         teachingWorks() {
             const schemaId = this.selected_course?.teaching_schema_id
             if (!schemaId) return []

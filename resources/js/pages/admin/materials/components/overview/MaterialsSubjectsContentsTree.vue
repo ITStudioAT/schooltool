@@ -89,18 +89,6 @@
                                 {{ statusLabelFn(material.status) }}
                             </v-chip>
                             <v-btn
-                                v-if="enableRemoveButtons && material.canRemoveClassification !== false"
-                                size="x-small"
-                                color="warning"
-                                variant="text"
-                                density="comfortable"
-                                prepend-icon="mdi-link-off"
-                                :disabled="actionBusy"
-                                title="Zuordnung entfernen"
-                                @click="removeClassification(material)">
-                                Entfernen
-                            </v-btn>
-                            <v-btn
                                 v-if="enableRemoveButtons && material.isLinked"
                                 size="x-small"
                                 color="warning"
@@ -229,18 +217,6 @@
                                         class="overview-subjects-material-status">
                                         {{ statusLabelFn(material.status) }}
                                     </v-chip>
-                                    <v-btn
-                                        v-if="enableRemoveButtons && material.canRemoveClassification !== false"
-                                        size="x-small"
-                                        color="warning"
-                                        variant="text"
-                                        density="comfortable"
-                                        prepend-icon="mdi-link-off"
-                                        :disabled="actionBusy"
-                                        title="Zuordnung entfernen"
-                                        @click="removeClassification(material)">
-                                        Entfernen
-                                    </v-btn>
                                     <v-btn
                                         v-if="enableRemoveButtons && material.isLinked"
                                         size="x-small"
@@ -394,18 +370,6 @@
                                                 {{ statusLabelFn(material.status) }}
                                             </v-chip>
                                             <v-btn
-                                                v-if="enableRemoveButtons && material.canRemoveClassification !== false"
-                                                size="x-small"
-                                                color="warning"
-                                                variant="text"
-                                                density="comfortable"
-                                                prepend-icon="mdi-link-off"
-                                                :disabled="actionBusy"
-                                                title="Zuordnung entfernen"
-                                                @click="removeClassification(material)">
-                                                Entfernen
-                                            </v-btn>
-                                            <v-btn
                                                 v-if="enableRemoveButtons && material.isLinked"
                                                 size="x-small"
                                                 color="warning"
@@ -504,7 +468,7 @@ export default {
             required: true,
         },
     },
-    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'remove-classification', 'unlink-linked-material', 'unlink-linked-unit'],
+    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'unlink-linked-material', 'unlink-linked-unit'],
     methods: {
         linkedPermissionChipColor(permission) {
             const normalized = String(permission || '').trim()
@@ -552,10 +516,6 @@ export default {
                 title: String(material?.title || '').trim(),
                 attachments: Array.isArray(material?.attachments) ? material.attachments : undefined,
             })
-        },
-        removeClassification(material) {
-            if (material?.canRemoveClassification === false) return
-            this.$emit('remove-classification', material)
         },
     },
 }

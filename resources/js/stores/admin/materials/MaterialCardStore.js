@@ -53,17 +53,41 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             const seen = new Set()
 
             for (const row of list) {
+                const classificationId = Number(row?.id ?? row?.classificationId ?? row?.classification_id ?? 0)
+                const subjectId = Number(row?.subjectId ?? row?.subject_id ?? 0)
+                let topicId = Number(row?.topicId ?? row?.topic_id ?? 0)
+                let unitId = Number(row?.unitId ?? row?.unit_id ?? 0)
                 const subject = this.normalizeName(row?.subject)
                 const topic = this.normalizeName(row?.topic)
                 let unit = this.normalizeName(row?.unit)
                 if (!subject) continue
                 if (!topic) {
+                    topicId = 0
+                    unitId = 0
                     unit = ''
+                } else if (!unit) {
+                    unitId = 0
                 }
-                const key = `${subject.toLocaleLowerCase()}|${topic.toLocaleLowerCase()}|${unit.toLocaleLowerCase()}`
+                const normalizedClassificationId = Number.isFinite(classificationId) && classificationId > 0 ? Math.round(classificationId) : null
+                const normalizedSubjectId = Number.isFinite(subjectId) && subjectId > 0 ? Math.round(subjectId) : null
+                const normalizedTopicId = Number.isFinite(topicId) && topicId > 0 ? Math.round(topicId) : null
+                const normalizedUnitId = Number.isFinite(unitId) && unitId > 0 ? Math.round(unitId) : null
+                const key = normalizedClassificationId !== null
+                    ? `classification:${normalizedClassificationId}`
+                    : normalizedSubjectId !== null || normalizedTopicId !== null || normalizedUnitId !== null
+                      ? `ids:${normalizedSubjectId || 0}|${normalizedTopicId || 0}|${normalizedUnitId || 0}`
+                      : `${subject.toLocaleLowerCase()}|${topic.toLocaleLowerCase()}|${unit.toLocaleLowerCase()}`
                 if (seen.has(key)) continue
                 seen.add(key)
-                result.push({ subject, topic, unit })
+                result.push({
+                    id: normalizedClassificationId,
+                    subject_id: normalizedSubjectId,
+                    topic_id: normalizedTopicId,
+                    unit_id: normalizedUnitId,
+                    subject,
+                    topic,
+                    unit,
+                })
             }
 
             return result
@@ -82,12 +106,21 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
 
             const findByName = (items, value) =>
                 (items || []).find((item) => String(item?.name || '').toLocaleLowerCase() === value.toLocaleLowerCase())
+            const findById = (items, value) => {
+                const id = Number(value || 0)
+                if (!Number.isFinite(id) || id <= 0) return null
+                return (items || []).find((item) => Number(item?.id || 0) === id) || null
+            }
 
             for (const row of incomingRows) {
-                let subjectNode = findByName(tree, row.subject)
+                const rowSubjectId = Number(row?.subject_id || row?.subjectId || 0)
+                const rowTopicId = Number(row?.topic_id || row?.topicId || 0)
+                const rowUnitId = Number(row?.unit_id || row?.unitId || 0)
+
+                let subjectNode = findById(tree, rowSubjectId) || findByName(tree, row.subject)
                 if (!subjectNode) {
                     subjectNode = {
-                        id: null,
+                        id: Number.isFinite(rowSubjectId) && rowSubjectId > 0 ? rowSubjectId : null,
                         name: row.subject,
                         can_delete: false,
                         topics: [],
@@ -95,6 +128,9 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                     tree.push(subjectNode)
                 } else if (subjectNode && typeof subjectNode === 'object' && !Object.prototype.hasOwnProperty.call(subjectNode, 'can_delete')) {
                     subjectNode.can_delete = false
+                }
+                if (Number.isFinite(rowSubjectId) && rowSubjectId > 0 && Number(subjectNode?.id || 0) <= 0) {
+                    subjectNode.id = rowSubjectId
                 }
 
                 if (!Array.isArray(subjectNode.topics)) {
@@ -105,10 +141,10 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                     continue
                 }
 
-                let topicNode = findByName(subjectNode.topics, row.topic)
+                let topicNode = findById(subjectNode.topics, rowTopicId) || findByName(subjectNode.topics, row.topic)
                 if (!topicNode) {
                     topicNode = {
-                        id: null,
+                        id: Number.isFinite(rowTopicId) && rowTopicId > 0 ? rowTopicId : null,
                         name: row.topic,
                         can_delete: false,
                         units: [],
@@ -116,6 +152,9 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                     subjectNode.topics.push(topicNode)
                 } else if (topicNode && typeof topicNode === 'object' && !Object.prototype.hasOwnProperty.call(topicNode, 'can_delete')) {
                     topicNode.can_delete = false
+                }
+                if (Number.isFinite(rowTopicId) && rowTopicId > 0 && Number(topicNode?.id || 0) <= 0) {
+                    topicNode.id = rowTopicId
                 }
 
                 if (!Array.isArray(topicNode.units)) {
@@ -126,21 +165,31 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                     continue
                 }
 
-                const unitExists = topicNode.units.some(
-                    (unitNode) => String(unitNode?.name || '').toLocaleLowerCase() === row.unit.toLocaleLowerCase()
-                )
-                if (!unitExists) {
+                let existingUnit = findById(topicNode.units, rowUnitId)
+                if (!existingUnit) {
+                    existingUnit = topicNode.units.find(
+                        (unitNode) => String(unitNode?.name || '').toLocaleLowerCase() === row.unit.toLocaleLowerCase()
+                            && (Number.isFinite(rowUnitId) && rowUnitId > 0 ? Number(unitNode?.id || 0) <= 0 : true)
+                    ) || null
+                }
+
+                if (!existingUnit) {
                     topicNode.units.push({
-                        id: null,
+                        id: Number.isFinite(rowUnitId) && rowUnitId > 0 ? rowUnitId : null,
                         name: row.unit,
                         can_delete: false,
                     })
                 } else {
-                    const existingUnit = topicNode.units.find(
-                        (unitNode) => String(unitNode?.name || '').toLocaleLowerCase() === row.unit.toLocaleLowerCase()
-                    )
-                    if (existingUnit && typeof existingUnit === 'object' && !Object.prototype.hasOwnProperty.call(existingUnit, 'can_delete')) {
-                        existingUnit.can_delete = false
+                    if (Number.isFinite(rowUnitId) && rowUnitId > 0 && Number(existingUnit?.id || 0) <= 0) {
+                        existingUnit.id = rowUnitId
+                    }
+                    if (existingUnit && typeof existingUnit === 'object') {
+                        if (!Object.prototype.hasOwnProperty.call(existingUnit, 'can_delete')) {
+                            existingUnit.can_delete = false
+                        }
+                        if (!String(existingUnit?.name || '').trim()) {
+                            existingUnit.name = row.unit
+                        }
                     }
                 }
             }

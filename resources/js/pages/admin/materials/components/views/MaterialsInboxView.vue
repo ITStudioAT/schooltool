@@ -78,7 +78,12 @@
                     <v-list-item-subtitle>
                         {{ user.email || 'ohne E-Mail' }}
                     </v-list-item-subtitle>
-                    <v-expansion-panels v-if="user.shared_items.length > 0" class="inbox-shared-panels">
+                    <v-expansion-panels
+                        v-if="user.shared_items.length > 0"
+                        class="inbox-shared-panels"
+                        multiple
+                        :model-value="isUserPanelOpen(user.id) ? [0] : []"
+                        @update:modelValue="setUserPanelModel(user.id, $event)">
                         <v-expansion-panel>
                             <v-expansion-panel-title>
                                 Anzeigen, was geteilt wurde ({{ filteredSharedItems(user).length }})
@@ -109,7 +114,14 @@
                                             <div
                                                 v-if="item.scope_type !== 'material' || !item.materialPreview"
                                                 class="inbox-shared-object-title">
-                                                {{ item.scope_object_label }}
+                                                <span>{{ item.scope_object_label }}</span>
+                                                <v-chip
+                                                    v-if="item.is_imported"
+                                                    size="x-small"
+                                                    variant="flat"
+                                                    color="success">
+                                                    Eingefächert
+                                                </v-chip>
                                             </div>
                                             <div class="inbox-shared-object-path">
                                                 {{ item.scope_path_label }}
@@ -122,6 +134,13 @@
                                                     :icon="item.materialPreview.icon || 'mdi-file-document-outline'"
                                                     :color="item.materialPreview.typeColor || undefined" />
                                                 <span class="inbox-hierarchy-material-title">{{ item.materialPreview.title }}</span>
+                                                <v-chip
+                                                    v-if="item.is_imported"
+                                                    size="x-small"
+                                                    variant="flat"
+                                                    color="success">
+                                                    Eingefächert
+                                                </v-chip>
                                                 <v-chip
                                                     v-if="item.materialPreview.typeLabel"
                                                     size="x-small"
@@ -138,13 +157,6 @@
                                                     variant="tonal"
                                                     :color="item.materialPreview.statusColor || materialStatusColor(item.materialPreview.status)">
                                                     {{ item.materialPreview.statusLabel || materialStatusLabel(item.materialPreview.status) }}
-                                                </v-chip>
-                                                <v-chip
-                                                    v-if="item.is_imported"
-                                                    size="x-small"
-                                                    variant="flat"
-                                                    color="success">
-                                                    Eingefächert
                                                 </v-chip>
                                             </div>
                                             <v-card
@@ -509,6 +521,7 @@ export default {
         return {
             isLoading: false,
             users: [],
+            openUserPanels: {},
             openHierarchyCards: {},
             inboxMaterialFilter: 'all',
             einfachernDialog: {
@@ -613,11 +626,12 @@ export default {
         async loadInboxUsers() {
             this.isLoading = true
             this.errorMessage = ''
+            const previousOpenUserPanels = { ...this.openUserPanels }
+            const previousOpenHierarchyCards = { ...this.openHierarchyCards }
             try {
                 const response = await axios.get('/api/admin/materials/shares/inbox-users')
                 const rows = Array.isArray(response.data?.data) ? response.data.data : []
-                this.openHierarchyCards = {}
-                this.users = rows.map((row) => ({
+                const nextUsers = rows.map((row) => ({
                     id: Number(row?.id || 0),
                     label: String(row?.label || '').trim() || 'Benutzer',
                     email: String(row?.email || '').trim(),
@@ -659,9 +673,29 @@ export default {
                         })).filter((item) => item.rule_id > 0)
                         : [],
                 })).filter((row) => row.id > 0)
+                const nextOpenUserPanels = {}
+                const nextOpenHierarchyCards = {}
+                for (const user of nextUsers) {
+                    const userPanelKey = this.userPanelKey(user.id)
+                    if (previousOpenUserPanels[userPanelKey]) {
+                        nextOpenUserPanels[userPanelKey] = true
+                    }
+
+                    const sharedItems = Array.isArray(user?.shared_items) ? user.shared_items : []
+                    for (const item of sharedItems) {
+                        const key = this.hierarchyKey(user.id, item?.rule_id)
+                        if (previousOpenHierarchyCards[key]) {
+                            nextOpenHierarchyCards[key] = true
+                        }
+                    }
+                }
+                this.users = nextUsers
+                this.openUserPanels = nextOpenUserPanels
+                this.openHierarchyCards = nextOpenHierarchyCards
                 this.needsMigration = !!response.data?.meta?.needs_migration
             } catch (error) {
                 this.users = []
+                this.openUserPanels = {}
                 this.openHierarchyCards = {}
                 this.needsMigration = false
                 this.errorMessage = error?.response?.data?.message || 'Inbox konnte nicht geladen werden.'
@@ -691,6 +725,20 @@ export default {
             const name = String(unit?.name || '').trim().toLocaleLowerCase()
             const id = Number(unit?.id || 0)
             return id <= 0 && name === 'ohne einheit'
+        },
+        userPanelKey(userId) {
+            return `${Number(userId || 0)}`
+        },
+        isUserPanelOpen(userId) {
+            return !!this.openUserPanels[this.userPanelKey(userId)]
+        },
+        setUserPanelModel(userId, modelValue) {
+            const key = this.userPanelKey(userId)
+            const values = Array.isArray(modelValue) ? modelValue : [modelValue]
+            this.openUserPanels = {
+                ...this.openUserPanels,
+                [key]: values.some((entry) => Number(entry) === 0),
+            }
         },
         hierarchyKey(userId, ruleId) {
             return `${Number(userId || 0)}-${Number(ruleId || 0)}`
@@ -1065,6 +1113,10 @@ export default {
 }
 
 .inbox-shared-object-title {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
     font-size: 1rem;
     font-weight: 700;
     color: #233d4c;

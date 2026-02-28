@@ -1,25 +1,24 @@
 <template>
     <ItsGridBox
         color="primary"
-        title="Termine"
         icon="mdi-calendar"
         class="w-100"
         v-if="selected_course"
         :disabled="action != '' && action != 'new_course_dates' && action != 'edit_course_date_content'">
+        <template #title>
+            <div class="d-flex align-center ga-2 flex-grow-1">
+                <div>Termine – {{ selected_course.title }} ({{ selectedCourseClasses }})</div>
+            </div>
+        </template>
+        <template #header-actions>
+            <v-btn icon="mdi-eye-off-outline" size="x-small" variant="text" density="compact" title="Ausblenden" @click="show_dates = false" />
+        </template>
         <v-card tile flat color="transparent" class="w-100" :disabled="action != ''">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
-                <!-- Anzeige ausgewählter Kurs -->
-                <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between">
-                    <div>
-                        <div class="text-body-1 font-weight-medium">{{ selected_course.title }}</div>
-                        <div class="d-flex flex-wrap ga-1 mt-1">
-                            <v-chip v-for="cls in selected_course.classes" :key="cls" size="small" variant="tonal">
-                                {{ cls }}
-                            </v-chip>
-                        </div>
-                    </div>
+                <!-- Neue Termine -->
+                <div class="d-flex justify-end">
                     <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newDates" :disabled="isEditingContent" />
-                </v-card>
+                </div>
 
                 <div v-if="semesterCount === 2" class="d-flex flex-wrap align-center ga-2 mt-2">
                     <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">
@@ -56,10 +55,18 @@
                         v-for="courseDate in filteredCourseDates"
                         :key="courseDate.id"
                         :disabled="isEditingContent && editing_content_id !== courseDate.id"
-                        :class="courseDateRowClass(courseDate)">
+                        :class="courseDateRowClass(courseDate)"
+                        :style="courseDateHighlightStyle(courseDate)">
                         <div class="d-flex flex-column ga-2 w-100">
                             <div class="course-date-row d-flex align-center ga-2 w-100">
-                                <v-icon v-if="highlightedDateId === courseDate.id" size="x-small" color="success" class="course-date-icon">mdi-arrow-right-bold</v-icon>
+                                <v-chip
+                                    v-if="highlightedDateId === courseDate.id"
+                                    size="x-small"
+                                    :color="isDateToday(courseDate) ? 'success' : 'primary'"
+                                    variant="flat"
+                                    class="course-date-icon font-weight-bold px-2">
+                                    {{ isDateToday(courseDate) ? 'Heute' : 'Nächster' }}
+                                </v-chip>
                                 <v-chip
                                     size="x-small"
                                     variant="tonal"
@@ -301,8 +308,13 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'config']),
-        ...mapWritableState(useCourseStore, ['selected_course']),
+        ...mapWritableState(useCourseStore, ['selected_course', 'show_dates']),
         ...mapWritableState(useCourseDateStore, ['courseDates', 'selected_courseDate']),
+        selectedCourseClasses() {
+            const classes = this.selected_course?.classes
+            if (!classes?.length) return ''
+            return classes.join(', ')
+        },
         semesterCount() {
             const schemaId = this.selected_course?.teaching_schema_id
             const grading = schemaId ? this.teachingStore?.gradingForSchema(schemaId) : {}
@@ -461,12 +473,24 @@ export default {
         hasStatus(courseDate, status) {
             return Array.isArray(courseDate.status) && courseDate.status.includes(status)
         },
+        isDateToday(courseDate) {
+            if (!courseDate?.date) return false
+            const today = new Date()
+            today.setHours(0, 0, 0, 0)
+            return courseDate.date === this.toDateString(today)
+        },
         courseDateRowClass(courseDate) {
             if (this.selected_courseDate?.id === courseDate.id) return 'bg-secondary-lighten-5'
             if (this.hasStatus(courseDate, 'pruefung')) return 'course-date-row--exam'
             if (this.hasStatus(courseDate, 'free')) return 'course-date-row--free'
-            if (this.highlightedDateId === courseDate.id) return 'bg-primary-lighten-4'
             return ''
+        },
+        courseDateHighlightStyle(courseDate) {
+            if (this.highlightedDateId !== courseDate.id) return {}
+            if (this.isDateToday(courseDate)) {
+                return { backgroundColor: '#bbdefb', borderLeft: '5px solid #1565c0' }
+            }
+            return { backgroundColor: '#e3f2fd', borderLeft: '3px solid #1976d2' }
         },
         selectCourseDate(courseDate) {
             if (!courseDate) return
@@ -630,5 +654,15 @@ export default {
 .course-date-row--free {
     background-color: #c8e6c9 !important;
     border-left: 4px solid #4caf50;
+}
+
+.course-date-row--today {
+    background-color: #c8e6c9 !important;
+    border-left: 5px solid #2e7d32;
+}
+
+.course-date-row--next {
+    background-color: #e3f2fd !important;
+    border-left: 5px solid #1565c0;
 }
 </style>

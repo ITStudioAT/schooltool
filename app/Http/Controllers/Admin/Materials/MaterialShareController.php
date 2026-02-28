@@ -166,10 +166,11 @@ class MaterialShareController extends Controller
             ->get(['id', 'school_id', 'scope_type', 'scope_id', 'created_by_user_id', 'updated_at']);
 
         $importedMaterialKeys = $this->resolveImportedInboxMaterialKeys($authUserId);
+        $importedRuleIds = $this->resolveImportedInboxRuleIds($authUserId);
 
         $users = $matchingRules
             ->groupBy(fn (MaterialShareRule $rule) => (int) $rule->created_by_user_id)
-            ->map(function ($creatorRules) use ($authUserId, $schoolId, $memberGroupIds, $importedMaterialKeys) {
+            ->map(function ($creatorRules) use ($authUserId, $schoolId, $memberGroupIds, $importedMaterialKeys, $importedRuleIds) {
                 $firstRule = $creatorRules->first();
                 $creator = $firstRule?->creator;
                 if (! $creator) {
@@ -183,7 +184,7 @@ class MaterialShareController extends Controller
                     ->first()?->updated_at;
                 $sharedItems = $creatorRules
                     ->sortByDesc(fn (MaterialShareRule $rule) => optional($rule->updated_at)?->getTimestamp() ?? 0)
-                    ->map(function (MaterialShareRule $rule) use ($authUserId, $schoolId, $memberGroupIds, $importedMaterialKeys) {
+                    ->map(function (MaterialShareRule $rule) use ($authUserId, $schoolId, $memberGroupIds, $importedMaterialKeys, $importedRuleIds) {
                         $permission = $this->resolveRulePermissionForUser($rule, $authUserId, $schoolId, $memberGroupIds);
                         [$scopeLabel, $scopeObjectLabel] = $this->resolveScopeLabels($rule, (int) $rule->school_id);
                         $scopeLabel = (string) $rule->scope_type === MaterialShareRule::SCOPE_ALL ? 'Workspace' : $scopeLabel;
@@ -195,7 +196,7 @@ class MaterialShareController extends Controller
                             'scope_path_label' => $this->resolveScopePathLabel($rule),
                             'permission' => $permission,
                             'permission_label' => mb_strtoupper($this->permissionLabel($permission)),
-                            'is_imported' => $this->isRuleMaterialImported($rule, $importedMaterialKeys),
+                            'is_imported' => $this->isRuleMaterialImported($rule, $importedMaterialKeys, $importedRuleIds),
                             'hierarchy' => $this->resolveScopeHierarchy($rule),
                             'updated_at' => optional($rule->updated_at)?->toIso8601String(),
                         ];
@@ -438,6 +439,7 @@ class MaterialShareController extends Controller
             $importMode,
             $targetLevel,
             $targetId,
+            $requestedSourceUnitId,
             $sourceUnitIdForUnitImport,
         ) {
             $targetType = $this->ensureTargetMaterialType(
@@ -460,6 +462,7 @@ class MaterialShareController extends Controller
                 'notes' => $sourceCard->notes,
                 'classifications' => [$targetClassification],
             ]);
+            $this->syncCardClassificationToResolvedTarget($createdCard, $targetClassification);
 
             $this->cloneSourceAttachmentsToCard($sourceCard, $createdCard);
             $keywordService->rebuild($createdCard->fresh());
@@ -487,6 +490,7 @@ class MaterialShareController extends Controller
                 $importMode === MaterialInboxImport::MODE_LINK
                 && $targetLevel === 'unit'
                 && $targetId > 0
+                && $requestedSourceUnitId > 0
                 && $sourceUnitIdForUnitImport > 0
                 && $this->hasMaterialUnitInboxImportsTable()
             ) {
@@ -545,6 +549,9 @@ class MaterialShareController extends Controller
             }
 
             return [
+                'subject_id' => (int) $subject->id,
+                'topic_id' => null,
+                'unit_id' => null,
                 'subject' => $subjectName,
                 'topic' => '',
                 'unit' => '',
@@ -567,6 +574,9 @@ class MaterialShareController extends Controller
             }
 
             return [
+                'subject_id' => (int) ($topic->subject?->id ?? 0),
+                'topic_id' => (int) $topic->id,
+                'unit_id' => null,
                 'subject' => $subjectName,
                 'topic' => $topicName,
                 'unit' => '',
@@ -590,6 +600,9 @@ class MaterialShareController extends Controller
             }
 
             return [
+                'subject_id' => (int) ($unit->topic?->subject?->id ?? 0),
+                'topic_id' => (int) ($unit->topic?->id ?? 0),
+                'unit_id' => (int) $unit->id,
                 'subject' => $subjectName,
                 'topic' => $topicName,
                 'unit' => $unitName,
@@ -597,6 +610,44 @@ class MaterialShareController extends Controller
         }
 
         return null;
+    }
+
+    private function syncCardClassificationToResolvedTarget(MaterialCard $card, array $targetClassification): void
+    {
+        if (!Schema::hasTable('material_card_classifications')) {
+            return;
+        }
+
+        $subjectId = (int) ($targetClassification['subject_id'] ?? 0);
+        if ($subjectId <= 0) {
+            return;
+        }
+
+        $topicId = (int) ($targetClassification['topic_id'] ?? 0);
+        $unitId = (int) ($targetClassification['unit_id'] ?? 0);
+        if ($topicId <= 0) {
+            $topicId = 0;
+            $unitId = 0;
+        }
+        if ($unitId <= 0) {
+            $unitId = 0;
+        }
+
+        $card->classifications()->delete();
+        $card->classifications()->create([
+            'subject_id' => $subjectId,
+            'topic_id' => $topicId > 0 ? $topicId : null,
+            'unit_id' => $unitId > 0 ? $unitId : null,
+        ]);
+
+        $subject = trim((string) ($targetClassification['subject'] ?? ''));
+        $topic = trim((string) ($targetClassification['topic'] ?? ''));
+        $unit = trim((string) ($targetClassification['unit'] ?? ''));
+        $card->update([
+            'subject' => $subject !== '' ? $subject : null,
+            'area' => $topic !== '' ? $topic : null,
+            'unit' => $unit !== '' ? $unit : null,
+        ]);
     }
 
     private function resolveAccessibleInboxRule(
@@ -748,8 +799,13 @@ class MaterialShareController extends Controller
         return $keys;
     }
 
-    private function isRuleMaterialImported(MaterialShareRule $rule, array $importedKeys): bool
+    private function isRuleMaterialImported(MaterialShareRule $rule, array $importedKeys, array $importedRuleIds = []): bool
     {
+        $ruleId = (int) ($rule->id ?? 0);
+        if ($ruleId > 0 && isset($importedRuleIds[$ruleId])) {
+            return true;
+        }
+
         if ((string) $rule->scope_type !== MaterialShareRule::SCOPE_MATERIAL) {
             return false;
         }
@@ -761,6 +817,50 @@ class MaterialShareController extends Controller
         }
 
         return isset($importedKeys[$this->materialImportKey($sourceSchoolId, $sourceMaterialId)]);
+    }
+
+    /**
+     * @return array<int,bool>
+     */
+    private function resolveImportedInboxRuleIds(int $targetUserId): array
+    {
+        if ($targetUserId <= 0) {
+            return [];
+        }
+
+        $ruleIds = [];
+
+        if ($this->hasMaterialInboxImportsTable()) {
+            $materialImportRuleIds = MaterialInboxImport::query()
+                ->where('target_user_id', $targetUserId)
+                ->whereHas('targetMaterialCard', fn ($query) => $query->where('user_id', $targetUserId))
+                ->whereNotNull('source_rule_id')
+                ->pluck('source_rule_id');
+
+            foreach ($materialImportRuleIds as $ruleId) {
+                $normalizedRuleId = (int) $ruleId;
+                if ($normalizedRuleId > 0) {
+                    $ruleIds[$normalizedRuleId] = true;
+                }
+            }
+        }
+
+        if ($this->hasMaterialUnitInboxImportsTable()) {
+            $unitImportRuleIds = MaterialUnitInboxImport::query()
+                ->where('target_user_id', $targetUserId)
+                ->whereHas('targetUnit.topic.subject', fn ($query) => $query->where('user_id', $targetUserId))
+                ->whereNotNull('source_rule_id')
+                ->pluck('source_rule_id');
+
+            foreach ($unitImportRuleIds as $ruleId) {
+                $normalizedRuleId = (int) $ruleId;
+                if ($normalizedRuleId > 0) {
+                    $ruleIds[$normalizedRuleId] = true;
+                }
+            }
+        }
+
+        return $ruleIds;
     }
 
     private function materialImportKey(int $sourceSchoolId, int $sourceMaterialId): string

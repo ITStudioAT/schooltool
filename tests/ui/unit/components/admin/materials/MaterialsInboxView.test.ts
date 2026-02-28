@@ -592,13 +592,12 @@ describe('MaterialsInboxView', () => {
             source_unit_id: 3,
         })
         expect(axiosMock.post).toHaveBeenNthCalledWith(3, '/api/admin/materials/shares/inbox/material-insert', {
-                rule_id: 920,
-                material_id: 702,
-                target_level: 'unit',
-                target_id: 230,
-                import_mode: 'copy',
-                source_unit_id: 3,
-            })
+            rule_id: 920,
+            material_id: 702,
+            target_level: 'unit',
+            target_id: 230,
+            import_mode: 'copy',
+            source_unit_id: 3,
         })
     })
 
@@ -722,6 +721,128 @@ describe('MaterialsInboxView', () => {
             import_mode: 'link',
             source_unit_id: 3,
         })
+    })
+
+    it('keeps opened hierarchy cards open after einfächern reloads the inbox', async () => {
+        let inboxUsersCalls = 0
+        axiosMock.get.mockImplementation((url: string) => {
+            if (url === '/api/admin/materials/shares/inbox-users') {
+                inboxUsersCalls += 1
+                return Promise.resolve({
+                    data: {
+                        data: [
+                            {
+                                id: 71,
+                                label: 'Reload User',
+                                email: 'reload@test.local',
+                                shared_rules_count: 1,
+                                shared_items: [
+                                    {
+                                        rule_id: 955,
+                                        scope_type: 'unit',
+                                        scope_label: 'Einheit',
+                                        scope_object_label: 'Kapitel A',
+                                        scope_path_label: 'Informatik - Grundlagen - Kapitel A',
+                                        permission: 'read_only',
+                                        permission_label: 'NUR LESEN',
+                                        hierarchy: [
+                                            {
+                                                id: 41,
+                                                name: 'Informatik',
+                                                topics: [
+                                                    {
+                                                        id: 42,
+                                                        name: 'Grundlagen',
+                                                        units: [
+                                                            {
+                                                                id: 43,
+                                                                name: 'Kapitel A',
+                                                                materials: [{ id: 901, title: 'Material Reload' }],
+                                                            },
+                                                        ],
+                                                    },
+                                                ],
+                                            },
+                                        ],
+                                        updated_at: '',
+                                    },
+                                ],
+                            },
+                        ],
+                        meta: { needs_migration: false },
+                    },
+                })
+            }
+            if (url === '/api/admin/materials/config') {
+                return Promise.resolve({
+                    data: {
+                        classification_tree: [
+                            {
+                                id: 51,
+                                name: 'Deutsch',
+                                topics: [
+                                    {
+                                        id: 52,
+                                        name: 'Literatur',
+                                        units: [{ id: 53, name: 'Kapitel A' }],
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                })
+            }
+            return Promise.reject(new Error('unexpected url'))
+        })
+        axiosMock.post.mockResolvedValue({
+            data: {
+                message: 'Material eingefächert.',
+                data: { id: 9901, title: 'Material Reload', attachments_count: 0 },
+            },
+        })
+
+        renderMaterialsInboxView()
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: 'Anzeigen' })).toBeInTheDocument()
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: 'Schließen' })).toBeInTheDocument()
+        })
+        expect(screen.getByText('Material Reload')).toBeInTheDocument()
+
+        const fanoutButtons = screen.getAllByRole('button', { name: 'Einfächern' })
+        await fireEvent.click(fanoutButtons[fanoutButtons.length - 1])
+
+        await waitFor(() => {
+            expect(screen.getByText('Fächer')).toBeInTheDocument()
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Deutsch' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Literatur' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Kapitel A' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Als Kopie einfächern' }))
+
+        await waitFor(() => {
+            expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/shares/inbox/material-insert', {
+                rule_id: 955,
+                material_id: 901,
+                target_level: 'unit',
+                target_id: 53,
+                import_mode: 'copy',
+            })
+        })
+        await waitFor(() => {
+            expect(inboxUsersCalls).toBe(2)
+        })
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: 'Schließen' })).toBeInTheDocument()
+        })
+        expect(screen.queryByRole('button', { name: 'Anzeigen' })).not.toBeInTheDocument()
+        expect(screen.getByText('Material Reload')).toBeInTheDocument()
     })
 
     it('topic scope hides subject level and omits "Ohne Einheit" for direct topic materials', async () => {

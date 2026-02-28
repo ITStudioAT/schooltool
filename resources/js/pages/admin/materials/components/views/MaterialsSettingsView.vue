@@ -372,7 +372,7 @@
                                                                     size="x-small"
                                                                     variant="text"
                                                                     color="primary"
-                                                                    :disabled="isSavingSubjectCatalog || !unit.id"
+                                                                    :disabled="isSavingSubjectCatalog || !unit.id || !canEditUnitNode(unit)"
                                                                     @click="openReclassifyDialogForUnit(subject, topic, unit)" />
                                                                 <v-btn
                                                                     icon="mdi-chevron-up"
@@ -391,10 +391,10 @@
                                                                     size="x-small"
                                                                     variant="text"
                                                                     color="primary"
-                                                                    :disabled="isSavingSubjectCatalog || !unit.id"
+                                                                    :disabled="isSavingSubjectCatalog || !unit.id || !canEditUnitNode(unit)"
                                                                     @click="startRenameUnit(unit)" />
                                                                 <v-btn
-                                                                    v-if="unit.canDelete"
+                                                                    v-if="unit.canDelete && canEditUnitNode(unit)"
                                                                     icon="mdi-delete-outline"
                                                                     size="x-small"
                                                                     variant="text"
@@ -1002,10 +1002,16 @@ export default {
                                     const unitName = this.normalizeTreeName(unitNode?.name)
                                     if (!unitName) return null
                                     const unitCanDelete = unitNode?.can_delete !== false
+                                    const unitIsLinked = unitNode?.is_linked === true || unitNode?.isLinked === true
+                                    const unitLinkedPermission = this.normalizeLinkedPermission(unitNode?.linked_permission ?? unitNode?.linkedPermission)
+                                    const unitLinkedPermissionLabel = this.normalizeTreeName(unitNode?.linked_permission_label ?? unitNode?.linkedPermissionLabel)
                                     return {
                                         id: Number.isFinite(unitId) && unitId > 0 ? unitId : null,
                                         name: unitName,
                                         canDelete: unitCanDelete,
+                                        isLinked: unitIsLinked,
+                                        linkedPermission: unitLinkedPermission,
+                                        linkedPermissionLabel: unitLinkedPermissionLabel || '',
                                     }
                                 })
                                 .filter(Boolean)
@@ -1454,6 +1460,44 @@ export default {
         },
         normalizeTreeName(value) {
             return String(value ?? '').trim()
+        },
+        normalizeLinkedPermission(permission) {
+            const normalized = String(permission || '').trim().toLocaleLowerCase()
+            if (normalized === 'full_access') return 'full_access'
+            if (normalized === 'read_write') return 'read_write'
+            if (normalized === 'read_only') return 'read_only'
+            if (normalized === 'read-only') return 'read_only'
+            return ''
+        },
+        findUnitNodeById(unitId) {
+            const id = Number(unitId)
+            if (!Number.isFinite(id) || id <= 0) return null
+
+            const subjects = Array.isArray(this.subjectTreeItems) ? this.subjectTreeItems : []
+            for (const subject of subjects) {
+                const topics = Array.isArray(subject?.topics) ? subject.topics : []
+                for (const topic of topics) {
+                    const units = Array.isArray(topic?.units) ? topic.units : []
+                    const unit = units.find((entry) => Number(entry?.id) === id)
+                    if (unit) return unit
+                }
+            }
+
+            return null
+        },
+        isUnitReadOnlyLinked(unit) {
+            if (unit?.isLinked !== true) return false
+            return this.normalizeLinkedPermission(unit?.linkedPermission) === 'read_only'
+        },
+        canEditUnitNode(unit) {
+            const unitId = Number(unit?.id)
+            if (!Number.isFinite(unitId) || unitId <= 0) return false
+            return !this.isUnitReadOnlyLinked(unit)
+        },
+        canEditUnitById(unitId) {
+            const unit = this.findUnitNodeById(unitId)
+            if (!unit) return false
+            return this.canEditUnitNode(unit)
         },
         stringHash(value) {
             const input = String(value ?? '')
@@ -1906,6 +1950,7 @@ export default {
             this.focusSubjectCatalogEditorInput()
         },
         startRenameUnit(unit) {
+            if (!this.canEditUnitNode(unit)) return
             const unitId = Number(unit?.id)
             if (!Number.isFinite(unitId) || unitId <= 0) return
             this.subjectCatalogEditor = {
@@ -2061,6 +2106,7 @@ export default {
             }
         },
         openReclassifyDialogForUnit(subject, topic, unit) {
+            if (!this.canEditUnitNode(unit)) return
             const sourceId = Number(unit?.id)
             const sourceSubjectId = Number(subject?.id)
             const sourceTopicId = Number(topic?.id)
@@ -2156,6 +2202,7 @@ export default {
             const allowedKinds = ['subject', 'topic', 'unit']
             const normalizedKind = allowedKinds.includes(String(kind)) ? String(kind) : ''
             if (!normalizedKind) return
+            if (normalizedKind === 'unit' && !this.canEditUnitById(id)) return
 
             const label = this.normalizeTreeName(row?.name)
             this.deleteConfirmDialog = {
@@ -2178,6 +2225,7 @@ export default {
             const id = Number(this.deleteConfirmDialog.id)
             const kind = String(this.deleteConfirmDialog.kind || '')
             if (!Number.isFinite(id) || id <= 0 || !kind || this.isSavingSubjectCatalog) return
+            if (kind === 'unit' && !this.canEditUnitById(id)) return
 
             if (kind === 'subject' && this.subjectCatalogEditor.subjectId === id) {
                 this.resetSubjectCatalogEditor()
@@ -2237,6 +2285,7 @@ export default {
                     return this.materialCardStore.createUnit(topicId, name)
                 }
                 if (mode === 'rename_unit' && Number.isFinite(unitId) && unitId > 0) {
+                    if (!this.canEditUnitById(unitId)) return null
                     return this.materialCardStore.updateUnit(unitId, name)
                 }
                 return null

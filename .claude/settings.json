@@ -4,7 +4,8 @@
       "Bash(find:*)",
       "Bash(npm run test:ui:*)",
       "Bash(composer update:*)",
-      "Read(//c/Users/kron/.claude/projects/c--Dropbox-laravel-schooltool/memory/**)"
+      "Read(//c/Users/kron/.claude/projects/c--Dropbox-laravel-schooltool/memory/**)",
+      "Read(//c/Users/kron/.claude/projects/c--Dropbox-laravel-schooltool/00d81398-1743-4309-9768-2b95f2cdf13d/tool-results/**)"
     ],
     "additionalDirectories": [
       "C:\\Users\\kron\\.claude\\projects\\c--Dropbox-laravel-schooltool\\memory"

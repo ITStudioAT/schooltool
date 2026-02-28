@@ -54,9 +54,9 @@
                         </a>
                     </div>
 
-                    <div v-if="card.source_text" class="mb-4">
+                    <div v-if="String(card.source_text || card.description || '').trim() !== ''" class="mb-4">
                         <div class="text-subtitle-2 mb-1">Beschreibung</div>
-                        <div class="text-body-2 detail-text">{{ card.source_text }}</div>
+                        <div class="text-body-2 detail-text">{{ String(card.source_text || card.description || '').trim() }}</div>
                     </div>
 
                     <div v-if="card.notes" class="mb-4">

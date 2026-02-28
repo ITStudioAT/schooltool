@@ -1,11 +1,14 @@
 <template>
     <ItsGridBox color="primary" title="Stundenplan" icon="mdi-calendar-clock" class="w-100" :disabled="action != ''">
+        <template #header-actions>
+            <v-btn icon="mdi-eye-off-outline" size="x-small" variant="text" density="compact" title="Ausblenden" @click="show_timetable = false" />
+        </template>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
                 <v-btn-toggle v-model="range" mandatory density="compact" color="primary" class="w-100" @update:model-value="resetOffset">
                     <v-btn :value="RANGE_TODAY" size="small">Heute</v-btn>
                     <v-btn :value="RANGE_WEEK" size="small">Diese Woche</v-btn>
-                    <v-btn :value="RANGE_TWO_WEEKS" size="small">Zwei Wochen</v-btn>
+                    <v-btn :value="RANGE_NEXT_WEEK" size="small">Nächste Woche</v-btn>
                     <v-btn :value="RANGE_MONTH" size="small">Dieser Monat</v-btn>
                     <v-btn :value="RANGE_CURRENT_SEMESTER" size="small">{{ currentSemesterButtonLabel }}</v-btn>
                 </v-btn-toggle>
@@ -41,8 +44,9 @@
                     <v-card-text class="pa-0">
                         <v-list density="compact">
                             <v-list-item v-for="item in filteredItems" :key="item.key" class="cursor-pointer pa-0" @click="openCourse(item)">
-                                <div :class="['d-flex flex-column ga-2 w-100 pa-3', getStatusClass(item)]" :style="getDateBackgroundStyle(item)">
+                                <div :class="['d-flex flex-column ga-2 w-100 pa-3', getStatusClass(item), { 'timetable-item--today': isToday(item) }]" :style="getDateBackgroundStyle(item)">
                                     <div class="d-flex flex-wrap align-center ga-2 w-100">
+                                        <v-chip v-if="isToday(item)" size="x-small" color="warning" variant="flat">Heute</v-chip>
                                         <v-icon
                                             v-if="isAttendanceChecked(item)"
                                             size="16"
@@ -87,7 +91,7 @@ import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
 const RANGE_TODAY = 'today'
 const RANGE_WEEK = 'week'
-const RANGE_TWO_WEEKS = 'two_weeks'
+const RANGE_NEXT_WEEK = 'next_week'
 const RANGE_MONTH = 'month'
 const RANGE_CURRENT_SEMESTER = 'current_semester'
 
@@ -98,7 +102,7 @@ export default {
         return {
             RANGE_TODAY,
             RANGE_WEEK,
-            RANGE_TWO_WEEKS,
+            RANGE_NEXT_WEEK,
             RANGE_MONTH,
             RANGE_CURRENT_SEMESTER,
             range: RANGE_WEEK,
@@ -108,7 +112,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
-        ...mapWritableState(useCourseStore, ['courses', 'selected_course', 'selected_course_id', 'selected_course_student', 'show_infos']),
+        ...mapWritableState(useCourseStore, ['courses', 'selected_course', 'selected_course_id', 'selected_course_student', 'show_infos', 'show_timetable']),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         myCourses() {
             const userId = this.config?.user?.id
@@ -286,13 +290,10 @@ export default {
                 referenceDate.setDate(today.getDate() + (this.offset * 7))
                 return [this.startOfWeek(referenceDate), this.endOfWeek(referenceDate)]
             }
-            if (this.range === RANGE_TWO_WEEKS) {
-                // Shift by 2-week periods (14 days)
-                referenceDate.setDate(today.getDate() + (this.offset * 14))
-                const start = this.startOfWeek(referenceDate)
-                const end = new Date(start)
-                end.setDate(start.getDate() + 13)
-                return [start, end]
+            if (this.range === RANGE_NEXT_WEEK) {
+                // Base is next week; shift further by offset weeks
+                referenceDate.setDate(today.getDate() + 7 + (this.offset * 7))
+                return [this.startOfWeek(referenceDate), this.endOfWeek(referenceDate)]
             }
             if (this.range === RANGE_MONTH) {
                 // Shift by months
@@ -403,6 +404,10 @@ export default {
             const statusStr = status.join(' ').toLowerCase()
             return statusStr.includes('frei') || statusStr.includes('free')
         },
+        isToday(item) {
+            const today = this.normalizeDay(new Date())
+            return item.dateObj.getTime() === today.getTime()
+        },
         isAttendanceChecked(item) {
             if (!item) return false
             if (typeof item.attendanceChecked === 'boolean') return item.attendanceChecked
@@ -437,5 +442,9 @@ export default {
 .timetable-item--free {
     background-color: #c8e6c9 !important;
     border-left: 4px solid #4caf50;
+}
+
+.timetable-item--today {
+    border-left: 4px solid #ff9800 !important;
 }
 </style>

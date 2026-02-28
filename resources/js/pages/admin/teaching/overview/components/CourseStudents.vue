@@ -1,18 +1,13 @@
 <template>
-    <ItsGridBox color="primary" title="Schüler:innen" icon="mdi-invoice-list" class="w-100" v-if="selected_course" :disabled="action != ''">
+    <ItsGridBox color="primary" :title="'Schüler:innen – ' + selected_course.title + ' (' + selectedCourseClasses + ')'" icon="mdi-invoice-list" class="w-100" v-if="selected_course" :disabled="action != ''">
+        <template #header-actions>
+            <v-btn icon="mdi-eye-off-outline" size="x-small" variant="text" density="compact" title="Ausblenden" @click="show_students = false" />
+        </template>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
                 <!-- Anzeige ausgewählter Kurs -->
                 <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between" v-if="selected_course">
-                    <div>
-                        <div class="text-body-1 font-weight-medium">{{ selected_course.title }}</div>
-                        <div class="d-flex flex-wrap ga-1 mt-1">
-                            <v-chip v-for="cls in selected_course.classes" :key="cls" size="small" variant="tonal">
-                                {{ cls }}
-                            </v-chip>
-                        </div>
-                    </div>
-                    <div v-if="selectedCourseDateForCourse" class="d-flex align-center ga-2 text-right">
+                    <div v-if="selectedCourseDateForCourse" class="d-flex align-center ga-2 w-100">
                         <v-btn
                             icon="mdi-chevron-left"
                             size="small"
@@ -20,7 +15,7 @@
                             variant="tonal"
                             :disabled="!hasPrevCourseDate"
                             @click="selectPrevCourseDate" />
-                        <v-chip size="x-large" color="primary" variant="outlined" class="selected-course-date-chip">
+                        <v-chip size="x-large" color="primary" variant="outlined" class="selected-course-date-chip flex-grow-1 justify-center">
                             {{ selectedCourseDateLabel }}
                         </v-chip>
                         <v-btn
@@ -31,7 +26,7 @@
                             :disabled="!hasNextCourseDate"
                             @click="selectNextCourseDate" />
                     </div>
-                    <div v-else class="text-caption text-medium-emphasis">
+                    <div v-else class="text-caption text-medium-emphasis w-100">
                         Kein Datum verfügbar
                     </div>
                 </v-card>
@@ -309,9 +304,16 @@ export default {
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useImport116Store, ['import116_students']),
-        ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'selected_course_id', 'selected_course_student']),
+        ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'selected_course_id', 'selected_course_student', 'show_students']),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapWritableState(useTeachingStore, ['settings']),
+        selectedCourseClasses() {
+            if (!this.selected_course?.classes?.length) return ''
+            if (typeof this.selected_course.classes === 'string') {
+                return this.selected_course.classes.replace(/,/g, ', ')
+            }
+            return this.selected_course.classes.join(', ')
+        },
         semesterCount() {
             const schemaId = this.selected_course?.teaching_schema_id
             const grading = schemaId ? this.teachingStore.gradingForSchema(schemaId) : {}
