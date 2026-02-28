@@ -19,7 +19,7 @@
                         :prepend-icon="item.icon"
                         :to="item.to"
                         :disabled="isMenuInteractionDisabled || !item.is_active"
-                        @click.capture="startNavigationLock(item.to)">
+                        @click="startNavigationLock(item.to)">
                         <template v-if="item.status_icon" #append>
                             <v-icon :icon="item.status_icon" :color="item.status_color || 'warning'" :title="item.status_title || ''" size="small" />
                         </template>
