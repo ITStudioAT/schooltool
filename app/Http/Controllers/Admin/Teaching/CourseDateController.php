@@ -11,11 +11,17 @@ use Illuminate\Http\Request;
 
 class CourseDateController extends Controller
 {
-    public function index(TeachingCourse $course)
+    public function index(Request $request)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+
+        $validated = $request->validate([
+            'course_id' => 'required|integer|exists:teaching_courses,id',
+        ]);
+
+        $course = TeachingCourse::findOrFail($validated['course_id']);
 
         if ($course->school_id !== $auth_user->school_id) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -65,21 +71,19 @@ class CourseDateController extends Controller
         return response()->json(['data' => CourseDateResource::collection($createdDates), 'count' => count($createdDates)], 201);
     }
 
-    public function show(TeachingCourse $course, TeachingCourseDate $date)
+    public function show(TeachingCourseDate $course_date)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
+        $course = $course_date->teachingCourse;
+
         if ($course->school_id !== $auth_user->school_id) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        if ($date->teaching_course_id !== $course->id) {
-            abort(404);
-        }
-
-        return response()->json(new CourseDateResource($date));
+        return response()->json(new CourseDateResource($course_date));
     }
 
     public function update(Request $request, TeachingCourseDate $course_date, TeachingCourseDateService $service)

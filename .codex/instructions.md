@@ -62,3 +62,15 @@ When reporting findings, include:
 
 - When generating code, include exact file paths and diffs.
 - Reuse existing patterns in `resources/js` (don’t create new conventions unless asked).
+
+## UI design consistency (Vuetify)
+
+When creating new pages in `resources/js/pages/admin`, ALWAYS base the layout and styling on the reference page:
+
+- Reference page for layout, background card-systling: resources\js\pages\admin\tutoring\Tutoring.vue
+- Reference page for the header: resources\js\pages\admin\groups\Groups.vue
+- Reference page for Cards, when show lists of items with menu:
+  resources\js\pages\admin\tutoring\components\Users.vue
+
+Reference for Objects creating or editing: use persisent Dialogs:
+resources\js\pages\admin\groups\Groups.vue

@@ -6,7 +6,14 @@
       "Bash(composer update:*)",
       "Read(//c/Users/kron/.claude/projects/c--Dropbox-laravel-schooltool/memory/**)",
       "Read(//c/Users/kron/.claude/projects/c--Dropbox-laravel-schooltool/00d81398-1743-4309-9768-2b95f2cdf13d/tool-results/**)",
-      "Bash(npx vitest run tests/ui/unit/components/admin/teaching/CourseStudent.test.ts --reporter=verbose)"
+      "Bash(npx vitest run tests/ui/unit/components/admin/teaching/CourseStudent.test.ts --reporter=verbose)",
+      "mcp__laravel-boost__list-routes",
+      "mcp__laravel-boost__browser-logs",
+      "mcp__laravel-boost__last-error",
+      "mcp__laravel-boost__tinker",
+      "mcp__laravel-boost__get-config",
+      "mcp__laravel-boost__database-query",
+      "mcp__laravel-boost__database-schema"
     ],
     "additionalDirectories": [
       "C:\\Users\\kron\\.claude\\projects\\c--Dropbox-laravel-schooltool\\memory"

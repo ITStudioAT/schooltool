@@ -19,7 +19,7 @@ beforeEach(function () {
         'teacher',
         'user',
         'student',
-    ])->each(fn(string $role) => Role::firstOrCreate([
+    ])->each(fn (string $role) => Role::firstOrCreate([
         'name' => $role,
         'guard_name' => 'web',
     ]));
@@ -43,6 +43,12 @@ beforeEach(function () {
     ]);
     $this->admin->assignRole('admin');
 
+    $this->regularUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $this->regularUser->assignRole('user');
+
     $this->studentA = User::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
@@ -63,6 +69,16 @@ beforeEach(function () {
         'user_id' => $this->admin->id,
         'classes' => ['2B'],
         'students' => [$this->studentA->id, $this->studentB->id],
+    ]);
+
+    $this->otherSchool = School::factory()->create();
+    $this->otherSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $this->otherSchool->id,
+    ]);
+    $this->otherCourse = TeachingCourse::factory()->create([
+        'school_id' => $this->otherSchool->id,
+        'schoolyear_id' => $this->otherSchoolyear->id,
+        'classes' => ['9Z'],
     ]);
 });
 
@@ -172,4 +188,123 @@ it('does not fall back to legacy status attendance when attendance column is emp
     expect($courseDate->status)->toBe([])
         ->and($courseDate->attendance)->toBe([])
         ->and($courseDate->attendance_checked)->toBeFalse();
+});
+
+it('index requires authentication and course_id', function () {
+    $this->getJson('/api/admin/teaching/course_dates')->assertStatus(401);
+
+    $this->actingAs($this->admin, 'sanctum');
+    $this->getJson('/api/admin/teaching/course_dates')
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['course_id']);
+});
+
+it('index returns dates for own course ordered ascending', function () {
+    $this->actingAs($this->admin, 'sanctum');
+
+    $first = TeachingCourseDate::query()->create([
+        'teaching_course_id' => $this->course->id,
+        'date' => '2026-02-11',
+        'hours' => [1],
+        'status' => [],
+    ]);
+    $second = TeachingCourseDate::query()->create([
+        'teaching_course_id' => $this->course->id,
+        'date' => '2026-02-20',
+        'hours' => [2],
+        'status' => [],
+    ]);
+
+    $response = $this->getJson('/api/admin/teaching/course_dates?course_id='.$this->course->id);
+    $response->assertOk()->assertJsonCount(2, 'data');
+
+    expect($response->json('data.0.id'))->toBe($first->id)
+        ->and($response->json('data.1.id'))->toBe($second->id);
+});
+
+it('store creates recurring dates', function () {
+    $this->actingAs($this->admin, 'sanctum');
+
+    $response = $this->postJson('/api/admin/teaching/course_dates', [
+        'course_id' => $this->course->id,
+        'from' => '2026-03-03',
+        'until' => '2026-03-17',
+        'hours' => [2, 3],
+        'interval' => 1,
+    ]);
+
+    $response->assertCreated()->assertJsonPath('count', 3);
+    $this->assertDatabaseHas('teaching_course_dates', [
+        'teaching_course_id' => $this->course->id,
+        'date' => '2026-03-03',
+    ]);
+    $this->assertDatabaseHas('teaching_course_dates', [
+        'teaching_course_id' => $this->course->id,
+        'date' => '2026-03-10',
+    ]);
+    $this->assertDatabaseHas('teaching_course_dates', [
+        'teaching_course_id' => $this->course->id,
+        'date' => '2026-03-17',
+    ]);
+});
+
+it('show returns own course date and forbids foreign school', function () {
+    $this->actingAs($this->admin, 'sanctum');
+
+    $ownDate = TeachingCourseDate::query()->create([
+        'teaching_course_id' => $this->course->id,
+        'date' => '2026-04-01',
+        'hours' => [2],
+        'status' => [],
+    ]);
+    $foreignDate = TeachingCourseDate::query()->create([
+        'teaching_course_id' => $this->otherCourse->id,
+        'date' => '2026-04-02',
+        'hours' => [2],
+        'status' => [],
+    ]);
+
+    $this->getJson('/api/admin/teaching/course_dates/'.$ownDate->id)
+        ->assertOk()
+        ->assertJsonPath('id', $ownDate->id);
+
+    $this->getJson('/api/admin/teaching/course_dates/'.$foreignDate->id)
+        ->assertStatus(403);
+});
+
+it('update and destroy course date', function () {
+    $this->actingAs($this->admin, 'sanctum');
+
+    $courseDate = TeachingCourseDate::query()->create([
+        'teaching_course_id' => $this->course->id,
+        'date' => '2026-04-03',
+        'hours' => [2],
+        'status' => [],
+    ]);
+
+    $this->putJson('/api/admin/teaching/course_dates/'.$courseDate->id, [
+        'date' => '2026-04-10',
+        'hours' => [1, 2],
+        'content' => 'Updated content',
+        'status' => ['pruefung'],
+        'attendance' => ['s_'.$this->studentA->id => false],
+        'attendance_checked' => true,
+    ])->assertOk()
+        ->assertJsonPath('date', '2026-04-10')
+        ->assertJsonPath('attendance_checked', true);
+
+    $courseDate->refresh();
+    expect($courseDate->date?->format('Y-m-d'))->toBe('2026-04-10')
+        ->and($courseDate->content)->toBe('Updated content');
+
+    $this->deleteJson('/api/admin/teaching/course_dates/'.$courseDate->id)->assertNoContent();
+    $this->assertDatabaseMissing('teaching_course_dates', ['id' => $courseDate->id]);
+});
+
+it('forbids access for users without role and for other school course', function () {
+    $this->actingAs($this->regularUser, 'sanctum');
+    $this->getJson('/api/admin/teaching/course_dates?course_id='.$this->course->id)->assertStatus(403);
+
+    $this->actingAs($this->admin, 'sanctum');
+    $this->getJson('/api/admin/teaching/course_dates?course_id='.$this->otherCourse->id)->assertStatus(403);
 });

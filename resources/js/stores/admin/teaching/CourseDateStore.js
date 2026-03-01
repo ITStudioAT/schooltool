@@ -17,7 +17,9 @@ export const useCourseDateStore = defineStore('AdminCourseDateStore', {
             adminStore.is_loading++
             try {
                 const selectedId = this.selected_courseDate?.id
-                const response = await axios.get(`/api/admin/teaching/course_dates`)
+                const response = await axios.get(`/api/admin/teaching/course_dates`, {
+                    params: { course_id: courseId },
+                })
                 this.courseDates = response.data.data
                 if (selectedId) {
                     this.selected_courseDate = this.courseDates.find((d) => d.id === selectedId) || null

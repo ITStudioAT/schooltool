@@ -90,6 +90,8 @@ export default {
 
     async beforeMount() {
         this.adminStore = useAdminStore()
+        this.action = ''
+        this.action_2 = ''
     },
 
     data() {

@@ -65,7 +65,10 @@ export default {
         }
     },
 
-    unmounted() {},
+    unmounted() {
+        this.action = ''
+        this.action_2 = ''
+    },
 
     data() {
         return {
