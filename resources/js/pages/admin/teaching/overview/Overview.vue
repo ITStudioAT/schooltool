@@ -32,9 +32,6 @@
             v-if="selected_course" />
     </v-card>
 
-    <!-- LOADING INDICATOR -->
-    <v-progress-linear v-if="action != '' || action_2 != ''" indeterminate color="primary" class="mb-1" />
-
     <!-- OVERVIEW-->
     <v-col cols="12" md="6" xl="4" v-if="show_my_courses || show_students">
         <!-- MY_COURSES-->

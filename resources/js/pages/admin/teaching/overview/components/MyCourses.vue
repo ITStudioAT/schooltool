@@ -336,7 +336,14 @@ export default {
         },
         activeSelectedStudentsCount() {
             const list = this.data?.students_info || []
-            return list.filter((student) => !this.isStudentCanceled(student)).length
+            const activeIds = new Set()
+            list.forEach((student) => {
+                if (!student?.id) return
+                if (this.isStudentCanceled(student)) return
+                if (student?.deleted_at) return
+                activeIds.add(String(student.id))
+            })
+            return activeIds.size
         },
     },
 
@@ -545,7 +552,7 @@ export default {
 
         isStudentCanceled(student) {
             if (!student) return false
-            return !!student.canceled_at
+            return !!student?.canceled_at || !!student?.deleted_at
         },
         studentNameClass(student) {
             return this.isStudentCanceled(student) ? 'student-name--canceled' : ''

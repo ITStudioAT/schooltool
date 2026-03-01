@@ -461,7 +461,14 @@ export default {
         },
         activeStudentsCount() {
             const list = this.selected_course?.students_info || []
-            return list.filter((student) => !this.isStudentCanceled(student)).length
+            const activeIds = new Set()
+            list.forEach((student) => {
+                if (!student?.id) return
+                if (this.isStudentCanceled(student)) return
+                if (student?.deleted_at) return
+                activeIds.add(String(student.id))
+            })
+            return activeIds.size
         },
         isDayOverviewMode() {
             return this.students_view_mode === 'day_overview'
@@ -791,7 +798,7 @@ export default {
             return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
         },
         isStudentCanceled(student) {
-            return !!student?.canceled_at
+            return !!student?.canceled_at || !!student?.deleted_at
         },
         studentNameClass(student) {
             return this.isStudentCanceled(student) ? 'student-name--canceled' : ''

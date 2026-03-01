@@ -99,6 +99,13 @@
                         </v-chip>
                     </div>
                     <v-textarea v-model="work_form.description" label="Beschreibung" rows="3" class="mt-4" />
+                    <div class="d-flex flex-wrap align-center ga-2 mt-2">
+                        <div class="text-caption text-medium-emphasis">Sortierung Schüler:innen</div>
+                        <v-btn-toggle v-model="students_sort_mode" mandatory density="compact" color="primary">
+                            <v-btn size="small" value="class_last_name">Klasse, Name</v-btn>
+                            <v-btn size="small" value="last_name_first_name">Name</v-btn>
+                        </v-btn-toggle>
+                    </div>
 
                     <v-switch
                         :key="group_work_switch_key"
@@ -239,6 +246,13 @@
                                         @click="toggleBulkAction">
                                         {{ show_bulk_action ? 'Sammelaktion schließen' : 'Sammelaktion' }}
                                     </v-btn>
+                                    <v-btn
+                                        size="x-small"
+                                        :variant="show_chip_grading_view ? 'flat' : 'outlined'"
+                                        :color="show_chip_grading_view ? 'secondary' : 'primary'"
+                                        @click="show_chip_grading_view = !show_chip_grading_view">
+                                        {{ show_chip_grading_view ? 'Chip-Ansicht schließen' : 'Chip-Ansicht' }}
+                                    </v-btn>
                                 </div>
                                 <v-btn size="x-small" variant="tonal" color="primary" @click="toggleAllSinglePanels">
                                     {{ allSinglePanelsOpen ? 'Alle schließen' : 'Alle öffnen' }}
@@ -280,8 +294,53 @@
                                     </div>
                                 </div>
                             </v-card>
+                            <!-- Chip grading view -->
+                            <div v-if="show_chip_grading_view" class="mt-3 d-flex flex-column ga-2">
+                                <v-card
+                                    v-for="row in chipViewRows"
+                                    :key="`chip-${row.groupIndex}-${row.studentId}`"
+                                    variant="outlined"
+                                    class="pa-2">
+                                    <div class="d-flex align-center ga-2 flex-wrap">
+                                        <v-chip v-if="row.classLabel" size="x-small" variant="tonal" color="primary">
+                                            {{ row.classLabel }}
+                                        </v-chip>
+                                        <div class="text-body-2 font-weight-medium">
+                                            {{ row.studentLabel }}
+                                        </div>
+                                        <v-spacer />
+                                        <v-btn
+                                            size="x-small"
+                                            variant="tonal"
+                                            :color="row.commentValue ? 'warning' : 'primary'"
+                                            icon="mdi-pencil"
+                                            @click="openCommentDialog(row.groupIndex, row.studentId)" />
+                                    </div>
+                                    <div class="d-flex flex-wrap ga-1 mt-2">
+                                        <v-chip
+                                            size="x-small"
+                                            :variant="row.gradeValue ? 'outlined' : 'flat'"
+                                            :color="row.gradeValue ? 'default' : 'success'"
+                                            @click="setStudentGrade(row.groupIndex, row.studentId, '')">
+                                            —
+                                        </v-chip>
+                                        <v-chip
+                                            v-for="grade in gradeItemsForType"
+                                            :key="`chip-grade-${row.groupIndex}-${row.studentId}-${grade.value}`"
+                                            size="x-small"
+                                            :variant="row.gradeValue === grade.value ? 'flat' : 'tonal'"
+                                            :color="row.gradeValue === grade.value ? 'success' : 'default'"
+                                            @click="setStudentGrade(row.groupIndex, row.studentId, grade.value)">
+                                            {{ grade.value }}
+                                        </v-chip>
+                                    </div>
+                                    <div v-if="row.commentPreview" class="text-caption text-medium-emphasis mt-1">
+                                        {{ row.commentPreview }}
+                                    </div>
+                                </v-card>
+                            </div>
                             <!-- Compact view when all open -->
-                            <div v-if="allSinglePanelsOpen" class="mt-3 d-flex flex-column ga-2">
+                            <div v-else-if="allSinglePanelsOpen" class="mt-3 d-flex flex-column ga-2">
                                 <v-card
                                     v-for="(group, index) in work_form.groups"
                                     :key="`compact-${index}`"
@@ -375,6 +434,35 @@
                 </v-card-text>
             </v-form>
         </v-card>
+
+        <v-dialog v-model="comment_dialog_open" persistent max-width="620">
+            <v-card>
+                <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                    <v-icon size="18">mdi-pencil</v-icon>
+                    Kommentar bearbeiten
+                    <v-spacer />
+                    <v-chip v-if="commentDialogStudentLabel" size="x-small" variant="tonal" color="primary">
+                        {{ commentDialogStudentLabel }}
+                    </v-chip>
+                </v-card-title>
+                <v-divider />
+                <v-card-text>
+                    <v-textarea
+                        v-model="comment_dialog_value"
+                        label="Kommentar"
+                        rows="4"
+                        auto-grow
+                        :counter="1024"
+                        :maxlength="1024" />
+                </v-card-text>
+                <v-divider />
+                <v-card-actions>
+                    <v-btn color="warning" variant="tonal" @click="closeCommentDialog">Abbruch</v-btn>
+                    <v-spacer />
+                    <v-btn color="success" variant="tonal" @click="saveCommentDialog">Speichern</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </ItsGridBox>
 </template>
 
@@ -425,6 +513,12 @@ export default {
             bulk_grade: null,
             bulk_comment: '',
             selected_student_ids: [],
+            students_sort_mode: 'class_last_name',
+            show_chip_grading_view: false,
+            comment_dialog_open: false,
+            comment_dialog_group_index: null,
+            comment_dialog_student_id: null,
+            comment_dialog_value: '',
             is_saving: false,
         }
     },
@@ -446,8 +540,20 @@ export default {
             if (!schemaId) return []
             return this.teachingStore.worksForSchema(schemaId)
         },
+        activeCourseStudents() {
+            const list = this.selected_course?.students_info || []
+            const seen = new Set()
+            return list.filter((student) => {
+                if (!student?.id) return false
+                if (this.isStudentInactive(student)) return false
+                const key = String(student.id)
+                if (seen.has(key)) return false
+                seen.add(key)
+                return true
+            })
+        },
         hasStudents() {
-            return (this.selected_course?.students_info || []).length > 0
+            return this.activeCourseStudents.length > 0
         },
         semesterCount() {
             const schemaId = this.selected_course?.teaching_schema_id
@@ -487,8 +593,7 @@ export default {
             }))
         },
         studentItems() {
-            const students = this.selected_course?.students_info || []
-            return students
+            return this.activeCourseStudents
                 .map((student) => ({
                     title: this.studentLabel(student),
                     value: student.id,
@@ -496,13 +601,7 @@ export default {
                     _last: (student.last_name || '').toString(),
                     _first: (student.first_name || '').toString(),
                 }))
-                .sort((a, b) => {
-                    const classCmp = a._class.localeCompare(b._class, 'de', { numeric: true, sensitivity: 'base' })
-                    if (classCmp !== 0) return classCmp
-                    const lastCmp = a._last.localeCompare(b._last, 'de', { sensitivity: 'base' })
-                    if (lastCmp !== 0) return lastCmp
-                    return a._first.localeCompare(b._first, 'de', { sensitivity: 'base' })
-                })
+                .sort((a, b) => this.compareStudentsBySelectedSort(a, b))
         },
         nextDates() {
             const dates = this.selected_course?.course_dates || []
@@ -523,11 +622,42 @@ export default {
         allSinglePanelsOpen() {
             return this.singlePanels.length === this.work_form.groups.length && this.work_form.groups.length > 0
         },
+        chipViewRows() {
+            if (this.work_form.is_group_work) return []
+            const byId = new Map(this.activeCourseStudents.map((student) => [String(student.id), student]))
+            const rows = []
+
+            ;(this.work_form.groups || []).forEach((group, groupIndex) => {
+                this.sortedGroupStudentIds(group).forEach((studentId) => {
+                    const student = byId.get(String(studentId))
+                    if (!student) return
+                    const gradeValue = this.getGroupStudentGrade(group, studentId)
+                    const commentValue = this.getGroupStudentComment(group, studentId)
+                    const commentPreview = (commentValue || '').toString().trim().slice(0, 120)
+                    rows.push({
+                        groupIndex,
+                        studentId,
+                        student,
+                        classLabel: this.studentClassValue(student),
+                        studentLabel: this.studentLabel(student),
+                        gradeValue,
+                        commentValue,
+                        commentPreview,
+                    })
+                })
+            })
+
+            return rows.sort((a, b) => this.compareStudentsBySelectedSort(a.student, b.student))
+        },
+        commentDialogStudentLabel() {
+            if (this.comment_dialog_student_id == null) return ''
+            return this.studentNameById(this.comment_dialog_student_id)
+        },
         hasUnassignedStudents() {
-            const allStudentIds = (this.selected_course?.students_info || []).map((s) => s.id)
+            const allStudentIds = this.activeCourseStudents.map((s) => String(s.id))
             const assignedIds = new Set()
             ;(this.work_form.groups || []).forEach((group) => {
-                ;(group.student_ids || []).forEach((id) => assignedIds.add(id))
+                ;(group.student_ids || []).forEach((id) => assignedIds.add(String(id)))
             })
             return allStudentIds.some((id) => !assignedIds.has(id))
         },
@@ -589,9 +719,64 @@ export default {
                 }
             }
         },
+        students_sort_mode() {
+            if (this.work_form?.is_group_work) return
+            this.work_form.groups = this.sortGroupsByStudent(this.work_form.groups || [])
+        },
     },
 
     methods: {
+        isStudentInactive(student) {
+            return !!student?.canceled_at || !!student?.deleted_at
+        },
+        getGroupStudentGrade(group, studentId) {
+            if (!group || typeof group !== 'object') return ''
+            return group.grades?.[studentId] ?? group.grades?.[String(studentId)] ?? ''
+        },
+        getGroupStudentComment(group, studentId) {
+            if (!group || typeof group !== 'object') return ''
+            return group.comments?.[studentId] ?? group.comments?.[String(studentId)] ?? ''
+        },
+        setStudentGrade(groupIndex, studentId, value) {
+            const group = this.work_form.groups?.[groupIndex]
+            if (!group) return
+            if (!group.grades || typeof group.grades !== 'object') {
+                group.grades = {}
+            }
+            group.grades[studentId] = value ?? ''
+        },
+        openCommentDialog(groupIndex, studentId) {
+            const group = this.work_form.groups?.[groupIndex]
+            if (!group) return
+            this.comment_dialog_group_index = groupIndex
+            this.comment_dialog_student_id = studentId
+            this.comment_dialog_value = this.getGroupStudentComment(group, studentId)
+            this.comment_dialog_open = true
+        },
+        closeCommentDialog() {
+            this.comment_dialog_open = false
+            this.comment_dialog_group_index = null
+            this.comment_dialog_student_id = null
+            this.comment_dialog_value = ''
+        },
+        saveCommentDialog() {
+            const groupIndex = this.comment_dialog_group_index
+            const studentId = this.comment_dialog_student_id
+            if (groupIndex == null || studentId == null) {
+                this.closeCommentDialog()
+                return
+            }
+            const group = this.work_form.groups?.[groupIndex]
+            if (!group) {
+                this.closeCommentDialog()
+                return
+            }
+            if (!group.comments || typeof group.comments !== 'object') {
+                group.comments = {}
+            }
+            group.comments[studentId] = (this.comment_dialog_value || '').toString()
+            this.closeCommentDialog()
+        },
         setGroupWork(value) {
             const nextVal = !!value
             const current = !!this.work_form.is_group_work
@@ -692,6 +877,7 @@ export default {
             this.bulk_grade = null
             this.bulk_comment = ''
             this.selected_student_ids = []
+            this.closeCommentDialog()
             this.action = 'new_course_work'
             this.$nextTick(() => {
                 this.is_initializing_form = false
@@ -699,6 +885,7 @@ export default {
         },
         editWork(work) {
             this.is_initializing_form = true
+            const activeStudentIdSet = new Set(this.activeCourseStudents.map((student) => String(student.id)))
             this.work_form = {
                 ...this.emptyWorkForm(),
                 ...work,
@@ -716,15 +903,27 @@ export default {
                     if (item?.student_id) acc[item.student_id] = item.comment ?? ''
                     return acc
                 }, {})
+                const studentIds = Array.isArray(group?.student_ids)
+                    ? group.student_ids.filter((id) => activeStudentIdSet.has(String(id)))
+                    : []
+                const filteredGrades = Object.fromEntries(
+                    Object.entries(grades).filter(([id]) => activeStudentIdSet.has(String(id)))
+                )
+                const filteredComments = Object.fromEntries(
+                    Object.entries(comments).filter(([id]) => activeStudentIdSet.has(String(id)))
+                )
                 return {
                     ...group,
+                    student_ids: studentIds,
                     // Normalize group date (server may return ISO format)
                     date: this.normalizeDateString(group.date),
-                    grades,
-                    comments,
-                    use_individual_grades: Object.keys(grades).length > 0,
+                    grades: filteredGrades,
+                    comments: filteredComments,
+                    use_individual_grades: Object.keys(filteredGrades).length > 0,
                 }
             })
+            // Ignore persisted empty groups (legacy/corrupt data) to avoid blank student rows in edit UI.
+            this.work_form.groups = this.work_form.groups.filter((group) => Array.isArray(group?.student_ids) && group.student_ids.length > 0)
             if (!this.work_form.is_group_work) {
                 this.work_form.groups = this.work_form.groups.map((group) => ({
                     ...group,
@@ -739,6 +938,7 @@ export default {
             this.bulk_grade = null
             this.bulk_comment = ''
             this.selected_student_ids = []
+            this.closeCommentDialog()
             this.action = 'edit_course_work'
             this.$nextTick(() => {
                 this.is_initializing_form = false
@@ -753,6 +953,7 @@ export default {
             this.bulk_grade = null
             this.bulk_comment = ''
             this.selected_student_ids = []
+            this.closeCommentDialog()
 
             // If we came from student detail, return to it
             if (this.courseStore.previous_selected_student) {
@@ -861,7 +1062,7 @@ export default {
             this.delete_work_id = null
         },
         buildIndividualGroups() {
-            const students = this.selected_course?.students_info || []
+            const students = this.activeCourseStudents
             return students.map((student) => ({
                 student_ids: [student.id],
                 date: this.work_form.date_for_all_groups || '',
@@ -892,7 +1093,7 @@ export default {
             return !Array.isArray(group?.student_ids) || group.student_ids.length === 0
         },
         generateRandomGroups() {
-            const students = (this.selected_course?.students_info || []).map((s) => s.id)
+            const students = this.activeCourseStudents.map((s) => s.id)
             if (!students.length) {
                 this.work_form.groups = []
                 return
@@ -940,6 +1141,31 @@ export default {
             const name = `${student.last_name || ''}, ${student.first_name || ''}`.trim()
             return `${cls}${name}`.trim()
         },
+        studentClassValue(student) {
+            return (student?.schoolclass || student?.class || '').toString()
+        },
+        compareStudentsBySelectedSort(a, b) {
+            const lastA = (a?.last_name ?? a?._last ?? '').toString()
+            const lastB = (b?.last_name ?? b?._last ?? '').toString()
+            const firstA = (a?.first_name ?? a?._first ?? '').toString()
+            const firstB = (b?.first_name ?? b?._first ?? '').toString()
+            const classA = (a?._class ?? this.studentClassValue(a)).toString()
+            const classB = (b?._class ?? this.studentClassValue(b)).toString()
+
+            if (this.students_sort_mode === 'last_name_first_name') {
+                const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
+                if (lastCmp !== 0) return lastCmp
+                const firstCmp = firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
+                if (firstCmp !== 0) return firstCmp
+                return classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
+            }
+
+            const classCmp = classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
+            if (classCmp !== 0) return classCmp
+            const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
+            if (lastCmp !== 0) return lastCmp
+            return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
+        },
         availableStudentItems(groupIndex) {
             const groups = this.work_form.groups || []
             const currentIds = new Set(groups[groupIndex]?.student_ids || [])
@@ -978,7 +1204,7 @@ export default {
             this.show_bulk_action = true
         },
         studentNameById(studentId) {
-            const student = (this.selected_course?.students_info || []).find((s) => s.id === studentId)
+            const student = this.activeCourseStudents.find((s) => String(s.id) === String(studentId))
             if (!student) return String(studentId || '')
             return this.studentLabel(student)
         },
@@ -1058,47 +1284,26 @@ export default {
         },
         sortedGroupStudentIds(group) {
             const ids = Array.isArray(group?.student_ids) ? [...group.student_ids] : []
-            const students = this.selected_course?.students_info || []
-            const byId = new Map(students.map((s) => [s.id, s]))
+            const byId = new Map(this.activeCourseStudents.map((s) => [String(s.id), s]))
+            const filteredIds = ids.filter((id) => byId.has(String(id)))
 
-            return ids.sort((a, b) => {
-                const sa = byId.get(a) || {}
-                const sb = byId.get(b) || {}
-                const classA = (sa.schoolclass || sa.class || '').toString()
-                const classB = (sb.schoolclass || sb.class || '').toString()
-                const classCmp = classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
-                if (classCmp !== 0) return classCmp
-                const lastA = (sa.last_name || '').toString()
-                const lastB = (sb.last_name || '').toString()
-                const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
-                if (lastCmp !== 0) return lastCmp
-                const firstA = (sa.first_name || '').toString()
-                const firstB = (sb.first_name || '').toString()
-                return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
+            return filteredIds.sort((a, b) => {
+                const sa = byId.get(String(a))
+                const sb = byId.get(String(b))
+                return this.compareStudentsBySelectedSort(sa, sb)
             })
         },
         sortGroupsByStudent(groups) {
             if (!Array.isArray(groups)) return []
-            const students = this.selected_course?.students_info || []
-            const byId = new Map(students.map((s) => [s.id, s]))
+            const byId = new Map(this.activeCourseStudents.map((s) => [String(s.id), s]))
 
             return [...groups].sort((a, b) => {
                 // For non-group works, each group has one student
                 const studentIdA = a.student_ids?.[0]
                 const studentIdB = b.student_ids?.[0]
-                const sa = byId.get(studentIdA) || {}
-                const sb = byId.get(studentIdB) || {}
-                const classA = (sa.schoolclass || sa.class || '').toString()
-                const classB = (sb.schoolclass || sb.class || '').toString()
-                const classCmp = classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
-                if (classCmp !== 0) return classCmp
-                const lastA = (sa.last_name || '').toString()
-                const lastB = (sb.last_name || '').toString()
-                const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
-                if (lastCmp !== 0) return lastCmp
-                const firstA = (sa.first_name || '').toString()
-                const firstB = (sb.first_name || '').toString()
-                return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
+                const sa = byId.get(String(studentIdA))
+                const sb = byId.get(String(studentIdB))
+                return this.compareStudentsBySelectedSort(sa, sb)
             })
         },
         selectDate(dateStr) {

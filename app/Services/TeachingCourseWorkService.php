@@ -97,6 +97,21 @@ class TeachingCourseWorkService
                 ];
             }
 
+            // Defensive cleanup:
+            // If primary student_ids are empty, salvage ids from resolved grades/comments.
+            // If still empty, drop the group entirely to avoid persisting blank student rows.
+            if (empty($studentIds)) {
+                $studentIds = array_values(array_unique(array_merge(
+                    array_map(fn (array $item) => (int) ($item['student_id'] ?? 0), $grades),
+                    array_map(fn (array $item) => (int) ($item['student_id'] ?? 0), $comments)
+                )));
+                $studentIds = array_values(array_filter($studentIds, fn (int $id) => $id > 0));
+            }
+
+            if (empty($studentIds)) {
+                continue;
+            }
+
             $normalized[] = array_merge($group, [
                 'student_ids' => $studentIds,
                 'grades' => $grades,
