@@ -1,5 +1,5 @@
 :root {
-    --st-cloudflare-bg-image: url('/images/backgrounds/cloudflare-hero-orange.svg');
+    --st-cloudflare-bg-image: url('../images/backgrounds/cloudflare-hero-orange.svg');
     --st-glass-border: rgba(255, 255, 255, 0.35);
     --st-glass-bg-top: rgba(255, 255, 255, 0.58);
     --st-glass-bg-bottom: rgba(255, 255, 255, 0.42);

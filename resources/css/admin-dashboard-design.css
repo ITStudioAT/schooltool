@@ -125,7 +125,7 @@
 .super-admin-page .ai-cloudflare-bg-image {
     position: absolute;
     inset: 0;
-    background-image: url('/images/backgrounds/cloudflare-hero-orange.svg');
+    background-image: url('../images/backgrounds/cloudflare-hero-orange.svg');
     background-repeat: no-repeat;
     background-position: center top;
     background-size: cover;
@@ -134,7 +134,7 @@
 .super-admin-page .ai-cloudflare-bg-image--dark {
     background-image:
         linear-gradient(180deg, rgba(8, 16, 24, 0.12), rgba(8, 16, 24, 0.4)),
-        url('/images/backgrounds/cloudflare-hero-orange.svg');
+        url('../images/backgrounds/cloudflare-hero-orange.svg');
 }
 
 .super-admin-page .ai-shell-1320 {

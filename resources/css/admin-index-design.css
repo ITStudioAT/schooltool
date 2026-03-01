@@ -1,5 +1,5 @@
 :root {
-    --ai-bg-image: url('/images/backgrounds/cloudflare-hero-orange.svg');
+    --ai-bg-image: url('../images/backgrounds/cloudflare-hero-orange.svg');
     --ai-glass-border: rgba(255, 255, 255, 0.35);
     --ai-glass-bg-top: rgba(255, 255, 255, 0.58);
     --ai-glass-bg-bottom: rgba(255, 255, 255, 0.42);

@@ -340,7 +340,7 @@ export default {
 .hero-bg-image {
     position: absolute;
     inset: 0;
-    background-image: url('/images/backgrounds/cloudflare-hero-orange.svg');
+    background-image: url('../../../../images/backgrounds/cloudflare-hero-orange.svg');
     background-repeat: no-repeat;
     background-position: center top;
     background-size: cover;
