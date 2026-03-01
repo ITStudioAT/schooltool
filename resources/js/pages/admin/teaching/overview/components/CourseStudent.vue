@@ -196,19 +196,14 @@
                                             Alle erforderlich
                                         </v-chip>
                                         <v-spacer />
-                                        <div v-if="cat.value != null || cat.grade" class="text-caption" :class="cat.isNa ? 'text-error' : 'text-medium-emphasis'">
-                                            Bewertung: {{ cat.value != null ? formatEvaluationValue(cat.value) : formatEvaluationValue(cat.grade) }}
+                                        <div class="text-caption" :class="cat.isNa ? 'text-error' : ((cat.value != null || cat.grade) ? 'text-medium-emphasis' : 'text-warning')">
+                                            Bewertung: {{ cat.value != null ? formatEvaluationValue(cat.value) : (cat.grade ? formatEvaluationValue(cat.grade) : '–') }}
                                         </div>
                                     </div>
                                     </v-list-item>
                                     <v-list-item v-if="categoryCalculationLine(cat)">
                                         <div class="text-caption text-medium-emphasis w-100">
                                             {{ categoryCalculationLine(cat) }}
-                                        </div>
-                                    </v-list-item>
-                                    <v-list-item v-if="categoryMissingLine(cat)">
-                                        <div class="text-caption text-warning w-100">
-                                            {{ categoryMissingLine(cat) }}
                                         </div>
                                     </v-list-item>
                                     <v-list-item v-for="row in cat.rows" :key="`sem1-cat-${cat.name}-${row.key}`">
@@ -266,19 +261,14 @@
                                             Alle erforderlich
                                         </v-chip>
                                         <v-spacer />
-                                        <div v-if="cat.value != null || cat.grade" class="text-caption" :class="cat.isNa ? 'text-error' : 'text-medium-emphasis'">
-                                            Bewertung: {{ cat.value != null ? formatEvaluationValue(cat.value) : formatEvaluationValue(cat.grade) }}
+                                        <div class="text-caption" :class="cat.isNa ? 'text-error' : ((cat.value != null || cat.grade) ? 'text-medium-emphasis' : 'text-warning')">
+                                            Bewertung: {{ cat.value != null ? formatEvaluationValue(cat.value) : (cat.grade ? formatEvaluationValue(cat.grade) : '–') }}
                                         </div>
                                         </div>
                                     </v-list-item>
                                     <v-list-item v-if="categoryCalculationLine(cat)">
                                         <div class="text-caption text-medium-emphasis w-100">
                                             {{ categoryCalculationLine(cat) }}
-                                        </div>
-                                    </v-list-item>
-                                    <v-list-item v-if="categoryMissingLine(cat)">
-                                        <div class="text-caption text-warning w-100">
-                                            {{ categoryMissingLine(cat) }}
                                         </div>
                                     </v-list-item>
                                     <v-list-item v-for="row in cat.rows" :key="`sem2-cat-${cat.name}-${row.key}`">
@@ -2318,13 +2308,6 @@ export default {
             if (!result) return ''
 
             return `Berechnung: (${terms.join(' + ')}) / ${this.formatTwoDecimals(denominator)} = ${result}`
-        },
-        categoryMissingLine(category) {
-            if (category?.isNb || category?.isNa) return ''
-            const missing = (category?.calculationParts || []).filter((part) => (part.value == null || Number.isNaN(part.value)) && part.factorPercent > 0)
-            if (!missing.length) return ''
-            const list = missing.map((part) => `${part.type} (${this.formatTwoDecimals(part.factorPercent)}%)`).join(', ')
-            return `Ohne Wert: ${list}`
         },
         setDueInAWeek() {
             const d = new Date()

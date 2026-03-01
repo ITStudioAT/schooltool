@@ -22,3 +22,43 @@ When reporting findings, include:
 - exact file path(s)
 - line numbers when possible
 - the exact code snippet (1–3 lines)outputs
+
+## Frontend conventions (resources/js) — Vue 3 + Pinia + Vue Router + Vuetify
+
+### Architecture
+
+- Vue 3 Composition API with `<script setup>`.
+- Keep domain logic in Pinia stores; pages/components stay thin.
+- Do not invent endpoints. Inspect Laravel routes first via Boost tools (or `php artisan route:list --path=api`).
+
+### Folder structure (this repo)
+
+- `resources/js/lib/api.ts` — single Axios instance + interceptors.
+- `resources/js/stores/*` — Pinia stores (one store per domain, e.g. `useTasksStore`).
+- `resources/js/router/index.ts` + `resources/js/router/guards/*` — routes + guards.
+- `resources/js/pages/*` (or `views/*` if that’s what exists) — route-level components.
+- `resources/js/components/*` — reusable Vuetify components.
+
+### API client rules
+
+- Use one Axios instance everywhere (no ad-hoc fetch in components).
+- If Sanctum SPA auth is used: `withCredentials: true`; handle 419 by re-fetching CSRF once and retrying.
+- Always normalize Laravel validation errors `{ errors: { field: [msg] } }` into `{ [field]: string }`.
+
+### Vuetify rules
+
+- Forms: `v-form` + `v-text-field`/`v-select` etc.
+- Field errors: `:error-messages="errors.field ? [errors.field] : []"`.
+- Use `v-snackbar` for success/error notifications.
+- Show loading state (`:loading`, disable submit) during requests.
+
+### Router + auth
+
+- Use a single auth store (`useAuthStore`) with `init()` that fetches current user.
+- Router guards enforce auth; redirect unauthenticated users to login.
+- 401 → redirect/login flow; 419 → CSRF refresh + retry once.
+
+### Output requirements
+
+- When generating code, include exact file paths and diffs.
+- Reuse existing patterns in `resources/js` (don’t create new conventions unless asked).

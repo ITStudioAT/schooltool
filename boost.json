@@ -10,7 +10,6 @@
     "sail": false,
     "skills": [
         "pest-testing",
-        "tailwindcss-development",
         "laravel-api"
     ]
 }
