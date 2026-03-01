@@ -13,12 +13,17 @@ class TeachingService
     public function schemasForUser(User $user, ?int $schoolyearId = null): Collection
     {
         $rows = $this->schemaRows($user, $schoolyearId);
+
         return $rows->map(function (TeachingSchema $schema) {
+            $works = $this->normalizeWorks(is_array($schema->works) ? $schema->works : []);
+            $grading = $this->normalizeGrading(is_array($schema->grading) ? $schema->grading : [], $works);
+            $works = $this->ensureMandatoryNaGradesForRequiredCategories($works, $grading);
+
             return [
                 'id' => (string) $schema->schema_id,
                 'name' => (string) $schema->name,
-                'works' => is_array($schema->works) ? $schema->works : [],
-                'grading' => is_array($schema->grading) ? $schema->grading : [],
+                'works' => $works,
+                'grading' => $grading,
             ];
         })
             ->values();
@@ -60,14 +65,18 @@ class TeachingService
                     return null;
                 }
 
+                $works = $this->normalizeWorks(is_array($schema['works'] ?? null) ? $schema['works'] : []);
+                $grading = $this->normalizeGrading(is_array($schema['grading'] ?? null) ? $schema['grading'] : [], $works);
+                $works = $this->ensureMandatoryNaGradesForRequiredCategories($works, $grading);
+
                 return [
                     'school_id' => $user->school_id,
                     'schoolyear_id' => $schoolyearId,
                     'user_id' => $user->id,
                     'schema_id' => $schemaId,
                     'name' => (string) ($schema['name'] ?? 'Standard'),
-                    'works' => $this->normalizeWorks(is_array($schema['works'] ?? null) ? $schema['works'] : []),
-                    'grading' => is_array($schema['grading'] ?? null) ? $schema['grading'] : [],
+                    'works' => $works,
+                    'grading' => $grading,
                 ];
             })
             ->filter()
@@ -185,6 +194,7 @@ class TeachingService
                     'name' => 'Mitarbeit',
                     'calculation' => 'points',
                     'require_all_entries' => true,
+                    'default_grade' => null,
                     'grades' => [
                         ['grade' => '-', 'name' => 'Minus', 'value' => '-1'],
                         ['grade' => '+', 'name' => 'Plus', 'value' => '1'],
@@ -204,6 +214,7 @@ class TeachingService
                     'name' => 'Schularbeit',
                     'calculation' => 'average',
                     'require_all_entries' => true,
+                    'default_grade' => null,
                     'grades' => [
                         ['grade' => '1', 'name' => 'Sehr gut', 'value' => '1'],
                         ['grade' => '2', 'name' => 'Gut', 'value' => '2'],
@@ -223,12 +234,14 @@ class TeachingService
                     [
                         'name' => 'Schularbeiten',
                         'weight' => 50,
+                        'require_all_entries' => true,
                         'calculation' => 'mean',
                         'works' => [['short_name' => 'SA', 'factor' => 100]],
                     ],
                     [
                         'name' => 'Mitarbeit',
                         'weight' => 50,
+                        'require_all_entries' => true,
                         'calculation' => 'mean',
                         'works' => [['short_name' => 'MA', 'factor' => 100]],
                     ],
@@ -256,6 +269,147 @@ class TeachingService
             ->get();
     }
 
+    private function normalizeGrading(array $grading, array $works): array
+    {
+        $categories = is_array($grading['categories'] ?? null) ? $grading['categories'] : [];
+        $grading['categories'] = collect($categories)
+            ->filter(fn ($category) => is_array($category))
+            ->map(function (array $category) use ($works) {
+                $normalizedWorks = $this->normalizeCategoryWorks(is_array($category['works'] ?? null) ? $category['works'] : []);
+                $hasOwnRequireAll = array_key_exists('require_all_entries', $category);
+
+                $category['works'] = $normalizedWorks;
+                $category['require_all_entries'] = $hasOwnRequireAll
+                    ? (bool) ($category['require_all_entries'] ?? false)
+                    : $this->inferCategoryRequireAllEntriesFromWorks($normalizedWorks, $works);
+
+                return $category;
+            })
+            ->values()
+            ->all();
+
+        return $grading;
+    }
+
+    private function normalizeCategoryWorks(array $works): array
+    {
+        return collect($works)
+            ->map(function ($work) {
+                if (is_string($work)) {
+                    $shortName = trim($work);
+
+                    return $shortName === '' ? null : ['short_name' => $shortName, 'factor' => 100];
+                }
+
+                if (! is_array($work)) {
+                    return null;
+                }
+
+                $shortName = trim((string) ($work['short_name'] ?? ''));
+                if ($shortName === '') {
+                    return null;
+                }
+
+                $factorRaw = $work['factor'] ?? 100;
+                $factor = is_numeric($factorRaw) ? (int) $factorRaw : 100;
+
+                return ['short_name' => $shortName, 'factor' => $factor];
+            })
+            ->filter(fn ($work) => is_array($work))
+            ->values()
+            ->all();
+    }
+
+    private function inferCategoryRequireAllEntriesFromWorks(array $categoryWorks, array $works): bool
+    {
+        if (empty($categoryWorks) || empty($works)) {
+            return false;
+        }
+
+        $worksByType = collect($works)
+            ->filter(fn ($work) => is_array($work) && trim((string) ($work['short_name'] ?? '')) !== '')
+            ->keyBy(fn ($work) => trim((string) ($work['short_name'] ?? '')));
+
+        return collect($categoryWorks)->contains(function ($workItem) use ($worksByType) {
+            if (! is_array($workItem)) {
+                return false;
+            }
+
+            $shortName = trim((string) ($workItem['short_name'] ?? ''));
+            if ($shortName === '') {
+                return false;
+            }
+
+            $work = $worksByType->get($shortName);
+
+            return is_array($work) && (bool) ($work['require_all_entries'] ?? false);
+        });
+    }
+
+    private function ensureMandatoryNaGradesForRequiredCategories(array $works, array $grading): array
+    {
+        $requiredTypes = collect(is_array($grading['categories'] ?? null) ? $grading['categories'] : [])
+            ->filter(fn ($category) => is_array($category) && (bool) ($category['require_all_entries'] ?? false))
+            ->flatMap(function (array $category) {
+                return collect(is_array($category['works'] ?? null) ? $category['works'] : [])
+                    ->map(function ($workItem) {
+                        if (is_string($workItem)) {
+                            return trim($workItem);
+                        }
+                        if (! is_array($workItem)) {
+                            return '';
+                        }
+
+                        return trim((string) ($workItem['short_name'] ?? ''));
+                    });
+            })
+            ->filter(fn ($shortName) => $shortName !== '')
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($requiredTypes)) {
+            return $works;
+        }
+
+        return collect($works)
+            ->map(function ($work) use ($requiredTypes) {
+                if (! is_array($work)) {
+                    return $work;
+                }
+
+                $shortName = trim((string) ($work['short_name'] ?? ''));
+                if ($shortName === '' || ! in_array($shortName, $requiredTypes, true)) {
+                    return $work;
+                }
+
+                $grades = is_array($work['grades'] ?? null) ? $work['grades'] : [];
+                $naIndex = collect($grades)->search(function ($grade) {
+                    if (! is_array($grade)) {
+                        return false;
+                    }
+
+                    return strtoupper(trim((string) ($grade['grade'] ?? ''))) === 'NA';
+                });
+
+                if ($naIndex === false) {
+                    $grades[] = ['grade' => 'NA', 'name' => 'NICHT ABGEGEBEN', 'value' => ''];
+                } else {
+                    $existing = is_array($grades[$naIndex] ?? null) ? $grades[$naIndex] : [];
+                    $grades[$naIndex] = array_merge($existing, [
+                        'grade' => 'NA',
+                        'name' => 'NICHT ABGEGEBEN',
+                    ]);
+                }
+
+                $work['grades'] = $grades;
+
+                return $work;
+            })
+            ->values()
+            ->all();
+    }
+
     private function normalizeWorks(array $works): array
     {
         return collect($works)
@@ -271,6 +425,7 @@ class TeachingService
                         }
 
                         $key = strtoupper(trim((string) ($grade['grade'] ?? '')));
+
                         return $key === 'NA';
                     });
 
@@ -286,6 +441,28 @@ class TeachingService
                 }
 
                 $work['grades'] = $grades;
+
+                $defaultGrade = trim((string) ($work['default_grade'] ?? ''));
+                if ($defaultGrade === '') {
+                    $work['default_grade'] = null;
+
+                    return $work;
+                }
+
+                $matchedGrade = collect($grades)->first(function ($grade) use ($defaultGrade) {
+                    if (! is_array($grade)) {
+                        return false;
+                    }
+
+                    $key = strtoupper(trim((string) ($grade['grade'] ?? '')));
+
+                    return $key === strtoupper($defaultGrade);
+                });
+
+                $work['default_grade'] = is_array($matchedGrade)
+                    ? trim((string) ($matchedGrade['grade'] ?? '')) ?: null
+                    : null;
+
                 return $work;
             })
             ->values()

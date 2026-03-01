@@ -160,19 +160,99 @@ class CourseStudentEntryController extends Controller
 
         // Build type labels map from teaching schema
         $typeLabels = [];
+        $defaultGradesByType = [];
         if ($schemaForCourse && isset($schemaForCourse['works'])) {
             foreach ($schemaForCourse['works'] as $work) {
                 if (isset($work['short_name'])) {
                     $shortName = (string) $work['short_name'];
                     $name = trim((string) ($work['name'] ?? ''));
                     $typeLabels[$shortName] = $name !== '' ? $name : $shortName;
+
+                    $defaultGrade = trim((string) ($work['default_grade'] ?? ''));
+                    if ($defaultGrade === '') {
+                        continue;
+                    }
+                    $grades = is_array($work['grades'] ?? null) ? $work['grades'] : [];
+                    $hasGrade = collect($grades)->contains(function ($grade) use ($defaultGrade) {
+                        if (! is_array($grade)) {
+                            return false;
+                        }
+
+                        return strtoupper(trim((string) ($grade['grade'] ?? ''))) === strtoupper($defaultGrade);
+                    });
+                    if ($hasGrade) {
+                        $defaultGradesByType[$shortName] = $defaultGrade;
+                    }
                 }
             }
         }
+
+        $requiredTypeSet = $this->buildRequireAllCategoryTypeSet($schemaForCourse);
+
+        $formattedEntries = $formattedEntries->map(function (array $entry) use ($defaultGradesByType, $requiredTypeSet) {
+            $raw = trim((string) ($entry['grade'] ?? ''));
+            if ($raw !== '') {
+                $entry['grade'] = $raw;
+            } else {
+                $type = trim((string) ($entry['type'] ?? ''));
+                $entry['grade'] = $type !== '' ? ($defaultGradesByType[$type] ?? null) : null;
+            }
+
+            $typeKey = strtoupper(trim((string) ($entry['type'] ?? '')));
+            $entry['is_required_entry'] = $typeKey !== '' && isset($requiredTypeSet[$typeKey]);
+
+            return $entry;
+        });
 
         return response()->json([
             'entries' => $formattedEntries,
             'type_labels' => $typeLabels,
         ], 200);
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $schema
+     * @return array<string, bool>
+     */
+    private function buildRequireAllCategoryTypeSet(?array $schema): array
+    {
+        if (! is_array($schema)) {
+            return [];
+        }
+
+        $grading = is_array($schema['grading'] ?? null) ? $schema['grading'] : [];
+        $categories = is_array($grading['categories'] ?? null) ? $grading['categories'] : [];
+        $requiredTypes = [];
+
+        foreach ($categories as $category) {
+            if (! is_array($category)) {
+                continue;
+            }
+
+            $hasRequireAllKey = array_key_exists('require_all_entries', $category);
+            $requireAllEntries = $hasRequireAllKey
+                ? (bool) $category['require_all_entries']
+                : (bool) ($category['all_entries_needed'] ?? $category['all_ewntries_needed'] ?? false);
+
+            if (! $requireAllEntries) {
+                continue;
+            }
+
+            $works = is_array($category['works'] ?? null) ? $category['works'] : [];
+            foreach ($works as $workItem) {
+                $shortName = is_string($workItem)
+                    ? $workItem
+                    : (is_array($workItem) ? ($workItem['short_name'] ?? null) : null);
+
+                $typeKey = strtoupper(trim((string) $shortName));
+                if ($typeKey === '') {
+                    continue;
+                }
+
+                $requiredTypes[$typeKey] = true;
+            }
+        }
+
+        return $requiredTypes;
     }
 }

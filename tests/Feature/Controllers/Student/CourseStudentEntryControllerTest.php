@@ -122,6 +122,7 @@ test('index returns entries with type labels and group members for enrolled stud
     $response->assertOk()
         ->assertJsonPath('type_labels.TW', 'Testarbeit')
         ->assertJsonPath('entries.0.type', 'TW')
+        ->assertJsonPath('entries.0.is_required_entry', false)
         ->assertJsonPath('entries.0.comment', 'Meine Notiz')
         ->assertJsonPath('entries.0.work.is_group_work', true)
         ->assertJsonPath('entries.0.work.group_members.0', 'Berta Beta');
@@ -137,6 +138,84 @@ test('index returns 403 for non enrolled student', function () {
     $this->actingAs($outsider)
         ->getJson("/api/homepage/student/courses/{$this->course->id}/entries")
         ->assertStatus(403);
+});
+
+test('index uses default grade from schema when entry grade is empty', function () {
+    TeachingSchema::query()
+        ->where('user_id', $this->teacher->id)
+        ->where('schoolyear_id', $this->schoolyear->id)
+        ->update([
+            'works' => [
+                [
+                    'short_name' => 'TW',
+                    'name' => 'Testarbeit',
+                    'default_grade' => '4',
+                    'grades' => [
+                        ['grade' => '1', 'name' => 'Sehr gut', 'value' => '1'],
+                        ['grade' => '2', 'name' => 'Gut', 'value' => '2'],
+                        ['grade' => '3', 'name' => 'Befriedigend', 'value' => '3'],
+                        ['grade' => '4', 'name' => 'Genügend', 'value' => '4'],
+                        ['grade' => '5', 'name' => 'Nicht genügend', 'value' => '5'],
+                    ],
+                ],
+            ],
+        ]);
+
+    TeachingCourseStudentEntry::query()->create([
+        'teaching_course_id' => $this->course->id,
+        'user_id' => $this->student->id,
+        'date' => '2026-03-01',
+        'type' => 'TW',
+        'grade' => null,
+        'status' => [],
+        'source' => 'manual',
+    ]);
+
+    $response = $this->actingAs($this->student)
+        ->getJson("/api/homepage/student/courses/{$this->course->id}/entries");
+
+    $response->assertOk()
+        ->assertJsonPath('entries.0.grade', '4');
+});
+
+test('index marks entry as required when type belongs to require-all category', function () {
+    TeachingSchema::query()
+        ->where('user_id', $this->teacher->id)
+        ->where('schoolyear_id', $this->schoolyear->id)
+        ->update([
+            'works' => [
+                ['short_name' => 'TW', 'name' => 'Testarbeit'],
+            ],
+            'grading' => [
+                'categories' => [
+                    [
+                        'name' => 'Mitarbeit',
+                        'weight' => 100,
+                        'require_all_entries' => true,
+                        'works' => [
+                            ['short_name' => 'TW', 'factor' => 100],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+    TeachingCourseStudentEntry::query()->create([
+        'teaching_course_id' => $this->course->id,
+        'user_id' => $this->student->id,
+        'date' => '2026-03-01',
+        'type' => 'TW',
+        'grade' => null,
+        'status' => [],
+        'source' => 'manual',
+    ]);
+
+    $response = $this->actingAs($this->student)
+        ->getJson("/api/homepage/student/courses/{$this->course->id}/entries");
+
+    $response->assertOk()
+        ->assertJsonPath('entries.0.type', 'TW')
+        ->assertJsonPath('entries.0.is_required_entry', true);
 });
 
 test('index returns 403 for non student role', function () {

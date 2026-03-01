@@ -729,9 +729,25 @@ export default {
         isStudentInactive(student) {
             return !!student?.canceled_at || !!student?.deleted_at
         },
+        workConfigForType(type) {
+            if (!type) return null
+            return this.teachingWorks.find((work) => work.short_name === type) || null
+        },
+        effectiveGradeForType(type, rawGrade) {
+            const direct = (rawGrade || '').toString().trim()
+            if (direct) return direct
+
+            const work = this.workConfigForType(type)
+            const defaultGrade = (work?.default_grade || '').toString().trim()
+            if (!defaultGrade) return ''
+
+            const exists = (work?.grades || []).some((grade) => (grade?.grade || '').toString().trim().toUpperCase() === defaultGrade.toUpperCase())
+            return exists ? defaultGrade : ''
+        },
         getGroupStudentGrade(group, studentId) {
             if (!group || typeof group !== 'object') return ''
-            return group.grades?.[studentId] ?? group.grades?.[String(studentId)] ?? ''
+            const raw = group.grades?.[studentId] ?? group.grades?.[String(studentId)] ?? ''
+            return this.effectiveGradeForType(this.work_form.type, raw)
         },
         getGroupStudentComment(group, studentId) {
             if (!group || typeof group !== 'object') return ''
@@ -1214,7 +1230,7 @@ export default {
             const nonEmptyGroups = groups.filter((group) => Array.isArray(group?.student_ids) && group.student_ids.length > 0)
             if (!nonEmptyGroups.length) return false
 
-            const hasGrade = (value) => (value ?? '').toString().trim() !== ''
+            const hasGrade = (value) => this.effectiveGradeForType(work?.type, value) !== ''
 
             // For group-work: complete when every group has either
             // 1) one shared grade, or
@@ -1259,7 +1275,7 @@ export default {
                 if (gradesArray.length) {
                     gradesArray.forEach((item) => {
                         if (!item?.student_id) return
-                        const val = (item.grade ?? '').toString().trim()
+                        const val = this.effectiveGradeForType(work?.type, item.grade)
                         if (val !== '') {
                             gradesByStudent.set(String(item.student_id), val)
                         }

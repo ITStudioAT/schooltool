@@ -4,11 +4,9 @@ namespace App\Http\Controllers\Admin\Teaching;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\PaginateResource;
-
 use App\Http\Resources\Admin\Teaching\Import116Resource;
 use App\Models\Import116;
 use App\Services\TeachingService;
-use Barryvdh\Debugbar\Facades\Debugbar;
 use Illuminate\Http\Request;
 
 class TeachingController extends Controller
@@ -30,7 +28,7 @@ class TeachingController extends Controller
         $import116 = Import116::where('school_id', $auth_user->school_id)
             ->where('schoolyear_id', $auth_user->schoolyear_id)
             ->when($searchString, function ($query) use ($searchString) {
-                $like = '%' . $searchString . '%';
+                $like = '%'.$searchString.'%';
                 $query->where(function ($query) use ($like) {
                     $query->where('last_name', 'like', $like)
                         ->orWhere('first_name', 'like', $like)
@@ -45,7 +43,6 @@ class TeachingController extends Controller
             ->orderBy('last_name')
             ->orderBy('first_name')
             ->paginate(config('schooltool.pagination'));
-
 
         return response()->json([
             'data' => Import116Resource::collection($import116),
@@ -130,6 +127,7 @@ class TeachingController extends Controller
             'teaching_schemas.*.works.*.grades.*.value' => 'nullable|string|max:10',
             'teaching_schemas.*.works.*.calculation' => 'nullable|string|in:average,points',
             'teaching_schemas.*.works.*.require_all_entries' => 'nullable|boolean',
+            'teaching_schemas.*.works.*.default_grade' => 'nullable|string|max:10',
             'teaching_schemas.*.works.*.points_table' => 'nullable|array',
             'teaching_schemas.*.works.*.points_table.*.min_points' => 'required|numeric',
             'teaching_schemas.*.works.*.points_table.*.grade' => 'required|string|max:10',
@@ -141,6 +139,7 @@ class TeachingController extends Controller
             'teaching_schemas.*.grading.categories' => 'nullable|array',
             'teaching_schemas.*.grading.categories.*.name' => 'required|string|max:100',
             'teaching_schemas.*.grading.categories.*.weight' => 'required|integer|min:0|max:100',
+            'teaching_schemas.*.grading.categories.*.require_all_entries' => 'nullable|boolean',
             'teaching_schemas.*.grading.categories.*.works' => 'nullable|array',
             'teaching_schemas.*.grading.categories.*.works.*.short_name' => 'required|string|max:10',
             'teaching_schemas.*.grading.categories.*.works.*.factor' => 'required|integer|min:0|max:100',

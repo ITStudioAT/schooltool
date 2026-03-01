@@ -202,6 +202,9 @@
                                     <v-icon size="20">mdi-chart-line</v-icon>
                                     Noten
                                 </h3>
+                                <v-alert v-if="showMissingRequiredNaHint" type="error" variant="tonal" density="comfortable" icon="mdi-alert-circle" class="grades-required-hint">
+                                    <strong>Hinweis:</strong> Es wurden noch nicht alle Leistungen erbracht! (siehe Leistungen)
+                                </v-alert>
                                 <div class="grades-display">
                                     <template v-if="course?.sem_1_grade || course?.sem_2_grade">
                                         <div class="grade-item" :class="course?.sem_1_grade ? 'grade-set' : 'grade-open'">
@@ -294,6 +297,9 @@
                                                         <v-chip v-if="item.entry.type" size="small" variant="outlined">
                                                             {{ entryTypeChipLabel(item.entry.type) }}
                                                         </v-chip>
+                                                        <v-chip v-if="item.entry.is_required_entry" size="small" color="error" variant="flat">
+                                                            Erforderlich
+                                                        </v-chip>
                                                         <div class="entry-main text-caption">
                                                             <div v-if="entryTitle(item.entry)" class="entry-title">{{ entryTitle(item.entry) }}</div>
                                                             <!-- Show expand button for work entries with details -->
@@ -330,7 +336,7 @@
                                                                 {{ entryComment(item.entry) }}
                                                             </div>
                                                         </div>
-                                                        <v-chip class="entry-grade" size="small" variant="tonal" :color="item.entry.grade ? 'success' : 'error'">
+                                                        <v-chip class="entry-grade" size="small" variant="tonal" :color="entryGradeChipColor(item.entry)">
                                                             {{ item.entry.grade || 'offen' }}
                                                         </v-chip>
                                                     </div>
@@ -475,6 +481,9 @@ export default {
 
         // Load course details
         await this.loadCourse()
+        if (this.entries.length === 0 && !this.loadingEntries) {
+            this.loadEntries()
+        }
     },
 
     data() {
@@ -523,6 +532,23 @@ export default {
 
         courseDates() {
             return this.course?.course_dates || []
+        },
+
+        requiredEntries() {
+            const entries = Array.isArray(this.entries) ? this.entries : []
+            return entries.filter((entry) => Boolean(entry?.is_required_entry))
+        },
+
+        showMissingRequiredNaHint() {
+            const requiredNaCount = this.requiredEntries.filter((entry) => {
+                const grade = String(entry?.grade || '')
+                    .trim()
+                    .toUpperCase()
+
+                return grade === 'NA'
+            }).length
+
+            return requiredNaCount === 1
         },
 
         weekdayLabel() {
@@ -889,6 +915,15 @@ export default {
             return this.isEntryOpen(entry) ? 'error' : 'success'
         },
 
+        entryGradeChipColor(entry) {
+            const grade = String(entry?.grade || '').trim()
+            if (grade === '') {
+                return 'error'
+            }
+
+            return grade.toUpperCase() === 'NA' ? 'error' : 'success'
+        },
+
         formatDate(dateString) {
             if (!dateString) return '—'
             try {
@@ -918,7 +953,7 @@ export default {
             if (statusStr.includes('pruefung') || statusStr.includes('prüfung')) {
                 return 'date-row--exam'
             }
-            if (statusStr.includes('frei') || statusStr.includes('free')) {
+            if (this.hasFreeStatus(status)) {
                 return 'date-row--free'
             }
             return ''
@@ -930,7 +965,7 @@ export default {
             if (statusStr.includes('pruefung') || statusStr.includes('prüfung')) {
                 return '#ff5722'
             }
-            if (statusStr.includes('frei') || statusStr.includes('free')) {
+            if (this.hasFreeStatus(status)) {
                 return '#4caf50'
             }
             return '#2196f3'
@@ -939,7 +974,11 @@ export default {
         hasFreeStatus(status) {
             if (!status || !Array.isArray(status)) return false
             const statusStr = status.join(' ').toLowerCase()
-            return statusStr.includes('frei') || statusStr.includes('free')
+            return statusStr.includes('frei')
+                || statusStr.includes('free')
+                || statusStr.includes('entfaellt')
+                || statusStr.includes('entfällt')
+                || statusStr.includes('entfallen')
         },
 
         toggleEntryExpansion(entryId) {
@@ -1267,6 +1306,11 @@ export default {
     display: flex;
     gap: 16px;
     flex-wrap: wrap;
+}
+
+.grades-required-hint {
+    margin-bottom: 12px;
+    border: 1px solid rgba(211, 47, 47, 0.35);
 }
 
 .grade-item {

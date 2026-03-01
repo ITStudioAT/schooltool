@@ -7,6 +7,7 @@ use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\User;
 use App\Services\TeachingCourseStudentEntryService;
+use App\Services\TeachingService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -43,6 +44,11 @@ class CourseStudentEntryController extends Controller
             ->orderBy('id', 'desc')
             ->get();
 
+        $defaultsByType = $this->defaultGradesByType($course, $auth_user);
+        $entries->each(function (TeachingCourseStudentEntry $entry) use ($defaultsByType) {
+            $this->attachEffectiveGrade($entry, $defaultsByType);
+        });
+
         return response()->json(['data' => $entries]);
     }
 
@@ -77,6 +83,7 @@ class CourseStudentEntryController extends Controller
         }
 
         $entry = TeachingCourseStudentEntry::create($validated);
+        $this->attachEffectiveGrade($entry, $this->defaultGradesByType($course, $auth_user));
 
         return response()->json(['data' => $entry], 201);
     }
@@ -113,6 +120,7 @@ class CourseStudentEntryController extends Controller
         }
 
         $course_student_entry->update($validated);
+        $this->attachEffectiveGrade($course_student_entry, $this->defaultGradesByType($course, $auth_user));
 
         return response()->json(['data' => $course_student_entry]);
     }
@@ -140,5 +148,67 @@ class CourseStudentEntryController extends Controller
         $course_student_entry->delete();
 
         return response()->json(null, 204);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function defaultGradesByType(TeachingCourse $course, User $authUser): array
+    {
+        if (! $course->teaching_schema_id) {
+            return [];
+        }
+
+        $schemaOwner = $course->user ?: $authUser;
+        $schema = (new TeachingService)->schemaById($schemaOwner, (string) $course->teaching_schema_id, $course->schoolyear_id);
+        if (! is_array($schema)) {
+            return [];
+        }
+
+        $defaults = [];
+        foreach ((array) ($schema['works'] ?? []) as $work) {
+            if (! is_array($work)) {
+                continue;
+            }
+
+            $type = trim((string) ($work['short_name'] ?? ''));
+            if ($type === '') {
+                continue;
+            }
+
+            $defaultGrade = trim((string) ($work['default_grade'] ?? ''));
+            if ($defaultGrade === '') {
+                continue;
+            }
+
+            $grades = is_array($work['grades'] ?? null) ? $work['grades'] : [];
+            $hasGrade = collect($grades)->contains(function ($grade) use ($defaultGrade) {
+                if (! is_array($grade)) {
+                    return false;
+                }
+
+                return strtoupper(trim((string) ($grade['grade'] ?? ''))) === strtoupper($defaultGrade);
+            });
+            if (! $hasGrade) {
+                continue;
+            }
+
+            $defaults[$type] = $defaultGrade;
+        }
+
+        return $defaults;
+    }
+
+    private function attachEffectiveGrade(TeachingCourseStudentEntry $entry, array $defaultsByType): void
+    {
+        $rawGrade = trim((string) ($entry->grade ?? ''));
+        if ($rawGrade !== '') {
+            $entry->setAttribute('effective_grade', $rawGrade);
+
+            return;
+        }
+
+        $type = trim((string) ($entry->type ?? ''));
+        $entry->setAttribute('effective_grade', $type !== '' ? ($defaultsByType[$type] ?? null) : null);
     }
 }

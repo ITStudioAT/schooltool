@@ -26,7 +26,11 @@ class CourseController extends Controller
                 $query->where('user_id', $auth_user->id);
             })
             ->with('user:id,first_name,last_name,short,email')
-            ->withCount('teachingCourseStudents')
+            ->withCount([
+                'teachingCourseStudents as active_students_count' => function ($query) {
+                    $query->whereNull('canceled_at');
+                },
+            ])
             ->with([
                 'teachingCourseStudents' => function ($query) use ($auth_user) {
                     $query->where('user_id', $auth_user->id);
@@ -41,10 +45,10 @@ class CourseController extends Controller
                     'title' => $course->title,
                     'description' => $course->description,
                     'teaching_schema_id' => $course->teaching_schema_id,
-                    'teacher' => $course->user ? ($course->user->short ?: ($course->user->first_name . ' ' . $course->user->last_name)) : '—',
+                    'teacher' => $course->user ? ($course->user->short ?: ($course->user->first_name.' '.$course->user->last_name)) : '—',
                     'teacher_email' => $course->user?->email ?? null,
                     'classes' => $course->classes,
-                    'students_count' => (int) ($course->teaching_course_students_count ?? 0),
+                    'students_count' => (int) ($course->active_students_count ?? 0),
                     'stars' => $studentData?->stars ?? [],
                     'sem_1_grade' => $studentData?->sem_1_grade,
                     'sem_2_grade' => $studentData?->sem_2_grade,
@@ -73,7 +77,11 @@ class CourseController extends Controller
 
         // Get the course
         $course = TeachingCourse::with('user:id,first_name,last_name,short,email,teaching_notifications,teaching_behaviour')
-            ->withCount('teachingCourseStudents')
+            ->withCount([
+                'teachingCourseStudents as active_students_count' => function ($query) {
+                    $query->whereNull('canceled_at');
+                },
+            ])
             ->where('id', $courseId)
             ->where('school_id', $auth_user->school_id)
             ->where('schoolyear_id', $active_schoolyear_id)
@@ -158,12 +166,12 @@ class CourseController extends Controller
             'title' => $course->title,
             'description' => $course->description,
             'teaching_schema_id' => $course->teaching_schema_id,
-            'teacher' => $course->user ? ($course->user->short ?: ($course->user->first_name . ' ' . $course->user->last_name)) : '—',
+            'teacher' => $course->user ? ($course->user->short ?: ($course->user->first_name.' '.$course->user->last_name)) : '—',
             'teacher_email' => $course->user?->email ?? null,
             'teacher_teaching_notifications' => $course->user?->teaching_notifications ?? [],
             'teacher_teaching_behaviour' => $course->user?->teaching_behaviour ?? [],
             'classes' => $course->classes,
-            'students_count' => (int) ($course->teaching_course_students_count ?? 0),
+            'students_count' => (int) ($course->active_students_count ?? 0),
             'stars' => $studentData->stars ?? [],
             'sem_1_grade' => $studentData->sem_1_grade,
             'sem_2_grade' => $studentData->sem_2_grade,

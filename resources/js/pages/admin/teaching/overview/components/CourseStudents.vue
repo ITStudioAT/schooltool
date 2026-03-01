@@ -499,6 +499,7 @@ export default {
                     kind: 'student_entry',
                     type: entry.type,
                     grade: entry.grade,
+                    effective_grade: entry.effective_grade,
                     description: entry.description,
                     source: entry.source || 'manual',
                 })
@@ -693,8 +694,11 @@ export default {
             if (!entry) return ''
             const base = entry.type ? `${this.dayEntryShortLabel(entry)}: ${entry.type}` : this.dayEntryShortLabel(entry)
 
-            if (entry.kind === 'student_entry' && entry.grade) {
-                return `${base} (${entry.grade})`
+            if (entry.kind === 'student_entry') {
+                const grade = (entry.effective_grade || entry.grade || '').toString().trim()
+                if (grade) {
+                    return `${base} (${grade})`
+                }
             }
 
             if (entry.kind === 'notification') {

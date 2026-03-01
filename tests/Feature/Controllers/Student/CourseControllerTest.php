@@ -77,7 +77,7 @@ test('index returns only enrolled courses from active schoolyear', function () {
         'title' => 'Mathematik',
         'students' => [
             ['id' => $this->studentA->id],
-            ['id' => $this->studentB->id],
+            ['id' => $this->studentB->id, 'canceled_at' => now()->subDay()->toDateTimeString()],
         ],
         'classes' => ['1A'],
     ]);
@@ -109,7 +109,8 @@ test('index returns only enrolled courses from active schoolyear', function () {
         ->assertJsonCount(1, 'courses')
         ->assertJsonPath('courses.0.id', $enrolledCourse->id)
         ->assertJsonPath('courses.0.title', 'Mathematik')
-        ->assertJsonPath('courses.0.teacher', 'TT');
+        ->assertJsonPath('courses.0.teacher', 'TT')
+        ->assertJsonPath('courses.0.students_count', 1);
 });
 
 test('show returns free reason with teacher reason priority over school reason', function () {
@@ -119,6 +120,7 @@ test('show returns free reason with teacher reason priority over school reason',
         'user_id' => $this->teacher->id,
         'students' => [
             ['id' => $this->studentA->id, 'stars' => []],
+            ['id' => $this->studentB->id, 'canceled_at' => now()->subDay()->toDateTimeString()],
         ],
         'classes' => ['1A'],
     ]);
@@ -154,6 +156,7 @@ test('show returns free reason with teacher reason priority over school reason',
 
     $response->assertOk()
         ->assertJsonPath('course.id', $course->id)
+        ->assertJsonPath('course.students_count', 1)
         ->assertJsonPath('course.course_dates.0.id', $courseDate->id)
         ->assertJsonPath('course.course_dates.0.free_reason', 'Fortbildung Lehrkraft')
         ->assertJsonPath('course.course_dates.0.status.0', 'free');

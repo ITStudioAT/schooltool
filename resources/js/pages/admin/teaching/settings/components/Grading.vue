@@ -115,6 +115,9 @@
                                 <v-icon size="small" color="primary">mdi-folder-outline</v-icon>
                                 <span class="text-body-1 flex-grow-1">{{ category.name }}</span>
                                 <v-chip size="small" color="primary" variant="outlined">{{ category.weight }}%</v-chip>
+                                <v-chip v-if="category.require_all_entries" size="x-small" color="primary" variant="tonal">
+                                    Alle erforderlich
+                                </v-chip>
                                 <v-chip v-if="category.works?.length" size="x-small" color="success" variant="tonal">
                                     {{ category.works.length }} Arbeit(en)
                                 </v-chip>
@@ -164,6 +167,12 @@
                                     step="5"
                                     style="max-width: 110px"
                                     @keyup.enter="saveEditCategory" />
+                                <v-checkbox
+                                    v-model="edit_category.require_all_entries"
+                                    density="compact"
+                                    hide-details
+                                    color="warning"
+                                    label="Pflicht alle" />
                                 <v-btn
                                     icon="mdi-check"
                                     size="x-small"
@@ -254,6 +263,12 @@
                         step="5"
                         style="max-width: 130px"
                         @keyup.enter="addCategory" />
+                    <v-checkbox
+                        v-model="new_category.require_all_entries"
+                        density="compact"
+                        hide-details
+                        color="warning"
+                        label="Pflicht alle" />
                     <v-btn
                         icon="mdi-plus"
                         size="small"
@@ -353,8 +368,8 @@ export default {
                 use_semester_grade_only: false,
                 categories: [],
             },
-            new_category: { name: '', weight: '' },
-            edit_category: { name: '', weight: '' },
+            new_category: { name: '', weight: '', require_all_entries: false },
+            edit_category: { name: '', weight: '', require_all_entries: false },
             edit_index: null,
             delete_index: null,
             expanded_index: null,
@@ -413,7 +428,7 @@ export default {
             this.is_editing = false
             this.delete_index = null
             this.edit_index = null
-            this.edit_category = { name: '', weight: '' }
+            this.edit_category = { name: '', weight: '', require_all_entries: false }
         },
 
         initData() {
@@ -428,9 +443,21 @@ export default {
                 categories: (grading.categories || []).map((c) => ({
                     ...c,
                     works: this.normalizeWorks(c.works).filter((w) => validShortNames.includes(w.short_name)),
+                    require_all_entries: Object.prototype.hasOwnProperty.call(c || {}, 'require_all_entries')
+                        ? Boolean(c.require_all_entries)
+                        : this.inferCategoryRequireAllEntries(c?.works),
                     calculation: c.calculation || 'mean',
                 })),
             }
+        },
+
+        inferCategoryRequireAllEntries(works) {
+            const normalized = this.normalizeWorks(works)
+            if (!normalized.length) return false
+            return normalized.some((workItem) => {
+                const work = this.teaching_works.find((entry) => entry.short_name === workItem.short_name)
+                return Boolean(work?.require_all_entries)
+            })
         },
 
         normalizeWorks(works) {
@@ -456,10 +483,11 @@ export default {
             this.data.categories.push({
                 name: this.new_category.name.trim(),
                 weight: parseInt(this.new_category.weight) || 0,
+                require_all_entries: Boolean(this.new_category.require_all_entries),
                 works: [],
                 calculation: 'mean',
             })
-            this.new_category = { name: '', weight: '' }
+            this.new_category = { name: '', weight: '', require_all_entries: false }
         },
 
         removeCategory(index) {
@@ -469,7 +497,7 @@ export default {
 
         startEditCategory(index) {
             const category = this.data.categories[index]
-            this.edit_category = { name: category.name, weight: category.weight }
+            this.edit_category = { name: category.name, weight: category.weight, require_all_entries: Boolean(category.require_all_entries) }
             this.edit_index = index
         },
 
@@ -477,16 +505,21 @@ export default {
             if (!this.edit_category.name || !this.edit_category.weight) return
             this.data.categories = this.data.categories.map((cat, i) =>
                 i === this.edit_index
-                    ? { ...cat, name: this.edit_category.name.trim(), weight: parseInt(this.edit_category.weight) || 0 }
+                    ? {
+                        ...cat,
+                        name: this.edit_category.name.trim(),
+                        weight: parseInt(this.edit_category.weight) || 0,
+                        require_all_entries: Boolean(this.edit_category.require_all_entries),
+                    }
                     : cat
             )
             this.edit_index = null
-            this.edit_category = { name: '', weight: '' }
+            this.edit_category = { name: '', weight: '', require_all_entries: false }
         },
 
         cancelEditCategory() {
             this.edit_index = null
-            this.edit_category = { name: '', weight: '' }
+            this.edit_category = { name: '', weight: '', require_all_entries: false }
         },
 
         isWorkAssigned(categoryIndex, shortName) {
@@ -534,6 +567,7 @@ export default {
             const cleanedCategories = this.data.categories.map((cat) => ({
                 ...cat,
                 works: this.getValidWorks(cat.works),
+                require_all_entries: Boolean(cat.require_all_entries),
             }))
 
             const grading = {

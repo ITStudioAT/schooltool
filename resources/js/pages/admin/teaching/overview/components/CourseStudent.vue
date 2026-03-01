@@ -113,8 +113,8 @@
                                                 <v-icon start size="12">mdi-lock</v-icon>
                                                 Aus Arbeit
                                             </v-chip>
-                                            <v-chip size="small" variant="tonal" :color="item.entry.grade ? 'success' : 'error'">
-                                                {{ item.entry.grade || 'offen' }}
+                                            <v-chip size="small" variant="tonal" :color="isNaGradeKey(entryDisplayGrade(item.entry)) ? 'error' : entryHasDisplayGrade(item.entry) ? 'success' : 'error'">
+                                                {{ entryDisplayGrade(item.entry) }}
                                             </v-chip>
                                             <v-spacer />
                                             <div class="entry-actions d-flex align-center ga-1">
@@ -192,8 +192,11 @@
                                             {{ cat.name }}
                                         </v-list-item-title>
                                         <v-chip size="x-small" variant="outlined">{{ cat.weight }}%</v-chip>
+                                        <v-chip v-if="cat.requireAllEntries" size="x-small" variant="tonal" color="primary">
+                                            Alle erforderlich
+                                        </v-chip>
                                         <v-spacer />
-                                        <div v-if="cat.value != null || cat.grade" class="text-caption text-medium-emphasis">
+                                        <div v-if="cat.value != null || cat.grade" class="text-caption" :class="cat.isNa ? 'text-error' : 'text-medium-emphasis'">
                                             Bewertung: {{ cat.value != null ? formatEvaluationValue(cat.value) : formatEvaluationValue(cat.grade) }}
                                         </div>
                                     </div>
@@ -213,19 +216,16 @@
                                             <v-chip v-if="row.type" size="x-small" variant="outlined">
                                                 {{ workTypeLabel(row.type) }}
                                             </v-chip>
-                                            <v-chip v-if="row.requireAllEntries" size="x-small" variant="tonal" color="info">
-                                                require_all_entries
-                                            </v-chip>
                                             <v-chip v-if="row.requireAllEntriesIncomplete" size="x-small" variant="tonal" color="warning">
                                                 NB
                                             </v-chip>
                                             <v-spacer />
                                             <v-chip v-if="row.sum != null" size="x-small" variant="tonal" color="primary">Σ {{ row.sum }}</v-chip>
-                                            <v-chip v-if="row.grade" size="x-small" variant="tonal" color="primary">{{ row.grade }}</v-chip>
+                                            <v-chip v-if="row.grade" size="x-small" variant="tonal" :color="isNaGradeKey(row.grade) ? 'error' : 'primary'">{{ row.grade }}</v-chip>
                                             <v-chip v-if="row.date" size="x-small" variant="tonal" color="primary">
                                                 {{ formatDate(row.date) }}
                                             </v-chip>
-                                            <v-chip v-if="row.value != null" size="x-small" variant="tonal" color="primary">
+                                            <v-chip v-if="row.value != null" size="x-small" variant="tonal" :color="isNaGradeKey(row.value) ? 'error' : 'primary'">
                                                 {{ row.value }}
                                             </v-chip>
                                         </div>
@@ -235,7 +235,7 @@
                                     <div class="d-flex align-center ga-2 w-100">
                                         <v-list-item-title class="text-subtitle-2">{{ semesterCount === 2 ? 'Berechnung Sem 1' : 'Berechnung' }}</v-list-item-title>
                                         <v-spacer />
-                                        <div class="text-subtitle-2" :class="semester1HasMissingCategory ? 'text-warning' : 'text-medium-emphasis'">
+                                        <div class="text-subtitle-2" :class="isNaGradeKey(semester1Total) ? 'text-error' : semester1HasMissingCategory ? 'text-warning' : 'text-medium-emphasis'">
                                             Bewertung: {{ formatEvaluationValue(semester1Total) }}
                                         </div>
                                     </div>
@@ -262,8 +262,11 @@
                                             {{ cat.name }}
                                         </v-list-item-title>
                                         <v-chip size="x-small" variant="outlined">{{ cat.weight }}%</v-chip>
+                                        <v-chip v-if="cat.requireAllEntries" size="x-small" variant="tonal" color="primary">
+                                            Alle erforderlich
+                                        </v-chip>
                                         <v-spacer />
-                                        <div v-if="cat.value != null || cat.grade" class="text-caption text-medium-emphasis">
+                                        <div v-if="cat.value != null || cat.grade" class="text-caption" :class="cat.isNa ? 'text-error' : 'text-medium-emphasis'">
                                             Bewertung: {{ cat.value != null ? formatEvaluationValue(cat.value) : formatEvaluationValue(cat.grade) }}
                                         </div>
                                         </div>
@@ -283,19 +286,16 @@
                                             <v-chip v-if="row.type" size="x-small" variant="outlined">
                                                 {{ workTypeLabel(row.type) }}
                                             </v-chip>
-                                            <v-chip v-if="row.requireAllEntries" size="x-small" variant="tonal" color="info">
-                                                require_all_entries
-                                            </v-chip>
                                             <v-chip v-if="row.requireAllEntriesIncomplete" size="x-small" variant="tonal" color="warning">
                                                 NB
                                             </v-chip>
                                             <v-spacer />
                                             <v-chip v-if="row.sum != null" size="x-small" variant="tonal" color="primary">Σ {{ row.sum }}</v-chip>
-                                            <v-chip v-if="row.grade" size="x-small" variant="tonal" color="primary">{{ row.grade }}</v-chip>
+                                            <v-chip v-if="row.grade" size="x-small" variant="tonal" :color="isNaGradeKey(row.grade) ? 'error' : 'primary'">{{ row.grade }}</v-chip>
                                             <v-chip v-if="row.date" size="x-small" variant="tonal" color="primary">
                                                 {{ formatDate(row.date) }}
                                             </v-chip>
-                                            <v-chip v-if="row.value != null" size="x-small" variant="tonal" color="primary">
+                                            <v-chip v-if="row.value != null" size="x-small" variant="tonal" :color="isNaGradeKey(row.value) ? 'error' : 'primary'">
                                                 {{ row.value }}
                                             </v-chip>
                                         </div>
@@ -305,7 +305,7 @@
                                     <div class="d-flex align-center ga-2 w-100">
                                         <v-list-item-title class="text-subtitle-2">Berechnung Sem 2</v-list-item-title>
                                         <v-spacer />
-                                        <div class="text-subtitle-2" :class="semester2HasMissingCategory ? 'text-warning' : 'text-medium-emphasis'">
+                                        <div class="text-subtitle-2" :class="isNaGradeKey(semester2Total) ? 'text-error' : semester2HasMissingCategory ? 'text-warning' : 'text-medium-emphasis'">
                                             Bewertung: {{ formatEvaluationValue(semester2Total) }}
                                         </div>
                                     </div>
@@ -320,12 +320,12 @@
                                             <span>Summe Semester 1+2</span>
                                         </div>
                                         <v-spacer />
-                                        <v-chip size="small" color="secondary" variant="flat">
+                                        <v-chip size="small" :color="isNaGradeKey(semesterWeightedGrade.value) ? 'error' : 'secondary'" variant="flat">
                                             Berechnung: {{ formatEvaluationValue(semesterWeightedGrade.value) }}
                                         </v-chip>
                                     </div>
-                                    <div v-if="semesterWeightedGrade.isNb" class="text-caption text-warning mt-2">
-                                        {{ semesterWeightedGrade.nbReason || 'NB: Pflichtarbeit mit require_all_entries ist nicht vollständig beurteilt.' }}
+                                    <div v-if="semesterWeightedGrade.isNb" class="text-caption mt-2" :class="isNaGradeKey(semesterWeightedGrade.value) ? 'text-error' : 'text-warning'">
+                                        {{ semesterWeightedGrade.nbReason || 'NB: Pflichtkategorie "Alle erforderlich" ist nicht vollständig beurteilt.' }}
                                     </div>
                                     <div v-else class="sum-formula mt-2">
                                         <div class="sum-formula-line">
@@ -1067,10 +1067,10 @@ export default {
             return this.totalFromCategoryGroups(this.semester2Groups)
         },
         semester1HasMissingCategory() {
-            return this.semester1Groups.some((cat) => !cat.rows || !cat.rows.length || cat.isNb)
+            return this.semester1Groups.some((cat) => !cat.rows || !cat.rows.length || cat.isNb || cat.isNa)
         },
         semester2HasMissingCategory() {
-            return this.semester2Groups.some((cat) => !cat.rows || !cat.rows.length || cat.isNb)
+            return this.semester2Groups.some((cat) => !cat.rows || !cat.rows.length || cat.isNb || cat.isNa)
         },
         showSemester1Auswertung() {
             if (this.semesterCount !== 2) return true
@@ -1130,6 +1130,29 @@ export default {
                 : this.categoryGroupTotalLine(sem2Groups, sem2CalculatedValue)
             const sem2Value = sem2CalculatedValue
 
+            if (this.isNaGradeKey(sem1Value) || this.isNaGradeKey(sem2Value)) {
+                const naGroups = [...sem1Groups.filter((g) => g.isNa), ...sem2Groups.filter((g) => g.isNa)]
+                const naLabels = [...new Set(naGroups.map((g) => g.name))]
+                return {
+                    isNb: true,
+                    value: 'NA',
+                    sem1Value,
+                    sem2Value,
+                    sem1CalculatedValue,
+                    sem2CalculatedValue,
+                    sem1CalculatedFormula,
+                    sem2CalculatedFormula,
+                    sem1Source,
+                    sem1Weight: w1,
+                    sem2Weight: w2,
+                    totalWeight,
+                    sem1SharePercent: Number(((w1 / totalWeight) * 100).toFixed(2)),
+                    sem2SharePercent: Number(((w2 / totalWeight) * 100).toFixed(2)),
+                    nbReason: naLabels.length
+                        ? `NA: Pflichtkategorie "Alle erforderlich" in ${naLabels.join(', ')} hat NA-Eintrag.`
+                        : 'NA: Pflichtkategorie "Alle erforderlich" hat NA-Eintrag.',
+                }
+            }
             if (this.isNbValue(sem1Value) || this.isNbValue(sem2Value)) {
                 return {
                     isNb: true,
@@ -1146,7 +1169,7 @@ export default {
                     totalWeight,
                     sem1SharePercent: Number(((w1 / totalWeight) * 100).toFixed(2)),
                     sem2SharePercent: Number(((w2 / totalWeight) * 100).toFixed(2)),
-                    nbReason: 'Mindestens eine Pflichtarbeit (require_all_entries) ist nicht vollständig beurteilt.',
+                    nbReason: 'Mindestens eine Pflichtkategorie "Alle erforderlich" ist nicht vollständig beurteilt.',
                 }
             }
 
@@ -1834,6 +1857,10 @@ export default {
             if (!found) return type
             return `${found.short_name} - ${found.name}`
         },
+        workConfigForType(type) {
+            if (!type) return null
+            return this.teachingWorks.find((w) => w.short_name === type) || null
+        },
         normalizeGradeKey(gradeKey) {
             return String(gradeKey || '').trim().toUpperCase()
         },
@@ -1847,18 +1874,52 @@ export default {
             if (value == null || value === '') return false
             return this.isNbGradeKey(value)
         },
-        isGradedEntry(entry) {
-            return String(entry?.grade || '').trim() !== ''
+        defaultGradeForWork(work) {
+            if (!work) return ''
+            const defaultGrade = String(work.default_grade || '').trim()
+            if (!defaultGrade) return ''
+            const exists = (work.grades || []).some((grade) => this.normalizeGradeKey(grade?.grade) === this.normalizeGradeKey(defaultGrade))
+            return exists ? defaultGrade : ''
+        },
+        effectiveGradeKeyForEntry(entry, workOverride = null) {
+            const effectiveFromApi = String(entry?.effective_grade || '').trim()
+            if (effectiveFromApi) return effectiveFromApi
+
+            const direct = String(entry?.grade || '').trim()
+            if (direct) return direct
+
+            const work = workOverride || this.workConfigForType(entry?.type)
+            return this.defaultGradeForWork(work)
+        },
+        entryHasDisplayGrade(entry) {
+            return this.effectiveGradeKeyForEntry(entry) !== ''
+        },
+        entryDisplayGrade(entry) {
+            return this.effectiveGradeKeyForEntry(entry) || 'offen'
+        },
+        isGradedEntry(entry, workOverride = null) {
+            return this.effectiveGradeKeyForEntry(entry, workOverride) !== ''
+        },
+        isTypeInRequireAllCategory(type) {
+            if (!type) return false
+            const categories = this.selectedSchema?.grading?.categories || []
+            return categories.some((category) => {
+                if (!category?.require_all_entries) return false
+                const works = Array.isArray(category.works) ? category.works : []
+                return works.some((workItem) => {
+                    const shortName = typeof workItem === 'string' ? workItem : workItem?.short_name
+                    return String(shortName || '') === String(type)
+                })
+            })
         },
         hasSingleNaSemesterGrade(entries) {
             const gradedEntries = (entries || []).filter((entry) => this.isGradedEntry(entry))
             if (gradedEntries.length !== 1) return false
 
             const onlyEntry = gradedEntries[0]
-            if (!this.isNaGradeKey(onlyEntry?.grade)) return false
+            if (!this.isNaGradeKey(this.effectiveGradeKeyForEntry(onlyEntry))) return false
 
-            const work = this.teachingWorks.find((w) => w.short_name === onlyEntry?.type)
-            if (!work || !work.require_all_entries) return false
+            if (!this.isTypeInRequireAllCategory(onlyEntry?.type)) return false
 
             const sameTypeEntries = (entries || []).filter((entry) => entry?.type === onlyEntry?.type)
             const hasUngraded = sameTypeEntries.some((entry) => !this.isGradedEntry(entry))
@@ -2003,7 +2064,10 @@ export default {
                 const workAverages = []
                 const calculationParts = []
                 let categoryPointsGrade = null
-                let categoryIsNb = false
+                const categoryRequireAllEntries = Boolean(cat?.require_all_entries)
+                let categoryHasAnyEntries = false
+                let categoryHasUngradedEntries = false
+                let categoryHasNaEntry = false
                 const missingRequiredTypes = []
 
                 works.forEach((workItem) => {
@@ -2012,11 +2076,19 @@ export default {
                     if (!work) return
                     usedTypes.add(type)
                     const workEntries = entriesByType.get(type) || []
-                    const requireAllEntries = Boolean(work.require_all_entries)
+                    if (workEntries.length > 0) {
+                        categoryHasAnyEntries = true
+                    }
                     const hasUngradedEntries = workEntries.some((entry) => !this.isGradedEntry(entry))
+                    if (hasUngradedEntries) {
+                        categoryHasUngradedEntries = true
+                    }
+                    if (categoryRequireAllEntries && workEntries.some((entry) => this.isNaGradeKey(this.effectiveGradeKeyForEntry(entry, work)))) {
+                        categoryHasNaEntry = true
+                    }
+                    const requireAllEntries = categoryRequireAllEntries
                     const requireAllEntriesIncomplete = requireAllEntries && workEntries.length > 0 && hasUngradedEntries
-                    if (requireAllEntriesIncomplete) {
-                        categoryIsNb = true
+                    if (requireAllEntriesIncomplete && !missingRequiredTypes.includes(type)) {
                         missingRequiredTypes.push(type)
                     }
 
@@ -2026,7 +2098,7 @@ export default {
 
                     if (work.calculation === 'points') {
                         const values = workEntries
-                            .map((entry) => this.gradeValueForWork(work, entry.grade))
+                            .map((entry) => this.gradeValueForWork(work, this.effectiveGradeKeyForEntry(entry, work)))
                             .filter((val) => val !== null)
                         const sum = values.reduce((s, v) => s + v, 0)
                         const rounded = Number.isInteger(sum) ? sum : Number(sum.toFixed(2))
@@ -2047,7 +2119,7 @@ export default {
                             const parsed = parseFloat(String(grade).replace(',', '.'))
                             numericGrade = Number.isNaN(parsed) ? null : parsed
                         }
-                        if (numericGrade !== null && !requireAllEntriesIncomplete) {
+                        if (numericGrade !== null) {
                             workAverages.push({ value: numericGrade, weight })
                         }
                         calculationParts.push({
@@ -2061,14 +2133,12 @@ export default {
                     }
 
                     const values = workEntries
-                        .map((entry) => this.gradeValueForWork(work, entry.grade))
+                        .map((entry) => this.gradeValueForWork(work, this.effectiveGradeKeyForEntry(entry, work)))
                         .filter((val) => val !== null)
                     let avg = null
                     if (values.length) {
                         avg = values.reduce((s, v) => s + v, 0) / values.length
-                        if (!requireAllEntriesIncomplete) {
-                            workAverages.push({ value: avg, weight })
-                        }
+                        workAverages.push({ value: avg, weight })
                     }
                     calculationParts.push({
                         type,
@@ -2079,11 +2149,11 @@ export default {
                     })
 
                     workEntries.forEach((entry) => {
-                        const value = this.gradeValueForWork(work, entry.grade)
+                        const value = this.gradeValueForWork(work, this.effectiveGradeKeyForEntry(entry, work))
                         rows.push({
                             key: `entry-${entry.id}`,
                             type,
-                            value: value !== null ? value : entry.grade,
+                            value: value !== null ? value : this.effectiveGradeKeyForEntry(entry, work),
                             date: entry.date || null,
                             requireAllEntries,
                             requireAllEntriesIncomplete,
@@ -2091,9 +2161,13 @@ export default {
                     })
                 })
 
+                const categoryIsNb = categoryRequireAllEntries && categoryHasAnyEntries && categoryHasUngradedEntries
+                const categoryIsNa = categoryRequireAllEntries && categoryHasNaEntry
                 let categoryValue = null
                 let categoryGrade = null
-                if (categoryIsNb) {
+                if (categoryIsNa) {
+                    categoryGrade = 'NA'
+                } else if (categoryIsNb) {
                     categoryGrade = 'NB'
                 } else if (workAverages.length) {
                     const totalWeight = workAverages.reduce((s, w) => s + w.weight, 0) || 1
@@ -2112,29 +2186,22 @@ export default {
                     grade: categoryGrade,
                     calculationParts,
                     isNb: categoryIsNb,
+                    isNa: categoryIsNa,
+                    requireAllEntries: categoryRequireAllEntries,
                     missingRequiredTypes,
                 }
             })
 
             const undefinedRows = []
-            let undefinedIsNb = false
-            const undefinedMissingRequiredTypes = []
             ;(entries || []).forEach((entry) => {
                 if (!entry.type || usedTypes.has(entry.type)) return
                 const work = worksByType.get(entry.type)
                 const typeEntries = entriesByType.get(entry.type) || []
-                const requireAllEntries = Boolean(work?.require_all_entries)
-                const hasUngradedEntries = typeEntries.some((e) => !this.isGradedEntry(e))
-                const requireAllEntriesIncomplete = requireAllEntries && typeEntries.length > 0 && hasUngradedEntries
-                if (requireAllEntriesIncomplete) {
-                    undefinedIsNb = true
-                    if (!undefinedMissingRequiredTypes.includes(entry.type)) {
-                        undefinedMissingRequiredTypes.push(entry.type)
-                    }
-                }
+                const requireAllEntries = false
+                const requireAllEntriesIncomplete = false
                 if (work && work.calculation === 'points') {
                     const values = typeEntries
-                        .map((e) => this.gradeValueForWork(work, e.grade))
+                        .map((e) => this.gradeValueForWork(work, this.effectiveGradeKeyForEntry(e, work)))
                         .filter((val) => val !== null)
                     const sum = values.length ? values.reduce((s, v) => s + v, 0) : 0
                     const rounded = Number.isInteger(sum) ? sum : Number(sum.toFixed(2))
@@ -2151,11 +2218,12 @@ export default {
                     return
                 }
 
-                const value = work ? this.gradeValueForWork(work, entry.grade) : entry.grade
+                const effectiveGrade = work ? this.effectiveGradeKeyForEntry(entry, work) : this.effectiveGradeKeyForEntry(entry)
+                const value = work ? this.gradeValueForWork(work, effectiveGrade) : effectiveGrade
                 undefinedRows.push({
                     key: `entry-${entry.id}`,
                     type: entry.type,
-                    value: value !== null ? value : entry.grade,
+                    value: value !== null ? value : effectiveGrade,
                     date: entry.date || null,
                     requireAllEntries,
                     requireAllEntriesIncomplete,
@@ -2166,9 +2234,10 @@ export default {
                 grouped.push({
                     name: 'Undefiniert',
                     rows: undefinedRows,
-                    grade: undefinedIsNb ? 'NB' : null,
-                    isNb: undefinedIsNb,
-                    missingRequiredTypes: undefinedMissingRequiredTypes,
+                    grade: null,
+                    isNb: false,
+                    requireAllEntries: false,
+                    missingRequiredTypes: [],
                 })
             }
 
@@ -2176,6 +2245,7 @@ export default {
         },
         totalFromCategoryGroups(groups) {
             if (!groups?.length) return null
+            if (groups.some((cat) => cat?.isNa)) return 'NA'
             if (groups.some((cat) => cat?.isNb)) return 'NB'
             const weightedCats = groups
                 .map((cat) => {
@@ -2194,6 +2264,15 @@ export default {
         },
         categoryGroupTotalLine(groups, totalValue) {
             if (totalValue == null || !groups?.length) return ''
+            if (this.isNaGradeKey(totalValue) || groups.some((group) => group?.isNa)) {
+                const labels = groups
+                    .filter((group) => group?.isNa)
+                    .map((group) => group.name)
+                if (!labels.length) {
+                    return 'Berechnung: NA'
+                }
+                return `Berechnung: NA (Pflichtkategorie "Alle erforderlich" in ${labels.join(', ')} hat NA-Eintrag)`
+            }
             if (this.isNbValue(totalValue) || groups.some((group) => group?.isNb)) {
                 const labels = groups
                     .filter((group) => group?.isNb)
@@ -2201,7 +2280,7 @@ export default {
                 if (!labels.length) {
                     return 'Berechnung: NB'
                 }
-                return `Berechnung: NB (Pflichtarbeit mit require_all_entries in ${labels.join(', ')} nicht vollständig beurteilt)`
+                return `Berechnung: NB (Pflichtkategorie "Alle erforderlich" in ${labels.join(', ')} nicht vollständig beurteilt)`
             }
 
             const weightedCats = groups
@@ -2227,7 +2306,7 @@ export default {
             return `Berechnung: ${terms.join(' + ')} = ${this.formatTwoDecimals(totalValue)}`
         },
         categoryCalculationLine(category) {
-            if (category?.isNb) return ''
+            if (category?.isNb || category?.isNa) return ''
             const parts = (category?.calculationParts || []).filter((part) => part.value != null && part.factorPercent > 0)
             if (!parts.length) return ''
 
@@ -2241,7 +2320,7 @@ export default {
             return `Berechnung: (${terms.join(' + ')}) / ${this.formatTwoDecimals(denominator)} = ${result}`
         },
         categoryMissingLine(category) {
-            if (category?.isNb) return ''
+            if (category?.isNb || category?.isNa) return ''
             const missing = (category?.calculationParts || []).filter((part) => (part.value == null || Number.isNaN(part.value)) && part.factorPercent > 0)
             if (!missing.length) return ''
             const list = missing.map((part) => `${part.type} (${this.formatTwoDecimals(part.factorPercent)}%)`).join(', ')
