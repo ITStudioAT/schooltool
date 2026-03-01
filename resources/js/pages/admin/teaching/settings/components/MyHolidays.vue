@@ -1,5 +1,5 @@
 <template>
-    <ItsGridBox color="primary" title="Eigene freie Tage" icon="mdi-account-clock" class="w-100">
+    <ItsGridBox variant="overview" color="primary" title="Eigene freie Tage" icon="mdi-account-clock" class="w-100">
         <v-form ref="form" v-model="is_valid" @submit.prevent="createHolidays">
             <v-date-input v-model="data.date_from" label="Datum von" class="flex-grow-1" />
             <v-date-input v-model="data.date_until" label="Datum bis (optional)" class="mt-3 flex-grow-1" />

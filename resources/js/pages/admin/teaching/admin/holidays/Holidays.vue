@@ -1,6 +1,6 @@
 <template>
-    <v-col cols="12" md="6" xl="4">
-        <ItsGridBox color="primary" title="Ferien" icon="mdi-beach" class="w-100">
+    <v-col cols="12" lg="4" xl="4" class="teaching-admin-holidays-col">
+        <ItsGridBox variant="overview" color="primary" title="Ferien" subtitle="Freie Tage erfassen und bereinigen" icon="mdi-beach" class="w-100">
             <div class="d-flex align-center justify-space-between ga-2">
                 <div class="text-subtitle-2">Freie Tage erstellen</div>
                 <v-btn
@@ -12,7 +12,7 @@
             </div>
 
             <v-expand-transition>
-                <div v-if="show_create_form" class="mt-3">
+                <div v-if="show_create_form" class="mt-3 holidays-create-form-wrap">
                     <v-form ref="form" v-model="is_valid" @submit.prevent="createHolidays">
                         <v-date-input v-model="data.date_from" label="Datum von" class="flex-grow-1" />
                         <v-date-input v-model="data.date_until" label="Datum bis (optional)" class="mt-3 flex-grow-1" />
@@ -49,7 +49,7 @@
                 </v-btn>
                 </div>
                 <v-list density="compact" class="holidays-list">
-                    <v-list-item v-for="holiday in holidays" :key="holiday.id" class="px-0">
+                    <v-list-item v-for="holiday in holidays" :key="holiday.id" class="px-0 holidays-list-item">
                         <div class="d-flex align-center justify-start ga-2 w-100 holiday-row">
                             <v-checkbox-btn
                                 v-model="selected_holiday_ids"
@@ -220,8 +220,23 @@ export default {
     text-align: left;
 }
 
+.holidays-create-form-wrap {
+    border-radius: 12px;
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    background: rgba(255, 255, 255, 0.72);
+    padding: 10px;
+}
+
 .free-days-overview {
     text-align: left;
+}
+
+.holidays-list-item {
+    border-radius: 10px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    background: rgba(255, 255, 255, 0.78);
+    margin-bottom: 6px;
+    padding: 0 6px;
 }
 
 .holiday-row {

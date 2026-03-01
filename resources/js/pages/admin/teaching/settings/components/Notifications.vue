@@ -1,6 +1,6 @@
 <template>
     <!-- NOTIFICATIONS OVERVIEW -->
-    <ItsGridBox v-if="action !== 'teaching_notifications_new_or_edit'" color="primary" title="Verständigungen" icon="mdi-bell" class="w-100" :disabled="action != ''">
+    <ItsGridBox variant="overview" v-if="action !== 'teaching_notifications_new_or_edit'" color="primary" title="Verständigungen" icon="mdi-bell" class="w-100" :disabled="action != ''">
         <!-- HEADER ACTIONS -->
         <div class="d-flex flex-row align-center justify-end mt-2 ga-2">
             <v-btn v-if="!is_editing" icon="mdi-pencil" size="x-small" color="primary" variant="flat" @click="is_editing = true" />
@@ -34,7 +34,7 @@
     </ItsGridBox>
 
     <!-- EDIT/NEW ENTRY FORM -->
-    <ItsGridBox color="primary" :title="edit_index !== null ? 'Eintrag ändern' : 'Neuer Eintrag'" icon="mdi-bell" class="w-100 mt-4" v-if="action == 'teaching_notifications_new_or_edit'">
+    <ItsGridBox variant="overview" color="primary" :title="edit_index !== null ? 'Eintrag ändern' : 'Neuer Eintrag'" icon="mdi-bell" class="w-100 mt-4" v-if="action == 'teaching_notifications_new_or_edit'">
         <div class="d-flex flex-row align-center justify-end mt-2 ga-2">
             <v-btn icon="mdi-check" size="x-small" color="success" variant="flat" :disabled="!is_valid" @click="save" />
             <v-btn icon="mdi-close" size="x-small" color="warning" variant="flat" @click="abort" />

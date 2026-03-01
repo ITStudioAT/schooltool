@@ -1,5 +1,6 @@
 <template>
     <ItsGridBox
+        variant="overview"
         color="primary"
         icon="mdi-clipboard-text"
         class="w-100"

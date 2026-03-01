@@ -1,5 +1,5 @@
 <template>
-    <ItsGridBox color="primary" title="Meine Fächer" icon="mdi-invoice-list" class="w-100" :disabled="action != ''">
+    <ItsGridBox variant="overview" color="primary" title="Meine Fächer" icon="mdi-invoice-list" class="w-100" :disabled="action != ''">
         <template #header-actions>
             <v-btn v-if="action !== 'teaching_course_new_or_edit'" icon="mdi-plus" size="small" variant="tonal" title="Fach anlegen" @click="newCourse" />
             <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" @click="show_my_courses = false" />

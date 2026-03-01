@@ -1,5 +1,5 @@
 <template>
-    <ItsGridBox color="primary" :title="'Schüler:innen – ' + selected_course.title + ' (' + selectedCourseClasses + ')'" icon="mdi-invoice-list" class="w-100" v-if="selected_course" :disabled="action != ''">
+    <ItsGridBox variant="overview" color="primary" :title="'Schüler:innen – ' + selected_course.title + ' (' + selectedCourseClasses + ')'" icon="mdi-invoice-list" class="w-100" v-if="selected_course" :disabled="action != ''">
         <template #header-actions>
             <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" @click="show_students = false" />
         </template>

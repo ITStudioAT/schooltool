@@ -1,5 +1,5 @@
 <template>
-    <ItsGridBox color="primary" title="Benotung" icon="mdi-numeric" class="w-100" :disabled="action != ''">
+    <ItsGridBox variant="overview" color="primary" title="Benotung" icon="mdi-numeric" class="w-100" :disabled="action != ''">
         <!-- HEADER ACTIONS -->
         <div class="d-flex flex-row align-center justify-end mt-2 ga-2">
             <v-btn v-if="!is_editing" icon="mdi-pencil" size="x-small" color="primary" variant="flat" @click="is_editing = true" />

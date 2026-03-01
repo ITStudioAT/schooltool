@@ -1,5 +1,6 @@
 <template>
     <ItsGridBox
+        variant="overview"
         color="primary"
         icon="mdi-calendar"
         class="w-100"

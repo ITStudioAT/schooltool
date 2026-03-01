@@ -1,5 +1,5 @@
 <template>
-    <ItsGridBox color="primary" title="Infos" icon="mdi-information-outline" class="w-100">
+    <ItsGridBox variant="overview" color="primary" title="Infos" icon="mdi-information-outline" class="w-100">
         <template #header-actions>
             <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" @click="show_my_infos = false" />
         </template>

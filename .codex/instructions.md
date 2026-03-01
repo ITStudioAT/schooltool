@@ -65,7 +65,7 @@ When reporting findings, include:
 
 ## UI design consistency (Vuetify)
 
-When creating new pages in `resources/js/pages/admin`, ALWAYS base the layout and styling on the reference page:
+When creating new pages or redesigning existing pages in `resources/js/pages/admin`, ALWAYS base the layout and styling on the reference page:
 
 - Reference page for layout, background card-systling: resources\js\pages\admin\tutoring\Tutoring.vue
 - Reference page for the header: resources\js\pages\admin\groups\Groups.vue

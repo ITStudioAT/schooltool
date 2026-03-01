@@ -1,5 +1,6 @@
 <template>
     <ItsGridBox
+        variant="overview"
         color="primary"
         :title="selected_course.title + ' (' + selectedCourseClasses + ')'"
         icon="mdi-information-box"

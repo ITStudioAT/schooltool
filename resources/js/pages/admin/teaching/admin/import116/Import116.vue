@@ -1,9 +1,9 @@
 <template>
-    <v-col cols="12" md="6" xl="4">
-        <ItsGridBox color="primary" title="Import Sokrates 116" icon="mdi-import" class="w-100">
+    <v-col cols="12" md="10" lg="7" xl="6" class="teaching-admin-import-col">
+        <ItsGridBox variant="overview" color="primary" title="Import Sokrates 116" subtitle="Schüler- und Elterndaten synchronisieren" icon="mdi-import" class="w-100">
             <div class="d-flex flex-row align-start">
                 <v-card tile flat color="transparent" class="w-100">
-                    <v-alert type="info">
+                    <v-alert type="info" class="import116-info-alert">
                         <div class="mb-4">Hier können die Schüler- und Elterndaten aus Sokrates-Bund übernommen werden.</div>
                         <div class="text-decoration-underline">Folgende Datei ist zu importieren:</div>
                         <div>Sokrates Bund ➜ Auswertungen ➜ Dynamische Suche ➜ Name der Abfrage: 116 ➜</div>
@@ -27,7 +27,7 @@
                             @error="uploadError" />
                     </div>
 
-                    <v-alert v-if="is_importing" type="info" class="mt-2">
+                    <v-alert v-if="is_importing" type="info" class="mt-2 import116-progress-alert">
                         <div class="d-flex flex-row align-center ga-2">
                             <v-progress-circular indeterminate size="26" width="3" color="primary" />
                             <div>Datei hochgeladen. Die Verarbeitung läuft – Sie erhalten eine Meldung, sobald der Import abgeschlossen ist.</div>
@@ -73,11 +73,12 @@
                         Noch keine Importe protokolliert.
                     </div>
 
-                    <div class="mt-3 d-flex flex-column ga-2" v-if="runs.length > 0">
+                    <div class="mt-3 d-flex flex-column ga-2 import116-runs-list" v-if="runs.length > 0">
                         <v-card
                             v-for="run in runs"
                             :key="run.id"
                             variant="outlined"
+                            class="import116-run-card"
                             :class="{ 'import116-selected-card': isSelectedRestoreTarget(run) }"
                             @click="selectRestoreTarget(run)">
                             <v-card-text class="pa-3">
@@ -430,8 +431,44 @@ export default {
 }
 </script>
 <style scoped>
+.import116-info-alert :deep(.v-alert__content) {
+    line-height: 1.4;
+}
+
+.teaching-admin-import-col {
+    max-width: 980px;
+}
+
+.import116-progress-alert {
+    border: 1px solid rgba(37, 99, 235, 0.2);
+}
+
+.import116-runs-list {
+    max-height: 62vh;
+    overflow: auto;
+    padding-right: 2px;
+}
+
+.import116-run-card {
+    border-color: rgba(15, 23, 42, 0.12) !important;
+    background: rgba(255, 255, 255, 0.84);
+    transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.import116-run-card:hover {
+    border-color: rgba(59, 130, 246, 0.3) !important;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.09);
+    transform: translateY(-1px);
+}
+
 .import116-selected-card {
     background: #fff3e0;
     border-color: #ef6c00 !important;
+}
+
+@media (max-width: 1903px) {
+    .teaching-admin-import-col {
+        max-width: none;
+    }
 }
 </style>

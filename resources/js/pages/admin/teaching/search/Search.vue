@@ -1,112 +1,149 @@
 <template>
-    <!-- SEARCH -->
-    <v-col cols="12" md="6" xl="4">
-        <ItsGridBox color="primary" title="Suche" icon="mdi-magnify" class="w-100">
-            <v-card tile flat color="transparent" class="w-100">
-                <v-alert type="info" class="mb-2">Die Suche bezieht sich auf die zuletzt importierten Daten aus Sokrates Bund.</v-alert>
-                <v-form ref="form" v-model="is_valid" @submit.prevent="search()">
-                    <v-text-field ref="search_string" autofocus clearable density="compact" flat rounded="0" label="Suchbegriff" v-model="search_string" @click:clear="search()" />
+    <v-col cols="12">
+        <section class="teaching-search-page">
+            <section class="teaching-search-toolbar">
+                <v-chip size="small" color="primary" variant="flat" prepend-icon="mdi-account-search-outline">
+                    Personen & Klassen
+                </v-chip>
+                <v-chip size="small" color="secondary" variant="tonal" prepend-icon="mdi-format-list-bulleted">
+                    {{ resultSummary }}
+                </v-chip>
+                <v-chip size="small" color="secondary" variant="tonal" prepend-icon="mdi-filter-variant">
+                    {{ searchMetaLabel }}
+                </v-chip>
+            </section>
 
-                    <v-btn block flat rounded="0" color="primary" type="submit" class="mt-2">Suchen</v-btn>
-                </v-form>
-            </v-card>
-            <v-card tile flat color="transparent" class="w-100">
-                <!-- RECORDS -->
-                <v-list dense variant="elevated" select-strategy="leaf" v-model:selected="selected_users" color="success-lighten-2" class="search-list">
-                    <v-list-item dense v-for="(item, index) in import116" :key="item.id" :value="item.id" :class="{ 'even-row': index % 2 === 1 }">
-                        <template v-slot:title>
-                            <!-- Schüler:in -->
-                            <div class="w-100">
-                                <div class="text-body-1 d-flex flex-row align-center justify-space-between w-100 name-email-row">
-                                    <div class="d-flex flex-row align-center ga-2 name-email-left">
-                                        <div class="d-flex flex-row align-center ga-2">
-                                            <div class="font-weight-medium student-name">
-                                                {{ item.last_name + ' ' + item.first_name + ' (' + item.class + ')' }}
+            <section class="teaching-search-query-shell">
+                <v-row class="w-100 ma-0" dense>
+                    <v-col cols="12" md="10" lg="7" xl="6" class="teaching-search-panel-col">
+                        <ItsGridBox
+                            variant="overview"
+                            color="primary"
+                            title="Personen & Klassen"
+                            subtitle="Sokrates 116 durchsuchen"
+                            icon="mdi-magnify"
+                            class="w-100">
+                            <v-alert type="info" variant="tonal" class="mb-3">
+                                Die Suche bezieht sich auf die zuletzt importierten Daten aus Sokrates Bund.
+                            </v-alert>
+
+                            <v-form ref="form" v-model="is_valid" @submit.prevent="search()">
+                                <div class="teaching-search-form-row">
+                                    <v-text-field
+                                        ref="search_string"
+                                        v-model="search_string"
+                                        autofocus
+                                        clearable
+                                        density="compact"
+                                        hide-details
+                                        label="Suchbegriff"
+                                        class="teaching-search-input"
+                                        @click:clear="clearSearch" />
+                                    <v-btn color="primary" variant="flat" type="submit" prepend-icon="mdi-magnify">
+                                        Suchen
+                                    </v-btn>
+                                </div>
+                            </v-form>
+                        </ItsGridBox>
+                    </v-col>
+                </v-row>
+            </section>
+
+            <section class="teaching-search-results-shell">
+                <v-row class="w-100 ma-0" dense>
+                    <v-col cols="12" md="9" lg="6" xl="5" class="teaching-search-panel-col">
+                        <ItsGridBox
+                            variant="overview"
+                            color="primary"
+                            title="Trefferliste"
+                            :subtitle="resultSummary"
+                            icon="mdi-format-list-bulleted-square"
+                            class="w-100">
+                            <v-alert v-if="!import116.length" type="info" variant="tonal" class="mb-2">
+                                Keine Treffer gefunden. Verwenden Sie einen anderen Suchbegriff.
+                            </v-alert>
+
+                            <v-list
+                                v-else
+                                density="comfortable"
+                                variant="text"
+                                select-strategy="leaf"
+                                v-model:selected="selected_import116"
+                                class="search-list">
+                                <v-list-item
+                                    v-for="(item, index) in import116"
+                                    :key="item.id"
+                                    :value="item.id"
+                                    class="px-0">
+                                    <div class="search-entry-card" :class="{ 'search-entry-card--even': index % 2 === 1 }">
+                                        <div class="entry-main-line">
+                                            <div class="entry-person">
+                                                <div class="entry-name">
+                                                    {{ item.last_name + ' ' + item.first_name }}
+                                                </div>
+                                                <v-chip size="x-small" color="primary" variant="tonal">
+                                                    {{ item.class || 'ohne Klasse' }}
+                                                </v-chip>
+                                                <v-icon
+                                                    size="18"
+                                                    :color="item.sex === 'm' ? 'blue' : item.sex === 'w' ? 'red' : 'amber'"
+                                                    :icon="item.sex === 'm' ? 'mdi-gender-male' : item.sex === 'w' ? 'mdi-gender-female' : 'mdi-gender-male-female'" />
                                             </div>
-                                            <v-icon
-                                                size="20"
-                                                class="mr-2"
-                                                :color="item.sex == 'm' ? 'blue' : item.sex == 'w' ? 'red' : 'yellow'"
-                                                :icon="item.sex == 'm' ? 'mdi-gender-male' : item.sex == 'w' ? 'mdi-gender-female' : 'mdi-gender-male-female'" />
+                                            <div v-if="item.email" class="entry-email">
+                                                <v-icon icon="mdi-email-outline" size="x-small" />
+                                                <span>{{ item.email }}</span>
+                                            </div>
+                                        </div>
+
+                                        <div class="entry-meta-row">
+                                            <v-chip v-if="item.birth_date" size="x-small" color="secondary" variant="outlined" prepend-icon="mdi-cake">
+                                                {{ item.birth_date }}<span v-if="item.age"> ({{ item.age }})</span>
+                                            </v-chip>
+                                            <v-chip v-if="item.phone_1" size="x-small" color="secondary" variant="outlined" prepend-icon="mdi-phone">
+                                                {{ item.phone_1 }}
+                                            </v-chip>
+                                            <v-chip v-if="item.phone_2" size="x-small" color="secondary" variant="outlined" prepend-icon="mdi-phone">
+                                                {{ item.phone_2 }}
+                                            </v-chip>
+                                        </div>
+
+                                        <div v-if="item.mother_name || item.mother_email || item.mother_phone_1 || item.mother_phone_2" class="entry-parent entry-parent--mother">
+                                            <div class="entry-parent-line">
+                                                <div class="entry-parent-name">{{ item.mother_name || 'Erziehungsberechtigte 1' }}</div>
+                                                <div v-if="item.mother_email" class="entry-parent-mail">{{ item.mother_email }}</div>
+                                            </div>
+                                            <div class="entry-parent-phones">
+                                                <span v-if="item.mother_phone_1">{{ item.mother_phone_1 }}</span>
+                                                <span v-if="item.mother_phone_2">{{ item.mother_phone_2 }}</span>
+                                            </div>
+                                        </div>
+
+                                        <div v-if="item.father_name || item.father_email || item.father_phone_1 || item.father_phone_2" class="entry-parent entry-parent--father">
+                                            <div class="entry-parent-line">
+                                                <div class="entry-parent-name">{{ item.father_name || 'Erziehungsberechtigte 2' }}</div>
+                                                <div v-if="item.father_email" class="entry-parent-mail">{{ item.father_email }}</div>
+                                            </div>
+                                            <div class="entry-parent-phones">
+                                                <span v-if="item.father_phone_1">{{ item.father_phone_1 }}</span>
+                                                <span v-if="item.father_phone_2">{{ item.father_phone_2 }}</span>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div class="text-rigtht text-body-2 name-email-right">{{ item.email }}</div>
-                                </div>
-                            </div>
-                            <!-- Zusatzinfos Schüler:in -->
-                            <div class="text-body-1 d-flex flex-row align-center ga-2 w-100">
-                                <div class="text-body-1 d-flex flex-row align-center ga-2" v-if="item.birth_date">
-                                    <v-icon icon="mdi-cake" size="x-small" />
-                                    <div class="text-body-2">{{ item.birth_date + ' (' + item.age + ')' }}</div>
-                                </div>
-                                <div class="text-body-1 d-flex flex-row align-center ga-2" v-if="item.phone_1">
-                                    <v-icon icon="mdi-phone" size="x-small" />
-                                    <div class="text-body-2">{{ item.phone_1 }}</div>
-                                </div>
-                                <div class="text-body-1 d-flex flex-row align-center ga-2" v-if="item.phone_2">
-                                    <v-icon icon="mdi-phone" size="x-small" />
-                                    <div class="text-body-2">{{ item.phone_2 }}</div>
-                                </div>
-                            </div>
+                                </v-list-item>
+                            </v-list>
 
-                            <!-- Eltern 1 -->
-                            <div class="w-100 text-pink-darken-3">
-                                <div class="text-body-1 d-flex flex-row align-center justify-space-between w-100 name-email-row">
-                                    <div class="d-flex flex-row align-center ga-2 name-email-left">
-                                        <div class="d-flex flex-row align-center ga-2">
-                                            {{ item.mother_name }}
-                                        </div>
-                                    </div>
-                                    <div class="text-rigtht text-body-2 name-email-right">{{ item.mother_email }}</div>
-                                </div>
+                            <div class="mt-3">
+                                <Pagination20 :meta="meta" :store="teachingStore" index_method="search116" selected_field="selected_import116" />
                             </div>
-                            <!-- Zusatzinfos Altern 1 -->
-                            <div class="text-body-1 d-flex flex-row align-center ga-2 w-100 text-pink-darken-3">
-                                <div class="text-body-1 d-flex flex-row align-center ga-2" v-if="item.mother_phone_1">
-                                    <v-icon icon="mdi-phone" size="x-small" />
-                                    <div class="text-body-2">{{ item.mother_phone_1 }}</div>
-                                </div>
-                                <div class="text-body-1 d-flex flex-row align-center ga-2" v-if="item.mother_phone_2">
-                                    <v-icon icon="mdi-phone" size="x-small" />
-                                    <div class="text-body-2">{{ item.mother_phone_2 }}</div>
-                                </div>
-                            </div>
-
-                            <!-- Eltern 2 -->
-                            <div class="w-100 text-indigo-darken-3">
-                                <div class="text-body-1 d-flex flex-row align-center justify-space-between w-100 name-email-row">
-                                    <div class="d-flex flex-row align-center ga-2 name-email-left">
-                                        <div class="d-flex flex-row align-center ga-2">
-                                            {{ item.father_name }}
-                                        </div>
-                                    </div>
-                                    <div class="text-rigtht text-body-2 name-email-right">{{ item.father_email }}</div>
-                                </div>
-                            </div>
-                            <!-- Zusatzinfos Altern 2 -->
-                            <div class="text-body-1 d-flex flex-row align-center ga-2 w-100 text-indigo-darken-3">
-                                <div class="text-body-1 d-flex flex-row align-center ga-2" v-if="item.father_phone_1">
-                                    <v-icon icon="mdi-phone" size="x-small" />
-                                    <div class="text-body-2">{{ item.father_phone_1 }}</div>
-                                </div>
-                                <div class="text-body-1 d-flex flex-row align-center ga-2" v-if="item.father_phone_2">
-                                    <v-icon icon="mdi-phone" size="x-small" />
-                                    <div class="text-body-2">{{ item.father_phone_2 }}</div>
-                                </div>
-                            </div>
-                        </template>
-                    </v-list-item>
-                </v-list>
-
-                <!-- PAGINATION-->
-                <Pagination20 :meta="meta" :store="teachingStore" index_method="search116" selected_field="selected_import116" />
-            </v-card>
-        </ItsGridBox>
+                        </ItsGridBox>
+                    </v-col>
+                </v-row>
+            </section>
+        </section>
     </v-col>
 </template>
 
 <script>
-import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
@@ -114,10 +151,6 @@ import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import Pagination20 from '@/pages/components/Pagination20.vue'
 
 export default {
-    setup() {
-        return useValidationRulesSetup()
-    },
-
     components: { ItsGridBox, Pagination20 },
 
     async beforeMount() {
@@ -126,11 +159,10 @@ export default {
         this.teachingStore.search116()
     },
 
-    unmounted() {},
-
     data() {
         return {
             adminStore: null,
+            teachingStore: null,
             is_valid: false,
         }
     },
@@ -138,49 +170,190 @@ export default {
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'config']),
         ...mapWritableState(useTeachingStore, ['import116', 'search_string', 'selected_import116', 'meta']),
+        resultSummary() {
+            const count = Array.isArray(this.import116) ? this.import116.length : 0
+            if (count === 0) {
+                return 'Keine Treffer'
+            }
+            if (count === 1) {
+                return '1 Treffer'
+            }
+            return `${count} Treffer`
+        },
+        searchMetaLabel() {
+            const query = String(this.search_string || '').trim()
+            if (!query) {
+                return 'Ohne Filter'
+            }
+            return `Filter: "${query}"`
+        },
     },
-
-    watch: {},
 
     methods: {
         search() {
+            this.selected_import116 = []
             this.teachingStore.search116()
+        },
+        clearSearch() {
+            this.search_string = ''
+            this.selected_import116 = []
+            this.teachingStore.search116(1)
         },
     },
 }
 </script>
 <style scoped>
-.v-text-field :deep(input) {
-    font-size: 24px;
+.teaching-search-page {
+    width: 100%;
+    display: grid;
+    gap: 12px;
 }
 
-.even-row {
-    background-color: rgba(0, 0, 0, 0.1);
+.teaching-search-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    border-radius: 16px;
+    border: 1px solid rgba(16, 38, 58, 0.09);
+    background: rgba(255, 255, 255, 0.78);
+    padding: 10px;
+}
+
+.teaching-search-query-shell,
+.teaching-search-results-shell {
+    border-radius: 16px;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    background: rgba(255, 255, 255, 0.66);
+    padding: 8px;
+}
+
+.teaching-search-form-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.teaching-search-input {
+    min-width: 240px;
+    flex: 1 1 320px;
+}
+
+.teaching-search-input :deep(input) {
+    font-size: 1.45rem;
 }
 
 .search-list {
-    box-shadow: none;
+    background: transparent;
 }
 
 .search-list :deep(.v-list-item) {
     box-shadow: none;
 }
 
-.name-email-row {
+.search-entry-card {
+    display: grid;
+    gap: 6px;
+    width: 100%;
+    border-radius: 10px;
+    border: 1px solid rgba(16, 38, 58, 0.11);
+    background: rgba(255, 255, 255, 0.86);
+    padding: 8px;
+    font-size: 1rem;
+}
+
+.search-entry-card--even {
+    background: rgba(234, 246, 255, 0.82);
+}
+
+.entry-main-line {
+    display: flex;
     flex-wrap: wrap;
-    row-gap: 2px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
 }
 
-.name-email-left {
+.entry-person {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
     min-width: 0;
-    flex: 1 1 auto;
 }
 
-.name-email-right {
-    margin-left: auto;
-    text-align: right;
+.entry-name {
+    font-size: 1.22rem;
+    font-weight: 650;
+    line-height: 1.25;
+}
+
+.entry-email {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 1rem;
+    color: rgba(16, 38, 58, 0.85);
     word-break: break-word;
-    max-width: 100%;
-    flex: 0 1 auto;
+}
+
+.entry-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.entry-parent {
+    border-radius: 8px;
+    border: 1px solid rgba(16, 38, 58, 0.1);
+    background: rgba(255, 255, 255, 0.82);
+    padding: 6px;
+}
+
+.entry-parent--mother {
+    border-left: 4px solid rgba(219, 39, 119, 0.5);
+}
+
+.entry-parent--father {
+    border-left: 4px solid rgba(79, 70, 229, 0.5);
+}
+
+.entry-parent-line {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.entry-parent-name {
+    font-size: 1.02rem;
+    font-weight: 600;
+}
+
+.entry-parent-mail {
+    font-size: 0.95rem;
+    color: rgba(16, 38, 58, 0.82);
+    word-break: break-word;
+}
+
+.entry-parent-phones {
+    margin-top: 4px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 0.92rem;
+}
+
+.entry-meta-row :deep(.v-chip__content),
+.entry-person :deep(.v-chip__content) {
+    font-size: 0.9rem;
+}
+
+@media (max-width: 960px) {
+    .teaching-search-input {
+        min-width: 100%;
+        flex: 1 1 100%;
+    }
 }
 </style>

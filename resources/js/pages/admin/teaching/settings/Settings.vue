@@ -1,116 +1,144 @@
 <template>
-    <!-- MENÜ FÜR SETTINGS -->
-    <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap ga-2 w-100 my-2 ml-1">
-        <its-menu-button
-            subtitle="Grundeinstellungen"
-            :icon="show_basic_settings ? 'mdi-eye' : 'mdi-eye-off'"
-            :color="show_basic_settings ? 'success' : 'secondary'"
-            @click="show_basic_settings = !show_basic_settings" />
-        <its-menu-button
-            subtitle="Verhalten"
-            :icon="show_behaviour ? 'mdi-eye' : 'mdi-eye-off'"
-            :color="show_behaviour ? 'success' : 'secondary'"
-            @click="show_behaviour = !show_behaviour" />
-        <its-menu-button
-            subtitle="Verständigungen"
-            :icon="show_notifications ? 'mdi-eye' : 'mdi-eye-off'"
-            :color="show_notifications ? 'success' : 'secondary'"
-            @click="show_notifications = !show_notifications" />
-        <its-menu-button
-            subtitle="Benotungsschemas"
-            :icon="show_schemas ? 'mdi-eye' : 'mdi-eye-off'"
-            :color="show_schemas ? 'success' : 'secondary'"
-            @click="show_schemas = !show_schemas" />
-        <its-menu-button
-            v-if="canManageOwnHolidays"
-            subtitle="Eigene freie Tage"
-            :icon="show_my_holidays ? 'mdi-eye' : 'mdi-eye-off'"
-            :color="show_my_holidays ? 'success' : 'secondary'"
-            @click="show_my_holidays = !show_my_holidays" />
-    </v-card>
+    <v-col cols="12">
+        <section class="teaching-settings-page">
+            <section class="teaching-settings-toolbar">
+                <v-btn-toggle
+                    v-model="active_panel"
+                    mandatory
+                    class="teaching-settings-panel-switcher"
+                    color="primary"
+                    divided>
+                    <v-btn
+                        v-for="panel in availablePanels"
+                        :key="panel.id"
+                        class="teaching-settings-toolbar-btn"
+                        :value="panel.id"
+                        :prepend-icon="panel.icon">
+                        {{ panel.label }}
+                    </v-btn>
+                </v-btn-toggle>
+            </section>
 
-    <!-- Grundeinstellungen + Verhalten + Verständigungen -->
-    <v-col cols="12" md="6" xl="4" v-if="show_basic_settings || show_behaviour || show_notifications || (canManageOwnHolidays && show_my_holidays)">
-        <ItsGridBox v-if="show_basic_settings" color="primary" title="Grundeinstellungen" icon="mdi-cog" class="w-100">
-            <BasicSettings />
-        </ItsGridBox>
-        <div v-if="show_behaviour" :class="{ 'mt-4': show_basic_settings }">
-            <Behaviour />
-        </div>
-        <div v-if="show_notifications" :class="{ 'mt-4': show_basic_settings || show_behaviour }">
-            <Notifications />
-        </div>
-        <div v-if="canManageOwnHolidays && show_my_holidays" :class="{ 'mt-4': show_basic_settings || show_behaviour || show_notifications }">
-            <MyHolidays />
-        </div>
+            <section class="teaching-settings-content-shell">
+                <v-window v-model="active_panel" class="w-100" :touch="false">
+                    <v-window-item value="basic">
+                        <v-row class="w-100 ma-0" dense>
+                            <v-col cols="12" md="10" lg="7" xl="6" class="teaching-settings-panel-col">
+                                <ItsGridBox variant="overview" color="primary" title="Grundeinstellungen" icon="mdi-cog-outline" class="w-100">
+                                    <BasicSettings />
+                                </ItsGridBox>
+                            </v-col>
+                        </v-row>
+                    </v-window-item>
+
+                    <v-window-item value="behaviour">
+                        <v-row class="w-100 ma-0" dense>
+                            <v-col cols="12" md="10" lg="7" xl="6" class="teaching-settings-panel-col">
+                                <Behaviour />
+                            </v-col>
+                        </v-row>
+                    </v-window-item>
+
+                    <v-window-item value="notifications">
+                        <v-row class="w-100 ma-0" dense>
+                            <v-col cols="12" md="10" lg="7" xl="6" class="teaching-settings-panel-col">
+                                <Notifications />
+                            </v-col>
+                        </v-row>
+                    </v-window-item>
+
+                    <v-window-item value="schemas">
+                        <v-row class="w-100 ma-0" dense>
+                            <v-col cols="12" md="10" lg="7" xl="6" class="teaching-settings-panel-col">
+                                <ItsGridBox variant="overview" color="primary" title="Benotungsschemas" icon="mdi-book-cog-outline" class="w-100">
+                                    <div class="d-flex flex-wrap align-center ga-2 mt-2">
+                                        <v-chip
+                                            v-for="schema in schemas"
+                                            :key="schema.id"
+                                            :color="selected_schema_id === schema.id ? 'primary' : 'secondary'"
+                                            variant="flat"
+                                            class="cursor-pointer"
+                                            @click="selectSchema(schema.id)">
+                                            {{ schema.name }}
+                                        </v-chip>
+                                        <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newSchema" />
+                                    </div>
+
+                                    <div v-if="selected_schema_id" class="d-flex flex-row align-center mt-3 ga-2 flex-wrap">
+                                        <v-btn v-if="!is_renaming && !selectedSchemaIsStandard" flat tile size="small" color="primary" prepend-icon="mdi-pencil" @click="startRename">Umbenennen</v-btn>
+                                        <v-btn
+                                            v-if="!is_renaming && !is_deleting && !selectedSchemaIsStandard && !selectedSchemaInUse"
+                                            flat
+                                            tile
+                                            size="small"
+                                            color="warning"
+                                            prepend-icon="mdi-delete"
+                                            @click="is_deleting = true">
+                                            Löschen
+                                        </v-btn>
+                                        <v-btn v-if="is_deleting" flat tile size="small" color="success" prepend-icon="mdi-delete-off" @click="is_deleting = false">Abbruch</v-btn>
+                                        <v-btn v-if="is_deleting" flat tile size="small" color="error" prepend-icon="mdi-delete" @click="deleteSchema">Endgültig löschen</v-btn>
+                                        <v-spacer />
+                                        <v-btn v-if="is_renaming" icon="mdi-check" size="x-small" color="success" variant="flat" @click="saveRename" />
+                                        <v-btn v-if="is_renaming" icon="mdi-close" size="x-small" color="warning" variant="flat" @click="is_renaming = false" />
+                                    </div>
+
+                                    <v-text-field v-if="is_renaming" v-model="rename_value" label="Name" density="compact" hide-details autofocus class="mt-2" @keyup.enter="saveRename" />
+
+                                    <template v-if="selected_schema_id">
+                                        <v-btn-toggle
+                                            v-model="active_schema_panel"
+                                            mandatory
+                                            color="primary"
+                                            divided
+                                            class="settings-schema-panel-toggles mt-4">
+                                            <v-btn
+                                                rounded="pill"
+                                                class="teaching-settings-toolbar-btn"
+                                                value="works"
+                                                prepend-icon="mdi-test-tube">
+                                                Arbeiten & Noten
+                                            </v-btn>
+                                            <v-btn
+                                                rounded="pill"
+                                                class="teaching-settings-toolbar-btn"
+                                                value="grading"
+                                                prepend-icon="mdi-calculator-variant-outline">
+                                                Benotung
+                                            </v-btn>
+                                        </v-btn-toggle>
+
+                                        <v-row class="w-100 ma-0 mt-2" dense>
+                                            <v-col cols="12" v-if="isSchemaPanelActive('works')">
+                                                <WorksAndGrades :schema-id="selected_schema_id" />
+                                            </v-col>
+                                            <v-col cols="12" v-if="isSchemaPanelActive('grading')">
+                                                <Grading :schema-id="selected_schema_id" />
+                                            </v-col>
+                                        </v-row>
+                                    </template>
+
+                                    <v-col v-else-if="!schemas.length" cols="12">
+                                        <v-alert type="info" variant="tonal">
+                                            Noch kein Benotungsschema vorhanden. Erstellen Sie ein neues Schema, um Arbeiten und Benotung zu konfigurieren.
+                                        </v-alert>
+                                    </v-col>
+                                </ItsGridBox>
+                            </v-col>
+                        </v-row>
+                    </v-window-item>
+
+                    <v-window-item v-if="canManageOwnHolidays" value="my_holidays">
+                        <v-row class="w-100 ma-0" dense>
+                            <v-col cols="12" md="10" lg="7" xl="6" class="teaching-settings-panel-col">
+                                <MyHolidays />
+                            </v-col>
+                        </v-row>
+                    </v-window-item>
+                </v-window>
+            </section>
+        </section>
     </v-col>
-
-    <!-- Schema CRUD -->
-    <v-col cols="12" md="6" xl="4" v-if="show_schemas">
-        <ItsGridBox color="primary" title="Benotungsschemas" icon="mdi-book-cog" class="w-100">
-            <div class="d-flex flex-wrap ga-2 mt-2">
-                <v-chip
-                    v-for="schema in schemas"
-                    :key="schema.id"
-                    :color="selected_schema_id === schema.id ? 'primary' : 'secondary'"
-                    variant="flat"
-                    class="cursor-pointer"
-                    @click="selectSchema(schema.id)">
-                    {{ schema.name }}
-                </v-chip>
-                <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newSchema" />
-            </div>
-
-            <!-- Schema bearbeiten -->
-            <div v-if="selected_schema_id" class="d-flex flex-row align-center mt-2 ga-2">
-                <v-btn v-if="!is_renaming && !selectedSchemaIsStandard" flat tile size="small" color="primary" prepend-icon="mdi-pencil" @click="startRename">Umbenennen</v-btn>
-                <v-btn
-                    v-if="!is_renaming && !is_deleting && !selectedSchemaIsStandard && !selectedSchemaInUse"
-                    flat
-                    tile
-                    size="small"
-                    color="warning"
-                    prepend-icon="mdi-delete"
-                    @click="is_deleting = true">
-                    Löschen
-                </v-btn>
-                <v-btn v-if="is_deleting" flat tile size="small" color="success" prepend-icon="mdi-delete-off" @click="is_deleting = false">Abbruch</v-btn>
-                <v-btn v-if="is_deleting" flat tile size="small" color="error" prepend-icon="mdi-delete" @click="deleteSchema">Endgültig löschen</v-btn>
-                <v-spacer />
-                <v-btn v-if="is_renaming" icon="mdi-check" size="x-small" color="success" variant="flat" @click="saveRename" />
-                <v-btn v-if="is_renaming" icon="mdi-close" size="x-small" color="warning" variant="flat" @click="is_renaming = false" />
-            </div>
-            <v-text-field v-if="is_renaming" v-model="rename_value" label="Name" density="compact" hide-details autofocus class="mt-2" @keyup.enter="saveRename" />
-
-            <!-- Schema-Inhalte -->
-            <template v-if="selected_schema_id">
-                <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap ga-2 w-100 my-2 ml-1">
-                    <ItsMenuButton
-                        subtitle="Arbeiten & Noten"
-                        :icon="show_works ? 'mdi-eye' : 'mdi-eye-off'"
-                        :color="show_works ? 'success' : 'secondary'"
-                        @click="show_works = !show_works" />
-                    <ItsMenuButton
-                        subtitle="Benotung"
-                        :icon="show_grading ? 'mdi-eye' : 'mdi-eye-off'"
-                        :color="show_grading ? 'success' : 'secondary'"
-                        @click="show_grading = !show_grading" />
-                </v-card>
-
-                <v-col cols="12" v-if="show_works">
-                    <WorksAndGrades :schema-id="selected_schema_id" />
-                </v-col>
-                <v-col cols="12" v-if="show_grading">
-                    <Grading :schema-id="selected_schema_id" />
-                </v-col>
-            </template>
-
-            <v-col v-else-if="!schemas.length" cols="12">
-                <v-alert type="info" variant="tonal">Noch kein Benotungsschema vorhanden. Erstellen Sie ein neues Schema, um Arbeiten und Benotung zu konfigurieren.</v-alert>
-            </v-col>
-        </ItsGridBox>
-    </v-col>
-
 </template>
 
 <script>
@@ -124,11 +152,10 @@ import BasicSettings from './components/BasicSettings.vue'
 import Behaviour from './components/Behaviour.vue'
 import Notifications from './components/Notifications.vue'
 import MyHolidays from './components/MyHolidays.vue'
-import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
 export default {
-    components: { WorksAndGrades, Grading, BasicSettings, Behaviour, Notifications, MyHolidays, ItsMenuButton, ItsGridBox },
+    components: { WorksAndGrades, Grading, BasicSettings, Behaviour, Notifications, MyHolidays, ItsGridBox },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -146,13 +173,8 @@ export default {
             teachingStore: null,
             courseStore: null,
             selected_schema_id: null,
-            show_basic_settings: true,
-            show_schemas: false,
-            show_behaviour: false,
-            show_notifications: false,
-            show_my_holidays: false,
-            show_works: true,
-            show_grading: true,
+            active_panel: 'behaviour',
+            active_schema_panel: 'works',
             is_renaming: false,
             rename_value: '',
             is_deleting: false,
@@ -177,9 +199,47 @@ export default {
             const roles = this.config?.roles || []
             return roles.includes('teacher') || roles.includes('admin') || roles.includes('super_admin')
         },
+        availablePanels() {
+            const panels = [
+                { id: 'basic', label: 'Grundeinstellungen', icon: 'mdi-cog-outline' },
+                { id: 'behaviour', label: 'Verhalten', icon: 'mdi-account-alert-outline' },
+                { id: 'notifications', label: 'Verständigungen', icon: 'mdi-bell-outline' },
+                { id: 'schemas', label: 'Benotungsschemas', icon: 'mdi-book-cog-outline' },
+            ]
+
+            if (this.canManageOwnHolidays) {
+                panels.push({ id: 'my_holidays', label: 'Eigene freie Tage', icon: 'mdi-calendar-heart' })
+            }
+
+            return panels
+        },
+    },
+
+    watch: {
+        canManageOwnHolidays(newValue) {
+            if (!newValue && this.active_panel === 'my_holidays') {
+                this.active_panel = 'behaviour'
+            }
+        },
     },
 
     methods: {
+        isPanelActive(panel) {
+            return this.active_panel === panel
+        },
+        activatePanel(panel) {
+            const panelExists = this.availablePanels.some((availablePanel) => availablePanel.id === panel)
+            if (!panelExists) {
+                return
+            }
+            this.active_panel = panel
+        },
+        isSchemaPanelActive(panel) {
+            return this.active_schema_panel === panel
+        },
+        activateSchemaPanel(panel) {
+            this.active_schema_panel = panel
+        },
         selectSchema(id) {
             this.selected_schema_id = id
             this.is_renaming = false
@@ -224,3 +284,50 @@ export default {
     },
 }
 </script>
+
+<style scoped>
+.teaching-settings-page {
+    width: 100%;
+    display: grid;
+    gap: 12px;
+}
+
+.teaching-settings-toolbar {
+    display: flex;
+    justify-content: flex-start;
+    gap: 8px;
+    border-radius: 16px;
+    border: 1px solid rgba(16, 38, 58, 0.09);
+    background: rgba(255, 255, 255, 0.78);
+    padding: 10px;
+}
+
+.teaching-settings-panel-switcher {
+    width: 100%;
+    flex-wrap: wrap;
+    row-gap: 8px;
+}
+
+.teaching-settings-toolbar-btn {
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 650;
+}
+
+.teaching-settings-content-shell {
+    border-radius: 16px;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    background: rgba(255, 255, 255, 0.66);
+    padding: 8px;
+}
+
+.settings-schema-panel-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    border-radius: 14px;
+    border: 1px solid rgba(16, 38, 58, 0.09);
+    background: rgba(255, 255, 255, 0.76);
+    padding: 10px;
+}
+</style>
