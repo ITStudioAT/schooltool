@@ -2,11 +2,6 @@
 
 namespace App\Jobs\Teaching;
 
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
 use App\Events\Import116FinishedEvent;
 use App\Models\Import116;
 use App\Models\Import116Run;
@@ -14,7 +9,13 @@ use App\Models\Import116RunChange;
 use App\Models\SchoolTool;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Spatie\SimpleExcel\SimpleExcelReader;
 
@@ -42,6 +43,7 @@ class Import116Job implements ShouldQueue
                 'Import 116 fehlgeschlagen: Datei nicht gefunden.',
                 ['path' => $this->path]
             ));
+
             return;
         }
 
@@ -57,6 +59,7 @@ class Import116Job implements ShouldQueue
                 'Import 116 fehlgeschlagen: Spaltenüberschriften nicht erkannt.',
                 []
             ));
+
             return;
         }
 
@@ -94,17 +97,17 @@ class Import116Job implements ShouldQueue
                         'import_user_id' => $this->user->id,
                     ];
 
-                    $addressType = strtolower((string) ($mapped['address_type'] ?? ''));
-                    if (in_array($addressType, ['eigen', 'schüler', 'schueler'], true)) {
+                    $addressType = $this->normalizeAddressType($mapped['address_type'] ?? null);
+                    if ($this->isStudentAddressType($addressType)) {
                         $this->setIfPresent($data, 'email', $mapped['email'] ?? null);
                         $this->setIfPresent($data, 'phone_1', $mapped['phone_1'] ?? null);
                         $this->setIfPresent($data, 'phone_2', $mapped['phone_2'] ?? null);
-                    } elseif ($addressType === 'vater') {
+                    } elseif (str_starts_with($addressType, 'vater')) {
                         $this->setIfPresent($data, 'father_name', $mapped['address_name'] ?? null);
                         $this->setIfPresent($data, 'father_email', $mapped['email'] ?? null);
                         $this->setIfPresent($data, 'father_phone_1', $mapped['phone_1'] ?? null);
                         $this->setIfPresent($data, 'father_phone_2', $mapped['phone_2'] ?? null);
-                    } elseif ($addressType === 'mutter') {
+                    } elseif (str_starts_with($addressType, 'mutter')) {
                         $this->setIfPresent($data, 'mother_name', $mapped['address_name'] ?? null);
                         $this->setIfPresent($data, 'mother_email', $mapped['email'] ?? null);
                         $this->setIfPresent($data, 'mother_phone_1', $mapped['phone_1'] ?? null);
@@ -134,6 +137,63 @@ class Import116Job implements ShouldQueue
                             $matchingUser->import116_id = $record->id;
                             $matchingUser->save();
                         }
+                    }
+
+                    // If student now has a real email and their linked user has a placeholder email,
+                    // update the user's email to the real one.
+                    if ($record->email && $record->user_id) {
+                        $linkedUser = User::find($record->user_id);
+                        if ($linkedUser && $this->isPlaceholderEmail($linkedUser->email)) {
+                            $emailTaken = User::where('email', $record->email)
+                                ->where('school_id', $schoolId)
+                                ->where('id', '!=', $linkedUser->id)
+                                ->exists();
+                            if (! $emailTaken) {
+                                $linkedUser->email = $record->email;
+                                $linkedUser->save();
+                            }
+                        }
+                    }
+
+                    // If student has no email and no user yet, create a placeholder user so that
+                    // course entries can be recorded for them.
+                    if (! $record->email && ! $record->user_id) {
+                        $placeholderEmail = $this->buildPlaceholderEmail($studentCode, $schoolId);
+                        $placeholderUser = User::where('email', $placeholderEmail)
+                            ->where('school_id', $schoolId)
+                            ->first();
+
+                        if (! $placeholderUser) {
+                            $placeholderUser = User::create([
+                                'school_id' => $schoolId,
+                                'schoolyear_id' => $schoolyearId,
+                                'email' => $placeholderEmail,
+                                'first_name' => $data['first_name'] ?? '',
+                                'last_name' => $data['last_name'] ?? '',
+                                'schoolclass' => $data['class'] ?? null,
+                                'sex' => $data['sex'] ?? null,
+                                'password' => Hash::make(str()->random(32)),
+                                'email_verified_at' => now(),
+                                'is_active' => 0,
+                                'import116_id' => $record->id,
+                            ]);
+                        }
+
+                        $record->user_id = $placeholderUser->id;
+                        $record->save();
+
+                        if ($placeholderUser->import116_id !== $record->id) {
+                            $placeholderUser->import116_id = $record->id;
+                            $placeholderUser->save();
+                        }
+                    }
+
+                    // Keep TeachingCourseStudents in sync: update user_id where still null.
+                    if ($record->user_id) {
+                        DB::table('teaching_course_students')
+                            ->where('import116_id', $record->id)
+                            ->whereNull('user_id')
+                            ->update(['user_id' => $record->user_id]);
                     }
                 });
 
@@ -224,6 +284,7 @@ class Import116Job implements ShouldQueue
         }
 
         $value = str_replace('\\', '/', $value);
+
         return basename($value);
     }
 
@@ -280,7 +341,7 @@ class Import116Job implements ShouldQueue
             ->where('schoolyear_id', $schoolyearId);
 
         if (is_array($studentCodes)) {
-            $studentCodes = array_values(array_filter(array_map(fn($code) => is_scalar($code) ? trim((string) $code) : '', $studentCodes)));
+            $studentCodes = array_values(array_filter(array_map(fn ($code) => is_scalar($code) ? trim((string) $code) : '', $studentCodes)));
             if (empty($studentCodes)) {
                 return [];
             }
@@ -289,7 +350,7 @@ class Import116Job implements ShouldQueue
 
         return $query
             ->get()
-            ->mapWithKeys(fn(Import116 $record) => [(string) $record->student_code => $this->snapshotImport116($record)])
+            ->mapWithKeys(fn (Import116 $record) => [(string) $record->student_code => $this->snapshotImport116($record)])
             ->all();
     }
 
@@ -310,8 +371,8 @@ class Import116Job implements ShouldQueue
 
         $ids = $rowsToDelete
             ->pluck('id')
-            ->map(fn($id) => (int) $id)
-            ->filter(fn($id) => $id > 0)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
             ->values()
             ->all();
 
@@ -399,6 +460,7 @@ class Import116Job implements ShouldQueue
 
             if (! $changeType) {
                 $counts['unchanged']++;
+
                 continue;
             }
 
@@ -479,7 +541,7 @@ class Import116Job implements ShouldQueue
             'change_type' => $changeType,
             'student_code' => $source['student_code'] ?? null,
             'class' => $source['class'] ?? null,
-            'name' => trim(((string) ($source['last_name'] ?? '')) . ' ' . ((string) ($source['first_name'] ?? ''))),
+            'name' => trim(((string) ($source['last_name'] ?? '')).' '.((string) ($source['first_name'] ?? ''))),
             'changed_fields' => [],
         ];
 
@@ -515,7 +577,7 @@ class Import116Job implements ShouldQueue
             'address_name' => ['name (anschrift)', 'anschrift (name)', 'name', 'anschrift'],
         ];
 
-        $normalized = array_map(fn($h) => trim(mb_strtolower($h)), $headers);
+        $normalized = array_map(fn ($h) => trim(mb_strtolower($h)), $headers);
         $mapping = [];
 
         foreach ($required as $field => $variants) {
@@ -586,6 +648,78 @@ class Import116Job implements ShouldQueue
         return trim((string) $value);
     }
 
+    private function normalizeAddressType(?string $value): string
+    {
+        $normalized = trim(mb_strtolower((string) $value));
+        if ($normalized === '') {
+            return '';
+        }
+
+        $normalized = str_replace(
+            ['ä', 'ö', 'ü', 'ß'],
+            ['ae', 'oe', 'ue', 'ss'],
+            $normalized
+        );
+
+        return preg_replace('/\s+/', ' ', $normalized) ?? $normalized;
+    }
+
+    private function isStudentAddressType(string $addressType): bool
+    {
+        if ($addressType === '') {
+            return false;
+        }
+
+        if (str_starts_with($addressType, 'eigen') || str_contains($addressType, 'schueler')) {
+            return true;
+        }
+
+        $collapsed = preg_replace('/[^a-z0-9]+/', '', $addressType) ?? '';
+        if ($collapsed === '') {
+            return false;
+        }
+
+        foreach (['eigen', 'eigenberechtigt', 'schueler', 'schuelerselbst'] as $keyword) {
+            if ($this->isNearMatch($collapsed, $keyword)) {
+                return true;
+            }
+
+            $keywordLength = strlen($keyword);
+            if (strlen($collapsed) > $keywordLength) {
+                $prefix = substr($collapsed, 0, $keywordLength);
+                if ($this->isNearMatch($prefix, $keyword)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private function isNearMatch(string $value, string $target): bool
+    {
+        if ($value === '' || $target === '') {
+            return false;
+        }
+
+        if ($value === $target) {
+            return true;
+        }
+
+        if ($value[0] !== $target[0]) {
+            return false;
+        }
+
+        $lengthDifference = abs(strlen($value) - strlen($target));
+        if ($lengthDifference > 2) {
+            return false;
+        }
+
+        $maxDistance = strlen($target) <= 6 ? 1 : 2;
+
+        return levenshtein($value, $target) <= $maxDistance;
+    }
+
     private function setIfPresent(array &$data, string $key, ?string $value): void
     {
         if ($value === null) {
@@ -598,5 +732,17 @@ class Import116Job implements ShouldQueue
         }
 
         $data[$key] = $trimmed;
+    }
+
+    private function buildPlaceholderEmail(string $studentCode, int $schoolId): string
+    {
+        $slug = preg_replace('/[^a-z0-9_]/', '_', strtolower($studentCode));
+
+        return 'noemail.'.$slug.'@schooltool.noemail';
+    }
+
+    public static function isPlaceholderEmail(?string $email): bool
+    {
+        return is_string($email) && str_ends_with($email, '@schooltool.noemail');
     }
 }

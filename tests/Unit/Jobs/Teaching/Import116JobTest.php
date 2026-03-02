@@ -37,7 +37,7 @@ beforeEach(function () {
         'teaching_admin',
         'teacher',
         'user',
-    ])->each(fn(string $role) => Role::firstOrCreate([
+    ])->each(fn (string $role) => Role::firstOrCreate([
         'name' => $role,
         'guard_name' => 'web',
     ]));
@@ -62,7 +62,7 @@ beforeEach(function () {
 
     // Ensure test directory exists
     $this->testDir = storage_path("app/private/{$this->school->id}/excel");
-    if (!is_dir($this->testDir)) {
+    if (! is_dir($this->testDir)) {
         mkdir($this->testDir, 0775, true);
     }
 });
@@ -98,6 +98,53 @@ describe('job construction', function () {
 
         expect($job)->toBeInstanceOf(\Illuminate\Contracts\Queue\ShouldQueue::class);
     });
+});
+
+// ============================================================================
+// Address Type Detection Tests
+// ============================================================================
+
+describe('address type detection', function () {
+    test('recognizes extended student address labels', function (string $label) {
+        $job = new Import116Job($this->admin, 'test/path');
+
+        $normalizeAddressTypeMethod = new ReflectionMethod($job, 'normalizeAddressType');
+        $normalizeAddressTypeMethod->setAccessible(true);
+        $isStudentAddressTypeMethod = new ReflectionMethod($job, 'isStudentAddressType');
+        $isStudentAddressTypeMethod->setAccessible(true);
+
+        $normalized = $normalizeAddressTypeMethod->invoke($job, $label);
+        $result = $isStudentAddressTypeMethod->invoke($job, $normalized);
+
+        expect($result)->toBeTrue();
+    })->with([
+        'Eigen',
+        'eign',
+        'Eigenberechtigt',
+        'Eigenberechtit',
+        'Eigen Kontakt',
+        'Schüler',
+        'Schüler selbst',
+        'Schueler',
+        'Schuelr',
+    ]);
+
+    test('does not classify parent address labels as student labels', function (string $label) {
+        $job = new Import116Job($this->admin, 'test/path');
+
+        $normalizeAddressTypeMethod = new ReflectionMethod($job, 'normalizeAddressType');
+        $normalizeAddressTypeMethod->setAccessible(true);
+        $isStudentAddressTypeMethod = new ReflectionMethod($job, 'isStudentAddressType');
+        $isStudentAddressTypeMethod->setAccessible(true);
+
+        $normalized = $normalizeAddressTypeMethod->invoke($job, $label);
+        $result = $isStudentAddressTypeMethod->invoke($job, $normalized);
+
+        expect($result)->toBeFalse();
+    })->with([
+        'Vater',
+        'Mutter',
+    ]);
 });
 
 // ============================================================================

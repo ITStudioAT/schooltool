@@ -1353,11 +1353,11 @@ export default {
             }
         },
         async loadEntries() {
-            if (!this.selected_course?.id || !this.selected_course_student?.id) {
+            if (!this.selected_course?.id || !this.selected_course_student?.user_id) {
                 this.entryStore?.clear()
                 return
             }
-            await this.entryStore.index(this.selected_course.id, this.selected_course_student.id)
+            await this.entryStore.index(this.selected_course.id, this.selected_course_student.user_id)
         },
         closeStudent() {
             this.selected_course_student = null
@@ -1503,7 +1503,7 @@ export default {
                 // Create: send all required fields
                 const payload = {
                     teaching_course_id: this.selected_course.id,
-                    user_id: this.selected_course_student.id,
+                    user_id: this.selected_course_student.user_id,
                     type: this.entry_form.type,
                     grade: this.entry_form.grade,
                     date: this.normalizeDateString(this.entry_form.date) || null,
@@ -1657,11 +1657,11 @@ export default {
             }
         },
         async loadBehaviourEntries() {
-            if (!this.selected_course?.id || !this.selected_course_student?.id) {
+            if (!this.selected_course?.id || !this.selected_course_student?.user_id) {
                 this.behaviourEntryStore?.clear()
                 return
             }
-            await this.behaviourEntryStore.index(this.selected_course.id, this.selected_course_student.id)
+            await this.behaviourEntryStore.index(this.selected_course.id, this.selected_course_student.user_id)
         },
         behaviourTypeLabel(type) {
             if (!type) return ''
@@ -1727,7 +1727,7 @@ export default {
             const payload = {
                 id: this.behaviour_form.id,
                 teaching_course_id: this.selected_course.id,
-                user_id: this.selected_course_student.id,
+                user_id: this.selected_course_student.user_id,
                 kind: this.behaviour_form.kind || 'behaviour',
                 type: this.behaviour_form.type,
                 date: this.behaviour_form.date instanceof Date ? this.toDateString(this.behaviour_form.date) : this.behaviour_form.date,

@@ -103,7 +103,6 @@ class TeachingCourseController extends Controller
         ]);
     }
 
-
     /**
      * Store a newly created resource in storage.
      */
@@ -296,6 +295,7 @@ class TeachingCourseController extends Controller
                 'first_name' => $import->first_name,
                 'last_name' => $import->last_name,
                 'email' => $import->email,
+                'email_is_placeholder' => false,
                 'schoolclass' => $import->class,
                 'class' => $import->class,
             ];
