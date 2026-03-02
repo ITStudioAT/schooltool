@@ -7,122 +7,78 @@
         </div>
 
         <v-container fluid class="ma-0 w-100 pa-2 super-admin-page-inner">
-            <header class="super-admin-header" v-if="isOverviewPage">
-                <div class="super-admin-brand">
-                    <div class="super-admin-brand-badge">
-                        <v-icon size="20" color="white">mdi-shield-crown</v-icon>
-                    </div>
-                    <div>
-                        <div class="super-admin-brand-eyebrow">Admin Dashboard</div>
-                        <h1 class="super-admin-brand-title">Super-Admin</h1>
-                        <p class="super-admin-brand-subtitle">
-                            Verwaltung von Schulen, Schuljahren, Lizenzen und Benutzern in einer Oberfläche.
-                        </p>
-                    </div>
+            <v-sheet rounded="xl" class="sa-hero mb-3" v-if="shouldShowHeader">
+                <div class="sa-hero__bg-orb sa-hero__bg-orb--left"></div>
+                <div class="sa-hero__bg-orb sa-hero__bg-orb--right"></div>
+
+                <v-row class="ma-0" align="stretch" dense>
+                    <v-col cols="12" lg="8" class="pa-2 pa-md-4">
+                        <div class="sa-hero__eyebrow">Admin Dashboard</div>
+                        <h1 class="sa-hero__title">Super-Admin</h1>
+                        <div class="sa-hero__chips">
+                            <v-chip v-if="config?.selected_school?.long_name || config?.selected_school?.short_name" size="small" variant="tonal" color="white" prepend-icon="mdi-domain">
+                                {{ config?.selected_school?.long_name || config?.selected_school?.short_name }}
+                            </v-chip>
+                            <v-chip v-if="config?.version" size="small" variant="tonal" color="white" prepend-icon="mdi-tag-outline">
+                                {{ config.version }}
+                            </v-chip>
+                            <v-chip v-if="isImpersonating" size="small" variant="tonal" color="warning" prepend-icon="mdi-account-switch">
+                                Übernahme aktiv
+                            </v-chip>
+                        </div>
+                    </v-col>
+
+                    <v-col cols="12" lg="4" class="pa-2 pa-md-4">
+                        <v-card variant="tonal" color="white" class="sa-hero__focus-card" rounded="xl">
+                            <v-card-text class="pa-4">
+                                <div class="sa-hero__focus-label">Aktiver Bereich</div>
+                                <div class="sa-hero__focus-value">
+                                    <v-icon size="18" :icon="activeSection.icon" />
+                                    <span>{{ activeSection.label }}</span>
+                                </div>
+                                <div class="sa-hero__focus-note">{{ activeSection.note }}</div>
+                            </v-card-text>
+                        </v-card>
+                    </v-col>
+                </v-row>
+            </v-sheet>
+
+            <v-sheet rounded="xl" class="super-admin-nav mb-2" :class="{ 'is-locked': isNavigationLocked }">
+                <div class="super-admin-nav__buttons">
+                    <v-btn
+                        v-for="item in visibleNavigationItems"
+                        :key="item.key"
+                        rounded="xl"
+                        :color="isNavigationItemActive(item) ? 'primary' : 'secondary'"
+                        :variant="isNavigationItemActive(item) ? 'flat' : 'tonal'"
+                        class="super-admin-nav__button"
+                        :disabled="isNavigationLocked"
+                        @click="handleNavigation(item)">
+                        <v-icon size="18" :icon="item.icon" class="mr-2" />
+                        <span class="super-admin-nav__button-copy">
+                            <span class="super-admin-nav__button-title">{{ item.label }}</span>
+                            <span class="super-admin-nav__button-meta">{{ item.meta }}</span>
+                        </span>
+                    </v-btn>
                 </div>
+            </v-sheet>
 
-                <div class="super-admin-header-meta">
-                    <div class="super-admin-meta-pill" v-if="config?.selected_school?.long_name || config?.selected_school?.short_name">
-                        <span>Schule</span>
-                        <strong>{{ config?.selected_school?.long_name || config?.selected_school?.short_name }}</strong>
-                    </div>
-                    <div class="super-admin-meta-pill" v-if="config?.version">
-                        <span>Version</span>
-                        <strong>{{ config.version }}</strong>
-                    </div>
-                    <div class="super-admin-meta-pill" v-if="isImpersonating">
-                        <span>Status</span>
-                        <strong>Übernahme aktiv</strong>
-                    </div>
-                </div>
-            </header>
-
-            <!-- Menüleiste oben -->
-            <v-card
-                tile
-                flat
-                color="transparent"
-                class="d-flex flex-row ga-2 w-100 mb-2 super-admin-menu-row"
-                :class="{ 'super-admin-menu-row--overview': usesOverviewTheme, 'is-disabled': action != '' }"
-                :disabled="action != ''">
-            <its-menu-button
-                subtitle="Übersicht"
-                icon="mdi-home"
-                :color="main_action == '' ? 'primary' : 'secondary'"
-                @click="main_action = ''"
-                v-if="['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
-
-            <its-menu-button
-                subtitle="Schulen"
-                icon="mdi-school"
-                :color="main_action == 'schools' ? 'primary' : 'secondary'"
-                @click="main_action = 'schools'"
-                v-if="['super_admin'].some((role) => config.roles.includes(role))" />
-
-            <its-menu-button
-                subtitle="Schuljahre"
-                icon="mdi-calendar-multiple"
-                :color="main_action == 'schoolyears' ? 'primary' : 'secondary'"
-                @click="main_action = 'schoolyears'"
-                v-if="['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
-
-            <its-menu-button
-                subtitle="Lizenzen"
-                icon="mdi-card-account-details"
-                :color="main_action == 'licences' ? 'primary' : 'secondary'"
-                @click="openLicencesOverview"
-                v-if="['super_admin'].some((role) => config.roles.includes(role))" />
-            <its-menu-button
-                subtitle="Rollen"
-                icon="mdi-badge-account-horizontal-outline"
-                :color="main_action == 'roles' ? 'primary' : 'secondary'"
-                @click="main_action = 'roles'"
-                v-if="['super_admin'].some((role) => config.roles.includes(role))" />
-            <its-menu-button
-                subtitle="Benutzer"
-                icon="mdi-account-multiple"
-                :color="main_action == 'users' ? 'primary' : 'secondary'"
-                @click="main_action = 'users'"
-                v-if="['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
-            <its-menu-button
-                subtitle="Benutzer wechseln"
-                icon="mdi-account-switch"
-                color="secondary"
-                @click="openImpersonationDialog"
-                v-if="config.roles.includes('super_admin') && !isImpersonating" />
-            <its-menu-button
-                subtitle="Lehrer"
-                icon="mdi-account-tie"
-                :color="main_action == 'teachers_overview' ? 'primary' : 'secondary'"
-                @click="main_action = 'teachers_overview'"
-                v-if="['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
-            <its-menu-button
-                subtitle="Log"
-                icon="mdi-file-document"
-                color="secondary"
-                @click="log_dialog = true"
-                v-if="['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
-            <its-menu-button subtitle="Horizon" icon="mdi-horizontal-rotate-clockwise" color="secondary" @click="moveToHorizon" />
-            </v-card>
-            <v-card
-                tile
-                flat
-                color="transparent"
-                class="d-flex flex-row flex-wrap ga-2 w-100 mb-2 super-admin-menu-row"
-                :class="{ 'super-admin-menu-row--overview': usesOverviewTheme, 'is-disabled': action != '' }"
-                :disabled="action != ''"
-                v-if="main_action == 'licences' && ['super_admin'].some((role) => config.roles.includes(role))">
-            <its-menu-button
-                subtitle="Alle Lizenzen"
-                icon="mdi-home"
-                :color="licences_action == 'overview' ? 'primary' : 'secondary'"
-                @click="licences_action = 'overview'" />
-            <its-menu-button
-                subtitle="Lizenzvergaben"
-                icon="mdi-card-account-details-outline"
-                :color="licences_action == 'schools' ? 'primary' : 'secondary'"
-                @click="licences_action = 'schools'" />
-            </v-card>
+            <v-sheet
+                v-if="main_action == 'licences' && ['super_admin'].some((role) => config.roles.includes(role))"
+                rounded="xl"
+                class="super-admin-subnav mb-2"
+                :class="{ 'is-locked': isNavigationLocked }">
+                <v-btn-toggle v-model="licences_action" mandatory class="super-admin-subnav__switcher" color="primary" divided :disabled="isNavigationLocked">
+                    <v-btn
+                        v-for="item in visibleLicenceNavigationItems"
+                        :key="item.key"
+                        :value="item.key"
+                        class="super-admin-subnav__button"
+                        :prepend-icon="item.icon">
+                        {{ item.label }}
+                    </v-btn>
+                </v-btn-toggle>
+            </v-sheet>
 
             <div class="super-admin-overview-shell" :class="{ 'super-admin-overview-shell--active': usesOverviewTheme }">
                 <v-row class="w-100 ma-0" dense>
@@ -142,9 +98,12 @@
 
         <Log v-model="log_dialog" v-if="['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
 
-        <v-dialog v-model="impersonation_dialog" max-width="720">
+        <v-dialog v-model="impersonation_dialog" max-width="720" persistent>
             <v-card>
-                <v-card-title>Benutzer wechseln</v-card-title>
+                <v-card-title class="d-flex align-center justify-space-between">
+                    <span>Benutzer wechseln</span>
+                    <v-btn icon="mdi-close" variant="text" density="comfortable" @click="closeImpersonationDialog" />
+                </v-card-title>
                 <v-card-text>
                     <v-select
                         class="mb-2"
@@ -255,8 +214,6 @@
 <script>
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
-import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
-import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import Schools from './components/Schools.vue'
 import Schoolyears from './components/Schoolyears.vue'
 import Licences from './components/Licences.vue'
@@ -272,7 +229,7 @@ import ActiveSchool from './components/ActiveSchool.vue'
 import Log from './components/Log.vue'
 
 export default {
-    components: { ItsMenuButton, ItsGridBox, Schools, Schoolyears, ActiveSchool, Licences, LicenceSchools, Roles, Users, TeacherOverview, Log, Teachers, TeachersList },
+    components: { Schools, Schoolyears, ActiveSchool, Licences, LicenceSchools, Roles, Users, TeacherOverview, Log, Teachers, TeachersList },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -296,11 +253,17 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'action', 'main_action', 'impersonatable_schools', 'impersonatable_users', 'impersonatable_users_meta']),
+        isNavigationLocked() {
+            return this.action != ''
+        },
         isOverviewPage() {
             return this.main_action == ''
         },
+        shouldShowHeader() {
+            return ['', 'schools', 'schoolyears', 'licences', 'roles', 'users', 'teachers_overview', 'teachers', 'teachers_list'].includes(this.main_action)
+        },
         usesOverviewTheme() {
-            return this.main_action == '' || this.main_action == 'schools' || this.main_action == 'schoolyears'
+            return ['', 'schools', 'schoolyears', 'licences', 'roles', 'users', 'teachers_overview', 'teachers', 'teachers_list'].includes(this.main_action)
         },
         canAccessSuperAdminPage() {
             const roles = this.config?.roles || []
@@ -308,6 +271,121 @@ export default {
         },
         isImpersonating() {
             return !!this.config?.impersonation?.is_impersonating
+        },
+        activeSection() {
+            const map = {
+                '': { icon: 'mdi-home', label: 'Übersicht', note: 'Dashboard & aktive Schule' },
+                schools: { icon: 'mdi-school', label: 'Schulen', note: 'Schulverwaltung' },
+                schoolyears: { icon: 'mdi-calendar-multiple', label: 'Schuljahre', note: 'Schuljahresverwaltung' },
+                licences: { icon: 'mdi-card-account-details', label: 'Lizenzen', note: 'Lizenzverwaltung' },
+                roles: { icon: 'mdi-badge-account-horizontal-outline', label: 'Rollen', note: 'Rollenverwaltung' },
+                users: { icon: 'mdi-account-multiple', label: 'Benutzer', note: 'Benutzerverwaltung' },
+                teachers_overview: { icon: 'mdi-account-tie', label: 'Lehrer', note: 'Lehrerverwaltung' },
+            }
+            return map[this.main_action] ?? { icon: 'mdi-dots-horizontal', label: this.main_action, note: '' }
+        },
+        visibleNavigationItems() {
+            const roles = Array.isArray(this.config?.roles) ? this.config.roles : []
+            const hasAnyRole = (requiredRoles) => roles.some((role) => requiredRoles.includes(role))
+
+            return [
+                {
+                    key: 'overview',
+                    label: 'Übersicht',
+                    meta: 'Dashboard',
+                    icon: 'mdi-home',
+                    targetAction: '',
+                    visible: hasAnyRole(['super_admin', 'admin']),
+                },
+                {
+                    key: 'schools',
+                    label: 'Schulen',
+                    meta: 'Verwaltung',
+                    icon: 'mdi-school',
+                    targetAction: 'schools',
+                    visible: hasAnyRole(['super_admin']),
+                },
+                {
+                    key: 'schoolyears',
+                    label: 'Schuljahre',
+                    meta: 'Kalender',
+                    icon: 'mdi-calendar-multiple',
+                    targetAction: 'schoolyears',
+                    visible: hasAnyRole(['super_admin', 'admin']),
+                },
+                {
+                    key: 'licences',
+                    label: 'Lizenzen',
+                    meta: 'Modelle',
+                    icon: 'mdi-card-account-details',
+                    targetAction: 'licences',
+                    visible: hasAnyRole(['super_admin']),
+                },
+                {
+                    key: 'roles',
+                    label: 'Rollen',
+                    meta: 'Rechte',
+                    icon: 'mdi-badge-account-horizontal-outline',
+                    targetAction: 'roles',
+                    visible: hasAnyRole(['super_admin']),
+                },
+                {
+                    key: 'users',
+                    label: 'Benutzer',
+                    meta: 'Accounts',
+                    icon: 'mdi-account-multiple',
+                    targetAction: 'users',
+                    visible: hasAnyRole(['super_admin', 'admin']),
+                },
+                {
+                    key: 'teachers_overview',
+                    label: 'Lehrer',
+                    meta: 'Lehrerliste',
+                    icon: 'mdi-account-tie',
+                    targetAction: 'teachers_overview',
+                    visible: hasAnyRole(['super_admin', 'admin']),
+                },
+                {
+                    key: 'impersonation',
+                    label: 'Benutzer wechseln',
+                    meta: 'Übernahme',
+                    icon: 'mdi-account-switch',
+                    action: 'impersonation',
+                    visible: roles.includes('super_admin') && !this.isImpersonating,
+                },
+                {
+                    key: 'log',
+                    label: 'Log',
+                    meta: 'System',
+                    icon: 'mdi-file-document',
+                    action: 'log',
+                    visible: hasAnyRole(['super_admin', 'admin']),
+                },
+                {
+                    key: 'horizon',
+                    label: 'Horizon',
+                    meta: 'Queue',
+                    icon: 'mdi-horizontal-rotate-clockwise',
+                    action: 'horizon',
+                    visible: true,
+                },
+            ].filter((item) => item.visible)
+        },
+        visibleLicenceNavigationItems() {
+            return [
+                {
+                    key: 'overview',
+                    label: 'Alle Lizenzen',
+                    meta: 'Übersicht',
+                    icon: 'mdi-home',
+                },
+                {
+                    key: 'schools',
+                    label: 'Lizenzvergaben',
+                    meta: 'Schulen',
+                    icon: 'mdi-card-account-details-outline',
+                },
+            ]
         },
         selectedImpersonationUserId() {
             return Array.isArray(this.selected_impersonation_users) && this.selected_impersonation_users.length >= 1
@@ -330,6 +408,36 @@ export default {
     },
 
     methods: {
+        isNavigationItemActive(item) {
+            return item.targetAction !== undefined && this.main_action === item.targetAction
+        },
+        async handleNavigation(item) {
+            if (this.isNavigationLocked) {
+                return
+            }
+
+            if (item.action === 'impersonation') {
+                await this.openImpersonationDialog()
+                return
+            }
+
+            if (item.action === 'log') {
+                this.log_dialog = true
+                return
+            }
+
+            if (item.action === 'horizon') {
+                this.moveToHorizon()
+                return
+            }
+
+            if (item.targetAction === 'licences') {
+                this.openLicencesOverview()
+                return
+            }
+
+            this.main_action = item.targetAction
+        },
         openLicencesOverview() {
             this.main_action = 'licences'
             this.licences_action = 'overview'

@@ -125,6 +125,27 @@
     gap: 10px;
 }
 
+/* Action panel */
+.crud-actions-primary {
+    display: grid;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.crud-actions-divider {
+    margin: 12px 0 !important;
+    opacity: 0.3;
+}
+
+.crud-actions-secondary {
+    display: grid;
+    gap: 12px;
+}
+
+.crud-action-btn-offset {
+    margin-top: 8px;
+}
+
 @media (max-width: 1260px) {
     .crud-side-stack {
         grid-template-columns: repeat(2, minmax(0, 1fr));

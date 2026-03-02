@@ -77,15 +77,15 @@
                         </div>
                         <div class="kpi-sub" style="margin-top: -2px">Verfügbare Schritte für die aktuelle Auswahl.</div>
 
-                        <div class="d-grid ga-2 mt-3">
+                        <div class="crud-actions-primary">
                             <v-btn block color="primary" variant="flat" rounded="lg" prepend-icon="mdi-plus" @click="createSchool">
                                 Hinzufügen
                             </v-btn>
                         </div>
 
                         <template v-if="selected_schools.length >= 1">
-                            <v-divider class="my-3 opacity-30" />
-                            <div class="d-grid ga-3">
+                            <v-divider class="crud-actions-divider" />
+                            <div class="crud-actions-secondary">
                                 <v-btn
                                     v-if="selected_schools.length == 1"
                                     block
@@ -102,7 +102,7 @@
                                     color="warning"
                                     variant="tonal"
                                     rounded="lg"
-                                    class="mt-2"
+                                    class="crud-action-btn-offset"
                                     prepend-icon="mdi-delete"
                                     @click="deleteSchool">
                                     Löschen

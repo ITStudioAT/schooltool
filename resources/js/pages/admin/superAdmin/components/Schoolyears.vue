@@ -89,44 +89,49 @@
                         </div>
                         <div class="kpi-sub" style="margin-top: -2px">Anlegen, ändern, aktiv setzen oder löschen.</div>
 
-                        <div class="d-grid ga-2 mt-3">
+                        <div class="crud-actions-primary">
                             <v-btn block color="primary" variant="flat" rounded="lg" prepend-icon="mdi-plus" @click="createSchoolyear">
                                 Hinzufügen
                             </v-btn>
-
-                            <v-btn
-                                v-if="selected_schoolyears.length == 1"
-                                block
-                                color="primary"
-                                variant="tonal"
-                                rounded="lg"
-                                prepend-icon="mdi-pencil"
-                                @click="editSchoolyear(selected_schoolyears[0])">
-                                Ändern
-                            </v-btn>
-
-                            <v-btn
-                                v-if="selected_schoolyears.length == 1"
-                                block
-                                color="success"
-                                variant="tonal"
-                                rounded="lg"
-                                prepend-icon="mdi-check-circle"
-                                @click="setActiveSchoolyear">
-                                Aktiv setzen
-                            </v-btn>
-
-                            <v-btn
-                                v-if="selected_schoolyears.length >= 1"
-                                block
-                                color="warning"
-                                variant="tonal"
-                                rounded="lg"
-                                prepend-icon="mdi-delete"
-                                @click="deleteSchoolyear">
-                                Löschen
-                            </v-btn>
                         </div>
+
+                        <template v-if="selected_schoolyears.length >= 1">
+                            <v-divider class="crud-actions-divider" />
+                            <div class="crud-actions-secondary">
+                                <v-btn
+                                    v-if="selected_schoolyears.length == 1"
+                                    block
+                                    color="primary"
+                                    variant="tonal"
+                                    rounded="lg"
+                                    prepend-icon="mdi-pencil"
+                                    @click="editSchoolyear(selected_schoolyears[0])">
+                                    Ändern
+                                </v-btn>
+
+                                <v-btn
+                                    v-if="selected_schoolyears.length == 1"
+                                    block
+                                    color="success"
+                                    variant="tonal"
+                                    rounded="lg"
+                                    prepend-icon="mdi-check-circle"
+                                    @click="setActiveSchoolyear">
+                                    Aktiv setzen
+                                </v-btn>
+
+                                <v-btn
+                                    block
+                                    color="warning"
+                                    variant="tonal"
+                                    rounded="lg"
+                                    class="crud-action-btn-offset"
+                                    prepend-icon="mdi-delete"
+                                    @click="deleteSchoolyear">
+                                    Löschen
+                                </v-btn>
+                            </div>
+                        </template>
                     </section>
                 </aside>
             </div>
