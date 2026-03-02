@@ -450,7 +450,11 @@ export default {
         hasFreeStatus(item) {
             const status = Array.isArray(item?.status) ? item.status : []
             const statusStr = status.join(' ').toLowerCase()
-            return statusStr.includes('frei') || statusStr.includes('free')
+            return statusStr.includes('frei')
+                || statusStr.includes('free')
+                || statusStr.includes('entfaellt')
+                || statusStr.includes('entfällt')
+                || statusStr.includes('entfallen')
         },
         isToday(item) {
             const today = this.normalizeDay(new Date())

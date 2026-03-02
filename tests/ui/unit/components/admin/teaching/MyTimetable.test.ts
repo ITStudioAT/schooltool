@@ -76,4 +76,20 @@ describe('MyTimetable time range labels', () => {
         expect(source).toContain('variant="outlined" color="primary">{{ item.timeRangeLabel }}</v-chip>')
         expect(source).toContain('v-if="!isToday(item)"')
     })
+
+    it('treats entfaellt status as free-like status', () => {
+        const hasFreeStatus = (MyTimetable as any).methods.hasFreeStatus.call({}, { status: ['entfaellt'] })
+
+        expect(hasFreeStatus).toBe(true)
+    })
+
+    it('returns free row class for entfaellt status', () => {
+        const ctx = {
+            hasExamStatus: (MyTimetable as any).methods.hasExamStatus,
+            hasFreeStatus: (MyTimetable as any).methods.hasFreeStatus,
+        }
+        const rowClass = (MyTimetable as any).methods.getStatusClass.call(ctx, { status: ['entfaellt'] })
+
+        expect(rowClass).toBe('timetable-item--free')
+    })
 })

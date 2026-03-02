@@ -25,4 +25,28 @@ describe('Student MyCourse date status display', () => {
 
         expect(rowClass).toBe('date-row--free')
     })
+
+    it('recognizes today date entries', () => {
+        const methods = (MyCourse as any).methods
+        const ctx = {
+            normalizeDateKey: methods.normalizeDateKey,
+        }
+        const todayKey = methods.normalizeDateKey.call(ctx, new Date())
+        const isToday = methods.isDateToday.call(ctx, todayKey)
+
+        expect(isToday).toBe(true)
+    })
+
+    it('does not mark other dates as today', () => {
+        const methods = (MyCourse as any).methods
+        const ctx = {
+            normalizeDateKey: methods.normalizeDateKey,
+        }
+        const yesterday = new Date()
+        yesterday.setDate(yesterday.getDate() - 1)
+        const yesterdayKey = methods.normalizeDateKey.call(ctx, yesterday)
+        const isToday = methods.isDateToday.call(ctx, yesterdayKey)
+
+        expect(isToday).toBe(false)
+    })
 })

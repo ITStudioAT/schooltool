@@ -421,9 +421,18 @@
                                     <v-card-text class="pa-0">
                                         <v-list density="comfortable">
                                             <v-list-item v-for="(dateEntry, index) in filteredDates" :key="dateEntry.id || index">
-                                                <div class="date-row" :class="[index % 2 === 1 ? 'date-row--alt' : 'date-row--base', getDateStatusClass(dateEntry.status)]">
+                                                <div
+                                                    class="date-row"
+                                                    :class="[
+                                                        index % 2 === 1 ? 'date-row--alt' : 'date-row--base',
+                                                        getDateStatusClass(dateEntry.status),
+                                                        { 'date-row--today': isDateToday(dateEntry.date) },
+                                                    ]">
                                                     <v-icon size="22" :color="getDateIconColor(dateEntry.status)">mdi-calendar</v-icon>
-                                                    <v-chip v-if="dateEntry.date" size="small" variant="tonal" color="primary">
+                                                    <v-chip v-if="isDateToday(dateEntry.date)" size="small" color="warning" variant="flat">
+                                                        Heute
+                                                    </v-chip>
+                                                    <v-chip v-if="dateEntry.date && !isDateToday(dateEntry.date)" size="small" variant="tonal" color="primary">
                                                         {{ formatDate(dateEntry.date) }}
                                                     </v-chip>
                                                     <v-chip v-if="dateEntry.hours && dateEntry.hours.length" size="small" variant="outlined">
@@ -996,6 +1005,11 @@ export default {
                 return dateString
             }
         },
+        isDateToday(dateValue) {
+            const targetKey = this.normalizeDateKey(dateValue)
+            if (!targetKey) return false
+            return targetKey === this.normalizeDateKey(new Date())
+        },
         isLiveTimerTestMode() {
             const liveTimerQuery = this.$route?.query?.live_timer
             const timerQuery = this.$route?.query?.timer
@@ -1407,6 +1421,10 @@ export default {
 .date-row--free {
     background-color: #c8e6c9 !important;
     border-left: 4px solid #4caf50;
+}
+
+.date-row--today {
+    box-shadow: inset 0 0 0 2px rgba(255, 152, 0, 0.55);
 }
 
 .date-main {
