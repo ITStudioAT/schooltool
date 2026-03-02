@@ -56,7 +56,7 @@
         </v-row>
     </v-col>
 
-    <v-col cols="12" md="6" lg="12" xl="5" v-if="(show_infos || show_dates || show_works) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
+    <v-col cols="12" md="6" lg="7" xl="5" v-if="(show_infos || show_dates || show_works) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
         <v-row v-if="show_infos">
             <v-col>
                 <CourseInfos />

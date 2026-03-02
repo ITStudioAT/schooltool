@@ -31,6 +31,11 @@
                 <div class="hero-logout-row">
                     <v-btn class="logout-btn" variant="text" prepend-icon="mdi-logout" @click="handleLogout">Abmelden</v-btn>
                 </div>
+
+                <div v-if="heroLiveTimerText" class="hero-live-timer">
+                    <v-icon size="20" color="primary">mdi-timer-sand</v-icon>
+                    <span>{{ heroLiveTimerText }}</span>
+                </div>
             </div>
         </section>
 
@@ -485,6 +490,16 @@ export default {
             this.loadEntries()
         }
     },
+    mounted() {
+        this.nowTimer = setInterval(() => {
+            this.nowTs = Date.now()
+        }, 1000)
+    },
+    unmounted() {
+        if (this.nowTimer) {
+            clearInterval(this.nowTimer)
+        }
+    },
 
     data() {
         return {
@@ -500,6 +515,9 @@ export default {
             selectedSemesterDates: 3, // 1 = Semester 1, 2 = Semester 2, 3 = Both (for dates)
             sortByType: false,
             expandedEntries: {}, // Track which work entries are expanded
+            nowTs: Date.now(),
+            nowTimer: null,
+            simulatedCourseEndAt: null,
         }
     },
 
@@ -532,6 +550,41 @@ export default {
 
         courseDates() {
             return this.course?.course_dates || []
+        },
+        courseRemainingLabel() {
+            const endAtRaw = (this.course?.active_course_end_at || this.simulatedCourseEndAt || '').toString().trim()
+            if (!endAtRaw) {
+                return null
+            }
+
+            const endAt = new Date(endAtRaw)
+            if (isNaN(endAt.getTime())) {
+                return null
+            }
+
+            const diffSeconds = Math.max(0, Math.floor((endAt.getTime() - this.nowTs) / 1000))
+            if (diffSeconds <= 0) {
+                return null
+            }
+
+            const hours = Math.floor(diffSeconds / 3600)
+            const minutes = Math.floor((diffSeconds % 3600) / 60)
+
+            if (hours > 0) {
+                return `${String(hours).padStart(2, '0')}h ${String(minutes).padStart(2, '0')}m`
+            }
+
+            return `${String(minutes).padStart(2, '0')}m`
+        },
+        heroLiveTimerText() {
+            if (!this.courseRemainingLabel) {
+                return null
+            }
+
+            const modePrefix = this.isSimulatedCourseTimer() ? 'Testmodus' : 'Live'
+            const title = (this.course?.title || '').toString().trim() || 'Kurs'
+
+            return `${modePrefix}: ${title} endet in ${this.courseRemainingLabel}`
         },
 
         requiredEntries() {
@@ -760,6 +813,12 @@ export default {
                 this.loadEntries()
             }
         },
+        '$route.query.live_timer'() {
+            this.setupSimulatedTimer()
+        },
+        '$route.query.timer'() {
+            this.setupSimulatedTimer()
+        },
     },
 
     methods: {
@@ -793,6 +852,7 @@ export default {
                 // Get course details with notifications
                 await this.courseStore.getCourse(this.courseId)
                 this.course = this.courseStore.course
+                this.setupSimulatedTimer()
 
                 if (!this.course) {
                     console.error('Course not found:', this.courseId)
@@ -936,6 +996,59 @@ export default {
                 return dateString
             }
         },
+        isLiveTimerTestMode() {
+            const liveTimerQuery = this.$route?.query?.live_timer
+            const timerQuery = this.$route?.query?.timer
+            return liveTimerQuery === '1'
+                || liveTimerQuery === 'true'
+                || timerQuery === '1'
+                || timerQuery === 'true'
+        },
+        isSimulatedCourseTimer() {
+            return !this.course?.active_course_end_at && !!this.simulatedCourseEndAt
+        },
+        setupSimulatedTimer() {
+            this.simulatedCourseEndAt = null
+            if (!this.isLiveTimerTestMode()) {
+                return
+            }
+
+            if (this.course?.active_course_end_at) {
+                return
+            }
+
+            const timeLabel = (this.course?.next_course_date?.time_label || '').toString().trim()
+            const durationSeconds = this.durationSecondsFromTimeLabel(timeLabel)
+            if (durationSeconds <= 0) {
+                return
+            }
+
+            this.simulatedCourseEndAt = new Date(this.nowTs + (durationSeconds * 1000)).toISOString()
+        },
+        durationSecondsFromTimeLabel(timeLabel) {
+            const normalized = (timeLabel || '').toString().trim()
+            if (!normalized.includes('-')) {
+                return 0
+            }
+
+            const [fromRaw, untilRaw] = normalized.split('-').map((part) => part.trim())
+            const fromMinutes = this.minutesFromTime(fromRaw)
+            const untilMinutes = this.minutesFromTime(untilRaw)
+
+            if (fromMinutes === null || untilMinutes === null || untilMinutes <= fromMinutes) {
+                return 0
+            }
+
+            return (untilMinutes - fromMinutes) * 60
+        },
+        minutesFromTime(value) {
+            const parts = (value || '').toString().trim().split(':').map((part) => Number(part))
+            if (!Number.isFinite(parts[0]) || !Number.isFinite(parts[1])) {
+                return null
+            }
+
+            return (parts[0] * 60) + parts[1]
+        },
 
         getNotificationTypeLabel(type) {
             if (!type) return ''
@@ -999,6 +1112,20 @@ export default {
     margin-top: 12px;
     display: flex;
     justify-content: flex-end;
+}
+
+.hero-live-timer {
+    margin-top: 28px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.92);
+    color: var(--primary, #fd802e);
+    font-weight: 800;
+    font-size: 1rem;
+    line-height: 1.2;
 }
 
 .content-head {

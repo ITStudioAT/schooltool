@@ -170,17 +170,18 @@ export default {
                         .filter((hour) => Number.isFinite(hour))
                         .sort((a, b) => a - b)
                     : []
+                if (!hours.length) {
+                    return
+                }
 
-                hours.forEach((hour) => {
-                    const start = this.lessonStartFromHour(date, hour)
-                    if (!start || start.getTime() <= now.getTime()) {
-                        return
-                    }
+                const start = this.lessonStartFromHour(date, hours[0])
+                if (!start || start.getTime() <= now.getTime()) {
+                    return
+                }
 
-                    if (nearestStartTs === null || start.getTime() < nearestStartTs) {
-                        nearestStartTs = start.getTime()
-                    }
-                })
+                if (nearestStartTs === null || start.getTime() < nearestStartTs) {
+                    nearestStartTs = start.getTime()
+                }
             })
 
             return nearestStartTs ? new Date(nearestStartTs) : null
@@ -198,22 +199,23 @@ export default {
                         .filter((hour) => Number.isFinite(hour))
                         .sort((a, b) => a - b)
                     : []
+                if (!hours.length) {
+                    return
+                }
 
-                hours.forEach((hour) => {
-                    const start = this.lessonStartFromHour(date, hour)
-                    const end = this.lessonEndFromHour(date, hour)
-                    if (!start || !end) {
-                        return
-                    }
+                const start = this.lessonStartFromHour(date, hours[0])
+                const end = this.lessonEndFromHour(date, hours[hours.length - 1])
+                if (!start || !end || end.getTime() <= start.getTime()) {
+                    return
+                }
 
-                    if (now.getTime() < start.getTime() || now.getTime() >= end.getTime()) {
-                        return
-                    }
+                if (now.getTime() < start.getTime() || now.getTime() >= end.getTime()) {
+                    return
+                }
 
-                    if (nearestEndTs === null || end.getTime() < nearestEndTs) {
-                        nearestEndTs = end.getTime()
-                    }
-                })
+                if (nearestEndTs === null || end.getTime() < nearestEndTs) {
+                    nearestEndTs = end.getTime()
+                }
             })
 
             return nearestEndTs ? new Date(nearestEndTs) : null

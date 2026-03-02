@@ -7,8 +7,10 @@ use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseDate;
 use App\Models\TeachingHoliday;
+use App\Models\TeachingSchoolHour;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -82,6 +84,32 @@ test('index returns only enrolled courses from active schoolyear', function () {
         'classes' => ['1A'],
     ]);
 
+    TeachingSchoolHour::factory()->create([
+        'school_id' => $this->school->id,
+        'hour' => 1,
+        'from' => '08:00:00',
+        'until' => '08:50:00',
+    ]);
+    TeachingSchoolHour::factory()->create([
+        'school_id' => $this->school->id,
+        'hour' => 2,
+        'from' => '08:55:00',
+        'until' => '09:45:00',
+    ]);
+
+    TeachingCourseDate::create([
+        'teaching_course_id' => $enrolledCourse->id,
+        'date' => now()->subDay()->toDateString(),
+        'hours' => [1],
+        'status' => [],
+    ]);
+    TeachingCourseDate::create([
+        'teaching_course_id' => $enrolledCourse->id,
+        'date' => now()->addDay()->toDateString(),
+        'hours' => [1, 2],
+        'status' => [],
+    ]);
+
     TeachingCourse::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->activeSchoolyear->id,
@@ -110,7 +138,57 @@ test('index returns only enrolled courses from active schoolyear', function () {
         ->assertJsonPath('courses.0.id', $enrolledCourse->id)
         ->assertJsonPath('courses.0.title', 'Mathematik')
         ->assertJsonPath('courses.0.teacher', 'TT')
-        ->assertJsonPath('courses.0.students_count', 1);
+        ->assertJsonPath('courses.0.students_count', 1)
+        ->assertJsonPath('courses.0.next_course_date.date', now()->addDay()->toDateString())
+        ->assertJsonPath('courses.0.next_course_date.time_label', '08:00 - 09:45')
+        ->assertJsonPath('courses.0.active_course_end_at', null);
+});
+
+test('index returns active course end timestamp when course is currently running', function () {
+    Carbon::setTestNow(Carbon::parse('2026-03-02 09:10:00'));
+
+    try {
+        $enrolledCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->activeSchoolyear->id,
+            'user_id' => $this->teacher->id,
+            'title' => 'Deutsch',
+            'students' => [
+                ['id' => $this->studentA->id],
+            ],
+            'classes' => ['1A'],
+        ]);
+
+        TeachingSchoolHour::factory()->create([
+            'school_id' => $this->school->id,
+            'hour' => 1,
+            'from' => '09:00:00',
+            'until' => '09:45:00',
+        ]);
+
+        TeachingCourseDate::create([
+            'teaching_course_id' => $enrolledCourse->id,
+            'date' => '2026-03-02',
+            'hours' => [1],
+            'status' => [],
+        ]);
+
+        $response = $this->actingAs($this->studentA)
+            ->getJson('/api/homepage/student/courses');
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'courses')
+            ->assertJsonPath('courses.0.id', $enrolledCourse->id)
+            ->assertJsonPath('courses.0.next_course_date', null);
+
+        $activeCourseEndAt = data_get($response->json(), 'courses.0.active_course_end_at');
+
+        expect($activeCourseEndAt)->not->toBeNull();
+        expect(Carbon::parse($activeCourseEndAt)->timestamp)
+            ->toBe(Carbon::parse('2026-03-02 09:45:00')->timestamp);
+    } finally {
+        Carbon::setTestNow();
+    }
 });
 
 test('show returns free reason with teacher reason priority over school reason', function () {
@@ -159,7 +237,53 @@ test('show returns free reason with teacher reason priority over school reason',
         ->assertJsonPath('course.students_count', 1)
         ->assertJsonPath('course.course_dates.0.id', $courseDate->id)
         ->assertJsonPath('course.course_dates.0.free_reason', 'Fortbildung Lehrkraft')
-        ->assertJsonPath('course.course_dates.0.status.0', 'free');
+        ->assertJsonPath('course.course_dates.0.status.0', 'free')
+        ->assertJsonPath('course.next_course_date', null)
+        ->assertJsonPath('course.active_course_end_at', null);
+});
+
+test('show returns active course end timestamp when selected course is currently running', function () {
+    Carbon::setTestNow(Carbon::parse('2026-03-02 09:10:00'));
+
+    try {
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->activeSchoolyear->id,
+            'user_id' => $this->teacher->id,
+            'students' => [
+                ['id' => $this->studentA->id],
+            ],
+        ]);
+
+        TeachingSchoolHour::factory()->create([
+            'school_id' => $this->school->id,
+            'hour' => 1,
+            'from' => '09:00:00',
+            'until' => '09:45:00',
+        ]);
+
+        TeachingCourseDate::create([
+            'teaching_course_id' => $course->id,
+            'date' => '2026-03-02',
+            'hours' => [1],
+            'status' => [],
+        ]);
+
+        $response = $this->actingAs($this->studentA)
+            ->getJson("/api/homepage/student/courses/{$course->id}");
+
+        $response->assertOk()
+            ->assertJsonPath('course.id', $course->id)
+            ->assertJsonPath('course.next_course_date', null);
+
+        $activeCourseEndAt = data_get($response->json(), 'course.active_course_end_at');
+
+        expect($activeCourseEndAt)->not->toBeNull();
+        expect(Carbon::parse($activeCourseEndAt)->timestamp)
+            ->toBe(Carbon::parse('2026-03-02 09:45:00')->timestamp);
+    } finally {
+        Carbon::setTestNow();
+    }
 });
 
 test('show returns 403 when student is not enrolled in the course', function () {

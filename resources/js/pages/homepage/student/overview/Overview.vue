@@ -26,12 +26,17 @@
                 <div class="hero-logout-row">
                     <v-btn class="logout-btn" data-testid="student-overview-logout" variant="text" prepend-icon="mdi-logout" @click="handleLogout">Abmelden</v-btn>
                 </div>
+
+                <div v-if="heroLiveTimerLabel" class="hero-live-timer">
+                    <v-icon size="20" color="primary">mdi-timer-sand</v-icon>
+                    <span>{{ heroLiveTimerLabel }}</span>
+                </div>
             </div>
         </section>
 
         <section class="content-cover">
             <!-- Courses Section -->
-            <MyCourses />
+            <MyCourses @live-timer-change="updateHeroLiveTimer" />
         </section>
     </div>
 </template>
@@ -64,6 +69,7 @@ export default {
         return {
             studentStore: null,
             showDrawer: false,
+            heroLiveTimerLabel: null,
         }
     },
 
@@ -79,6 +85,9 @@ export default {
     },
 
     methods: {
+        updateHeroLiveTimer(label) {
+            this.heroLiveTimerLabel = (label || '').toString().trim() || null
+        },
         async handleLogout() {
             this.showDrawer = false
             await this.studentStore.logout()
@@ -99,5 +108,19 @@ export default {
     margin-top: 12px;
     display: flex;
     justify-content: flex-end;
+}
+
+.hero-live-timer {
+    margin-top: 28px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.92);
+    color: var(--primary, #fd802e);
+    font-weight: 800;
+    font-size: 1rem;
+    line-height: 1.2;
 }
 </style>
