@@ -102,7 +102,14 @@
                     <v-icon size="26">mdi-account-school</v-icon>
                     <h2>Login-Bereich</h2>
                 </div>
-                <p class="login-copy">Die Schule ist ausgewählt. Du kannst jetzt deine E-Mail eingeben.</p>
+                <div class="school-selected">
+                    <div class="school-selected-info">
+                        <v-icon size="22" color="success">mdi-school</v-icon>
+                        <span class="school-selected-name">{{ school.long_name }}</span>
+                    </div>
+                    <v-btn variant="tonal" size="small" color="warning" rounded="pill" prepend-icon="mdi-swap-horizontal" @click="changeSchool">Schule ändern</v-btn>
+                </div>
+                <p class="login-copy">Gib jetzt deine E-Mail-Adresse ein.</p>
 
                 <v-form ref="loginForm" v-model="is_login_email_valid" @submit.prevent>
                     <div class="login-fields">
@@ -438,6 +445,16 @@ export default {
 
         backToEmail() {
             this.login_step = 'email'
+            this.login_code = ''
+            this.login_password = ''
+            this.show_password = false
+        },
+
+        changeSchool() {
+            this.school = null
+            this.selected_school_id = null
+            this.login_step = 'email'
+            this.login_email = ''
             this.login_code = ''
             this.login_password = ''
             this.show_password = false
