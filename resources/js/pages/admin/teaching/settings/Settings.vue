@@ -1,10 +1,11 @@
 <template>
-    <v-col cols="12">
+    <v-col cols="12" md="6" lg="7" xl="4">
         <section class="teaching-settings-page">
             <section class="teaching-settings-toolbar">
                 <v-btn-toggle
                     v-model="active_panel"
                     mandatory
+                    density="compact"
                     class="teaching-settings-panel-switcher"
                     color="primary"
                     divided>
@@ -23,7 +24,7 @@
                 <v-window v-model="active_panel" class="w-100" :touch="false">
                     <v-window-item value="basic">
                         <v-row class="w-100 ma-0" dense>
-                            <v-col cols="12" md="10" lg="7" xl="6" class="teaching-settings-panel-col">
+                            <v-col cols="12" class="teaching-settings-panel-col">
                                 <ItsGridBox variant="overview" color="primary" title="Grundeinstellungen" icon="mdi-cog-outline" class="w-100">
                                     <BasicSettings />
                                 </ItsGridBox>
@@ -33,7 +34,7 @@
 
                     <v-window-item value="behaviour">
                         <v-row class="w-100 ma-0" dense>
-                            <v-col cols="12" md="10" lg="7" xl="6" class="teaching-settings-panel-col">
+                            <v-col cols="12" class="teaching-settings-panel-col">
                                 <Behaviour />
                             </v-col>
                         </v-row>
@@ -41,7 +42,7 @@
 
                     <v-window-item value="notifications">
                         <v-row class="w-100 ma-0" dense>
-                            <v-col cols="12" md="10" lg="7" xl="6" class="teaching-settings-panel-col">
+                            <v-col cols="12" class="teaching-settings-panel-col">
                                 <Notifications />
                             </v-col>
                         </v-row>
@@ -49,7 +50,7 @@
 
                     <v-window-item value="schemas">
                         <v-row class="w-100 ma-0" dense>
-                            <v-col cols="12" md="10" lg="7" xl="6" class="teaching-settings-panel-col">
+                            <v-col cols="12" class="teaching-settings-panel-col">
                                 <ItsGridBox variant="overview" color="primary" title="Benotungsschemas" icon="mdi-book-cog-outline" class="w-100">
                                     <div class="d-flex flex-wrap align-center ga-2 mt-2">
                                         <v-chip
@@ -130,7 +131,7 @@
 
                     <v-window-item v-if="canManageOwnHolidays" value="my_holidays">
                         <v-row class="w-100 ma-0" dense>
-                            <v-col cols="12" md="10" lg="7" xl="6" class="teaching-settings-panel-col">
+                            <v-col cols="12" class="teaching-settings-panel-col">
                                 <MyHolidays />
                             </v-col>
                         </v-row>
@@ -300,12 +301,11 @@ export default {
     border: 1px solid rgba(16, 38, 58, 0.09);
     background: rgba(255, 255, 255, 0.78);
     padding: 10px;
+    overflow-x: auto;
 }
 
 .teaching-settings-panel-switcher {
-    width: 100%;
-    flex-wrap: wrap;
-    row-gap: 8px;
+    flex-shrink: 0;
 }
 
 .teaching-settings-toolbar-btn {

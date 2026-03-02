@@ -1,5 +1,9 @@
 <template>
-    <v-sheet class="mb-2 its-grid-box" :class="[`its-grid-box--${variant}`, { 'its-grid-box--disabled': disabled }]">
+    <v-sheet
+        class="mb-2 its-grid-box"
+        :class="[`its-grid-box--${variant}`, { 'its-grid-box--disabled': disabled }]"
+        :color="variant === 'overview' ? 'transparent' : undefined"
+        :rounded="variant === 'overview' ? 'xl' : undefined">
         <v-card flat :rounded="variant === 'overview' ? 'xl' : '0'" :color="cardColor" class="h-100 py-0 its-grid-box__card" :disabled="disabled">
             <v-card-title class="its-grid-box__title">
                 <div class="d-flex flex-row ga-2 align-center">

@@ -45,9 +45,11 @@ export const useTeachingStore = defineStore('AdminTeachingStore', {
                 this.meta = response.data.meta
                 return true
             } catch (error) {
+                const status = error?.response?.status
+                const message = error?.response?.data?.message || 'Fehler passiert.'
                 notification.notify({
-                    status: error.response.status,
-                    message: error.response.data.message || 'Fehler passiert.',
+                    status,
+                    message,
                     type: 'error',
                     timeout: 3000,
                 })
@@ -66,9 +68,11 @@ export const useTeachingStore = defineStore('AdminTeachingStore', {
                 this.settings = response.data.settings
                 return true
             } catch (error) {
+                const status = error?.response?.status
+                const message = error?.response?.data?.message || 'Fehler passiert.'
                 notification.notify({
-                    status: error.response.status,
-                    message: error.response.data.message || 'Fehler passiert.',
+                    status,
+                    message,
                     type: 'error',
                     timeout: 3000,
                 })
@@ -127,9 +131,11 @@ export const useTeachingStore = defineStore('AdminTeachingStore', {
                 })
                 return true
             } catch (error) {
+                const status = error?.response?.status
+                const message = error?.response?.data?.message || 'Fehler passiert.'
                 notification.notify({
-                    status: error.response.status,
-                    message: error.response.data.message || 'Fehler passiert.',
+                    status,
+                    message,
                     type: 'error',
                     timeout: 3000,
                 })

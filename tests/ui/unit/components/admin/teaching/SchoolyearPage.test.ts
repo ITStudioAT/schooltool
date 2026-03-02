@@ -2,18 +2,21 @@ import { describe, expect, it, vi } from 'vitest'
 import Schoolyear from '@/pages/admin/teaching/schoolyear/Schoolyear.vue'
 
 describe('Teaching schoolyear page', () => {
-    it('builds active label and schoolyear counter', () => {
-        const activeCtx = {
-            config: {
-                selected_schoolyear: { name: 'Schuljahr 2025/26' },
-            },
-        }
-        const counterCtx = {
-            schoolyears: [{ id: 1 }, { id: 2 }, { id: 3 }],
+    it('builds schoolyear metadata string from available dates', () => {
+        const methods = (Schoolyear as any).methods
+        const ctx = {
+            formatDate: methods.formatDate,
         }
 
-        expect((Schoolyear as any).computed.activeSchoolyearName.call(activeCtx)).toBe('Schuljahr 2025/26')
-        expect((Schoolyear as any).computed.schoolyearCountLabel.call(counterCtx)).toBe('3 Schuljahre')
+        const meta = methods.buildSchoolyearMeta.call(ctx, {
+            from: '2025-09-08',
+            sem_2_start: '2026-02-16',
+            until: '2026-07-10',
+        })
+
+        expect(meta).toContain('Start')
+        expect(meta).toContain('Sem 2')
+        expect(meta).toContain('Ende')
     })
 
     it('sorts schoolyears by name descending', () => {

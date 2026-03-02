@@ -1,21 +1,9 @@
 <template>
-    <v-col cols="12">
+    <v-col cols="12" md="6" lg="7" xl="4">
         <section class="teaching-search-page">
-            <section class="teaching-search-toolbar">
-                <v-chip size="small" color="primary" variant="flat" prepend-icon="mdi-account-search-outline">
-                    Personen & Klassen
-                </v-chip>
-                <v-chip size="small" color="secondary" variant="tonal" prepend-icon="mdi-format-list-bulleted">
-                    {{ resultSummary }}
-                </v-chip>
-                <v-chip size="small" color="secondary" variant="tonal" prepend-icon="mdi-filter-variant">
-                    {{ searchMetaLabel }}
-                </v-chip>
-            </section>
-
             <section class="teaching-search-query-shell">
                 <v-row class="w-100 ma-0" dense>
-                    <v-col cols="12" md="10" lg="7" xl="6" class="teaching-search-panel-col">
+                    <v-col cols="12" class="teaching-search-panel-col">
                         <ItsGridBox
                             variant="overview"
                             color="primary"
@@ -51,7 +39,7 @@
 
             <section class="teaching-search-results-shell">
                 <v-row class="w-100 ma-0" dense>
-                    <v-col cols="12" md="9" lg="6" xl="5" class="teaching-search-panel-col">
+                    <v-col cols="12" class="teaching-search-panel-col">
                         <ItsGridBox
                             variant="overview"
                             color="primary"
@@ -207,17 +195,6 @@ export default {
     width: 100%;
     display: grid;
     gap: 12px;
-}
-
-.teaching-search-toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    border-radius: 16px;
-    border: 1px solid rgba(16, 38, 58, 0.09);
-    background: rgba(255, 255, 255, 0.78);
-    padding: 10px;
 }
 
 .teaching-search-query-shell,

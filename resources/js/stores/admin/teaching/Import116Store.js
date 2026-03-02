@@ -24,8 +24,8 @@ export const useImport116Store = defineStore('AdminImport116Store', {
                 return true
             } catch (error) {
                 notification.notify({
-                    status: error.response.status,
-                    message: error.response.data.message || 'Fehler passiert.',
+                    status: error?.response?.status,
+                    message: error?.response?.data?.message || 'Fehler passiert.',
                     type: 'error',
                     timeout: 3000,
                 })

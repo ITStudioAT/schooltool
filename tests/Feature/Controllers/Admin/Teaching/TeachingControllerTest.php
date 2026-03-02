@@ -14,6 +14,8 @@ use App\Models\Import116;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\Schoolyear;
+use App\Models\TeachingCourse;
+use App\Models\TeachingSchema;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
@@ -28,7 +30,7 @@ beforeEach(function () {
         'teaching_admin',
         'teacher',
         'user',
-    ])->each(fn(string $role) => Role::firstOrCreate([
+    ])->each(fn (string $role) => Role::firstOrCreate([
         'name' => $role,
         'guard_name' => 'web',
     ]));
@@ -89,6 +91,48 @@ beforeEach(function () {
         'school_id' => $this->otherSchool->id,
     ]);
 });
+
+function validTeachingSettingsPayload(string $schemaId = 'schema-1'): array
+{
+    return [
+        'teaching_schemas' => [
+            [
+                'id' => $schemaId,
+                'name' => 'Standard',
+                'works' => [
+                    [
+                        'short_name' => 'MA',
+                        'name' => 'Mitarbeit',
+                        'grades' => [
+                            ['grade' => '1', 'name' => 'Sehr gut', 'value' => '1'],
+                            ['grade' => '2', 'name' => 'Gut', 'value' => '2'],
+                        ],
+                    ],
+                ],
+                'grading' => [
+                    'semester_count' => 2,
+                    'semester_1_weight' => 40,
+                    'semester_2_weight' => 60,
+                    'categories' => [
+                        [
+                            'name' => 'Mitarbeit',
+                            'weight' => 100,
+                            'works' => [
+                                ['short_name' => 'MA', 'factor' => 100],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ],
+        'teaching_behaviour' => [
+            ['short_name' => 'M', 'name' => 'Mitarbeit'],
+        ],
+        'teaching_notifications' => [
+            ['short_name' => 'INFO', 'name' => 'Info'],
+        ],
+    ];
+}
 
 // ============================================================================
 // Authorization Tests
@@ -528,7 +572,7 @@ describe('validation', function () {
 
         $longString = str_repeat('a', 256);
 
-        $response = $this->getJson('/api/admin/teaching/search116?search_string=' . $longString);
+        $response = $this->getJson('/api/admin/teaching/search116?search_string='.$longString);
 
         $response->assertStatus(422)
             ->assertJsonValidationErrors(['search_string']);
@@ -550,5 +594,306 @@ describe('validation', function () {
 
         $response->assertStatus(422)
             ->assertJsonValidationErrors(['page']);
+    });
+});
+
+// ============================================================================
+// Settings + Semester Endpoint Tests
+// ============================================================================
+
+describe('settings and semester endpoints', function () {
+    test('load_settings returns settings and creates default schema when none exists', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        expect(TeachingSchema::query()->count())->toBe(0);
+
+        $response = $this->getJson('/api/admin/teaching/load_settings');
+
+        $response->assertStatus(200)
+            ->assertJsonStructure([
+                'settings' => [
+                    'teaching_schemas',
+                    'teaching_behaviour',
+                    'teaching_notifications',
+                ],
+            ]);
+
+        $schemas = $response->json('settings.teaching_schemas');
+        expect($schemas)->toBeArray()
+            ->and(count($schemas))->toBeGreaterThan(0)
+            ->and($schemas[0]['name'])->toBe('Standard');
+
+        $this->assertDatabaseCount('teaching_schemas', 1);
+        $this->assertDatabaseHas('teaching_schemas', [
+            'user_id' => $this->admin->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'name' => 'Standard',
+        ]);
+    });
+
+    test('save_active_semester validates allowed semester values', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $response = $this->postJson('/api/admin/teaching/save_active_semester', [
+            'teaching_active_semester' => 4,
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['teaching_active_semester']);
+    });
+
+    test('save_active_semester persists value on user and returns saved semester', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $response = $this->postJson('/api/admin/teaching/save_active_semester', [
+            'teaching_active_semester' => 3,
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('teaching_active_semester', 3);
+
+        $this->assertDatabaseHas('users', [
+            'id' => $this->admin->id,
+            'teaching_active_semester' => 3,
+        ]);
+    });
+
+    test('save_semester_2_date validates date format', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $response = $this->postJson('/api/admin/teaching/save_semester_2_date', [
+            'teaching_count_for_semester_2_date' => 'not-a-date',
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['teaching_count_for_semester_2_date']);
+    });
+
+    test('save_semester_2_date persists date and allows clearing it with null', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $saveResponse = $this->postJson('/api/admin/teaching/save_semester_2_date', [
+            'teaching_count_for_semester_2_date' => '2026-02-15',
+        ]);
+
+        $saveResponse->assertStatus(200)
+            ->assertJsonPath('teaching_count_for_semester_2_date', '2026-02-15');
+
+        $this->assertDatabaseHas('users', [
+            'id' => $this->admin->id,
+            'teaching_count_for_semester_2_date' => '2026-02-15',
+        ]);
+
+        $clearResponse = $this->postJson('/api/admin/teaching/save_semester_2_date', [
+            'teaching_count_for_semester_2_date' => null,
+        ]);
+
+        $clearResponse->assertStatus(200)
+            ->assertJsonPath('teaching_count_for_semester_2_date', null);
+
+        $this->assertDatabaseHas('users', [
+            'id' => $this->admin->id,
+            'teaching_count_for_semester_2_date' => null,
+        ]);
+    });
+
+    test('save_settings rejects renaming standard schema', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $loadResponse = $this->getJson('/api/admin/teaching/load_settings')->assertStatus(200);
+        $standardSchemaId = $loadResponse->json('settings.teaching_schemas.0.id');
+
+        $response = $this->postJson('/api/admin/teaching/save_settings', [
+            'teaching_schemas' => [
+                [
+                    'id' => $standardSchemaId,
+                    'name' => 'Standard Plus',
+                    'works' => [],
+                    'grading' => [],
+                ],
+            ],
+            'teaching_behaviour' => [],
+            'teaching_notifications' => [],
+        ]);
+
+        $response->assertStatus(409);
+        expect($response->json('message'))->toContain('Standard-Schema');
+
+        $this->assertDatabaseHas('teaching_schemas', [
+            'user_id' => $this->admin->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'schema_id' => $standardSchemaId,
+            'name' => 'Standard',
+        ]);
+    });
+});
+
+// ============================================================================
+// Save Settings Contract Validation Tests
+// ============================================================================
+
+describe('save_settings contract validation', function () {
+    test('validates nested payload fields :dataset', function (callable $mutatePayload, string $errorKey) {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $payload = validTeachingSettingsPayload('schema-contract');
+        $payload = $mutatePayload($payload);
+
+        $response = $this->postJson('/api/admin/teaching/save_settings', $payload);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors([$errorKey]);
+    })->with([
+        'work short_name required' => [
+            fn (array $payload): array => tap($payload, function (&$data) {
+                unset($data['teaching_schemas'][0]['works'][0]['short_name']);
+            }),
+            'teaching_schemas.0.works.0.short_name',
+        ],
+        'category weight max 100' => [
+            fn (array $payload): array => tap($payload, function (&$data) {
+                $data['teaching_schemas'][0]['grading']['categories'][0]['weight'] = 101;
+            }),
+            'teaching_schemas.0.grading.categories.0.weight',
+        ],
+        'category work short_name required' => [
+            fn (array $payload): array => tap($payload, function (&$data) {
+                unset($data['teaching_schemas'][0]['grading']['categories'][0]['works'][0]['short_name']);
+            }),
+            'teaching_schemas.0.grading.categories.0.works.0.short_name',
+        ],
+        'notification short_name required' => [
+            fn (array $payload): array => tap($payload, function (&$data) {
+                unset($data['teaching_notifications'][0]['short_name']);
+            }),
+            'teaching_notifications.0.short_name',
+        ],
+    ]);
+});
+
+// ============================================================================
+// Role Matrix Tests (Teaching Settings Endpoints)
+// ============================================================================
+
+describe('role matrix for teaching settings endpoints', function () {
+    test('returns 401 for unauthenticated requests :dataset', function (string $method, string $uri, array $payload = []) {
+        $response = match ($method) {
+            'GET' => $this->getJson($uri),
+            'POST' => $this->postJson($uri, $payload),
+        };
+
+        $response->assertStatus(401);
+    })->with([
+        ['GET', '/api/admin/teaching/load_settings'],
+        ['POST', '/api/admin/teaching/save_settings', []],
+        ['POST', '/api/admin/teaching/save_active_semester', ['teaching_active_semester' => 1]],
+        ['POST', '/api/admin/teaching/save_semester_2_date', ['teaching_count_for_semester_2_date' => '2026-02-01']],
+    ]);
+
+    test('returns 403 for regular user role :dataset', function (string $method, string $uri, array $payload = []) {
+        $this->actingAs($this->regularUser, 'sanctum');
+
+        $response = match ($method) {
+            'GET' => $this->getJson($uri),
+            'POST' => $this->postJson($uri, $payload),
+        };
+
+        $response->assertStatus(403);
+    })->with([
+        ['GET', '/api/admin/teaching/load_settings'],
+        ['POST', '/api/admin/teaching/save_settings', []],
+        ['POST', '/api/admin/teaching/save_active_semester', ['teaching_active_semester' => 1]],
+        ['POST', '/api/admin/teaching/save_semester_2_date', ['teaching_count_for_semester_2_date' => '2026-02-01']],
+    ]);
+
+    test('allows admin, teaching_admin, teacher roles :dataset', function (string $actor, string $method, string $uri, array $payload = []) {
+        $actingUser = match ($actor) {
+            'admin' => $this->admin,
+            'teaching_admin' => $this->teachingAdmin,
+            'teacher' => $this->teacher,
+        };
+
+        $this->actingAs($actingUser, 'sanctum');
+
+        $response = match ($method) {
+            'GET' => $this->getJson($uri),
+            'POST' => $this->postJson($uri, $payload),
+        };
+
+        $response->assertStatus(200);
+    })->with([
+        // admin
+        ['admin', 'GET', '/api/admin/teaching/load_settings'],
+        ['admin', 'POST', '/api/admin/teaching/save_settings', []],
+        ['admin', 'POST', '/api/admin/teaching/save_active_semester', ['teaching_active_semester' => 1]],
+        ['admin', 'POST', '/api/admin/teaching/save_semester_2_date', ['teaching_count_for_semester_2_date' => '2026-02-01']],
+
+        // teaching_admin
+        ['teaching_admin', 'GET', '/api/admin/teaching/load_settings'],
+        ['teaching_admin', 'POST', '/api/admin/teaching/save_settings', []],
+        ['teaching_admin', 'POST', '/api/admin/teaching/save_active_semester', ['teaching_active_semester' => 1]],
+        ['teaching_admin', 'POST', '/api/admin/teaching/save_semester_2_date', ['teaching_count_for_semester_2_date' => '2026-02-01']],
+
+        // teacher
+        ['teacher', 'GET', '/api/admin/teaching/load_settings'],
+        ['teacher', 'POST', '/api/admin/teaching/save_settings', []],
+        ['teacher', 'POST', '/api/admin/teaching/save_active_semester', ['teaching_active_semester' => 1]],
+        ['teacher', 'POST', '/api/admin/teaching/save_semester_2_date', ['teaching_count_for_semester_2_date' => '2026-02-01']],
+    ]);
+});
+
+// ============================================================================
+// Dependency Conflict Tests
+// ============================================================================
+
+describe('save_settings dependency conflicts', function () {
+    test('rejects deleting a schema that is used by an existing course', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        TeachingSchema::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'schema_id' => 'schema-used',
+            'name' => 'Used Schema',
+            'works' => [],
+            'grading' => [],
+        ]);
+
+        TeachingSchema::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'schema_id' => 'schema-keep',
+            'name' => 'Keep Schema',
+            'works' => [],
+            'grading' => [],
+        ]);
+
+        TeachingCourse::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'title' => 'Mathematik',
+            'description' => 'Schema dependency test',
+            'classes' => ['5A'],
+            'teaching_schema_id' => 'schema-used',
+        ]);
+
+        $payload = validTeachingSettingsPayload('schema-keep');
+
+        $response = $this->postJson('/api/admin/teaching/save_settings', $payload);
+
+        $response->assertConflict();
+        expect($response->json('message'))
+            ->toContain('Schema wird in Fächern verwendet')
+            ->toContain('Used Schema');
+
+        $this->assertDatabaseHas('teaching_schemas', [
+            'user_id' => $this->admin->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'schema_id' => 'schema-used',
+            'name' => 'Used Schema',
+        ]);
     });
 });

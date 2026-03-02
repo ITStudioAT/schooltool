@@ -1,118 +1,94 @@
 <template>
     <v-col cols="12">
         <section class="teaching-schoolyear-page">
-            <section class="teaching-schoolyear-toolbar">
-                <v-chip size="small" color="primary" variant="flat" prepend-icon="mdi-calendar-check-outline">
-                    Aktiv: {{ activeSchoolyearName }}
-                </v-chip>
-                <v-chip size="small" color="secondary" variant="tonal" prepend-icon="mdi-calendar-multiselect">
-                    {{ schoolyearCountLabel }}
-                </v-chip>
-                <v-chip v-if="selectedSchoolyearRange" size="small" color="secondary" variant="tonal" prepend-icon="mdi-timeline-clock-outline">
-                    {{ selectedSchoolyearRange }}
-                </v-chip>
-            </section>
+            <div class="teaching-schoolyear-shells-row">
+                <section v-if="schoolyears.length > 0" class="teaching-schoolyear-content-shell">
+                    <ItsGridBox
+                        variant="overview"
+                        color="primary"
+                        title="Schuljahr auswählen"
+                        subtitle="Aktives Schuljahr für den Unterricht setzen"
+                        icon="mdi-calendar-range"
+                        :disabled="is_loading"
+                        class="w-100">
+                        <v-alert type="info" variant="tonal" class="mb-3">
+                            Wählen Sie zuerst ein Schuljahr aus. Aktiviert wird es erst über den Button im Info-Block.
+                        </v-alert>
 
-            <section class="teaching-schoolyear-content-shell">
-                <v-row class="w-100 ma-0" dense>
-                    <v-col v-if="schoolyears.length > 0" cols="12" md="10" lg="7" xl="6" class="teaching-schoolyear-panel-col">
-                        <ItsGridBox
-                            variant="overview"
-                            color="primary"
-                            title="Schuljahr auswählen"
-                            subtitle="Aktives Schuljahr für den Unterricht setzen"
-                            icon="mdi-calendar-range"
-                            :disabled="is_loading"
-                            class="w-100">
-                            <v-alert type="info" variant="tonal" class="mb-3">
-                                Wählen Sie zuerst ein Schuljahr aus. Aktiviert wird es erst über den Button im Info-Block.
-                            </v-alert>
+                        <div class="schoolyear-card-grid">
+                            <v-btn
+                                v-for="schoolyear in sortedSchoolyears"
+                                :key="schoolyear.id"
+                                class="schoolyear-select-btn"
+                                :color="isSelectedSchoolyear(schoolyear) ? 'primary' : 'secondary'"
+                                :variant="isSelectedSchoolyear(schoolyear) ? 'flat' : 'tonal'"
+                                :prepend-icon="isActiveSchoolyear(schoolyear) ? 'mdi-check-circle-outline' : 'mdi-calendar-blank-outline'"
+                                :loading="is_loading && pending_schoolyear_id === schoolyear.id"
+                                :disabled="is_loading"
+                                @click="selectSchoolyear(schoolyear)">
+                                <span class="schoolyear-select-btn-title">{{ schoolyear.name }}</span>
+                                <span class="schoolyear-select-btn-meta">{{ buildSchoolyearMeta(schoolyear) }}</span>
+                            </v-btn>
+                        </div>
+                    </ItsGridBox>
+                </section>
 
-                            <div class="schoolyear-card-grid">
-                                <v-btn
-                                    v-for="schoolyear in sortedSchoolyears"
-                                    :key="schoolyear.id"
-                                    class="schoolyear-select-btn"
-                                    :color="isSelectedSchoolyear(schoolyear) ? 'primary' : 'secondary'"
-                                    :variant="isSelectedSchoolyear(schoolyear) ? 'flat' : 'tonal'"
-                                    :prepend-icon="isActiveSchoolyear(schoolyear) ? 'mdi-check-circle-outline' : 'mdi-calendar-blank-outline'"
-                                    :loading="is_loading && pending_schoolyear_id === schoolyear.id"
-                                    :disabled="is_loading"
-                                    @click="selectSchoolyear(schoolyear)">
-                                    <span class="schoolyear-select-btn-title">{{ schoolyear.name }}</span>
-                                    <span class="schoolyear-select-btn-meta">{{ buildSchoolyearMeta(schoolyear) }}</span>
-                                </v-btn>
-                            </div>
-                        </ItsGridBox>
-                    </v-col>
-
-                    <v-col v-if="selectedSchoolyear" cols="12" md="7" lg="4" xl="3" class="teaching-schoolyear-panel-col">
-                        <ItsGridBox
-                            variant="overview"
-                            color="primary"
-                            title="Ausgewähltes Schuljahr"
-                            subtitle="Vorschau und Aktivierung"
-                            icon="mdi-calendar-star"
-                            class="w-100 schoolyear-active-box">
-                            <div class="schoolyear-active-header">
-                                <div class="schoolyear-active-headline">{{ selectedSchoolyear.name }}</div>
-                                <v-chip
-                                    size="x-small"
-                                    :color="isSelectedSchoolyearActive ? 'success' : 'warning'"
-                                    variant="tonal">
-                                    {{ isSelectedSchoolyearActive ? 'Aktiv' : 'Nicht aktiv' }}
+                <section v-if="selectedSchoolyear" class="teaching-schoolyear-content-shell">
+                    <ItsGridBox
+                        variant="overview"
+                        color="primary"
+                        title="Ausgewähltes Schuljahr"
+                        subtitle="Vorschau und Aktivierung"
+                        icon="mdi-calendar-star"
+                        class="w-100 schoolyear-active-box">
+                        <div class="schoolyear-active-header">
+                            <div class="schoolyear-active-headline">{{ selectedSchoolyear.name }}</div>
+                            <v-chip
+                                size="x-small"
+                                :color="isSelectedSchoolyearActive ? 'success' : 'warning'"
+                                variant="tonal">
+                                {{ isSelectedSchoolyearActive ? 'Aktiv' : 'Nicht aktiv' }}
+                            </v-chip>
+                        </div>
+                        <div class="schoolyear-active-actions">
+                            <v-btn
+                                size="small"
+                                color="primary"
+                                variant="flat"
+                                prepend-icon="mdi-check-circle-outline"
+                                :disabled="is_loading || isSelectedSchoolyearActive"
+                                :loading="is_loading && pending_schoolyear_id === selectedSchoolyear.id"
+                                @click="activateSelectedSchoolyear">
+                                Aktivieren
+                            </v-btn>
+                        </div>
+                        <div class="schoolyear-active-grid">
+                            <div class="schoolyear-active-row">
+                                <span class="schoolyear-active-label">Beginn</span>
+                                <v-chip size="x-small" color="secondary" variant="outlined" class="schoolyear-active-chip">
+                                    {{ formatDate(selectedSchoolyear.from) || 'Nicht gesetzt' }}
                                 </v-chip>
                             </div>
-                            <div class="schoolyear-active-actions">
-                                <v-btn
-                                    size="small"
-                                    color="primary"
-                                    variant="flat"
-                                    prepend-icon="mdi-check-circle-outline"
-                                    :disabled="is_loading || isSelectedSchoolyearActive"
-                                    :loading="is_loading && pending_schoolyear_id === selectedSchoolyear.id"
-                                    @click="activateSelectedSchoolyear">
-                                    Aktivieren
-                                </v-btn>
-                                <v-btn
-                                    icon="mdi-check-bold"
-                                    size="x-small"
-                                    color="primary"
-                                    variant="tonal"
-                                    :disabled="is_loading || isSelectedSchoolyearActive"
-                                    :loading="is_loading && pending_schoolyear_id === selectedSchoolyear.id"
-                                    @click="activateSelectedSchoolyear" />
+                            <div class="schoolyear-active-row">
+                                <span class="schoolyear-active-label">2. Semester</span>
+                                <v-chip size="x-small" color="secondary" variant="outlined" class="schoolyear-active-chip">
+                                    {{ formatDate(selectedSchoolyear.sem_2_start) || 'Nicht gesetzt' }}
+                                </v-chip>
                             </div>
-                            <div class="schoolyear-active-grid">
-                                <div class="schoolyear-active-row">
-                                    <span class="schoolyear-active-label">Beginn</span>
-                                    <v-chip size="x-small" color="secondary" variant="outlined" class="schoolyear-active-chip">
-                                        {{ formatDate(selectedSchoolyear.from) || 'Nicht gesetzt' }}
-                                    </v-chip>
-                                </div>
-                                <div class="schoolyear-active-row">
-                                    <span class="schoolyear-active-label">2. Semester</span>
-                                    <v-chip size="x-small" color="secondary" variant="outlined" class="schoolyear-active-chip">
-                                        {{ formatDate(selectedSchoolyear.sem_2_start) || 'Nicht gesetzt' }}
-                                    </v-chip>
-                                </div>
-                                <div class="schoolyear-active-row">
-                                    <span class="schoolyear-active-label">Ende</span>
-                                    <v-chip size="x-small" color="secondary" variant="outlined" class="schoolyear-active-chip">
-                                        {{ formatDate(selectedSchoolyear.until) || 'Nicht gesetzt' }}
-                                    </v-chip>
-                                </div>
+                            <div class="schoolyear-active-row">
+                                <span class="schoolyear-active-label">Ende</span>
+                                <v-chip size="x-small" color="secondary" variant="outlined" class="schoolyear-active-chip">
+                                    {{ formatDate(selectedSchoolyear.until) || 'Nicht gesetzt' }}
+                                </v-chip>
                             </div>
-                        </ItsGridBox>
-                    </v-col>
-
-                    <v-col v-if="schoolyears.length === 0" cols="12">
-                        <div class="teaching-schoolyear-empty">
-                            Keine Schuljahre verfügbar.
                         </div>
-                    </v-col>
-                </v-row>
-            </section>
+                    </ItsGridBox>
+                </section>
+
+                <div v-if="schoolyears.length === 0" class="teaching-schoolyear-empty">
+                    Keine Schuljahre verfügbar.
+                </div>
+            </div>
         </section>
     </v-col>
 </template>
@@ -167,25 +143,6 @@ export default {
                 return false
             }
             return String(selectedId) === String(activeId)
-        },
-        activeSchoolyearName() {
-            return this.config?.selected_schoolyear?.name || 'Kein Schuljahr aktiv'
-        },
-        schoolyearCountLabel() {
-            const count = Array.isArray(this.schoolyears) ? this.schoolyears.length : 0
-            if (count === 0) {
-                return 'Keine Schuljahre'
-            }
-            if (count === 1) {
-                return '1 Schuljahr'
-            }
-            return `${count} Schuljahre`
-        },
-        selectedSchoolyearRange() {
-            if (!this.config?.selected_schoolyear) {
-                return ''
-            }
-            return this.buildSchoolyearMeta(this.config.selected_schoolyear)
         },
         sortedSchoolyears() {
             return [...(this.schoolyears || [])].sort((a, b) => (b.name || '').localeCompare(a.name || '', 'de'))
@@ -284,15 +241,29 @@ export default {
     gap: 12px;
 }
 
-.teaching-schoolyear-toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    border-radius: 16px;
-    border: 1px solid rgba(16, 38, 58, 0.09);
-    background: rgba(255, 255, 255, 0.78);
-    padding: 10px;
+.teaching-schoolyear-shells-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 12px;
+}
+
+@media (min-width: 960px) {
+    .teaching-schoolyear-shells-row {
+        grid-template-columns: 50% 25%;
+    }
+}
+
+@media (min-width: 1280px) {
+    .teaching-schoolyear-shells-row {
+        grid-template-columns: 58.333% 29.167%;
+    }
+}
+
+@media (min-width: 1920px) {
+    .teaching-schoolyear-shells-row {
+        grid-template-columns: 33.333% 16.667%;
+    }
 }
 
 .teaching-schoolyear-content-shell {

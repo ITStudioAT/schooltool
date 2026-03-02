@@ -1,5 +1,5 @@
 <template>
-    <v-col cols="12" md="10" lg="7" xl="6" class="teaching-admin-import-col">
+    <v-col cols="12" class="teaching-admin-import-col">
         <ItsGridBox variant="overview" color="primary" title="Import Sokrates 116" subtitle="Schüler- und Elterndaten synchronisieren" icon="mdi-import" class="w-100">
             <div class="d-flex flex-row align-start">
                 <v-card tile flat color="transparent" class="w-100">

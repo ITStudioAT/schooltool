@@ -1,92 +1,24 @@
 <template>
     <v-col cols="12" class="pb-1">
         <v-sheet rounded="xl" class="overview-header" :class="{ 'is-locked': isControlLocked }">
-            <div class="overview-header__top">
-                <div>
-                    <div class="overview-header__eyebrow">Übersicht</div>
-                    <h2 class="overview-header__title">Kurs- und Leistungsansicht</h2>
-                    <p class="overview-header__subtitle">
-                        {{ selectedCourseDisplay }}
-                    </p>
-                </div>
-                <div class="overview-header__status">
-                    <v-chip size="small" variant="flat" color="primary" prepend-icon="mdi-account-school" v-if="selected_course">
-                        Kurs aktiv
-                    </v-chip>
-                    <v-chip size="small" variant="tonal" color="secondary" prepend-icon="mdi-view-dashboard-outline" v-else>
-                        Bitte Fach auswählen
-                    </v-chip>
-                    <v-chip size="small" variant="tonal" :color="action_2 === 'course_student_view' ? 'warning' : 'success'" prepend-icon="mdi-eye">
-                        {{ action_2 === 'course_student_view' ? 'Schüler:innen-Detail aktiv' : 'Listenansicht aktiv' }}
-                    </v-chip>
-                </div>
-            </div>
-
-            <div class="overview-header__controls">
-                <v-btn
-                    rounded="lg"
-                    class="overview-toggle-btn"
-                    :color="show_my_courses ? 'success' : 'secondary'"
-                    :variant="show_my_courses ? 'flat' : 'tonal'"
-                    :disabled="isControlLocked"
-                    prepend-icon="mdi-book-open-variant"
-                    @click="toggleMyCourses">
-                    Meine Fächer
-                    <v-icon size="16" :icon="toggleIcon(show_my_courses)" class="ml-2" />
-                </v-btn>
-
-                <v-btn
-                    v-if="selected_course"
-                    rounded="lg"
-                    class="overview-toggle-btn"
-                    :color="show_students ? 'success' : 'secondary'"
-                    :variant="show_students ? 'flat' : 'tonal'"
-                    :disabled="isControlLocked"
-                    prepend-icon="mdi-account-group"
-                    @click="show_students = !show_students">
-                    Schüler:innen
-                    <v-icon size="16" :icon="toggleIcon(show_students)" class="ml-2" />
-                </v-btn>
-
-                <v-btn
-                    v-if="selected_course"
-                    rounded="lg"
-                    class="overview-toggle-btn"
-                    :color="show_infos ? 'success' : 'secondary'"
-                    :variant="show_infos ? 'flat' : 'tonal'"
-                    :disabled="isControlLocked"
-                    prepend-icon="mdi-information-outline"
-                    @click="show_infos = !show_infos">
-                    Infos
-                    <v-icon size="16" :icon="toggleIcon(show_infos)" class="ml-2" />
-                </v-btn>
-
-                <v-btn
-                    v-if="selected_course"
-                    rounded="lg"
-                    class="overview-toggle-btn"
-                    :color="show_works ? 'success' : 'secondary'"
-                    :variant="show_works ? 'flat' : 'tonal'"
-                    :disabled="isControlLocked"
-                    prepend-icon="mdi-file-document-edit-outline"
-                    @click="show_works = !show_works">
-                    Arbeiten
-                    <v-icon size="16" :icon="toggleIcon(show_works)" class="ml-2" />
-                </v-btn>
-
-                <v-btn
-                    v-if="selected_course"
-                    rounded="lg"
-                    class="overview-toggle-btn"
-                    :color="show_dates ? 'success' : 'secondary'"
-                    :variant="show_dates ? 'flat' : 'tonal'"
-                    :disabled="isControlLocked"
-                    prepend-icon="mdi-calendar-clock-outline"
-                    @click="show_dates = !show_dates">
-                    Termine
-                    <v-icon size="16" :icon="toggleIcon(show_dates)" class="ml-2" />
-                </v-btn>
-            </div>
+            <section class="overview-dummy-submenu">
+                <v-btn-toggle
+                    v-model="functionalPanelSelection"
+                    multiple
+                    class="overview-dummy-panel-switcher"
+                    color="primary"
+                    divided>
+                    <v-btn
+                        v-for="panel in functionalPanels"
+                        :key="panel.id"
+                        class="overview-dummy-toolbar-btn"
+                        :value="panel.id"
+                        :disabled="isControlLocked"
+                        :prepend-icon="panel.icon">
+                        {{ panel.label }}
+                    </v-btn>
+                </v-btn-toggle>
+            </section>
         </v-sheet>
     </v-col>
 
@@ -97,7 +29,7 @@
             </v-col>
         </v-row>
 
-        <v-row v-if="show_my_courses && show_timetable && !selected_course && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
+        <v-row v-if="show_my_courses && show_timetable && !selected_course && action != 'teaching_course_new_or_edit'" :style="contentLockStyle" class="mt-n6">
             <v-col>
                 <MyTimetable />
             </v-col>
@@ -131,13 +63,13 @@
             </v-col>
         </v-row>
 
-        <v-row v-if="show_works">
+        <v-row v-if="show_works" class="mt-n6">
             <v-col>
                 <CourseWorks />
             </v-col>
         </v-row>
 
-        <v-row v-if="show_dates">
+        <v-row v-if="show_dates" class="mt-n6">
             <v-col>
                 <CourseDates />
             </v-col>
@@ -202,15 +134,40 @@ export default {
         contentLockStyle() {
             return this.action_2 == 'course_student_view' ? 'pointer-events:none; opacity:0.6' : ''
         },
-        selectedCourseDisplay() {
-            const course = this.selected_course
-            if (!course) {
-                return 'Kein Fach ausgewählt. Wählen Sie ein Fach, um Schüler:innen, Termine und Arbeiten einzublenden.'
+        functionalPanels() {
+            const panels = [{ id: 'my_courses', label: 'Meine Fächer', icon: 'mdi-book-open-variant' }]
+            if (this.selected_course) {
+                panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })
+                panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })
+                panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })
+                panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })
             }
-
-            const title = course.title || 'Fach'
-            const classes = Array.isArray(course.classes) && course.classes.length ? ` (${course.classes.join(', ')})` : ''
-            return `${title}${classes}`
+            return panels
+        },
+        functionalPanelSelection: {
+            get() {
+                const activePanels = []
+                if (this.show_my_courses) {
+                    activePanels.push('my_courses')
+                }
+                if (this.selected_course && this.show_students) {
+                    activePanels.push('students')
+                }
+                if (this.selected_course && this.show_infos) {
+                    activePanels.push('infos')
+                }
+                if (this.selected_course && this.show_works) {
+                    activePanels.push('works')
+                }
+                if (this.selected_course && this.show_dates) {
+                    activePanels.push('dates')
+                }
+                return activePanels
+            },
+            set(value) {
+                const selectedPanels = Array.isArray(value) ? value : []
+                this.syncFunctionalPanelSelection(selectedPanels)
+            },
         },
     },
 
@@ -224,9 +181,6 @@ export default {
     },
 
     methods: {
-        toggleIcon(isVisible) {
-            return isVisible ? 'mdi-eye' : 'mdi-eye-off'
-        },
         toggleMyCourses() {
             const next = !this.show_my_courses
             this.show_my_courses = next
@@ -237,6 +191,42 @@ export default {
                 this.selected_course_student = null
                 this.show_infos = false
             }
+        },
+        toggleFunctionalPanel(panel) {
+            if (this.isControlLocked) {
+                return
+            }
+
+            if (panel === 'my_courses') {
+                this.toggleMyCourses()
+                return
+            }
+            if (panel === 'students' && this.selected_course) {
+                this.show_students = !this.show_students
+                return
+            }
+            if (panel === 'infos' && this.selected_course) {
+                this.show_infos = !this.show_infos
+                return
+            }
+            if (panel === 'works' && this.selected_course) {
+                this.show_works = !this.show_works
+                return
+            }
+            if (panel === 'dates' && this.selected_course) {
+                this.show_dates = !this.show_dates
+            }
+        },
+        syncFunctionalPanelSelection(nextSelection) {
+            const requestedPanels = new Set(nextSelection)
+            const currentPanels = new Set(this.functionalPanelSelection)
+            this.functionalPanels.forEach((panel) => {
+                const isActive = currentPanels.has(panel.id)
+                const shouldBeActive = requestedPanels.has(panel.id)
+                if (isActive !== shouldBeActive) {
+                    this.toggleFunctionalPanel(panel.id)
+                }
+            })
         },
         toggleShowMyCourses() {
             if (this.show_my_courses) {
@@ -260,70 +250,29 @@ export default {
     padding: 14px;
 }
 
-.overview-header__top {
+.overview-dummy-submenu {
     display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    justify-content: space-between;
-    align-items: flex-start;
-}
-
-.overview-header__eyebrow {
-    font-size: 0.72rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: rgba(30, 41, 59, 0.72);
-}
-
-.overview-header__title {
-    margin-top: 4px;
-    font-size: clamp(1rem, 1.9vw, 1.22rem);
-    line-height: 1.2;
-    font-weight: 700;
-    color: #0f172a;
-}
-
-.overview-header__subtitle {
-    margin-top: 6px;
-    max-width: 78ch;
-    font-size: 0.86rem;
-    color: rgba(30, 41, 59, 0.86);
-}
-
-.overview-header__status {
-    display: flex;
-    flex-wrap: wrap;
+    justify-content: flex-start;
     gap: 8px;
-    justify-content: flex-end;
-}
-
-.overview-header__controls {
+    border-radius: 16px;
+    border: 1px solid rgba(16, 38, 58, 0.09);
+    background: rgba(255, 255, 255, 0.78);
+    padding: 10px;
     margin-top: 12px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
 }
 
-.overview-toggle-btn {
-    min-height: 44px;
+.overview-dummy-panel-switcher {
+    flex-wrap: wrap;
+    row-gap: 8px;
+}
+
+.overview-dummy-toolbar-btn {
     text-transform: none;
     letter-spacing: 0;
-    font-weight: 600;
+    font-weight: 650;
 }
 
 .overview-header.is-locked {
     opacity: 0.68;
-}
-
-@media (max-width: 960px) {
-    .overview-toggle-btn {
-        flex: 1 1 calc(50% - 8px);
-    }
-}
-
-@media (max-width: 620px) {
-    .overview-toggle-btn {
-        flex-basis: 100%;
-    }
 }
 </style>

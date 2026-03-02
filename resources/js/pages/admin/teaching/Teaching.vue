@@ -218,6 +218,8 @@ export default {
     --teaching-hero-primary: #0f172a;
     --teaching-hero-secondary: #1d4ed8;
     --teaching-hero-accent: #0ea5e9;
+    background: #0f172a;
+    min-height: 100vh;
 }
 
 .teaching-hero {
@@ -309,8 +311,8 @@ export default {
 }
 
 .teaching-nav {
-    border: 1px solid rgba(148, 163, 184, 0.32);
-    background: linear-gradient(132deg, rgba(30, 41, 59, 0.02), rgba(14, 116, 144, 0.08));
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(30, 41, 59, 0.8);
     padding: 10px;
 }
 

@@ -5,12 +5,12 @@
         </template>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
-                <v-btn-toggle v-model="range" mandatory density="compact" color="primary" class="w-100" @update:model-value="resetOffset">
-                    <v-btn :value="RANGE_TODAY" size="small">Heute</v-btn>
-                    <v-btn :value="RANGE_WEEK" size="small">Diese Woche</v-btn>
-                    <v-btn :value="RANGE_NEXT_WEEK" size="small">Nächste Woche</v-btn>
-                    <v-btn :value="RANGE_MONTH" size="small">Dieser Monat</v-btn>
-                    <v-btn :value="RANGE_CURRENT_SEMESTER" size="small">{{ currentSemesterButtonLabel }}</v-btn>
+                <v-btn-toggle v-model="range" mandatory color="primary" class="w-100 timetable-range-toggle" @update:model-value="resetOffset">
+                    <v-btn :value="RANGE_TODAY">Heute</v-btn>
+                    <v-btn :value="RANGE_WEEK">Diese Woche</v-btn>
+                    <v-btn :value="RANGE_NEXT_WEEK">Nächste Woche</v-btn>
+                    <v-btn :value="RANGE_MONTH">Dieser Monat</v-btn>
+                    <v-btn :value="RANGE_CURRENT_SEMESTER">{{ currentSemesterButtonLabel }}</v-btn>
                 </v-btn-toggle>
 
                 <!-- Navigation -->
@@ -419,6 +419,16 @@ export default {
 </script>
 
 <style scoped>
+.timetable-range-toggle {
+    flex-wrap: wrap;
+    row-gap: 4px;
+    height: auto !important;
+}
+
+.timetable-range-toggle :deep(.v-btn) {
+    height: 52px !important;
+}
+
 .chip-truncate {
     max-width: 100%;
 }

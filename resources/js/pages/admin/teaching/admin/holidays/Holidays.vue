@@ -1,5 +1,5 @@
 <template>
-    <v-col cols="12" lg="4" xl="4" class="teaching-admin-holidays-col">
+    <v-col cols="12" class="teaching-admin-holidays-col">
         <ItsGridBox variant="overview" color="primary" title="Ferien" subtitle="Freie Tage erfassen und bereinigen" icon="mdi-beach" class="w-100">
             <div class="d-flex align-center justify-space-between ga-2">
                 <div class="text-subtitle-2">Freie Tage erstellen</div>

@@ -1,5 +1,5 @@
 <template>
-    <v-col cols="12">
+    <v-col cols="12" md="6" lg="7" xl="4">
         <section class="teaching-admin-page">
             <section class="teaching-admin-toolbar">
                 <v-btn-toggle
@@ -130,7 +130,6 @@ export default {
 }
 
 .teaching-admin-panel-switcher {
-    width: 100%;
     flex-wrap: wrap;
     row-gap: 8px;
 }
