@@ -1,37 +1,43 @@
 <template>
-    <div class="super-admin-page is-overview">
-        <div class="super-admin-bg">
-            <div class="super-admin-bg-image"></div>
-            <div class="super-admin-bg-glow super-admin-bg-glow-left"></div>
-            <div class="super-admin-bg-glow super-admin-bg-glow-right"></div>
-        </div>
+    <div class="groups-page">
+        <v-container fluid class="ma-0 w-100 pa-2">
+            <v-sheet rounded="xl" class="groups-hero mb-3">
+                <div class="groups-hero__bg-orb groups-hero__bg-orb--left"></div>
+                <div class="groups-hero__bg-orb groups-hero__bg-orb--right"></div>
 
-        <v-container fluid class="ma-0 w-100 pa-2 super-admin-page-inner">
-            <header class="super-admin-header">
-                <div class="super-admin-brand">
-                    <div class="super-admin-brand-badge">
-                        <v-icon size="20" color="white">mdi-account-group-outline</v-icon>
-                    </div>
-                    <div>
-                        <div class="super-admin-brand-eyebrow">Verwaltung</div>
-                        <h1 class="super-admin-brand-title">Gruppen</h1>
-                        <p class="super-admin-brand-subtitle">
-                            Schulgruppen, Materialiengruppen und Eigene Gruppen verwalten. Löschen ist nur möglich, wenn keine Mitglieder zugeordnet sind.
-                        </p>
-                    </div>
-                </div>
+                <v-row class="ma-0" align="stretch" dense>
+                    <v-col cols="12" lg="8" class="pa-2 pa-md-4">
+                        <div class="groups-hero__eyebrow">Verwaltung</div>
+                        <h1 class="groups-hero__title">Gruppen</h1>
+                        <div class="groups-hero__chips">
+                            <v-chip
+                                v-if="config?.selected_school?.long_name || config?.selected_school?.short_name"
+                                size="small"
+                                variant="tonal"
+                                color="white"
+                                prepend-icon="mdi-domain">
+                                {{ config?.selected_school?.long_name || config?.selected_school?.short_name }}
+                            </v-chip>
+                            <v-chip size="small" variant="tonal" color="white" prepend-icon="mdi-account-group-outline">
+                                {{ groups.length }} Gruppen
+                            </v-chip>
+                        </div>
+                    </v-col>
 
-                <div class="super-admin-header-meta">
-                    <div class="super-admin-meta-pill" v-if="config?.selected_school?.long_name || config?.selected_school?.short_name">
-                        <span>Schule</span>
-                        <strong>{{ config?.selected_school?.long_name || config?.selected_school?.short_name }}</strong>
-                    </div>
-                    <div class="super-admin-meta-pill">
-                        <span>Gruppen</span>
-                        <strong>{{ groups.length }}</strong>
-                    </div>
-                </div>
-            </header>
+                    <v-col cols="12" lg="4" class="pa-2 pa-md-4">
+                        <v-card variant="tonal" color="white" class="groups-hero__focus-card" rounded="xl">
+                            <v-card-text class="pa-4">
+                                <div class="groups-hero__focus-label">Gruppentypen</div>
+                                <div class="groups-hero__focus-value">
+                                    <v-icon size="18" icon="mdi-account-group-outline" />
+                                    <span>Schulgruppen, Materialien, Eigene</span>
+                                </div>
+                                <div class="groups-hero__focus-note">Löschen nur ohne Mitglieder möglich.</div>
+                            </v-card-text>
+                        </v-card>
+                    </v-col>
+                </v-row>
+            </v-sheet>
 
             <div class="super-admin-overview-shell super-admin-overview-shell--active">
                 <section class="sa-card sa-card-school mb-3">
@@ -1905,6 +1911,91 @@ export default {
 <style scoped src="../../../../css/admin-superadmin-overview-cards.css"></style>
 
 <style scoped>
+.groups-page {
+    background: #0f172a;
+    min-height: 100vh;
+}
+
+.groups-hero {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    background: linear-gradient(132deg, #0f172a, #1d4ed8);
+    color: #ffffff;
+}
+
+.groups-hero__bg-orb {
+    position: absolute;
+    width: 220px;
+    height: 220px;
+    border-radius: 999px;
+    filter: blur(12px);
+    opacity: 0.34;
+    background: radial-gradient(circle at center, #67e8f9 0%, rgba(103, 232, 249, 0.08) 72%);
+    pointer-events: none;
+}
+
+.groups-hero__bg-orb--left {
+    top: -64px;
+    left: -52px;
+}
+
+.groups-hero__bg-orb--right {
+    right: -58px;
+    bottom: -70px;
+    background: radial-gradient(circle at center, #a5b4fc 0%, rgba(165, 180, 252, 0.08) 72%);
+}
+
+.groups-hero__eyebrow {
+    font-size: 0.76rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.82;
+}
+
+.groups-hero__title {
+    margin-top: 8px;
+    font-size: clamp(1.4rem, 2.3vw, 2rem);
+    line-height: 1.1;
+    font-weight: 750;
+}
+
+.groups-hero__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 18px;
+}
+
+.groups-hero__focus-card {
+    border: 1px solid rgba(255, 255, 255, 0.26);
+    background: rgba(255, 255, 255, 0.16) !important;
+    backdrop-filter: blur(3px);
+    height: 100%;
+}
+
+.groups-hero__focus-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    opacity: 0.72;
+}
+
+.groups-hero__focus-value {
+    margin-top: 8px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.groups-hero__focus-note {
+    margin-top: 8px;
+    font-size: 0.86rem;
+    opacity: 0.84;
+}
+
 .groups-cards-shell {
     width: calc(100% + ((100vw - 100%) / 2));
     max-width: none;

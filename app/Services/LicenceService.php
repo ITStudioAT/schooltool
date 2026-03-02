@@ -238,7 +238,9 @@ class LicenceService
     {
 
         // Wenn die Schule eine Lizenz zugeordnet hat, kann nicht gelöscht werden
-        if (SchoolLicence::whereIn('licence_id', $ids)->exists()) abort(409, "Mindest eine Lizenz ist noch einer Schule zugeordnet");
+        if (SchoolLicence::whereIn('licence_id', $ids)->exists()) {
+            abort(409, 'Mindestens eine Lizenz ist noch einer Schule zugeordnet und kann nicht gelöscht werden.');
+        }
 
         Licence::whereIn('id', $ids)->delete();
     }

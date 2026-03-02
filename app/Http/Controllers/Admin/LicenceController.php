@@ -11,6 +11,7 @@ use App\Http\Requests\Admin\LicenceUpdateRequest;
 use App\Http\Resources\Admin\LicenceResource;
 use App\Http\Resources\Admin\PaginateResource;
 use App\Models\Licence;
+use App\Models\SchoolLicence;
 use App\Services\LicenceService;
 use Illuminate\Http\Request;
 
