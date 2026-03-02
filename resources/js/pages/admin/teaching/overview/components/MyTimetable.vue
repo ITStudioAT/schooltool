@@ -54,8 +54,9 @@
                                             title="Anwesenheit geprüft">
                                             mdi-check-circle
                                         </v-icon>
-                                        <v-chip size="x-small" variant="tonal" color="primary">{{ formatWeekdayDate(item.date) }}</v-chip>
+                                        <v-chip v-if="!isToday(item)" size="x-small" variant="tonal" color="primary">{{ formatWeekdayDate(item.date) }}</v-chip>
                                         <v-chip size="x-small" variant="outlined" color="primary">{{ item.hoursLabel }}</v-chip>
+                                        <v-chip size="x-small" variant="outlined" color="primary">{{ item.timeRangeLabel }}</v-chip>
                                         <v-chip size="x-small" variant="outlined">{{ item.classLabel }}</v-chip>
                                         <v-chip size="x-small" variant="tonal" color="primary" class="chip-truncate">{{ item.courseTitle }}</v-chip>
                                         <v-chip
@@ -87,6 +88,7 @@ import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
+import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
 const RANGE_TODAY = 'today'
@@ -98,6 +100,13 @@ const RANGE_CURRENT_SEMESTER = 'current_semester'
 export default {
     components: { ItsGridBox },
 
+    async beforeMount() {
+        this.schoolHourStore = useSchoolHourStore()
+        if (!Array.isArray(this.school_hours) || this.school_hours.length === 0) {
+            await this.schoolHourStore.index()
+        }
+    },
+
     data() {
         return {
             RANGE_TODAY,
@@ -107,6 +116,7 @@ export default {
             RANGE_CURRENT_SEMESTER,
             range: RANGE_WEEK,
             offset: 0,
+            schoolHourStore: null,
         }
     },
 
@@ -114,6 +124,20 @@ export default {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useCourseStore, ['courses', 'selected_course', 'selected_course_id', 'selected_course_student', 'show_infos', 'show_timetable']),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
+        ...mapWritableState(useSchoolHourStore, ['school_hours']),
+        schoolHoursByHour() {
+            const entries = Array.isArray(this.school_hours) ? this.school_hours : []
+
+            return entries.reduce((carry, item) => {
+                const hour = Number(item?.hour)
+                if (!Number.isFinite(hour)) {
+                    return carry
+                }
+
+                carry[hour] = item
+                return carry
+            }, {})
+        },
         myCourses() {
             const userId = this.config?.user?.id
             const list = Array.isArray(this.courses) ? this.courses : []
@@ -136,6 +160,7 @@ export default {
                             .filter((h) => Number.isFinite(h))
                             .sort((a, b) => a - b)
                         const hoursLabel = hours.length ? hours.map((h) => `${h}. Std`).join(', ') : '-'
+                        const timeRangeLabel = this.formatHoursTimeRange(hours)
 
                         const status = Array.isArray(courseDate?.status) ? courseDate.status : []
 
@@ -147,6 +172,7 @@ export default {
                             dateObj,
                             hours,
                             hoursLabel,
+                            timeRangeLabel,
                             classLabel: classLabel || '-',
                             courseTitle: courseTitle || '-',
                             content: (courseDate?.content || '').toString().trim(),
@@ -334,6 +360,28 @@ export default {
             const d = parseLocalDate(date)
             if (isNaN(d.getTime())) return ''
             return d.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })
+        },
+        formatHoursTimeRange(hours) {
+            const sortedHours = Array.isArray(hours)
+                ? [...hours]
+                    .map((hour) => Number(hour))
+                    .filter((hour) => Number.isFinite(hour))
+                    .sort((a, b) => a - b)
+                : []
+            if (!sortedHours.length) return '-'
+
+            const firstHourConfig = this.schoolHoursByHour[sortedHours[0]]
+            const lastHourConfig = this.schoolHoursByHour[sortedHours[sortedHours.length - 1]]
+            const from = this.formatTimeValue(firstHourConfig?.from)
+            const until = this.formatTimeValue(lastHourConfig?.until)
+            if (!from || !until) return '-'
+
+            return `${from} - ${until}`
+        },
+        formatTimeValue(value) {
+            const raw = (value || '').toString().trim()
+            if (!raw) return ''
+            return raw.slice(0, 5)
         },
         contentHtml(text) {
             if (!text) return ''

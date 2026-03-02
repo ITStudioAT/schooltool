@@ -45,10 +45,22 @@
                     <v-divider />
                     <v-card-text class="pa-0">
                         <v-list density="compact">
+                            <v-list-item v-if="showActiveLessonEndCountdown">
+                                <div class="d-flex align-center justify-space-between ga-2 w-100">
+                                    <div class="text-caption text-medium-emphasis">Untericht endet in:</div>
+                                    <div class="text-body-1 font-weight-medium text-primary">{{ activeLessonEndsInDisplay }}</div>
+                                </div>
+                            </v-list-item>
                             <v-list-item>
                                 <div class="d-flex align-center justify-space-between ga-2 w-100">
                                     <div class="text-caption text-medium-emphasis">Heute</div>
                                     <div class="text-body-2 font-weight-medium">{{ nowLabel }}</div>
+                                </div>
+                            </v-list-item>
+                            <v-list-item v-if="showLessonCountdownRows">
+                                <div class="d-flex align-center justify-space-between ga-2 w-100">
+                                    <div class="text-caption text-medium-emphasis">Nächster Unterricht in</div>
+                                    <div class="text-body-2 font-weight-medium">{{ nextLessonCountdownLabel }}</div>
                                 </div>
                             </v-list-item>
                             <v-list-item>
@@ -102,6 +114,7 @@ import { parseLocalDate } from '@/helpers/date'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
+import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
@@ -110,9 +123,13 @@ export default {
 
     async beforeMount() {
         this.courseStore = useCourseStore()
+        this.schoolHourStore = useSchoolHourStore()
         this.teachingStore = useTeachingStore()
         if (!this.teachingStore.settings) {
             await this.teachingStore.loadSettings()
+        }
+        if (!Array.isArray(this.school_hours) || this.school_hours.length === 0) {
+            await this.schoolHourStore.index()
         }
         await this.loadOpenNotifications()
     },
@@ -128,6 +145,7 @@ export default {
     data() {
         return {
             courseStore: null,
+            schoolHourStore: null,
             teachingStore: null,
             openNotifications: [],
             nowTs: Date.now(),
@@ -138,6 +156,7 @@ export default {
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'action_2']),
         ...mapWritableState(useCourseStore, ['courses', 'selected_course', 'selected_course_id', 'selected_course_student', 'show_my_infos']),
+        ...mapWritableState(useSchoolHourStore, ['school_hours']),
         myCourses() {
             const userId = this.config?.user?.id
             const list = Array.isArray(this.courses) ? this.courses : []
@@ -156,8 +175,149 @@ export default {
                 year: 'numeric',
                 hour: '2-digit',
                 minute: '2-digit',
-                second: '2-digit',
             })
+        },
+        schoolHoursByHour() {
+            const entries = Array.isArray(this.school_hours) ? this.school_hours : []
+
+            return entries.reduce((carry, item) => {
+                const hour = Number(item?.hour)
+                if (!Number.isFinite(hour)) {
+                    return carry
+                }
+
+                carry[hour] = item
+                return carry
+            }, {})
+        },
+        hasConfiguredSchoolHours() {
+            return Object.keys(this.schoolHoursByHour).length > 0
+        },
+        hasCourseHoursInMyCourses() {
+            const courses = Array.isArray(this.myCourses) ? this.myCourses : []
+
+            return courses.some((course) => {
+                const courseDates = Array.isArray(course?.course_dates) ? course.course_dates : []
+                return courseDates.some((courseDate) => {
+                    const hours = Array.isArray(courseDate?.hours) ? courseDate.hours : []
+                    return hours.some((hour) => Number.isFinite(Number(hour)))
+                })
+            })
+        },
+        showLessonCountdownRows() {
+            return this.hasConfiguredSchoolHours && this.hasCourseHoursInMyCourses
+        },
+        showActiveLessonEndCountdown() {
+            return this.showLessonCountdownRows && !!this.activeLessonEndAt
+        },
+        nextLessonStartAt() {
+            const now = new Date(this.nowTs)
+            const courses = Array.isArray(this.myCourses) ? this.myCourses : []
+            let nearestStartTs = null
+
+            courses.forEach((course) => {
+                const courseDates = Array.isArray(course?.course_dates) ? course.course_dates : []
+                courseDates.forEach((courseDate) => {
+                    const date = (courseDate?.date || '').toString().slice(0, 10)
+                    const hours = Array.isArray(courseDate?.hours)
+                        ? [...courseDate.hours]
+                            .map((hour) => Number(hour))
+                            .filter((hour) => Number.isFinite(hour))
+                            .sort((a, b) => a - b)
+                        : []
+
+                    hours.forEach((hour) => {
+                        const start = this.lessonStartFromHour(date, hour)
+                        if (!start || start.getTime() <= now.getTime()) {
+                            return
+                        }
+
+                        if (nearestStartTs === null || start.getTime() < nearestStartTs) {
+                            nearestStartTs = start.getTime()
+                        }
+                    })
+                })
+            })
+
+            return nearestStartTs ? new Date(nearestStartTs) : null
+        },
+        activeLessonEndAt() {
+            const now = new Date(this.nowTs)
+            const courses = Array.isArray(this.myCourses) ? this.myCourses : []
+            let nearestEndTs = null
+
+            courses.forEach((course) => {
+                const courseDates = Array.isArray(course?.course_dates) ? course.course_dates : []
+                courseDates.forEach((courseDate) => {
+                    const date = (courseDate?.date || '').toString().slice(0, 10)
+                    const hours = Array.isArray(courseDate?.hours)
+                        ? [...courseDate.hours]
+                            .map((hour) => Number(hour))
+                            .filter((hour) => Number.isFinite(hour))
+                            .sort((a, b) => a - b)
+                        : []
+
+                    hours.forEach((hour) => {
+                        const start = this.lessonStartFromHour(date, hour)
+                        const end = this.lessonEndFromHour(date, hour)
+                        if (!start || !end) {
+                            return
+                        }
+
+                        if (now.getTime() < start.getTime() || now.getTime() >= end.getTime()) {
+                            return
+                        }
+
+                        if (nearestEndTs === null || end.getTime() < nearestEndTs) {
+                            nearestEndTs = end.getTime()
+                        }
+                    })
+                })
+            })
+
+            return nearestEndTs ? new Date(nearestEndTs) : null
+        },
+        activeLessonEndsInDisplay() {
+            if (!this.activeLessonEndAt) {
+                return '–'
+            }
+
+            const diffSeconds = Math.max(0, Math.floor((this.activeLessonEndAt.getTime() - this.nowTs) / 1000))
+            const hours = Math.floor(diffSeconds / 3600)
+            const minutes = Math.floor((diffSeconds % 3600) / 60)
+
+            if (hours > 0) {
+                return `${this.padTwo(hours)}h ${this.padTwo(minutes)}m`
+            }
+
+            return `${this.padTwo(minutes)}m`
+        },
+        nextLessonCountdownLabel() {
+            if (!this.nextLessonStartAt) {
+                return '–'
+            }
+
+            const diffSeconds = Math.max(0, Math.floor((this.nextLessonStartAt.getTime() - this.nowTs) / 1000))
+            const days = Math.floor(diffSeconds / 86400)
+            const hours = Math.floor((diffSeconds % 86400) / 3600)
+            const minutes = Math.floor((diffSeconds % 3600) / 60)
+
+            const parts = []
+            if (days > 0) {
+                parts.push(`${days}d`)
+            }
+            if (hours > 0) {
+                parts.push(`${this.padTwo(hours)}h`)
+            }
+            if (minutes > 0) {
+                parts.push(`${this.padTwo(minutes)}m`)
+            }
+
+            if (!parts.length) {
+                return '< 1m'
+            }
+
+            return parts.join(' ')
         },
         myStudentCount() {
             const ids = new Set()
@@ -376,6 +536,41 @@ export default {
             const diffDays = Math.floor((today.getTime() - target.getTime()) / (1000 * 60 * 60 * 24))
             if (mode === 'since') return Math.max(0, diffDays)
             return Math.max(0, -diffDays)
+        },
+        lessonStartFromHour(dateStr, hour) {
+            if (!dateStr) return null
+
+            const schoolHour = this.schoolHoursByHour[Number(hour)]
+            const fromValue = (schoolHour?.from || '').toString().trim()
+            if (!fromValue) return null
+
+            const date = parseLocalDate(dateStr)
+            if (isNaN(date.getTime())) return null
+
+            const parts = fromValue.split(':').map((part) => Number(part))
+            if (!Number.isFinite(parts[0]) || !Number.isFinite(parts[1])) return null
+
+            date.setHours(parts[0], parts[1], Number.isFinite(parts[2]) ? parts[2] : 0, 0)
+            return date
+        },
+        lessonEndFromHour(dateStr, hour) {
+            if (!dateStr) return null
+
+            const schoolHour = this.schoolHoursByHour[Number(hour)]
+            const untilValue = (schoolHour?.until || '').toString().trim()
+            if (!untilValue) return null
+
+            const date = parseLocalDate(dateStr)
+            if (isNaN(date.getTime())) return null
+
+            const parts = untilValue.split(':').map((part) => Number(part))
+            if (!Number.isFinite(parts[0]) || !Number.isFinite(parts[1])) return null
+
+            date.setHours(parts[0], parts[1], Number.isFinite(parts[2]) ? parts[2] : 0, 0)
+            return date
+        },
+        padTwo(value) {
+            return String(value).padStart(2, '0')
         },
     },
 }

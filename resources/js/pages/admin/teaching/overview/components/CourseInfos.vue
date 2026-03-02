@@ -44,6 +44,19 @@
                         </v-list>
                     </v-card-text>
                 </v-card>
+
+                <v-card variant="outlined" class="mt-2">
+                    <v-card-text class="pa-0">
+                        <v-list density="compact">
+                            <v-list-item>
+                                <div class="d-flex align-center justify-space-between ga-2 w-100">
+                                    <div class="text-caption text-medium-emphasis">{{ representativeCountdownLabel }}</div>
+                                    <div :class="representativeCountdownValueClass">{{ representativeCountdownValue }}</div>
+                                </div>
+                            </v-list-item>
+                        </v-list>
+                    </v-card-text>
+                </v-card>
                 <div class="text-caption text-medium-emphasis">{{ schemaName }}</div>
                 <div class="text-body-2 course-description" v-if="selected_course.description" v-html="descriptionHtml"></div>
                 <div class="text-body-2" v-else>Keine Fachinfos vorhanden.</div>
@@ -72,6 +85,7 @@ import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseBehaviourEntryStore } from '@/stores/admin/teaching/CourseBehaviourEntryStore'
+import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
@@ -88,19 +102,31 @@ export default {
         this.adminStore = useAdminStore()
         this.courseStore = useCourseStore()
         this.behaviourEntryStore = useCourseBehaviourEntryStore()
+        this.schoolHourStore = useSchoolHourStore()
         this.teachingStore = useTeachingStore()
+        if (!Array.isArray(this.school_hours) || this.school_hours.length === 0) {
+            await this.schoolHourStore.index()
+        }
         if (this.selected_course?.id) {
             await this.behaviourEntryStore.indexByCourse(this.selected_course.id)
         }
     },
 
-    unmounted() {},
+    mounted() {
+        this.nowTimer = setInterval(() => {
+            this.nowTs = Date.now()
+        }, 1000)
+    },
+    unmounted() {
+        if (this.nowTimer) clearInterval(this.nowTimer)
+    },
 
     data() {
         return {
             adminStore: null,
             courseStore: null,
             behaviourEntryStore: null,
+            schoolHourStore: null,
             teachingStore: null,
             is_valid: false,
             data: {
@@ -108,12 +134,142 @@ export default {
             },
             edit_description: '',
             delete_level: 0,
+            nowTs: Date.now(),
+            nowTimer: null,
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'show_infos']),
+        ...mapWritableState(useSchoolHourStore, ['school_hours']),
+
+        schoolHoursByHour() {
+            const entries = Array.isArray(this.school_hours) ? this.school_hours : []
+
+            return entries.reduce((carry, item) => {
+                const hour = Number(item?.hour)
+                if (!Number.isFinite(hour)) {
+                    return carry
+                }
+
+                carry[hour] = item
+                return carry
+            }, {})
+        },
+        nextCourseStartAt() {
+            const now = new Date(this.nowTs)
+            const dates = Array.isArray(this.selected_course?.course_dates) ? this.selected_course.course_dates : []
+            let nearestStartTs = null
+
+            dates.forEach((courseDate) => {
+                const date = (courseDate?.date || '').toString().slice(0, 10)
+                const hours = Array.isArray(courseDate?.hours)
+                    ? [...courseDate.hours]
+                        .map((hour) => Number(hour))
+                        .filter((hour) => Number.isFinite(hour))
+                        .sort((a, b) => a - b)
+                    : []
+
+                hours.forEach((hour) => {
+                    const start = this.lessonStartFromHour(date, hour)
+                    if (!start || start.getTime() <= now.getTime()) {
+                        return
+                    }
+
+                    if (nearestStartTs === null || start.getTime() < nearestStartTs) {
+                        nearestStartTs = start.getTime()
+                    }
+                })
+            })
+
+            return nearestStartTs ? new Date(nearestStartTs) : null
+        },
+        activeCourseEndAt() {
+            const now = new Date(this.nowTs)
+            const dates = Array.isArray(this.selected_course?.course_dates) ? this.selected_course.course_dates : []
+            let nearestEndTs = null
+
+            dates.forEach((courseDate) => {
+                const date = (courseDate?.date || '').toString().slice(0, 10)
+                const hours = Array.isArray(courseDate?.hours)
+                    ? [...courseDate.hours]
+                        .map((hour) => Number(hour))
+                        .filter((hour) => Number.isFinite(hour))
+                        .sort((a, b) => a - b)
+                    : []
+
+                hours.forEach((hour) => {
+                    const start = this.lessonStartFromHour(date, hour)
+                    const end = this.lessonEndFromHour(date, hour)
+                    if (!start || !end) {
+                        return
+                    }
+
+                    if (now.getTime() < start.getTime() || now.getTime() >= end.getTime()) {
+                        return
+                    }
+
+                    if (nearestEndTs === null || end.getTime() < nearestEndTs) {
+                        nearestEndTs = end.getTime()
+                    }
+                })
+            })
+
+            return nearestEndTs ? new Date(nearestEndTs) : null
+        },
+        startsInLabel() {
+            if (!this.nextCourseStartAt) {
+                return '–'
+            }
+
+            const diffSeconds = Math.max(0, Math.floor((this.nextCourseStartAt.getTime() - this.nowTs) / 1000))
+            const days = Math.floor(diffSeconds / 86400)
+            const hours = Math.floor((diffSeconds % 86400) / 3600)
+            const minutes = Math.floor((diffSeconds % 3600) / 60)
+
+            const parts = []
+            if (days > 0) {
+                parts.push(`${days}d`)
+            }
+            if (hours > 0) {
+                parts.push(`${this.padTwo(hours)}h`)
+            }
+            parts.push(`${this.padTwo(minutes)}m`)
+
+            return parts.join(' ')
+        },
+        endsInLabel() {
+            if (!this.activeCourseEndAt) {
+                return '–'
+            }
+
+            const diffSeconds = Math.max(0, Math.floor((this.activeCourseEndAt.getTime() - this.nowTs) / 1000))
+            const hours = Math.floor(diffSeconds / 3600)
+            const minutes = Math.floor((diffSeconds % 3600) / 60)
+
+            if (hours > 0) {
+                return `${this.padTwo(hours)}h ${this.padTwo(minutes)}m`
+            }
+
+            return `${this.padTwo(minutes)}m`
+        },
+        isCourseActiveNow() {
+            return !!this.activeCourseEndAt
+        },
+        representativeCountdownLabel() {
+            return this.isCourseActiveNow ? 'Endet in:' : 'Findet statt in:'
+        },
+        representativeCountdownValue() {
+            return this.isCourseActiveNow ? this.endsInLabel : this.startsInLabel
+        },
+        representativeCountdownValueClass() {
+            if (this.isCourseActiveNow) {
+                return 'text-body-1 font-weight-medium text-primary'
+            }
+
+            return 'text-body-2 font-weight-medium'
+        },
 
         schemaName() {
             const schemaId = this.selected_course?.teaching_schema_id
@@ -226,6 +382,41 @@ export default {
             const month = String(d.getMonth() + 1).padStart(2, '0')
             const day = String(d.getDate()).padStart(2, '0')
             return `${year}-${month}-${day}`
+        },
+        lessonStartFromHour(dateStr, hour) {
+            if (!dateStr) return null
+
+            const schoolHour = this.schoolHoursByHour[Number(hour)]
+            const fromValue = (schoolHour?.from || '').toString().trim()
+            if (!fromValue) return null
+
+            const date = parseLocalDate(dateStr)
+            if (isNaN(date.getTime())) return null
+
+            const parts = fromValue.split(':').map((part) => Number(part))
+            if (!Number.isFinite(parts[0]) || !Number.isFinite(parts[1])) return null
+
+            date.setHours(parts[0], parts[1], Number.isFinite(parts[2]) ? parts[2] : 0, 0)
+            return date
+        },
+        lessonEndFromHour(dateStr, hour) {
+            if (!dateStr) return null
+
+            const schoolHour = this.schoolHoursByHour[Number(hour)]
+            const untilValue = (schoolHour?.until || '').toString().trim()
+            if (!untilValue) return null
+
+            const date = parseLocalDate(dateStr)
+            if (isNaN(date.getTime())) return null
+
+            const parts = untilValue.split(':').map((part) => Number(part))
+            if (!Number.isFinite(parts[0]) || !Number.isFinite(parts[1])) return null
+
+            date.setHours(parts[0], parts[1], Number.isFinite(parts[2]) ? parts[2] : 0, 0)
+            return date
+        },
+        padTwo(value) {
+            return String(value).padStart(2, '0')
         },
         async completeNotification(entry) {
             if (!entry?.id || !entry?.type) return

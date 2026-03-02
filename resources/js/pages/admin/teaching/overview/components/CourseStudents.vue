@@ -241,6 +241,7 @@ import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
 import { useCourseBehaviourEntryStore } from '@/stores/admin/teaching/CourseBehaviourEntryStore'
+import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
@@ -259,9 +260,13 @@ export default {
         this.courseDateStore = useCourseDateStore()
         this.entryStore = useCourseStudentEntryStore()
         this.behaviourEntryStore = useCourseBehaviourEntryStore()
+        this.schoolHourStore = useSchoolHourStore()
         this.teachingStore = useTeachingStore()
         if (!this.teachingStore.settings) {
             await this.teachingStore.loadSettings()
+        }
+        if (!Array.isArray(this.school_hours) || this.school_hours.length === 0) {
+            await this.schoolHourStore.index()
         }
         this.activeSemester = Number(this.config?.user?.teaching_active_semester) || 1
         if (this.selected_course?.id) {
@@ -282,6 +287,7 @@ export default {
             courseDateStore: null,
             entryStore: null,
             behaviourEntryStore: null,
+            schoolHourStore: null,
             teachingStore: null,
             is_valid: false,
             data: {
@@ -306,7 +312,21 @@ export default {
         ...mapWritableState(useImport116Store, ['import116_students']),
         ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'selected_course_id', 'selected_course_student', 'show_students']),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
+        ...mapWritableState(useSchoolHourStore, ['school_hours']),
         ...mapWritableState(useTeachingStore, ['settings']),
+        schoolHoursByHour() {
+            const entries = Array.isArray(this.school_hours) ? this.school_hours : []
+
+            return entries.reduce((carry, item) => {
+                const hour = Number(item?.hour)
+                if (!Number.isFinite(hour)) {
+                    return carry
+                }
+
+                carry[hour] = item
+                return carry
+            }, {})
+        },
         selectedCourseClasses() {
             if (!this.selected_course?.classes?.length) return ''
             if (typeof this.selected_course.classes === 'string') {
@@ -565,19 +585,19 @@ export default {
         selectedCourseDateLabel() {
             const courseDate = this.selectedCourseDateForCourse
             if (!courseDate) return ''
-            const weekday = this.getWeekday(courseDate.date)
-            const date = this.formatDate(courseDate.date)
-            const hours = Array.isArray(courseDate.hours)
-                ? [...courseDate.hours]
-                    .map((h) => Number(h))
-                    .filter((h) => Number.isFinite(h))
-                    .sort((a, b) => a - b)
-                    .map((h) => `${h}. Std`)
-                    .join(', ')
-                : ''
-            if (weekday && date && hours) return `${weekday}, ${date} - ${hours}`
-            if (date && hours) return `${date} - ${hours}`
-            return date || hours || ''
+            const weekday = this.getWeekdayShort(courseDate.date)
+            const date = this.formatDateShort(courseDate.date)
+            const hours = this.formatCourseDateHoursCompact(courseDate.hours)
+            const timeRange = this.formatCourseDateTimeRange(courseDate.hours)
+            const base = weekday && date && hours
+                ? `${weekday}, ${date} - ${hours}`
+                : (date && hours ? `${date} - ${hours}` : (date || hours || ''))
+
+            if (base && timeRange) {
+                return `${base} (${timeRange})`
+            }
+
+            return base
         },
     },
 
@@ -812,6 +832,79 @@ export default {
             const d = parseLocalDate(date)
             if (isNaN(d.getTime())) return ''
             return d.toLocaleDateString('de-DE', { weekday: 'long' })
+        },
+        getWeekdayShort(date) {
+            if (!date) return ''
+            const d = parseLocalDate(date)
+            if (isNaN(d.getTime())) return ''
+            const label = d.toLocaleDateString('de-DE', { weekday: 'short' })
+            return label.replace(/\.$/, '')
+        },
+        formatDateShort(date) {
+            if (!date) return ''
+            const d = parseLocalDate(date)
+            if (isNaN(d.getTime())) return ''
+            return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
+        },
+        formatCourseDateHoursCompact(hours) {
+            const sortedHours = Array.isArray(hours)
+                ? [...hours]
+                    .map((h) => Number(h))
+                    .filter((h) => Number.isFinite(h))
+                    .sort((a, b) => a - b)
+                : []
+            if (!sortedHours.length) return ''
+
+            const labels = []
+            let rangeStart = sortedHours[0]
+            let rangeEnd = sortedHours[0]
+
+            const pushRange = () => {
+                if (rangeStart === rangeEnd) {
+                    labels.push(`${rangeStart}. Std`)
+                    return
+                }
+
+                labels.push(`${rangeStart}.-${rangeEnd}. Std`)
+            }
+
+            for (let i = 1; i < sortedHours.length; i++) {
+                const current = sortedHours[i]
+                if (current <= rangeEnd + 1) {
+                    rangeEnd = current
+                    continue
+                }
+
+                pushRange()
+                rangeStart = current
+                rangeEnd = current
+            }
+
+            pushRange()
+
+            return labels.join(', ')
+        },
+        formatCourseDateTimeRange(hours) {
+            const sortedHours = Array.isArray(hours)
+                ? [...hours]
+                    .map((h) => Number(h))
+                    .filter((h) => Number.isFinite(h))
+                    .sort((a, b) => a - b)
+                : []
+            if (!sortedHours.length) return ''
+
+            const firstHourConfig = this.schoolHoursByHour[sortedHours[0]]
+            const lastHourConfig = this.schoolHoursByHour[sortedHours[sortedHours.length - 1]]
+            const from = this.formatTimeShort(firstHourConfig?.from)
+            const until = this.formatTimeShort(lastHourConfig?.until)
+            if (!from || !until) return ''
+
+            return `${from}-${until}`
+        },
+        formatTimeShort(value) {
+            const raw = (value || '').toString().trim()
+            if (!raw) return ''
+            return raw.slice(0, 5)
         },
         normalizeCourseDatePayload(response) {
             if (!response) return null

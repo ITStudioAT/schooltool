@@ -62,3 +62,39 @@ describe('CourseStudents sorting', () => {
         expect(activeClass).toBe('')
     })
 })
+
+describe('CourseStudents selected date label', () => {
+    it('formats selected date label in compact form', () => {
+        const computed = (CourseStudents as any).computed
+        const methods = (CourseStudents as any).methods
+
+        const ctx: Record<string, unknown> = {
+            selectedCourseDateForCourse: {
+                date: '2026-03-02',
+                hours: [6, 5],
+            },
+            school_hours: [
+                { hour: 5, from: '11:50:00', until: '12:40:00' },
+                { hour: 6, from: '12:45:00', until: '13:35:00' },
+            ],
+            getWeekdayShort: methods.getWeekdayShort,
+            formatDateShort: methods.formatDateShort,
+            formatCourseDateHoursCompact: methods.formatCourseDateHoursCompact,
+            formatCourseDateTimeRange: methods.formatCourseDateTimeRange,
+            formatTimeShort: methods.formatTimeShort,
+        }
+        ctx.schoolHoursByHour = computed.schoolHoursByHour.call(ctx)
+
+        const label = computed.selectedCourseDateLabel.call(ctx)
+
+        expect(label).toBe('Mo, 02.03. - 5.-6. Std (11:50-13:35)')
+    })
+
+    it('formats discontinuous hours as compact groups', () => {
+        const methods = (CourseStudents as any).methods
+
+        const label = methods.formatCourseDateHoursCompact.call({}, [2, 4, 5])
+
+        expect(label).toBe('2. Std, 4.-5. Std')
+    })
+})
