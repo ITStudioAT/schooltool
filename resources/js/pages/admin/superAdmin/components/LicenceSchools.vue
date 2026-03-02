@@ -1,73 +1,109 @@
 <template>
-    <v-col cols="12" md="6" xl="4">
-        <its-grid-box color="primary" title="Lizenzvergaben" class="w-100" :disabled="action != ''">
-            <div class="d-flex flex-row align-start">
-                <v-card tile flat color="transparent" class="w-100">
-                    <v-card-text>
-                        <SearchField :store="schoolStore" selected_field="selected_schools" />
+    <v-col cols="12" :xl="mainColXl">
+        <section class="crud-shell admin-card ai-glass-panel" :class="{ 'is-disabled': action != '' }">
+            <div class="admin-card-head crud-head mb-4">
+                <div>
+                    <div class="admin-card-eyebrow">Verwaltung</div>
+                    <h2 class="admin-card-title crud-title">Lizenzvergaben</h2>
+                </div>
+                <div class="admin-kpi-grid crud-kpis">
+                    <div class="kpi-card ai-glass-panel">
+                        <div class="kpi-label">Schulen</div>
+                        <div class="kpi-value">{{ totalSchoolsCount }}</div>
+                    </div>
+                </div>
+            </div>
+            <section class="admin-card ai-glass-panel crud-main-card pa-3">
+                <SearchField :store="schoolStore" selected_field="selected_schools" />
 
-                        <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2 mt-2" :disabled="action != ''">
-                            <v-btn
-                                color="error"
-                                slim
-                                tile
-                                class="text-caption"
-                                :variant="expired_only ? 'flat' : 'outlined'"
-                                :disabled="isInteractionLocked"
-                                @click="toggleExpiredSchools">
-                                Abgelaufen
-                            </v-btn>
-                            <v-btn color="primary" slim flat tile class="text-caption" @click="clearSelection" :disabled="isInteractionLocked" v-if="selected_schools.length >= 1">
-                                Auswahl aufheben
-                            </v-btn>
-                        </v-card>
+                <div class="d-flex flex-row flex-wrap align-center ga-2 mt-2" :disabled="action != ''">
+                    <v-btn
+                        color="error"
+                        slim
+                        tile
+                        class="text-caption"
+                        :variant="expired_only ? 'flat' : 'outlined'"
+                        :disabled="isInteractionLocked"
+                        @click="toggleExpiredSchools">
+                        Abgelaufen
+                    </v-btn>
+                    <v-btn color="primary" slim flat tile class="text-caption" @click="clearSelection" :disabled="isInteractionLocked" v-if="selected_schools.length >= 1">
+                        Auswahl aufheben
+                    </v-btn>
+                </div>
 
-                        <v-list
-                            dense
-                            variant="elevated"
-                            select-strategy="leaf"
-                            v-model:selected="selected_schools"
-                            @update:selected="onSelectedSchoolsUpdate"
-                            color="success-lighten-2">
-                            <v-list-item v-for="item in schools" :key="item.id" :value="item.id">
-                                <template #title>
-                                    <div class="d-flex flex-column ga-2 py-1">
-                                        <div class="text-body-1">{{ item.long_name }}</div>
-                                        <div class="text-caption text-medium-emphasis">{{ item.short_name }} | {{ item.email }}</div>
-                                        <div class="d-flex flex-row flex-wrap align-center ga-2">
-                                            <span class="text-caption text-medium-emphasis">Lizenzen:</span>
-                                            <template v-if="item.licences && item.licences.length >= 1">
-                                                <v-chip
-                                                    v-for="licence in sortedLicences(item.licences)"
-                                                    :key="`licence-assignment-${item.id}-${licence.id}`"
-                                                    size="x-small"
-                                                    :color="isSchoolLicenceNotNeeded(licence) ? 'success' : undefined"
-                                                    :variant="isSchoolLicenceNotNeeded(licence) ? 'flat' : 'outlined'">
-                                                    <v-avatar size="14" :color="isLicenceActive(licence) ? 'success' : 'error'" class="mr-1">
-                                                        <v-icon size="10" color="white" :icon="isLicenceActive(licence) ? 'mdi-check' : 'mdi-close'" />
-                                                    </v-avatar>
-                                                    {{ licence.name }}
-                                                </v-chip>
-                                            </template>
-                                            <span v-else class="text-caption text-medium-emphasis">-</span>
+                <v-list
+                    dense
+                    variant="flat"
+                    class="assignment-schools-list"
+                    select-strategy="leaf"
+                    v-model:selected="selected_schools"
+                    @update:selected="onSelectedSchoolsUpdate"
+                    color="success-lighten-2">
+                    <v-list-item
+                        v-for="item in schools"
+                        :key="item.id"
+                        :value="item.id"
+                        class="assignment-schools-item"
+                        :class="{ 'is-selected': selectedSchoolId === item.id }">
+                        <template #title>
+                            <article class="licence-card">
+                                <header class="licence-card__header">
+                                    <div class="licence-card__title-wrap">
+                                        <div class="licence-card__title">{{ item.long_name }}</div>
+                                        <div class="licence-card__subtitle">{{ item.email || 'Keine E-Mail hinterlegt' }}</div>
+                                    </div>
+                                    <div class="licence-card__badges">
+                                        <div class="licence-card__badge">
+                                            <span class="licence-card__badge-label">Kürzel</span>
+                                            <span class="licence-card__badge-value">{{ item.short_name || '-' }}</span>
+                                        </div>
+                                        <div class="licence-card__badge">
+                                            <span class="licence-card__badge-label">Lizenzen</span>
+                                            <span class="licence-card__badge-value">{{ Array.isArray(item.licences) ? item.licences.length : 0 }}</span>
                                         </div>
                                     </div>
-                                </template>
-                            </v-list-item>
-                        </v-list>
+                                </header>
 
-                        <Pagination :meta="meta" :store="schoolStore" selected_field="selected_schools" />
-                    </v-card-text>
-                </v-card>
+                                <div class="licence-card__roles-block">
+                                    <div class="licence-card__roles-title">Zugewiesene Lizenzen</div>
+                                    <div class="licence-card__roles-list">
+                                        <template v-if="item.licences && item.licences.length >= 1">
+                                            <v-chip
+                                                v-for="licence in sortedLicences(item.licences)"
+                                                :key="`licence-assignment-${item.id}-${licence.id}`"
+                                                size="small"
+                                                class="licence-card__role-chip"
+                                                :color="isSchoolLicenceNotNeeded(licence) ? 'success' : undefined"
+                                                :variant="isSchoolLicenceNotNeeded(licence) ? 'flat' : 'outlined'">
+                                                <v-avatar size="14" :color="isLicenceActive(licence) ? 'success' : 'error'" class="mr-1">
+                                                    <v-icon size="10" color="white" :icon="isLicenceActive(licence) ? 'mdi-check' : 'mdi-close'" />
+                                                </v-avatar>
+                                                {{ licence.name }}
+                                            </v-chip>
+                                        </template>
+                                        <span v-else class="text-medium-emphasis">Keine Lizenzen zugewiesen</span>
+                                    </div>
+                                </div>
+                            </article>
+                        </template>
+                    </v-list-item>
+                </v-list>
 
-            </div>
-        </its-grid-box>
+                <Pagination :meta="meta" :store="schoolStore" selected_field="selected_schools" />
+            </section>
+        </section>
     </v-col>
 
-    <v-col cols="12" md="6" xl="4" v-if="selectedSchool && !isUserLicencesOpen">
-        <its-grid-box color="primary" :title="`Lizenzen: ${selectedSchool.long_name}`" class="w-100">
-            <v-card tile flat color="transparent" class="pa-1">
-                <v-card variant="outlined" class="pa-4 mb-4">
+    <v-col cols="12" md="8" :xl="schoolDetailXl" v-if="selectedSchool && !isUserLicencesOpen">
+        <section class="admin-card ai-glass-panel pa-4">
+            <div class="admin-card-head mb-3">
+                <div>
+                    <div class="admin-card-eyebrow">Schule</div>
+                    <h2 class="admin-card-title">{{ selectedSchool.long_name }}</h2>
+                </div>
+            </div>
+            <v-card variant="outlined" class="pa-4 mb-4">
                     <div class="text-subtitle-1 mb-3">Lizenz zuweisen</div>
                     <v-row dense>
                         <v-col cols="12">
@@ -91,27 +127,32 @@
 
                 <v-card variant="outlined" class="pa-4 mb-4">
                     <div class="text-subtitle-1 mb-3">Zugewiesene Lizenzen</div>
-                    <v-list dense variant="text" v-if="school_licences.length >= 1">
-                        <v-list-item v-for="licence in sortedLicences(school_licences)" :key="`school-licence-${licence.school_licence_id}`">
+                    <v-list dense variant="flat" class="assignment-licence-list" v-if="school_licences.length >= 1">
+                        <v-list-item
+                            v-for="licence in sortedLicences(school_licences)"
+                            :key="`school-licence-${licence.school_licence_id}`"
+                            class="assignment-licence-item">
                             <template #title>
-                                <div class="d-flex flex-row align-center justify-space-between ga-2 flex-wrap">
-                                    <div>
-                                        <div class="d-flex flex-row align-center ga-1">
-                                            <v-avatar size="16" :color="isLicenceActive(licence) ? 'success' : 'error'">
-                                                <v-icon size="11" color="white" :icon="isLicenceActive(licence) ? 'mdi-check' : 'mdi-close'" />
-                                            </v-avatar>
-                                            <div class="text-body-1" :class="{ 'text-success': isSchoolLicenceNotNeeded(licence) }">{{ licence.name }}</div>
-                                            <v-btn
-                                                size="x-small"
-                                                icon="mdi-pencil"
-                                                variant="text"
-                                                color="secondary"
-                                                :disabled="isInteractionLocked"
-                                                @click="openEditDateDialog(licence)" />
+                                <article class="licence-card licence-card--compact">
+                                    <header class="licence-card__header">
+                                        <div class="licence-card__title-wrap">
+                                            <div class="d-flex flex-row align-center ga-1">
+                                                <v-avatar size="16" :color="isLicenceActive(licence) ? 'success' : 'error'">
+                                                    <v-icon size="11" color="white" :icon="isLicenceActive(licence) ? 'mdi-check' : 'mdi-close'" />
+                                                </v-avatar>
+                                                <div class="licence-card__title" :class="{ 'text-success': isSchoolLicenceNotNeeded(licence) }">{{ licence.name }}</div>
+                                                <v-btn
+                                                    size="x-small"
+                                                    icon="mdi-pencil"
+                                                    variant="text"
+                                                    color="secondary"
+                                                    :disabled="isInteractionLocked"
+                                                    @click="openEditDateDialog(licence)" />
+                                            </div>
+                                            <div class="licence-card__subtitle">Gültig bis: {{ licence.valid_until || '-' }}</div>
                                         </div>
-                                        <div class="text-caption text-medium-emphasis">Gültig bis: {{ licence.valid_until || '-' }}</div>
-                                    </div>
-                                    <div class="d-flex flex-row ga-2">
+                                    </header>
+                                    <div class="d-flex flex-row ga-2 flex-wrap">
                                         <v-btn
                                             v-if="hasUserLicenceRequiredRole(licence)"
                                             size="small"
@@ -141,21 +182,24 @@
                                             Entfernen
                                         </v-btn>
                                     </div>
-                                </div>
+                                </article>
                             </template>
                         </v-list-item>
                     </v-list>
                     <div class="text-caption text-medium-emphasis" v-else>Keine Lizenzen zugewiesen.</div>
                 </v-card>
-
-            </v-card>
-        </its-grid-box>
+        </section>
     </v-col>
 
     <v-col cols="12" md="6" xl="4" v-if="selectedSchoolLicence && currentSchoolLicenceModel">
-        <its-grid-box color="primary" :title="`Lizenzmodell: ${selectedSchoolLicence.name}`" class="w-100">
-            <v-card variant="outlined" class="pa-4">
-                <div class="text-subtitle-2 mb-2">Schullizenz nötig</div>
+        <section class="admin-card ai-glass-panel pa-4">
+            <div class="admin-card-head mb-3">
+                <div>
+                    <div class="admin-card-eyebrow">Lizenzmodell</div>
+                    <h2 class="admin-card-title">{{ selectedSchoolLicence.name }}</h2>
+                </div>
+            </div>
+            <div class="text-subtitle-2 mb-2">Schullizenz nötig</div>
                 <v-btn-toggle
                     :model-value="currentSchoolLicenceModel.school_licence_required"
                     mandatory
@@ -206,20 +250,24 @@
                     Wählen Sie zuerst eine oder mehrere Rollen aus.
                 </div>
 
-                <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between mt-4">
-                    <v-btn color="warning" flat tile @click="closeSchoolLicenceModel">Abbrechen</v-btn>
-                    <v-btn color="success" flat tile @click="saveSchoolLicenceModel">Speichern</v-btn>
-                </v-card>
-            </v-card>
-        </its-grid-box>
+            <div class="d-flex flex-row align-center justify-space-between mt-4">
+                <v-btn color="warning" flat tile @click="closeSchoolLicenceModel">Abbrechen</v-btn>
+                <v-btn color="success" flat tile @click="saveSchoolLicenceModel">Speichern</v-btn>
+            </div>
+        </section>
     </v-col>
 
     <v-col cols="12" md="6" xl="4" v-if="selectedUserLicencesSource">
-        <its-grid-box color="primary" :title="`Benutzerlizenzen: ${selectedUserLicencesSource.name}`" class="w-100">
-            <div class="d-flex flex-row align-start">
-                <v-card tile flat color="transparent" class="w-100">
-                    <v-card tile flat color="transparent">
-                        <div class="text-body-2 mb-2">Rollen mit eigener Userlizenz</div>
+        <section class="admin-card ai-glass-panel pa-4">
+            <div class="admin-card-head mb-3">
+                <div>
+                    <div class="admin-card-eyebrow">Benutzerlizenzen</div>
+                    <h2 class="admin-card-title">{{ selectedUserLicencesSource.name }}</h2>
+                </div>
+                <v-btn size="small" tile flat color="warning" @click="closeUserLicencesCard">Abbrechen</v-btn>
+            </div>
+            <div>
+                <div class="text-body-2 mb-2">Rollen mit eigener Userlizenz</div>
                         <div class="d-flex flex-row flex-wrap ga-2 mb-3">
                             <v-chip
                                 clickable
@@ -261,7 +309,7 @@
                             </div>
                         </v-form>
 
-                        <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2 mt-2">
+                        <div class="d-flex flex-row flex-wrap align-center ga-2 mt-2">
                             <v-btn
                                 color="error"
                                 slim
@@ -271,8 +319,7 @@
                                 @click="toggleUserLicencesExpiredOnly">
                                 Abgelaufen
                             </v-btn>
-                        </v-card>
-                    </v-card>
+                        </div>
 
                     <v-list
                         dense
@@ -354,18 +401,18 @@
                                 :disabled="school_licence_users_meta.current_page >= school_licence_users_meta.last_page" />
                         </div>
                     </v-card>
-
-                </v-card>
-
-                <v-card tile flat color="transparent" style="width: 150px" class="d-flex flex-column ga-2">
-                    <v-btn block tile flat color="warning" class="text-caption" @click="closeUserLicencesCard">Abbrechen</v-btn>
-                </v-card>
             </div>
-        </its-grid-box>
+        </section>
     </v-col>
 
     <v-col cols="12" md="6" xl="4" v-if="selectedUserLicenceUser">
-        <its-grid-box color="primary" :title="`Benutzer: ${selectedUserLicenceUser.last_name} ${selectedUserLicenceUser.first_name}`" class="w-100">
+        <section class="admin-card ai-glass-panel pa-4">
+            <div class="admin-card-head mb-3">
+                <div>
+                    <div class="admin-card-eyebrow">Benutzer</div>
+                    <h2 class="admin-card-title">{{ selectedUserLicenceUser.last_name }} {{ selectedUserLicenceUser.first_name }}</h2>
+                </div>
+            </div>
             <v-card variant="outlined" class="pa-4 mb-4">
                 <template v-if="isSchoolLicenceNotNeeded(selectedUserLicencesSource)">
                     <div class="text-subtitle-1">Schullizenz nicht erforderlich</div>
@@ -496,12 +543,12 @@
                     Wählen Sie zuerst eine oder mehrere Rollen aus.
                 </div>
 
-                <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between mt-4">
+                <div class="d-flex flex-row align-center justify-space-between mt-4">
                     <v-btn color="warning" flat tile @click="closeSelectedUserLicenceCard">Abbrechen</v-btn>
                     <v-btn color="success" flat tile :disabled="!selectedUserLicenceUser" @click="saveSelectedUserLicenceRoles">Speichern</v-btn>
-                </v-card>
+                </div>
             </v-card>
-        </its-grid-box>
+        </section>
     </v-col>
 
     <v-dialog v-model="edit_date_dialog" max-width="520">
@@ -531,12 +578,11 @@ import { useLicenceStore } from '@/stores/admin/LicenceStore'
 import { useRoleStore } from '@/stores/admin/RoleStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import { parseLocalDate } from '@/helpers/date'
-import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import SearchField from '@/pages/components/SearchField.vue'
 import Pagination from '@/pages/components/Pagination.vue'
 
 export default {
-    components: { ItsGridBox, SearchField, Pagination },
+    components: { SearchField, Pagination },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -595,6 +641,24 @@ export default {
         ]),
         ...mapWritableState(useLicenceStore, ['licences']),
         ...mapWritableState(useRoleStore, ['roles']),
+        totalSchoolsCount() {
+            return this.meta?.total ?? this.schools?.length ?? 0
+        },
+        mainColXl() {
+            if (this.selectedSchool && !this.isUserLicencesOpen) {
+                return 6
+            }
+            if (this.selectedUserLicenceUser) {
+                return 4
+            }
+            if (this.selectedUserLicencesSource) {
+                return 7
+            }
+            return 6
+        },
+        schoolDetailXl() {
+            return this.selectedSchoolLicence && this.currentSchoolLicenceModel ? 4 : 6
+        },
         selectedSchoolId() {
             return this.selected_schools[0] ?? null
         },
@@ -1345,3 +1409,13 @@ export default {
     },
 }
 </script>
+
+<style scoped src="../../../../../css/admin-index-page.css"></style>
+<style scoped src="../../../../../css/admin-crud-panel.css"></style>
+<style scoped src="../../../../../css/admin-licence-cards.css"></style>
+<style scoped>
+.assignment-schools-list :deep(.v-list-item__content),
+.assignment-licence-list :deep(.v-list-item__content) {
+    overflow: visible;
+}
+</style>
