@@ -81,6 +81,7 @@
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
+import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import MyCourses from './components/MyCourses.vue'
 import CourseStudents from './components/CourseStudents.vue'
 import CourseStudent from './components/CourseStudent.vue'
@@ -96,12 +97,13 @@ export default {
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.courseStore = useCourseStore()
+        this.schoolHourStore = useSchoolHourStore()
         this.selected_course = null
         this.selected_course_id = null
         this.selected_course_student = null
         this.action_2 = ''
         this.show_my_courses = true
-        await this.courseStore.index()
+        await this.refreshOverviewData()
     },
 
     unmounted() {},
@@ -110,6 +112,7 @@ export default {
         return {
             adminStore: null,
             courseStore: null,
+            schoolHourStore: null,
             selected_course_old: null,
         }
     },
@@ -214,6 +217,10 @@ export default {
     },
 
     methods: {
+        async refreshOverviewData() {
+            await this.courseStore.index()
+            await this.schoolHourStore.index()
+        },
         toggleMyCourses() {
             const next = !this.show_my_courses
             this.show_my_courses = next

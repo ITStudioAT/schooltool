@@ -2,6 +2,20 @@ import { describe, expect, it, vi } from 'vitest'
 import Overview from '@/pages/admin/teaching/overview/Overview.vue'
 
 describe('Teaching overview controls', () => {
+    it('refreshes courses and school hours together', async () => {
+        const courseIndex = vi.fn().mockResolvedValue(true)
+        const schoolHourIndex = vi.fn().mockResolvedValue(true)
+        const ctx = {
+            courseStore: { index: courseIndex },
+            schoolHourStore: { index: schoolHourIndex },
+        }
+
+        await (Overview as any).methods.refreshOverviewData.call(ctx)
+
+        expect(courseIndex).toHaveBeenCalledTimes(1)
+        expect(schoolHourIndex).toHaveBeenCalledTimes(1)
+    })
+
     it('resets course context when showing courses again', () => {
         const ctx = {
             show_my_courses: false,
