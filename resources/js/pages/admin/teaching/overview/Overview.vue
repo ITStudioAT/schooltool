@@ -1,17 +1,17 @@
 <template>
     <v-col cols="12" class="pb-1">
-        <v-sheet rounded="xl" class="overview-header" :class="{ 'is-locked': isControlLocked }">
-            <section class="overview-dummy-submenu">
+        <div class="teaching-overview-toolbar-width" :class="toolbarWidthClass">
+            <section class="teaching-overview-toolbar" :class="{ 'is-locked': isControlLocked }">
                 <v-btn-toggle
                     v-model="functionalPanelSelection"
                     multiple
-                    class="overview-dummy-panel-switcher"
+                    class="teaching-overview-panel-switcher"
                     color="primary"
                     divided>
                     <v-btn
                         v-for="panel in functionalPanels"
                         :key="panel.id"
-                        class="overview-dummy-toolbar-btn"
+                        class="teaching-overview-toolbar-btn"
                         :value="panel.id"
                         :disabled="isControlLocked"
                         :prepend-icon="panel.icon">
@@ -19,7 +19,7 @@
                     </v-btn>
                 </v-btn-toggle>
             </section>
-        </v-sheet>
+        </div>
     </v-col>
 
     <v-col cols="12" md="6" lg="7" xl="4" v-if="show_my_courses || show_students">
@@ -134,6 +134,39 @@ export default {
         contentLockStyle() {
             return this.action_2 == 'course_student_view' ? 'pointer-events:none; opacity:0.6' : ''
         },
+        hasLeftOverviewColumn() {
+            return this.show_my_courses || this.show_students
+        },
+        hasMiddleOverviewColumn() {
+            return this.show_my_courses && this.show_my_infos && !this.selected_course && this.action != 'teaching_course_new_or_edit'
+        },
+        hasRightOverviewColumn() {
+            return (this.show_infos || this.show_dates || this.show_works) && this.action != 'teaching_course_new_or_edit'
+        },
+        toolbarWidthClass() {
+            if (this.hasLeftOverviewColumn && this.hasMiddleOverviewColumn && this.hasRightOverviewColumn) {
+                return 'toolbar-width-xl-12'
+            }
+            if (this.hasLeftOverviewColumn && this.hasRightOverviewColumn) {
+                return 'toolbar-width-xl-9'
+            }
+            if (this.hasLeftOverviewColumn && this.hasMiddleOverviewColumn) {
+                return 'toolbar-width-xl-7'
+            }
+            if (this.hasMiddleOverviewColumn && this.hasRightOverviewColumn) {
+                return 'toolbar-width-xl-8'
+            }
+            if (this.hasLeftOverviewColumn) {
+                return 'toolbar-width-xl-4'
+            }
+            if (this.hasRightOverviewColumn) {
+                return 'toolbar-width-xl-5'
+            }
+            if (this.hasMiddleOverviewColumn) {
+                return 'toolbar-width-xl-3'
+            }
+            return 'toolbar-width-xl-12'
+        },
         functionalPanels() {
             const panels = [{ id: 'my_courses', label: 'Meine Fächer', icon: 'mdi-book-open-variant' }]
             if (this.selected_course) {
@@ -242,37 +275,57 @@ export default {
 </script>
 
 <style scoped>
-.overview-header {
-    border: 1px solid rgba(148, 163, 184, 0.33);
-    background:
-        radial-gradient(circle at top right, rgba(125, 211, 252, 0.24), transparent 45%),
-        linear-gradient(132deg, rgba(248, 250, 252, 0.97), rgba(240, 249, 255, 0.95));
-    padding: 14px;
-}
-
-.overview-dummy-submenu {
+.teaching-overview-toolbar {
+    width: 100%;
     display: flex;
     justify-content: flex-start;
     gap: 8px;
     border-radius: 16px;
-    border: 1px solid rgba(16, 38, 58, 0.09);
-    background: rgba(255, 255, 255, 0.78);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(30, 41, 59, 0.8);
     padding: 10px;
-    margin-top: 12px;
 }
 
-.overview-dummy-panel-switcher {
+.teaching-overview-panel-switcher {
     flex-wrap: wrap;
     row-gap: 8px;
 }
 
-.overview-dummy-toolbar-btn {
+.teaching-overview-toolbar-btn {
     text-transform: none;
     letter-spacing: 0;
     font-weight: 650;
 }
 
-.overview-header.is-locked {
+.teaching-overview-toolbar.is-locked {
     opacity: 0.68;
+}
+
+.teaching-overview-toolbar-width {
+    width: 100%;
+}
+
+@media (min-width: 1920px) {
+    .teaching-overview-toolbar-width.toolbar-width-xl-12 {
+        width: 100%;
+    }
+    .teaching-overview-toolbar-width.toolbar-width-xl-9 {
+        width: 75%;
+    }
+    .teaching-overview-toolbar-width.toolbar-width-xl-8 {
+        width: 66.667%;
+    }
+    .teaching-overview-toolbar-width.toolbar-width-xl-7 {
+        width: 58.333%;
+    }
+    .teaching-overview-toolbar-width.toolbar-width-xl-5 {
+        width: 41.667%;
+    }
+    .teaching-overview-toolbar-width.toolbar-width-xl-4 {
+        width: 33.333%;
+    }
+    .teaching-overview-toolbar-width.toolbar-width-xl-3 {
+        width: 25%;
+    }
 }
 </style>

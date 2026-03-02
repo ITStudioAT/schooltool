@@ -46,6 +46,26 @@ describe('Teaching settings page', () => {
         expect(ctx.active_panel).toBe('schemas')
     })
 
+    it('mirrored submenu delegates selection to primary panel activation', () => {
+        const methods = (Settings as any).methods
+        const ctx = {
+            active_panel: 'behaviour',
+            availablePanels: [
+                { id: 'basic' },
+                { id: 'behaviour' },
+                { id: 'notifications' },
+                { id: 'schemas' },
+            ],
+            activatePanel: methods.activatePanel,
+        }
+
+        ;(Settings as any).computed.mirroredPanelSelection.set.call(ctx, 'schemas')
+        expect(ctx.active_panel).toBe('schemas')
+
+        ;(Settings as any).computed.mirroredPanelSelection.set.call(ctx, 'my_holidays')
+        expect(ctx.active_panel).toBe('schemas')
+    })
+
     it('switches schema sub-panels in exclusive mode', () => {
         const ctx = {
             active_schema_panel: 'works',

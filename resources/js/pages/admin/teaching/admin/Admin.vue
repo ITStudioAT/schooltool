@@ -1,35 +1,35 @@
 <template>
-    <v-col cols="12" md="6" lg="7" xl="4">
-        <section class="teaching-admin-page">
-            <section class="teaching-admin-toolbar">
-                <v-btn-toggle
-                    v-model="panelSelection"
-                    mandatory
-                    class="teaching-admin-panel-switcher"
-                    color="primary"
-                    divided>
-                    <v-btn
-                        v-for="panel in availablePanels"
-                        :key="panel.id"
-                        class="teaching-admin-toolbar-btn"
-                        :value="panel.id"
-                        :prepend-icon="panel.icon">
-                        {{ panel.label }}
-                    </v-btn>
-                </v-btn-toggle>
-            </section>
+    <v-col cols="12" class="pb-1">
+        <section class="teaching-admin-toolbar">
+            <v-btn-toggle
+                v-model="panelSelection"
+                mandatory
+                class="teaching-admin-panel-switcher"
+                color="primary"
+                divided>
+                <v-btn
+                    v-for="panel in availablePanels"
+                    :key="panel.id"
+                    class="teaching-admin-toolbar-btn"
+                    :value="panel.id"
+                    :prepend-icon="panel.icon">
+                    {{ panel.label }}
+                </v-btn>
+            </v-btn-toggle>
+        </section>
+    </v-col>
 
-            <section class="teaching-admin-content-shell">
-                <v-row class="w-100 ma-0" dense>
-                    <Import116 v-if="isPanelActive('import')" />
-                    <Holidays v-if="canManageSchoolHolidays && isPanelActive('holidays')" />
-                    <v-col cols="12" v-if="visiblePanelsCount === 0">
-                        <div class="teaching-admin-empty">
-                            Kein Bereich aktiv. Aktivieren Sie oben mindestens einen Bereich.
-                        </div>
-                    </v-col>
-                </v-row>
-            </section>
+    <v-col cols="12" md="6" lg="7" xl="4">
+        <section class="teaching-admin-content-shell">
+            <v-row class="w-100 ma-0" dense>
+                <Import116 v-if="isPanelActive('import')" />
+                <Holidays v-if="canManageSchoolHolidays && isPanelActive('holidays')" />
+                <v-col cols="12" v-if="visiblePanelsCount === 0">
+                    <div class="teaching-admin-empty">
+                        Kein Bereich aktiv. Aktivieren Sie oben mindestens einen Bereich.
+                    </div>
+                </v-col>
+            </v-row>
         </section>
     </v-col>
 </template>
@@ -113,23 +113,19 @@ export default {
 </script>
 
 <style scoped>
-.teaching-admin-page {
-    width: 100%;
-    display: grid;
-    gap: 12px;
-}
-
 .teaching-admin-toolbar {
+    width: 100%;
     display: flex;
     justify-content: flex-start;
     gap: 8px;
     border-radius: 16px;
-    border: 1px solid rgba(16, 38, 58, 0.09);
-    background: rgba(255, 255, 255, 0.78);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(30, 41, 59, 0.8);
     padding: 10px;
 }
 
 .teaching-admin-panel-switcher {
+    width: 100%;
     flex-wrap: wrap;
     row-gap: 8px;
 }
