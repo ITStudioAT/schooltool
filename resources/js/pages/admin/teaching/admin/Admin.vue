@@ -24,6 +24,7 @@
             <v-row class="w-100 ma-0" dense>
                 <Import116 v-if="isPanelActive('import')" />
                 <Holidays v-if="canManageSchoolHolidays && isPanelActive('holidays')" />
+                <SchoolHours v-if="canManageSchoolHolidays && isPanelActive('school_hours')" />
                 <v-col cols="12" v-if="visiblePanelsCount === 0">
                     <div class="teaching-admin-empty">
                         Kein Bereich aktiv. Aktivieren Sie oben mindestens einen Bereich.
@@ -39,9 +40,10 @@ import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import Import116 from './import116/Import116.vue'
 import Holidays from './holidays/Holidays.vue'
+import SchoolHours from './schoolhours/SchoolHours.vue'
 
 export default {
-    components: { Import116, Holidays },
+    components: { Import116, Holidays, SchoolHours },
 
     data() {
         return {
@@ -59,6 +61,7 @@ export default {
             const panels = [{ id: 'import', label: 'Import 116', icon: 'mdi-import' }]
             if (this.canManageSchoolHolidays) {
                 panels.push({ id: 'holidays', label: 'Ferien', icon: 'mdi-beach' })
+                panels.push({ id: 'school_hours', label: 'Schulstunden', icon: 'mdi-clock-time-four-outline' })
             }
             return panels
         },
@@ -85,13 +88,16 @@ export default {
             if (this.active_panel === 'holidays' && this.canManageSchoolHolidays) {
                 return 1
             }
+            if (this.active_panel === 'school_hours' && this.canManageSchoolHolidays) {
+                return 1
+            }
             return 0
         },
     },
 
     watch: {
         canManageSchoolHolidays(newValue) {
-            if (!newValue && this.active_panel === 'holidays') {
+            if (!newValue && (this.active_panel === 'holidays' || this.active_panel === 'school_hours')) {
                 this.active_panel = 'import'
             }
         },

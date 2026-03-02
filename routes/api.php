@@ -1,17 +1,14 @@
 <?php
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Spa\RouteController;
-use App\Http\Controllers\Admin\SpaRoleController;
-use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\NavigationController;
+use App\Http\Controllers\Admin\SpaRoleController;
+use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\UserWithRoleController;
 use App\Http\Controllers\Homepage\HomepageController;
-
-
-
+use App\Http\Controllers\Spa\RouteController;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
 
 // Globales Throttle
 Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function () {
@@ -20,15 +17,14 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         return csrf_token();
     });
 
-
     /***** OTHER ROUTES *****/
-    Route::post('/routes/is_route_allowed',  [RouteController::class, 'isRouteAllowed']);
-    Route::post('/admin/execute_logout',  [AdminController::class, 'executeLogout']);
+    Route::post('/routes/is_route_allowed', [RouteController::class, 'isRouteAllowed']);
+    Route::post('/admin/execute_logout', [AdminController::class, 'executeLogout']);
 
     /***** HOMEPAGE ROUTES *****/
-    Route::get('/homepage/config',  [HomepageController::class, 'config']);
-    Route::get('/homepage/load_schools_for_tool',  [HomepageController::class, 'loadSchoolsForTool']);
-    Route::post('/homepage/logout',  [\App\Http\Controllers\Homepage\HomepageController::class, 'logout']);
+    Route::get('/homepage/config', [HomepageController::class, 'config']);
+    Route::get('/homepage/load_schools_for_tool', [HomepageController::class, 'loadSchoolsForTool']);
+    Route::post('/homepage/logout', [\App\Http\Controllers\Homepage\HomepageController::class, 'logout']);
 
     /***** STUDENT ROUTES *****/
     Route::get('/homepage/student/config', [\App\Http\Controllers\Student\StudentController::class, 'config']);
@@ -42,49 +38,48 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::get('/homepage/student/courses/{courseId}/entries', [\App\Http\Controllers\Student\CourseStudentEntryController::class, 'index'])->middleware('tool-licensed:Lehrertool');
 
     /***** ADMIN ROUTES *****/
-    Route::get('/admin/config',  [AdminController::class, 'config']);
+    Route::get('/admin/config', [AdminController::class, 'config']);
 
-    Route::post('/admin/login_step_email',  [AdminController::class, 'loginStepEmail']);
-    Route::post('/admin/login_step_2',  [AdminController::class, 'loginStep2']);
-    Route::post('/admin/login_step_3',  [AdminController::class, 'loginStep3']);
+    Route::post('/admin/login_step_email', [AdminController::class, 'loginStepEmail']);
+    Route::post('/admin/login_step_2', [AdminController::class, 'loginStep2']);
+    Route::post('/admin/login_step_3', [AdminController::class, 'loginStep3']);
 
-    Route::post('/admin/new_teacher_step_email',  [AdminController::class, 'newTeacherStepEmail']);
-    Route::post('/admin/new_teacher_step_school',  [AdminController::class, 'newTeacherStepSchool']);
-    Route::post('/admin/new_teacher_step_code',  [AdminController::class, 'newTeacherStepCode']);
+    Route::post('/admin/new_teacher_step_email', [AdminController::class, 'newTeacherStepEmail']);
+    Route::post('/admin/new_teacher_step_school', [AdminController::class, 'newTeacherStepSchool']);
+    Route::post('/admin/new_teacher_step_code', [AdminController::class, 'newTeacherStepCode']);
 
-    Route::post('/admin/password_unknown_step_email',  [AdminController::class, 'passwordUnknownStepEmail']);
-    Route::post('/admin/password_unknown_step_school',  [AdminController::class, 'passwordUnknownStepSchool']);
-    Route::post('/admin/password_unknown_step_token',  [AdminController::class, 'passwordUnknownStepToken']);
-    Route::post('/admin/password_unknown_step_token_2',  [AdminController::class, 'passwordUnknownStepToken2']);
-    Route::post('/admin/password_unknown_step_password',  [AdminController::class, 'passwordUnknownStepPassword']);
+    Route::post('/admin/password_unknown_step_email', [AdminController::class, 'passwordUnknownStepEmail']);
+    Route::post('/admin/password_unknown_step_school', [AdminController::class, 'passwordUnknownStepSchool']);
+    Route::post('/admin/password_unknown_step_token', [AdminController::class, 'passwordUnknownStepToken']);
+    Route::post('/admin/password_unknown_step_token_2', [AdminController::class, 'passwordUnknownStepToken2']);
+    Route::post('/admin/password_unknown_step_password', [AdminController::class, 'passwordUnknownStepPassword']);
 
-    Route::post('/admin/register_step_1',  [AdminController::class, 'registerStep1']);
-    Route::post('/admin/register_step_2',  [AdminController::class, 'registerStep2']);
-    Route::post('/admin/register_step_3',  [AdminController::class, 'registerStep3']);
+    Route::post('/admin/register_step_1', [AdminController::class, 'registerStep1']);
+    Route::post('/admin/register_step_2', [AdminController::class, 'registerStep2']);
+    Route::post('/admin/register_step_3', [AdminController::class, 'registerStep3']);
 
     /* vom User ausgelöste APis zur E-Mail-Verifikation */
-    Route::post('/admin/users/send_verification_email_initialized_from_user',  [UserController::class, 'sendVerificationEmailInitializedFromUser']);
-    Route::post('/admin/users/email_verification',  [UserController::class, 'emailVerification']);
-
+    Route::post('/admin/users/send_verification_email_initialized_from_user', [UserController::class, 'sendVerificationEmailInitializedFromUser']);
+    Route::post('/admin/users/email_verification', [UserController::class, 'emailVerification']);
 
     /* homepage/register */
-    Route::get('/homepage/register/config',  [\App\Http\Controllers\Homepage\RegisterController::class, 'config'])->middleware('tool-licensed:Anmeldetool');
-    Route::post('/homepage/register/check_email',  [\App\Http\Controllers\Homepage\RegisterController::class, 'checkEmail'])->middleware('tool-licensed:Anmeldetool');
-    Route::post('/homepage/register/confirm_email',  [\App\Http\Controllers\Homepage\RegisterController::class, 'confirmEmail'])->middleware('tool-licensed:Anmeldetool');
-    Route::post('/homepage/register/save_user_data',  [\App\Http\Controllers\Homepage\RegisterController::class, 'saveUserData'])->middleware('tool-licensed:Anmeldetool');
-    Route::post('/homepage/register/login_token',  [\App\Http\Controllers\Homepage\RegisterController::class, 'loginToken'])->middleware('tool-licensed:Anmeldetool');
-    Route::get('/homepage/register/load_register_and_user',  [\App\Http\Controllers\Homepage\RegisterController::class, 'loadRegisterAndUser'])->middleware('tool-licensed:Anmeldetool');
-    Route::post('/homepage/register/book',  [\App\Http\Controllers\Homepage\RegisterController::class, 'book'])->middleware('tool-licensed:Anmeldetool');
-    Route::post('/homepage/register/delete_booking',  [\App\Http\Controllers\Homepage\RegisterController::class, 'deleteBooking'])->middleware('tool-licensed:Anmeldetool');
+    Route::get('/homepage/register/config', [\App\Http\Controllers\Homepage\RegisterController::class, 'config'])->middleware('tool-licensed:Anmeldetool');
+    Route::post('/homepage/register/check_email', [\App\Http\Controllers\Homepage\RegisterController::class, 'checkEmail'])->middleware('tool-licensed:Anmeldetool');
+    Route::post('/homepage/register/confirm_email', [\App\Http\Controllers\Homepage\RegisterController::class, 'confirmEmail'])->middleware('tool-licensed:Anmeldetool');
+    Route::post('/homepage/register/save_user_data', [\App\Http\Controllers\Homepage\RegisterController::class, 'saveUserData'])->middleware('tool-licensed:Anmeldetool');
+    Route::post('/homepage/register/login_token', [\App\Http\Controllers\Homepage\RegisterController::class, 'loginToken'])->middleware('tool-licensed:Anmeldetool');
+    Route::get('/homepage/register/load_register_and_user', [\App\Http\Controllers\Homepage\RegisterController::class, 'loadRegisterAndUser'])->middleware('tool-licensed:Anmeldetool');
+    Route::post('/homepage/register/book', [\App\Http\Controllers\Homepage\RegisterController::class, 'book'])->middleware('tool-licensed:Anmeldetool');
+    Route::post('/homepage/register/delete_booking', [\App\Http\Controllers\Homepage\RegisterController::class, 'deleteBooking'])->middleware('tool-licensed:Anmeldetool');
 
     /* homepage/tutoring */
-    Route::get('/homepage/tutoring/config',  [\App\Http\Controllers\Tutoring\TutoringController::class, 'config']);
-    Route::post('/homepage/tutoring/check_email',  [\App\Http\Controllers\Tutoring\TutoringController::class, 'checkEMail'])->middleware('tool-licensed:Nachhilfetool');
-    Route::post('/homepage/tutoring/confirm_email',  [\App\Http\Controllers\Tutoring\TutoringController::class, 'confirmEMail'])->middleware('tool-licensed:Nachhilfetool');
-    Route::post('/homepage/tutoring/create_user',  [\App\Http\Controllers\Tutoring\TutoringController::class, 'createUser'])->middleware('tool-licensed:Nachhilfetool');
-    Route::post('/homepage/tutoring/unknown_password',  [\App\Http\Controllers\Tutoring\TutoringController::class, 'unknownPassword'])->middleware('tool-licensed:Nachhilfetool');
-    Route::post('/homepage/tutoring/login_with_token',  [\App\Http\Controllers\Tutoring\TutoringController::class, 'loginWithToken'])->middleware('tool-licensed:Nachhilfetool');
-    Route::post('/homepage/tutoring/login_with_password',  [\App\Http\Controllers\Tutoring\TutoringController::class, 'loginWithPassword'])->middleware('tool-licensed:Nachhilfetool');
+    Route::get('/homepage/tutoring/config', [\App\Http\Controllers\Tutoring\TutoringController::class, 'config']);
+    Route::post('/homepage/tutoring/check_email', [\App\Http\Controllers\Tutoring\TutoringController::class, 'checkEMail'])->middleware('tool-licensed:Nachhilfetool');
+    Route::post('/homepage/tutoring/confirm_email', [\App\Http\Controllers\Tutoring\TutoringController::class, 'confirmEMail'])->middleware('tool-licensed:Nachhilfetool');
+    Route::post('/homepage/tutoring/create_user', [\App\Http\Controllers\Tutoring\TutoringController::class, 'createUser'])->middleware('tool-licensed:Nachhilfetool');
+    Route::post('/homepage/tutoring/unknown_password', [\App\Http\Controllers\Tutoring\TutoringController::class, 'unknownPassword'])->middleware('tool-licensed:Nachhilfetool');
+    Route::post('/homepage/tutoring/login_with_token', [\App\Http\Controllers\Tutoring\TutoringController::class, 'loginWithToken'])->middleware('tool-licensed:Nachhilfetool');
+    Route::post('/homepage/tutoring/login_with_password', [\App\Http\Controllers\Tutoring\TutoringController::class, 'loginWithPassword'])->middleware('tool-licensed:Nachhilfetool');
     Route::get('/homepage/tutoring/load_offer_config', [\App\Http\Controllers\Tutoring\OfferController::class, 'loadOfferConfig']);
     Route::get('/homepage/tutoring/load_offers', [\App\Http\Controllers\Tutoring\OfferController::class, 'loadOffers']);
     Route::post('/homepage/tutoring/click_count', [\App\Http\Controllers\Tutoring\OfferController::class, 'clickCount']);
@@ -97,8 +92,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     /* SANCTUM */
     Route::middleware(['auth:sanctum'])->group(function () {
         // navigation, menus
-        Route::get('/admin/navigation/profile_menu',  [NavigationController::class, 'profileMenu']);
-        Route::get('/admin/navigation/user_menu',  [NavigationController::class, 'userMenu']);
+        Route::get('/admin/navigation/profile_menu', [NavigationController::class, 'profileMenu']);
+        Route::get('/admin/navigation/user_menu', [NavigationController::class, 'userMenu']);
 
         // users
         Route::apiResource('/admin/users', UserController::class)->names('admin.users');
@@ -111,16 +106,14 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /* SANCTUM - user */
     Route::middleware(['auth:sanctum', 'api-allowed:user,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,teacher'])->group(function () {
-        Route::put('/admin/users/update_profile/{user}',  [UserController::class, 'updateProfile']);
-        Route::post('/admin/users/update_with_code',  [UserController::class, 'updateWithCode']);
-        Route::post('/admin/users/save_password',  [UserController::class, 'savePassword']);
-        Route::post('/admin/users/save_password_with_code',  [UserController::class, 'savePasswordWithCode']);
-
-
+        Route::put('/admin/users/update_profile/{user}', [UserController::class, 'updateProfile']);
+        Route::post('/admin/users/update_with_code', [UserController::class, 'updateWithCode']);
+        Route::post('/admin/users/save_password', [UserController::class, 'savePassword']);
+        Route::post('/admin/users/save_password_with_code', [UserController::class, 'savePasswordWithCode']);
 
         // RegisterUsers
-        Route::get('/admin/register_users',  [\App\Http\Controllers\Admin\RegisterUserController::class, 'index'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/register_users/delete_register_users',  [\App\Http\Controllers\Admin\RegisterUserController::class, 'deleteRegisterUsers'])->middleware('tool-licensed:Anmeldetool');
+        Route::get('/admin/register_users', [\App\Http\Controllers\Admin\RegisterUserController::class, 'index'])->middleware('tool-licensed:Anmeldetool');
+        Route::post('/admin/register_users/delete_register_users', [\App\Http\Controllers\Admin\RegisterUserController::class, 'deleteRegisterUsers'])->middleware('tool-licensed:Anmeldetool');
     });
 
     /* SANCTUM - admin */
@@ -130,12 +123,11 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/users20/store', [\App\Http\Controllers\Admin\UserController::class, 'storeUser']);
         Route::post('/admin/users20/delete_users', [\App\Http\Controllers\Admin\UserController::class, 'deleteUsers']);
 
-        //teachers, teachers_list
+        // teachers, teachers_list
         Route::apiResource('/admin/teachers', \App\Http\Controllers\Admin\TeacherController::class);
         Route::post('/admin/teachers/delete_teachers', [\App\Http\Controllers\Admin\TeacherController::class, 'deleteTeachers']);
         Route::apiResource('/admin/teachers_list', \App\Http\Controllers\Admin\TeachersListController::class);
         Route::post('/admin/teachers_list/delete_teachers', [\App\Http\Controllers\Admin\TeachersListController::class, 'deleteTeachers']);
-
 
         Route::post('/admin/teachers_list_upload', [\App\Http\Controllers\Admin\TeachersListController::class, 'upload']);
         Route::patch('/admin/teachers_list_upload', [\App\Http\Controllers\Admin\TeachersListController::class, 'uploadNext']);
@@ -159,8 +151,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/homepage/tutoring/load_my_offers', [\App\Http\Controllers\Tutoring\OfferController::class, 'loadMyOffers']);
         Route::apiResource('/homepage/tutoring/subjects', \App\Http\Controllers\Tutoring\SubjectController::class)->names('tutoring.subjects');
         Route::apiResource('/homepage/tutoring/offers', \App\Http\Controllers\Tutoring\OfferController::class)->names('tutoring.offers');
-        Route::post('/homepage/tutoring/toggle_offer',  [\App\Http\Controllers\Tutoring\OfferController::class, 'toggleOffer']);
-        Route::post('/homepage/tutoring/send_request',  [\App\Http\Controllers\Tutoring\OfferController::class, 'sendRequest']);
+        Route::post('/homepage/tutoring/toggle_offer', [\App\Http\Controllers\Tutoring\OfferController::class, 'toggleOffer']);
+        Route::post('/homepage/tutoring/send_request', [\App\Http\Controllers\Tutoring\OfferController::class, 'sendRequest']);
         Route::apiResource('/homepage/tutoring/offer_requests', \App\Http\Controllers\Tutoring\OfferRequestController::class)->names('tutoring.offer_requests');
         Route::get('/homepage/tutoring/received_offer_requests', [\App\Http\Controllers\Tutoring\OfferRequestController::class, 'receivedRequests']);
         Route::post('/homepage/tutoring/request_mail_clicked', [\App\Http\Controllers\Tutoring\OfferRequestController::class, 'requestMailClicked']);
@@ -169,7 +161,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/homepage/tutoring/to_user_archive', [\App\Http\Controllers\Tutoring\OfferRequestController::class, 'toUserArchive']);
         Route::post('/homepage/tutoring/to_user_active', [\App\Http\Controllers\Tutoring\OfferRequestController::class, 'toUserActive']);
 
-        //api/homepage/tutoring/offer_requests
+        // api/homepage/tutoring/offer_requests
     });
 
     /* SANCTUM - admin, tutoring_admin, register_admin */
@@ -190,7 +182,6 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/groups/{group}/assign-from-group', [\App\Http\Controllers\Admin\GroupController::class, 'assignFromGroup']);
         Route::get('/admin/groups/{group}/my-teaching-courses', [\App\Http\Controllers\Admin\GroupController::class, 'myTeachingCourses']);
     });
-
 
     /* SANCTUM - admin, tutoring_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:admin,tutoring_admin'])->group(function () {});
@@ -217,6 +208,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/teaching/course_dates', \App\Http\Controllers\Admin\Teaching\CourseDateController::class);
         Route::patch('/admin/teaching/course_dates/{course_date}/status', [\App\Http\Controllers\Admin\Teaching\CourseDateController::class, 'updateStatus']);
         Route::apiResource('/admin/teaching/holidays', \App\Http\Controllers\Admin\Teaching\HolidayController::class)->only(['index', 'store', 'destroy']);
+        Route::apiResource('/admin/teaching/school_hours', \App\Http\Controllers\Admin\Teaching\SchoolHourController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::apiResource('/admin/teaching/my_holidays', \App\Http\Controllers\Admin\Teaching\MyHolidayController::class)
             ->only(['index', 'store', 'destroy'])
             ->parameters(['my_holidays' => 'my_holiday']);
@@ -320,103 +312,96 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/tutoring/toggle_active_offer', [\App\Http\Controllers\Admin\Tutoring\OfferController::class, 'toggleActiveOffer'])->middleware('tool-licensed:Nachhilfetool');
         Route::post('/admin/tutoring/toggle_accepted_offer', [\App\Http\Controllers\Admin\Tutoring\OfferController::class, 'toggleAcceptedOffer'])->middleware('tool-licensed:Nachhilfetool');
         Route::get('/admin/tutoring/get_stats', [\App\Http\Controllers\Admin\Tutoring\OfferController::class, 'getStats'])->middleware('tool-licensed:Nachhilfetool');
-        ///admin/tutoring/get_stats
+        // /admin/tutoring/get_stats
 
-        //Roles
+        // Roles
         Route::get('/admin/roles/load_roles', [\App\Http\Controllers\Admin\RoleController::class, 'loadRoles']);
 
-        //licences
+        // licences
         Route::apiResource('/admin/licences', \App\Http\Controllers\Admin\LicenceController::class);
         Route::post('/admin/licences/load_licences', [\App\Http\Controllers\Admin\LicenceController::class, 'loadLicences']);
         Route::post('/admin/licences/delete_licences', [\App\Http\Controllers\Admin\LicenceController::class, 'deleteLicences']);
         Route::put('/admin/licences/{licence}/save_licence_model', [\App\Http\Controllers\Admin\LicenceController::class, 'saveLicenceModel']);
 
-        //schools
+        // schools
         Route::apiResource('/admin/schools', \App\Http\Controllers\Admin\SchoolController::class);
         Route::post('/admin/schools_upload/uploadLogo', [\App\Http\Controllers\Admin\SchoolController::class, 'uploadLogo']);
         Route::patch('/admin/schools_upload/uploadLogo', [\App\Http\Controllers\Admin\SchoolController::class, 'uploadLogoNext']);
-        Route::post('/admin/schools/delete_schools',  [\App\Http\Controllers\Admin\SchoolController::class, 'deleteSchools']);
-        Route::post('/admin/schools/load_switchable_schools',  [\App\Http\Controllers\Admin\SchoolController::class, 'loadSwitchableSchools']);
-        Route::post('/admin/schools/search_switch_users',  [\App\Http\Controllers\Admin\SchoolController::class, 'searchSwitchUsers']);
-        Route::post('/admin/schools/switch_school',  [\App\Http\Controllers\Admin\SchoolController::class, 'switchSchool']);
-        Route::post('/admin/schools/load_school_infos',  [\App\Http\Controllers\Admin\SchoolController::class, 'loadSchoolInfos']);
-        Route::post('/admin/schools/add_licence',  [\App\Http\Controllers\Admin\SchoolController::class, 'addLicence']);
-        Route::post('/admin/schools/delete_licence',  [\App\Http\Controllers\Admin\SchoolController::class, 'deleteLicence']);
-        Route::put('/admin/school_licences/{school_licence}/save_licence_model',  [\App\Http\Controllers\Admin\SchoolController::class, 'saveSchoolLicenceModel']);
-        Route::get('/admin/school_licences/{school_licence}/users',  [\App\Http\Controllers\Admin\SchoolController::class, 'loadSchoolLicenceUsers']);
-        Route::get('/admin/school_licences/{school_licence}/users/{user}/roles',  [\App\Http\Controllers\Admin\SchoolController::class, 'loadSchoolLicenceUserRoles']);
-        Route::put('/admin/school_licences/{school_licence}/users/{user}/roles',  [\App\Http\Controllers\Admin\SchoolController::class, 'saveSchoolLicenceUserRoles']);
-        Route::put('/admin/school_licences/{school_licence}/users/{user}/spatie_roles',  [\App\Http\Controllers\Admin\SchoolController::class, 'saveSchoolLicenceUserSpatieRoles']);
-        Route::post('/admin/school_licences/{school_licence}/activate_user_licence',  [\App\Http\Controllers\Admin\SchoolController::class, 'activateCurrentUserLicence']);
-        Route::post('/admin/school_licences/{school_licence}/renew_user_licence',  [\App\Http\Controllers\Admin\SchoolController::class, 'renewCurrentUserLicence']);
-        Route::post('/admin/school_licences/{school_licence}/deactivate_user_licence',  [\App\Http\Controllers\Admin\SchoolController::class, 'deactivateCurrentUserLicence']);
-        Route::post('/admin/schools/add_admin',  [\App\Http\Controllers\Admin\SchoolController::class, 'addAdmin']);
-        Route::post('/admin/schools/delete_admin',  [\App\Http\Controllers\Admin\SchoolController::class, 'deleteAdmin']);
+        Route::post('/admin/schools/delete_schools', [\App\Http\Controllers\Admin\SchoolController::class, 'deleteSchools']);
+        Route::post('/admin/schools/load_switchable_schools', [\App\Http\Controllers\Admin\SchoolController::class, 'loadSwitchableSchools']);
+        Route::post('/admin/schools/search_switch_users', [\App\Http\Controllers\Admin\SchoolController::class, 'searchSwitchUsers']);
+        Route::post('/admin/schools/switch_school', [\App\Http\Controllers\Admin\SchoolController::class, 'switchSchool']);
+        Route::post('/admin/schools/load_school_infos', [\App\Http\Controllers\Admin\SchoolController::class, 'loadSchoolInfos']);
+        Route::post('/admin/schools/add_licence', [\App\Http\Controllers\Admin\SchoolController::class, 'addLicence']);
+        Route::post('/admin/schools/delete_licence', [\App\Http\Controllers\Admin\SchoolController::class, 'deleteLicence']);
+        Route::put('/admin/school_licences/{school_licence}/save_licence_model', [\App\Http\Controllers\Admin\SchoolController::class, 'saveSchoolLicenceModel']);
+        Route::get('/admin/school_licences/{school_licence}/users', [\App\Http\Controllers\Admin\SchoolController::class, 'loadSchoolLicenceUsers']);
+        Route::get('/admin/school_licences/{school_licence}/users/{user}/roles', [\App\Http\Controllers\Admin\SchoolController::class, 'loadSchoolLicenceUserRoles']);
+        Route::put('/admin/school_licences/{school_licence}/users/{user}/roles', [\App\Http\Controllers\Admin\SchoolController::class, 'saveSchoolLicenceUserRoles']);
+        Route::put('/admin/school_licences/{school_licence}/users/{user}/spatie_roles', [\App\Http\Controllers\Admin\SchoolController::class, 'saveSchoolLicenceUserSpatieRoles']);
+        Route::post('/admin/school_licences/{school_licence}/activate_user_licence', [\App\Http\Controllers\Admin\SchoolController::class, 'activateCurrentUserLicence']);
+        Route::post('/admin/school_licences/{school_licence}/renew_user_licence', [\App\Http\Controllers\Admin\SchoolController::class, 'renewCurrentUserLicence']);
+        Route::post('/admin/school_licences/{school_licence}/deactivate_user_licence', [\App\Http\Controllers\Admin\SchoolController::class, 'deactivateCurrentUserLicence']);
+        Route::post('/admin/schools/add_admin', [\App\Http\Controllers\Admin\SchoolController::class, 'addAdmin']);
+        Route::post('/admin/schools/delete_admin', [\App\Http\Controllers\Admin\SchoolController::class, 'deleteAdmin']);
 
         // Profile
-        Route::post('/admin/users/save_2fa',  [UserController::class, 'save2Fa']);
-        Route::post('/admin/users/save_2fa_with_code',  [UserController::class, 'save2FaWithCode']);
+        Route::post('/admin/users/save_2fa', [UserController::class, 'save2Fa']);
+        Route::post('/admin/users/save_2fa_with_code', [UserController::class, 'save2FaWithCode']);
 
-
-
-
-
-        //schoolyears
+        // schoolyears
         Route::apiResource('/admin/schoolyears', \App\Http\Controllers\Admin\SchoolyearController::class);
-        Route::post('/admin/schoolyears/set_active',  [\App\Http\Controllers\Admin\SchoolyearController::class, 'setActiveSchoolyear']);
-        Route::get('/admin/schoolyears_paginate',  [\App\Http\Controllers\Admin\SchoolyearController::class, 'indexPaginate']);
+        Route::post('/admin/schoolyears/set_active', [\App\Http\Controllers\Admin\SchoolyearController::class, 'setActiveSchoolyear']);
+        Route::get('/admin/schoolyears_paginate', [\App\Http\Controllers\Admin\SchoolyearController::class, 'indexPaginate']);
 
         // registers
         Route::apiResource('/admin/registers', \App\Http\Controllers\Admin\RegisterController::class)->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/registers/set_active',  [\App\Http\Controllers\Admin\RegisterController::class, 'setActiveRegister'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/registers/get_active',  [\App\Http\Controllers\Admin\RegisterController::class, 'getActiveRegisters'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/registers/toggle',  [\App\Http\Controllers\Admin\RegisterController::class, 'toggleRegister'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/registers/print_excel',  [\App\Http\Controllers\Admin\RegisterPrintController::class, 'printExcel'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/registers/print_supervisor',  [\App\Http\Controllers\Admin\RegisterPrintController::class, 'printSupervisor'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/registers/print_date',  [\App\Http\Controllers\Admin\RegisterPrintController::class, 'printDate'])->middleware('tool-licensed:Anmeldetool');
-
+        Route::post('/admin/registers/set_active', [\App\Http\Controllers\Admin\RegisterController::class, 'setActiveRegister'])->middleware('tool-licensed:Anmeldetool');
+        Route::post('/admin/registers/get_active', [\App\Http\Controllers\Admin\RegisterController::class, 'getActiveRegisters'])->middleware('tool-licensed:Anmeldetool');
+        Route::post('/admin/registers/toggle', [\App\Http\Controllers\Admin\RegisterController::class, 'toggleRegister'])->middleware('tool-licensed:Anmeldetool');
+        Route::post('/admin/registers/print_excel', [\App\Http\Controllers\Admin\RegisterPrintController::class, 'printExcel'])->middleware('tool-licensed:Anmeldetool');
+        Route::post('/admin/registers/print_supervisor', [\App\Http\Controllers\Admin\RegisterPrintController::class, 'printSupervisor'])->middleware('tool-licensed:Anmeldetool');
+        Route::post('/admin/registers/print_date', [\App\Http\Controllers\Admin\RegisterPrintController::class, 'printDate'])->middleware('tool-licensed:Anmeldetool');
 
         // register_dates
         Route::apiResource('/admin/register_dates', \App\Http\Controllers\Admin\RegisterDateController::class)->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/register_dates/create_dates',  [\App\Http\Controllers\Admin\RegisterDateController::class, 'createDates'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/register_dates/load_days',  [\App\Http\Controllers\Admin\RegisterDateController::class, 'loadDays'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/register_dates/filter_register_dates',  [\App\Http\Controllers\Admin\RegisterDateController::class, 'filterRegisterDates'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/register_dates/lock_register_dates',  [\App\Http\Controllers\Admin\RegisterDateController::class, 'lockRegisterDates'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/register_dates/unlock_register_dates',  [\App\Http\Controllers\Admin\RegisterDateController::class, 'unlockRegisterDates'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/register_dates/delete_register_dates',  [\App\Http\Controllers\Admin\RegisterDateController::class, 'deleteRegisterDates'])->middleware('tool-licensed:Anmeldetool');
+        Route::post('/admin/register_dates/create_dates', [\App\Http\Controllers\Admin\RegisterDateController::class, 'createDates'])->middleware('tool-licensed:Anmeldetool');
+        Route::post('/admin/register_dates/load_days', [\App\Http\Controllers\Admin\RegisterDateController::class, 'loadDays'])->middleware('tool-licensed:Anmeldetool');
+        Route::post('/admin/register_dates/filter_register_dates', [\App\Http\Controllers\Admin\RegisterDateController::class, 'filterRegisterDates'])->middleware('tool-licensed:Anmeldetool');
+        Route::post('/admin/register_dates/lock_register_dates', [\App\Http\Controllers\Admin\RegisterDateController::class, 'lockRegisterDates'])->middleware('tool-licensed:Anmeldetool');
+        Route::post('/admin/register_dates/unlock_register_dates', [\App\Http\Controllers\Admin\RegisterDateController::class, 'unlockRegisterDates'])->middleware('tool-licensed:Anmeldetool');
+        Route::post('/admin/register_dates/delete_register_dates', [\App\Http\Controllers\Admin\RegisterDateController::class, 'deleteRegisterDates'])->middleware('tool-licensed:Anmeldetool');
 
         // register_date_bookings
         Route::apiResource('/admin/register_date_bookings', \App\Http\Controllers\Admin\RegisterDateBookingController::class)->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/register_date_bookings/get_user_with_email',  [\App\Http\Controllers\Admin\RegisterDateBookingController::class, 'getUserWithEmail'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/register_date_bookings/update_or_create_user',  [\App\Http\Controllers\Admin\RegisterDateBookingController::class, 'updateOrCreateUser'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/register_date_bookings/delete_bookings',  [\App\Http\Controllers\Admin\RegisterDateBookingController::class, 'deleteBookings'])->middleware('tool-licensed:Anmeldetool');
+        Route::post('/admin/register_date_bookings/get_user_with_email', [\App\Http\Controllers\Admin\RegisterDateBookingController::class, 'getUserWithEmail'])->middleware('tool-licensed:Anmeldetool');
+        Route::post('/admin/register_date_bookings/update_or_create_user', [\App\Http\Controllers\Admin\RegisterDateBookingController::class, 'updateOrCreateUser'])->middleware('tool-licensed:Anmeldetool');
+        Route::post('/admin/register_date_bookings/delete_bookings', [\App\Http\Controllers\Admin\RegisterDateBookingController::class, 'deleteBookings'])->middleware('tool-licensed:Anmeldetool');
     });
 
     /* SANCTUM - admin */
     Route::middleware(['auth:sanctum', 'api-allowed:admin'])->group(function () {
 
         // users
-        Route::post('/admin/users/destroy_multiple',  [UserController::class, 'destroyMultiple']);
-        Route::post('/admin/users/send_verification_email',  [UserController::class, 'sendVerificationEmail']);
-        Route::post('/admin/users/confirm',  [UserController::class, 'confirm']);
-        Route::post('/admin/users/save_user_roles',  [UserController::class, 'saveUserRoles']);
-
-
+        Route::post('/admin/users/destroy_multiple', [UserController::class, 'destroyMultiple']);
+        Route::post('/admin/users/send_verification_email', [UserController::class, 'sendVerificationEmail']);
+        Route::post('/admin/users/confirm', [UserController::class, 'confirm']);
+        Route::post('/admin/users/save_user_roles', [UserController::class, 'saveUserRoles']);
 
         // roles
         Route::apiResource('/admin/roles', SpaRoleController::class);
-        Route::post('/admin/roles/destroy_multiple',  [SpaRoleController::class, 'destroyMultiple']);
-        Route::post('/admin/load_roles',  [\App\Http\Controllers\Admin\AdminController::class, 'loadRoles']);
+        Route::post('/admin/roles/destroy_multiple', [SpaRoleController::class, 'destroyMultiple']);
+        Route::post('/admin/load_roles', [\App\Http\Controllers\Admin\AdminController::class, 'loadRoles']);
 
         // users_with_roles
-        Route::get('/admin/users_with_roles/roles',  [UserWithRoleController::class, 'roles']);
-        Route::post('/admin/users_with_roles/roles',  [UserWithRoleController::class, 'saveUserRoles']);
+        Route::get('/admin/users_with_roles/roles', [UserWithRoleController::class, 'roles']);
+        Route::post('/admin/users_with_roles/roles', [UserWithRoleController::class, 'saveUserRoles']);
         Route::apiResource('/admin/users_with_roles', UserWithRoleController::class);
     });
 
     /* SANCTUM - super_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:super_admin'])->group(function () {
-        Route::post('/admin/delete_log',  [\App\Http\Controllers\Admin\LogController::class, 'deleteLog']);
+        Route::post('/admin/delete_log', [\App\Http\Controllers\Admin\LogController::class, 'deleteLog']);
         Route::get('/admin/impersonation/schools', [\App\Http\Controllers\Admin\ImpersonationController::class, 'schools']);
         Route::get('/admin/impersonation/users', [\App\Http\Controllers\Admin\ImpersonationController::class, 'users']);
         Route::post('/admin/impersonation/start', [\App\Http\Controllers\Admin\ImpersonationController::class, 'start']);
@@ -424,7 +409,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /* SANCTUM - super_admin, admin */
     Route::middleware(['auth:sanctum', 'api-allowed:super_admin,admin'])->group(function () {
-        Route::get('/admin/get_log',  [\App\Http\Controllers\Admin\LogController::class, 'getLog']);
+        Route::get('/admin/get_log', [\App\Http\Controllers\Admin\LogController::class, 'getLog']);
         Route::get('/admin/list_logs', [\App\Http\Controllers\Admin\LogController::class, 'listLogs']);
     });
 });

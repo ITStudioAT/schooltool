@@ -22,6 +22,10 @@ describe('Teaching admin page', () => {
             active_panel: 'holidays',
             canManageSchoolHolidays: true,
         }
+        const schoolHoursPanel = {
+            active_panel: 'school_hours',
+            canManageSchoolHolidays: true,
+        }
         const blockedHolidaysPanel = {
             active_panel: 'holidays',
             canManageSchoolHolidays: false,
@@ -29,6 +33,7 @@ describe('Teaching admin page', () => {
 
         expect((Admin as any).computed.visiblePanelsCount.call(importPanel)).toBe(1)
         expect((Admin as any).computed.visiblePanelsCount.call(holidaysPanel)).toBe(1)
+        expect((Admin as any).computed.visiblePanelsCount.call(schoolHoursPanel)).toBe(1)
         expect((Admin as any).computed.visiblePanelsCount.call(blockedHolidaysPanel)).toBe(0)
     })
 
@@ -39,13 +44,17 @@ describe('Teaching admin page', () => {
             availablePanels: [
                 { id: 'import' },
                 { id: 'holidays' },
+                { id: 'school_hours' },
             ],
         }
 
         ;(Admin as any).methods.activatePanel.call(ctx, 'holidays')
         expect(ctx.active_panel).toBe('holidays')
 
+        ;(Admin as any).methods.activatePanel.call(ctx, 'school_hours')
+        expect(ctx.active_panel).toBe('school_hours')
+
         ;(Admin as any).methods.activatePanel.call(ctx, 'missing')
-        expect(ctx.active_panel).toBe('holidays')
+        expect(ctx.active_panel).toBe('school_hours')
     })
 })
