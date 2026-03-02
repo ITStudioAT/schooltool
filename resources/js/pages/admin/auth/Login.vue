@@ -102,6 +102,15 @@
                                 v-model="data.password"
                                 data-testid="admin-login-password"
                                 id="admin-login-password" />
+                            <v-checkbox
+                                v-model="data.remember"
+                                label="Angemeldet bleiben"
+                                color="primary"
+                                density="comfortable"
+                                hide-details
+                                class="mt-1"
+                                data-testid="admin-login-remember"
+                            />
                         </v-form>
                         <v-btn block color="success" flat size="large" data-testid="admin-login-submit-password" @click="loginStep2()" class="mb-3">Anmelden</v-btn>
                         <v-btn block variant="text" color="warning" data-testid="admin-login-back-from-password" @click="restartLogin">Zurück</v-btn>
@@ -269,6 +278,7 @@ export default {
         restartLogin() {
             this.data.password = null
             this.data.token_2fa = null
+            this.data.remember = true
             this.step = 'LOGIN_ENTER_EMAIL'
         },
 
@@ -281,10 +291,12 @@ export default {
             this.is_valid = false
             await this.$refs.form.validate()
             if (!this.is_valid) return
+            const remember = typeof this.data?.remember === 'boolean' ? this.data.remember : true
             this.data.step = 'LOGIN_ENTER_EMAIL'
             if (!(await this.adminStore.loginStepEmail(this.data))) return
 
             if (!this.data.school) this.selected_school_id = null
+            this.data.remember = remember
             this.step = this.data.step
         },
 
@@ -293,6 +305,7 @@ export default {
             await this.$refs.form.validate()
             if (!this.is_valid) return
             this.data.step = 'LOGIN_ENTER_PASSWORD'
+            this.data.remember = !!this.data.remember
 
             if (!(await this.adminStore.loginStep2(this.data))) return
 
@@ -307,6 +320,7 @@ export default {
         async loginStep3() {
             if (this.data.token_2fa.length != 6) return
             this.data.step = 'LOGIN_ENTER_TOKEN'
+            this.data.remember = !!this.data.remember
             if (!(await this.adminStore.loginStep3(this.data))) return
 
             if (this.data.step == 'LOGIN_SUCCESS') {

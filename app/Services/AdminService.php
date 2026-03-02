@@ -9,7 +9,6 @@ use App\Models\User;
 use App\Notifications\StandardEmail;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 
 class AdminService
@@ -92,7 +91,7 @@ class AdminService
         $user->login_ip = request()->ip();
         $user->save();
 
-        Auth::guard('web')->login($user, true);
+        Auth::guard('web')->login($user, $this->resolveRemember($data));
         session()->regenerate();
 
         return $user;
@@ -114,7 +113,7 @@ class AdminService
         $this->syncTeacherSchoolyearFromSchoolTool($user);
         $user->save();
 
-        Auth::guard('web')->login($user, true);
+        Auth::guard('web')->login($user, $this->resolveRemember($data));
         session()->regenerate();
 
         return $user;
@@ -268,7 +267,7 @@ class AdminService
         $mail = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $fromName,
-            'logo' => asset('/storage/images/' . config('schooltool.logo')),
+            'logo' => asset('/storage/images/'.config('schooltool.logo')),
             'subject' => $subject,
             'markdown' => 'mails.admin.sendCode',
             'token_2fa' => $token,
@@ -381,6 +380,11 @@ class AdminService
         $user->schoolyear_id = (int) $activeSchoolyearId;
     }
 
+    private function resolveRemember(array $data): bool
+    {
+        return filter_var($data['remember'] ?? false, FILTER_VALIDATE_BOOLEAN);
+    }
+
     public function informUserToBeBlockedOrNot($user)
     {
 
@@ -389,13 +393,12 @@ class AdminService
         $mail = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
-            'logo' => asset('/storage/images/logos' . $school->logo),
+            'logo' => asset('/storage/images/logos'.$school->logo),
             'subject' => $user->is_active ? 'Benutzerkonto wurde freigeschaltet' : 'Benutzerkonto wurde gesperrt',
             'markdown' => $user->is_active ? 'mails.admin.informStudentIsNotBlocked' : 'mails.admin.informStudentIsBlocked',
-            'full_name' => $user->last_name . ' ' . $user->first_name,
+            'full_name' => $user->last_name.' '.$user->first_name,
             'email' => $user->email,
         ];
-
 
         Notification::route('mail', $user->email)->notify(new StandardEmail($mail));
     }

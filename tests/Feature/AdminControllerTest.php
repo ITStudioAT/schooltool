@@ -2,13 +2,13 @@
 
 /**
  * AdminController Tests
- * 
+ *
  * These tests cover the core functionality of the AdminController including:
  * - Configuration endpoint
  * - Login flow
  * - Logout functionality
  * - Role management
- * 
+ *
  * Note: Some registration and password reset flows require mocking due to
  * database constraints in the test environment.
  */
@@ -30,14 +30,14 @@ beforeEach(function () {
         'short_name' => 'TS',
         'logo' => 'test-logo.png',
     ]);
-    
+
     $this->schoolyear = Schoolyear::factory()->create([
         'school_id' => $this->school->id,
     ]);
-    
+
     // Create roles
     Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
-    
+
     // Create test user
     $this->user = User::factory()->create([
         'email' => 'test@example.com',
@@ -50,7 +50,7 @@ beforeEach(function () {
         'email_verified_at' => now(),
         'is_active' => true,
     ]);
-    
+
     // Assign role to user
     $this->user->assignRole('admin');
 });
@@ -58,7 +58,7 @@ beforeEach(function () {
 // Config Tests
 test('config returns json response with app configuration', function () {
     $response = $this->getJson('/api/admin/config');
-    
+
     $response->assertStatus(200)
         ->assertJsonStructure([
             'logo',
@@ -80,7 +80,7 @@ test('config returns json response with app configuration', function () {
 
 test('config returns correct app information', function () {
     $response = $this->getJson('/api/admin/config');
-    
+
     $response->assertStatus(200)
         ->assertJson([
             'title' => 'SchoolTool',
@@ -91,9 +91,9 @@ test('config returns correct app information', function () {
 
 test('config returns user data when authenticated', function () {
     $this->actingAs($this->user);
-    
+
     $response = $this->getJson('/api/admin/config');
-    
+
     $response->assertStatus(200)
         ->assertJson([
             'is_auth' => true,
@@ -105,9 +105,9 @@ test('config returns user data when authenticated', function () {
 
 test('config returns selected school when user has one', function () {
     $this->actingAs($this->user);
-    
+
     $response = $this->getJson('/api/admin/config');
-    
+
     $response->assertStatus(200)
         ->assertJsonStructure([
             'selected_school' => ['id', 'long_name'],
@@ -116,7 +116,7 @@ test('config returns selected school when user has one', function () {
 
 test('config returns empty menu for unauthenticated user', function () {
     $response = $this->getJson('/api/admin/config');
-    
+
     $response->assertStatus(200)
         ->assertJson([
             'menu' => [],
@@ -126,7 +126,7 @@ test('config returns empty menu for unauthenticated user', function () {
 
 test('config includes health check data', function () {
     $response = $this->getJson('/api/admin/config');
-    
+
     $response->assertStatus(200)
         ->assertJsonPath('health.queue_working', true);
 });
@@ -139,9 +139,9 @@ test('login step email returns correct data for valid email', function () {
             'email' => $this->user->email,
         ],
     ];
-    
+
     $response = $this->postJson('/api/admin/login_step_email', $data);
-    
+
     $response->assertStatus(200)
         ->assertJsonStructure([
             'users_count',
@@ -155,9 +155,9 @@ test('login step email rejects non-existent email', function () {
             'email' => 'nonexistent@example.com',
         ],
     ];
-    
+
     $response = $this->postJson('/api/admin/login_step_email', $data);
-    
+
     $response->assertStatus(401);
 });
 
@@ -167,14 +167,15 @@ test('login step 2 authenticates user with correct credentials', function () {
             'step' => 'LOGIN_ENTER_PASSWORD',
             'email' => $this->user->email,
             'password' => 'password123',
+            'remember' => true,
             'school' => [
                 'id' => $this->school->id,
             ],
         ],
     ];
-    
+
     $response = $this->postJson('/api/admin/login_step_2', $data);
-    
+
     $response->assertStatus(200)
         ->assertJsonStructure(['step']);
 });
@@ -190,9 +191,9 @@ test('login step 2 rejects incorrect password', function () {
             ],
         ],
     ];
-    
+
     $response = $this->postJson('/api/admin/login_step_2', $data);
-    
+
     $response->assertStatus(401);
 });
 
@@ -206,6 +207,7 @@ test('login step 2 handles 2fa enabled users', function () {
             'step' => 'LOGIN_ENTER_PASSWORD',
             'email' => $this->user->email,
             'password' => 'password123',
+            'remember' => true,
             'school' => [
                 'id' => $this->school->id,
                 'long_name' => $this->school->long_name,
@@ -221,14 +223,96 @@ test('login step 2 handles 2fa enabled users', function () {
         ]);
 });
 
+test('login step 2 keeps remember token empty when remember is false', function () {
+    $this->user->remember_token = null;
+    $this->user->save();
+    $this->user->refresh();
+
+    expect($this->user->remember_token)->toBeNull();
+
+    $data = [
+        'data' => [
+            'step' => 'LOGIN_ENTER_PASSWORD',
+            'email' => $this->user->email,
+            'password' => 'password123',
+            'remember' => false,
+            'school' => [
+                'id' => $this->school->id,
+            ],
+        ],
+    ];
+
+    $response = $this->postJson('/api/admin/login_step_2', $data);
+
+    $response->assertStatus(200)
+        ->assertJson([
+            'step' => 'LOGIN_SUCCESS',
+        ]);
+
+    $this->user->refresh();
+    expect($this->user->remember_token)->toBeNull();
+});
+
+test('login step 3 sets remember token when remember is true', function () {
+    $this->user->is_2fa = true;
+    $this->user->email_2fa = 'second@example.com';
+    $this->user->save();
+
+    $step2Data = [
+        'data' => [
+            'step' => 'LOGIN_ENTER_PASSWORD',
+            'email' => $this->user->email,
+            'password' => 'password123',
+            'remember' => true,
+            'school' => [
+                'id' => $this->school->id,
+                'long_name' => $this->school->long_name,
+            ],
+        ],
+    ];
+
+    $step2Response = $this->postJson('/api/admin/login_step_2', $step2Data);
+    $step2Response->assertStatus(200)
+        ->assertJson([
+            'step' => 'LOGIN_ENTER_TOKEN',
+        ]);
+
+    $this->user->refresh();
+    expect($this->user->token_2fa)->not->toBeNull();
+
+    $step3Data = [
+        'data' => [
+            'step' => 'LOGIN_ENTER_TOKEN',
+            'email' => $this->user->email,
+            'password' => 'password123',
+            'token_2fa' => $this->user->token_2fa,
+            'remember' => true,
+            'school' => [
+                'id' => $this->school->id,
+            ],
+        ],
+    ];
+
+    $step3Response = $this->postJson('/api/admin/login_step_3', $step3Data);
+
+    $step3Response->assertStatus(200)
+        ->assertJson([
+            'step' => 'LOGIN_SUCCESS',
+            'auth' => true,
+        ]);
+
+    $this->user->refresh();
+    expect($this->user->remember_token)->not->toBeNull();
+});
+
 // Logout Tests
 test('execute logout logs out authenticated user', function () {
     $this->actingAs($this->user);
-    
+
     expect(Auth::check())->toBeTrue();
-    
+
     $response = $this->postJson('/api/admin/execute_logout');
-    
+
     $response->assertStatus(200)
         ->assertJson([
             'is_auth' => false,
@@ -237,7 +321,7 @@ test('execute logout logs out authenticated user', function () {
 
 test('execute logout works for unauthenticated user', function () {
     $response = $this->postJson('/api/admin/execute_logout');
-    
+
     $response->assertStatus(200)
         ->assertJson([
             'is_auth' => false,
@@ -246,9 +330,9 @@ test('execute logout works for unauthenticated user', function () {
 
 test('execute logout returns config data', function () {
     $this->actingAs($this->user);
-    
+
     $response = $this->postJson('/api/admin/execute_logout');
-    
+
     $response->assertStatus(200)
         ->assertJsonStructure([
             'logo',
@@ -261,15 +345,15 @@ test('execute logout returns config data', function () {
 
 // Load Roles Tests
 test('load roles returns roles for super admin', function () {
-    if (!Role::where('name', 'super_admin')->exists()) {
+    if (! Role::where('name', 'super_admin')->exists()) {
         Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
     }
-    
+
     $this->user->syncRoles(['super_admin']);
     $this->actingAs($this->user);
-    
+
     $response = $this->postJson('/api/admin/load_roles');
-    
+
     $response->assertStatus(200)
         ->assertJsonStructure([
             '*' => ['id', 'name'],
@@ -278,15 +362,15 @@ test('load roles returns roles for super admin', function () {
 
 test('load roles denies access for non-super admin', function () {
     $this->actingAs($this->user);
-    
+
     $response = $this->postJson('/api/admin/load_roles');
-    
+
     $response->assertStatus(403);
 });
 
 test('load roles requires authentication', function () {
     $response = $this->postJson('/api/admin/load_roles');
-    
+
     $response->assertStatus(401);
 });
 
@@ -321,7 +405,7 @@ test('register step 2 validates token correctly', function () {
         'token_2fa_expires_at' => now()->addMinutes(10),
         'email_verified_at' => null,
     ]);
-    
+
     $data = [
         'data' => [
             'email' => 'register@example.com',
@@ -329,14 +413,14 @@ test('register step 2 validates token correctly', function () {
             'step' => 'REGISTER_ENTER_TOKEN',
         ],
     ];
-    
+
     $response = $this->postJson('/api/admin/register_step_2', $data);
-    
+
     $response->assertStatus(200)
         ->assertJson([
             'step' => 'REGISTER_ENTER_FIELDS',
         ]);
-    
+
     $registerUser->refresh();
     expect($registerUser->email_verified_at)->not->toBeNull();
 });
@@ -350,7 +434,7 @@ test('register step 2 rejects invalid token', function () {
         'token_2fa' => '123456',
         'token_2fa_expires_at' => now()->addMinutes(10),
     ]);
-    
+
     $data = [
         'data' => [
             'email' => 'register@example.com',
@@ -358,9 +442,9 @@ test('register step 2 rejects invalid token', function () {
             'step' => 'REGISTER_ENTER_TOKEN',
         ],
     ];
-    
+
     $response = $this->postJson('/api/admin/register_step_2', $data);
-    
+
     $response->assertStatus(401);
 });
 
@@ -377,7 +461,7 @@ test('register step 3 updates user with valid data', function () {
         'last_name' => null,
         'confirmed_at' => null,
     ]);
-    
+
     $data = [
         'data' => [
             'email' => 'complete@example.com',
@@ -389,11 +473,11 @@ test('register step 3 updates user with valid data', function () {
             'password_repeat' => 'SecurePass123!',
         ],
     ];
-    
+
     $response = $this->postJson('/api/admin/register_step_3', $data);
-    
+
     $response->assertStatus(200);
-    
+
     $registerUser->refresh();
     expect($registerUser->last_name)->toBe('Smith')
         ->and($registerUser->first_name)->toBe('Jane');
@@ -404,7 +488,7 @@ test('config reflects authentication state correctly', function () {
     // Unauthenticated
     $response = $this->getJson('/api/admin/config');
     $response->assertJson(['is_auth' => false]);
-    
+
     // Authenticated
     $this->actingAs($this->user);
     $response = $this->getJson('/api/admin/config');
@@ -413,12 +497,11 @@ test('config reflects authentication state correctly', function () {
 
 test('authenticated user config includes navigation menu', function () {
     $this->actingAs($this->user);
-    
+
     $response = $this->getJson('/api/admin/config');
-    
+
     $response->assertStatus(200);
     $data = $response->json();
-    
+
     expect($data)->toHaveKey('menu');
 });
-
