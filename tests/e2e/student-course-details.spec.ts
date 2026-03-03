@@ -18,7 +18,7 @@ async function loginAsE2EStudent(page: Page): Promise<void> {
     await expect(page).toHaveURL(/\/student\/overview$/)
 }
 
-async function openCourseTab(page: Page, tabName: 'Termine' | 'Leistungen'): Promise<void> {
+async function openCourseTab(page: Page, tabName: 'Termine' | 'Leistungen' | 'Verhalten'): Promise<void> {
     const visibleTab = page
         .locator('.course-tabs-desktop [role="tab"]:visible, .course-tabs-mobile button:visible')
         .filter({ hasText: tabName })
@@ -56,3 +56,62 @@ test('leistungen marks open and finished entries with correct row state', async 
     await expect(finishedRow).toBeVisible()
     await expect(finishedRow).not.toHaveClass(/entry-row--open/)
 });
+
+test('behaviour resolves tolerant short code labels to readable text', async ({ page }) => {
+    await loginAsE2EStudent(page)
+
+    const mockedCourseId = 99999
+    await page.route(`**/api/homepage/student/courses/${mockedCourseId}`, async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                course: {
+                    id: mockedCourseId,
+                    title: 'E2E Verhalten',
+                    description: null,
+                    teaching_schema_id: null,
+                    teacher: 'E2E Teacher',
+                    teacher_email: null,
+                    teacher_teaching_notifications: [],
+                    teacher_teaching_behaviour: [
+                        { short_name: 'LV', name: 'Laptop vergessen' },
+                    ],
+                    classes: [],
+                    students_count: 1,
+                    stars: [],
+                    sem_1_grade: null,
+                    sem_2_grade: null,
+                    sem_grade: null,
+                    behaviour_1_grade: null,
+                    behaviour_2_grade: null,
+                    behaviour_grade: null,
+                    notifications: [],
+                    behaviour_entries: [
+                        { id: 1, date: '2026-02-25', description: null, type: 'L' },
+                    ],
+                    show_behaviour: true,
+                    course_dates: [],
+                    next_course_date: null,
+                    active_course_end_at: null,
+                },
+            }),
+        })
+    })
+    await page.route(`**/api/homepage/student/courses/${mockedCourseId}/entries`, async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                entries: [],
+                type_labels: {},
+            }),
+        })
+    })
+
+    await page.goto(`/student/course/${mockedCourseId}`)
+    await expect(page).toHaveURL(new RegExp(`/student/course/${mockedCourseId}$`))
+
+    await openCourseTab(page, 'Verhalten')
+    await expect(page.locator('.behaviour-entry-type').first()).toContainText('Laptop vergessen')
+})

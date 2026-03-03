@@ -1081,8 +1081,42 @@ export default {
         },
 
         getBehaviourTypeLabel(type) {
-            if (!type) return ''
-            return this.behaviourTypeLabels[type] || type
+            const rawType = String(type || '').trim()
+            if (!rawType) return ''
+
+            const directLabel = this.behaviourTypeLabels[rawType]
+            if (directLabel) {
+                return directLabel
+            }
+
+            const normalizedType = rawType.toUpperCase()
+            const behaviourDefinitions = Array.isArray(this.course?.teacher_teaching_behaviour) ? this.course.teacher_teaching_behaviour : []
+            const normalizedDefinitions = behaviourDefinitions
+                .map((entry) => {
+                    const shortName = String(entry?.short_name || '').trim()
+                    const name = String(entry?.name || shortName).trim()
+                    return {
+                        shortName,
+                        shortNameUpper: shortName.toUpperCase(),
+                        name: name || shortName,
+                    }
+                })
+                .filter((entry) => entry.shortNameUpper !== '')
+
+            const caseInsensitiveExact = normalizedDefinitions.find((entry) => entry.shortNameUpper === normalizedType)
+            if (caseInsensitiveExact) {
+                return caseInsensitiveExact.name
+            }
+
+            const tolerantMatches = normalizedDefinitions
+                .filter((entry) => entry.shortNameUpper.startsWith(normalizedType) || normalizedType.startsWith(entry.shortNameUpper))
+                .sort((a, b) => a.shortNameUpper.length - b.shortNameUpper.length)
+
+            if (tolerantMatches.length >= 1) {
+                return tolerantMatches[0].name
+            }
+
+            return rawType
         },
 
         getDateStatusClass(status) {

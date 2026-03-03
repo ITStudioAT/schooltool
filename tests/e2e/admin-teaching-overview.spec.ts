@@ -86,11 +86,20 @@ test('admin teaching page supports overview navigation without js runtime errors
     await expect(page.getByTestId('teaching-more-col')).toHaveClass(/teaching-more-col--full/)
 
     await page.getByTestId('teaching-more-menu-dummy_2').click()
-    await expect(page.getByTestId('teaching-performances-dummy')).toBeVisible()
+    await expect(page.getByTestId('teaching-performances-card')).toBeVisible()
+    await expect(page.getByTestId('teaching-performances-table')).toBeVisible()
     await expect(page.getByTestId('teaching-attendance-matrix')).toHaveCount(0)
-    await expect(page.getByTestId('teaching-more-col')).not.toHaveClass(/teaching-more-col--full/)
+    await expect(page.getByTestId('teaching-more-col')).toHaveClass(/teaching-more-col--full/)
 
-    await expect(page.locator('.teaching-overview-panel-switcher .v-btn--active')).toHaveCount(1)
+    await page.getByTestId('teaching-overview-panel-more').click()
+    await expect(page.getByTestId('teaching-more-card')).toHaveCount(0)
+    await expect(page.getByTestId('teaching-overview-panel-my_courses')).not.toHaveClass(/v-btn--active/)
+    await expect(page.getByTestId('teaching-overview-panel-students')).toHaveClass(/v-btn--active/)
+    await expect(page.getByTestId('teaching-overview-panel-infos')).toHaveClass(/v-btn--active/)
+    await expect(page.getByTestId('teaching-overview-panel-works')).toHaveClass(/v-btn--active/)
+    await expect(page.getByTestId('teaching-overview-panel-dates')).toHaveClass(/v-btn--active/)
+
+    await expect(page.locator('.teaching-overview-panel-switcher .v-btn--active')).toHaveCount(4)
 
     expect(runtimeErrors, runtimeErrors.join('\n')).toEqual([])
 })

@@ -291,6 +291,18 @@ export default {
                 return
             }
 
+            if (moreCurrentlyActive && !moreRequested) {
+                this.show_more = false
+                this.show_my_courses = false
+                this.show_students = true
+                this.show_infos = true
+                this.show_works = true
+                this.show_dates = true
+                this.action_2 = ''
+                this.selected_course_student = null
+                return
+            }
+
             if (moreRequested && moreCurrentlyActive && requestedPanels.size > 1) {
                 requestedPanels.delete('more')
             }

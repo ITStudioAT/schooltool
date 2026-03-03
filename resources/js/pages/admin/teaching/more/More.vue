@@ -1,10 +1,10 @@
 <template>
     <v-col
         cols="12"
-        :md="isAttendanceSelected ? 12 : 6"
-        :lg="isAttendanceSelected ? 12 : 7"
-        :xl="isAttendanceSelected ? 12 : 4"
-        :class="{ 'teaching-more-col--full': isAttendanceSelected }"
+        :md="isWideLayoutSelected ? 12 : 6"
+        :lg="isWideLayoutSelected ? 12 : 7"
+        :xl="isWideLayoutSelected ? 12 : 4"
+        :class="{ 'teaching-more-col--full': isWideLayoutSelected }"
         data-testid="teaching-more-col">
         <v-card rounded="xl" class="teaching-more-card" data-testid="teaching-more-card">
             <v-card-item>
@@ -49,7 +49,12 @@
                     :active-semester="activeSemester"
                     :semester-count="semesterCount"
                     :sem2-start-date="sem2StartDate" />
-                <PerformancesDummy v-else-if="active_menu === 'dummy_2'" />
+                <PerformancesDummy
+                    v-else-if="active_menu === 'dummy_2'"
+                    :selected-course="selected_course"
+                    :active-semester="activeSemester"
+                    :semester-count="semesterCount"
+                    :sem2-start-date="sem2StartDate" />
 
                 <v-alert v-else type="info" variant="tonal" data-testid="teaching-more-content">
                     {{ activeMenuContent }}
@@ -109,8 +114,8 @@ export default {
         sem2StartDate() {
             return this.config?.user?.teaching_count_for_semester_2_date || this.config?.selected_schoolyear?.sem_2_start || null
         },
-        isAttendanceSelected() {
-            return this.active_menu === 'dummy_1'
+        isWideLayoutSelected() {
+            return this.active_menu === 'dummy_1' || this.active_menu === 'dummy_2'
         },
         activeMenuContent() {
             return 'Bitte einen Bereich auswählen.'
