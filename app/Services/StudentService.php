@@ -7,24 +7,20 @@ use App\Models\SchoolTool;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Sabberworm\CSS\Property\Import;
 
 class StudentService
 {
-
-    public function isEmailValidForSchool($email, $school_id): User|null
+    public function isEmailValidForSchool(string $email, int $school_id): ?User
     {
 
-        // Beispiel: Überprüfen, ob die E-Mail-Adresse in der Tabelle "students" mit der Schule verknüpft ist
         $user = User::where('email', $email)
             ->where('school_id', $school_id)
             ->first();
 
-
         return $user;
     }
 
-    public function  isStudentInImport116($email, $school_id, $schoolyear_id)
+    public function isStudentInImport116(string $email, int $school_id, int $schoolyear_id): ?Import116
     {
 
         $student = Import116::where('email', $email)
@@ -35,31 +31,51 @@ class StudentService
         return $student;
     }
 
-    public function createUserFromImport116($import116User)
+    public function createUserFromImport116(Import116 $import116User): User
     {
-        $user_data = [
-            'school_id' => $import116User->school_id,
-            'schoolyear_id' => $import116User->schoolyear_id,
-            'email' => $import116User->email,
-            'password' => Hash::make(now()),
-            'last_name' => $import116User->last_name,
-            'first_name' => $import116User->first_name,
-            'phone' => $import116User->phone_1 ?? $import116User->phone_2,
-            'is_active' => 1,
-            'sex' => $import116User->sex,
-            'import116_id' => $import116User->id,
-        ];
+        $importEmail = trim((string) ($import116User->email ?? ''));
+        $resolvedEmail = $importEmail !== '' ? $importEmail : "import116.{$import116User->id}@schooltool.noemail";
 
-        $user = User::create($user_data);
-        $user->email_verified_at = now();
+        $user = $this->resolveExistingImportUser($import116User);
+
+        if (! $user) {
+            $user = new User;
+            $user->password = Hash::make(now());
+        }
+
+        if ($importEmail !== '' && $this->canUseEmailForUser($user, $importEmail)) {
+            $resolvedEmail = $importEmail;
+        } elseif (trim((string) $user->email) !== '') {
+            $resolvedEmail = trim((string) $user->email);
+        }
+
+        $user->school_id = (int) $import116User->school_id;
+        $user->schoolyear_id = $import116User->schoolyear_id ? (int) $import116User->schoolyear_id : null;
+        $user->email = $resolvedEmail;
+        $user->last_name = $import116User->last_name;
+        $user->first_name = $import116User->first_name;
+        $user->phone = $import116User->phone_1 ?? $import116User->phone_2;
+        $user->is_active = 1;
+        $user->sex = $import116User->sex;
+        $user->import116_id = (int) $import116User->id;
+        $user->email_verified_at = $user->email_verified_at ?? now();
         $user->save();
-        $user->assignRole('student');
+
+        if ((int) ($import116User->user_id ?? 0) !== (int) $user->id) {
+            $import116User->user_id = (int) $user->id;
+            $import116User->save();
+        }
+
+        if (! $user->hasRole('student')) {
+            $user->assignRole('student');
+        }
+
         return $user;
     }
 
     public function isTokenValid($user, $token)
     {
-        if (!$user->token_2fa || !$user->token_2fa_expires_at) {
+        if (! $user->token_2fa || ! $user->token_2fa_expires_at) {
             return false;
         }
 
@@ -101,9 +117,6 @@ class StudentService
     /**
      * Synchronize user data from Import116 to User
      * Updates user information if corresponding Import116 record exists
-     *
-     * @param User $user
-     * @return User
      */
     public function syncUserDataFromImport116(User $user): User
     {
@@ -118,7 +131,7 @@ class StudentService
         $import116 = $import116Query->first();
 
         // If no Import116 record found, return user unchanged
-        if (!$import116) {
+        if (! $import116) {
             return $user;
         }
 
@@ -173,5 +186,52 @@ class StudentService
         }
 
         return $user;
+    }
+
+    private function resolveExistingImportUser(Import116 $import116User): ?User
+    {
+        $schoolId = (int) $import116User->school_id;
+        $importId = (int) $import116User->id;
+
+        if ((int) ($import116User->user_id ?? 0) > 0) {
+            $directUser = User::where('id', (int) $import116User->user_id)
+                ->where('school_id', $schoolId)
+                ->first();
+            if ($directUser) {
+                return $directUser;
+            }
+        }
+
+        $linkedUser = User::where('school_id', $schoolId)
+            ->where('import116_id', $importId)
+            ->orderByDesc('id')
+            ->first();
+        if ($linkedUser) {
+            return $linkedUser;
+        }
+
+        $importEmail = trim((string) ($import116User->email ?? ''));
+        if ($importEmail !== '') {
+            return User::where('school_id', $schoolId)
+                ->where('email', $importEmail)
+                ->first();
+        }
+
+        return null;
+    }
+
+    private function canUseEmailForUser(User $user, string $targetEmail): bool
+    {
+        $targetEmail = trim($targetEmail);
+        if ($targetEmail === '') {
+            return false;
+        }
+
+        $conflictExists = User::where('school_id', (int) $user->school_id)
+            ->where('email', $targetEmail)
+            ->where('id', '!=', (int) $user->id)
+            ->exists();
+
+        return ! $conflictExists;
     }
 }

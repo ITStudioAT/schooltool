@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Import116;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
@@ -141,4 +142,43 @@ test('impersonation status returns current user email and school while impersona
         ->and((string) data_get($status, 'impersonator.email'))->toBe((string) $impersonator->email)
         ->and((int) data_get($status, 'impersonator.school_id'))->toBe((int) $impersonator->school_id)
         ->and((string) data_get($status, 'impersonator.school_name'))->toBe($expectedImpersonatorSchoolName);
+});
+
+test('impersonation users list returns only the latest user per school and import116 record', function () {
+    $importRow = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'latest.email@test.com',
+    ]);
+
+    $olderDuplicate = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'first_name' => 'Elena',
+        'last_name' => 'Pabinger',
+        'email' => 'old.email@test.com',
+        'import116_id' => $importRow->id,
+    ]);
+    $olderDuplicate->assignRole('teacher');
+
+    $newerDuplicate = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'first_name' => 'Elena',
+        'last_name' => 'Pabinger',
+        'email' => 'latest.email@test.com',
+        'import116_id' => $importRow->id,
+    ]);
+    $newerDuplicate->assignRole('teacher');
+
+    $this->actingAs($this->superAdmin);
+
+    $responseIds = collect(
+        $this->getJson('/api/admin/impersonation/users?school_id='.$this->school->id)
+            ->assertOk()
+            ->json('data')
+    )->pluck('id');
+
+    expect($responseIds->contains($newerDuplicate->id))->toBeTrue()
+        ->and($responseIds->contains($olderDuplicate->id))->toBeFalse();
 });

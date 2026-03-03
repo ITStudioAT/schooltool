@@ -28,7 +28,7 @@ beforeEach(function () {
         'teaching_admin',
         'teacher',
         'user',
-    ])->each(fn(string $role) => Role::firstOrCreate([
+    ])->each(fn (string $role) => Role::firstOrCreate([
         'name' => $role,
         'guard_name' => 'web',
     ]));
@@ -57,7 +57,7 @@ beforeEach(function () {
         'long_name' => 'Other School',
     ]);
 
-    $this->service = new Import116Service();
+    $this->service = new Import116Service;
 });
 
 // ============================================================================
@@ -260,6 +260,65 @@ describe('createUserFromImport116', function () {
         $user = User::find($result['user_id']);
 
         expect($user->schoolclass)->toBe('');
+    });
+
+    test('reuses existing user linked by import116_id and updates email instead of creating duplicate', function () {
+        $importRecord = Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'email' => 'new.mail@student.test',
+            'first_name' => 'Elena',
+            'last_name' => 'Pabinger',
+            'import_user_id' => $this->admin->id,
+        ]);
+
+        $existingUser = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'email' => 'old.mail@student.test',
+            'import116_id' => $importRecord->id,
+            'first_name' => 'Elena',
+            'last_name' => 'Pabinger',
+        ]);
+
+        $result = $this->service->createUserFromImport116($importRecord);
+
+        $importRecord->refresh();
+        $existingUser->refresh();
+
+        expect($result['user_id'])->toBe($existingUser->id)
+            ->and($existingUser->email)->toBe('new.mail@student.test')
+            ->and($importRecord->user_id)->toBe($existingUser->id)
+            ->and(User::query()->where('school_id', $this->school->id)->where('import116_id', $importRecord->id)->count())->toBe(1);
+    });
+
+    test('reuses existing user found by school and email', function () {
+        $importRecord = Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'email' => 'reuse.by.email@student.test',
+            'first_name' => 'Reuse',
+            'last_name' => 'Email',
+            'import_user_id' => $this->admin->id,
+        ]);
+
+        $existingUser = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => null,
+            'email' => 'reuse.by.email@student.test',
+            'import116_id' => null,
+            'first_name' => 'Old',
+            'last_name' => 'Name',
+        ]);
+
+        $result = $this->service->createUserFromImport116($importRecord);
+
+        $existingUser->refresh();
+
+        expect($result['user_id'])->toBe($existingUser->id)
+            ->and($existingUser->import116_id)->toBe($importRecord->id)
+            ->and($existingUser->schoolyear_id)->toBe($this->schoolyear->id)
+            ->and(User::query()->where('school_id', $this->school->id)->where('email', 'reuse.by.email@student.test')->count())->toBe(1);
     });
 });
 

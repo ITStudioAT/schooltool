@@ -80,7 +80,22 @@ class ImpersonationController extends Controller
         $users = User::query()
             ->with(['roles', 'selectedSchool:id,long_name,short_name'])
             ->where('id', '!=', $authUser->id)
-            ->when($schoolId, fn($query) => $query->where('school_id', $schoolId))
+            ->when($schoolId, fn ($query) => $query->where('school_id', $schoolId))
+            ->where(function ($query) {
+                $query->whereNull('import116_id')
+                    ->orWhereRaw(
+                        'users.id = (
+                            SELECT MAX(import_users.id)
+                            FROM users AS import_users
+                            WHERE import_users.school_id = users.school_id
+                              AND import_users.import116_id = users.import116_id
+                        )'
+                    );
+            })
+            ->where(function ($query) {
+                $query->whereNull('email')
+                    ->orWhere('email', 'not like', '%@schooltool.noemail');
+            })
             ->when($searchString !== '', function ($query) use ($searchString) {
                 $query->where(function ($q) use ($searchString) {
                     $q->where('last_name', 'like', "%{$searchString}%")
@@ -99,7 +114,7 @@ class ImpersonationController extends Controller
 
         $users->setCollection(
             $users->getCollection()->map(function (User $user) {
-                $fullName = trim((string) ($user->last_name ?? '') . ' ' . (string) ($user->first_name ?? ''));
+                $fullName = trim((string) ($user->last_name ?? '').' '.(string) ($user->first_name ?? ''));
                 $schoolName = trim((string) ($user->selectedSchool?->long_name ?? $user->selectedSchool?->short_name ?? ''));
                 $baseLabel = trim($fullName !== '' ? "{$fullName} ({$user->email})" : $user->email);
                 $displayName = $schoolName !== '' ? "{$baseLabel} - {$schoolName}" : $baseLabel;

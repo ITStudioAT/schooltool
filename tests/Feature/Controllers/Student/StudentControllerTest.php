@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Import116;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolLicence;
@@ -157,7 +158,7 @@ test('login step password returns password_not_valid for wrong password', functi
 });
 
 test('user endpoint returns user only for authenticated students', function () {
-    $url = '/api/homepage/student/user?school_id=' . $this->school->id;
+    $url = '/api/homepage/student/user?school_id='.$this->school->id;
 
     $this->getJson($url)
         ->assertOk()
@@ -192,4 +193,44 @@ test('change password updates password for student and blocks other roles', func
             'confirm_password' => 'another-password-123',
         ])
         ->assertStatus(403);
+});
+
+test('login step email reuses existing import-linked user when import email changed', function () {
+    $importRow = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'new.import.email@student.test',
+        'first_name' => 'Elena',
+        'last_name' => 'Pabinger',
+    ]);
+
+    $existingLinkedUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'old.import.email@student.test',
+        'first_name' => 'Elena',
+        'last_name' => 'Pabinger',
+        'import116_id' => $importRow->id,
+        'password' => Hash::make('password123'),
+    ]);
+    $existingLinkedUser->assignRole('student');
+
+    $usersBefore = User::query()->count();
+
+    $response = $this->postJson('/api/homepage/student/login_step_email', [
+        'type' => 'login_with_password',
+        'school_id' => $this->school->id,
+        'email' => 'new.import.email@student.test',
+    ]);
+
+    $response->assertOk()
+        ->assertJsonPath('status', 'enter_password')
+        ->assertJsonPath('schoolyear_id', $this->schoolyear->id);
+
+    $existingLinkedUser->refresh();
+    $importRow->refresh();
+
+    expect(User::query()->count())->toBe($usersBefore)
+        ->and($existingLinkedUser->email)->toBe('new.import.email@student.test')
+        ->and((int) $importRow->user_id)->toBe($existingLinkedUser->id);
 });
