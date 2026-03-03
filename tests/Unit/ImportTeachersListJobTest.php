@@ -14,7 +14,6 @@ use App\Models\Teacher;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -23,17 +22,19 @@ uses(TestCase::class, RefreshDatabase::class);
 // Helper function to create test Excel file
 function createTestExcelFile(array $headers, array $rows): string
 {
-    $tempPath = 'app/temp/test-imports';
-    $fullPath = storage_path($tempPath);
-
-    if (!is_dir($fullPath)) {
-        mkdir($fullPath, 0775, true);
+    $tempDirectory = storage_path('framework/testing');
+    $tempFile = tempnam($tempDirectory, 'teachers-import-');
+    if ($tempFile === false) {
+        throw new RuntimeException('Could not create temporary teacher import file.');
     }
 
-    $filename = 'test-teachers-' . uniqid() . '.csv';
-    $filePath = $fullPath . '/' . $filename;
+    $filePath = $tempFile.'.csv';
+    rename($tempFile, $filePath);
 
     $handle = fopen($filePath, 'w');
+    if ($handle === false) {
+        throw new RuntimeException('Could not open temporary teacher import file for writing.');
+    }
 
     // Write headers
     fputcsv($handle, $headers);
@@ -45,21 +46,21 @@ function createTestExcelFile(array $headers, array $rows): string
 
     fclose($handle);
 
-    return $tempPath . '/' . $filename;
+    return str_replace('\\', '/', substr($filePath, strlen(storage_path()) + 1));
 }
 
 // Helper function to clean up test files
 function cleanupTestFiles(): void
 {
-    $tempPath = storage_path('app/temp/test-imports');
-    if (is_dir($tempPath)) {
-        $files = glob($tempPath . '/*');
-        foreach ($files as $file) {
-            if (is_file($file)) {
-                @unlink($file);
-            }
+    $files = glob(storage_path('framework/testing/teachers-import-*'));
+    if ($files === false) {
+        return;
+    }
+
+    foreach ($files as $file) {
+        if (is_file($file)) {
+            @unlink($file);
         }
-        @rmdir($tempPath);
     }
 }
 
@@ -88,12 +89,6 @@ beforeEach(function () {
 afterEach(function () {
     // Clean up test files after each test
     cleanupTestFiles();
-
-    // Clean up temp directory
-    $tempPath = storage_path('app/temp');
-    if (is_dir($tempPath)) {
-        @rmdir($tempPath);
-    }
 });
 
 describe('handle - successful imports', function () {
@@ -330,6 +325,23 @@ describe('handle - header variations', function () {
 
         expect(Teacher::count())->toBe(1);
     });
+
+    it('accepts minor typo headers', function () {
+        $filePath = createTestExcelFile(
+            ['kurtz', 'nachnam', 'vornaem', 'emial'],
+            [
+                ['MUE', 'Mueller', 'Hans', 'hans@test.de'],
+            ]
+        );
+
+        $job = new ImportTeachersListJob($this->user, $filePath);
+        $job->handle();
+
+        expect(Teacher::count())->toBe(1);
+        Event::assertDispatched(TeachersListImportFinishedEvent::class, function ($event) {
+            return $event->status === 200;
+        });
+    });
 });
 
 describe('handle - error handling', function () {
@@ -495,10 +507,10 @@ describe('handle - edge cases', function () {
         $rows = [];
         for ($i = 1; $i <= 50; $i++) {
             $rows[] = [
-                'T' . str_pad($i, 2, '0', STR_PAD_LEFT),
-                'Teacher' . $i,
-                'First' . $i,
-                'teacher' . $i . '@test.de',
+                'T'.str_pad($i, 2, '0', STR_PAD_LEFT),
+                'Teacher'.$i,
+                'First'.$i,
+                'teacher'.$i.'@test.de',
             ];
         }
 
@@ -522,7 +534,7 @@ describe('handle - edge cases', function () {
             ['Kurz', 'Nachname', 'Vorname', 'Email'],
             [
                 ['MUE', 'Müller', 'Jürgen', 'mueller@test.de'],
-                ['SCH', "O'Brien", "Mary-Jane", 'obrien@test.de'],
+                ['SCH', "O'Brien", 'Mary-Jane', 'obrien@test.de'],
             ]
         );
 
@@ -633,6 +645,23 @@ describe('validateAndMapHeaders', function () {
         expect($mapping)->toBeArray()
             ->and($mapping)->toHaveCount(4);
     });
+
+    it('maps headers with minor typos to expected columns', function () {
+        $job = new ImportTeachersListJob($this->user, 'dummy-path');
+
+        $reflection = new ReflectionClass($job);
+        $method = $reflection->getMethod('validateAndMapHeaders');
+        $method->setAccessible(true);
+
+        $headers = ['kurtz', 'nachnam', 'vornaem', 'emial'];
+        $mapping = $method->invoke($job, $headers);
+
+        expect($mapping)->toBeArray()
+            ->and($mapping['kurtz'])->toBe('Kurz')
+            ->and($mapping['nachnam'])->toBe('Nachname')
+            ->and($mapping['vornaem'])->toBe('Vorname')
+            ->and($mapping['emial'])->toBe('Email');
+    });
 });
 
 describe('job properties', function () {
@@ -650,4 +679,3 @@ describe('job properties', function () {
             ->and($job->path)->toBe($path);
     });
 });
-

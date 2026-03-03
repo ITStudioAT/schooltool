@@ -1,6 +1,6 @@
 <template>
     <!-- FREIZUGEBENDE ANGEBOTE (CRUD style) -->
-    <v-col cols="12" v-if="offers !== null">
+    <v-col cols="12" xl="11" v-if="offers !== null">
         <section class="crud-shell admin-card ai-glass-panel" :class="{ 'is-disabled': action != '' }">
             <div class="admin-card-head crud-head mb-4">
                 <div>

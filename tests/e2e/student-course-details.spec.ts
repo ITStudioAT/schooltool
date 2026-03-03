@@ -18,13 +18,23 @@ async function loginAsE2EStudent(page: Page): Promise<void> {
     await expect(page).toHaveURL(/\/student\/overview$/)
 }
 
+async function openCourseTab(page: Page, tabName: 'Termine' | 'Leistungen'): Promise<void> {
+    const visibleTab = page
+        .locator('.course-tabs-desktop [role="tab"]:visible, .course-tabs-mobile button:visible')
+        .filter({ hasText: tabName })
+        .first()
+
+    await expect(visibleTab).toBeVisible()
+    await visibleTab.click()
+}
+
 test('student course details shows free reason and no placeholder dashes', async ({ page }) => {
     await loginAsE2EStudent(page)
 
     await page.locator('.course-card', { hasText: 'E2E Mathematik' }).click()
     await expect(page).toHaveURL(/\/student\/course\/\d+$/)
 
-    await page.getByRole('tab', { name: 'Termine' }).click()
+    await openCourseTab(page, 'Termine')
     await expect(page.getByText('E2E Lehrerfortbildung')).toBeVisible()
     await expect(page.locator('text=---')).toHaveCount(0)
 });
@@ -35,7 +45,7 @@ test('leistungen marks open and finished entries with correct row state', async 
     await page.locator('.course-card', { hasText: 'E2E Mathematik' }).click()
     await expect(page).toHaveURL(/\/student\/course\/\d+$/)
 
-    await page.getByRole('tab', { name: 'Leistungen' }).click()
+    await openCourseTab(page, 'Leistungen')
     await page.locator('.entries-semester-filter').getByRole('button', { name: '1+2' }).click()
 
     const openRow = page.locator('.entry-row', { has: page.locator('.entry-grade', { hasText: 'offen' }) }).first()

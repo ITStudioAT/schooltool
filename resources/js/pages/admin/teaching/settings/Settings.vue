@@ -32,7 +32,7 @@
                     </v-row>
                 </v-window-item>
 
-                <v-window-item value="behaviour">
+                <v-window-item v-if="showBehaviourEnabled" value="behaviour">
                     <v-row class="w-100 ma-0" dense>
                         <v-col cols="12" class="teaching-settings-panel-col">
                             <Behaviour />
@@ -199,13 +199,19 @@ export default {
             const roles = this.config?.roles || []
             return roles.includes('teacher') || roles.includes('admin') || roles.includes('super_admin')
         },
+        showBehaviourEnabled() {
+            return this.settings?.teaching_show_behaviour !== false
+        },
         availablePanels() {
             const panels = [
                 { id: 'basic', label: 'Grundeinstellungen', icon: 'mdi-cog-outline' },
-                { id: 'behaviour', label: 'Verhalten', icon: 'mdi-account-alert-outline' },
                 { id: 'notifications', label: 'Verständigungen', icon: 'mdi-bell-outline' },
                 { id: 'schemas', label: 'Benotungsschemas', icon: 'mdi-book-cog-outline' },
             ]
+
+            if (this.showBehaviourEnabled) {
+                panels.splice(1, 0, { id: 'behaviour', label: 'Verhalten', icon: 'mdi-account-alert-outline' })
+            }
 
             if (this.canManageOwnHolidays) {
                 panels.push({ id: 'my_holidays', label: 'Eigene freie Tage', icon: 'mdi-calendar-heart' })
@@ -230,7 +236,12 @@ export default {
     watch: {
         canManageOwnHolidays(newValue) {
             if (!newValue && this.active_panel === 'my_holidays') {
-                this.active_panel = 'behaviour'
+                this.active_panel = this.showBehaviourEnabled ? 'behaviour' : 'basic'
+            }
+        },
+        'settings.teaching_show_behaviour'(newValue) {
+            if (newValue === false && this.active_panel === 'behaviour') {
+                this.active_panel = 'basic'
             }
         },
     },

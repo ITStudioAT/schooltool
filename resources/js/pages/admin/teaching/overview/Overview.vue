@@ -56,7 +56,7 @@
         </v-row>
     </v-col>
 
-    <v-col cols="12" md="6" lg="7" xl="5" v-if="(show_infos || show_dates || show_works) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
+    <v-col cols="12" md="6" lg="7" xl="4" v-if="(show_infos || show_dates || show_works) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
         <v-row v-if="show_infos">
             <v-col>
                 <CourseInfos />
@@ -151,7 +151,7 @@ export default {
                 return 'toolbar-width-xl-12'
             }
             if (this.hasLeftOverviewColumn && this.hasRightOverviewColumn) {
-                return 'toolbar-width-xl-9'
+                return 'toolbar-width-xl-8'
             }
             if (this.hasLeftOverviewColumn && this.hasMiddleOverviewColumn) {
                 return 'toolbar-width-xl-7'
@@ -163,7 +163,7 @@ export default {
                 return 'toolbar-width-xl-4'
             }
             if (this.hasRightOverviewColumn) {
-                return 'toolbar-width-xl-5'
+                return 'toolbar-width-xl-4'
             }
             if (this.hasMiddleOverviewColumn) {
                 return 'toolbar-width-xl-3'

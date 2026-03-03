@@ -63,6 +63,10 @@
                         </div>
 
                         <div class="d-grid ga-3 mb-3">
+                            <div class="empty-state crud-search-panel">
+                                <SearchField :store="teachersListStore" selected_field="selected_teachers" />
+                            </div>
+
                             <div class="d-flex flex-wrap ga-2">
                                 <v-btn color="primary" variant="tonal" rounded="lg" class="text-caption" @click="selectAll">
                                     Alle auswählen [{{ Math.max(0, teachers.length - selected_teachers.length) }}]
@@ -103,6 +107,9 @@
                                 </v-list-item>
                             </v-list>
                         </div>
+                    <div class="empty-state crud-pagination mt-3 pa-3">
+                        <Pagination :meta="meta" :store="teachersListStore" selected_field="selected_teachers" />
+                    </div>
                     </template>
                 </section>
 
@@ -238,6 +245,8 @@ import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import FileUpload from '@/pages/components/FileUpload.vue'
+import SearchField from '@/pages/components/SearchField.vue'
+import Pagination from '@/pages/components/Pagination.vue'
 import { useTeachersListStore } from '@/stores/admin/TeachersListStore'
 
 export default {
@@ -245,7 +254,7 @@ export default {
         return useValidationRulesSetup()
     },
 
-    components: { FileUpload },
+    components: { FileUpload, SearchField, Pagination },
 
     async beforeMount() {
         this.adminStore = useAdminStore()

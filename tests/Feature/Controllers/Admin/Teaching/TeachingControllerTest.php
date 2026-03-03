@@ -615,6 +615,7 @@ describe('settings and semester endpoints', function () {
                     'teaching_schemas',
                     'teaching_behaviour',
                     'teaching_notifications',
+                    'teaching_show_behaviour',
                 ],
             ]);
 
@@ -622,6 +623,7 @@ describe('settings and semester endpoints', function () {
         expect($schemas)->toBeArray()
             ->and(count($schemas))->toBeGreaterThan(0)
             ->and($schemas[0]['name'])->toBe('Standard');
+        expect($response->json('settings.teaching_show_behaviour'))->toBeTrue();
 
         $this->assertDatabaseCount('teaching_schemas', 1);
         $this->assertDatabaseHas('teaching_schemas', [
@@ -694,6 +696,23 @@ describe('settings and semester endpoints', function () {
         $this->assertDatabaseHas('users', [
             'id' => $this->admin->id,
             'teaching_count_for_semester_2_date' => null,
+        ]);
+    });
+
+    test('save_settings persists teaching_show_behaviour toggle', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $payload = validTeachingSettingsPayload('schema-behaviour-toggle');
+        $payload['teaching_show_behaviour'] = false;
+
+        $response = $this->postJson('/api/admin/teaching/save_settings', $payload);
+
+        $response->assertOk()
+            ->assertJsonPath('settings.teaching_show_behaviour', false);
+
+        $this->assertDatabaseHas('users', [
+            'id' => $this->admin->id,
+            'teaching_show_behaviour' => 0,
         ]);
     });
 

@@ -15,12 +15,28 @@ describe('Teaching settings page', () => {
     it('builds available panels based on role permissions', () => {
         const ctx = {
             canManageOwnHolidays: true,
+            showBehaviourEnabled: true,
         }
         const panelsWithPermission = (Settings as any).computed.availablePanels.call(ctx)
 
         expect(panelsWithPermission.map((panel: { id: string }) => panel.id)).toEqual([
             'basic',
             'behaviour',
+            'notifications',
+            'schemas',
+            'my_holidays',
+        ])
+    })
+
+    it('removes behaviour panel when show-behaviour setting is disabled', () => {
+        const ctx = {
+            canManageOwnHolidays: true,
+            showBehaviourEnabled: false,
+        }
+        const panels = (Settings as any).computed.availablePanels.call(ctx)
+
+        expect(panels.map((panel: { id: string }) => panel.id)).toEqual([
+            'basic',
             'notifications',
             'schemas',
             'my_holidays',
@@ -79,11 +95,23 @@ describe('Teaching settings page', () => {
     it('falls back to behaviour when own-holidays permission is removed', () => {
         const ctx = {
             active_panel: 'my_holidays',
+            showBehaviourEnabled: true,
         }
 
         ;(Settings as any).watch.canManageOwnHolidays.call(ctx, false)
 
         expect(ctx.active_panel).toBe('behaviour')
+    })
+
+    it('falls back to basic when own-holidays permission is removed and behaviour is disabled', () => {
+        const ctx = {
+            active_panel: 'my_holidays',
+            showBehaviourEnabled: false,
+        }
+
+        ;(Settings as any).watch.canManageOwnHolidays.call(ctx, false)
+
+        expect(ctx.active_panel).toBe('basic')
     })
 
     it('newSchema clones standard schema and selects the newly created schema id', async () => {

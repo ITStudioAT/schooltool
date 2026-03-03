@@ -59,7 +59,8 @@ test('tutoring request lifecycle works for requester and offer owner', async ({ 
     const receivedRequest = page.locator('[data-testid^="tutoring-received-request-"]', { hasText: 'TutoringPeer' }).first()
     await expect(receivedRequest).toBeVisible()
     const markDoneButton = receivedRequest.locator('[data-testid^="tutoring-received-request-mark-done-"]')
-    await markDoneButton.scrollIntoViewIfNeeded()
+    await expect(markDoneButton).toBeVisible()
+    await markDoneButton.evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' }))
     await markDoneButton.click()
 
     await expect(receivedRequest).toContainText('TutoringPeer')

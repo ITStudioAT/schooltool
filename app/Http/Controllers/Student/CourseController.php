@@ -199,7 +199,7 @@ class CourseController extends Controller
             ->keyBy(fn (TeachingSchoolHour $schoolHour): int => (int) $schoolHour->hour);
 
         // Get the course
-        $course = TeachingCourse::with('user:id,first_name,last_name,short,email,teaching_notifications,teaching_behaviour')
+        $course = TeachingCourse::with('user:id,first_name,last_name,short,email,teaching_notifications,teaching_behaviour,teaching_show_behaviour')
             ->withCount([
                 'teachingCourseStudents as active_students_count' => function ($query) {
                     $query->whereNull('canceled_at');
@@ -222,6 +222,8 @@ class CourseController extends Controller
             abort(403, 'Sie sind nicht in diesem Fach eingeschrieben');
         }
 
+        $showBehaviour = (bool) ($course->user?->teaching_show_behaviour ?? true);
+
         // Get notifications (TeachingCourseBehaviourEntry where kind == 'notification')
         $notifications = TeachingCourseBehaviourEntry::where('teaching_course_id', $course->id)
             ->where('user_id', $auth_user->id)
@@ -242,20 +244,22 @@ class CourseController extends Controller
             });
 
         // Get behaviour entries (TeachingCourseBehaviourEntry where kind == 'behaviour')
-        $behaviourEntries = TeachingCourseBehaviourEntry::where('teaching_course_id', $course->id)
-            ->where('user_id', $auth_user->id)
-            ->where('kind', 'behaviour')
-            ->orderBy('date', 'desc')
-            ->orderBy('id', 'desc')
-            ->get()
-            ->map(function ($entry) {
-                return [
-                    'id' => $entry->id,
-                    'date' => $entry->date?->format('Y-m-d'),
-                    'description' => $entry->description,
-                    'type' => $entry->type,
-                ];
-            });
+        $behaviourEntries = $showBehaviour
+            ? TeachingCourseBehaviourEntry::where('teaching_course_id', $course->id)
+                ->where('user_id', $auth_user->id)
+                ->where('kind', 'behaviour')
+                ->orderBy('date', 'desc')
+                ->orderBy('id', 'desc')
+                ->get()
+                ->map(function ($entry) {
+                    return [
+                        'id' => $entry->id,
+                        'date' => $entry->date?->format('Y-m-d'),
+                        'description' => $entry->description,
+                        'type' => $entry->type,
+                    ];
+                })
+            : collect();
 
         // Get course dates (TeachingCourseDate)
         $holidaySync = app(TeachingHolidaySyncService::class);
@@ -296,18 +300,19 @@ class CourseController extends Controller
             'teacher' => $course->user ? ($course->user->short ?: ($course->user->first_name.' '.$course->user->last_name)) : '—',
             'teacher_email' => $course->user?->email ?? null,
             'teacher_teaching_notifications' => $course->user?->teaching_notifications ?? [],
-            'teacher_teaching_behaviour' => $course->user?->teaching_behaviour ?? [],
+            'teacher_teaching_behaviour' => $showBehaviour ? ($course->user?->teaching_behaviour ?? []) : [],
             'classes' => $course->classes,
             'students_count' => (int) ($course->active_students_count ?? 0),
             'stars' => $studentData->stars ?? [],
             'sem_1_grade' => $studentData->sem_1_grade,
             'sem_2_grade' => $studentData->sem_2_grade,
             'sem_grade' => $studentData->sem_grade,
-            'behaviour_1_grade' => $studentData->behaviour_1_grade,
-            'behaviour_2_grade' => $studentData->behaviour_2_grade,
-            'behaviour_grade' => $studentData->behaviour_grade,
+            'behaviour_1_grade' => $showBehaviour ? $studentData->behaviour_1_grade : null,
+            'behaviour_2_grade' => $showBehaviour ? $studentData->behaviour_2_grade : null,
+            'behaviour_grade' => $showBehaviour ? $studentData->behaviour_grade : null,
             'notifications' => $notifications,
             'behaviour_entries' => $behaviourEntries,
+            'show_behaviour' => $showBehaviour,
             'course_dates' => $courseDates,
             'next_course_date' => $courseTimingMeta['next_course_date'],
             'active_course_end_at' => $courseTimingMeta['active_course_end_at'],

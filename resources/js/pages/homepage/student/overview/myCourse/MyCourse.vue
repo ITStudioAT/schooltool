@@ -64,7 +64,7 @@
                             <v-icon start>mdi-notebook-outline</v-icon>
                             Leistungen
                         </v-btn>
-                        <v-btn class="course-tab-mobile-btn" :variant="currentTab === 'behaviour' ? 'flat' : 'outlined'" :color="currentTab === 'behaviour' ? 'primary' : undefined" @click="currentTab = 'behaviour'">
+                        <v-btn v-if="showBehaviourEnabled" class="course-tab-mobile-btn" :variant="currentTab === 'behaviour' ? 'flat' : 'outlined'" :color="currentTab === 'behaviour' ? 'primary' : undefined" @click="currentTab = 'behaviour'">
                             <v-icon start>mdi-account-star</v-icon>
                             Verhalten
                         </v-btn>
@@ -83,7 +83,7 @@
                             <v-icon start>mdi-notebook-outline</v-icon>
                             Leistungen
                         </v-tab>
-                        <v-tab value="behaviour">
+                        <v-tab v-if="showBehaviourEnabled" value="behaviour">
                             <v-icon start>mdi-account-star</v-icon>
                             Verhalten
                         </v-tab>
@@ -216,7 +216,7 @@
                                             <div class="grade-label">1. Semester</div>
                                             <div class="grade-value">{{ course?.sem_1_grade || 'offen' }}</div>
                                             <div
-                                                v-if="course?.behaviour_1_grade || !course?.sem_1_grade"
+                                                v-if="showBehaviourEnabled && (course?.behaviour_1_grade || !course?.sem_1_grade)"
                                                 class="behaviour-value"
                                                 :class="course?.behaviour_1_grade ? 'behaviour-set' : 'behaviour-open'">
                                                 Verhalten: {{ course?.behaviour_1_grade || 'offen' }}
@@ -226,7 +226,7 @@
                                             <div class="grade-label">2. Semester</div>
                                             <div class="grade-value">{{ course?.sem_2_grade || 'offen' }}</div>
                                             <div
-                                                v-if="course?.behaviour_2_grade || !course?.sem_2_grade"
+                                                v-if="showBehaviourEnabled && (course?.behaviour_2_grade || !course?.sem_2_grade)"
                                                 class="behaviour-value"
                                                 :class="course?.behaviour_2_grade ? 'behaviour-set' : 'behaviour-open'">
                                                 Verhalten: {{ course?.behaviour_2_grade || 'offen' }}
@@ -238,7 +238,7 @@
                                             <div class="grade-label">Semesternote</div>
                                             <div class="grade-value">{{ course?.sem_grade || 'offen' }}</div>
                                             <div
-                                                v-if="course?.behaviour_grade || !course?.sem_grade"
+                                                v-if="showBehaviourEnabled && (course?.behaviour_grade || !course?.sem_grade)"
                                                 class="behaviour-value"
                                                 :class="course?.behaviour_grade ? 'behaviour-set' : 'behaviour-open'">
                                                 Verhalten: {{ course?.behaviour_grade || 'offen' }}
@@ -363,7 +363,7 @@
                         </v-tabs-window-item>
 
                         <!-- Verhalten Tab -->
-                        <v-tabs-window-item value="behaviour">
+                        <v-tabs-window-item v-if="showBehaviourEnabled" value="behaviour">
                             <div v-if="behaviourEntries.length === 0" class="profile-info-box">
                                 <v-icon color="#fd802e" size="24">mdi-account-star</v-icon>
                                 <div>
@@ -555,6 +555,9 @@ export default {
 
         behaviourEntries() {
             return this.course?.behaviour_entries || []
+        },
+        showBehaviourEnabled() {
+            return this.course?.show_behaviour !== false
         },
 
         courseDates() {
@@ -822,6 +825,11 @@ export default {
                 this.loadEntries()
             }
         },
+        showBehaviourEnabled(newValue) {
+            if (newValue === false && this.currentTab === 'behaviour') {
+                this.currentTab = 'overview'
+            }
+        },
         '$route.query.live_timer'() {
             this.setupSimulatedTimer()
         },
@@ -862,6 +870,9 @@ export default {
                 await this.courseStore.getCourse(this.courseId)
                 this.course = this.courseStore.course
                 this.setupSimulatedTimer()
+                if (!this.showBehaviourEnabled && this.currentTab === 'behaviour') {
+                    this.currentTab = 'overview'
+                }
 
                 if (!this.course) {
                     console.error('Course not found:', this.courseId)

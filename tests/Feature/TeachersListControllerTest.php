@@ -11,16 +11,11 @@
  * All endpoints require admin role
  */
 
-use App\Events\TeachersListImportFinishedEvent;
-use App\Jobs\ImportTeachersListJob;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\Teacher;
 use App\Models\User;
-use App\Services\FileUploadService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -125,9 +120,9 @@ test('index returns teachers from Teacher model', function () {
     $response = $this->getJson('/api/admin/teachers_list');
 
     $response->assertStatus(200)
-        ->assertJsonCount(2);
+        ->assertJsonCount(2, 'items');
 
-    $teachers = $response->json();
+    $teachers = $response->json('items');
     expect($teachers[0]['short'])->toBe('KRO')
         ->and($teachers[1]['short'])->toBe('MUS');
 });
@@ -158,9 +153,9 @@ test('index filters by school_id', function () {
     $response = $this->getJson('/api/admin/teachers_list');
 
     $response->assertStatus(200)
-        ->assertJsonCount(1);
+        ->assertJsonCount(1, 'items');
 
-    $teachers = $response->json();
+    $teachers = $response->json('items');
     expect($teachers[0]['short'])->toBe('KRO');
 });
 
@@ -185,9 +180,7 @@ test('index orders by short and last_name', function () {
 
     $response = $this->getJson('/api/admin/teachers_list');
 
-    $teachers = $response->json();
+    $teachers = $response->json('items');
     expect($teachers[0]['short'])->toBe('KRO')
         ->and($teachers[1]['short'])->toBe('MUS');
 });
-
-

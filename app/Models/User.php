@@ -4,19 +4,11 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 
-use App\Models\Import116;
-use App\Models\MaterialCard;
-use App\Models\Register;
-use App\Models\RegisterDateBooking;
-use App\Models\School;
-use App\Models\Schoolyear;
-use App\Models\TutoringOffer;
 use App\Notifications\StandardEmail;
 use App\Traits\UserTrait;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Notification;
@@ -67,6 +59,7 @@ use Spatie\Permission\Traits\HasRoles;
  * @property-read Schoolyear|null $selectedSchoolyear
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \Laravel\Sanctum\PersonalAccessToken> $tokens
  * @property-read int|null $tokens_count
+ *
  * @method static \Database\Factories\UserFactory factory($count = null, $state = [])
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User newQuery()
@@ -107,36 +100,42 @@ use Spatie\Permission\Traits\HasRoles;
  * @method bool hasAnyRole(string|int|array|\Spatie\Permission\Contracts\Role|\Illuminate\Support\Collection $roles, string|null $guard = null)
  * @method bool hasAllRoles(string|int|array|\Spatie\Permission\Contracts\Role|\Illuminate\Support\Collection $roles, string|null $guard = null)
  * @method \Illuminate\Database\Eloquent\Collection|\Spatie\Permission\Models\Role[] getRoleNames()
+ *
  * @mixin \Spatie\Permission\Traits\HasRoles
  * @mixin IdeHelperUser
+ *
  * @property string|null $sex
  * @property string $schoolclass
+ *
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User bySchoolAndRole($schoolId, $roleName)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereSchoolclass($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereSex($value)
+ *
  * @property string|null $short
  * @property array<array-key, mixed>|null $tutoring_filter
+ *
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User teachers($school_id = null)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereShort($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereTutoringFilter($value)
+ *
  * @mixin \Eloquent
  */
 class User extends Authenticatable
 {
+    use HasApiTokens;
+
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory;
-    use Notifiable;
-    use UserTrait;
-    use HasApiTokens;
     use HasRoles;
     use ImpersonateTrait;
+    use Notifiable;
+    use UserTrait;
 
     /**
      * The attributes that are mass assignable.
      *
      * @var list<string>
      */
-
     protected $guard_name = 'web';
 
     protected $fillable = [
@@ -157,6 +156,7 @@ class User extends Authenticatable
         'teaching_count_for_semester_2_date',
         'teaching_behaviour',
         'teaching_notifications',
+        'teaching_show_behaviour',
         'materials_pagination_number',
     ];
 
@@ -188,6 +188,7 @@ class User extends Authenticatable
             'tutoring_filter' => 'array',
             'teaching_behaviour' => 'array',
             'teaching_notifications' => 'array',
+            'teaching_show_behaviour' => 'boolean',
         ];
     }
 
@@ -218,7 +219,6 @@ class User extends Authenticatable
     {
         return $this->belongsTo(School::class, 'school_id');
     }
-
 
     public function selectedSchoolyear(): BelongsTo
     {
@@ -258,8 +258,11 @@ class User extends Authenticatable
     public function shouldDelete(): bool
     {
 
-        if (count($this->roles) > 0) abort(403, "Benutzer kann nicht gelöscht werden, da er noch Rollen inne hat.");
+        if (count($this->roles) > 0) {
+            abort(403, 'Benutzer kann nicht gelöscht werden, da er noch Rollen inne hat.');
+        }
         $this->delete();
+
         return true;
     }
 
@@ -272,13 +275,12 @@ class User extends Authenticatable
             'from_name' => env('MAIL_FROM_NAME'),
             'subject' => 'E-Mail-Verifikation',
             'markdown' => 'spa::mails.admin.sendEmailVerification',
-            'url' => $data['url'] = config('app.url') . '/admin/email_verification?email=' . $this->email . '&uuid=' . $uuid,
+            'url' => $data['url'] = config('app.url').'/admin/email_verification?email='.$this->email.'&uuid='.$uuid,
             'token-expire-time' => config('spa.token_expire_time'),
         ];
 
         Notification::route('mail', $this->email)->notify(new StandardEmail($data));
     }
-
 
     public function sendConfirmEmail()
     {
@@ -290,7 +292,7 @@ class User extends Authenticatable
             'from_name' => env('MAIL_FROM_NAME'),
             'subject' => 'E-Mail-Verifikation',
             'markdown' => 'spa::mails.admin.sendEmailVerification',
-            'url' => $data['url'] = config('app.url') . '/admin/email_verification?email=' . $this->email . '&uuid=' . $uuid,
+            'url' => $data['url'] = config('app.url').'/admin/email_verification?email='.$this->email.'&uuid='.$uuid,
             'token-expire-time' => config('spa.token_expire_time'),
         ];
 
@@ -327,8 +329,13 @@ class User extends Authenticatable
 
     public function hasDependencies(): bool
     {
-        if (RegisterDateBooking::where('user_id', $this->id)->count() > 0) return true;
-        if (TutoringOffer::where('user_id', $this->id)->count() > 0) return true;
+        if (RegisterDateBooking::where('user_id', $this->id)->count() > 0) {
+            return true;
+        }
+        if (TutoringOffer::where('user_id', $this->id)->count() > 0) {
+            return true;
+        }
+
         return false;
     }
 

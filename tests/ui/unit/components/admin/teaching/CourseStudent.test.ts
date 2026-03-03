@@ -229,3 +229,45 @@ describe('CourseStudent NA cascade (require_all_entries + NA entry)', () => {
         expect(line).toContain('Alle erforderlich')
     })
 })
+
+describe('CourseStudent behaviour visibility', () => {
+    it('enables behaviour by default when setting flag is missing', () => {
+        const ctx = {
+            settings: {},
+        }
+
+        const enabled = (CourseStudent as any).computed.showBehaviourEnabled.call(ctx)
+
+        expect(enabled).toBe(true)
+    })
+
+    it('disables behaviour when setting flag is false', () => {
+        const ctx = {
+            settings: { teaching_show_behaviour: false },
+        }
+
+        const enabled = (CourseStudent as any).computed.showBehaviourEnabled.call(ctx)
+
+        expect(enabled).toBe(false)
+    })
+
+    it('closes behaviour editing UI when behaviour is disabled', () => {
+        const watcher = (CourseStudent as any).watch['settings.teaching_show_behaviour']
+        const methods = (CourseStudent as any).methods
+
+        const ctx = {
+            show_behaviour_form: true,
+            behaviour_form: { id: 123, type: 'BZ' },
+            delete_behaviour_id: 999,
+            is_editing_behaviour_grades: true,
+            emptyBehaviourForm: methods.emptyBehaviourForm,
+        }
+
+        watcher.call(ctx, false)
+
+        expect(ctx.show_behaviour_form).toBe(false)
+        expect((ctx.behaviour_form as any).id).toBeNull()
+        expect(ctx.delete_behaviour_id).toBeNull()
+        expect(ctx.is_editing_behaviour_grades).toBe(false)
+    })
+})

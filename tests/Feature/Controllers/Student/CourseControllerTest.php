@@ -5,6 +5,7 @@ use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
+use App\Models\TeachingCourseBehaviourEntry;
 use App\Models\TeachingCourseDate;
 use App\Models\TeachingHoliday;
 use App\Models\TeachingSchoolHour;
@@ -240,6 +241,57 @@ test('show returns free reason with teacher reason priority over school reason',
         ->assertJsonPath('course.course_dates.0.status.0', 'free')
         ->assertJsonPath('course.next_course_date', null)
         ->assertJsonPath('course.active_course_end_at', null);
+});
+
+test('show hides behaviour data when teacher disables behaviour visibility', function () {
+    $this->teacher->forceFill([
+        'teaching_show_behaviour' => false,
+        'teaching_behaviour' => [['short_name' => 'BZ', 'name' => 'Benehmen']],
+        'teaching_notifications' => [['short_name' => 'INFO', 'name' => 'Info']],
+    ])->save();
+
+    $course = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->activeSchoolyear->id,
+        'user_id' => $this->teacher->id,
+        'students' => [
+            [
+                'id' => $this->studentA->id,
+                'sem_grade' => '2',
+                'behaviour_grade' => '1',
+            ],
+        ],
+    ]);
+
+    TeachingCourseBehaviourEntry::query()->create([
+        'teaching_course_id' => $course->id,
+        'user_id' => $this->studentA->id,
+        'kind' => 'behaviour',
+        'type' => 'BZ',
+        'date' => '2026-03-01',
+        'description' => 'Verhaltenseintrag',
+    ]);
+
+    TeachingCourseBehaviourEntry::query()->create([
+        'teaching_course_id' => $course->id,
+        'user_id' => $this->studentA->id,
+        'kind' => 'notification',
+        'type' => 'INFO',
+        'date' => '2026-03-02',
+        'description' => 'Verständigung',
+    ]);
+
+    $response = $this->actingAs($this->studentA)
+        ->getJson("/api/homepage/student/courses/{$course->id}");
+
+    $response->assertOk()
+        ->assertJsonPath('course.show_behaviour', false)
+        ->assertJsonPath('course.teacher_teaching_behaviour', [])
+        ->assertJsonPath('course.behaviour_entries', [])
+        ->assertJsonPath('course.behaviour_1_grade', null)
+        ->assertJsonPath('course.behaviour_2_grade', null)
+        ->assertJsonPath('course.behaviour_grade', null)
+        ->assertJsonCount(1, 'course.notifications');
 });
 
 test('show returns active course end timestamp when selected course is currently running', function () {

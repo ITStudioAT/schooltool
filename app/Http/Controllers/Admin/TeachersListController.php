@@ -2,23 +2,23 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Events\TeachersListImportFinishedEvent;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\TeacherListStoreRequest;
 use App\Http\Requests\Admin\TeacherListUpdateRequest;
 use App\Http\Requests\Admin\TeachersListDeleteTeachers;
 use App\Http\Resources\Admin\TeachersListResource;
 use App\Jobs\ImportTeachersListJob;
-use App\Models\School;
 use App\Models\Teacher;
 use App\Services\FileUploadService;
 use App\Services\TeacherListService;
+use App\Traits\PaginationTrait;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Response;
 
 class TeachersListController extends Controller
 {
+    use PaginationTrait;
+
     /**
      * Display a listing of the resource.
      */
@@ -28,8 +28,20 @@ class TeachersListController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $teachers = Teacher::where('school_id', $auth_user->school_id)->orderBy('short')->orderBy('last_name')->get();
-        return response()->json(TeachersListResource::collection($teachers), 200);
+        $search_string = $request->get('search_string');
+        $query = Teacher::where('school_id', $auth_user->school_id)->orderBy('short')->orderBy('last_name');
+
+        if (! empty($search_string)) {
+            $query->where(function ($q) use ($search_string) {
+                $q->where('short', 'like', "%{$search_string}%")
+                    ->orWhere('last_name', 'like', "%{$search_string}%")
+                    ->orWhere('first_name', 'like', "%{$search_string}%");
+            });
+        }
+
+        $pagination = TeachersListResource::collection($query->paginate(config('spa.pagination')));
+
+        return response()->json($this->makePagination($pagination), 200);
     }
 
     /**
@@ -88,6 +100,7 @@ class TeachersListController extends Controller
 
         return response($id, 200)->header('Content-Type', 'text/plain');
     }
+
     public function uploadNext(Request $request, FileUploadService $fileUploadService)
     {
 
@@ -98,7 +111,7 @@ class TeachersListController extends Controller
         $result = $fileUploadService->uploadNext(
             $request,
             "app/private/{$auth_user->school_id}/excel",              // final target directory
-            "teachers_list"
+            'teachers_list'
         );
 
         // Partial chunk → just forward the 200 "OK" response
@@ -106,7 +119,7 @@ class TeachersListController extends Controller
             return $result; // "OK" or final name wrapped in Response
         }
 
-        ImportTeachersListJob::dispatch($auth_user, 'app/private/' . $auth_user->school_id . '/excel/' . $result);
+        ImportTeachersListJob::dispatch($auth_user, 'app/private/'.$auth_user->school_id.'/excel/'.$result);
 
         return response($result, 200)->header('Content-Type', 'text/plain');
     }

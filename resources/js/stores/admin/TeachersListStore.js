@@ -7,6 +7,14 @@ export const useTeachersListStore = defineStore('AdminTeachersListStore', {
         teachers: [],
         selected_teachers: [],
         search_string: '',
+        meta: {
+            current_page: 1,
+            per_page: 0,
+            total: 0,
+            last_page: 1,
+            from: 0,
+            to: 0,
+        },
         data: {},
         answer: null,
         switchable_teachers: [],
@@ -23,7 +31,19 @@ export const useTeachersListStore = defineStore('AdminTeachersListStore', {
             const role = this.role
             try {
                 const response = await axios.get(`/api/admin/teachers_list`, { params: { role, search_string, page } })
-                this.teachers = response.data
+                this.teachers = response.data.items ?? []
+                const pagination = response.data.pagination ?? {}
+                const currentPage = Number(pagination.current_page || 1)
+                const perPage = Number(pagination.per_page || 0)
+                const total = Number(pagination.total || 0)
+                this.meta = {
+                    current_page: currentPage,
+                    per_page: perPage,
+                    total,
+                    last_page: Number(pagination.last_page || 1),
+                    from: total === 0 ? 0 : (currentPage - 1) * perPage + 1,
+                    to: total === 0 ? 0 : Math.min(currentPage * perPage, total),
+                }
 
                 return true
             } catch (error) {

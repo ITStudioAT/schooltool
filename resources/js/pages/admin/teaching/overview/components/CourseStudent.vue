@@ -358,7 +358,7 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4">
+                <v-card v-if="showBehaviourEnabled" variant="outlined" class="mt-4">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-account-alert</v-icon>
                         Verhaltens-Einträge
@@ -566,7 +566,7 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4">
+                <v-card v-if="showBehaviourEnabled" variant="outlined" class="mt-4">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-account-alert</v-icon>
                         Verhaltensnoten
@@ -604,7 +604,7 @@
                     </v-card-text>
                 </v-card>
 
-                <v-dialog v-model="show_behaviour_form" persistent max-width="500">
+                <v-dialog v-if="showBehaviourEnabled" v-model="show_behaviour_form" persistent max-width="500">
                     <v-card>
                         <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                             <v-icon size="18">mdi-account-alert</v-icon>
@@ -912,6 +912,9 @@ export default {
         },
         teachingNotifications() {
             return this.settings?.teaching_notifications || []
+        },
+        showBehaviourEnabled() {
+            return this.settings?.teaching_show_behaviour !== false
         },
         behaviourTypeItems() {
             return this.teachingBehaviour.map((b) => ({
@@ -1254,6 +1257,16 @@ export default {
         },
         'config.user.teaching_active_semester'(val) {
             if (val) this.activeSemester = Number(val) || 1
+        },
+        'settings.teaching_show_behaviour'(newValue) {
+            if (newValue !== false) {
+                return
+            }
+
+            this.show_behaviour_form = false
+            this.behaviour_form = this.emptyBehaviourForm()
+            this.delete_behaviour_id = null
+            this.is_editing_behaviour_grades = false
         },
         selected_course: {
             async handler(course) {

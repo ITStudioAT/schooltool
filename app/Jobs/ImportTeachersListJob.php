@@ -37,6 +37,7 @@ class ImportTeachersListJob implements ShouldQueue
 
             if ($headerMapping === false) {
                 $this->broadcastFailed('Die Überschriften der Excel-Datei sind nicht korrekt! (Kurz, Nachname, Vorname, Email)');
+
                 return;
             }
 
@@ -83,7 +84,7 @@ class ImportTeachersListJob implements ShouldQueue
             broadcast(new TeachersListImportFinishedEvent(
                 200,
                 $this->user->id,
-                'Die Lehrerliste (Excel) wurde erfolgreich importiert (' . $created . ' neu, ' . $updated . ' geprüft, ' . $deleted . ' gelöscht)',
+                'Die Lehrerliste (Excel) wurde erfolgreich importiert ('.$created.' neu, '.$updated.' geprüft, '.$deleted.' gelöscht)',
                 ['created' => $created, 'updated' => $updated, 'deleted' => $deleted]
             ));
         } catch (Throwable $e) {
@@ -104,6 +105,7 @@ class ImportTeachersListJob implements ShouldQueue
             $reader = SimpleExcelReader::create($fullPath);
             $headers = $reader->getHeaders();
             $rows = $reader->getRows()->toArray();
+
             return [$headers, $rows];
         } catch (UnsupportedTypeException $e) {
             $ext = strtolower((string) pathinfo($fullPath, PATHINFO_EXTENSION));
@@ -169,32 +171,130 @@ class ImportTeachersListJob implements ShouldQueue
             'Email' => ['email', 'e-mail', 'mail', 'e_mail'],
         ];
 
-        $normalizedHeaders = array_map('strtolower', $headers);
-        $normalizedHeaders = array_map('trim', $normalizedHeaders);
-
-        $headerMapping = [];
-        $missingColumns = [];
-
+        $normalizedHeaders = array_map(fn ($header) => $this->normalizeHeader((string) $header), $headers);
+        $normalizedRequiredColumns = [];
         foreach ($requiredColumns as $standardName => $variations) {
-            $found = false;
-            foreach ($normalizedHeaders as $index => $normalizedHeader) {
-                if (in_array($normalizedHeader, $variations)) {
-                    // Mappe den Original-Header auf den Standard-Namen
-                    $headerMapping[$headers[$index]] = $standardName;
-                    $found = true;
-                    break;
-                }
-            }
-
-            if (!$found) {
-                $missingColumns[] = $standardName;
-            }
+            $normalizedRequiredColumns[$standardName] = array_values(array_unique(array_map(
+                fn ($variation) => $this->normalizeHeader((string) $variation),
+                $variations
+            )));
         }
 
-        if (!empty($missingColumns)) {
-            return false;
+        $headerMapping = [];
+        $matchedStandardColumns = [];
+        $usedHeaderIndexes = [];
+
+        // Phase 1: exact header matching against known variants
+        foreach ($normalizedRequiredColumns as $standardName => $variations) {
+            $exactMatchIndex = $this->findExactHeaderIndex($normalizedHeaders, $variations, $usedHeaderIndexes);
+            if ($exactMatchIndex === null) {
+                continue;
+            }
+
+            $usedHeaderIndexes[] = $exactMatchIndex;
+            $matchedStandardColumns[] = $standardName;
+            $headerMapping[$headers[$exactMatchIndex]] = $standardName;
+        }
+
+        // Phase 2: fuzzy matching for minor typos in remaining required headers
+        foreach ($normalizedRequiredColumns as $standardName => $variations) {
+            if (in_array($standardName, $matchedStandardColumns, true)) {
+                continue;
+            }
+
+            $fuzzyMatchIndex = $this->findFuzzyHeaderIndex($normalizedHeaders, $variations, $usedHeaderIndexes);
+            if ($fuzzyMatchIndex === null) {
+                return false;
+            }
+
+            $usedHeaderIndexes[] = $fuzzyMatchIndex;
+            $matchedStandardColumns[] = $standardName;
+            $headerMapping[$headers[$fuzzyMatchIndex]] = $standardName;
         }
 
         return $headerMapping;
+    }
+
+    private function normalizeHeader(string $value): string
+    {
+        $normalized = mb_strtolower(trim($value));
+        $normalized = str_replace(['ä', 'ö', 'ü', 'ß'], ['ae', 'oe', 'ue', 'ss'], $normalized);
+
+        return preg_replace('/[^a-z0-9]/', '', $normalized) ?? '';
+    }
+
+    private function findExactHeaderIndex(array $normalizedHeaders, array $normalizedVariations, array $usedHeaderIndexes): ?int
+    {
+        foreach ($normalizedHeaders as $index => $normalizedHeader) {
+            if ($normalizedHeader === '' || in_array($index, $usedHeaderIndexes, true)) {
+                continue;
+            }
+
+            if (in_array($normalizedHeader, $normalizedVariations, true)) {
+                return $index;
+            }
+        }
+
+        return null;
+    }
+
+    private function findFuzzyHeaderIndex(array $normalizedHeaders, array $normalizedVariations, array $usedHeaderIndexes): ?int
+    {
+        $bestIndex = null;
+        $bestDistance = PHP_INT_MAX;
+        $bestSimilarity = 0.0;
+
+        foreach ($normalizedHeaders as $index => $normalizedHeader) {
+            if ($normalizedHeader === '' || in_array($index, $usedHeaderIndexes, true)) {
+                continue;
+            }
+
+            foreach ($normalizedVariations as $variation) {
+                if ($variation === '') {
+                    continue;
+                }
+
+                $distance = levenshtein($normalizedHeader, $variation);
+                if (! $this->isAcceptableFuzzyMatch($distance, $normalizedHeader, $variation)) {
+                    continue;
+                }
+
+                $maxLength = max(strlen($normalizedHeader), strlen($variation));
+                $similarity = $maxLength > 0 ? 1 - ($distance / $maxLength) : 0.0;
+
+                if (
+                    $distance < $bestDistance
+                    || ($distance === $bestDistance && $similarity > $bestSimilarity)
+                ) {
+                    $bestDistance = $distance;
+                    $bestSimilarity = $similarity;
+                    $bestIndex = $index;
+                }
+            }
+        }
+
+        return $bestIndex;
+    }
+
+    private function isAcceptableFuzzyMatch(int $distance, string $candidate, string $expected): bool
+    {
+        $maxLength = max(strlen($candidate), strlen($expected));
+        if ($maxLength === 0) {
+            return false;
+        }
+
+        $maxDistance = match (true) {
+            $maxLength <= 4 => 1,
+            $maxLength <= 8 => 2,
+            default => 3,
+        };
+
+        if ($distance > $maxDistance) {
+            return false;
+        }
+
+        $similarity = 1 - ($distance / $maxLength);
+
+        return $similarity >= 0.6;
     }
 }

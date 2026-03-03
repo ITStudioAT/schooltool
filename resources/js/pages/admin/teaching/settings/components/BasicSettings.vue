@@ -25,6 +25,22 @@
                 2. Sem (Schuljahr): {{ formatDate(semester2DateFallback) }}
             </v-chip>
         </div>
+
+        <v-divider />
+
+        <div class="d-flex flex-wrap align-center justify-space-between ga-2">
+            <div class="text-body-2">Verhalten anzeigen</div>
+            <v-btn-toggle
+                :model-value="showBehaviourEnabled ? 'yes' : 'no'"
+                mandatory
+                color="primary"
+                density="compact"
+                :disabled="is_saving_show_behaviour"
+                @update:model-value="saveShowBehaviour">
+                <v-btn value="yes">JA</v-btn>
+                <v-btn value="no">NEIN</v-btn>
+            </v-btn-toggle>
+        </div>
     </div>
 </template>
 
@@ -44,13 +60,18 @@ export default {
             is_editing: false,
             semester2DateInput: null,
             originalValue: null,
+            is_saving_show_behaviour: false,
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['config']),
+        ...mapWritableState(useTeachingStore, ['settings']),
         semester2DateFallback() {
             return this.config?.selected_schoolyear?.sem_2_start || ''
+        },
+        showBehaviourEnabled() {
+            return this.settings?.teaching_show_behaviour !== false
         },
     },
 
@@ -72,6 +93,21 @@ export default {
             await useTeachingStore().saveSemester2Date(value)
             this.is_editing = false
             this.originalValue = this.semester2DateInput
+        },
+        async saveShowBehaviour(value) {
+            const enabled = value === 'yes'
+            if (enabled === this.showBehaviourEnabled || this.is_saving_show_behaviour) {
+                return
+            }
+
+            this.is_saving_show_behaviour = true
+            try {
+                await useTeachingStore().saveSettings({
+                    teaching_show_behaviour: enabled,
+                })
+            } finally {
+                this.is_saving_show_behaviour = false
+            }
         },
         cancel() {
             this.semester2DateInput = this.originalValue

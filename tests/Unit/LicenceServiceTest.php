@@ -13,7 +13,7 @@ use Tests\TestCase;
 uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->service = new LicenceService();
+    $this->service = new LicenceService;
 });
 
 describe('selectableSchoolLicences', function () {
@@ -21,13 +21,13 @@ describe('selectableSchoolLicences', function () {
         $school = School::factory()->create();
         $licence1 = Licence::create(['name' => 'app1', 'long_name' => 'Application 1']);
         $licence2 = Licence::create(['name' => 'app2', 'long_name' => 'Application 2']);
-        
+
         SchoolLicence::create([
             'school_id' => $school->id,
             'licence_id' => $licence1->id,
             'valid_until' => now()->addYear(),
         ]);
-        
+
         SchoolLicence::create([
             'school_id' => $school->id,
             'licence_id' => $licence2->id,
@@ -51,13 +51,13 @@ describe('selectableSchoolLicences', function () {
         $school1 = School::factory()->create();
         $school2 = School::factory()->create();
         $licence = Licence::create(['name' => 'app1', 'long_name' => 'Application 1']);
-        
+
         SchoolLicence::create([
             'school_id' => $school1->id,
             'licence_id' => $licence->id,
             'valid_until' => now()->addYear(),
         ]);
-        
+
         SchoolLicence::create([
             'school_id' => $school2->id,
             'licence_id' => $licence->id,
@@ -75,7 +75,7 @@ describe('isLicenceValid', function () {
     it('returns true when licence is valid and has no expiration date', function () {
         $school = School::factory()->create();
         $licence = Licence::create(['name' => 'app1', 'long_name' => 'Application 1']);
-        
+
         SchoolLicence::create([
             'school_id' => $school->id,
             'licence_id' => $licence->id,
@@ -90,7 +90,7 @@ describe('isLicenceValid', function () {
     it('returns true when licence is valid and expires in the future', function () {
         $school = School::factory()->create();
         $licence = Licence::create(['name' => 'app1', 'long_name' => 'Application 1']);
-        
+
         SchoolLicence::create([
             'school_id' => $school->id,
             'licence_id' => $licence->id,
@@ -128,7 +128,7 @@ describe('isLicenceValid', function () {
     it('returns false when licence has expired', function () {
         $school = School::factory()->create();
         $licence = Licence::create(['name' => 'app1', 'long_name' => 'Application 1']);
-        
+
         // Create a licence that expired 2 days ago to avoid any edge cases
         SchoolLicence::create([
             'school_id' => $school->id,
@@ -144,7 +144,7 @@ describe('isLicenceValid', function () {
     it('returns true when licence expires today but in the future', function () {
         $school = School::factory()->create();
         $licence = Licence::create(['name' => 'app1', 'long_name' => 'Application 1']);
-        
+
         // Create a licence that expires at end of today (still in future)
         SchoolLicence::create([
             'school_id' => $school->id,
@@ -160,7 +160,7 @@ describe('isLicenceValid', function () {
     it('returns true when licence expires tomorrow', function () {
         $school = School::factory()->create();
         $licence = Licence::create(['name' => 'app1', 'long_name' => 'Application 1']);
-        
+
         SchoolLicence::create([
             'school_id' => $school->id,
             'licence_id' => $licence->id,
@@ -268,7 +268,7 @@ describe('schoolAddLicence', function () {
     it('creates a new school licence when it does not exist', function () {
         $school = School::factory()->create();
         $licence = Licence::create(['name' => 'app1', 'long_name' => 'Application 1']);
-        
+
         $data = [
             'licence_id' => $licence->id,
             'valid_until' => now()->addYear(),
@@ -285,7 +285,7 @@ describe('schoolAddLicence', function () {
     it('updates existing school licence when it already exists', function () {
         $school = School::factory()->create();
         $licence = Licence::create(['name' => 'app1', 'long_name' => 'Application 1']);
-        
+
         $schoolLicence = SchoolLicence::create([
             'school_id' => $school->id,
             'licence_id' => $licence->id,
@@ -307,7 +307,7 @@ describe('schoolAddLicence', function () {
     it('handles null valid_until date', function () {
         $school = School::factory()->create();
         $licence = Licence::create(['name' => 'app1', 'long_name' => 'Application 1']);
-        
+
         $data = [
             'licence_id' => $licence->id,
             'valid_until' => null,
@@ -321,7 +321,7 @@ describe('schoolAddLicence', function () {
     it('accepts school array with id', function () {
         $school = School::factory()->create();
         $licence = Licence::create(['name' => 'app1', 'long_name' => 'Application 1']);
-        
+
         $data = [
             'licence_id' => $licence->id,
             'valid_until' => now()->addYear(),
@@ -355,7 +355,7 @@ describe('deleteLicences', function () {
     it('aborts when trying to delete licence assigned to a school', function () {
         $school = School::factory()->create();
         $licence = Licence::create(['name' => 'app1', 'long_name' => 'Application 1']);
-        
+
         SchoolLicence::create([
             'school_id' => $school->id,
             'licence_id' => $licence->id,
@@ -363,13 +363,13 @@ describe('deleteLicences', function () {
         ]);
 
         $this->service->deleteLicences([$licence->id]);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Mindest eine Lizenz ist noch einer Schule zugeordnet');
+    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Mindestens eine Lizenz ist noch einer Schule zugeordnet');
 
     it('aborts when at least one licence in the array is assigned to a school', function () {
         $school = School::factory()->create();
         $licence1 = Licence::create(['name' => 'app1', 'long_name' => 'Application 1']);
         $licence2 = Licence::create(['name' => 'app2', 'long_name' => 'Application 2']);
-        
+
         SchoolLicence::create([
             'school_id' => $school->id,
             'licence_id' => $licence1->id,
@@ -383,7 +383,7 @@ describe('deleteLicences', function () {
         $school = School::factory()->create();
         $licence1 = Licence::create(['name' => 'app1', 'long_name' => 'Application 1']);
         $licence2 = Licence::create(['name' => 'app2', 'long_name' => 'Application 2']);
-        
+
         SchoolLicence::create([
             'school_id' => $school->id,
             'licence_id' => $licence1->id,
@@ -404,7 +404,7 @@ describe('checkLicence', function () {
     it('returns success status when licence is valid', function () {
         $school = School::factory()->create();
         $licence = Licence::create(['name' => 'app1', 'long_name' => 'Application 1']);
-        
+
         SchoolLicence::create([
             'school_id' => $school->id,
             'licence_id' => $licence->id,
@@ -455,7 +455,7 @@ describe('checkLicence', function () {
     it('returns error when licence has expired', function () {
         $school = School::factory()->create();
         $licence = Licence::create(['name' => 'app1', 'long_name' => 'Application 1']);
-        
+
         SchoolLicence::create([
             'school_id' => $school->id,
             'licence_id' => $licence->id,
@@ -471,7 +471,7 @@ describe('checkLicence', function () {
     it('returns success when licence expires today', function () {
         $school = School::factory()->create();
         $licence = Licence::create(['name' => 'app1', 'long_name' => 'Application 1']);
-        
+
         SchoolLicence::create([
             'school_id' => $school->id,
             'licence_id' => $licence->id,
@@ -487,7 +487,7 @@ describe('checkLicence', function () {
     it('includes licence name in redirect parameter', function () {
         $school = School::factory()->create();
         $licence = Licence::create(['name' => 'custom_app', 'long_name' => 'Custom Application']);
-        
+
         SchoolLicence::create([
             'school_id' => $school->id,
             'licence_id' => $licence->id,
