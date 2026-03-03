@@ -80,6 +80,23 @@
                 </v-btn-toggle>
             </v-sheet>
 
+            <v-sheet
+                v-if="['teachers', 'teachers_list'].includes(main_action) && ['super_admin', 'admin'].some((role) => config.roles.includes(role))"
+                rounded="xl"
+                class="super-admin-subnav mb-2"
+                :class="{ 'is-locked': isNavigationLocked }">
+                <v-btn-toggle v-model="main_action" mandatory class="super-admin-subnav__switcher" color="primary" divided :disabled="isNavigationLocked">
+                    <v-btn
+                        v-for="item in visibleTeacherNavigationItems"
+                        :key="item.key"
+                        :value="item.key"
+                        class="super-admin-subnav__button"
+                        :prepend-icon="item.icon">
+                        {{ item.label }}
+                    </v-btn>
+                </v-btn-toggle>
+            </v-sheet>
+
             <div class="super-admin-overview-shell" :class="{ 'super-admin-overview-shell--active': usesOverviewTheme }">
                 <v-row class="w-100 ma-0" dense>
                     <ActiveSchool v-if="main_action == '' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
@@ -89,7 +106,6 @@
                     <LicenceSchools v-if="main_action == 'licences' && licences_action == 'schools' && ['super_admin'].some((role) => config.roles.includes(role))" />
                     <Roles v-if="main_action == 'roles' && ['super_admin'].some((role) => config.roles.includes(role))" />
                     <Users v-if="main_action == 'users' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
-                    <TeacherOverview v-if="main_action == 'teachers_overview' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
                     <Teachers v-if="main_action == 'teachers' && (config.roles.includes('super_admin') || config.roles.includes('admin'))" />
                     <TeachersList v-if="main_action == 'teachers_list' && (config.roles.includes('super_admin') || config.roles.includes('admin'))" />
                 </v-row>
@@ -220,7 +236,6 @@ import Licences from './components/Licences.vue'
 import LicenceSchools from './components/LicenceSchools.vue'
 import Roles from './components/Roles.vue'
 import Users from './components/Users.vue'
-import TeacherOverview from './components/TeacherOverview.vue'
 import Teachers from './components/Teachers.vue'
 import TeachersList from './components/TeachersList.vue'
 
@@ -229,7 +244,7 @@ import ActiveSchool from './components/ActiveSchool.vue'
 import Log from './components/Log.vue'
 
 export default {
-    components: { Schools, Schoolyears, ActiveSchool, Licences, LicenceSchools, Roles, Users, TeacherOverview, Log, Teachers, TeachersList },
+    components: { Schools, Schoolyears, ActiveSchool, Licences, LicenceSchools, Roles, Users, Log, Teachers, TeachersList },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -260,10 +275,10 @@ export default {
             return this.main_action == ''
         },
         shouldShowHeader() {
-            return ['', 'schools', 'schoolyears', 'licences', 'roles', 'users', 'teachers_overview', 'teachers', 'teachers_list'].includes(this.main_action)
+            return ['', 'schools', 'schoolyears', 'licences', 'roles', 'users', 'teachers', 'teachers_list'].includes(this.main_action)
         },
         usesOverviewTheme() {
-            return ['', 'schools', 'schoolyears', 'licences', 'roles', 'users', 'teachers_overview', 'teachers', 'teachers_list'].includes(this.main_action)
+            return ['', 'schools', 'schoolyears', 'licences', 'roles', 'users', 'teachers', 'teachers_list'].includes(this.main_action)
         },
         canAccessSuperAdminPage() {
             const roles = this.config?.roles || []
@@ -280,7 +295,8 @@ export default {
                 licences: { icon: 'mdi-card-account-details', label: 'Lizenzen', note: 'Lizenzverwaltung' },
                 roles: { icon: 'mdi-badge-account-horizontal-outline', label: 'Rollen', note: 'Rollenverwaltung' },
                 users: { icon: 'mdi-account-multiple', label: 'Benutzer', note: 'Benutzerverwaltung' },
-                teachers_overview: { icon: 'mdi-account-tie', label: 'Lehrer', note: 'Lehrerverwaltung' },
+                teachers: { icon: 'mdi-account-tie', label: 'Lehrer', note: 'Lehrerverwaltung' },
+                teachers_list: { icon: 'mdi-view-list', label: 'Lehrerliste', note: 'Lehrerverwaltung' },
             }
             return map[this.main_action] ?? { icon: 'mdi-dots-horizontal', label: this.main_action, note: '' }
         },
@@ -338,11 +354,11 @@ export default {
                     visible: hasAnyRole(['super_admin', 'admin']),
                 },
                 {
-                    key: 'teachers_overview',
+                    key: 'teachers',
                     label: 'Lehrer',
                     meta: 'Lehrerliste',
                     icon: 'mdi-account-tie',
-                    targetAction: 'teachers_overview',
+                    targetAction: 'teachers',
                     visible: hasAnyRole(['super_admin', 'admin']),
                 },
                 {
@@ -387,6 +403,22 @@ export default {
                 },
             ]
         },
+        visibleTeacherNavigationItems() {
+            return [
+                {
+                    key: 'teachers',
+                    label: 'Lehrer',
+                    meta: 'Verwaltung',
+                    icon: 'mdi-account-tie',
+                },
+                {
+                    key: 'teachers_list',
+                    label: 'Lehrerliste',
+                    meta: 'Verwaltung',
+                    icon: 'mdi-view-list',
+                },
+            ]
+        },
         selectedImpersonationUserId() {
             return Array.isArray(this.selected_impersonation_users) && this.selected_impersonation_users.length >= 1
                 ? this.selected_impersonation_users[0]
@@ -409,6 +441,10 @@ export default {
 
     methods: {
         isNavigationItemActive(item) {
+            if (item.targetAction === 'teachers') {
+                return ['teachers', 'teachers_list'].includes(this.main_action)
+            }
+
             return item.targetAction !== undefined && this.main_action === item.targetAction
         },
         async handleNavigation(item) {
@@ -436,11 +472,19 @@ export default {
                 return
             }
 
+            if (item.targetAction === 'teachers') {
+                this.openTeachersOverview()
+                return
+            }
+
             this.main_action = item.targetAction
         },
         openLicencesOverview() {
             this.main_action = 'licences'
             this.licences_action = 'overview'
+        },
+        openTeachersOverview() {
+            this.main_action = 'teachers'
         },
         async openImpersonationDialog() {
             this.impersonation_dialog = true

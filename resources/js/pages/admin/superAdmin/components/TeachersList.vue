@@ -1,157 +1,243 @@
 <template>
-    <v-col cols="12" md="6" xl="4">
-        <ItsGridBox color="primary" title="Lehrerliste" subtitle="Diese Lehrer:innen dürfen sich am System registrieren" class="w-100" :disabled="action != ''" v-if="teachers">
-            <div class="d-flex flex-row align-start">
-                <v-card tile flat color="transparent" class="w-100">
-                    <v-card-text>
-                        <v-alert type="info" title="Hinweis">
-                            Diese Liste dient dazu, festzulegen, welche Lehrer:innen berechtigt sind, sich am System zu registrieren.
-                            <div class="text-caption">(Das entspricht nicht unbedingt den am System bereits tatsächlich registrierten Lehrer:inen)</div>
+    <v-col cols="12" xl="11" v-if="teachers">
+        <section class="crud-shell admin-card ai-glass-panel" :class="{ 'is-disabled': action != '' }">
+            <div class="admin-card-head crud-head mb-4">
+                <div>
+                    <div class="admin-card-eyebrow">Verwaltung</div>
+                    <h2 class="admin-card-title crud-title">Lehrerliste</h2>
+                </div>
 
-                            <div class="font-weight-bold mt-4">Es ist eine xlsx-Datei zu importieren.</div>
-                            <div class="font-weight-bold">Diese Datei benötigt folgende Überschriften: Kurz, Nachname, Vorname, Email</div>
-                        </v-alert>
-                        <!-- Abwählen / Auswählen-->
-                        <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap align-center ga-2 mt-2" v-if="is_upload == false">
-                            <v-btn color="primary" slim flat tile class="text-caption" @click="selectAll">Alle auswählen [{{ teachers.length - selected_teachers.length }}]</v-btn>
-                            <v-btn color="primary" slim flat tile class="text-caption" @click="unselectAll">Alle abwählen [{{ selected_teachers.length }}]</v-btn>
-                        </v-card>
-                        <!-- RECORDS   -->
-                        <v-list density="compact" variant="elevated" select-strategy="leaf" v-model:selected="selected_teachers" color="success-lighten-2" v-if="is_upload != true">
-                            <v-list-item v-for="item in teachers" :key="item.id" :value="item.id">
-                                <template v-slot:title>
-                                    <v-row>
-                                        <v-col cols="2">
-                                            {{ item.short }}
-                                        </v-col>
-                                        <v-col cols="10">
-                                            {{ item.last_name + ' ' + item.first_name }}
-                                        </v-col>
-                                    </v-row>
-                                </template>
-                            </v-list-item>
-                        </v-list>
-
-                        <div v-if="is_upload == true">
-                            <v-card-title>Upload einer Lehrer-Liste</v-card-title>
-                            <v-card-subtitle v-if="!is_upload_finished">
-                                <div>Es muss sich um eine Excel-Datei (*.xlsx) handeln.</div>
-                                <div>
-                                    Es werden die Spaltenüberschriften
-                                    <i>Kurz</i>
-                                    ,
-                                    <i>Nachname</i>
-                                    ,
-                                    <i>Vorname</i>
-                                    und
-                                    <i>Email</i>
-                                    benötigt.
-                                </div>
-                            </v-card-subtitle>
-
-                            <div v-if="!is_upload_finished">
-                                <FileUpload path="/api/admin/teachers_list_upload" @fileUploadFinished="fileUploadFinished" @uploadStart="onUploadStart" class="mt-2" />
-
-                                <div class="mt-4">
-                                    <v-btn color="warning" flat tile @click="is_upload = false">Abbruch</v-btn>
-                                </div>
-                            </div>
-                            <div class="mt-4" v-if="is_upload_finished">
-                                <div>Die Datei ist hochgeladen und wir jetzt verarbeitet</div>
-                                <div class="mt-4">
-                                    <v-btn color="success" flat tile @click="uploadFinished">Fertig</v-btn>
-                                </div>
-                            </div>
-                        </div>
-                        <div v-if="!is_upload">
-                            <v-alert type="info" title="Die Liste ist leer" text="Sie können jederzeit eine Liste importieren" v-if="teachers.length == 0" />
-
-                            <div class="mt-4">
-                                <v-btn color="warning" flat tile @click="abortReturn">Zur Übersicht</v-btn>
-                            </div>
-                        </div>
-                    </v-card-text>
-                </v-card>
-                <!-- MENÜ -->
-                <v-card tile flat color="transparent" style="width: 150px" class="d-flex flex-column ga-2" v-if="is_upload == false">
-                    <!-- AUSWAHl EGAL -->
-                    <div class="d-flex flex-column ga-2">
-                        <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-refresh" @click="refresh">Aktualisierung</v-btn>
-                        <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-import" @click="is_upload = true">Importieren</v-btn>
-                        <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-plus" @click="createTeacher">Hinzufügen</v-btn>
+                <div class="admin-kpi-grid crud-kpis">
+                    <div class="kpi-card ai-glass-panel">
+                        <div class="kpi-label">Gesamt</div>
+                        <div class="kpi-value">{{ totalTeachersCount }}</div>
                     </div>
-                    <!-- GENAU 1 ELEMENT AUSGEWÄHLT -->
-                    <div class="d-flex flex-column ga-2" v-if="selected_teachers.length == 1">
-                        <v-btn block tile flat color="primary" class="text-caption" prepend-icon="mdi-pencil" @click="editTeacher(selected_teachers[0])">Ändern</v-btn>
-                    </div>
-                    <!-- MINDEST 1 ELEMENT AUSGEWÄHLT -->
-                    <div class="d-flex flex-column ga-2" v-if="selected_teachers.length >= 1">
-                        <v-btn block tile flat color="warning" class="text-caption" prepend-icon="mdi-delete" @click="deleteTeacher">Löschen</v-btn>
-                    </div>
-                </v-card>
+                </div>
             </div>
-        </ItsGridBox>
+
+            <div class="crud-content-grid">
+                <section class="admin-card ai-glass-panel crud-main-card pa-3">
+                    <!-- Upload mode -->
+                    <template v-if="is_upload">
+                        <div class="empty-state crud-form-section mb-3">
+                            <div class="admin-card-eyebrow">Import</div>
+                            <h3 class="admin-card-title" style="margin-top: 4px">Lehrer-Liste importieren</h3>
+                            <div class="kpi-sub mt-2">
+                                Es muss sich um eine Excel-Datei (*.xlsx) handeln. Benötigte Spaltenüberschriften:
+                                <strong>Kurz, Nachname, Vorname, Email</strong>
+                            </div>
+                        </div>
+
+                        <template v-if="!is_upload_finished">
+                            <FileUpload
+                                path="/api/admin/teachers_list_upload"
+                                @fileUploadFinished="fileUploadFinished"
+                                @uploadStart="onUploadStart"
+                                class="mt-2" />
+                            <div class="mt-4">
+                                <v-btn color="warning" variant="tonal" rounded="lg" prepend-icon="mdi-close" @click="is_upload = false">
+                                    Abbruch
+                                </v-btn>
+                            </div>
+                        </template>
+
+                        <template v-else>
+                            <div class="empty-state crud-form-section">
+                                <div class="kpi-sub">Die Datei wurde hochgeladen und wird jetzt verarbeitet.</div>
+                            </div>
+                            <div class="mt-4">
+                                <v-btn color="success" variant="flat" rounded="lg" prepend-icon="mdi-check" @click="uploadFinished">
+                                    Fertig
+                                </v-btn>
+                            </div>
+                        </template>
+                    </template>
+
+                    <!-- List mode -->
+                    <template v-else>
+                        <div class="empty-state crud-form-section mb-3">
+                            <div class="kpi-sub">
+                                Diese Liste legt fest, welche Lehrer:innen berechtigt sind, sich am System zu registrieren.
+                                Das entspricht nicht unbedingt den tatsächlich registrierten Benutzeraccounts.
+                            </div>
+                        </div>
+
+                        <div class="d-grid ga-3 mb-3">
+                            <div class="d-flex flex-wrap ga-2">
+                                <v-btn color="primary" variant="tonal" rounded="lg" class="text-caption" @click="selectAll">
+                                    Alle auswählen [{{ Math.max(0, teachers.length - selected_teachers.length) }}]
+                                </v-btn>
+                                <v-btn color="primary" variant="text" rounded="lg" class="text-caption" @click="unselectAll">
+                                    Alle abwählen [{{ selected_teachers.length }}]
+                                </v-btn>
+                            </div>
+                        </div>
+
+                        <div class="empty-state pa-2" v-if="teachers.length === 0">
+                            <v-alert type="info" variant="tonal" rounded="lg" text="Die Liste ist leer. Sie können jederzeit eine Liste importieren." />
+                        </div>
+                        <div class="empty-state pa-2" v-else>
+                            <v-list
+                                dense
+                                variant="flat"
+                                class="crud-list"
+                                select-strategy="leaf"
+                                v-model:selected="selected_teachers"
+                                color="success-lighten-2">
+                                <v-list-item
+                                    v-for="item in teachers"
+                                    :key="item.id"
+                                    :value="item.id"
+                                    class="crud-list-item"
+                                    :class="{ 'is-selected': isSelectedTeacher(item.id) }">
+                                    <template #title>
+                                        <div class="person-row crud-item-row">
+                                            <div class="d-flex align-start" style="min-width: 0">
+                                                <div class="person-body" style="min-width: 0">
+                                                    <div class="person-name">{{ item.last_name }} {{ item.first_name }}</div>
+                                                    <div class="person-roles">{{ item.short || '-' }}</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </v-list-item>
+                            </v-list>
+                        </div>
+                    </template>
+                </section>
+
+                <aside class="crud-side-stack">
+                    <section class="admin-card ai-glass-panel">
+                        <div class="admin-card-head mb-2">
+                            <div>
+                                <div class="admin-card-eyebrow">Aktionen</div>
+                                <h3 class="admin-card-title">Liste verwalten</h3>
+                            </div>
+                        </div>
+                        <div class="kpi-sub" style="margin-top: -2px">Verfügbare Schritte für die aktuelle Auswahl.</div>
+
+                        <template v-if="!is_upload">
+                            <div class="crud-actions-primary">
+                                <v-btn block color="primary" variant="flat" rounded="lg" prepend-icon="mdi-refresh" @click="refresh">
+                                    Aktualisieren
+                                </v-btn>
+                                <v-btn block color="primary" variant="tonal" rounded="lg" class="crud-action-btn-offset" prepend-icon="mdi-import" @click="is_upload = true">
+                                    Importieren
+                                </v-btn>
+                                <v-btn block color="primary" variant="tonal" rounded="lg" class="crud-action-btn-offset" prepend-icon="mdi-plus" @click="createTeacher">
+                                    Hinzufügen
+                                </v-btn>
+                            </div>
+
+                            <template v-if="selected_teachers.length >= 1">
+                                <v-divider class="crud-actions-divider" />
+                                <div class="crud-actions-secondary">
+                                    <v-btn
+                                        v-if="selected_teachers.length == 1"
+                                        block
+                                        color="primary"
+                                        variant="tonal"
+                                        rounded="lg"
+                                        prepend-icon="mdi-pencil"
+                                        @click="editTeacher(selected_teachers[0])">
+                                        Ändern
+                                    </v-btn>
+
+                                    <v-btn
+                                        block
+                                        color="warning"
+                                        variant="tonal"
+                                        rounded="lg"
+                                        class="crud-action-btn-offset"
+                                        prepend-icon="mdi-delete"
+                                        @click="deleteTeacher">
+                                        Löschen
+                                    </v-btn>
+                                </div>
+                            </template>
+                        </template>
+
+                        <v-divider class="crud-actions-divider" />
+                        <div class="crud-actions-secondary">
+                            <v-btn block color="secondary" variant="tonal" rounded="lg" prepend-icon="mdi-arrow-left" @click="abortReturn">
+                                Zur Übersicht
+                            </v-btn>
+                        </div>
+                    </section>
+                </aside>
+            </div>
+        </section>
     </v-col>
 
-    <!-- EDIT TEACHER -->
-    <v-col cols="12" md="6" xl="4" v-if="action == 'create_teacher' || action == 'edit_teacher'">
-        <its-grid-box color="primary" :title="data.id ? 'Lehrer:in ändern' : 'Neue:r Lehrer:in'" class="w-100">
-            <v-form ref="form" v-model="is_valid" @submit.prevent="saveTeacher(data)" class="mb-4">
-                <v-row dense>
-                    <v-col cols="12">
-                        <v-text-field autofocus v-model="data.short" label="Kurzname" :rules="[required(), maxLength(10)]" />
-                    </v-col>
-                    <v-col cols="12">
-                        <v-text-field v-model="data.last_name" label="Nachname" :rules="[required(), maxLength(255)]" />
-                    </v-col>
+    <v-dialog v-model="teacherDialogOpen" persistent :max-width="teacherDialogMaxWidth" scrollable>
+        <v-card class="crud-dialog-card ai-glass-panel">
+            <div class="crud-dialog-head">
+                <div>
+                    <div class="admin-card-eyebrow" :class="{ 'crud-delete-eyebrow': action == 'delete_teacher' }">
+                        {{ action == 'delete_teacher' ? 'Achtung' : 'Lehrer:in' }}
+                    </div>
+                    <div class="admin-card-title" style="margin-top: 4px">{{ teacherDialogTitle }}</div>
+                </div>
 
-                    <v-col cols="12">
-                        <v-text-field v-model="data.first_name" label="Vorname" :rules="[maxLength(255)]" />
-                    </v-col>
+                <v-btn icon="mdi-close" variant="text" rounded="lg" @click="abort" />
+            </div>
 
-                    <v-col cols="12">
-                        <v-text-field v-model="data.email" label="E-Mail" :rules="[required(), mail(), maxLength(255)]" />
-                    </v-col>
-                </v-row>
-                <v-row>
-                    <v-col cols="12">
-                        <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between">
-                            <v-btn color="warning" flat tile @click="abort">Abbruch</v-btn>
-                            <v-btn color="success" flat tile type="submit">Speichern</v-btn>
-                        </v-card>
-                    </v-col>
-                </v-row>
-            </v-form>
-        </its-grid-box>
-    </v-col>
+            <v-card-text class="crud-dialog-body">
+                <template v-if="action == 'create_teacher' || action == 'edit_teacher'">
+                    <v-form ref="form" v-model="is_valid" @submit.prevent="saveTeacher(data)" class="mb-2 crud-form">
+                        <div class="empty-state crud-form-section">
+                            <v-row dense>
+                                <v-col cols="12">
+                                    <v-text-field autofocus v-model="data.short" label="Kurzname" :rules="[required(), maxLength(10)]" @input="data.short = data.short?.toUpperCase()" />
+                                </v-col>
+                                <v-col cols="12">
+                                    <v-text-field v-model="data.last_name" label="Nachname" :rules="[required(), maxLength(255)]" />
+                                </v-col>
+                                <v-col cols="12">
+                                    <v-text-field v-model="data.first_name" label="Vorname" :rules="[maxLength(255)]" />
+                                </v-col>
+                                <v-col cols="12">
+                                    <v-text-field v-model="data.email" label="E-Mail" :rules="[required(), mail(), maxLength(255)]" />
+                                </v-col>
+                            </v-row>
+                        </div>
 
-    <!-- Löschen -->
-    <v-col cols="12" md="6" xl="4" v-if="action == 'delete_teacher'">
-        <its-grid-box color="primary" title="Löschen" class="w-100">
-            <v-form ref="form" v-model="is_valid" @submit.prevent="doDeleteTeachers(selected_teachers)">
-                <v-card tile flat color="transparent" class="text-body-1">
-                    <div v-if="selected_teachers.length == 1">Es soll ein:e Lehrer:in gelöscht werden. Sind Sie sicher?</div>
-                    <div v-if="selected_teachers.length > 1">Es sollen {{ selected_teachers.length }} Lehrer:innen gelöscht werden. Sind Sie sicher?</div>
-                </v-card>
-                <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between mt-4">
-                    <v-btn color="success" flat tile @click="action = ''">Abbruch</v-btn>
-                    <v-btn color="error" flat tile type="submit">Löschen</v-btn>
-                </v-card>
-            </v-form>
-        </its-grid-box>
-    </v-col>
+                        <div class="crud-form-actions d-flex flex-row align-center justify-space-between mt-4">
+                            <v-btn color="warning" variant="text" rounded="lg" @click="abort">Abbruch</v-btn>
+                            <v-btn color="success" variant="flat" rounded="lg" type="submit">Speichern</v-btn>
+                        </div>
+                    </v-form>
+                </template>
+
+                <template v-else-if="action == 'delete_teacher'">
+                    <v-form ref="form" v-model="is_valid" @submit.prevent="doDeleteTeachers(selected_teachers)" class="crud-form">
+                        <div class="empty-state crud-delete-alert">
+                            <div class="admin-card-eyebrow crud-delete-eyebrow">Achtung</div>
+                            <div class="admin-card-title crud-delete-title">Lehrer:in löschen</div>
+                            <div class="kpi-sub mt-2" v-if="selected_teachers.length == 1">
+                                Es soll ein:e Lehrer:in gelöscht werden. Sind Sie sicher?
+                            </div>
+                            <div class="kpi-sub mt-2" v-if="selected_teachers.length > 1">
+                                Es sollen {{ selected_teachers.length }} Lehrer:innen gelöscht werden. Sind Sie sicher?
+                            </div>
+                        </div>
+
+                        <div class="crud-form-actions d-flex flex-row align-center justify-space-between mt-4">
+                            <v-btn color="success" variant="text" rounded="lg" @click="abort">Abbruch</v-btn>
+                            <v-btn color="error" variant="flat" rounded="lg" type="submit" prepend-icon="mdi-delete">Löschen</v-btn>
+                        </div>
+                    </v-form>
+                </template>
+            </v-card-text>
+        </v-card>
+    </v-dialog>
 </template>
 
 <script>
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
-import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
-import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import FileUpload from '@/pages/components/FileUpload.vue'
-
-// SPECIFIC
-
 import { useTeachersListStore } from '@/stores/admin/TeachersListStore'
 
 export default {
@@ -159,15 +245,13 @@ export default {
         return useValidationRulesSetup()
     },
 
-    components: { ItsMenuButton, ItsGridBox, FileUpload },
+    components: { FileUpload },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.teachersListStore = useTeachersListStore()
         await this.teachersListStore.index()
     },
-
-    unmounted() {},
 
     data() {
         return {
@@ -182,50 +266,75 @@ export default {
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'config', 'main_action', 'pusher_count']),
         ...mapWritableState(useTeachersListStore, ['teachers', 'meta', 'selected_teachers', 'search_string', 'data', 'answer']),
+        teacherDialogOpen: {
+            get() {
+                return ['create_teacher', 'edit_teacher', 'delete_teacher'].includes(this.action)
+            },
+            set(value) {
+                if (!value) { this.action = '' }
+            },
+        },
+        teacherDialogMaxWidth() {
+            return this.action == 'delete_teacher' ? 640 : 640
+        },
+        teacherDialogTitle() {
+            if (this.action == 'create_teacher') { return 'Neue:r Lehrer:in' }
+            if (this.action == 'edit_teacher') { return 'Lehrer:in ändern' }
+            if (this.action == 'delete_teacher') { return 'Löschen bestätigen' }
+            return 'Lehrer:in'
+        },
+        totalTeachersCount() {
+            const total = Number(this.meta?.total)
+            return Number.isFinite(total) && total >= 0 ? total : this.teachers.length
+        },
     },
 
     methods: {
         async refresh() {
             await this.teachersListStore.index()
         },
+
         onUploadStart() {
-            // Start Pusher
-            if (this.config.is_auth) this.adminStore.initializeEcho()
+            if (this.config.is_auth) { this.adminStore.initializeEcho() }
         },
 
-        fileUploadFinished(file) {
+        fileUploadFinished() {
             this.is_upload_finished = true
         },
+
         uploadFinished() {
             this.is_upload_finished = false
             this.is_upload = false
         },
 
         abortReturn() {
-            this.main_action = 'teachers_overview'
+            this.main_action = 'teachers'
         },
 
         selectAll() {
             this.selected_teachers = this.teachers.map((item) => item.id)
         },
+
         unselectAll() {
             this.selected_teachers = []
         },
 
+        isSelectedTeacher(id) {
+            return this.selected_teachers.includes(id)
+        },
+
         async saveTeacher(data) {
-            if (this.is_uploading) return
             this.is_valid = false
             await this.$refs.form.validate()
-            if (!this.is_valid) return
+            if (!this.is_valid) { return }
 
             if (data.id) {
-                if (!(await this.teachersListStore.update(data))) return
+                if (!(await this.teachersListStore.update(data))) { return }
             } else {
-                if (!(await this.teachersListStore.store(data))) return
+                if (!(await this.teachersListStore.store(data))) { return }
             }
 
             this.selected_teachers = []
-            // await this.adminStore.loadConfig()
             await this.teachersListStore.index()
             this.data = {}
             this.action = ''
@@ -241,6 +350,7 @@ export default {
             this.data = JSON.parse(JSON.stringify(teacher))
             this.action = 'edit_teacher'
         },
+
         abort() {
             this.action = ''
         },
@@ -250,7 +360,7 @@ export default {
         },
 
         async doDeleteTeachers(data) {
-            if (!(await this.teachersListStore.deleteTeachers(data))) return
+            if (!(await this.teachersListStore.deleteTeachers(data))) { return }
             this.selected_teachers = []
             await this.teachersListStore.index()
             this.action = ''
@@ -258,3 +368,6 @@ export default {
     },
 }
 </script>
+
+<style scoped src="../../../../../css/admin-index-page.css"></style>
+<style scoped src="../../../../../css/admin-crud-panel.css"></style>

@@ -9,7 +9,6 @@ describe('Super admin page navigation', () => {
         expect((SuperAdmin as any).computed.shouldShowHeader.call({ main_action: 'licences' })).toBe(true)
         expect((SuperAdmin as any).computed.shouldShowHeader.call({ main_action: 'roles' })).toBe(true)
         expect((SuperAdmin as any).computed.shouldShowHeader.call({ main_action: 'users' })).toBe(true)
-        expect((SuperAdmin as any).computed.shouldShowHeader.call({ main_action: 'teachers_overview' })).toBe(true)
         expect((SuperAdmin as any).computed.shouldShowHeader.call({ main_action: 'teachers' })).toBe(true)
         expect((SuperAdmin as any).computed.shouldShowHeader.call({ main_action: 'teachers_list' })).toBe(true)
         expect((SuperAdmin as any).computed.shouldShowHeader.call({ main_action: 'unknown' })).toBe(false)
@@ -20,7 +19,6 @@ describe('Super admin page navigation', () => {
         expect((SuperAdmin as any).computed.usesOverviewTheme.call({ main_action: 'licences' })).toBe(true)
         expect((SuperAdmin as any).computed.usesOverviewTheme.call({ main_action: 'roles' })).toBe(true)
         expect((SuperAdmin as any).computed.usesOverviewTheme.call({ main_action: 'users' })).toBe(true)
-        expect((SuperAdmin as any).computed.usesOverviewTheme.call({ main_action: 'teachers_overview' })).toBe(true)
         expect((SuperAdmin as any).computed.usesOverviewTheme.call({ main_action: 'teachers' })).toBe(true)
         expect((SuperAdmin as any).computed.usesOverviewTheme.call({ main_action: 'teachers_list' })).toBe(true)
     })
@@ -35,7 +33,7 @@ describe('Super admin page navigation', () => {
 
         const items = (SuperAdmin as any).computed.visibleNavigationItems.call(ctx)
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'schoolyears', 'users', 'teachers_overview', 'log', 'horizon'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'schoolyears', 'users', 'teachers', 'log', 'horizon'])
     })
 
     it('builds full navigation items for super admin role', () => {
@@ -55,7 +53,7 @@ describe('Super admin page navigation', () => {
             'licences',
             'roles',
             'users',
-            'teachers_overview',
+            'teachers',
             'impersonation',
             'log',
             'horizon',
@@ -74,10 +72,26 @@ describe('Super admin page navigation', () => {
         expect(inactive).toBe(false)
     })
 
+    it('keeps the teacher navigation item active for both teacher sub-sections', () => {
+        const teachersCtx = {
+            main_action: 'teachers',
+        }
+        const teachersListCtx = {
+            main_action: 'teachers_list',
+        }
+
+        const teacherActive = (SuperAdmin as any).methods.isNavigationItemActive.call(teachersCtx, { targetAction: 'teachers' })
+        const teacherListActive = (SuperAdmin as any).methods.isNavigationItemActive.call(teachersListCtx, { targetAction: 'teachers' })
+
+        expect(teacherActive).toBe(true)
+        expect(teacherListActive).toBe(true)
+    })
+
     it('prevents navigation when controls are locked', async () => {
         const openImpersonationDialog = vi.fn()
         const moveToHorizon = vi.fn()
         const openLicencesOverview = vi.fn()
+        const openTeachersOverview = vi.fn()
         const ctx = {
             isNavigationLocked: true,
             main_action: '',
@@ -85,6 +99,7 @@ describe('Super admin page navigation', () => {
             openImpersonationDialog,
             moveToHorizon,
             openLicencesOverview,
+            openTeachersOverview,
         }
 
         await (SuperAdmin as any).methods.handleNavigation.call(ctx, { targetAction: 'users' })
@@ -95,12 +110,14 @@ describe('Super admin page navigation', () => {
         expect(openImpersonationDialog).not.toHaveBeenCalled()
         expect(moveToHorizon).not.toHaveBeenCalled()
         expect(openLicencesOverview).not.toHaveBeenCalled()
+        expect(openTeachersOverview).not.toHaveBeenCalled()
     })
 
     it('routes special navigation actions to dedicated handlers', async () => {
         const openImpersonationDialog = vi.fn()
         const moveToHorizon = vi.fn()
         const openLicencesOverview = vi.fn()
+        const openTeachersOverview = vi.fn()
         const ctx = {
             isNavigationLocked: false,
             main_action: '',
@@ -108,17 +125,20 @@ describe('Super admin page navigation', () => {
             openImpersonationDialog,
             moveToHorizon,
             openLicencesOverview,
+            openTeachersOverview,
         }
 
         await (SuperAdmin as any).methods.handleNavigation.call(ctx, { action: 'impersonation' })
         await (SuperAdmin as any).methods.handleNavigation.call(ctx, { action: 'horizon' })
         await (SuperAdmin as any).methods.handleNavigation.call(ctx, { action: 'log' })
         await (SuperAdmin as any).methods.handleNavigation.call(ctx, { targetAction: 'licences' })
+        await (SuperAdmin as any).methods.handleNavigation.call(ctx, { targetAction: 'teachers' })
         await (SuperAdmin as any).methods.handleNavigation.call(ctx, { targetAction: 'users' })
 
         expect(openImpersonationDialog).toHaveBeenCalledTimes(1)
         expect(moveToHorizon).toHaveBeenCalledTimes(1)
         expect(openLicencesOverview).toHaveBeenCalledTimes(1)
+        expect(openTeachersOverview).toHaveBeenCalledTimes(1)
         expect(ctx.log_dialog).toBe(true)
         expect(ctx.main_action).toBe('users')
     })
