@@ -9,8 +9,8 @@
  * - Public verification email trigger
  */
 
-use App\Enums\VerificationResult;
 use App\Enums\TwoFaResult;
+use App\Enums\VerificationResult;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
@@ -40,7 +40,7 @@ beforeEach(function () {
     ]);
 
     collect(['super_admin', 'admin', 'user', 'teacher', 'register_admin'])->each(
-        fn(string $role) => Role::firstOrCreate(['name' => $role, 'guard_name' => 'web'])
+        fn (string $role) => Role::firstOrCreate(['name' => $role, 'guard_name' => 'web'])
     );
 
     $this->superAdmin = User::factory()->create([
@@ -163,7 +163,7 @@ test('register admin can show a user', function () {
 
     $this->actingAs($registerAdmin, 'sanctum');
 
-    $this->getJson('/api/admin/users/' . $this->standardUser->id)
+    $this->getJson('/api/admin/users/'.$this->standardUser->id)
         ->assertStatus(200)
         ->assertJsonFragment(['email' => $this->standardUser->email]);
 });
@@ -180,7 +180,7 @@ test('admin can destroy another user', function () {
 
     $this->actingAs($this->adminUser, 'sanctum');
 
-    $this->deleteJson('/api/admin/users/' . $target->id)
+    $this->deleteJson('/api/admin/users/'.$target->id)
         ->assertStatus(204);
 
     expect(User::find($target->id))->toBeNull();
@@ -189,7 +189,7 @@ test('admin can destroy another user', function () {
 test('admin cannot destroy themselves', function () {
     $this->actingAs($this->adminUser, 'sanctum');
 
-    $this->deleteJson('/api/admin/users/' . $this->adminUser->id)
+    $this->deleteJson('/api/admin/users/'.$this->adminUser->id)
         ->assertStatus(403);
 });
 
@@ -296,6 +296,95 @@ test('admin can also load users', function () {
 test('guest is unauthorized from loading users', function () {
     $this->getJson('/api/admin/users20/load_users')
         ->assertStatus(401);
+});
+
+// ============================================================================
+// toggleIsActive (users20 endpoint)
+// ============================================================================
+
+test('super admin can toggle a single user active state via users20 endpoint', function () {
+    $target = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $this->postJson('/api/admin/users20/toggle_is_active', [
+        'user_id' => $target->id,
+    ])->assertStatus(200)
+        ->assertJsonFragment([
+            'id' => $target->id,
+            'is_active' => false,
+        ]);
+
+    expect((bool) $target->fresh()->is_active)->toBeFalse();
+});
+
+test('super admin can force active state for multiple users via users20 endpoint', function () {
+    $first = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'is_active' => false,
+    ]);
+    $second = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'is_active' => false,
+    ]);
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $this->postJson('/api/admin/users20/toggle_is_active', [
+        'user_ids' => [$first->id, $second->id],
+        'is_active' => true,
+    ])->assertStatus(200)
+        ->assertJsonFragment([
+            'updated_count' => 2,
+            'selected_count' => 2,
+        ]);
+
+    expect((bool) $first->fresh()->is_active)->toBeTrue();
+    expect((bool) $second->fresh()->is_active)->toBeTrue();
+});
+
+test('admin cannot toggle a user from another school via users20 endpoint', function () {
+    $foreignUser = User::factory()->create([
+        'school_id' => $this->otherSchool->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $this->postJson('/api/admin/users20/toggle_is_active', [
+        'user_id' => $foreignUser->id,
+    ])->assertStatus(403);
+});
+
+test('users20 toggle_is_active blocks deactivating protected admin roles', function () {
+    $protectedAdmin = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'is_active' => true,
+    ]);
+    $protectedAdmin->assignRole('admin');
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $this->postJson('/api/admin/users20/toggle_is_active', [
+        'user_id' => $protectedAdmin->id,
+        'is_active' => false,
+    ])->assertStatus(403);
+
+    expect((bool) $protectedAdmin->fresh()->is_active)->toBeTrue();
+});
+
+test('guest is unauthorized from toggling users20 active state', function () {
+    $this->postJson('/api/admin/users20/toggle_is_active', [
+        'user_id' => $this->standardUser->id,
+    ])->assertStatus(401);
 });
 
 // ============================================================================
@@ -470,7 +559,7 @@ test('admin can filter users by active flag', function () {
 
     $this->actingAs($this->adminUser, 'sanctum');
 
-    $response = $this->getJson('/api/admin/users?' . http_build_query([
+    $response = $this->getJson('/api/admin/users?'.http_build_query([
         'search_model' => ['is_active' => '1'],
     ]));
 
@@ -481,9 +570,9 @@ test('admin can filter users by active flag', function () {
 
     expect($users)->not->toBeEmpty();
 
-    $usersWithFlag = $users->filter(fn($user) => data_get($user, 'is_active') !== null);
-    expect($usersWithFlag->every(fn($user) => data_get($user, 'is_active') === true))->toBeTrue();
-    expect($users->contains(fn($user) => data_get($user, 'email') === 'inactive@test.com'))->toBeFalse();
+    $usersWithFlag = $users->filter(fn ($user) => data_get($user, 'is_active') !== null);
+    expect($usersWithFlag->every(fn ($user) => data_get($user, 'is_active') === true))->toBeTrue();
+    expect($users->contains(fn ($user) => data_get($user, 'email') === 'inactive@test.com'))->toBeFalse();
 });
 
 test('standard user can access index endpoint', function () {
