@@ -34,7 +34,7 @@ beforeEach(function () {
     ]);
 
     collect(['super_admin', 'admin', 'register_admin'])->each(
-        fn(string $role) => Role::firstOrCreate(['name' => $role, 'guard_name' => 'web'])
+        fn (string $role) => Role::firstOrCreate(['name' => $role, 'guard_name' => 'web'])
     );
 
     $this->superAdmin = User::factory()->create([
@@ -348,7 +348,7 @@ test('admin can update school via service', function () {
     $this->mock(SchoolService::class, function ($mock) use ($schoolToUpdate, $payload, $updatedSchool) {
         $mock->shouldReceive('update')
             ->once()
-            ->with(\Mockery::on(fn($school) => $school->id === $schoolToUpdate->id), $payload)
+            ->with(\Mockery::on(fn ($school) => $school->id === $schoolToUpdate->id), $payload)
             ->andReturn($updatedSchool);
     });
 
@@ -445,7 +445,7 @@ test('super admin can switch school via service', function () {
         'email' => $this->superAdmin->email,
     ]);
 
-    $this->mock(SchoolService::class, function ($mock) use ($targetSchool, $targetUser) {
+    $this->mock(SchoolService::class, function ($mock) use ($targetUser) {
         $mock->shouldReceive('switchSchool')
             ->once()
             ->andReturn($targetUser);
@@ -1032,6 +1032,102 @@ test('super admin can load school licence user role details', function () {
         ->assertJsonPath('roles.0.valid_until', '2026-12-31')
         ->assertJsonPath('roles.1.name', 'admin')
         ->assertJsonPath('roles.1.assigned', false);
+});
+
+test('school licence model can disable user licence requirement for a role', function () {
+    Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+
+    $licence = Licence::create([
+        'name' => 'user_roles_override',
+        'long_name' => 'User Roles Override Licence',
+        'licence_model' => [
+            'school_licence_required' => true,
+            'affected_roles' => ['teacher'],
+            'user_licence_required_by_role' => [
+                'teacher' => true,
+            ],
+        ],
+    ]);
+
+    $schoolLicence = SchoolLicence::create([
+        'school_id' => $this->school->id,
+        'licence_id' => $licence->id,
+        'valid_until' => '2027-01-31',
+        'licence_model' => [
+            'school_licence_required' => true,
+            'affected_roles' => ['teacher'],
+            'user_licence_required_by_role' => [
+                'teacher' => false,
+            ],
+        ],
+        'user_licence_assignments' => [],
+    ]);
+
+    $user = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $user->assignRole('teacher');
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $response = $this->getJson("/api/admin/school_licences/{$schoolLicence->id}/users/{$user->id}/roles");
+
+    $response->assertStatus(200)
+        ->assertJsonPath('roles.0.name', 'teacher')
+        ->assertJsonPath('roles.0.user_licence_required', false)
+        ->assertJsonPath('roles.0.assigned', true)
+        ->assertJsonPath('roles.0.is_activated', true)
+        ->assertJsonPath('roles.0.valid_until', null)
+        ->assertJsonPath('roles.0.plan_id', null);
+});
+
+test('super admin can assign non-required licence-model role to user via spatie roles endpoint', function () {
+    Role::firstOrCreate(['name' => 'teaching_admin', 'guard_name' => 'web']);
+
+    $licence = Licence::create([
+        'name' => 'user_roles_spatie_sync',
+        'long_name' => 'User Roles Spatie Sync Licence',
+        'licence_model' => [
+            'school_licence_required' => true,
+            'affected_roles' => ['teaching_admin'],
+            'user_licence_required_by_role' => [
+                'teaching_admin' => true,
+            ],
+        ],
+    ]);
+
+    $schoolLicence = SchoolLicence::create([
+        'school_id' => $this->school->id,
+        'licence_id' => $licence->id,
+        'valid_until' => '2027-01-31',
+        'licence_model' => [
+            'school_licence_required' => true,
+            'affected_roles' => ['teaching_admin'],
+            'user_licence_required_by_role' => [
+                'teaching_admin' => false,
+            ],
+        ],
+        'user_licence_assignments' => [],
+    ]);
+
+    $user = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $this->putJson("/api/admin/school_licences/{$schoolLicence->id}/users/{$user->id}/spatie_roles", [
+        'role_names' => ['teaching_admin'],
+    ])->assertStatus(200)
+        ->assertJsonPath('roles.0.name', 'teaching_admin')
+        ->assertJsonPath('roles.0.user_licence_required', false)
+        ->assertJsonPath('roles.0.assigned', true)
+        ->assertJsonPath('roles.0.is_activated', true);
+
+    $user->refresh();
+    expect($user->hasRole('teaching_admin'))->toBeTrue();
 });
 
 test('super admin can save school licence user role details with valid until', function () {
