@@ -142,4 +142,67 @@ describe('Super admin page navigation', () => {
         expect(ctx.log_dialog).toBe(true)
         expect(ctx.main_action).toBe('users')
     })
+
+    it('uses homepage redirect target when impersonated user has no admin-capable roles', () => {
+        const methods = (SuperAdmin as any).methods
+        const ctx = {
+            adminAccessRoles: methods.adminAccessRoles,
+            targetCanAccessAdmin: methods.targetCanAccessAdmin,
+        }
+
+        const path = methods.impersonationTargetPath.call(ctx, { roles: ['user', 'student'] })
+
+        expect(path).toBe('/')
+    })
+
+    it('uses admin redirect target when impersonated user has admin-capable roles', () => {
+        const methods = (SuperAdmin as any).methods
+        const ctx = {
+            adminAccessRoles: methods.adminAccessRoles,
+            targetCanAccessAdmin: methods.targetCanAccessAdmin,
+        }
+
+        const path = methods.impersonationTargetPath.call(ctx, { roles: ['teacher'] })
+
+        expect(path).toBe('/admin')
+    })
+
+    it('falls back to admin redirect target when selected user data is unavailable', () => {
+        const methods = (SuperAdmin as any).methods
+        const ctx = {
+            adminAccessRoles: methods.adminAccessRoles,
+            targetCanAccessAdmin: methods.targetCanAccessAdmin,
+        }
+
+        const path = methods.impersonationTargetPath.call(ctx, null)
+
+        expect(path).toBe('/admin')
+    })
+
+    it('startImpersonation redirects to calculated target after successful switch', async () => {
+        const redirectAfterImpersonation = vi.fn()
+        const closeImpersonationDialog = vi.fn()
+        const ctx = {
+            selectedImpersonationUserId: 42,
+            selectedImpersonationUser: { id: 42, roles: ['student'] },
+            adminStore: {
+                startImpersonation: vi.fn().mockResolvedValue(true),
+            },
+            impersonationTargetPath: (SuperAdmin as any).methods.impersonationTargetPath,
+            targetCanAccessAdmin: (SuperAdmin as any).methods.targetCanAccessAdmin,
+            adminAccessRoles: (SuperAdmin as any).methods.adminAccessRoles,
+            closeImpersonationDialog,
+            redirectAfterImpersonation,
+            action: 'x',
+            main_action: 'users',
+        }
+
+        await (SuperAdmin as any).methods.startImpersonation.call(ctx)
+
+        expect(ctx.adminStore.startImpersonation).toHaveBeenCalledWith(42)
+        expect(closeImpersonationDialog).toHaveBeenCalledTimes(1)
+        expect(ctx.action).toBe('')
+        expect(ctx.main_action).toBe('')
+        expect(redirectAfterImpersonation).toHaveBeenCalledWith('/')
+    })
 })

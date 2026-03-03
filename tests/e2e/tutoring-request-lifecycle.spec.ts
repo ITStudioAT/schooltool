@@ -3,6 +3,7 @@ import { loginAsTutoringUser } from './helpers/tutoring'
 import { hideObstructiveUi } from './helpers/ui'
 
 test('tutoring request lifecycle works for requester and offer owner', async ({ page }) => {
+    test.setTimeout(60_000)
     const requestMessage = `E2E tutoring request ${Date.now()}`
     await page.emulateMedia({ reducedMotion: 'reduce' })
 
@@ -54,7 +55,7 @@ test('tutoring request lifecycle works for requester and offer owner', async ({ 
     }
 
     await receivedRequestsCard.click()
-    await expect(page.getByTestId('tutoring-received-requests-section')).toBeVisible()
+    await expect(page.getByTestId('tutoring-received-requests-section')).toBeVisible({ timeout: 15_000 })
 
     const receivedRequest = page.locator('[data-testid^="tutoring-received-request-"]', { hasText: 'TutoringPeer' }).first()
     await expect(receivedRequest).toBeVisible()

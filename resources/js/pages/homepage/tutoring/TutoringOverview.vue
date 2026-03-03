@@ -1202,6 +1202,7 @@ export default {
     .gradient-orb,
     .particle,
     .menu-card,
+    .menu-section,
     .logo-wrapper {
         animation: none;
     }

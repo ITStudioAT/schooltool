@@ -424,6 +424,15 @@ export default {
                 ? this.selected_impersonation_users[0]
                 : null
         },
+        selectedImpersonationUser() {
+            const selectedId = Number(this.selectedImpersonationUserId || 0)
+            if (!selectedId) {
+                return null
+            }
+
+            return (Array.isArray(this.impersonatable_users) ? this.impersonatable_users : [])
+                .find((item) => Number(item?.id || 0) === selectedId) || null
+        },
         impersonationMetaInfoText() {
             const meta = this.impersonatable_users_meta || {}
             const from = meta.from || 0
@@ -558,10 +567,33 @@ export default {
         },
         async startImpersonation() {
             if (!this.selectedImpersonationUserId) return
+            const selectedUser = this.selectedImpersonationUser
             if (!(await this.adminStore.startImpersonation(this.selectedImpersonationUserId))) return
+            const redirectTarget = this.impersonationTargetPath(selectedUser)
             this.closeImpersonationDialog()
             this.action = ''
             this.main_action = ''
+            this.redirectAfterImpersonation(redirectTarget)
+        },
+        adminAccessRoles() {
+            return ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'teacher']
+        },
+        targetCanAccessAdmin(user) {
+            const userRoles = Array.isArray(user?.roles) ? user.roles : []
+            if (!userRoles.length) {
+                return false
+            }
+
+            return userRoles.some((role) => this.adminAccessRoles().includes(String(role)))
+        },
+        impersonationTargetPath(user) {
+            if (!user) {
+                return '/admin'
+            }
+            return this.targetCanAccessAdmin(user) ? '/admin' : '/'
+        },
+        redirectAfterImpersonation(path) {
+            window.location.href = path
         },
         moveToHorizon() {
             window.open('/horizon', '_blank')

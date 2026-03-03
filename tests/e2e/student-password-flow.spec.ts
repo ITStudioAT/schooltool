@@ -22,7 +22,9 @@ async function tryStudentLogin(page: Page, email: string, password: string): Pro
     await page.getByTestId('student-login-continue-password').click()
     await expect(page.locator('[data-testid="student-login-password"]')).toBeVisible()
     await page.locator('[data-testid="student-login-password"] input').fill(password)
-    await page.getByTestId('student-login-submit-password').click()
+    const submitButton = page.getByTestId('student-login-submit-password')
+    await submitButton.evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' }))
+    await submitButton.click()
 }
 
 async function waitForStudentLoginResult(page: Page): Promise<'success' | 'invalid'> {
