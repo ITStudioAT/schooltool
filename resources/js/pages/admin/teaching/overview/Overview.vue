@@ -11,6 +11,7 @@
                     <v-btn
                         v-for="panel in functionalPanels"
                         :key="panel.id"
+                        :data-testid="`teaching-overview-panel-${panel.id}`"
                         class="teaching-overview-toolbar-btn"
                         :value="panel.id"
                         :disabled="isControlLocked"
@@ -75,6 +76,8 @@
             </v-col>
         </v-row>
     </v-col>
+
+    <More v-if="show_more && action != 'teaching_course_new_or_edit'" />
 </template>
 
 <script>
@@ -90,9 +93,10 @@ import CourseDates from './components/CourseDates.vue'
 import CourseWorks from './components/CourseWorks.vue'
 import MyInfos from './components/MyInfos.vue'
 import MyTimetable from './components/MyTimetable.vue'
+import More from '../more/More.vue'
 
 export default {
-    components: { MyCourses, CourseStudents, CourseStudent, CourseInfos, CourseDates, CourseWorks, MyInfos, MyTimetable },
+    components: { MyCourses, CourseStudents, CourseStudent, CourseInfos, CourseDates, CourseWorks, MyInfos, MyTimetable, More },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -114,6 +118,7 @@ export default {
             courseStore: null,
             schoolHourStore: null,
             selected_course_old: null,
+            show_more: false,
         }
     },
 
@@ -177,6 +182,7 @@ export default {
                 panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })
                 panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })
                 panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })
+                panels.push({ id: 'more', label: 'Mehr', icon: 'mdi-dots-horizontal-circle-outline' })
             }
             return panels
         },
@@ -198,6 +204,9 @@ export default {
                 if (this.selected_course && this.show_dates) {
                     activePanels.push('dates')
                 }
+                if (this.selected_course && this.show_more) {
+                    activePanels.push('more')
+                }
                 return activePanels
             },
             set(value) {
@@ -212,6 +221,8 @@ export default {
             if (newCourse) {
                 this.show_my_courses = false
                 this.show_infos = true
+            } else {
+                this.show_more = false
             }
         },
     },
@@ -255,11 +266,35 @@ export default {
             }
             if (panel === 'dates' && this.selected_course) {
                 this.show_dates = !this.show_dates
+                return
+            }
+            if (panel === 'more' && this.selected_course) {
+                this.show_more = !this.show_more
             }
         },
         syncFunctionalPanelSelection(nextSelection) {
             const requestedPanels = new Set(nextSelection)
             const currentPanels = new Set(this.functionalPanelSelection)
+
+            const moreRequested = requestedPanels.has('more')
+            const moreCurrentlyActive = currentPanels.has('more')
+
+            if (moreRequested && !moreCurrentlyActive) {
+                this.show_more = true
+                this.show_my_courses = false
+                this.show_students = false
+                this.show_infos = false
+                this.show_works = false
+                this.show_dates = false
+                this.action_2 = ''
+                this.selected_course_student = null
+                return
+            }
+
+            if (moreRequested && moreCurrentlyActive && requestedPanels.size > 1) {
+                requestedPanels.delete('more')
+            }
+
             this.functionalPanels.forEach((panel) => {
                 const isActive = currentPanels.has(panel.id)
                 const shouldBeActive = requestedPanels.has(panel.id)

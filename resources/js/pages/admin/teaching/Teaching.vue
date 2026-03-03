@@ -41,6 +41,7 @@
                 <v-btn
                     v-for="item in visibleNavigationItems"
                     :key="item.key"
+                    :data-testid="`teaching-nav-${item.key}`"
                     rounded="xl"
                     :color="main_action === item.key ? 'primary' : 'secondary'"
                     :variant="main_action === item.key ? 'flat' : 'tonal'"

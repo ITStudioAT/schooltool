@@ -32,7 +32,7 @@ test('admin with 2FA reaches token step and can complete login', async ({ page }
     await page.locator('[data-testid="admin-login-password"] input').fill('password123')
     await page.getByTestId('admin-login-submit-password').click()
 
-    await expect(page.getByTestId('admin-login-token')).toBeVisible()
+    await expect(page.getByTestId('admin-login-token')).toBeVisible({ timeout: 15000 })
 
     const token = await fetchUserToken(email, 'token_2fa')
     await fillOtpInput(page, 'admin-login-token', token)

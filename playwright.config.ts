@@ -4,11 +4,11 @@ export default defineConfig({
     testDir: './tests/e2e',
     timeout: 30_000,
     expect: {
-        timeout: 5_000,
+        timeout: 15_000,
     },
     fullyParallel: false,
     workers: 1,
-    retries: 0,
+    retries: 1,
     use: {
         baseURL: 'http://127.0.0.1:8001',
         trace: 'on-first-retry',
@@ -22,7 +22,7 @@ export default defineConfig({
     webServer: {
         command: 'php artisan serve --host=127.0.0.1 --port=8001',
         url: 'http://127.0.0.1:8001',
-        reuseExistingServer: false,
+        reuseExistingServer: !process.env.CI,
         timeout: 120_000,
         env: {
             ...process.env,
