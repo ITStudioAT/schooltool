@@ -2,6 +2,13 @@
     <ItsGridBox variant="overview" color="primary" title="Meine Fächer" icon="mdi-invoice-list" class="w-100" :disabled="action != ''">
         <template #header-actions>
             <v-btn v-if="action !== 'teaching_course_new_or_edit'" icon="mdi-plus" size="small" variant="tonal" title="Fach anlegen" @click="newCourse" />
+            <v-btn
+                v-if="action !== 'teaching_course_new_or_edit'"
+                :icon="courses_view_variant === 'v1' ? 'mdi-view-grid-outline' : 'mdi-format-list-bulleted'"
+                size="small"
+                variant="tonal"
+                :title="courses_view_variant === 'v1' ? 'Neue Kartenansicht aktivieren' : 'Klassische Chip-Ansicht aktivieren'"
+                @click="toggleCoursesViewVariant" />
             <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" @click="show_my_courses = false" />
         </template>
         <!-- AKTIONS-LEISTE -->
@@ -12,22 +19,52 @@
         <!-- ALLE KURSE ANZEIGEN -->
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
-                <v-card tile flat color="transparent" class="d-flex flex-row flex-wrap ga-2 align-center w-100">
-                    <v-chip-group v-model="selected_course_id" column>
-                        <v-chip v-for="course in courses" :key="course.id" :value="course.id" :color="selected_course?.id === course.id ? 'primary' : 'secondary'">
-                            {{ course.title }} ({{ course.classes.join(', ') }})
-                        </v-chip>
-                    </v-chip-group>
+                <v-card tile flat color="transparent" class="w-100">
+                    <div class="d-flex flex-row flex-wrap ga-2 align-center w-100" v-if="courses_view_variant === 'v1'">
+                        <v-chip-group v-model="selected_course_id" column>
+                            <v-chip v-for="course in courses" :key="course.id" :value="course.id" :color="selected_course?.id === course.id ? 'primary' : 'secondary'">
+                                {{ course.title }} ({{ courseClassesText(course) }})
+                            </v-chip>
+                        </v-chip-group>
+                    </div>
 
-                    <div class="w-100 d-flex flex-row justify-end" v-if="selected_course">
-                        <div class="d-flex flex-row align-center ga-2">
-                            <v-btn flat tile size="small" color="warning" icon="mdi-delete" @click="delete_level++" v-if="delete_level == 0" />
-                            <v-btn flat tile size="small" color="success" icon="mdi-delete-off" @click="delete_level = 0" v-if="delete_level == 1" />
-                            <v-btn flat tile size="small" color="error" icon="mdi-delete" @click="deleteCourse(selected_course)" v-if="delete_level == 1" />
-                            <v-btn flat tile size="small" color="primary" icon="mdi-pencil" @click="editCourse(selected_course)" v-if="delete_level == 0" />
-                        </div>
+                    <div v-else class="my-courses-v2-grid">
+                        <button
+                            v-for="course in courses"
+                            :key="course.id"
+                            type="button"
+                            class="my-courses-v2-card"
+                            :class="{ 'is-selected': selected_course?.id === course.id }"
+                            @click="selectCourse(course)">
+                            <div class="my-courses-v2-card__top">
+                                <span class="my-courses-v2-card__primary-class">{{ primaryCourseClass(course) }}</span>
+                                <span class="my-courses-v2-card__class-count">{{ courseClassesCountLabel(course) }}</span>
+                            </div>
+                            <div class="my-courses-v2-card__title">{{ course.title }}</div>
+                            <div class="my-courses-v2-card__classes" v-if="secondaryCourseClasses(course).length">
+                                <span
+                                    v-for="classItem in secondaryCourseClasses(course)"
+                                    :key="`course-${course.id}-class-${classItem}`"
+                                    class="my-courses-v2-card__class-chip">
+                                    {{ classItem }}
+                                </span>
+                            </div>
+                        </button>
+                    </div>
+
+                    <div v-if="!courses.length" class="text-caption text-medium-emphasis">
+                        Noch keine Fächer vorhanden.
                     </div>
                 </v-card>
+
+                <div class="w-100 d-flex flex-row justify-end" v-if="selected_course">
+                    <div class="d-flex flex-row align-center ga-2">
+                        <v-btn flat tile size="small" color="warning" icon="mdi-delete" @click="delete_level++" v-if="delete_level == 0" />
+                        <v-btn flat tile size="small" color="success" icon="mdi-delete-off" @click="delete_level = 0" v-if="delete_level == 1" />
+                        <v-btn flat tile size="small" color="error" icon="mdi-delete" @click="deleteCourse(selected_course)" v-if="delete_level == 1" />
+                        <v-btn flat tile size="small" color="primary" icon="mdi-pencil" @click="editCourse(selected_course)" v-if="delete_level == 0" />
+                    </div>
+                </div>
             </v-card-text>
         </v-card>
     </ItsGridBox>
@@ -280,6 +317,7 @@ export default {
         this.courseStore = useCourseStore()
         this.teachingStore = useTeachingStore()
         await this.teachingStore.loadSettings()
+        this.loadCoursesViewVariant()
     },
 
     unmounted() {},
@@ -296,6 +334,7 @@ export default {
             },
 
             delete_level: 0,
+            courses_view_variant: 'v1',
             students_sort_mode: 'class_last_name',
             student_search_string: '',
             student_search_results: [],
@@ -367,6 +406,53 @@ export default {
             this.selectCourse(null)
             const courseDateStore = useCourseDateStore()
             courseDateStore.selected_courseDate = null
+        },
+        loadCoursesViewVariant() {
+            const storage = this.getBrowserStorage()
+            if (!storage) return
+
+            const savedVariant = storage.getItem('teaching_my_courses_view_variant')
+            if (savedVariant === 'v1' || savedVariant === 'v2') {
+                this.courses_view_variant = savedVariant
+            }
+        },
+        getBrowserStorage() {
+            if (typeof window === 'undefined') return null
+            if (!window.localStorage) return null
+            return window.localStorage
+        },
+        setCoursesViewVariant(variant) {
+            this.courses_view_variant = variant === 'v2' ? 'v2' : 'v1'
+            const storage = this.getBrowserStorage()
+            if (!storage) return
+            storage.setItem('teaching_my_courses_view_variant', this.courses_view_variant)
+        },
+        toggleCoursesViewVariant() {
+            this.setCoursesViewVariant(this.courses_view_variant === 'v1' ? 'v2' : 'v1')
+        },
+        courseClasses(course) {
+            const classes = Array.isArray(course?.classes) ? course.classes : []
+            return classes.map((item) => String(item || '').trim()).filter((item) => item !== '')
+        },
+        courseClassesText(course) {
+            const classes = this.courseClasses(course)
+            return classes.length ? classes.join(', ') : 'Keine Klasse'
+        },
+        primaryCourseClass(course) {
+            const classes = this.courseClasses(course)
+            return classes[0] || 'Ohne Klasse'
+        },
+        secondaryCourseClasses(course) {
+            const classes = this.courseClasses(course)
+            return classes.slice(1)
+        },
+        courseClassesCountLabel(course) {
+            const count = this.courseClasses(course).length
+            if (count === 1) {
+                return '1 Klasse'
+            }
+
+            return `${count} Klassen`
         },
         async searchStudents() {
             if (!this.student_search_string?.trim()) return
@@ -795,6 +881,88 @@ export default {
 .student-name--canceled {
     text-decoration: line-through;
     opacity: 0.75;
+}
+
+.my-courses-v2-grid {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+}
+
+.my-courses-v2-card {
+    border: 1px solid rgba(37, 99, 235, 0.26);
+    border-radius: 14px;
+    background: linear-gradient(160deg, rgba(237, 244, 255, 0.96), rgba(220, 235, 255, 0.92));
+    padding: 12px;
+    text-align: left;
+    cursor: pointer;
+    transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+
+.my-courses-v2-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 20px rgba(30, 64, 175, 0.14);
+    border-color: rgba(37, 99, 235, 0.42);
+}
+
+.my-courses-v2-card.is-selected {
+    border-color: rgba(29, 78, 216, 0.78);
+    box-shadow: 0 14px 26px rgba(29, 78, 216, 0.22);
+    background: linear-gradient(160deg, rgba(219, 234, 254, 0.98), rgba(191, 219, 254, 0.96));
+}
+
+.my-courses-v2-card__top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+
+.my-courses-v2-card__primary-class {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: rgba(30, 64, 175, 0.16);
+    color: #1e3a8a;
+    font-weight: 800;
+    font-size: 0.76rem;
+    letter-spacing: 0.04em;
+}
+
+.my-courses-v2-card__class-count {
+    font-size: 0.72rem;
+    color: rgba(30, 58, 138, 0.86);
+    font-weight: 700;
+}
+
+.my-courses-v2-card__title {
+    margin-top: 8px;
+    color: #0f172a;
+    font-size: 0.98rem;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.my-courses-v2-card__classes {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.my-courses-v2-card__class-chip {
+    display: inline-flex;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(59, 130, 246, 0.16);
+    border: 1px solid rgba(37, 99, 235, 0.3);
+    color: #1e40af;
+    font-weight: 650;
+    font-size: 0.74rem;
+    line-height: 1.2;
 }
 
 .course-edit-students-sort-toggle-btn {
