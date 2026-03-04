@@ -5,8 +5,7 @@
                 v-model="mirroredPanelSelection"
                 mandatory
                 class="teaching-settings-panel-switcher-secondary"
-                color="primary"
-                divided>
+                color="primary">
                 <v-btn
                     v-for="panel in availablePanels"
                     :key="`mirror-${panel.id}`"
@@ -329,13 +328,15 @@ export default {
 .teaching-settings-panel-switcher-secondary {
     width: 100%;
     flex-wrap: wrap;
-    row-gap: 8px;
+    row-gap: 6px;
+    height: auto !important;
 }
 
 .teaching-settings-toolbar-btn-secondary {
     text-transform: none;
     letter-spacing: 0;
     font-weight: 650;
+    height: 40px !important;
 }
 
 .teaching-settings-content-shell {

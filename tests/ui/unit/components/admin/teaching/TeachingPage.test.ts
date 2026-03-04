@@ -68,6 +68,22 @@ describe('Teaching page navigation', () => {
         expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'settings', 'search', 'schoolyear'])
     })
 
+    it('builds hero chips from selected school context', () => {
+        const ctx = {
+            selectedSchoolLabel: 'Christian-Doppler-Gymnasium Salzburg',
+            selectedSchoolyearLabel: '2025/26',
+            selectedRoleLabel: 'super_admin / admin',
+        }
+
+        const chips = (Teaching as any).computed.headerChips.call(ctx)
+
+        expect(chips).toEqual([
+            { key: 'school', text: 'Christian-Doppler-Gymnasium Salzburg', icon: 'mdi-domain' },
+            { key: 'schoolyear', text: '2025/26', icon: 'mdi-calendar-month-outline' },
+            { key: 'role', text: 'super_admin / admin', icon: 'mdi-shield-account' },
+        ])
+    })
+
     it('opens settings through handleNavigation', () => {
         const ctx = {
             isNavigationLocked: false,

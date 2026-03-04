@@ -515,7 +515,7 @@ export default {
             studentStore: null,
             courseStore: null,
             showDrawer: false,
-            loading: false,
+            loading: true,
             course: null,
             currentTab: 'overview', // Start with Übersicht as default
             entries: [],
@@ -667,29 +667,17 @@ export default {
             }, {})
         },
 
-        // Get semester boundary (middle date between first and last entry, or Feb 1st)
+        // Get semester boundary: teacher's personal date > schoolyear sem_2_start > Feb 1st fallback
         semesterBoundary() {
-            if (this.entries.length < 2) {
-                // Default to February 1st as semester boundary
-                const now = new Date()
-                const year = now.getMonth() >= 8 ? now.getFullYear() + 1 : now.getFullYear()
-                return `${year}-02-01`
+            if (this.course?.teacher_count_for_semester_2_date) {
+                return this.course.teacher_count_for_semester_2_date
             }
-
-            const dates = this.entries
-                .map((e) => this.normalizeDateKey(e.date))
-                .filter(Boolean)
-                .sort((a, b) => a.localeCompare(b))
-            if (dates.length < 2) {
-                const now = new Date()
-                const year = now.getMonth() >= 8 ? now.getFullYear() + 1 : now.getFullYear()
-                return `${year}-02-01`
+            if (this.course?.sem_2_start) {
+                return this.course.sem_2_start
             }
-
-            const first = parseLocalDate(dates[0])
-            const last = parseLocalDate(dates[dates.length - 1])
-            const middle = new Date((first.getTime() + last.getTime()) / 2)
-            return this.normalizeDateKey(middle)
+            const now = new Date()
+            const year = now.getMonth() >= 8 ? now.getFullYear() + 1 : now.getFullYear()
+            return `${year}-02-01`
         },
 
         // Filter entries by selected semester

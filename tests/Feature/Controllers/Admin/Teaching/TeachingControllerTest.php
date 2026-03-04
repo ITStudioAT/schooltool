@@ -15,6 +15,9 @@ use App\Models\Licence;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
+use App\Models\TeachingCourseBehaviourEntry;
+use App\Models\TeachingCourseStudentEntry;
+use App\Models\TeachingCourseWork;
 use App\Models\TeachingSchema;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -713,6 +716,334 @@ describe('settings and semester endpoints', function () {
         $this->assertDatabaseHas('users', [
             'id' => $this->admin->id,
             'teaching_show_behaviour' => 0,
+        ]);
+    });
+
+    test('save_settings renames behaviour type in course entries for all students of the school', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->admin->update([
+            'teaching_behaviour' => [
+                ['short_name' => 'M', 'name' => 'Mitarbeit'],
+            ],
+        ]);
+
+        $sameSchoolStudent = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $sameSchoolTeacher = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+
+        $sameSchoolCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $sameSchoolTeacher->id,
+            'classes' => ['2A'],
+        ]);
+
+        $sameSchoolEntry = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $sameSchoolCourse->id,
+            'user_id' => $sameSchoolStudent->id,
+            'kind' => 'behaviour',
+            'type' => 'M',
+            'date' => '2026-03-01',
+        ]);
+        $sameSchoolNotification = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $sameSchoolCourse->id,
+            'user_id' => $sameSchoolStudent->id,
+            'kind' => 'notification',
+            'type' => 'M',
+            'date' => '2026-03-01',
+        ]);
+
+        $otherSchoolTeacher = User::factory()->create([
+            'school_id' => $this->otherSchool->id,
+            'schoolyear_id' => $this->otherSchoolyear->id,
+        ]);
+        $otherSchoolStudent = User::factory()->create([
+            'school_id' => $this->otherSchool->id,
+            'schoolyear_id' => $this->otherSchoolyear->id,
+        ]);
+        $otherSchoolCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->otherSchool->id,
+            'schoolyear_id' => $this->otherSchoolyear->id,
+            'user_id' => $otherSchoolTeacher->id,
+            'classes' => ['9A'],
+        ]);
+        $otherSchoolEntry = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $otherSchoolCourse->id,
+            'user_id' => $otherSchoolStudent->id,
+            'kind' => 'behaviour',
+            'type' => 'M',
+            'date' => '2026-03-01',
+        ]);
+
+        $response = $this->postJson('/api/admin/teaching/save_settings', [
+            'teaching_behaviour' => [
+                ['short_name' => 'MI', 'name' => 'Mitarbeit'],
+            ],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('settings.teaching_behaviour.0.short_name', 'MI');
+
+        $this->assertDatabaseHas('teaching_course_behaviour_entries', [
+            'id' => $sameSchoolEntry->id,
+            'kind' => 'behaviour',
+            'type' => 'MI',
+        ]);
+        $this->assertDatabaseHas('teaching_course_behaviour_entries', [
+            'id' => $sameSchoolNotification->id,
+            'kind' => 'notification',
+            'type' => 'M',
+        ]);
+        $this->assertDatabaseHas('teaching_course_behaviour_entries', [
+            'id' => $otherSchoolEntry->id,
+            'kind' => 'behaviour',
+            'type' => 'M',
+        ]);
+    });
+
+    test('save_settings renames notification type in course entries for all students of the school', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->admin->update([
+            'teaching_notifications' => [
+                ['short_name' => 'I', 'name' => 'Info'],
+            ],
+        ]);
+
+        $sameSchoolStudent = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $sameSchoolTeacher = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $sameSchoolCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $sameSchoolTeacher->id,
+            'classes' => ['3A'],
+        ]);
+
+        $sameSchoolNotification = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $sameSchoolCourse->id,
+            'user_id' => $sameSchoolStudent->id,
+            'kind' => 'notification',
+            'type' => 'I',
+            'date' => '2026-03-01',
+        ]);
+        $sameSchoolBehaviour = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $sameSchoolCourse->id,
+            'user_id' => $sameSchoolStudent->id,
+            'kind' => 'behaviour',
+            'type' => 'I',
+            'date' => '2026-03-01',
+        ]);
+
+        $otherSchoolTeacher = User::factory()->create([
+            'school_id' => $this->otherSchool->id,
+            'schoolyear_id' => $this->otherSchoolyear->id,
+        ]);
+        $otherSchoolStudent = User::factory()->create([
+            'school_id' => $this->otherSchool->id,
+            'schoolyear_id' => $this->otherSchoolyear->id,
+        ]);
+        $otherSchoolCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->otherSchool->id,
+            'schoolyear_id' => $this->otherSchoolyear->id,
+            'user_id' => $otherSchoolTeacher->id,
+            'classes' => ['8A'],
+        ]);
+        $otherSchoolNotification = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $otherSchoolCourse->id,
+            'user_id' => $otherSchoolStudent->id,
+            'kind' => 'notification',
+            'type' => 'I',
+            'date' => '2026-03-01',
+        ]);
+
+        $response = $this->postJson('/api/admin/teaching/save_settings', [
+            'teaching_notifications' => [
+                ['short_name' => 'IN', 'name' => 'Info'],
+            ],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('settings.teaching_notifications.0.short_name', 'IN');
+
+        $this->assertDatabaseHas('teaching_course_behaviour_entries', [
+            'id' => $sameSchoolNotification->id,
+            'kind' => 'notification',
+            'type' => 'IN',
+        ]);
+        $this->assertDatabaseHas('teaching_course_behaviour_entries', [
+            'id' => $sameSchoolBehaviour->id,
+            'kind' => 'behaviour',
+            'type' => 'I',
+        ]);
+        $this->assertDatabaseHas('teaching_course_behaviour_entries', [
+            'id' => $otherSchoolNotification->id,
+            'kind' => 'notification',
+            'type' => 'I',
+        ]);
+    });
+
+    test('save_settings renames schema work type and grades in works and student entries', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        TeachingSchema::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'schema_id' => 'schema-sync-work',
+            'name' => 'Schema Sync',
+            'works' => [
+                [
+                    'short_name' => 'MA',
+                    'name' => 'Mitarbeit',
+                    'grades' => [
+                        ['grade' => 'A', 'name' => 'Alpha', 'value' => '1'],
+                        ['grade' => 'B', 'name' => 'Beta', 'value' => '2'],
+                    ],
+                ],
+            ],
+            'grading' => [],
+        ]);
+
+        $sameSchoolTeacher = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $sameSchoolStudent = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $sameSchoolCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $sameSchoolTeacher->id,
+            'teaching_schema_id' => 'schema-sync-work',
+            'classes' => ['4A'],
+        ]);
+        $sameSchoolWork = TeachingCourseWork::query()->create([
+            'teaching_course_id' => $sameSchoolCourse->id,
+            'type' => 'MA',
+            'title' => 'Work',
+            'groups' => [
+                [
+                    'student_ids' => [$sameSchoolStudent->id],
+                    'grade' => 'A',
+                    'grades' => [
+                        ['student_id' => $sameSchoolStudent->id, 'grade' => 'A'],
+                    ],
+                ],
+            ],
+        ]);
+        $sameSchoolManualEntry = TeachingCourseStudentEntry::query()->create([
+            'teaching_course_id' => $sameSchoolCourse->id,
+            'user_id' => $sameSchoolStudent->id,
+            'teaching_course_work_id' => null,
+            'type' => 'MA',
+            'grade' => 'A',
+            'source' => 'manual',
+        ]);
+        $sameSchoolWorkEntry = TeachingCourseStudentEntry::query()->create([
+            'teaching_course_id' => $sameSchoolCourse->id,
+            'user_id' => $sameSchoolStudent->id,
+            'teaching_course_work_id' => $sameSchoolWork->id,
+            'type' => 'MA',
+            'grade' => 'A',
+            'source' => 'course_work',
+        ]);
+
+        $otherSchoolTeacher = User::factory()->create([
+            'school_id' => $this->otherSchool->id,
+            'schoolyear_id' => $this->otherSchoolyear->id,
+        ]);
+        $otherSchoolStudent = User::factory()->create([
+            'school_id' => $this->otherSchool->id,
+            'schoolyear_id' => $this->otherSchoolyear->id,
+        ]);
+        $otherSchoolCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->otherSchool->id,
+            'schoolyear_id' => $this->otherSchoolyear->id,
+            'user_id' => $otherSchoolTeacher->id,
+            'teaching_schema_id' => 'schema-sync-work',
+            'classes' => ['9A'],
+        ]);
+        $otherSchoolWork = TeachingCourseWork::query()->create([
+            'teaching_course_id' => $otherSchoolCourse->id,
+            'type' => 'MA',
+            'title' => 'Other',
+            'groups' => [
+                ['student_ids' => [$otherSchoolStudent->id], 'grade' => 'A'],
+            ],
+        ]);
+        $otherSchoolEntry = TeachingCourseStudentEntry::query()->create([
+            'teaching_course_id' => $otherSchoolCourse->id,
+            'user_id' => $otherSchoolStudent->id,
+            'type' => 'MA',
+            'grade' => 'A',
+            'source' => 'manual',
+        ]);
+
+        $response = $this->postJson('/api/admin/teaching/save_settings', [
+            'teaching_schemas' => [
+                [
+                    'id' => 'schema-sync-work',
+                    'name' => 'Schema Sync',
+                    'works' => [
+                        [
+                            'short_name' => 'MI',
+                            'name' => 'Mitarbeit',
+                            'grades' => [
+                                ['grade' => 'AA', 'name' => 'Alpha', 'value' => '1'],
+                                ['grade' => 'B', 'name' => 'Beta', 'value' => '2'],
+                            ],
+                        ],
+                    ],
+                    'grading' => [],
+                ],
+            ],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('settings.teaching_schemas.0.works.0.short_name', 'MI')
+            ->assertJsonPath('settings.teaching_schemas.0.works.0.grades.0.grade', 'AA');
+
+        $this->assertDatabaseHas('teaching_course_works', [
+            'id' => $sameSchoolWork->id,
+            'type' => 'MI',
+        ]);
+        $this->assertDatabaseHas('teaching_course_student_entries', [
+            'id' => $sameSchoolManualEntry->id,
+            'type' => 'MI',
+            'grade' => 'AA',
+        ]);
+        $this->assertDatabaseHas('teaching_course_student_entries', [
+            'id' => $sameSchoolWorkEntry->id,
+            'type' => 'MI',
+            'grade' => 'AA',
+        ]);
+
+        $sameSchoolWork->refresh();
+        expect($sameSchoolWork->groups[0]['grade'])->toBe('AA')
+            ->and($sameSchoolWork->groups[0]['grades'][0]['grade'])->toBe('AA');
+
+        $this->assertDatabaseHas('teaching_course_works', [
+            'id' => $otherSchoolWork->id,
+            'type' => 'MA',
+        ]);
+        $this->assertDatabaseHas('teaching_course_student_entries', [
+            'id' => $otherSchoolEntry->id,
+            'type' => 'MA',
+            'grade' => 'A',
         ]);
     });
 

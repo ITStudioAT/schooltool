@@ -6,8 +6,7 @@
                     v-model="functionalPanelSelection"
                     multiple
                     class="teaching-overview-panel-switcher"
-                    color="primary"
-                    divided>
+                    color="primary">
                     <v-btn
                         v-for="panel in functionalPanels"
                         :key="panel.id"
@@ -342,13 +341,15 @@ export default {
 
 .teaching-overview-panel-switcher {
     flex-wrap: wrap;
-    row-gap: 8px;
+    row-gap: 6px;
+    height: auto !important;
 }
 
 .teaching-overview-toolbar-btn {
     text-transform: none;
     letter-spacing: 0;
     font-weight: 650;
+    height: 40px !important;
 }
 
 .teaching-overview-toolbar.is-locked {

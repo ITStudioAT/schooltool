@@ -1,6 +1,10 @@
 <template>
     <ItsGridBox variant="overview" color="primary" title="Stundenplan" icon="mdi-calendar-clock" class="w-100" :disabled="action != ''">
         <template #header-actions>
+            <v-btn-toggle v-if="tableViewAllowed" v-model="timetable_view_mode" mandatory color="primary" density="compact" class="timetable-view-toggle">
+                <v-btn value="list" size="small" title="Listenansicht"><v-icon size="18">mdi-format-list-bulleted</v-icon></v-btn>
+                <v-btn value="table" size="small" title="Tabellenansicht"><v-icon size="18">mdi-table</v-icon></v-btn>
+            </v-btn-toggle>
             <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" @click="show_timetable = false" />
         </template>
         <v-card tile flat color="transparent" class="w-100">
@@ -34,7 +38,8 @@
                     />
                 </div>
 
-                <v-card variant="outlined" class="mt-2">
+                <!-- List View -->
+                <v-card v-if="activeViewMode === 'list'" variant="outlined" class="mt-2">
                     <v-card-title class="text-subtitle-2 d-flex align-center ga-2">
                         <v-icon size="18">mdi-format-list-bulleted</v-icon>
                         Unterricht
@@ -75,6 +80,59 @@
                                 <v-list-item-title class="text-caption text-medium-emphasis">Keine Termine im gewaehlten Zeitraum.</v-list-item-title>
                             </v-list-item>
                         </v-list>
+                    </v-card-text>
+                </v-card>
+
+                <!-- Table View -->
+                <v-card v-else variant="outlined" class="mt-2">
+                    <v-card-title class="text-subtitle-2 d-flex align-center ga-2">
+                        <v-icon size="18">mdi-table</v-icon>
+                        Stundenplan
+                        <v-chip size="x-small" color="primary" variant="tonal">{{ filteredItems.length }}</v-chip>
+                    </v-card-title>
+                    <v-divider />
+                    <v-card-text class="pa-1">
+                        <div class="timetable-table-wrapper">
+                            <table class="timetable-grid-table">
+                                <thead>
+                                    <tr>
+                                        <th class="timetable-hour-header-cell"></th>
+                                        <th
+                                            v-for="day in tableWeekDays"
+                                            :key="normalizeDateToString(day)"
+                                            :class="['timetable-day-header-cell', { 'day-today': isDayToday(day) }]">
+                                            <div>{{ formatDayOfWeek(day) }}</div>
+                                            <div class="timetable-day-date">{{ formatDayDate(day) }}</div>
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="hour in tableHours" :key="hour">
+                                        <td class="timetable-hour-cell">
+                                            <div class="timetable-hour-num">{{ hour }}.</div>
+                                            <div v-if="schoolHoursByHour[hour]" class="timetable-hour-time">
+                                                {{ formatTimeValue(schoolHoursByHour[hour]?.from) }}<br>{{ formatTimeValue(schoolHoursByHour[hour]?.until) }}
+                                            </div>
+                                        </td>
+                                        <td v-for="day in tableWeekDays" :key="normalizeDateToString(day)" class="timetable-grid-cell">
+                                            <div
+                                                v-for="item in getTableCellItems(day, hour)"
+                                                :key="item.key"
+                                                :class="['timetable-grid-item', getStatusClass(item), { 'timetable-item--today': isToday(item) }]"
+                                                @click="openCourse(item)">
+                                                <div class="timetable-grid-course">{{ item.courseTitle }}</div>
+                                                <div class="timetable-grid-class">{{ item.classLabel }}</div>
+                                                <div v-if="range === RANGE_TODAY && item.content" class="timetable-grid-content" v-html="contentHtml(item.content)"></div>
+                                                <v-icon v-if="isAttendanceChecked(item)" size="12" color="success">mdi-check-circle</v-icon>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="!tableHours.length">
+                                        <td colspan="99" class="text-caption text-medium-emphasis pa-3">Keine Termine im gewählten Zeitraum.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </v-card-text>
                 </v-card>
             </v-card-text>
@@ -122,7 +180,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
-        ...mapWritableState(useCourseStore, ['courses', 'selected_course', 'selected_course_id', 'selected_course_student', 'show_infos', 'show_timetable']),
+        ...mapWritableState(useCourseStore, ['courses', 'selected_course', 'selected_course_id', 'selected_course_student', 'show_infos', 'show_timetable', 'timetable_view_mode']),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapWritableState(useSchoolHourStore, ['school_hours']),
         schoolHoursByHour() {
@@ -281,6 +339,58 @@ export default {
             if (!latestDate) return false
             return latestDate > until
         },
+        tableViewAllowed() {
+            return this.range === RANGE_TODAY || this.range === RANGE_WEEK || this.range === RANGE_NEXT_WEEK
+        },
+        activeViewMode() {
+            return this.tableViewAllowed ? this.timetable_view_mode : 'list'
+        },
+        tableWeekDays() {
+            const [from, until] = this.currentRangeBounds()
+            if (!from || !until) return []
+            const days = []
+            const cur = new Date(from)
+            while (cur <= until) {
+                const dayOfWeek = cur.getDay()
+                if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+                    days.push(new Date(cur))
+                }
+                cur.setDate(cur.getDate() + 1)
+            }
+            return days
+        },
+        tableHours() {
+            const schoolHourList = Array.isArray(this.school_hours) ? this.school_hours : []
+            const itemHours = this.filteredItems.flatMap((i) => i.hours)
+            if (!itemHours.length && !schoolHourList.length) return []
+            if (!itemHours.length) {
+                return schoolHourList.map((sh) => Number(sh.hour)).sort((a, b) => a - b)
+            }
+            const minHour = Math.min(...itemHours)
+            const maxHour = Math.max(...itemHours)
+            if (schoolHourList.length > 0) {
+                return schoolHourList
+                    .map((sh) => Number(sh.hour))
+                    .filter((h) => h >= minHour && h <= maxHour)
+                    .sort((a, b) => a - b)
+            }
+            const hours = []
+            for (let h = minHour; h <= maxHour; h++) {
+                hours.push(h)
+            }
+            return hours
+        },
+        tableCellItems() {
+            const map = {}
+            this.filteredItems.forEach((item) => {
+                item.hours.forEach((h) => {
+                    const key = `${item.date}-${h}`
+                    if (!map[key]) map[key] = []
+                    map[key].push(item)
+                })
+            })
+            return map
+        },
     },
 
     methods: {
@@ -414,6 +524,25 @@ export default {
             const date = (course?.course_dates || []).find((d) => d?.id === dateId) || null
             this.selected_courseDate = date
         },
+        normalizeDateToString(date) {
+            const y = date.getFullYear()
+            const m = String(date.getMonth() + 1).padStart(2, '0')
+            const d = String(date.getDate()).padStart(2, '0')
+            return `${y}-${m}-${d}`
+        },
+        isDayToday(day) {
+            return this.normalizeDay(day).getTime() === this.normalizeDay(new Date()).getTime()
+        },
+        formatDayOfWeek(day) {
+            return day.toLocaleDateString('de-DE', { weekday: 'short' })
+        },
+        formatDayDate(day) {
+            return day.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
+        },
+        getTableCellItems(day, hour) {
+            const key = `${this.normalizeDateToString(day)}-${hour}`
+            return this.tableCellItems[key] || []
+        },
         navigatePrevious() {
             if (this.range === RANGE_CURRENT_SEMESTER && !this.canNavigatePrevious) return
             this.offset--
@@ -508,5 +637,130 @@ export default {
 
 .timetable-item--today {
     border-left: 4px solid #ff9800 !important;
+}
+
+.timetable-view-toggle {
+    height: 32px;
+}
+
+.timetable-table-wrapper {
+    overflow-x: auto;
+}
+
+.timetable-grid-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 300px;
+    font-size: 0.8rem;
+}
+
+.timetable-grid-table th,
+.timetable-grid-table td {
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    padding: 0;
+    vertical-align: top;
+}
+
+.timetable-hour-header-cell {
+    width: 44px;
+    min-width: 44px;
+    background-color: #f5f5f5;
+}
+
+.timetable-day-header-cell {
+    text-align: center;
+    min-width: 90px;
+    background-color: #f5f5f5;
+    font-weight: 600;
+    padding: 6px 4px;
+}
+
+.timetable-day-header-cell.day-today {
+    background-color: #fff3e0;
+    color: #e65100;
+}
+
+.timetable-day-date {
+    font-size: 0.75rem;
+    font-weight: 400;
+    opacity: 0.7;
+}
+
+.timetable-hour-cell {
+    text-align: center;
+    background-color: #f5f5f5;
+    padding: 6px 4px;
+    white-space: nowrap;
+    min-width: 44px;
+}
+
+.timetable-hour-num {
+    font-weight: 600;
+    font-size: 0.8rem;
+}
+
+.timetable-hour-time {
+    font-size: 0.7rem;
+    opacity: 0.65;
+}
+
+.timetable-grid-cell {
+    min-width: 90px;
+    height: 52px;
+    padding: 2px;
+}
+
+.timetable-grid-item {
+    padding: 4px 5px;
+    border-radius: 3px;
+    background-color: #e3f2fd;
+    border-left: 3px solid #1976d2;
+    margin-bottom: 2px;
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+
+.timetable-grid-item:hover {
+    opacity: 0.8;
+}
+
+.timetable-grid-course {
+    font-weight: 600;
+    font-size: 0.75rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 120px;
+}
+
+.timetable-grid-class {
+    font-size: 0.7rem;
+    opacity: 0.7;
+}
+
+.timetable-grid-content {
+    font-size: 0.7rem;
+    margin-top: 2px;
+    opacity: 0.85;
+    white-space: normal;
+}
+
+.timetable-grid-content :deep(p) {
+    margin: 0;
+    min-height: 1em;
+}
+
+.timetable-grid-item.timetable-item--exam {
+    background-color: #ffebee;
+    border-left-color: #ff5722;
+}
+
+.timetable-grid-item.timetable-item--free {
+    background-color: #c8e6c9;
+    border-left-color: #4caf50;
+}
+
+.timetable-grid-item.timetable-item--today {
+    border-left-color: #ff9800;
 }
 </style>

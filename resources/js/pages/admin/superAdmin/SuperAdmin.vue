@@ -7,41 +7,14 @@
         </div>
 
         <v-container fluid class="ma-0 w-100 pa-2 super-admin-page-inner">
-            <v-sheet rounded="xl" class="sa-hero mb-3" v-if="shouldShowHeader">
-                <div class="sa-hero__bg-orb sa-hero__bg-orb--left"></div>
-                <div class="sa-hero__bg-orb sa-hero__bg-orb--right"></div>
-
-                <v-row class="ma-0" align="stretch" dense>
-                    <v-col cols="12" lg="8" class="pa-2 pa-md-4">
-                        <div class="sa-hero__eyebrow">Admin Dashboard</div>
-                        <h1 class="sa-hero__title">Super-Admin</h1>
-                        <div class="sa-hero__chips">
-                            <v-chip v-if="config?.selected_school?.long_name || config?.selected_school?.short_name" size="small" variant="tonal" color="white" prepend-icon="mdi-domain">
-                                {{ config?.selected_school?.long_name || config?.selected_school?.short_name }}
-                            </v-chip>
-                            <v-chip v-if="config?.version" size="small" variant="tonal" color="white" prepend-icon="mdi-tag-outline">
-                                {{ config.version }}
-                            </v-chip>
-                            <v-chip v-if="isImpersonating" size="small" variant="tonal" color="warning" prepend-icon="mdi-account-switch">
-                                Übernahme aktiv
-                            </v-chip>
-                        </div>
-                    </v-col>
-
-                    <v-col cols="12" lg="4" class="pa-2 pa-md-4">
-                        <v-card variant="tonal" color="white" class="sa-hero__focus-card" rounded="xl">
-                            <v-card-text class="pa-4">
-                                <div class="sa-hero__focus-label">Aktiver Bereich</div>
-                                <div class="sa-hero__focus-value">
-                                    <v-icon size="18" :icon="activeSection.icon" />
-                                    <span>{{ activeSection.label }}</span>
-                                </div>
-                                <div class="sa-hero__focus-note">{{ activeSection.note }}</div>
-                            </v-card-text>
-                        </v-card>
-                    </v-col>
-                </v-row>
-            </v-sheet>
+            <AdminSectionHero
+                v-if="shouldShowHeader"
+                class="mb-3"
+                eyebrow="Admin Dashboard"
+                title="Super-Admin"
+                :active-section="activeSection"
+                :chips="headerChips"
+                :show-current-user-chip="true" />
 
             <v-sheet rounded="xl" class="super-admin-nav mb-2" :class="{ 'is-locked': isNavigationLocked }">
                 <div class="super-admin-nav__buttons">
@@ -230,6 +203,7 @@
 <script>
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
 import Schools from './components/Schools.vue'
 import Schoolyears from './components/Schoolyears.vue'
 import Licences from './components/Licences.vue'
@@ -244,7 +218,7 @@ import ActiveSchool from './components/ActiveSchool.vue'
 import Log from './components/Log.vue'
 
 export default {
-    components: { Schools, Schoolyears, ActiveSchool, Licences, LicenceSchools, Roles, Users, Log, Teachers, TeachersList },
+    components: { AdminSectionHero, Schools, Schoolyears, ActiveSchool, Licences, LicenceSchools, Roles, Users, Log, Teachers, TeachersList },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -299,6 +273,29 @@ export default {
                 teachers_list: { icon: 'mdi-view-list', label: 'Lehrerliste', note: 'Lehrerverwaltung' },
             }
             return map[this.main_action] ?? { icon: 'mdi-dots-horizontal', label: this.main_action, note: '' }
+        },
+        headerChips() {
+            const selectedSchoolName = this.config?.selected_school?.long_name || this.config?.selected_school?.short_name || ''
+
+            return [
+                {
+                    key: 'school',
+                    text: selectedSchoolName,
+                    icon: 'mdi-domain',
+                },
+                {
+                    key: 'version',
+                    text: this.config?.version || '',
+                    icon: 'mdi-tag-outline',
+                },
+                {
+                    key: 'impersonation',
+                    text: 'Übernahme aktiv',
+                    icon: 'mdi-account-switch',
+                    color: 'warning',
+                    visible: this.isImpersonating,
+                },
+            ]
         },
         visibleNavigationItems() {
             const roles = Array.isArray(this.config?.roles) ? this.config.roles : []

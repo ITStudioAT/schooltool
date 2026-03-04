@@ -5,8 +5,7 @@
                 v-model="panelSelection"
                 mandatory
                 class="teaching-admin-panel-switcher"
-                color="primary"
-                divided>
+                color="primary">
                 <v-btn
                     v-for="panel in availablePanels"
                     :key="panel.id"
@@ -133,13 +132,15 @@ export default {
 .teaching-admin-panel-switcher {
     width: 100%;
     flex-wrap: wrap;
-    row-gap: 8px;
+    row-gap: 6px;
+    height: auto !important;
 }
 
 .teaching-admin-toolbar-btn {
     text-transform: none;
     letter-spacing: 0;
     font-weight: 650;
+    height: 40px !important;
 }
 
 .teaching-admin-content-shell {

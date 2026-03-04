@@ -20,6 +20,7 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             show_infos: true,
             show_works: true,
             show_dates: true,
+            timetable_view_mode: 'table',
         }
     },
 

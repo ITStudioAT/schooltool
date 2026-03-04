@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Student;
 
 use App\Http\Controllers\Controller;
 use App\Models\SchoolTool;
+use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseBehaviourEntry;
 use App\Models\TeachingCourseDate;
@@ -199,7 +200,7 @@ class CourseController extends Controller
             ->keyBy(fn (TeachingSchoolHour $schoolHour): int => (int) $schoolHour->hour);
 
         // Get the course
-        $course = TeachingCourse::with('user:id,first_name,last_name,short,email,teaching_notifications,teaching_behaviour,teaching_show_behaviour')
+        $course = TeachingCourse::with('user:id,first_name,last_name,short,email,teaching_notifications,teaching_behaviour,teaching_show_behaviour,teaching_count_for_semester_2_date')
             ->withCount([
                 'teachingCourseStudents as active_students_count' => function ($query) {
                     $query->whereNull('canceled_at');
@@ -292,11 +293,15 @@ class CourseController extends Controller
         $courseWithTiming->setRelation('teachingCourseDates', $courseDateModels);
         $courseTimingMeta = $this->resolveCourseTimingMeta($courseWithTiming, $schoolHoursByHour, $today);
 
+        $schoolyear = Schoolyear::find($course->schoolyear_id);
+
         $courseData = [
             'id' => $course->id,
             'title' => $course->title,
             'description' => $course->description,
             'teaching_schema_id' => $course->teaching_schema_id,
+            'sem_2_start' => $schoolyear?->sem_2_start,
+            'teacher_count_for_semester_2_date' => $course->user?->teaching_count_for_semester_2_date,
             'teacher' => $course->user ? ($course->user->short ?: ($course->user->first_name.' '.$course->user->last_name)) : '—',
             'teacher_email' => $course->user?->email ?? null,
             'teacher_teaching_notifications' => $course->user?->teaching_notifications ?? [],

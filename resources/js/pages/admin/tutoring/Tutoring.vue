@@ -1,40 +1,14 @@
 <template>
     <v-container fluid class="tutoring-page ma-0 w-100 pa-2">
-        <v-sheet rounded="xl" class="tutoring-hero mb-3">
-            <div class="tutoring-hero__bg-orb tutoring-hero__bg-orb--left"></div>
-            <div class="tutoring-hero__bg-orb tutoring-hero__bg-orb--right"></div>
-
-            <v-row class="ma-0" align="stretch" dense>
-                <v-col cols="12" lg="8" class="pa-2 pa-md-4">
-                    <div class="tutoring-hero__eyebrow">Nachhilfe</div>
-                    <h1 class="tutoring-hero__title">Nachhilfe-Verwaltung</h1>
-                    <div class="tutoring-hero__chips">
-                        <v-chip size="small" variant="tonal" color="white" prepend-icon="mdi-domain">
-                            {{ selectedSchoolLabel }}
-                        </v-chip>
-                        <v-chip size="small" variant="tonal" color="white" prepend-icon="mdi-calendar-month-outline">
-                            {{ selectedSchoolyearLabel }}
-                        </v-chip>
-                        <v-chip size="small" variant="tonal" color="white" prepend-icon="mdi-shield-account">
-                            {{ selectedRoleLabel }}
-                        </v-chip>
-                    </div>
-                </v-col>
-
-                <v-col cols="12" lg="4" class="pa-2 pa-md-4">
-                    <v-card variant="tonal" color="white" class="tutoring-hero__focus-card" rounded="xl">
-                        <v-card-text class="pa-4">
-                            <div class="tutoring-hero__focus-label">Aktiver Bereich</div>
-                            <div class="tutoring-hero__focus-value">
-                                <v-icon size="18" :icon="activeSection.icon" />
-                                <span>{{ activeSection.label }}</span>
-                            </div>
-                            <div class="tutoring-hero__focus-note">{{ activeSection.note }}</div>
-                        </v-card-text>
-                    </v-card>
-                </v-col>
-            </v-row>
-        </v-sheet>
+        <AdminSectionHero
+            class="mb-3"
+            eyebrow="Nachhilfe"
+            title="Nachhilfe-Verwaltung"
+            :active-section="activeSection"
+            :chips="headerChips"
+            :show-current-user-chip="true"
+            secondary-color="#0f766e"
+            right-orb-color="#99f6e4" />
 
         <v-sheet rounded="xl" class="tutoring-nav mb-2" :class="{ 'is-locked': isNavigationLocked }">
             <div class="tutoring-nav__buttons">
@@ -70,6 +44,7 @@
 <script>
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
 
 import Overview from './components/Overview.vue'
 import Settings from './components/Settings.vue'
@@ -77,7 +52,7 @@ import Subjects from './components/Subjects.vue'
 import Users from './components/Users.vue'
 
 export default {
-    components: { Settings, Subjects, Users, Overview },
+    components: { AdminSectionHero, Settings, Subjects, Users, Overview },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -110,6 +85,25 @@ export default {
                 return 'Keine Rolle'
             }
             return roles.slice(0, 2).join(' / ')
+        },
+        headerChips() {
+            return [
+                {
+                    key: 'school',
+                    text: this.selectedSchoolLabel,
+                    icon: 'mdi-domain',
+                },
+                {
+                    key: 'schoolyear',
+                    text: this.selectedSchoolyearLabel,
+                    icon: 'mdi-calendar-month-outline',
+                },
+                {
+                    key: 'role',
+                    text: this.selectedRoleLabel,
+                    icon: 'mdi-shield-account',
+                },
+            ]
         },
         activeSection() {
             const sections = {
@@ -175,91 +169,8 @@ export default {
 
 <style scoped>
 .tutoring-page {
-    --tutoring-hero-primary: #0f172a;
-    --tutoring-hero-secondary: #0f766e;
-    --tutoring-hero-accent: #14b8a6;
     background: #0f172a;
     min-height: 100vh;
-}
-
-.tutoring-hero {
-    position: relative;
-    overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.24);
-    background: linear-gradient(132deg, var(--tutoring-hero-primary), var(--tutoring-hero-secondary));
-    color: #ffffff;
-}
-
-.tutoring-hero__bg-orb {
-    position: absolute;
-    width: 220px;
-    height: 220px;
-    border-radius: 999px;
-    filter: blur(12px);
-    opacity: 0.34;
-    background: radial-gradient(circle at center, #67e8f9 0%, rgba(103, 232, 249, 0.08) 72%);
-    pointer-events: none;
-}
-
-.tutoring-hero__bg-orb--left {
-    top: -64px;
-    left: -52px;
-}
-
-.tutoring-hero__bg-orb--right {
-    right: -58px;
-    bottom: -70px;
-    background: radial-gradient(circle at center, #99f6e4 0%, rgba(153, 246, 228, 0.08) 72%);
-}
-
-.tutoring-hero__eyebrow {
-    font-size: 0.76rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    opacity: 0.82;
-}
-
-.tutoring-hero__title {
-    margin-top: 8px;
-    font-size: clamp(1.4rem, 2.3vw, 2rem);
-    line-height: 1.1;
-    font-weight: 750;
-}
-
-.tutoring-hero__chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 18px;
-}
-
-.tutoring-hero__focus-card {
-    border: 1px solid rgba(255, 255, 255, 0.26);
-    background: rgba(255, 255, 255, 0.16) !important;
-    backdrop-filter: blur(3px);
-    height: 100%;
-}
-
-.tutoring-hero__focus-label {
-    font-size: 0.72rem;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    opacity: 0.72;
-}
-
-.tutoring-hero__focus-value {
-    margin-top: 8px;
-    font-size: 1.1rem;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.tutoring-hero__focus-note {
-    margin-top: 8px;
-    font-size: 0.86rem;
-    opacity: 0.84;
 }
 
 .tutoring-nav {

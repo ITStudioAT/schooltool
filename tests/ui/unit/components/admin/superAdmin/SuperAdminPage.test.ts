@@ -60,6 +60,24 @@ describe('Super admin page navigation', () => {
         ])
     })
 
+    it('builds header chips with optional impersonation chip', () => {
+        const ctx = {
+            config: {
+                selected_school: { long_name: 'Christian-Doppler-Gymnasium Salzburg' },
+                version: '3.20.19',
+            },
+            isImpersonating: true,
+        }
+
+        const chips = (SuperAdmin as any).computed.headerChips.call(ctx)
+
+        expect(chips).toEqual([
+            { key: 'school', text: 'Christian-Doppler-Gymnasium Salzburg', icon: 'mdi-domain' },
+            { key: 'version', text: '3.20.19', icon: 'mdi-tag-outline' },
+            { key: 'impersonation', text: 'Übernahme aktiv', icon: 'mdi-account-switch', color: 'warning', visible: true },
+        ])
+    })
+
     it('marks navigation items as active only for matching targetAction', () => {
         const ctx = {
             main_action: 'users',
