@@ -1,27 +1,27 @@
 <?php
 
+use App\Models\Licence;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
 use App\Models\MaterialCardClassification;
 use App\Models\MaterialInboxImport;
 use App\Models\MaterialShareRule;
 use App\Models\MaterialShareTarget;
+use App\Models\MaterialSubject;
 use App\Models\MaterialTopic;
 use App\Models\MaterialTopicInboxImport;
-use App\Models\Licence;
-use App\Models\SchoolLicence;
-use App\Models\SchoolTool;
-use App\Models\MaterialSubject;
 use App\Models\MaterialType;
 use App\Models\MaterialUnit;
 use App\Models\MaterialUnitInboxImport;
 use App\Models\School;
+use App\Models\SchoolLicence;
+use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
@@ -37,7 +37,7 @@ beforeEach(function () {
         'materials_moderator',
         'teacher',
         'user',
-    ])->each(fn(string $role) => Role::firstOrCreate([
+    ])->each(fn (string $role) => Role::firstOrCreate([
         'name' => $role,
         'guard_name' => 'web',
     ]));
@@ -52,6 +52,7 @@ beforeEach(function () {
             'email' => $email,
         ]);
         $user->assignRole($role);
+
         return $user;
     };
 
@@ -81,7 +82,7 @@ function createLinkedImportedCard(User $targetUser, School $school, Schoolyear $
     $sourceUser = User::factory()->create([
         'school_id' => $school->id,
         'schoolyear_id' => $schoolyear->id,
-        'email' => 'source-' . uniqid() . '@materials.test',
+        'email' => 'source-'.uniqid().'@materials.test',
     ]);
 
     $sourceCard = MaterialCard::factory()->create([
@@ -293,21 +294,21 @@ test('teacher can create and rename subject topic and unit in own taxonomy', fun
 
     $unitId = (int) $unitResponse->json('data.id');
 
-    $this->putJson('/api/admin/materials/subjects/' . $subjectId, [
+    $this->putJson('/api/admin/materials/subjects/'.$subjectId, [
         'data' => [
             'name' => 'Mathe',
         ],
     ])->assertStatus(200)
         ->assertJsonPath('data.name', 'Mathe');
 
-    $this->putJson('/api/admin/materials/topics/' . $topicId, [
+    $this->putJson('/api/admin/materials/topics/'.$topicId, [
         'data' => [
             'name' => 'Gleichungen',
         ],
     ])->assertStatus(200)
         ->assertJsonPath('data.name', 'Gleichungen');
 
-    $this->putJson('/api/admin/materials/units/' . $unitId, [
+    $this->putJson('/api/admin/materials/units/'.$unitId, [
         'data' => [
             'name' => 'Lineare Systeme',
         ],
@@ -426,7 +427,7 @@ test('teacher cannot rename subject from another user taxonomy', function () {
 
     $this->actingAs($this->teacher, 'sanctum');
 
-    $this->putJson('/api/admin/materials/subjects/' . $foreignSubject->id, [
+    $this->putJson('/api/admin/materials/subjects/'.$foreignSubject->id, [
         'data' => [
             'name' => 'Bio',
         ],
@@ -457,15 +458,15 @@ test('teacher can delete unused subject topic and unit', function () {
     ])->assertStatus(200);
     $unitId = (int) $unitResponse->json('data.id');
 
-    $this->deleteJson('/api/admin/materials/units/' . $unitId)
+    $this->deleteJson('/api/admin/materials/units/'.$unitId)
         ->assertStatus(204);
     $this->assertDatabaseMissing('material_units', ['id' => $unitId]);
 
-    $this->deleteJson('/api/admin/materials/topics/' . $topicId)
+    $this->deleteJson('/api/admin/materials/topics/'.$topicId)
         ->assertStatus(204);
     $this->assertDatabaseMissing('material_topics', ['id' => $topicId]);
 
-    $this->deleteJson('/api/admin/materials/subjects/' . $subjectId)
+    $this->deleteJson('/api/admin/materials/subjects/'.$subjectId)
         ->assertStatus(204);
     $this->assertDatabaseMissing('material_subjects', ['id' => $subjectId]);
 });
@@ -491,7 +492,7 @@ test('teacher can delete subject when only subject level is used', function () {
     ]);
 
     $this->actingAs($this->teacher, 'sanctum');
-    $this->deleteJson('/api/admin/materials/subjects/' . $subject->id)
+    $this->deleteJson('/api/admin/materials/subjects/'.$subject->id)
         ->assertStatus(204);
 
     $this->assertDatabaseMissing('material_subjects', ['id' => $subject->id]);
@@ -520,7 +521,7 @@ test('teacher can delete topic when only topic level is used', function () {
     ]);
 
     $this->actingAs($this->teacher, 'sanctum');
-    $this->deleteJson('/api/admin/materials/topics/' . $topic->id)
+    $this->deleteJson('/api/admin/materials/topics/'.$topic->id)
         ->assertStatus(204);
 
     $this->assertDatabaseMissing('material_topics', ['id' => $topic->id]);
@@ -548,7 +549,7 @@ test('teacher cannot delete subject when a topic below is used', function () {
     ]);
 
     $this->actingAs($this->teacher, 'sanctum');
-    $this->deleteJson('/api/admin/materials/subjects/' . $subject->id)
+    $this->deleteJson('/api/admin/materials/subjects/'.$subject->id)
         ->assertStatus(422);
 
     $this->assertDatabaseHas('material_subjects', ['id' => $subject->id]);
@@ -577,7 +578,7 @@ test('teacher cannot delete topic when a unit below is used', function () {
     ]);
 
     $this->actingAs($this->teacher, 'sanctum');
-    $this->deleteJson('/api/admin/materials/topics/' . $topic->id)
+    $this->deleteJson('/api/admin/materials/topics/'.$topic->id)
         ->assertStatus(422);
 
     $this->assertDatabaseHas('material_topics', ['id' => $topic->id]);
@@ -606,7 +607,7 @@ test('teacher cannot delete unit when used by materials', function () {
     ]);
 
     $this->actingAs($this->teacher, 'sanctum');
-    $this->deleteJson('/api/admin/materials/units/' . $unit->id)
+    $this->deleteJson('/api/admin/materials/units/'.$unit->id)
         ->assertStatus(422);
 
     $this->assertDatabaseHas('material_units', ['id' => $unit->id]);
@@ -636,7 +637,7 @@ test('teacher can delete subject when only soft-deleted topic usage exists', fun
     $card->delete();
 
     $this->actingAs($this->teacher, 'sanctum');
-    $this->deleteJson('/api/admin/materials/subjects/' . $subject->id)
+    $this->deleteJson('/api/admin/materials/subjects/'.$subject->id)
         ->assertStatus(204);
 
     $this->assertDatabaseMissing('material_subjects', ['id' => $subject->id]);
@@ -667,7 +668,7 @@ test('teacher can delete topic when only soft-deleted unit usage exists', functi
     $card->delete();
 
     $this->actingAs($this->teacher, 'sanctum');
-    $this->deleteJson('/api/admin/materials/topics/' . $topic->id)
+    $this->deleteJson('/api/admin/materials/topics/'.$topic->id)
         ->assertStatus(204);
 
     $this->assertDatabaseMissing('material_topics', ['id' => $topic->id]);
@@ -698,7 +699,7 @@ test('teacher can delete unit when only soft-deleted unit usage exists', functio
     $card->delete();
 
     $this->actingAs($this->teacher, 'sanctum');
-    $this->deleteJson('/api/admin/materials/units/' . $unit->id)
+    $this->deleteJson('/api/admin/materials/units/'.$unit->id)
         ->assertStatus(204);
 
     $this->assertDatabaseMissing('material_units', ['id' => $unit->id]);
@@ -976,7 +977,7 @@ test('admin may manage school status values and teachers can use them', function
     $statusId = (int) $response->json('data.id');
     $statusValue = (string) $response->json('data.value');
 
-    $this->putJson('/api/admin/materials/statuses/' . $statusId, [
+    $this->putJson('/api/admin/materials/statuses/'.$statusId, [
         'data' => [
             'label' => 'Zur Freigabe intern',
             'color' => '#44aa66',
@@ -1033,12 +1034,12 @@ test('admin can update school max upload size and upload is validated against it
     $this->actingAs($this->teacher, 'sanctum');
 
     $this->post(
-        '/api/admin/materials/cards/' . $card->id . '/attachments/file',
+        '/api/admin/materials/cards/'.$card->id.'/attachments/file',
         ['file' => UploadedFile::fake()->create('zu-gross.pdf', 120, 'application/pdf')],
         ['Accept' => 'application/json']
     )->assertStatus(422);
 
-    $this->post('/api/admin/materials/cards/' . $card->id . '/attachments/file', [
+    $this->post('/api/admin/materials/cards/'.$card->id.'/attachments/file', [
         'file' => UploadedFile::fake()->create('ok.pdf', 90, 'application/pdf'),
     ])->assertStatus(200);
 });
@@ -1068,7 +1069,7 @@ test('teacher can upload file in chunks and attach it to material card', functio
     $uploadId = trim((string) $startResponse->getContent());
     expect($uploadId)->not->toBe('');
 
-    $patchResponse = $this->call('PATCH', '/api/admin/materials/uploads/chunk?patch=' . $uploadId, [], [], [], [
+    $patchResponse = $this->call('PATCH', '/api/admin/materials/uploads/chunk?patch='.$uploadId, [], [], [], [
         'HTTP_ACCEPT' => 'text/plain',
         'HTTP_UPLOAD_LENGTH' => $length,
         'HTTP_UPLOAD_NAME' => 'chunk-upload-test.pdf',
@@ -1077,7 +1078,7 @@ test('teacher can upload file in chunks and attach it to material card', functio
     $patchResponse->assertStatus(200);
     expect(trim((string) $patchResponse->getContent()))->toBe($uploadId);
 
-    $attachResponse = $this->postJson('/api/admin/materials/cards/' . $card->id . '/attachments/file-temp', [
+    $attachResponse = $this->postJson('/api/admin/materials/cards/'.$card->id.'/attachments/file-temp', [
         'data' => [
             'upload_id' => $uploadId,
             'name' => 'Chunk Test Datei',
@@ -1203,7 +1204,7 @@ test('index can filter by subject topic and unit', function () {
         ],
     ])->assertStatus(200);
 
-    $subjectResponse = $this->getJson('/api/admin/materials/cards?' . http_build_query([
+    $subjectResponse = $this->getJson('/api/admin/materials/cards?'.http_build_query([
         'subject' => 'Mathematik',
     ]));
     $subjectResponse->assertStatus(200);
@@ -1212,7 +1213,7 @@ test('index can filter by subject topic and unit', function () {
         ->and($subjectTitles)->toContain('Mathematik Gleichungen')
         ->and($subjectTitles)->not->toContain('Deutsch Grammatik');
 
-    $topicResponse = $this->getJson('/api/admin/materials/cards?' . http_build_query([
+    $topicResponse = $this->getJson('/api/admin/materials/cards?'.http_build_query([
         'subject' => 'Mathematik',
         'topic' => 'Algebra',
     ]));
@@ -1222,7 +1223,7 @@ test('index can filter by subject topic and unit', function () {
         ->and($topicTitles)->toContain('Mathematik Gleichungen')
         ->and($topicTitles)->not->toContain('Deutsch Grammatik');
 
-    $unitResponse = $this->getJson('/api/admin/materials/cards?' . http_build_query([
+    $unitResponse = $this->getJson('/api/admin/materials/cards?'.http_build_query([
         'subject' => 'Mathematik',
         'topic' => 'Algebra',
         'unit' => 'Brüche',
@@ -1243,7 +1244,7 @@ test('index uses user specific materials pagination number', function () {
         MaterialCard::factory()->create([
             'school_id' => $this->school->id,
             'user_id' => $this->teacher->id,
-            'title' => 'Eigene Karte ' . $index,
+            'title' => 'Eigene Karte '.$index,
             'status' => 'inbox',
             'keywords' => [],
         ]);
@@ -1284,7 +1285,7 @@ test('owner protection blocks update from another teacher', function () {
 
     $this->actingAs($this->teacher, 'sanctum');
 
-    $this->putJson('/api/admin/materials/cards/' . $card->id, [
+    $this->putJson('/api/admin/materials/cards/'.$card->id, [
         'data' => [
             'title' => 'Manipuliert',
             'status' => 'done',
@@ -1293,7 +1294,7 @@ test('owner protection blocks update from another teacher', function () {
 });
 
 test('linked material with nur lesen blocks edit delete and attachment mutations', function () {
-    if (!Schema::hasTable('material_inbox_imports') || !Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+    if (! Schema::hasTable('material_inbox_imports') || ! Schema::hasColumn('material_inbox_imports', 'import_mode')) {
         $this->markTestSkipped('Linked inbox import mode is not available.');
     }
 
@@ -1322,29 +1323,29 @@ test('linked material with nur lesen blocks edit delete and attachment mutations
 
     $this->actingAs($this->teacher, 'sanctum');
 
-    $this->putJson('/api/admin/materials/cards/' . $card->id, [
+    $this->putJson('/api/admin/materials/cards/'.$card->id, [
         'data' => [
             'title' => 'Geändert',
             'status' => MaterialCard::STATUS_DONE,
         ],
     ])->assertStatus(403);
 
-    $this->postJson('/api/admin/materials/cards/' . $card->id . '/attachments/link', [
+    $this->postJson('/api/admin/materials/cards/'.$card->id.'/attachments/link', [
         'data' => [
             'url' => 'https://example.org/new',
             'name' => 'Neu',
         ],
     ])->assertStatus(403);
 
-    $this->deleteJson('/api/admin/materials/attachments/' . $attachment->id)
+    $this->deleteJson('/api/admin/materials/attachments/'.$attachment->id)
         ->assertStatus(403);
 
-    $this->deleteJson('/api/admin/materials/cards/' . $card->id)
+    $this->deleteJson('/api/admin/materials/cards/'.$card->id)
         ->assertStatus(403);
 });
 
 test('linked material can be unlinked from materials overview endpoint', function () {
-    if (!Schema::hasTable('material_inbox_imports') || !Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+    if (! Schema::hasTable('material_inbox_imports') || ! Schema::hasColumn('material_inbox_imports', 'import_mode')) {
         $this->markTestSkipped('Linked inbox import mode is not available.');
     }
 
@@ -1366,7 +1367,7 @@ test('linked material can be unlinked from materials overview endpoint', functio
 
     $this->actingAs($this->teacher, 'sanctum');
 
-    $this->postJson('/api/admin/materials/cards/' . $card->id . '/unlink')
+    $this->postJson('/api/admin/materials/cards/'.$card->id.'/unlink')
         ->assertStatus(200)
         ->assertJsonPath('message', 'Link entfernt.')
         ->assertJsonPath('data.id', (int) $card->id)
@@ -1383,7 +1384,7 @@ test('linked material can be unlinked from materials overview endpoint', functio
         'user_id' => (int) $this->teacher->id,
     ]);
 
-    $this->getJson('/api/admin/materials/cards/' . $card->id)
+    $this->getJson('/api/admin/materials/cards/'.$card->id)
         ->assertStatus(404);
 
     $cardsResponse = $this->getJson('/api/admin/materials/cards')
@@ -1405,9 +1406,9 @@ test('linked material can be unlinked from materials overview endpoint', functio
 
 test('linked unit can be unlinked from materials overview endpoint and removes linked materials', function () {
     if (
-        !Schema::hasTable('material_inbox_imports')
-        || !Schema::hasColumn('material_inbox_imports', 'import_mode')
-        || !Schema::hasTable('material_unit_inbox_imports')
+        ! Schema::hasTable('material_inbox_imports')
+        || ! Schema::hasColumn('material_inbox_imports', 'import_mode')
+        || ! Schema::hasTable('material_unit_inbox_imports')
     ) {
         $this->markTestSkipped('Linked unit inbox import tables are not available.');
     }
@@ -1472,7 +1473,7 @@ test('linked unit can be unlinked from materials overview endpoint and removes l
 
     $this->actingAs($this->teacher, 'sanctum');
 
-    $response = $this->postJson('/api/admin/materials/units/' . $unit->id . '/unlink')
+    $response = $this->postJson('/api/admin/materials/units/'.$unit->id.'/unlink')
         ->assertStatus(200)
         ->assertJsonPath('message', 'Link entfernt.')
         ->assertJsonPath('data.id', (int) $unit->id)
@@ -1532,9 +1533,9 @@ test('linked unit can be unlinked from materials overview endpoint and removes l
 
 test('linked topic can be unlinked from materials overview endpoint and removes linked materials', function () {
     if (
-        !Schema::hasTable('material_inbox_imports')
-        || !Schema::hasColumn('material_inbox_imports', 'import_mode')
-        || !Schema::hasTable('material_topic_inbox_imports')
+        ! Schema::hasTable('material_inbox_imports')
+        || ! Schema::hasColumn('material_inbox_imports', 'import_mode')
+        || ! Schema::hasTable('material_topic_inbox_imports')
     ) {
         $this->markTestSkipped('Linked topic inbox import tables are not available.');
     }
@@ -1603,7 +1604,7 @@ test('linked topic can be unlinked from materials overview endpoint and removes 
 
     $this->actingAs($this->teacher, 'sanctum');
 
-    $response = $this->postJson('/api/admin/materials/topics/' . $topic->id . '/unlink')
+    $response = $this->postJson('/api/admin/materials/topics/'.$topic->id.'/unlink')
         ->assertStatus(200)
         ->assertJsonPath('message', 'Link entfernt.')
         ->assertJsonPath('data.id', (int) $topic->id)
@@ -1661,8 +1662,221 @@ test('linked topic can be unlinked from materials overview endpoint and removes 
     expect((bool) ($matchingInboxEntry['is_imported'] ?? true))->toBeFalse();
 });
 
+test('linked topic name is synchronized from source for overview endpoints', function () {
+    if (
+        ! Schema::hasTable('material_inbox_imports')
+        || ! Schema::hasColumn('material_inbox_imports', 'import_mode')
+        || ! Schema::hasTable('material_topic_inbox_imports')
+    ) {
+        $this->markTestSkipped('Linked topic inbox import tables are not available.');
+    }
+
+    $linkedCard = createLinkedImportedCard(
+        targetUser: $this->teacher,
+        school: $this->school,
+        schoolyear: $this->schoolyear,
+        permission: MaterialShareTarget::PERMISSION_READ_ONLY,
+    );
+
+    $linkImport = MaterialInboxImport::query()
+        ->where('target_user_id', (int) $this->teacher->id)
+        ->where('target_material_card_id', (int) $linkedCard->id)
+        ->where('import_mode', MaterialInboxImport::MODE_LINK)
+        ->latest('id')
+        ->first();
+    expect($linkImport)->not->toBeNull();
+
+    $sourceCard = MaterialCard::query()->find((int) ($linkImport?->source_material_id ?? 0));
+    expect($sourceCard)->not->toBeNull();
+
+    $sourceSubject = MaterialSubject::query()->create([
+        'user_id' => (int) ($sourceCard?->user_id ?? 0),
+        'name' => 'Quelle Fach',
+    ]);
+    $sourceTopic = MaterialTopic::query()->create([
+        'subject_id' => (int) $sourceSubject->id,
+        'name' => 'Quelle Thema Alt',
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => (int) ($sourceCard?->id ?? 0),
+        'subject_id' => (int) $sourceSubject->id,
+        'topic_id' => (int) $sourceTopic->id,
+        'unit_id' => null,
+    ]);
+
+    $targetSubject = MaterialSubject::query()->create([
+        'user_id' => (int) $this->teacher->id,
+        'name' => 'Ziel Fach',
+    ]);
+    $targetTopic = MaterialTopic::query()->create([
+        'subject_id' => (int) $targetSubject->id,
+        'name' => 'Ziel Thema Alt',
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => (int) $linkedCard->id,
+        'subject_id' => (int) $targetSubject->id,
+        'topic_id' => (int) $targetTopic->id,
+        'unit_id' => null,
+    ]);
+
+    MaterialTopicInboxImport::query()->create([
+        'target_user_id' => (int) $this->teacher->id,
+        'target_topic_id' => (int) $targetTopic->id,
+        'source_rule_id' => (int) ($linkImport?->source_rule_id ?? 0),
+        'source_school_id' => (int) $this->school->id,
+        'source_topic_id' => (int) $sourceTopic->id,
+        'imported_at' => now(),
+    ]);
+
+    $sourceTopic->update(['name' => 'Quelle Thema Neu']);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $cardsResponse = $this->getJson('/api/admin/materials/cards')
+        ->assertStatus(200);
+
+    $linkedCardRow = collect($cardsResponse->json('data'))
+        ->first(fn ($row) => (int) ($row['id'] ?? 0) === (int) $linkedCard->id);
+    expect($linkedCardRow)->not->toBeNull();
+    $classificationTopicNames = collect($linkedCardRow['classifications'] ?? [])
+        ->pluck('topic')
+        ->map(fn ($value) => trim((string) $value))
+        ->filter()
+        ->values()
+        ->all();
+    expect($classificationTopicNames)->toContain('Quelle Thema Neu');
+
+    $configResponse = $this->getJson('/api/admin/materials/config')
+        ->assertStatus(200);
+
+    $subjectNode = collect($configResponse->json('classification_tree', []))
+        ->firstWhere('id', (int) $targetSubject->id);
+    expect($subjectNode)->not->toBeNull();
+    $topicNode = collect($subjectNode['topics'] ?? [])
+        ->firstWhere('id', (int) $targetTopic->id);
+    expect($topicNode)->not->toBeNull();
+    expect((string) ($topicNode['name'] ?? ''))->toBe('Quelle Thema Neu');
+
+    $this->assertDatabaseHas('material_topics', [
+        'id' => (int) $targetTopic->id,
+        'name' => 'Quelle Thema Neu',
+    ]);
+});
+
+test('linked unit name is synchronized from source for overview endpoints', function () {
+    if (
+        ! Schema::hasTable('material_inbox_imports')
+        || ! Schema::hasColumn('material_inbox_imports', 'import_mode')
+        || ! Schema::hasTable('material_unit_inbox_imports')
+    ) {
+        $this->markTestSkipped('Linked unit inbox import tables are not available.');
+    }
+
+    $linkedCard = createLinkedImportedCard(
+        targetUser: $this->teacher,
+        school: $this->school,
+        schoolyear: $this->schoolyear,
+        permission: MaterialShareTarget::PERMISSION_READ_ONLY,
+    );
+
+    $linkImport = MaterialInboxImport::query()
+        ->where('target_user_id', (int) $this->teacher->id)
+        ->where('target_material_card_id', (int) $linkedCard->id)
+        ->where('import_mode', MaterialInboxImport::MODE_LINK)
+        ->latest('id')
+        ->first();
+    expect($linkImport)->not->toBeNull();
+
+    $sourceCard = MaterialCard::query()->find((int) ($linkImport?->source_material_id ?? 0));
+    expect($sourceCard)->not->toBeNull();
+
+    $sourceSubject = MaterialSubject::query()->create([
+        'user_id' => (int) ($sourceCard?->user_id ?? 0),
+        'name' => 'Quelle Fach',
+    ]);
+    $sourceTopic = MaterialTopic::query()->create([
+        'subject_id' => (int) $sourceSubject->id,
+        'name' => 'Quelle Thema',
+    ]);
+    $sourceUnit = MaterialUnit::query()->create([
+        'topic_id' => (int) $sourceTopic->id,
+        'name' => 'Quelle Einheit Alt',
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => (int) ($sourceCard?->id ?? 0),
+        'subject_id' => (int) $sourceSubject->id,
+        'topic_id' => (int) $sourceTopic->id,
+        'unit_id' => (int) $sourceUnit->id,
+    ]);
+
+    $targetSubject = MaterialSubject::query()->create([
+        'user_id' => (int) $this->teacher->id,
+        'name' => 'Ziel Fach',
+    ]);
+    $targetTopic = MaterialTopic::query()->create([
+        'subject_id' => (int) $targetSubject->id,
+        'name' => 'Ziel Thema',
+    ]);
+    $targetUnit = MaterialUnit::query()->create([
+        'topic_id' => (int) $targetTopic->id,
+        'name' => 'Ziel Einheit Alt',
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => (int) $linkedCard->id,
+        'subject_id' => (int) $targetSubject->id,
+        'topic_id' => (int) $targetTopic->id,
+        'unit_id' => (int) $targetUnit->id,
+    ]);
+
+    MaterialUnitInboxImport::query()->create([
+        'target_user_id' => (int) $this->teacher->id,
+        'target_unit_id' => (int) $targetUnit->id,
+        'source_rule_id' => (int) ($linkImport?->source_rule_id ?? 0),
+        'source_school_id' => (int) $this->school->id,
+        'source_unit_id' => (int) $sourceUnit->id,
+        'imported_at' => now(),
+    ]);
+
+    $sourceUnit->update(['name' => 'Quelle Einheit Neu']);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $cardsResponse = $this->getJson('/api/admin/materials/cards')
+        ->assertStatus(200);
+
+    $linkedCardRow = collect($cardsResponse->json('data'))
+        ->first(fn ($row) => (int) ($row['id'] ?? 0) === (int) $linkedCard->id);
+    expect($linkedCardRow)->not->toBeNull();
+    $classificationUnitNames = collect($linkedCardRow['classifications'] ?? [])
+        ->pluck('unit')
+        ->map(fn ($value) => trim((string) $value))
+        ->filter()
+        ->values()
+        ->all();
+    expect($classificationUnitNames)->toContain('Quelle Einheit Neu');
+
+    $configResponse = $this->getJson('/api/admin/materials/config')
+        ->assertStatus(200);
+
+    $subjectNode = collect($configResponse->json('classification_tree', []))
+        ->firstWhere('id', (int) $targetSubject->id);
+    expect($subjectNode)->not->toBeNull();
+    $topicNode = collect($subjectNode['topics'] ?? [])
+        ->firstWhere('id', (int) $targetTopic->id);
+    expect($topicNode)->not->toBeNull();
+    $unitNode = collect($topicNode['units'] ?? [])
+        ->firstWhere('id', (int) $targetUnit->id);
+    expect($unitNode)->not->toBeNull();
+    expect((string) ($unitNode['name'] ?? ''))->toBe('Quelle Einheit Neu');
+
+    $this->assertDatabaseHas('material_units', [
+        'id' => (int) $targetUnit->id,
+        'name' => 'Quelle Einheit Neu',
+    ]);
+});
+
 test('linked material with lesen schreiben allows edit and append but blocks delete operations', function () {
-    if (!Schema::hasTable('material_inbox_imports') || !Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+    if (! Schema::hasTable('material_inbox_imports') || ! Schema::hasColumn('material_inbox_imports', 'import_mode')) {
         $this->markTestSkipped('Linked inbox import mode is not available.');
     }
 
@@ -1682,7 +1896,7 @@ test('linked material with lesen schreiben allows edit and append but blocks del
 
     $this->actingAs($this->teacher, 'sanctum');
 
-    $this->putJson('/api/admin/materials/cards/' . $card->id, [
+    $this->putJson('/api/admin/materials/cards/'.$card->id, [
         'data' => [
             'title' => 'Geändert',
             'status' => MaterialCard::STATUS_DONE,
@@ -1707,22 +1921,22 @@ test('linked material with lesen schreiben allows edit and append but blocks del
     expect($sourceCard)->not->toBeNull();
     expect((string) ($sourceCard?->title ?? ''))->toBe('Geändert');
 
-    $this->postJson('/api/admin/materials/cards/' . $card->id . '/attachments/link', [
+    $this->postJson('/api/admin/materials/cards/'.$card->id.'/attachments/link', [
         'data' => [
             'url' => 'https://example.org/new',
             'name' => 'Neu',
         ],
     ])->assertStatus(200);
 
-    $this->deleteJson('/api/admin/materials/attachments/' . $attachment->id)
+    $this->deleteJson('/api/admin/materials/attachments/'.$attachment->id)
         ->assertStatus(403);
 
-    $this->deleteJson('/api/admin/materials/cards/' . $card->id)
+    $this->deleteJson('/api/admin/materials/cards/'.$card->id)
         ->assertStatus(403);
 });
 
 test('linked material with lesen schreiben keeps source attachments visible in destination on equal timestamps', function () {
-    if (!Schema::hasTable('material_inbox_imports') || !Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+    if (! Schema::hasTable('material_inbox_imports') || ! Schema::hasColumn('material_inbox_imports', 'import_mode')) {
         $this->markTestSkipped('Linked inbox import mode is not available.');
     }
 
@@ -1755,14 +1969,14 @@ test('linked material with lesen schreiben keeps source attachments visible in d
 
     $this->actingAs($this->teacher, 'sanctum');
 
-    $this->getJson('/api/admin/materials/cards/' . $card->id)
+    $this->getJson('/api/admin/materials/cards/'.$card->id)
         ->assertStatus(200)
         ->assertJsonPath('attachments.0.name', 'Quelle')
         ->assertJsonPath('attachments.0.url', 'https://example.org/source');
 });
 
 test('linked material with vollzugriff allows attachment delete but still blocks material delete', function () {
-    if (!Schema::hasTable('material_inbox_imports') || !Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+    if (! Schema::hasTable('material_inbox_imports') || ! Schema::hasColumn('material_inbox_imports', 'import_mode')) {
         $this->markTestSkipped('Linked inbox import mode is not available.');
     }
 
@@ -1782,7 +1996,7 @@ test('linked material with vollzugriff allows attachment delete but still blocks
 
     $this->actingAs($this->teacher, 'sanctum');
 
-    $this->putJson('/api/admin/materials/cards/' . $card->id, [
+    $this->putJson('/api/admin/materials/cards/'.$card->id, [
         'data' => [
             'title' => 'Geändert',
             'status' => MaterialCard::STATUS_DONE,
@@ -1790,20 +2004,20 @@ test('linked material with vollzugriff allows attachment delete but still blocks
     ])->assertStatus(200)
         ->assertJsonPath('title', 'Geändert');
 
-    $this->postJson('/api/admin/materials/cards/' . $card->id . '/attachments/link', [
+    $this->postJson('/api/admin/materials/cards/'.$card->id.'/attachments/link', [
         'data' => [
             'url' => 'https://example.org/new',
             'name' => 'Neu',
         ],
     ])->assertStatus(200);
 
-    $this->deleteJson('/api/admin/materials/attachments/' . $attachment->id)
+    $this->deleteJson('/api/admin/materials/attachments/'.$attachment->id)
         ->assertNoContent();
     $this->assertDatabaseMissing('material_card_attachments', [
         'id' => $attachment->id,
     ]);
 
-    $this->deleteJson('/api/admin/materials/cards/' . $card->id)
+    $this->deleteJson('/api/admin/materials/cards/'.$card->id)
         ->assertStatus(403);
 });
 
@@ -1817,7 +2031,7 @@ test('adding link attachment stores attachment and refreshes keywords', function
 
     $this->actingAs($this->teacher, 'sanctum');
 
-    $this->postJson('/api/admin/materials/cards/' . $card->id . '/attachments/link', [
+    $this->postJson('/api/admin/materials/cards/'.$card->id.'/attachments/link', [
         'data' => [
             'url' => 'https://example.org/chemie/stoechiometrie',
             'name' => 'Stöchiometrie Link',
@@ -1843,21 +2057,21 @@ test('adding file attachment stores file and allows download', function () {
 
     $this->actingAs($this->teacher, 'sanctum');
 
-    $uploadResponse = $this->post('/api/admin/materials/cards/' . $card->id . '/attachments/file', [
+    $uploadResponse = $this->post('/api/admin/materials/cards/'.$card->id.'/attachments/file', [
         'file' => UploadedFile::fake()->create('mittelalter-arbeitsblatt.pdf', 200, 'application/pdf'),
     ]);
 
     $uploadResponse->assertStatus(200);
     $attachmentId = $uploadResponse->json('id');
-    $uploadResponse->assertJsonPath('preview_url', '/api/admin/materials/attachments/' . $attachmentId . '/preview');
+    $uploadResponse->assertJsonPath('preview_url', '/api/admin/materials/attachments/'.$attachmentId.'/preview');
     $attachment = MaterialCardAttachment::findOrFail($attachmentId);
 
     Storage::disk('local')->assertExists($attachment->file_path);
 
-    $this->get('/api/admin/materials/attachments/' . $attachment->id . '/download')
+    $this->get('/api/admin/materials/attachments/'.$attachment->id.'/download')
         ->assertStatus(200);
 
-    $previewResponse = $this->get('/api/admin/materials/attachments/' . $attachment->id . '/preview');
+    $previewResponse = $this->get('/api/admin/materials/attachments/'.$attachment->id.'/preview');
     $previewResponse->assertStatus(200);
     expect(strtolower((string) $previewResponse->headers->get('content-type')))->toContain('application/pdf');
 });
@@ -1872,7 +2086,7 @@ test('excel attachment preview is rendered as html', function () {
         'keywords' => [],
     ]);
 
-    $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet;
     $sheet = $spreadsheet->getActiveSheet();
     $sheet->setCellValue('A1', 'Kategorie');
     $sheet->setCellValue('B1', 'Wert');
@@ -1892,12 +2106,12 @@ test('excel attachment preview is rendered as html', function () {
 
     $this->actingAs($this->teacher, 'sanctum');
 
-    $uploadResponse = $this->post('/api/admin/materials/cards/' . $card->id . '/attachments/file', [
+    $uploadResponse = $this->post('/api/admin/materials/cards/'.$card->id.'/attachments/file', [
         'file' => UploadedFile::fake()->createWithContent('auswertung.xlsx', (string) $xlsxContent),
     ]);
 
     $attachment = MaterialCardAttachment::findOrFail($uploadResponse->json('id'));
-    $response = $this->get('/api/admin/materials/attachments/' . $attachment->id . '/preview');
+    $response = $this->get('/api/admin/materials/attachments/'.$attachment->id.'/preview');
 
     $response->assertStatus(200)
         ->assertSee('Punkte')
@@ -1916,7 +2130,7 @@ test('word attachment preview is rendered as html', function () {
         'keywords' => [],
     ]);
 
-    $document = new \PhpOffice\PhpWord\PhpWord();
+    $document = new \PhpOffice\PhpWord\PhpWord;
     $section = $document->addSection();
     $section->addText('Word Vorschau Inhalt');
 
@@ -1931,12 +2145,12 @@ test('word attachment preview is rendered as html', function () {
 
     $this->actingAs($this->teacher, 'sanctum');
 
-    $uploadResponse = $this->post('/api/admin/materials/cards/' . $card->id . '/attachments/file', [
+    $uploadResponse = $this->post('/api/admin/materials/cards/'.$card->id.'/attachments/file', [
         'file' => UploadedFile::fake()->createWithContent('text.docx', (string) $docxContent),
     ]);
 
     $attachment = MaterialCardAttachment::findOrFail($uploadResponse->json('id'));
-    $response = $this->get('/api/admin/materials/attachments/' . $attachment->id . '/preview');
+    $response = $this->get('/api/admin/materials/attachments/'.$attachment->id.'/preview');
 
     $response->assertStatus(200)
         ->assertSee('Word Vorschau Inhalt');
@@ -1954,9 +2168,9 @@ test('powerpoint attachment preview is rendered as html', function () {
         'keywords' => [],
     ]);
 
-    $presentation = new \PhpOffice\PhpPresentation\PhpPresentation();
+    $presentation = new \PhpOffice\PhpPresentation\PhpPresentation;
     $slide = $presentation->getActiveSlide();
-    $shape = new \PhpOffice\PhpPresentation\Shape\RichText();
+    $shape = new \PhpOffice\PhpPresentation\Shape\RichText;
     $shape->setHeight(120)->setWidth(620)->setOffsetX(32)->setOffsetY(48);
     $shape->createTextRun('PowerPoint Vorschau Inhalt');
     $slide->addShape($shape);
@@ -1972,12 +2186,12 @@ test('powerpoint attachment preview is rendered as html', function () {
 
     $this->actingAs($this->teacher, 'sanctum');
 
-    $uploadResponse = $this->post('/api/admin/materials/cards/' . $card->id . '/attachments/file', [
+    $uploadResponse = $this->post('/api/admin/materials/cards/'.$card->id.'/attachments/file', [
         'file' => UploadedFile::fake()->createWithContent('folien.pptx', (string) $pptxContent),
     ]);
 
     $attachment = MaterialCardAttachment::findOrFail($uploadResponse->json('id'));
-    $response = $this->get('/api/admin/materials/attachments/' . $attachment->id . '/preview');
+    $response = $this->get('/api/admin/materials/attachments/'.$attachment->id.'/preview');
 
     $response->assertStatus(200)
         ->assertSee('PowerPoint Vorschau Inhalt');
@@ -2003,7 +2217,7 @@ test('adding remote image attachment stores image file from url', function () {
 
     $this->actingAs($this->teacher, 'sanctum');
 
-    $response = $this->postJson('/api/admin/materials/cards/' . $card->id . '/attachments/image-url', [
+    $response = $this->postJson('/api/admin/materials/cards/'.$card->id.'/attachments/image-url', [
         'data' => [
             'url' => 'https://example.org/media/diagramm.jpg',
             'name' => 'Diagramm aus Web',
@@ -2039,14 +2253,14 @@ test('attachment rename updates stored attachment name', function () {
 
     $this->actingAs($this->teacher, 'sanctum');
 
-    $uploadResponse = $this->post('/api/admin/materials/cards/' . $card->id . '/attachments/file', [
+    $uploadResponse = $this->post('/api/admin/materials/cards/'.$card->id.'/attachments/file', [
         'file' => UploadedFile::fake()->create('experimente.pdf', 120, 'application/pdf'),
         'name' => 'Alte Bezeichnung',
     ]);
 
     $attachment = MaterialCardAttachment::findOrFail($uploadResponse->json('id'));
 
-    $this->patchJson('/api/admin/materials/attachments/' . $attachment->id, [
+    $this->patchJson('/api/admin/materials/attachments/'.$attachment->id, [
         'data' => [
             'name' => 'Neue Bezeichnung',
         ],
@@ -2071,14 +2285,14 @@ test('attachment delete removes file from storage', function () {
 
     $this->actingAs($this->teacher, 'sanctum');
 
-    $uploadResponse = $this->post('/api/admin/materials/cards/' . $card->id . '/attachments/file', [
+    $uploadResponse = $this->post('/api/admin/materials/cards/'.$card->id.'/attachments/file', [
         'file' => UploadedFile::fake()->create('grammatik-uebung.pdf', 100, 'application/pdf'),
     ]);
 
     $attachment = MaterialCardAttachment::findOrFail($uploadResponse->json('id'));
     Storage::disk('local')->assertExists($attachment->file_path);
 
-    $this->deleteJson('/api/admin/materials/attachments/' . $attachment->id)
+    $this->deleteJson('/api/admin/materials/attachments/'.$attachment->id)
         ->assertStatus(204);
 
     Storage::disk('local')->assertMissing($attachment->file_path);
@@ -2095,7 +2309,7 @@ test('teacher can delete own card', function () {
 
     $this->actingAs($this->teacher, 'sanctum');
 
-    $this->deleteJson('/api/admin/materials/cards/' . $card->id)
+    $this->deleteJson('/api/admin/materials/cards/'.$card->id)
         ->assertStatus(204);
 
     expect(MaterialCard::where('id', $card->id)->exists())->toBeFalse();
@@ -2138,7 +2352,7 @@ test('teacher can permanently delete a previously deleted card', function () {
 
     $this->actingAs($this->teacher, 'sanctum');
 
-    $this->deleteJson('/api/admin/materials/cards/' . $card->id)
+    $this->deleteJson('/api/admin/materials/cards/'.$card->id)
         ->assertStatus(204);
 
     expect(MaterialCard::onlyTrashed()->where('id', $card->id)->exists())->toBeTrue();
@@ -2146,7 +2360,7 @@ test('teacher can permanently delete a previously deleted card', function () {
         'material_card_id' => $card->id,
     ]);
 
-    $this->deleteJson('/api/admin/materials/cards/deleted/' . $card->id)
+    $this->deleteJson('/api/admin/materials/cards/deleted/'.$card->id)
         ->assertStatus(204);
 
     expect(MaterialCard::withTrashed()->where('id', $card->id)->exists())->toBeFalse();
@@ -2180,7 +2394,7 @@ test('restore deleted card recreates taxonomy path when original path was delete
 
     $this->actingAs($this->teacher, 'sanctum');
 
-    $this->deleteJson('/api/admin/materials/cards/' . $card->id)
+    $this->deleteJson('/api/admin/materials/cards/'.$card->id)
         ->assertStatus(204);
 
     $this->assertDatabaseHas('material_card_deleted_classifications', [
@@ -2190,10 +2404,10 @@ test('restore deleted card recreates taxonomy path when original path was delete
         'unit_name' => 'Mikroskopie',
     ]);
 
-    $this->deleteJson('/api/admin/materials/subjects/' . $subject->id)
+    $this->deleteJson('/api/admin/materials/subjects/'.$subject->id)
         ->assertStatus(204);
 
-    $this->postJson('/api/admin/materials/cards/restore-deleted/' . $card->id)
+    $this->postJson('/api/admin/materials/cards/restore-deleted/'.$card->id)
         ->assertStatus(200)
         ->assertJsonFragment([
             'subject' => 'Biologie',

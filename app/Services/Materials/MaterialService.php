@@ -11,8 +11,8 @@ use App\Models\MaterialShareRule;
 use App\Models\MaterialShareTarget;
 use App\Models\MaterialStatus;
 use App\Models\MaterialSubject;
-use App\Models\MaterialTopicInboxImport;
 use App\Models\MaterialTopic;
+use App\Models\MaterialTopicInboxImport;
 use App\Models\MaterialType;
 use App\Models\MaterialUnit;
 use App\Models\MaterialUnitInboxImport;
@@ -32,7 +32,9 @@ use Illuminate\Validation\ValidationException;
 class MaterialService
 {
     private const DEFAULT_MAX_UPLOAD_SIZE_KB = 20480;
+
     private const DEFAULT_MATERIALS_PAGINATION_NUMBER = 30;
+
     private const DEFAULT_TYPE_ICON = 'mdi-file-document-outline';
 
     private ?bool $hasMaterialInboxImportsTableCache = null;
@@ -49,6 +51,9 @@ class MaterialService
 
     public function config(User $user): array
     {
+        $this->syncLinkedUnitInboxImportsForUser($user);
+        $this->syncLinkedTopicInboxImportsForUser($user);
+
         return [
             'module' => 'materials',
             'school_id' => $user->school_id,
@@ -69,6 +74,8 @@ class MaterialService
     public function listForUser(User $user, array $filters): LengthAwarePaginator
     {
         $this->syncLinkedInboxImportsForUser($user);
+        $this->syncLinkedUnitInboxImportsForUser($user);
+        $this->syncLinkedTopicInboxImportsForUser($user);
 
         $query = MaterialCard::query()
             ->where('user_id', $user->id)
@@ -79,15 +86,15 @@ class MaterialService
         $hasClassificationTables = $this->supportsClassificationTables();
         if ($search !== '') {
             $query->where(function ($q) use ($search, $hasClassificationTables) {
-                $q->where('title', 'like', '%' . $search . '%')
-                    ->orWhere('notes', 'like', '%' . $search . '%')
-                    ->orWhere('source_text', 'like', '%' . $search . '%')
-                    ->orWhere('source_url', 'like', '%' . $search . '%');
+                $q->where('title', 'like', '%'.$search.'%')
+                    ->orWhere('notes', 'like', '%'.$search.'%')
+                    ->orWhere('source_text', 'like', '%'.$search.'%')
+                    ->orWhere('source_url', 'like', '%'.$search.'%');
 
                 if ($hasClassificationTables) {
-                    $q->orWhereHas('classifications.subject', fn ($subjectQuery) => $subjectQuery->where('name', 'like', '%' . $search . '%'))
-                        ->orWhereHas('classifications.topic', fn ($topicQuery) => $topicQuery->where('name', 'like', '%' . $search . '%'))
-                        ->orWhereHas('classifications.unit', fn ($unitQuery) => $unitQuery->where('name', 'like', '%' . $search . '%'));
+                    $q->orWhereHas('classifications.subject', fn ($subjectQuery) => $subjectQuery->where('name', 'like', '%'.$search.'%'))
+                        ->orWhereHas('classifications.topic', fn ($topicQuery) => $topicQuery->where('name', 'like', '%'.$search.'%'))
+                        ->orWhereHas('classifications.unit', fn ($unitQuery) => $unitQuery->where('name', 'like', '%'.$search.'%'));
                 }
             });
         }
@@ -562,7 +569,7 @@ class MaterialService
                 $unit = '';
             }
 
-            $key = mb_strtolower($subject . '|' . $topic . '|' . $unit);
+            $key = mb_strtolower($subject.'|'.$topic.'|'.$unit);
             if (isset($seen[$key])) {
                 continue;
             }
@@ -667,7 +674,7 @@ class MaterialService
                 $unit = '';
             }
 
-            $key = mb_strtolower($subject . '|' . $topic . '|' . $unit);
+            $key = mb_strtolower($subject.'|'.$topic.'|'.$unit);
             if (isset($seen[$key])) {
                 continue;
             }
@@ -784,7 +791,7 @@ class MaterialService
 
         $tempFileName = basename($tempPath);
         $destinationPath = $this->materialAttachmentDirectory($card)
-            . '/' . $this->materialAttachmentStoredFileNameFromOriginalName($tempFileName);
+            .'/'.$this->materialAttachmentStoredFileNameFromOriginalName($tempFileName);
 
         $stream = Storage::disk('local')->readStream($tempPath);
         $moved = $stream !== false && Storage::put($destinationPath, $stream);
@@ -843,7 +850,7 @@ class MaterialService
 
     public function tempUploadStoragePathForUser(User $user): string
     {
-        return 'app/private/' . $this->tempUploadDirectoryForUser($user);
+        return 'app/private/'.$this->tempUploadDirectoryForUser($user);
     }
 
     public function maxUploadSizeKbForUser(User $user): int
@@ -935,7 +942,7 @@ class MaterialService
 
             $originalName = $this->remoteImageOriginalName($normalizedUrl, $mimeType);
             $destinationPath = $this->materialAttachmentDirectory($card)
-                . '/' . $this->materialAttachmentStoredFileNameFromOriginalName($originalName);
+                .'/'.$this->materialAttachmentStoredFileNameFromOriginalName($originalName);
 
             $stream = fopen($tempFilePath, 'rb');
             if ($stream === false) {
@@ -1028,8 +1035,7 @@ class MaterialService
         MaterialCardAttachment $attachment,
         string $contentHtml,
         ?string $name = null
-    ): MaterialCardAttachment
-    {
+    ): MaterialCardAttachment {
         $this->assertEditableTextAttachment($attachment);
 
         $normalizedHtml = trim($contentHtml);
@@ -2206,7 +2212,7 @@ class MaterialService
         $linkedTopicMetaMap = $this->linkedTopicMetaMapForUser($user, $topicIds->all());
         $linkedUnitMetaMap = $this->linkedUnitMetaMapForUser($user, $unitIds->all());
 
-        return $subjects->map(function (MaterialSubject $subject) use ($usedSubjectIds, $usedTopicIds, $usedUnitIds, $linkedTopicMetaMap, $linkedUnitMetaMap) {
+        return $subjects->map(function (MaterialSubject $subject) use ($usedTopicIds, $usedUnitIds, $linkedTopicMetaMap, $linkedUnitMetaMap) {
             $subjectTopicIds = $subject->topics
                 ->pluck('id')
                 ->map(fn ($id) => (int) $id)
@@ -2224,7 +2230,7 @@ class MaterialService
                 'id' => $subject->id,
                 'name' => $subject->name,
                 'can_delete' => ! $subjectHasUsage,
-                'topics' => $subject->topics->map(function (MaterialTopic $topic) use ($usedTopicIds, $usedUnitIds, $linkedTopicMetaMap, $linkedUnitMetaMap) {
+                'topics' => $subject->topics->map(function (MaterialTopic $topic) use ($usedUnitIds, $linkedTopicMetaMap, $linkedUnitMetaMap) {
                     $topicUnitIds = $topic->units
                         ->pluck('id')
                         ->map(fn ($id) => (int) $id)
@@ -2261,7 +2267,7 @@ class MaterialService
     }
 
     /**
-     * @param array<int,int> $unitIds
+     * @param  array<int,int>  $unitIds
      * @return array<int,array{is_linked:bool,linked_permission:?string,linked_permission_label:?string}>
      */
     private function linkedUnitMetaMapForUser(User $user, array $unitIds): array
@@ -2334,7 +2340,7 @@ class MaterialService
     }
 
     /**
-     * @param array<int,int> $topicIds
+     * @param  array<int,int>  $topicIds
      * @return array<int,array{is_linked:bool,linked_permission:?string,linked_permission_label:?string}>
      */
     private function linkedTopicMetaMapForUser(User $user, array $topicIds): array
@@ -2463,7 +2469,7 @@ class MaterialService
                 $unit = '';
             }
 
-            $key = mb_strtolower($subject . '|' . $topic . '|' . $unit);
+            $key = mb_strtolower($subject.'|'.$topic.'|'.$unit);
             if (isset($seen[$key])) {
                 continue;
             }
@@ -2655,6 +2661,7 @@ class MaterialService
     private function normalizeOptionalName(mixed $value): ?string
     {
         $text = $this->normalizeName($value);
+
         return $text === '' ? null : $text;
     }
 
@@ -2696,7 +2703,7 @@ class MaterialService
             return mb_substr($normalized, 0, 255);
         }
 
-        return mb_substr($normalized . '.html', 0, 255);
+        return mb_substr($normalized.'.html', 0, 255);
     }
 
     private function isHtmlAttachmentFile(string $mimeType, string $fileName): bool
@@ -2707,6 +2714,7 @@ class MaterialService
         }
 
         $extension = strtolower((string) pathinfo((string) $fileName, PATHINFO_EXTENSION));
+
         return $extension === 'html' || $extension === 'htm';
     }
 
@@ -3171,7 +3179,7 @@ class MaterialService
         }
 
         if (strlen($value) === 4) {
-            $value = '#' . $value[1] . $value[1] . $value[2] . $value[2] . $value[3] . $value[3];
+            $value = '#'.$value[1].$value[1].$value[2].$value[2].$value[3].$value[3];
         }
 
         return mb_strtolower($value);
@@ -3325,11 +3333,318 @@ class MaterialService
 
                 if ($targetIsNewer) {
                     $this->syncLinkedSourceCardFromTarget($sourceCard, $targetCard);
+
                     continue;
                 }
             }
 
             $this->syncLinkedCardFromSource($targetCard, $sourceCard);
+        }
+    }
+
+    private function syncLinkedTopicInboxImportsForUser(User $user): void
+    {
+        if (! $this->supportsMaterialTopicInboxImports()) {
+            return;
+        }
+
+        $imports = MaterialTopicInboxImport::query()
+            ->where('target_user_id', (int) $user->id)
+            ->get(['target_topic_id', 'source_school_id', 'source_topic_id']);
+
+        if ($imports->isEmpty()) {
+            return;
+        }
+
+        $targetTopicIds = $imports->pluck('target_topic_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($targetTopicIds === []) {
+            return;
+        }
+
+        $targetTopics = MaterialTopic::query()
+            ->whereIn('id', $targetTopicIds)
+            ->with('subject:id,user_id')
+            ->get()
+            ->filter(fn (MaterialTopic $topic) => (int) ($topic->subject?->user_id ?? 0) === (int) $user->id)
+            ->keyBy(fn (MaterialTopic $topic) => (int) $topic->id);
+
+        if ($targetTopics->isEmpty()) {
+            return;
+        }
+
+        $subjectTopicNameMap = [];
+        $subjectIds = $targetTopics->pluck('subject_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+        if ($subjectIds !== []) {
+            $subjectTopics = MaterialTopic::query()
+                ->whereIn('subject_id', $subjectIds)
+                ->get(['id', 'subject_id', 'name']);
+
+            foreach ($subjectTopics as $subjectTopic) {
+                $subjectId = (int) ($subjectTopic->subject_id ?? 0);
+                if ($subjectId <= 0) {
+                    continue;
+                }
+
+                $normalizedName = mb_strtolower($this->normalizeName($subjectTopic->name));
+                if ($normalizedName === '') {
+                    continue;
+                }
+
+                $subjectTopicNameMap[$subjectId][$normalizedName] = (int) ($subjectTopic->id ?? 0);
+            }
+        }
+
+        $sourceTopicsByKey = [];
+        $sourceGroups = $imports->groupBy(fn (MaterialTopicInboxImport $import) => (int) ($import->source_school_id ?? 0));
+        foreach ($sourceGroups as $sourceSchoolId => $group) {
+            $schoolId = (int) $sourceSchoolId;
+            if ($schoolId <= 0) {
+                continue;
+            }
+
+            $sourceTopicIds = $group->pluck('source_topic_id')
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn (int $id) => $id > 0)
+                ->unique()
+                ->values()
+                ->all();
+            if ($sourceTopicIds === []) {
+                continue;
+            }
+
+            $sourceTopics = MaterialTopic::query()
+                ->whereIn('id', $sourceTopicIds)
+                ->whereHas('subject.user', fn ($query) => $query->where('school_id', $schoolId))
+                ->get(['id', 'name']);
+
+            foreach ($sourceTopics as $sourceTopic) {
+                $sourceTopicId = (int) ($sourceTopic->id ?? 0);
+                if ($sourceTopicId <= 0) {
+                    continue;
+                }
+
+                $sourceTopicsByKey[$this->inboxSourceTopicKey($schoolId, $sourceTopicId)] = $sourceTopic;
+            }
+        }
+
+        foreach ($imports as $import) {
+            $targetTopicId = (int) ($import->target_topic_id ?? 0);
+            if ($targetTopicId <= 0) {
+                continue;
+            }
+
+            $targetTopic = $targetTopics->get($targetTopicId);
+            if (! $targetTopic instanceof MaterialTopic) {
+                continue;
+            }
+
+            $sourceSchoolId = (int) ($import->source_school_id ?? 0);
+            $sourceTopicId = (int) ($import->source_topic_id ?? 0);
+            if ($sourceSchoolId <= 0 || $sourceTopicId <= 0) {
+                continue;
+            }
+
+            $sourceTopic = $sourceTopicsByKey[$this->inboxSourceTopicKey($sourceSchoolId, $sourceTopicId)] ?? null;
+            if (! $sourceTopic instanceof MaterialTopic) {
+                continue;
+            }
+
+            $nextName = $this->normalizeName($sourceTopic->name);
+            if ($nextName === '') {
+                continue;
+            }
+
+            $subjectId = (int) ($targetTopic->subject_id ?? 0);
+            if ($subjectId <= 0) {
+                continue;
+            }
+
+            $currentName = $this->normalizeName($targetTopic->name);
+            if ($currentName === $nextName) {
+                continue;
+            }
+
+            $nextNameKey = mb_strtolower($nextName);
+            $currentNameKey = mb_strtolower($currentName);
+            $subjectNameMap = $subjectTopicNameMap[$subjectId] ?? [];
+            $existingTopicIdForNextName = (int) ($subjectNameMap[$nextNameKey] ?? 0);
+            if ($existingTopicIdForNextName > 0 && $existingTopicIdForNextName !== $targetTopicId) {
+                continue;
+            }
+
+            $targetTopic->update([
+                'name' => $nextName,
+            ]);
+            $targetTopic->name = $nextName;
+
+            if ($currentNameKey !== '' && (($subjectTopicNameMap[$subjectId][$currentNameKey] ?? null) === $targetTopicId)) {
+                unset($subjectTopicNameMap[$subjectId][$currentNameKey]);
+            }
+            $subjectTopicNameMap[$subjectId][$nextNameKey] = $targetTopicId;
+        }
+    }
+
+    private function syncLinkedUnitInboxImportsForUser(User $user): void
+    {
+        if (! $this->supportsMaterialUnitInboxImports()) {
+            return;
+        }
+
+        $imports = MaterialUnitInboxImport::query()
+            ->where('target_user_id', (int) $user->id)
+            ->get(['target_unit_id', 'source_school_id', 'source_unit_id']);
+
+        if ($imports->isEmpty()) {
+            return;
+        }
+
+        $targetUnitIds = $imports->pluck('target_unit_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($targetUnitIds === []) {
+            return;
+        }
+
+        $targetUnits = MaterialUnit::query()
+            ->whereIn('id', $targetUnitIds)
+            ->with('topic.subject:id,user_id')
+            ->get()
+            ->filter(fn (MaterialUnit $unit) => (int) ($unit->topic?->subject?->user_id ?? 0) === (int) $user->id)
+            ->keyBy(fn (MaterialUnit $unit) => (int) $unit->id);
+
+        if ($targetUnits->isEmpty()) {
+            return;
+        }
+
+        $topicUnitNameMap = [];
+        $topicIds = $targetUnits->pluck('topic_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+        if ($topicIds !== []) {
+            $topicUnits = MaterialUnit::query()
+                ->whereIn('topic_id', $topicIds)
+                ->get(['id', 'topic_id', 'name']);
+
+            foreach ($topicUnits as $topicUnit) {
+                $topicId = (int) ($topicUnit->topic_id ?? 0);
+                if ($topicId <= 0) {
+                    continue;
+                }
+
+                $normalizedName = mb_strtolower($this->normalizeName($topicUnit->name));
+                if ($normalizedName === '') {
+                    continue;
+                }
+
+                $topicUnitNameMap[$topicId][$normalizedName] = (int) ($topicUnit->id ?? 0);
+            }
+        }
+
+        $sourceUnitsByKey = [];
+        $sourceGroups = $imports->groupBy(fn (MaterialUnitInboxImport $import) => (int) ($import->source_school_id ?? 0));
+        foreach ($sourceGroups as $sourceSchoolId => $group) {
+            $schoolId = (int) $sourceSchoolId;
+            if ($schoolId <= 0) {
+                continue;
+            }
+
+            $sourceUnitIds = $group->pluck('source_unit_id')
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn (int $id) => $id > 0)
+                ->unique()
+                ->values()
+                ->all();
+            if ($sourceUnitIds === []) {
+                continue;
+            }
+
+            $sourceUnits = MaterialUnit::query()
+                ->whereIn('id', $sourceUnitIds)
+                ->whereHas('topic.subject.user', fn ($query) => $query->where('school_id', $schoolId))
+                ->get(['id', 'name']);
+
+            foreach ($sourceUnits as $sourceUnit) {
+                $sourceUnitId = (int) ($sourceUnit->id ?? 0);
+                if ($sourceUnitId <= 0) {
+                    continue;
+                }
+
+                $sourceUnitsByKey[$this->inboxSourceUnitKey($schoolId, $sourceUnitId)] = $sourceUnit;
+            }
+        }
+
+        foreach ($imports as $import) {
+            $targetUnitId = (int) ($import->target_unit_id ?? 0);
+            if ($targetUnitId <= 0) {
+                continue;
+            }
+
+            $targetUnit = $targetUnits->get($targetUnitId);
+            if (! $targetUnit instanceof MaterialUnit) {
+                continue;
+            }
+
+            $sourceSchoolId = (int) ($import->source_school_id ?? 0);
+            $sourceUnitId = (int) ($import->source_unit_id ?? 0);
+            if ($sourceSchoolId <= 0 || $sourceUnitId <= 0) {
+                continue;
+            }
+
+            $sourceUnit = $sourceUnitsByKey[$this->inboxSourceUnitKey($sourceSchoolId, $sourceUnitId)] ?? null;
+            if (! $sourceUnit instanceof MaterialUnit) {
+                continue;
+            }
+
+            $nextName = $this->normalizeName($sourceUnit->name);
+            if ($nextName === '') {
+                continue;
+            }
+
+            $topicId = (int) ($targetUnit->topic_id ?? 0);
+            if ($topicId <= 0) {
+                continue;
+            }
+
+            $currentName = $this->normalizeName($targetUnit->name);
+            if ($currentName === $nextName) {
+                continue;
+            }
+
+            $nextNameKey = mb_strtolower($nextName);
+            $currentNameKey = mb_strtolower($currentName);
+            $topicNameMap = $topicUnitNameMap[$topicId] ?? [];
+            $existingUnitIdForNextName = (int) ($topicNameMap[$nextNameKey] ?? 0);
+            if ($existingUnitIdForNextName > 0 && $existingUnitIdForNextName !== $targetUnitId) {
+                continue;
+            }
+
+            $targetUnit->update([
+                'name' => $nextName,
+            ]);
+            $targetUnit->name = $nextName;
+
+            if ($currentNameKey !== '' && (($topicUnitNameMap[$topicId][$currentNameKey] ?? null) === $targetUnitId)) {
+                unset($topicUnitNameMap[$topicId][$currentNameKey]);
+            }
+            $topicUnitNameMap[$topicId][$nextNameKey] = $targetUnitId;
         }
     }
 
@@ -3410,6 +3725,7 @@ class MaterialService
                     'size_bytes' => $sourceAttachment->size_bytes,
                     'downloaded_at' => $sourceAttachment->downloaded_at,
                 ]);
+
                 continue;
             }
 
@@ -3426,7 +3742,7 @@ class MaterialService
             if ($nameSource === '') {
                 $nameSource = 'file';
             }
-            $targetPath = $this->materialAttachmentDirectory($targetCard) . '/' . $this->materialAttachmentStoredFileNameFromOriginalName($nameSource);
+            $targetPath = $this->materialAttachmentDirectory($targetCard).'/'.$this->materialAttachmentStoredFileNameFromOriginalName($nameSource);
             $copied = $disk->copy($sourcePath, $targetPath);
             if (! $copied) {
                 continue;
@@ -3448,6 +3764,7 @@ class MaterialService
     {
         $rows = array_map(function ($attachment) {
             $type = trim((string) ($attachment->attachment_type ?? ''));
+
             return [
                 'type' => $type,
                 'name' => trim((string) ($attachment->name ?? '')),
@@ -3467,17 +3784,28 @@ class MaterialService
 
     private function inboxSourceCardKey(int $schoolId, int $cardId): string
     {
-        return $schoolId . ':' . $cardId;
+        return $schoolId.':'.$cardId;
+    }
+
+    private function inboxSourceTopicKey(int $schoolId, int $topicId): string
+    {
+        return $schoolId.':'.$topicId;
+    }
+
+    private function inboxSourceUnitKey(int $schoolId, int $unitId): string
+    {
+        return $schoolId.':'.$unitId;
     }
 
     private function normalizeNullableText(mixed $value): ?string
     {
         $text = trim((string) ($value ?? ''));
+
         return $text !== '' ? $text : null;
     }
 
     /**
-     * @param array<int,true> $memberGroupSet
+     * @param  array<int,true>  $memberGroupSet
      */
     private function resolveLinkedPermissionForUser(
         MaterialShareRule $rule,
@@ -3686,9 +4014,9 @@ class MaterialService
 
         $slug = mb_substr($slug, 0, 120);
         $extension = strtolower((string) pathinfo($originalName, PATHINFO_EXTENSION));
-        $suffix = $extension !== '' ? '.' . $extension : '';
+        $suffix = $extension !== '' ? '.'.$extension : '';
 
-        return Str::uuid()->toString() . '-' . $slug . $suffix;
+        return Str::uuid()->toString().'-'.$slug.$suffix;
     }
 
     private function tempUploadDirectoryForUser(User $user): string
@@ -3769,6 +4097,7 @@ class MaterialService
         }
 
         $normalized = strtolower(trim(explode(';', $raw)[0] ?? ''));
+
         return $normalized !== '' ? $normalized : null;
     }
 
@@ -3802,6 +4131,7 @@ class MaterialService
     {
         $path = (string) parse_url($url, PHP_URL_PATH);
         $extension = strtolower((string) pathinfo($path, PATHINFO_EXTENSION));
+
         return trim($extension);
     }
 
@@ -3822,6 +4152,7 @@ class MaterialService
         ];
 
         $key = strtolower(trim($extension));
+
         return $map[$key] ?? null;
     }
 
@@ -3840,6 +4171,7 @@ class MaterialService
         ];
 
         $key = strtolower(trim((string) $mimeType));
+
         return $map[$key] ?? null;
     }
 
@@ -3864,6 +4196,6 @@ class MaterialService
 
         $extension = preg_replace('/[^a-z0-9]+/i', '', $extension) ?: 'jpg';
 
-        return mb_substr($baseName, 0, 200) . '.' . $extension;
+        return mb_substr($baseName, 0, 200).'.'.$extension;
     }
 }
