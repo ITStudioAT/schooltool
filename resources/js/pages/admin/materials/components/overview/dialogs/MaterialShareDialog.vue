@@ -129,6 +129,7 @@
                                         hide-details="auto"
                                         type="email" />
                                     <v-alert v-if="externalSchoolsError" type="warning" variant="tonal" density="compact" class="mt-2 mb-0">{{ externalSchoolsError }}</v-alert>
+                                    <v-alert v-if="externalUserLookupError" type="warning" variant="tonal" density="compact" class="mt-2 mb-0">{{ externalUserLookupError }}</v-alert>
                                     <div class="d-flex flex-wrap ga-2 mt-2 align-center">
                                         <v-chip v-if="selectedExternalSchoolLabel" size="small" variant="tonal" color="primary">{{ selectedExternalSchoolLabel }}</v-chip>
                                         <v-chip v-if="normalizedExternalUserEmail" size="small" variant="outlined" color="secondary">{{ normalizedExternalUserEmail }}</v-chip>
@@ -199,10 +200,20 @@
                             <div class="text-subtitle-2">Freigabeart</div>
                             <v-chip size="x-small" color="primary" variant="flat">{{ shareModeLabel(shareMode) }}</v-chip>
                         </div>
-                        <v-btn-toggle v-model="shareMode" mandatory color="primary" variant="outlined" class="share-dialog-mode-toggle">
-                            <v-btn value="full_access" class="share-dialog-mode-btn">Vollzugriff</v-btn>
-                            <v-btn value="read_write" class="share-dialog-mode-btn">Lesen/Schreiben</v-btn>
-                            <v-btn value="read_only" class="share-dialog-mode-btn">Nur Lesen</v-btn>
+                        <v-btn-toggle
+                            v-model="shareMode"
+                            mandatory
+                            color="primary"
+                            variant="outlined"
+                            class="share-dialog-mode-toggle"
+                            :style="{ gridTemplateColumns: `repeat(${Math.max(availableShareModes.length, 1)}, minmax(0, 1fr))` }">
+                            <v-btn
+                                v-for="mode in availableShareModes"
+                                :key="`share-mode-${mode.value}`"
+                                :value="mode.value"
+                                class="share-dialog-mode-btn">
+                                {{ mode.label }}
+                            </v-btn>
                         </v-btn-toggle>
                         <div class="d-flex justify-end flex-wrap ga-2 mt-3">
                             <v-btn variant="text" @click="clearPendingShareTarget">Abbrechen</v-btn>
@@ -276,6 +287,7 @@ export default {
             externalSchoolsLoading: false,
             externalSchoolsLoaded: false,
             externalSchoolsError: '',
+            externalUserLookupError: '',
             externalSchools: [],
             selectedExternalSchoolId: null,
             externalUserEmail: '',
@@ -294,6 +306,9 @@ export default {
         }
     },
     computed: {
+        availableShareModes() {
+            return this.allowedShareModesForScope(this.target?.level)
+        },
         normalizedPeopleSearch() {
             return String(this.sharePersonSearch || '').trim()
         },
@@ -346,16 +361,27 @@ export default {
             if (!isOpen) return
             this.initializeDialogState()
         },
+        target() {
+            this.ensureShareModeForScope(this.target?.level)
+        },
+        selectedExternalSchoolId() {
+            this.externalUserLookupError = ''
+        },
+        externalUserEmail() {
+            this.externalUserLookupError = ''
+        },
     },
     methods: {
         initializeDialogState() {
             this.shareTargetPanel = 0
             this.pendingShareTarget = null
             this.shareMode = 'read_only'
+            this.ensureShareModeForScope(this.target?.level)
             this.lastActionError = ''
             this.peopleSearchError = ''
             this.peopleSearchResults = []
             this.externalSchoolsError = ''
+            this.externalUserLookupError = ''
             this.selectedExternalSchoolId = null
             this.externalUserEmail = ''
             this.loadExternalSchools()
@@ -364,6 +390,31 @@ export default {
         },
         levelLabel(level) {
             return ({ subject: 'Fach', topic: 'Thema', unit: 'Einheit', material: 'Material', all: 'Alles' })[String(level || '').trim()] || String(level || '-')
+        },
+        normalizeShareMode(mode) {
+            const normalized = String(mode || '').trim()
+            if (normalized === 'full_access') return 'full_access'
+            if (normalized === 'read_write') return 'read_write'
+            return 'read_only'
+        },
+        scopeAllowsFullAccess(scopeType) {
+            const normalized = String(scopeType || '').trim()
+            return normalized === 'all' || normalized === 'subject'
+        },
+        allowedShareModesForScope(scopeType) {
+            const base = [
+                { value: 'read_write', label: 'Lesen/Schreiben' },
+                { value: 'read_only', label: 'Nur Lesen' },
+            ]
+            if (this.scopeAllowsFullAccess(scopeType)) {
+                return [{ value: 'full_access', label: 'Vollzugriff' }, ...base]
+            }
+            return base
+        },
+        ensureShareModeForScope(scopeType) {
+            const allowedModes = this.allowedShareModesForScope(scopeType).map((mode) => mode.value)
+            const normalizedMode = this.normalizeShareMode(this.shareMode)
+            this.shareMode = allowedModes.includes(normalizedMode) ? normalizedMode : 'read_write'
         },
         shareModeLabel(mode) {
             return ({ full_access: 'Vollzugriff', read_write: 'Lesen/Schreiben', read_only: 'Nur Lesen' })[String(mode || '').trim()] || 'Nur Lesen'
@@ -438,6 +489,7 @@ export default {
         async requestStoreTarget(payload, busyKey = '') {
             const scope = this.scopePayload()
             if (!scope) return false
+            this.ensureShareModeForScope(scope.scope_type)
             if (busyKey) this.pushBusyKey(busyKey)
             this.lastActionError = ''
             try {
@@ -500,18 +552,51 @@ export default {
             }
             this.lastActionError = ''
         },
-        stageExternalUserShare() {
+        async stageExternalUserShare() {
             const schoolId = Number(this.selectedExternalSchoolId || 0)
             const email = this.normalizedExternalUserEmail
             if (schoolId <= 0 || email === '') return
-            this.pendingShareTarget = {
-                typeLabel: 'Person (andere Schule)',
-                label: email,
-                metaLabel: this.selectedExternalSchoolLabel,
-                payload: { target_type: 'user', target_school_id: schoolId, user_email: email },
-                busyKey: `external-user:${schoolId}:${email}`,
-            }
+            const busyKey = `external-user:${schoolId}:${email}`
+            if (this.actionTargetKeyBusy(busyKey)) return
+            this.pushBusyKey(busyKey)
             this.lastActionError = ''
+            this.externalUserLookupError = ''
+            try {
+                const response = await axios.get('/api/admin/materials/shares/lookup-external-user', {
+                    params: {
+                        target_school_id: schoolId,
+                        user_email: email,
+                    },
+                })
+                const exists = !!response?.data?.data?.exists
+                if (!exists) {
+                    this.pendingShareTarget = null
+                    this.externalUserLookupError = 'Benutzer wurde nicht gefunden.'
+                    return
+                }
+                const externalUserLabel = String(response?.data?.data?.label || '').trim() || email
+                const schoolLabel = String(response?.data?.data?.school_label || '').trim() || this.selectedExternalSchoolLabel
+                this.pendingShareTarget = {
+                    typeLabel: 'Person (andere Schule)',
+                    label: externalUserLabel,
+                    metaLabel: schoolLabel,
+                    payload: { target_type: 'user', target_school_id: schoolId, user_email: email },
+                    busyKey,
+                }
+            } catch (error) {
+                const fieldErrors = error?.response?.data?.errors || {}
+                let firstFieldError = ''
+                for (const value of Object.values(fieldErrors)) {
+                    if (Array.isArray(value) && value.length > 0) {
+                        firstFieldError = String(value[0] || '').trim()
+                        if (firstFieldError !== '') break
+                    }
+                }
+                this.pendingShareTarget = null
+                this.externalUserLookupError = firstFieldError || error?.response?.data?.message || 'Prüfung der Person fehlgeschlagen.'
+            } finally {
+                this.popBusyKey(busyKey)
+            }
         },
         stageSelectedGroup(type) {
             const normalizedType = String(type || '').trim()
@@ -627,4 +712,3 @@ export default {
     .share-assignment-target-row { flex-direction: column; align-items: stretch; }
 }
 </style>
-

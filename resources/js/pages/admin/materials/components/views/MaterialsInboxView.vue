@@ -38,6 +38,13 @@
                 @click="setInboxMaterialFilter('imported')">
                 Eingefächerte Materialien
             </v-btn>
+            <v-btn
+                size="small"
+                color="primary"
+                :variant="inboxMaterialFilter === 'archived' ? 'flat' : 'outlined'"
+                @click="setInboxMaterialFilter('archived')">
+                Archiv
+            </v-btn>
         </div>
 
         <v-alert
@@ -104,16 +111,29 @@
                                                 <div class="inbox-shared-object-scope">
                                                     {{ item.scope_label }}
                                                 </div>
-                                                <v-chip
-                                                    size="x-small"
-                                                    variant="flat"
-                                                    :color="permissionChipColor(item.permission)">
-                                                    {{ item.permission_label }}
-                                                </v-chip>
+                                                <div class="inbox-shared-object-head-actions">
+                                                    <v-chip
+                                                        size="x-small"
+                                                        variant="flat"
+                                                        :color="permissionChipColor(item.permission)">
+                                                        {{ item.permission_label }}
+                                                    </v-chip>
+                                                    <v-btn
+                                                        v-if="item.scope_type !== 'material' && isHierarchyOpen(user.id, item.rule_id)"
+                                                        size="x-small"
+                                                        variant="text"
+                                                        color="secondary"
+                                                        icon
+                                                        aria-label="Hierarchie schließen"
+                                                        @click.stop="toggleHierarchy(user.id, item.rule_id)">
+                                                        <v-icon size="16">mdi-close</v-icon>
+                                                    </v-btn>
+                                                </div>
                                             </div>
                                             <div
                                                 v-if="item.scope_type !== 'material' || !item.materialPreview"
-                                                class="inbox-shared-object-title">
+                                                class="inbox-shared-object-title"
+                                                :class="`inbox-shared-object-title--${String(item.scope_type || '').trim().toLocaleLowerCase() || 'material'}`">
                                                 <span>{{ item.scope_object_label }}</span>
                                                 <v-chip
                                                     v-if="item.is_imported"
@@ -172,11 +192,22 @@
                                                             <div
                                                                 v-for="topic in subject.topics"
                                                                 :key="`hier-topic-scope-topic-${item.rule_id}-${topic.id || topic.name}`"
-                                                                class="inbox-hierarchy-topic inbox-hierarchy-topic--root">
-                                                                <div class="inbox-hierarchy-context-line">{{ subject.name }}</div>
-                                                                <div class="inbox-hierarchy-unit-head">
+                                                                class="inbox-hierarchy-topic">
+                                                                <div class="inbox-hierarchy-subject-head inbox-hierarchy-level-subject">
+                                                                    <div class="inbox-hierarchy-context-line">{{ subject.name }}</div>
+                                                                    <v-btn
+                                                                        v-if="!item.is_archived"
+                                                                        size="x-small"
+                                                                        variant="tonal"
+                                                                        color="primary"
+                                                                        @click.stop="onDummyObjectAction(item, 'subject-einfachern')">
+                                                                        Einfächern
+                                                                    </v-btn>
+                                                                </div>
+                                                                <div class="inbox-hierarchy-unit-head inbox-hierarchy-level-topic">
                                                                     <div class="inbox-hierarchy-topic-title">{{ topic.name }}</div>
                                                                     <v-btn
+                                                                        v-if="!item.is_archived"
                                                                         size="x-small"
                                                                         variant="tonal"
                                                                         color="primary"
@@ -188,13 +219,13 @@
                                                                 <div
                                                                     v-for="unit in topic.units"
                                                                     :key="`hier-topic-scope-unit-${item.rule_id}-${unit.id || unit.name}`"
-                                                                    class="inbox-hierarchy-unit">
+                                                                    class="inbox-hierarchy-unit inbox-hierarchy-level-unit">
                                                                     <template v-if="isTopicDirectUnit(unit)">
                                                                         <div class="inbox-hierarchy-material-lines">
                                                                             <div
                                                                                 v-for="material in unit.materials"
                                                                                 :key="`hier-topic-scope-material-${item.rule_id}-${material.id || material.title}`"
-                                                                                class="inbox-hierarchy-material-line">
+                                                                                class="inbox-hierarchy-material-line inbox-hierarchy-level-material">
                                                                                 <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || undefined" />
                                                                                 <span class="inbox-hierarchy-material-title">{{ material.title }}</span>
                                                                                 <v-chip
@@ -215,6 +246,7 @@
                                                                                     {{ material.statusLabel || materialStatusLabel(material.status) }}
                                                                                 </v-chip>
                                                                                 <v-btn
+                                                                                    v-if="!item.is_archived"
                                                                                     size="x-small"
                                                                                     variant="tonal"
                                                                                     color="primary"
@@ -228,6 +260,7 @@
                                                                         <div class="inbox-hierarchy-unit-head">
                                                                             <div class="inbox-hierarchy-unit-title">{{ unit.name }}</div>
                                                                             <v-btn
+                                                                                v-if="!item.is_archived"
                                                                                 size="x-small"
                                                                                 variant="tonal"
                                                                                 color="primary"
@@ -240,7 +273,7 @@
                                                                             <div
                                                                                 v-for="material in unit.materials"
                                                                                 :key="`hier-topic-scope-material-${item.rule_id}-${material.id || material.title}`"
-                                                                                class="inbox-hierarchy-material-line">
+                                                                                class="inbox-hierarchy-material-line inbox-hierarchy-level-material">
                                                                                 <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || undefined" />
                                                                                 <span class="inbox-hierarchy-material-title">{{ material.title }}</span>
                                                                                 <v-chip
@@ -261,6 +294,7 @@
                                                                                     {{ material.statusLabel || materialStatusLabel(material.status) }}
                                                                                 </v-chip>
                                                                                 <v-btn
+                                                                                    v-if="!item.is_archived"
                                                                                     size="x-small"
                                                                                     variant="tonal"
                                                                                     color="primary"
@@ -279,18 +313,40 @@
                                                             v-for="subject in item.hierarchy"
                                                             :key="`hier-subject-${item.rule_id}-${subject.id || subject.name}`"
                                                             class="inbox-hierarchy-subject">
+                                                            <div class="inbox-hierarchy-subject-head inbox-hierarchy-level-subject">
+                                                                <div class="inbox-hierarchy-context-line">{{ subject.name }}</div>
+                                                                <v-btn
+                                                                    v-if="!item.is_archived"
+                                                                    size="x-small"
+                                                                    variant="tonal"
+                                                                    color="primary"
+                                                                    @click.stop="onDummyObjectAction(item, 'subject-einfachern')">
+                                                                    Einfächern
+                                                                </v-btn>
+                                                            </div>
                                                             <div
                                                                 v-for="topic in subject.topics"
                                                                 :key="`hier-topic-${item.rule_id}-${topic.id || `${subject.name}-${topic.name}`}`"
-                                                                class="inbox-hierarchy-topic">
-                                                                <div class="inbox-hierarchy-context-line">{{ subject.name }} / {{ topic.name }}</div>
+                                                                class="inbox-hierarchy-topic inbox-hierarchy-level-topic">
+                                                                <div class="inbox-hierarchy-topic-head">
+                                                                    <div class="inbox-hierarchy-topic-title">{{ topic.name }}</div>
+                                                                    <v-btn
+                                                                        v-if="!item.is_archived"
+                                                                        size="x-small"
+                                                                        variant="tonal"
+                                                                        color="primary"
+                                                                        @click.stop="onDummyObjectAction(item, 'topic-einfachern')">
+                                                                        Einfächern
+                                                                    </v-btn>
+                                                                </div>
                                                                 <div
                                                                     v-for="unit in topic.units"
                                                                     :key="`hier-unit-${item.rule_id}-${unit.id || `${topic.name}-${unit.name}`}`"
-                                                                    class="inbox-hierarchy-unit">
+                                                                    class="inbox-hierarchy-unit inbox-hierarchy-level-unit">
                                                                     <div class="inbox-hierarchy-unit-head">
                                                                         <div class="inbox-hierarchy-unit-title">{{ unit.name }}</div>
                                                                         <v-btn
+                                                                            v-if="!item.is_archived"
                                                                             size="x-small"
                                                                             variant="tonal"
                                                                             color="primary"
@@ -303,7 +359,7 @@
                                                                         <div
                                                                             v-for="material in unit.materials"
                                                                             :key="`hier-material-${item.rule_id}-${material.id || material.title}`"
-                                                                            class="inbox-hierarchy-material-line">
+                                                                            class="inbox-hierarchy-material-line inbox-hierarchy-level-material">
                                                                             <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || undefined" />
                                                                             <span class="inbox-hierarchy-material-title">{{ material.title }}</span>
                                                                             <v-chip
@@ -324,6 +380,7 @@
                                                                                 {{ material.statusLabel || materialStatusLabel(material.status) }}
                                                                             </v-chip>
                                                                             <v-btn
+                                                                                v-if="!item.is_archived"
                                                                                 size="x-small"
                                                                                 variant="tonal"
                                                                                 color="primary"
@@ -344,15 +401,7 @@
                                         </div>
                                         <div class="inbox-shared-object-actions">
                                             <v-btn
-                                                v-if="item.scope_type === 'material'"
-                                                size="small"
-                                                variant="tonal"
-                                                color="primary"
-                                                @click.stop="openEinfachernDialog(item)">
-                                                Einfächern
-                                            </v-btn>
-                                            <v-btn
-                                                v-else
+                                                v-if="item.scope_type !== 'material'"
                                                 size="small"
                                                 variant="tonal"
                                                 color="primary"
@@ -360,7 +409,45 @@
                                                 {{ isHierarchyOpen(user.id, item.rule_id) ? 'Schließen' : 'Anzeigen' }}
                                             </v-btn>
                                             <v-btn
-                                                v-if="item.scope_type !== 'material' && item.scope_type !== 'unit'"
+                                                v-if="!item.is_archived"
+                                                size="small"
+                                                variant="tonal"
+                                                color="secondary"
+                                                :loading="isArchivingRule(item.rule_id)"
+                                                :disabled="isArchivingRule(item.rule_id)"
+                                                @click.stop="archiveSharedItem(item)">
+                                                Archivieren
+                                            </v-btn>
+                                            <v-btn
+                                                v-if="item.is_archived"
+                                                size="small"
+                                                variant="tonal"
+                                                color="secondary"
+                                                :loading="isUnarchivingRule(item.rule_id)"
+                                                :disabled="isUnarchivingRule(item.rule_id)"
+                                                @click.stop="unarchiveSharedItem(item)">
+                                                Wiederherstellen
+                                            </v-btn>
+                                            <v-btn
+                                                v-if="isWorkspaceScope(item) && !item.is_archived"
+                                                size="small"
+                                                variant="tonal"
+                                                color="primary"
+                                                :loading="isWorkspaceImporting(item.rule_id)"
+                                                :disabled="isWorkspaceImporting(item.rule_id)"
+                                                @click.stop="onWorkspaceEinfachern(item)">
+                                                Einfächern
+                                            </v-btn>
+                                            <v-btn
+                                                v-if="item.scope_type === 'material' && !item.is_archived"
+                                                size="small"
+                                                variant="tonal"
+                                                color="primary"
+                                                @click.stop="openEinfachernDialog(item)">
+                                                Einfächern
+                                            </v-btn>
+                                            <v-btn
+                                                v-if="item.scope_type !== 'material' && item.scope_type !== 'unit' && !isWorkspaceScope(item)"
                                                 size="small"
                                                 variant="tonal"
                                                 color="warning"
@@ -368,7 +455,7 @@
                                                 Merken
                                             </v-btn>
                                             <v-btn
-                                                v-if="item.scope_type !== 'material' && item.scope_type !== 'unit'"
+                                                v-if="item.scope_type !== 'material' && item.scope_type !== 'unit' && !isWorkspaceScope(item)"
                                                 size="small"
                                                 variant="tonal"
                                                 color="secondary"
@@ -381,11 +468,6 @@
                             </v-expansion-panel-text>
                         </v-expansion-panel>
                     </v-expansion-panels>
-                    <template #append>
-                        <v-chip color="primary" variant="tonal" size="small">
-                            {{ user.shared_rules_count }} Freigabe{{ user.shared_rules_count === 1 ? '' : 'n' }}
-                        </v-chip>
-                    </template>
                 </v-list-item>
             </v-list>
         </v-card>
@@ -534,6 +616,9 @@ export default {
             users: [],
             openUserPanels: {},
             openHierarchyCards: {},
+            workspaceImportingRuleIds: {},
+            archivingRuleIds: {},
+            unarchivingRuleIds: {},
             inboxMaterialFilter: 'all',
             einfachernDialog: {
                 open: false,
@@ -624,7 +709,7 @@ export default {
     methods: {
         setInboxMaterialFilter(mode) {
             const normalized = String(mode || '').trim()
-            if (normalized !== 'all' && normalized !== 'new' && normalized !== 'imported') {
+            if (normalized !== 'all' && normalized !== 'new' && normalized !== 'imported' && normalized !== 'archived') {
                 this.inboxMaterialFilter = 'all'
                 return
             }
@@ -632,13 +717,16 @@ export default {
         },
         filteredSharedItems(user) {
             const list = Array.isArray(user?.shared_items) ? user.shared_items : []
+            if (this.inboxMaterialFilter === 'archived') {
+                return list.filter((item) => !!item?.is_archived)
+            }
             if (this.inboxMaterialFilter === 'imported') {
-                return list.filter((item) => !!item?.is_imported)
+                return list.filter((item) => !!item?.is_imported && !item?.is_archived)
             }
             if (this.inboxMaterialFilter === 'new') {
-                return list.filter((item) => !item?.is_imported)
+                return list.filter((item) => !item?.is_imported && !item?.is_archived)
             }
-            return list
+            return list.filter((item) => !item?.is_archived)
         },
         async loadInboxUsers() {
             this.isLoading = true
@@ -664,6 +752,7 @@ export default {
                             permission: String(item?.permission || '').trim() || 'read_only',
                             permission_label: String(item?.permission_label || '').trim() || 'NUR LESEN',
                             is_imported: !!item?.is_imported,
+                            is_archived: !!item?.is_archived,
                             hierarchy: Array.isArray(item?.hierarchy)
                                 ? item.hierarchy.map((subject) => ({
                                     id: Number(subject?.id || 0),
@@ -738,6 +827,130 @@ export default {
             if (normalized === 'read_write') return 'warning'
             return 'primary'
         },
+        isArchivingRule(ruleId) {
+            const normalizedRuleId = Number(ruleId || 0)
+            if (normalizedRuleId <= 0) return false
+            return !!this.archivingRuleIds[normalizedRuleId]
+        },
+        isUnarchivingRule(ruleId) {
+            const normalizedRuleId = Number(ruleId || 0)
+            if (normalizedRuleId <= 0) return false
+            return !!this.unarchivingRuleIds[normalizedRuleId]
+        },
+        async archiveSharedItem(item) {
+            const ruleId = Number(item?.rule_id || 0)
+            if (ruleId <= 0 || this.isArchivingRule(ruleId)) return
+
+            this.archivingRuleIds = {
+                ...this.archivingRuleIds,
+                [ruleId]: true,
+            }
+
+            try {
+                await axios.post('/api/admin/materials/shares/inbox/archive', {
+                    rule_id: ruleId,
+                })
+                item.is_archived = true
+            } catch (error) {
+                this.errorMessage = error?.response?.data?.message || 'Freigabe konnte nicht archiviert werden.'
+            } finally {
+                this.archivingRuleIds = {
+                    ...this.archivingRuleIds,
+                    [ruleId]: false,
+                }
+            }
+        },
+        async unarchiveSharedItem(item) {
+            const ruleId = Number(item?.rule_id || 0)
+            if (ruleId <= 0 || this.isUnarchivingRule(ruleId)) return
+
+            this.unarchivingRuleIds = {
+                ...this.unarchivingRuleIds,
+                [ruleId]: true,
+            }
+
+            try {
+                await axios.post('/api/admin/materials/shares/inbox/unarchive', {
+                    rule_id: ruleId,
+                })
+                item.is_archived = false
+            } catch (error) {
+                this.errorMessage = error?.response?.data?.message || 'Freigabe konnte nicht wiederhergestellt werden.'
+            } finally {
+                this.unarchivingRuleIds = {
+                    ...this.unarchivingRuleIds,
+                    [ruleId]: false,
+                }
+            }
+        },
+        isWorkspaceScope(item) {
+            const scopeType = String(item?.scope_type || '').trim().toLocaleLowerCase()
+            const scopeLabel = String(item?.scope_label || '').trim().toLocaleLowerCase()
+            return scopeType === 'all' && scopeLabel === 'workspace'
+        },
+        isWorkspaceImporting(ruleId) {
+            const normalizedRuleId = Number(ruleId || 0)
+            if (normalizedRuleId <= 0) return false
+            return !!this.workspaceImportingRuleIds[normalizedRuleId]
+        },
+        async onWorkspaceEinfachern(item) {
+            if (item?.is_archived) return
+            const ruleId = Number(item?.rule_id || 0)
+            if (ruleId <= 0 || this.isWorkspaceImporting(ruleId)) return
+
+            const materials = this.collectHierarchyMaterials(item?.hierarchy)
+            if (materials.length === 0) {
+                this.errorMessage = 'Keine Materialien zum Einfächern gefunden.'
+                return
+            }
+
+            this.workspaceImportingRuleIds = {
+                ...this.workspaceImportingRuleIds,
+                [ruleId]: true,
+            }
+
+            try {
+                this.errorMessage = ''
+                for (const material of materials) {
+                    await axios.post('/api/admin/materials/shares/inbox/material-original-copy', {
+                        rule_id: ruleId,
+                        material_id: Number(material.id || 0),
+                    })
+                }
+                await this.loadInboxUsers()
+            } catch (error) {
+                this.errorMessage = error?.response?.data?.message || 'Workspace konnte nicht eingefächert werden.'
+            } finally {
+                this.workspaceImportingRuleIds = {
+                    ...this.workspaceImportingRuleIds,
+                    [ruleId]: false,
+                }
+            }
+        },
+        collectHierarchyMaterials(hierarchy) {
+            if (!Array.isArray(hierarchy)) return []
+
+            const result = []
+            const seen = new Set()
+            for (const subject of hierarchy) {
+                const topics = Array.isArray(subject?.topics) ? subject.topics : []
+                for (const topic of topics) {
+                    const units = Array.isArray(topic?.units) ? topic.units : []
+                    for (const unit of units) {
+                        const materials = Array.isArray(unit?.materials) ? unit.materials : []
+                        for (const material of materials) {
+                            const normalized = this.normalizeHierarchyMaterial(material)
+                            const materialId = Number(normalized?.id || 0)
+                            if (materialId <= 0 || seen.has(materialId)) continue
+                            seen.add(materialId)
+                            result.push(normalized)
+                        }
+                    }
+                }
+            }
+
+            return result
+        },
         isTopicDirectUnit(unit) {
             const name = String(unit?.name || '').trim().toLocaleLowerCase()
             const id = Number(unit?.id || 0)
@@ -776,6 +989,7 @@ export default {
             }
         },
         async openEinfachernDialog(item, materialOverride = null) {
+            if (item?.is_archived) return
             const preview = this.normalizeHierarchyMaterial(materialOverride || item?.materialPreview || null)
             if (Number(preview?.id || 0) <= 0) return
 
@@ -796,6 +1010,7 @@ export default {
             await this.loadEinfachernTree()
         },
         async openUnitEinfachernDialog(item, unit, topic) {
+            if (item?.is_archived) return
             const materials = Array.isArray(unit?.materials)
                 ? unit.materials
                     .map((material) => this.normalizeHierarchyMaterial(material))
@@ -821,6 +1036,7 @@ export default {
             await this.loadEinfachernTree()
         },
         async openTopicEinfachernDialog(item, topic) {
+            if (item?.is_archived) return
             const topicId = Number(topic?.id || 0)
             if (topicId <= 0) return
 
@@ -978,6 +1194,7 @@ export default {
                         ...(sourceTopicId > 0 ? { source_topic_id: sourceTopicId } : {}),
                     })
                 }
+
                 this.closeEinfachernDialog()
                 await this.loadInboxUsers()
             } catch (error) {
@@ -1194,6 +1411,14 @@ export default {
 </script>
 
 <style scoped>
+.materials-shell {
+    --inbox-font-all-materials: clamp(18px, 1rem + 1vw, 24px);
+    --inbox-font-subject: clamp(16px, 0.9rem + 0.65vw, 20px);
+    --inbox-font-topic: clamp(14px, 0.82rem + 0.45vw, 16px);
+    --inbox-font-unit: clamp(11px, 0.64rem + 0.2vw, 12px);
+    --inbox-font-material: clamp(9px, 0.52rem + 0.16vw, 10px);
+}
+
 .inbox-shared-panels {
     margin-top: 6px;
 }
@@ -1222,6 +1447,12 @@ export default {
     gap: 8px;
 }
 
+.inbox-shared-object-head-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
 .inbox-shared-object-scope {
     display: inline-block;
     font-size: 0.75rem;
@@ -1236,11 +1467,31 @@ export default {
     align-items: center;
     flex-wrap: wrap;
     gap: 6px;
-    font-size: 1rem;
+    font-size: var(--inbox-font-topic);
     font-weight: 700;
     color: #233d4c;
     line-height: 1.25;
     margin-top: 2px;
+}
+
+.inbox-shared-object-title--all {
+    font-size: var(--inbox-font-all-materials);
+}
+
+.inbox-shared-object-title--subject {
+    font-size: var(--inbox-font-subject);
+}
+
+.inbox-shared-object-title--topic {
+    font-size: var(--inbox-font-topic);
+}
+
+.inbox-shared-object-title--unit {
+    font-size: var(--inbox-font-unit);
+}
+
+.inbox-shared-object-title--material {
+    font-size: var(--inbox-font-material);
 }
 
 .inbox-shared-object-path {
@@ -1252,6 +1503,8 @@ export default {
 .inbox-shared-hierarchy {
     margin-top: 8px;
     padding: 10px;
+    --inbox-hierarchy-indent-step: clamp(0.7rem, 1.2vw, 1.1rem);
+    --inbox-hierarchy-guide-color: rgba(31, 111, 139, 0.22);
 }
 
 .inbox-hierarchy-card {
@@ -1266,15 +1519,22 @@ export default {
 
 .inbox-hierarchy-topic {
     margin-top: 6px;
-    margin-left: 10px;
 }
 
 .inbox-hierarchy-topic--root {
     margin-left: 0;
 }
 
+.inbox-hierarchy-subject-head {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 .inbox-hierarchy-context-line {
-    font-size: 0.82rem;
+    font-size: var(--inbox-font-subject);
     font-weight: 400;
     color: #3a5668;
     line-height: 1.25;
@@ -1282,20 +1542,49 @@ export default {
 
 .inbox-hierarchy-unit {
     margin-top: 6px;
-    margin-left: 10px;
+}
+
+.inbox-hierarchy-level-subject {
+    margin-left: 0;
+}
+
+.inbox-hierarchy-level-topic {
+    margin-left: var(--inbox-hierarchy-indent-step);
+    padding-left: 8px;
+    border-left: 1px solid var(--inbox-hierarchy-guide-color);
+}
+
+.inbox-hierarchy-level-unit {
+    margin-left: calc(var(--inbox-hierarchy-indent-step) * 2);
+    padding-left: 8px;
+    border-left: 1px solid var(--inbox-hierarchy-guide-color);
+}
+
+.inbox-hierarchy-level-material {
+    margin-left: calc(var(--inbox-hierarchy-indent-step) * 3);
+    padding-left: 6px;
+    border-left: 1px dotted rgba(31, 111, 139, 0.26);
 }
 
 .inbox-hierarchy-unit-title {
-    font-size: 0.8rem;
+    font-size: var(--inbox-font-unit);
     font-weight: 600;
     color: #3a5668;
 }
 
 .inbox-hierarchy-topic-title {
     margin-top: 2px;
-    font-size: 0.84rem;
+    font-size: var(--inbox-font-topic);
     font-weight: 700;
     color: #2f4b5c;
+}
+
+.inbox-hierarchy-topic-head {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 
 .inbox-hierarchy-unit-head {
@@ -1317,11 +1606,12 @@ export default {
     align-items: center;
     gap: 6px;
     flex-wrap: wrap;
-    font-size: 0.8rem;
+    font-size: var(--inbox-font-material);
     color: #233d4c;
 }
 
 .inbox-hierarchy-material-title {
+    font-size: var(--inbox-font-material);
     line-height: 1.2;
 }
 

@@ -139,6 +139,16 @@ describe('MaterialsSharesView', () => {
         })).toBe('Materialteam')
     })
 
+    it('limits permission options by scope type', () => {
+        const ctx = createViewCtx()
+
+        expect(ctx.permissionOptionsForScope('all').map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_only'])
+        expect(ctx.permissionOptionsForScope('subject').map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_only'])
+        expect(ctx.permissionOptionsForScope('topic').map((entry: any) => entry.value)).toEqual(['read_write', 'read_only'])
+        expect(ctx.permissionOptionsForScope('unit').map((entry: any) => entry.value)).toEqual(['read_write', 'read_only'])
+        expect(ctx.permissionOptionsForScope('material').map((entry: any) => entry.value)).toEqual(['read_write', 'read_only'])
+    })
+
     it('loadShares stores rows and needsMigration meta', async () => {
         axiosMock.get.mockResolvedValue({
             data: {
@@ -224,6 +234,85 @@ describe('MaterialsSharesView', () => {
 
         expect(ctx.rows[0].is_active).toBe(false)
         expect(ctx.statusBusyIds).toEqual([])
+    })
+
+    it('updateTargetPermission blocks forbidden full access for non-workspace scopes', async () => {
+        const ctx = createViewCtx({
+            rows: [{ id: 12, is_active: true, scope_type: 'unit', targets: [{ id: 88, permission: 'read_only' }] }],
+        })
+
+        await ctx.updateTargetPermission({ id: 12, scope_type: 'unit' }, { id: 88, permission: 'read_only' }, 'full_access')
+
+        expect(axiosMock.patch).not.toHaveBeenCalled()
+        expect(ctx.errorMessage).toBe('VOLLZUGRIFF ist auf dieser Ebene aktuell nicht erlaubt.')
+    })
+
+    it('removeTarget deletes a share target and updates local rows', async () => {
+        axiosMock.delete.mockResolvedValue({ data: { message: 'Freigabe entfernt.' } })
+
+        const ctx = createViewCtx({
+            rows: [
+                {
+                    id: 12,
+                    scope_type: 'all',
+                    targets_count: 2,
+                    targets: [{ id: 88, permission: 'read_only' }, { id: 89, permission: 'read_write' }],
+                },
+            ],
+            workspaceShareAssignments: [
+                {
+                    id: 12,
+                    scope_type: 'all',
+                    targets_count: 2,
+                    targets: [{ id: 88, permission: 'read_only' }, { id: 89, permission: 'read_write' }],
+                },
+            ],
+        })
+
+        await ctx.removeTarget({ id: 12 }, { id: 88 })
+
+        expect(axiosMock.delete).toHaveBeenCalledWith('/api/admin/materials/shares/targets/88')
+        expect(ctx.rows[0].targets.map((target: any) => target.id)).toEqual([89])
+        expect(ctx.rows[0].targets_count).toBe(1)
+        expect(ctx.workspaceShareAssignments[0].targets.map((target: any) => target.id)).toEqual([89])
+        expect(ctx.targetBusyIds).toEqual([])
+        expect(ctx.errorMessage).toBe('')
+    })
+
+    it('removeTarget removes the full rule row when last target is deleted', async () => {
+        axiosMock.delete.mockResolvedValue({ data: { message: 'Freigabe entfernt.' } })
+
+        const ctx = createViewCtx({
+            rows: [
+                {
+                    id: 15,
+                    scope_type: 'subject',
+                    targets_count: 1,
+                    targets: [{ id: 91, permission: 'read_only' }],
+                },
+            ],
+        })
+
+        await ctx.removeTarget({ id: 15 }, { id: 91 })
+
+        expect(ctx.rows).toEqual([])
+        expect(ctx.targetBusyIds).toEqual([])
+    })
+
+    it('removeTarget stores an error message when deletion fails', async () => {
+        axiosMock.delete.mockRejectedValue({
+            response: { data: { message: 'Löschen fehlgeschlagen.' } },
+        })
+
+        const ctx = createViewCtx({
+            rows: [{ id: 21, scope_type: 'all', targets_count: 1, targets: [{ id: 99, permission: 'read_only' }] }],
+        })
+
+        await ctx.removeTarget({ id: 21 }, { id: 99 })
+
+        expect(ctx.errorMessage).toBe('Löschen fehlgeschlagen.')
+        expect(ctx.targetBusyIds).toEqual([])
+        expect(ctx.rows[0].targets).toHaveLength(1)
     })
 
     it('opens workspace share dialog and triggers assignment loading', () => {

@@ -227,11 +227,14 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::middleware(['auth:sanctum', 'api-allowed:admin,materials_admin,materials_moderator', 'tool-licensed:Materialientool'])->group(function () {
         Route::get('/admin/materials/shares', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'index']);
         Route::get('/admin/materials/shares/inbox-users', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'inboxUsers']);
+        Route::post('/admin/materials/shares/inbox/archive', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'archiveInboxRule']);
+        Route::post('/admin/materials/shares/inbox/unarchive', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'unarchiveInboxRule']);
         Route::post('/admin/materials/shares/inbox/material-insert', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'insertInboxMaterial']);
         Route::post('/admin/materials/shares/inbox/material-original-copy', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'copyInboxMaterialAsOriginal']);
         Route::patch('/admin/materials/shares/{material_share_rule}', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'updateRule']);
         Route::get('/admin/materials/shares/lookup-users', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'lookupUsers']);
         Route::get('/admin/materials/shares/lookup-schools', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'lookupSchools']);
+        Route::get('/admin/materials/shares/lookup-external-user', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'lookupExternalUser']);
         Route::get('/admin/materials/shares/lookup-groups', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'lookupGroups']);
         Route::post('/admin/materials/shares/targets', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'storeTarget']);
         Route::patch('/admin/materials/shares/targets/{material_share_target}', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'updateTarget']);

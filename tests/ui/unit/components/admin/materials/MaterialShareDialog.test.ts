@@ -71,7 +71,7 @@ describe('MaterialShareDialog', () => {
         expect(ctx.assignedExternalUserTarget?.id).toBe(102)
     })
 
-    it('stages everyone and external-user share payloads', () => {
+    it('stages everyone and external-user share payloads', async () => {
         const ctx = createDialogCtx({
             shareEveryoneScope: 'global',
             externalSchools: [{ id: 5, label: 'Partnerschule' }],
@@ -86,14 +86,76 @@ describe('MaterialShareDialog', () => {
             busyKey: 'everyone:global',
         })
 
-        ctx.stageExternalUserShare()
+        axiosMock.get.mockResolvedValueOnce({
+            data: {
+                data: {
+                    exists: true,
+                    label: 'Extern Eva',
+                    school_label: 'Partnerschule',
+                },
+            },
+        })
+
+        await ctx.stageExternalUserShare()
+        expect(axiosMock.get).toHaveBeenCalledWith('/api/admin/materials/shares/lookup-external-user', {
+            params: {
+                target_school_id: 5,
+                user_email: 'extern@test.local',
+            },
+        })
+        expect(ctx.externalUserLookupError).toBe('')
         expect(ctx.pendingShareTarget).toMatchObject({
             typeLabel: 'Person (andere Schule)',
-            label: 'extern@test.local',
+            label: 'Extern Eva',
             metaLabel: 'Partnerschule',
             payload: { target_type: 'user', target_school_id: 5, user_email: 'extern@test.local' },
             busyKey: 'external-user:5:extern@test.local',
         })
+    })
+
+    it('stageExternalUserShare shows error when external user does not exist', async () => {
+        const ctx = createDialogCtx({
+            externalSchools: [{ id: 5, label: 'Partnerschule' }],
+            selectedExternalSchoolId: 5,
+            externalUserEmail: 'missing@test.local',
+            pendingShareTarget: { keep: true },
+        })
+
+        axiosMock.get.mockResolvedValueOnce({
+            data: {
+                data: {
+                    exists: false,
+                },
+            },
+        })
+
+        await ctx.stageExternalUserShare()
+
+        expect(ctx.pendingShareTarget).toBeNull()
+        expect(ctx.externalUserLookupError).toBe('Benutzer wurde nicht gefunden.')
+    })
+
+    it('stageExternalUserShare shows backend validation message for invalid email', async () => {
+        const ctx = createDialogCtx({
+            externalSchools: [{ id: 5, label: 'Partnerschule' }],
+            selectedExternalSchoolId: 5,
+            externalUserEmail: 'invalid-email',
+        })
+
+        axiosMock.get.mockRejectedValueOnce({
+            response: {
+                data: {
+                    errors: {
+                        user_email: ['Bitte eine gültige E-Mail-Adresse eingeben.'],
+                    },
+                },
+            },
+        })
+
+        await ctx.stageExternalUserShare()
+
+        expect(ctx.pendingShareTarget).toBeNull()
+        expect(ctx.externalUserLookupError).toBe('Bitte eine gültige E-Mail-Adresse eingeben.')
     })
 
     it('requestStoreTarget posts payload and emits reload + changed on success', async () => {
@@ -143,6 +205,42 @@ describe('MaterialShareDialog', () => {
         expect(ok).toBe(false)
         expect(ctx.lastActionError).toBe('Bitte E-Mail angeben.')
         expect(ctx.targetActionBusyKeys).toEqual([])
+    })
+
+    it('limits full access mode to workspace and subject scopes', () => {
+        const unitCtx = createDialogCtx({
+            target: { level: 'unit', id: 9, label: 'Kapitel A' },
+            shareMode: 'full_access',
+        })
+
+        expect(unitCtx.availableShareModes.map((entry: any) => entry.value)).toEqual(['read_write', 'read_only'])
+        unitCtx.ensureShareModeForScope('unit')
+        expect(unitCtx.shareMode).toBe('read_write')
+
+        const subjectCtx = createDialogCtx({
+            target: { level: 'subject', id: 12, label: 'Mathematik' },
+        })
+        expect(subjectCtx.availableShareModes.map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_only'])
+    })
+
+    it('requestStoreTarget coerces forbidden full access to read_write', async () => {
+        axiosMock.post.mockResolvedValue({ data: {} })
+
+        const ctx = createDialogCtx({
+            shareMode: 'full_access',
+            target: { level: 'topic', id: 22, label: 'Algebra' },
+        })
+
+        const ok = await ctx.requestStoreTarget({ target_type: 'everyone', audience_scope: 'school' }, 'everyone:school')
+        expect(ok).toBe(true)
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/shares/targets', {
+            scope_type: 'topic',
+            scope_id: 22,
+            permission: 'read_write',
+            target_type: 'everyone',
+            audience_scope: 'school',
+        })
+        expect(ctx.shareMode).toBe('read_write')
     })
 
     it('removeAssignedTarget deletes target and emits refresh events', async () => {

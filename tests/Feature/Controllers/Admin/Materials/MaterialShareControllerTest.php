@@ -1,12 +1,13 @@
 <?php
 
 use App\Models\Licence;
-use App\Models\MaterialShareRule;
-use App\Models\MaterialShareTarget;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
 use App\Models\MaterialCardClassification;
 use App\Models\MaterialInboxImport;
+use App\Models\MaterialShareRule;
+use App\Models\MaterialShareRuleArchive;
+use App\Models\MaterialShareTarget;
 use App\Models\MaterialStatus;
 use App\Models\MaterialSubject;
 use App\Models\MaterialTopic;
@@ -408,6 +409,145 @@ test('inbox imported flag is false when imported target card is soft-deleted', f
     expect((bool) $afterDelete->json('data.0.shared_items.0.is_imported'))->toBeFalse();
 });
 
+test('workspace share never reports imported badge even when import record exists', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'workspace-source@test.local',
+    ]);
+
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Workspace Material',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'scope_id' => null,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $targetImportedCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->materialsAdmin->id,
+        'title' => 'Imported Workspace Material',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+
+    $importData = [
+        'target_user_id' => (int) $this->materialsAdmin->id,
+        'target_material_card_id' => (int) $targetImportedCard->id,
+        'source_rule_id' => (int) $rule->id,
+        'source_school_id' => (int) $this->school->id,
+        'source_material_id' => (int) $sourceCard->id,
+        'imported_at' => now(),
+    ];
+    if (Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+        $importData['import_mode'] = MaterialInboxImport::MODE_COPY;
+    }
+    MaterialInboxImport::query()->create($importData);
+
+    $response = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertStatus(200);
+
+    expect((string) $response->json('data.0.shared_items.0.scope_type'))->toBe(MaterialShareRule::SCOPE_ALL);
+    expect((bool) $response->json('data.0.shared_items.0.is_imported'))->toBeFalse();
+});
+
+test('can archive and unarchive inbox share item', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'archive-source@test.local',
+    ]);
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Mathematik',
+        'sort_order' => 1,
+    ]);
+    $card = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Archivierbares Material',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $card->id,
+        'subject_id' => $subject->id,
+        'topic_id' => null,
+        'unit_id' => null,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_MATERIAL,
+        'scope_id' => $card->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $this->postJson('/api/admin/materials/shares/inbox/archive', [
+        'rule_id' => $rule->id,
+    ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.rule_id', (int) $rule->id)
+        ->assertJsonPath('data.is_archived', true);
+
+    $archiveRow = MaterialShareRuleArchive::query()
+        ->where('target_user_id', (int) $this->materialsAdmin->id)
+        ->where('material_share_rule_id', (int) $rule->id)
+        ->first();
+    expect($archiveRow)->not->toBeNull();
+    expect($archiveRow?->archived_at)->not->toBeNull();
+
+    $inboxResponse = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertSuccessful();
+
+    expect((int) $inboxResponse->json('data.0.shared_items.0.rule_id'))->toBe((int) $rule->id);
+    expect((bool) $inboxResponse->json('data.0.shared_items.0.is_archived'))->toBeTrue();
+
+    $this->postJson('/api/admin/materials/shares/inbox/unarchive', [
+        'rule_id' => $rule->id,
+    ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.rule_id', (int) $rule->id)
+        ->assertJsonPath('data.is_archived', false);
+
+    $archiveRow = MaterialShareRuleArchive::query()
+        ->where('target_user_id', (int) $this->materialsAdmin->id)
+        ->where('material_share_rule_id', (int) $rule->id)
+        ->first();
+    expect($archiveRow)->not->toBeNull();
+    expect($archiveRow?->archived_at)->toBeNull();
+
+    $inboxResponseAfterRestore = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertSuccessful();
+
+    expect((int) $inboxResponseAfterRestore->json('data.0.shared_items.0.rule_id'))->toBe((int) $rule->id);
+    expect((bool) $inboxResponseAfterRestore->json('data.0.shared_items.0.is_archived'))->toBeFalse();
+});
+
 test('inbox keeps shared material hierarchy live-linked after source updates', function () {
     $this->actingAs($this->materialsAdmin, 'sanctum');
 
@@ -503,6 +643,152 @@ test('inbox keeps shared material hierarchy live-linked after source updates', f
     expect((string) $updatedInbox->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.name'))->toBe('Neue Einheit');
     expect((string) $updatedInbox->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.materials.0.title'))->toBe('Neues Material');
     expect((int) $updatedInbox->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.materials.0.attachments_count'))->toBe(2);
+});
+
+test('inbox hierarchy keeps source sort order for subjects topics and units', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'source-sort-order@test.local',
+    ]);
+
+    $preferredSubject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Z Fach',
+        'sort_order' => 1,
+    ]);
+    $otherSubject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'A Fach',
+        'sort_order' => 2,
+    ]);
+
+    $preferredTopic = MaterialTopic::query()->create([
+        'subject_id' => $preferredSubject->id,
+        'name' => 'Z Thema',
+        'sort_order' => 1,
+    ]);
+    $otherTopic = MaterialTopic::query()->create([
+        'subject_id' => $preferredSubject->id,
+        'name' => 'A Thema',
+        'sort_order' => 2,
+    ]);
+    $otherSubjectTopic = MaterialTopic::query()->create([
+        'subject_id' => $otherSubject->id,
+        'name' => 'B Thema',
+        'sort_order' => 1,
+    ]);
+
+    $preferredUnit = MaterialUnit::query()->create([
+        'topic_id' => $preferredTopic->id,
+        'name' => 'Z Einheit',
+        'sort_order' => 1,
+    ]);
+    $otherUnit = MaterialUnit::query()->create([
+        'topic_id' => $preferredTopic->id,
+        'name' => 'A Einheit',
+        'sort_order' => 2,
+    ]);
+    $otherTopicUnit = MaterialUnit::query()->create([
+        'topic_id' => $otherTopic->id,
+        'name' => 'C Einheit',
+        'sort_order' => 1,
+    ]);
+    $otherSubjectUnit = MaterialUnit::query()->create([
+        'topic_id' => $otherSubjectTopic->id,
+        'name' => 'D Einheit',
+        'sort_order' => 1,
+    ]);
+
+    $preferredUnitCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Material 1',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $preferredUnitCard->id,
+        'subject_id' => $preferredSubject->id,
+        'topic_id' => $preferredTopic->id,
+        'unit_id' => $preferredUnit->id,
+    ]);
+
+    $otherUnitCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Material 2',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $otherUnitCard->id,
+        'subject_id' => $preferredSubject->id,
+        'topic_id' => $preferredTopic->id,
+        'unit_id' => $otherUnit->id,
+    ]);
+
+    $otherTopicCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Material 3',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $otherTopicCard->id,
+        'subject_id' => $preferredSubject->id,
+        'topic_id' => $otherTopic->id,
+        'unit_id' => $otherTopicUnit->id,
+    ]);
+
+    $otherSubjectCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Material 4',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $otherSubjectCard->id,
+        'subject_id' => $otherSubject->id,
+        'topic_id' => $otherSubjectTopic->id,
+        'unit_id' => $otherSubjectUnit->id,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'scope_id' => null,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $response = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertStatus(200);
+
+    $sharedItems = collect($response->json('data.0.shared_items', []));
+    $inboxItem = $sharedItems->first(fn (array $item) => (int) ($item['rule_id'] ?? 0) === (int) $rule->id);
+    expect($inboxItem)->not->toBeNull();
+
+    $hierarchy = collect($inboxItem['hierarchy'] ?? []);
+    expect($hierarchy->pluck('name')->all())->toBe(['Z Fach', 'A Fach']);
+
+    $preferredSubjectNode = $hierarchy->firstWhere('name', 'Z Fach');
+    expect($preferredSubjectNode)->not->toBeNull();
+
+    $topicNames = collect($preferredSubjectNode['topics'] ?? [])->pluck('name')->all();
+    expect($topicNames)->toBe(['Z Thema', 'A Thema']);
+
+    $preferredTopicNode = collect($preferredSubjectNode['topics'] ?? [])->firstWhere('name', 'Z Thema');
+    expect($preferredTopicNode)->not->toBeNull();
+
+    $unitNames = collect($preferredTopicNode['units'] ?? [])->pluck('name')->all();
+    expect($unitNames)->toBe(['Z Einheit', 'A Einheit']);
 });
 
 test('can copy shared material as original into own workspace with taxonomy type status and attachments', function () {
@@ -1084,10 +1370,10 @@ test('can einfächern material from unit-scoped share when selected material bel
 });
 
 test('unit einfächern as link marks destination unit as linked independent from material aggregation', function () {
-    if (!Schema::hasTable('material_inbox_imports') || !Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+    if (! Schema::hasTable('material_inbox_imports') || ! Schema::hasColumn('material_inbox_imports', 'import_mode')) {
         $this->markTestSkipped('Linked inbox import mode is not available.');
     }
-    if (!Schema::hasTable('material_unit_inbox_imports')) {
+    if (! Schema::hasTable('material_unit_inbox_imports')) {
         $this->markTestSkipped('Linked unit inbox import table is not available.');
     }
 
@@ -1228,10 +1514,10 @@ test('unit einfächern as link marks destination unit as linked independent from
 });
 
 test('linking a single material into a manual target unit does not mark the whole unit as linked', function () {
-    if (!Schema::hasTable('material_inbox_imports') || !Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+    if (! Schema::hasTable('material_inbox_imports') || ! Schema::hasColumn('material_inbox_imports', 'import_mode')) {
         $this->markTestSkipped('Linked inbox import mode is not available.');
     }
-    if (!Schema::hasTable('material_unit_inbox_imports')) {
+    if (! Schema::hasTable('material_unit_inbox_imports')) {
         $this->markTestSkipped('Linked unit inbox import table is not available.');
     }
 
@@ -1348,10 +1634,10 @@ test('linking a single material into a manual target unit does not mark the whol
 });
 
 test('topic einfächern as link marks destination topic as linked', function () {
-    if (!Schema::hasTable('material_inbox_imports') || !Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+    if (! Schema::hasTable('material_inbox_imports') || ! Schema::hasColumn('material_inbox_imports', 'import_mode')) {
         $this->markTestSkipped('Linked inbox import mode is not available.');
     }
-    if (!Schema::hasTable('material_topic_inbox_imports')) {
+    if (! Schema::hasTable('material_topic_inbox_imports')) {
         $this->markTestSkipped('Linked topic inbox import table is not available.');
     }
 
@@ -1485,10 +1771,10 @@ test('topic einfächern as link marks destination topic as linked', function () 
 });
 
 test('linking a single material into a manual target topic does not mark the whole topic as linked', function () {
-    if (!Schema::hasTable('material_inbox_imports') || !Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+    if (! Schema::hasTable('material_inbox_imports') || ! Schema::hasColumn('material_inbox_imports', 'import_mode')) {
         $this->markTestSkipped('Linked inbox import mode is not available.');
     }
-    if (!Schema::hasTable('material_topic_inbox_imports')) {
+    if (! Schema::hasTable('material_topic_inbox_imports')) {
         $this->markTestSkipped('Linked topic inbox import table is not available.');
     }
 
@@ -1834,10 +2120,10 @@ test('repeated unit fanout creates a second unit mapping and assigns materials t
 });
 
 test('repeated linked unit fanout keeps each linked card on its selected duplicate target unit', function () {
-    if (!Schema::hasTable('material_inbox_imports') || !Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+    if (! Schema::hasTable('material_inbox_imports') || ! Schema::hasColumn('material_inbox_imports', 'import_mode')) {
         $this->markTestSkipped('Linked inbox import mode is not available.');
     }
-    if (!Schema::hasTable('material_unit_inbox_imports')) {
+    if (! Schema::hasTable('material_unit_inbox_imports')) {
         $this->markTestSkipped('Linked unit inbox import table is not available.');
     }
 
@@ -2059,13 +2345,13 @@ test('link then copy of same shared material keeps linked card flagged as link',
     expect($copiedCardId)->toBeGreaterThan(0);
     expect($copiedCardId)->not->toBe($linkedCardId);
 
-    $linkedShow = $this->getJson('/api/admin/materials/cards/' . $linkedCardId)
+    $linkedShow = $this->getJson('/api/admin/materials/cards/'.$linkedCardId)
         ->assertStatus(200);
     expect((bool) $linkedShow->json('is_linked'))->toBeTrue();
     expect((string) $linkedShow->json('linked_permission'))->toBe(MaterialShareTarget::PERMISSION_READ_ONLY);
     expect((string) $linkedShow->json('linked_permission_label'))->toBe('NUR LESEN');
 
-    $copyShow = $this->getJson('/api/admin/materials/cards/' . $copiedCardId)
+    $copyShow = $this->getJson('/api/admin/materials/cards/'.$copiedCardId)
         ->assertStatus(200);
     expect((bool) $copyShow->json('is_linked'))->toBeFalse();
     expect($copyShow->json('linked_permission'))->toBeNull();
@@ -2319,7 +2605,7 @@ test('materials moderator can toggle share rule active state and remove last tar
     $ruleId = (int) $store->json('rule.id');
     $targetId = (int) $store->json('target_id');
 
-    $this->patchJson('/api/admin/materials/shares/' . $ruleId, [
+    $this->patchJson('/api/admin/materials/shares/'.$ruleId, [
         'is_active' => false,
     ])
         ->assertStatus(200)
@@ -2332,7 +2618,7 @@ test('materials moderator can toggle share rule active state and remove last tar
         'is_active' => 0,
     ]);
 
-    $this->deleteJson('/api/admin/materials/shares/targets/' . $targetId)
+    $this->deleteJson('/api/admin/materials/shares/targets/'.$targetId)
         ->assertStatus(200)
         ->assertJsonPath('message', 'Freigabe entfernt.');
 
@@ -2355,7 +2641,7 @@ test('materials admin can update share target permission', function () {
     $ruleId = (int) $store->json('rule.id');
     $targetId = (int) $store->json('target_id');
 
-    $this->patchJson('/api/admin/materials/shares/targets/' . $targetId, [
+    $this->patchJson('/api/admin/materials/shares/targets/'.$targetId, [
         'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
     ])
         ->assertStatus(200)
@@ -2369,6 +2655,78 @@ test('materials admin can update share target permission', function () {
         'id' => $targetId,
         'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
     ]);
+});
+
+test('full access is only allowed for workspace and subject scopes when storing targets', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->materialsAdmin->id,
+        'name' => 'Mathematik',
+        'sort_order' => 1,
+    ]);
+    $topic = MaterialTopic::query()->create([
+        'subject_id' => $subject->id,
+        'name' => 'Algebra',
+        'sort_order' => 1,
+    ]);
+
+    $this->postJson('/api/admin/materials/shares/targets', [
+        'scope_type' => MaterialShareRule::SCOPE_SUBJECT,
+        'scope_id' => $subject->id,
+        'target_type' => MaterialShareTarget::TARGET_EVERYONE,
+        'audience_scope' => MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL,
+        'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
+    ])
+        ->assertStatus(200)
+        ->assertJsonPath('rule.scope_type', MaterialShareRule::SCOPE_SUBJECT)
+        ->assertJsonPath('rule.targets.0.permission', MaterialShareTarget::PERMISSION_FULL_ACCESS);
+
+    $this->postJson('/api/admin/materials/shares/targets', [
+        'scope_type' => MaterialShareRule::SCOPE_TOPIC,
+        'scope_id' => $topic->id,
+        'target_type' => MaterialShareTarget::TARGET_EVERYONE,
+        'audience_scope' => MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL,
+        'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['permission']);
+});
+
+test('updating target to full access is blocked for unit scope', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->materialsAdmin->id,
+        'name' => 'Biologie',
+        'sort_order' => 1,
+    ]);
+    $topic = MaterialTopic::query()->create([
+        'subject_id' => $subject->id,
+        'name' => 'Zellen',
+        'sort_order' => 1,
+    ]);
+    $unit = MaterialUnit::query()->create([
+        'topic_id' => $topic->id,
+        'name' => 'Grundlagen',
+        'sort_order' => 1,
+    ]);
+
+    $store = $this->postJson('/api/admin/materials/shares/targets', [
+        'scope_type' => MaterialShareRule::SCOPE_UNIT,
+        'scope_id' => $unit->id,
+        'target_type' => MaterialShareTarget::TARGET_EVERYONE,
+        'audience_scope' => MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL,
+        'permission' => MaterialShareTarget::PERMISSION_READ_WRITE,
+    ])->assertStatus(200);
+
+    $targetId = (int) $store->json('target_id');
+
+    $this->patchJson('/api/admin/materials/shares/targets/'.$targetId, [
+        'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
+    ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['permission']);
 });
 
 test('lookup users returns only same-school users matching search', function () {
@@ -2406,6 +2764,79 @@ test('lookup users returns only same-school users matching search', function () 
 
     expect((int) $response->json('data.0.id'))->toBe((int) $match->id);
     expect((string) $response->json('data.0.email'))->toBe('anna.muster@test.local');
+});
+
+test('lookup users excludes the authenticated user from search results', function () {
+    $this->materialsAdmin->forceFill([
+        'first_name' => 'Anna',
+        'last_name' => 'Admin',
+        'email' => 'anna.admin@test.local',
+    ])->save();
+
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $match = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'first_name' => 'Anna',
+        'last_name' => 'Kollege',
+        'email' => 'anna.kollege@test.local',
+    ]);
+
+    $response = $this->getJson('/api/admin/materials/shares/lookup-users?search=Anna')
+        ->assertStatus(200);
+
+    expect(collect($response->json('data'))->pluck('id')->map(fn ($id) => (int) $id)->all())
+        ->toBe([(int) $match->id]);
+});
+
+test('lookup external user checks selectable school and email', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $otherSchool = School::factory()->create([
+        'is_selectable' => true,
+        'long_name' => 'Partnerschule',
+    ]);
+    $otherYear = Schoolyear::factory()->create(['school_id' => $otherSchool->id]);
+    $remoteUser = User::factory()->create([
+        'school_id' => $otherSchool->id,
+        'schoolyear_id' => $otherYear->id,
+        'first_name' => 'Eva',
+        'last_name' => 'Extern',
+        'email' => 'eva.extern@test.local',
+    ]);
+
+    $this->getJson('/api/admin/materials/shares/lookup-external-user?'.http_build_query([
+        'target_school_id' => $otherSchool->id,
+        'user_email' => 'EVA.EXTERN@test.local',
+    ]))
+        ->assertStatus(200)
+        ->assertJsonPath('data.exists', true)
+        ->assertJsonPath('data.id', (int) $remoteUser->id)
+        ->assertJsonPath('data.school_id', (int) $otherSchool->id)
+        ->assertJsonPath('data.email', 'eva.extern@test.local');
+
+    $this->getJson('/api/admin/materials/shares/lookup-external-user?'.http_build_query([
+        'target_school_id' => $otherSchool->id,
+        'user_email' => 'missing@test.local',
+    ]))
+        ->assertStatus(200)
+        ->assertJsonPath('data.exists', false);
+
+    $this->getJson('/api/admin/materials/shares/lookup-external-user?'.http_build_query([
+        'target_school_id' => $otherSchool->id,
+        'user_email' => 'not-an-email',
+    ]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['user_email'])
+        ->assertJsonPath('errors.user_email.0', 'Bitte eine gültige E-Mail-Adresse eingeben.');
+
+    $this->getJson('/api/admin/materials/shares/lookup-external-user?'.http_build_query([
+        'target_school_id' => $this->school->id,
+        'user_email' => 'someone@test.local',
+    ]))
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['target_school_id']);
 });
 
 test('lookup groups validates type and scopes own groups to creator', function () {
@@ -2563,15 +2994,15 @@ test('cannot patch or delete shares from another school', function () {
         'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
     ]);
 
-    $this->patchJson('/api/admin/materials/shares/' . $rule->id, [
+    $this->patchJson('/api/admin/materials/shares/'.$rule->id, [
         'is_active' => false,
     ])->assertStatus(404);
 
-    $this->patchJson('/api/admin/materials/shares/targets/' . $target->id, [
+    $this->patchJson('/api/admin/materials/shares/targets/'.$target->id, [
         'permission' => MaterialShareTarget::PERMISSION_READ_WRITE,
     ])->assertStatus(404);
 
-    $this->deleteJson('/api/admin/materials/shares/targets/' . $target->id)
+    $this->deleteJson('/api/admin/materials/shares/targets/'.$target->id)
         ->assertStatus(404);
 });
 
@@ -2699,11 +3130,11 @@ test('update rule validates boolean is_active', function () {
         'is_active' => true,
     ]);
 
-    $this->patchJson('/api/admin/materials/shares/' . $rule->id, [])
+    $this->patchJson('/api/admin/materials/shares/'.$rule->id, [])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['is_active']);
 
-    $this->patchJson('/api/admin/materials/shares/' . $rule->id, [
+    $this->patchJson('/api/admin/materials/shares/'.$rule->id, [
         'is_active' => 'not-bool',
     ])
         ->assertStatus(422)
@@ -2720,11 +3151,11 @@ test('update target validates permission', function () {
 
     $targetId = (int) $store->json('target_id');
 
-    $this->patchJson('/api/admin/materials/shares/targets/' . $targetId, [])
+    $this->patchJson('/api/admin/materials/shares/targets/'.$targetId, [])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['permission']);
 
-    $this->patchJson('/api/admin/materials/shares/targets/' . $targetId, [
+    $this->patchJson('/api/admin/materials/shares/targets/'.$targetId, [
         'permission' => 'invalid',
     ])
         ->assertStatus(422)
@@ -2790,7 +3221,7 @@ test('index filters out serialized targets when referenced user or group was del
 
     $targetUser->delete();
 
-    $indexResponse = $this->getJson('/api/admin/materials/shares?' . http_build_query([
+    $indexResponse = $this->getJson('/api/admin/materials/shares?'.http_build_query([
         'scope_type' => MaterialShareRule::SCOPE_ALL,
     ]))->assertStatus(200);
 
@@ -2856,7 +3287,7 @@ test('index can filter by scope type and scope id and returns scope labels', fun
         'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
     ])->assertStatus(200);
 
-    $subjectFiltered = $this->getJson('/api/admin/materials/shares?' . http_build_query([
+    $subjectFiltered = $this->getJson('/api/admin/materials/shares?'.http_build_query([
         'scope_type' => MaterialShareRule::SCOPE_SUBJECT,
         'scope_id' => $subject->id,
     ]))
@@ -2868,7 +3299,7 @@ test('index can filter by scope type and scope id and returns scope labels', fun
 
     expect((int) $subjectFiltered->json('data.0.scope_id'))->toBe((int) $subject->id);
 
-    $this->getJson('/api/admin/materials/shares?' . http_build_query([
+    $this->getJson('/api/admin/materials/shares?'.http_build_query([
         'scope_type' => MaterialShareRule::SCOPE_TOPIC,
         'scope_id' => $topic->id,
     ]))
@@ -2877,7 +3308,7 @@ test('index can filter by scope type and scope id and returns scope labels', fun
         ->assertJsonPath('data.0.scope_label', 'Thema')
         ->assertJsonPath('data.0.scope_object_label', 'Algebra');
 
-    $this->getJson('/api/admin/materials/shares?' . http_build_query([
+    $this->getJson('/api/admin/materials/shares?'.http_build_query([
         'scope_type' => MaterialShareRule::SCOPE_UNIT,
         'scope_id' => $unit->id,
     ]))
@@ -2886,7 +3317,7 @@ test('index can filter by scope type and scope id and returns scope labels', fun
         ->assertJsonPath('data.0.scope_label', 'Einheit')
         ->assertJsonPath('data.0.scope_object_label', 'Brüche');
 
-    $this->getJson('/api/admin/materials/shares?' . http_build_query([
+    $this->getJson('/api/admin/materials/shares?'.http_build_query([
         'scope_type' => MaterialShareRule::SCOPE_MATERIAL,
         'scope_id' => $card->id,
     ]))
@@ -2899,6 +3330,7 @@ test('index can filter by scope type and scope id and returns scope labels', fun
 test('shares index returns needs migration meta when share tables are missing', function () {
     $this->actingAs($this->materialsAdmin, 'sanctum');
 
+    Schema::dropIfExists('material_share_rule_archives');
     Schema::dropIfExists('material_share_targets');
     Schema::dropIfExists('material_unit_inbox_imports');
     Schema::dropIfExists('material_topic_inbox_imports');
@@ -2914,6 +3346,7 @@ test('shares index returns needs migration meta when share tables are missing', 
 test('inbox users endpoint returns needs migration meta when share tables are missing', function () {
     $this->actingAs($this->materialsAdmin, 'sanctum');
 
+    Schema::dropIfExists('material_share_rule_archives');
     Schema::dropIfExists('material_share_targets');
     Schema::dropIfExists('material_unit_inbox_imports');
     Schema::dropIfExists('material_topic_inbox_imports');
@@ -2929,6 +3362,7 @@ test('inbox users endpoint returns needs migration meta when share tables are mi
 test('share mutation and lookup endpoints return 409 when share tables are missing', function () {
     $this->actingAs($this->materialsAdmin, 'sanctum');
 
+    Schema::dropIfExists('material_share_rule_archives');
     Schema::dropIfExists('material_share_targets');
     Schema::dropIfExists('material_unit_inbox_imports');
     Schema::dropIfExists('material_topic_inbox_imports');
@@ -2940,8 +3374,19 @@ test('share mutation and lookup endpoints return 409 when share tables are missi
     $this->getJson('/api/admin/materials/shares/lookup-schools')
         ->assertStatus(409);
 
+    $this->getJson('/api/admin/materials/shares/lookup-external-user?target_school_id=1&user_email=test%40example.com')
+        ->assertStatus(409);
+
     $this->getJson('/api/admin/materials/shares/lookup-groups?type=materials')
         ->assertStatus(409);
+
+    $this->postJson('/api/admin/materials/shares/inbox/archive', [
+        'rule_id' => 1,
+    ])->assertStatus(409);
+
+    $this->postJson('/api/admin/materials/shares/inbox/unarchive', [
+        'rule_id' => 1,
+    ])->assertStatus(409);
 
     $this->postJson('/api/admin/materials/shares/targets', workspaceEveryonePayload())
         ->assertStatus(409);
