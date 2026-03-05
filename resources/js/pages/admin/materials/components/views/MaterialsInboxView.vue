@@ -412,7 +412,7 @@
                                                 v-if="!item.is_archived"
                                                 size="small"
                                                 variant="tonal"
-                                                color="secondary"
+                                                color="warning"
                                                 :loading="isArchivingRule(item.rule_id)"
                                                 :disabled="isArchivingRule(item.rule_id)"
                                                 @click.stop="archiveSharedItem(item)">
@@ -422,7 +422,7 @@
                                                 v-if="item.is_archived"
                                                 size="small"
                                                 variant="tonal"
-                                                color="secondary"
+                                                color="success"
                                                 :loading="isUnarchivingRule(item.rule_id)"
                                                 :disabled="isUnarchivingRule(item.rule_id)"
                                                 @click.stop="unarchiveSharedItem(item)">

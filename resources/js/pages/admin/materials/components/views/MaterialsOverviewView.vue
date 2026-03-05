@@ -9,6 +9,7 @@
             @refresh="loadCards" />
 
         <MaterialsOverviewFilters
+            v-if="!isSharedSubjectsContentsSource"
             :action-disabled="isLoading || isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null"
             :badge-count-content="badgeCountContent"
             :subject-all-count="subjectAllCount"
@@ -47,12 +48,12 @@
             :is-status-filter-active="isStatusFilterActive"
             :toggle-status-filter="toggleStatusFilter" />
 
-        <v-alert type="info" variant="tonal" class="mb-4">
+        <v-alert v-if="!isSharedSubjectsContentsSource" type="info" variant="tonal" class="mb-4">
             {{ displayedMaterials }}/{{ totalMaterials }} Material{{ totalMaterials === 1 ? '' : 'ien' }} angezeigt.
             <span class="ml-2">• Speicher: angezeigt {{ shownListedAttachmentSizeLabel }} / alle {{ allListedAttachmentSizeLabel }}</span>
         </v-alert>
         <v-alert
-            v-if="deletedMaterialRestoreItems.length > 0 && !deletedMaterialRestoreHidden"
+            v-if="!isSharedSubjectsContentsSource && deletedMaterialRestoreItems.length > 0 && !deletedMaterialRestoreHidden"
             type="warning"
             variant="tonal"
             class="mb-4">
@@ -119,7 +120,7 @@
                 </v-list>
             </div>
         </v-alert>
-        <div v-if="deletedMaterialRestoreItems.length > 0 && deletedMaterialRestoreHidden" class="mb-4 d-flex justify-end">
+        <div v-if="!isSharedSubjectsContentsSource && deletedMaterialRestoreItems.length > 0 && deletedMaterialRestoreHidden" class="mb-4 d-flex justify-end">
             <v-btn
                 size="small"
                 color="warning"
@@ -132,12 +133,39 @@
         </div>
         <MaterialsOverviewSortBar v-if="!isSubjectsContentsOverview" :overview-sort-mode="overviewSortMode" @update:overview-sort-mode="setOverviewSortMode" />
 
-        <v-skeleton-loader v-if="isLoading && !hasCards" type="list-item-three-line@4" />
+        <v-skeleton-loader v-if="!isSharedSubjectsContentsSource && isLoading && !hasCards" type="list-item-three-line@4" />
 
         <template v-else-if="isSubjectsContentsOverview">
             <div class="d-flex flex-wrap align-center ga-2 mb-3">
+                <template v-if="showSubjectsContentsSourceToggle">
+                    <div class="subjects-source-switch">
+                    <v-btn
+                        class="subjects-source-switch__btn"
+                        :class="{ 'subjects-source-switch__btn--active': isWorkspaceSubjectsContentsSource }"
+                        size="small"
+                        color="primary"
+                        prepend-icon="mdi-briefcase-outline"
+                        :variant="isWorkspaceSubjectsContentsSource ? 'flat' : 'text'"
+                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                        @click="setSubjectsContentsSource('workspace')">
+                        Mein Workspace
+                    </v-btn>
+                    <v-btn
+                        class="subjects-source-switch__btn"
+                        :class="{ 'subjects-source-switch__btn--active': !isWorkspaceSubjectsContentsSource }"
+                        size="small"
+                        color="primary"
+                        prepend-icon="mdi-account-multiple-outline"
+                        :variant="!isWorkspaceSubjectsContentsSource ? 'flat' : 'text'"
+                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                        @click="setSubjectsContentsSource('shared')">
+                        Für mich freigegeben
+                    </v-btn>
+                    </div>
+                </template>
+                <v-spacer />
                 <v-btn
-                    v-if="!hideSubjectsOverviewPrintButton"
+                    v-if="isWorkspaceSubjectsContentsSource && !hideSubjectsOverviewPrintButton"
                     size="small"
                     color="primary"
                     variant="outlined"
@@ -148,30 +176,87 @@
                 </v-btn>
             </div>
 
-            <v-progress-linear v-if="isLoadingSubjectsContentsOverview" indeterminate color="primary" rounded class="mb-3" />
+            <template v-if="!isWorkspaceSubjectsContentsSource">
+                <v-progress-linear v-if="isLoadingSharedObjectsForMe" indeterminate color="primary" rounded class="mb-3" />
 
-            <v-alert v-else-if="!subjectsContentsOverviewItems.length" type="info" variant="tonal" class="mb-0">Keine Fachstruktur mit Materialien gefunden.</v-alert>
+                <v-alert v-else-if="sharedObjectsForMeError" type="error" variant="tonal" class="mb-0">
+                    {{ sharedObjectsForMeError }}
+                </v-alert>
 
-            <MaterialsSubjectsContentsTree
-                v-else
-                :items="subjectsContentsOverviewItems"
-                :action-busy="isLoading || isDeletingId !== null || isSavingEdit || isSavingCreate || isRemovingTreeClassification || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null"
-                :enable-share-buttons="enableShareButtons"
-                :enable-create-buttons="!readOnlyMaterialActions"
-                :enable-remove-buttons="!readOnlyMaterialActions"
-                :show-share-indicators="enableShareButtons"
-                :share-indicator-color-fn="shareIndicatorColor"
-                :status-color-fn="statusColor"
-                :status-label-fn="statusLabel"
-                :subject-group-style-fn="subjectGroupStyle"
-                :topic-group-style-fn="topicGroupStyle"
-                @open-material="openDetailDialog"
-                @open-share="openShareDialog"
-                @open-create="openCreateDialogFromTree"
-                @open-attachments="openAttachmentManager"
-                @unlink-linked-material="unlinkLinkedCard"
-                @unlink-linked-topic="unlinkLinkedTopic"
-                @unlink-linked-unit="unlinkLinkedUnit" />
+                <v-alert v-else-if="sharedObjectsForMeCards.length === 0" type="info" variant="tonal" class="mb-0">
+                    Es sind aktuell keine Freigaben für dich vorhanden.
+                </v-alert>
+
+                <v-row v-else dense class="shared-objects-grid">
+                    <v-col
+                        v-for="item in sharedObjectsForMeCards"
+                        :key="`shared-object-${item.ruleId}`"
+                        cols="12"
+                        md="6"
+                        xl="4">
+                        <v-card variant="outlined" class="shared-object-card h-100">
+                            <v-card-text class="d-flex flex-column ga-3">
+                                <div class="d-flex align-start justify-space-between ga-2">
+                                    <div>
+                                        <div class="text-subtitle-1 font-weight-bold">
+                                            {{ item.scopeObjectLabel }}
+                                        </div>
+                                        <div class="text-caption text-medium-emphasis">
+                                            {{ item.scopePathLabel }}
+                                        </div>
+                                    </div>
+                                    <v-chip size="x-small" variant="tonal" color="primary">
+                                        <v-icon start size="14">{{ sharedScopeIcon(item.scopeType) }}</v-icon>
+                                        {{ item.scopeLabel }}
+                                    </v-chip>
+                                </div>
+
+                                <div class="d-flex flex-wrap align-center ga-2">
+                                    <v-chip size="x-small" variant="flat" :color="sharedPermissionColor(item.permission)">
+                                        {{ item.permissionLabel }}
+                                    </v-chip>
+                                </div>
+
+                                <div class="text-body-2">
+                                    <span class="font-weight-medium">Von:</span>
+                                    {{ item.fromUserLabel }}
+                                    <span v-if="item.fromSchoolLabel" class="text-medium-emphasis"> · {{ item.fromSchoolLabel }}</span>
+                                </div>
+
+                                <div class="text-caption text-medium-emphasis">
+                                    Freigegeben: {{ formatDateTime(item.sharedAt) || '-' }}
+                                </div>
+                            </v-card-text>
+                        </v-card>
+                    </v-col>
+                </v-row>
+            </template>
+            <template v-else>
+                <v-progress-linear v-if="isLoadingSubjectsContentsOverview" indeterminate color="primary" rounded class="mb-3" />
+
+                <v-alert v-else-if="!subjectsContentsOverviewItems.length" type="info" variant="tonal" class="mb-0">Keine Fachstruktur mit Materialien gefunden.</v-alert>
+
+                <MaterialsSubjectsContentsTree
+                    v-else
+                    :items="subjectsContentsOverviewItems"
+                    :action-busy="isLoading || isDeletingId !== null || isSavingEdit || isSavingCreate || isRemovingTreeClassification || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null"
+                    :enable-share-buttons="enableShareButtons"
+                    :enable-create-buttons="!readOnlyMaterialActions"
+                    :enable-remove-buttons="!readOnlyMaterialActions"
+                    :show-share-indicators="enableShareButtons"
+                    :share-indicator-color-fn="shareIndicatorColor"
+                    :status-color-fn="statusColor"
+                    :status-label-fn="statusLabel"
+                    :subject-group-style-fn="subjectGroupStyle"
+                    :topic-group-style-fn="topicGroupStyle"
+                    @open-material="openDetailDialog"
+                    @open-share="openShareDialog"
+                    @open-create="openCreateDialogFromTree"
+                    @open-attachments="openAttachmentManager"
+                    @unlink-linked-material="unlinkLinkedCard"
+                    @unlink-linked-topic="unlinkLinkedTopic"
+                    @unlink-linked-unit="unlinkLinkedUnit" />
+            </template>
         </template>
 
         <template v-else-if="hasCards">
@@ -944,6 +1029,10 @@ export default {
             csrfToken: null,
             overviewViewMode: 'list',
             overviewSortMode: 'date',
+            subjectsContentsSource: 'workspace',
+            isLoadingSharedObjectsForMe: false,
+            sharedObjectsForMeError: '',
+            sharedObjectsForMeCards: [],
             isLoadingSubjectsContentsOverview: false,
             subjectsContentsOverviewItems: [],
             subjectsContentsOverviewSnapshotKey: '',
@@ -1089,6 +1178,18 @@ export default {
         },
         isSubjectsContentsOverview() {
             return this.overviewViewMode === 'subjects_contents'
+        },
+        showSubjectsContentsSourceToggle() {
+            return this.isSubjectsContentsOverview && this.canSelectSubjectsContentsSource()
+        },
+        isWorkspaceSubjectsContentsSource() {
+            if (!this.canSelectSubjectsContentsSource()) {
+                return true
+            }
+            return this.subjectsContentsSource === 'workspace'
+        },
+        isSharedSubjectsContentsSource() {
+            return this.isSubjectsContentsOverview && !this.isWorkspaceSubjectsContentsSource
         },
         currentMetaPage() {
             const value = Number(this.materialCardStore?.meta?.current_page || this.currentPage)
@@ -1748,6 +1849,9 @@ export default {
                 return
             }
             this.overviewViewMode = nextMode
+            if (nextMode === 'subjects_contents' && this.canSelectSubjectsContentsSource()) {
+                this.subjectsContentsSource = 'workspace'
+            }
             try {
                 window?.localStorage?.setItem?.('materials.overview.mode', nextMode)
             } catch {
@@ -1755,6 +1859,116 @@ export default {
             }
             if (nextMode === 'subjects_contents') {
                 this.loadSubjectsContentsOverview({ force: true })
+            }
+        },
+        canSelectSubjectsContentsSource() {
+            return String(this.forcedOverviewMode || '').trim() === ''
+        },
+        setSubjectsContentsSource(value) {
+            if (!this.canSelectSubjectsContentsSource()) {
+                this.subjectsContentsSource = 'workspace'
+                return
+            }
+
+            if (value !== 'workspace' && value !== 'shared') {
+                return
+            }
+
+            const nextSource = String(value)
+            if (nextSource === this.subjectsContentsSource) {
+                return
+            }
+
+            this.subjectsContentsSource = nextSource
+
+            if (nextSource === 'workspace' && this.isSubjectsContentsOverview) {
+                this.loadSubjectsContentsOverview({ force: true })
+                return
+            }
+            if (nextSource === 'shared' && this.isSubjectsContentsOverview) {
+                this.loadSharedObjectsForMe()
+            }
+        },
+        sharedScopeIcon(scopeType) {
+            const normalized = String(scopeType || '').trim().toLocaleLowerCase()
+            if (normalized === 'all') return 'mdi-briefcase-outline'
+            if (normalized === 'subject') return 'mdi-book-open-page-variant-outline'
+            if (normalized === 'topic') return 'mdi-shape-outline'
+            if (normalized === 'unit') return 'mdi-bookmark-outline'
+            if (normalized === 'material') return 'mdi-file-document-outline'
+            return 'mdi-share-variant-outline'
+        },
+        sharedPermissionColor(permission) {
+            const normalized = String(permission || '').trim().toLocaleLowerCase()
+            if (normalized === 'full_access') return 'error'
+            if (normalized === 'read_write') return 'warning'
+            return 'primary'
+        },
+        normalizeSharedObjectsForMeResponse(rows) {
+            if (!Array.isArray(rows)) return []
+
+            const cards = []
+            for (const userRow of rows) {
+                const fromUserLabel =
+                    String(userRow?.label || '').trim() ||
+                    String(userRow?.email || '').trim() ||
+                    'Benutzer'
+                const fromSchoolLabel = String(userRow?.school_label || '').trim()
+                const fallbackSharedAt = String(userRow?.last_shared_at || '').trim()
+                const sharedItems = Array.isArray(userRow?.shared_items) ? userRow.shared_items : []
+
+                for (const item of sharedItems) {
+                    const ruleId = Number(item?.rule_id || 0)
+                    if (!Number.isFinite(ruleId) || ruleId <= 0 || item?.is_archived) {
+                        continue
+                    }
+
+                    const scopeType = String(item?.scope_type || '').trim() || 'all'
+                    const scopeLabel = String(item?.scope_label || '').trim() || 'Bereich'
+                    const scopeObjectLabel = String(item?.scope_object_label || '').trim() || 'Freigabe'
+                    const scopePathLabel = String(item?.scope_path_label || '').trim() || ''
+                    const permission = String(item?.permission || '').trim() || 'read_only'
+                    const permissionLabel = String(item?.permission_label || '').trim() || 'NUR LESEN'
+                    const sharedAt = String(item?.updated_at || '').trim() || fallbackSharedAt
+
+                    cards.push({
+                        ruleId,
+                        scopeType,
+                        scopeLabel,
+                        scopeObjectLabel,
+                        scopePathLabel,
+                        permission,
+                        permissionLabel,
+                        sharedAt,
+                        fromUserLabel,
+                        fromSchoolLabel,
+                    })
+                }
+            }
+
+            cards.sort((left, right) => {
+                const leftTime = Date.parse(String(left?.sharedAt || '')) || 0
+                const rightTime = Date.parse(String(right?.sharedAt || '')) || 0
+                if (leftTime !== rightTime) {
+                    return rightTime - leftTime
+                }
+                return Number(right?.ruleId || 0) - Number(left?.ruleId || 0)
+            })
+
+            return cards
+        },
+        async loadSharedObjectsForMe() {
+            this.isLoadingSharedObjectsForMe = true
+            this.sharedObjectsForMeError = ''
+            try {
+                const response = await axios.get('/api/admin/materials/shares/inbox-users')
+                const rows = Array.isArray(response?.data?.data) ? response.data.data : []
+                this.sharedObjectsForMeCards = this.normalizeSharedObjectsForMeResponse(rows)
+            } catch (error) {
+                this.sharedObjectsForMeCards = []
+                this.sharedObjectsForMeError = error?.response?.data?.message || 'Freigaben konnten nicht geladen werden.'
+            } finally {
+                this.isLoadingSharedObjectsForMe = false
             }
         },
         openSubjectsOverviewScreen() {
@@ -4972,6 +5186,36 @@ ${content}
 
 .overview-sort-toggle {
     max-width: 100%;
+}
+
+.subjects-source-switch {
+    display: inline-flex;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 999px;
+    border: 1px solid rgba(35, 61, 76, 0.14);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.84) 0%, rgba(245, 236, 228, 0.74) 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+.subjects-source-switch__btn {
+    border-radius: 999px;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 600;
+}
+
+.subjects-source-switch__btn--active {
+    box-shadow: 0 6px 16px rgba(35, 61, 76, 0.2);
+}
+
+.shared-objects-grid {
+    margin: 0;
+}
+
+.shared-object-card {
+    border-color: rgba(35, 61, 76, 0.18) !important;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0.66) 100%);
 }
 
 .overview-subjects-tree {
