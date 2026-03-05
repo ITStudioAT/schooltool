@@ -8,8 +8,10 @@ use App\Http\Resources\Homepage\LicenceResource;
 use App\Http\Resources\Homepage\SchoolResource;
 use App\Models\Licence;
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Services\HomepageRoutingService;
 use App\Services\LicenceService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
@@ -17,12 +19,13 @@ use Illuminate\Support\Facades\Auth;
 class HomepageController extends Controller
 {
     public function index(Request $request) {}
+
     public function routing(HomepageRoutingRequest $request, HomepageRoutingService $service)
     {
 
         $validated = $request->validated();
 
-        if (!config('schooltool.tutoring_active', false) && $request->is('homepage/tutoring*')) {
+        if (! config('schooltool.tutoring_active', false) && $request->is('homepage/tutoring*')) {
             return redirect('/');
         }
 
@@ -34,7 +37,9 @@ class HomepageController extends Controller
 
         $answer = $service->checkRoute($validated['school'] ?? null, $validated['licence'] ?? null);
 
-        if ($answer['status'] == 'error') return redirect('/homepage/error?msg=' . $answer['msg']);
+        if ($answer['status'] == 'error') {
+            return redirect('/homepage/error?msg='.$answer['msg']);
+        }
 
         $redirectUrl = $answer['redirect'];
 
@@ -46,11 +51,11 @@ class HomepageController extends Controller
 
         switch ($licence) {
             case 'Anmeldetool':
-                return redirect('/homepage/register?school=' . $school);
+                return redirect('/homepage/register?school='.$school);
             case 'Nachhilfetool':
-                return redirect('/homepage/tutoring_overview?school=' . $school);
+                return redirect('/homepage/tutoring_overview?school='.$school);
             case 'Lehrertool':
-                return redirect('/homepage/student?school=' . $school);
+                return redirect('/homepage/student?school='.$school);
 
             default:
                 // Fallback to SPA shell to avoid redirect loops on unknown/empty targets.
@@ -65,7 +70,7 @@ class HomepageController extends Controller
         $toolData = $licenceService->selectableSchoolsForTool($validated['tool']);
         $licence = $toolData['licence'];
 
-        if (!$licence) {
+        if (! $licence) {
             return response()->json([
                 'licence' => null,
                 'schools' => [],
@@ -82,8 +87,6 @@ class HomepageController extends Controller
         return response()->json($data, 200);
     }
 
-
-
     public function config(Request $request, LicenceService $licenceService)
     {
         $school_short = $request->query('school');
@@ -97,7 +100,6 @@ class HomepageController extends Controller
 
         // Laden aller auswählbaren Schulen
         $schools = School::selectables()->get();
-
 
         // Wenn es eine Schule gibt, die gültige Lizenzen holen
         if ($isSchoolValid) {
@@ -132,7 +134,7 @@ class HomepageController extends Controller
             'title' => 'SchoolTool',
             'isSchoolValid' => $isSchoolValid,
             'school' => $isSchoolValid ? new SchoolResource($school) : null,
-            'isLicenceValid' =>  $isLicenceValid,
+            'isLicenceValid' => $isLicenceValid,
             'licence' => $isLicenceValid ? new LicenceResource($licence) : null,
             'selectableSchools' => SchoolResource::collection($schools),
             'schoolLicences' => $school ? LicenceResource::collection($schoolLicences) : [],
@@ -144,6 +146,9 @@ class HomepageController extends Controller
                 'Nachhilfetool' => $this->toolLicenceStatus('Nachhilfetool', $licenceService),
                 'Lehrertool' => $this->toolLicenceStatus('Lehrertool', $licenceService),
             ],
+            'health' => [
+                'queue_working' => $this->isQueueWorking(),
+            ],
         ];
 
         return response()->json($data, 200);
@@ -152,6 +157,16 @@ class HomepageController extends Controller
     private function toolLicenceStatus(string $toolName, LicenceService $licenceService): string
     {
         return $licenceService->selectableSchoolLicenceOverview($toolName)['overall_status'];
+    }
+
+    private function isQueueWorking(): bool
+    {
+        $lastHealthAt = SchoolTool::query()->whereNotNull('health_at')->max('health_at');
+        if (! $lastHealthAt) {
+            return true;
+        }
+
+        return Carbon::parse($lastHealthAt)->greaterThan(now()->subMinutes(2));
     }
 
     public function logout()

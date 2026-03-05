@@ -23,7 +23,6 @@ use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\TutoringOffer;
-use App\Models\TutoringOfferRequest;
 use App\Models\TutoringSubject;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -931,6 +930,7 @@ describe('loadOfferConfig', function () {
             ->assertJsonStructure([
                 'school' => ['id', 'short_name', 'long_name'],
                 'auth' => ['is_auth'],
+                'health' => ['queue_working'],
             ]);
 
         expect($response->json('auth.is_auth'))->toBeFalse();
@@ -943,6 +943,7 @@ describe('loadOfferConfig', function () {
             ->assertJsonStructure([
                 'school',
                 'auth' => ['is_auth'],
+                'health' => ['queue_working'],
             ]);
 
         expect($response->json('auth.is_auth'))->toBeTrue();
@@ -1067,13 +1068,13 @@ describe('setUserSearchCriteria', function () {
 
 describe('offerConfirmRefuse', function () {
     test('it validates required parameters', function () {
-        $response = $this->get("/homepage/tutoring/offer");
+        $response = $this->get('/homepage/tutoring/offer');
 
         $response->assertStatus(302); // Redirects due to validation failure
     });
 
     test('it validates action parameter is valid', function () {
-        $response = $this->get("/homepage/tutoring/offer?action=invalid&offer_id=1&token=test&email_mentor=test@example.com");
+        $response = $this->get('/homepage/tutoring/offer?action=invalid&offer_id=1&token=test&email_mentor=test@example.com');
 
         $response->assertStatus(302); // Redirects due to validation failure
     });
@@ -1145,4 +1146,3 @@ describe('sendRequest', function () {
             ]);
     });
 });
-

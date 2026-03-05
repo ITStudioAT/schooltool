@@ -12,18 +12,16 @@ use App\Http\Requests\Homepage\RegisterSaveUserDataRequest;
 use App\Http\Resources\Homepage\LicenceResource;
 use App\Http\Resources\Homepage\RegisterResource;
 use App\Http\Resources\Homepage\SchoolResource;
-use App\Models\Licence;
 use App\Models\Register;
-use App\Models\RegisterDateBooking;
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\User;
 use App\Services\AdminService;
-use App\Services\LicenceService;
 use App\Services\RegisterDateBookingService;
 use App\Services\RegisterService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
 
 class RegisterController extends Controller
 {
@@ -42,7 +40,9 @@ class RegisterController extends Controller
 
         $register_data = $service->checkLicenceAndSchool($school_short, $app);
 
-        if ($register_data['status'] == 'error') abort(403, $register_data['message']);
+        if ($register_data['status'] == 'error') {
+            abort(403, $register_data['message']);
+        }
 
         $isSchoolValid = $register_data['isSchoolValid'];
         $isLicenceValid = $register_data['isLicenceValid'];
@@ -59,9 +59,12 @@ class RegisterController extends Controller
             'title' => 'Anmeldetool',
             'isSchoolValid' => $isSchoolValid,
             'school' => $isSchoolValid ? new SchoolResource($school) : null,
-            'isLicenceValid' =>  $isLicenceValid,
+            'isLicenceValid' => $isLicenceValid,
             'licence' => $isLicenceValid ? new LicenceResource($licence) : null,
             'registers' => $registers ? RegisterResource::collection($registers) : [],
+            'health' => [
+                'queue_working' => $this->isQueueWorking(),
+            ],
         ];
 
         return response()->json($data, 200);
@@ -75,8 +78,8 @@ class RegisterController extends Controller
         // Prüfen, ob es den User bereits gibt
         $user = User::where('school_id', $data['school_id'])->where('email', $data['email'])->first();
 
-        // User existiert noch nicht, 
-        if (!$user) {
+        // User existiert noch nicht,
+        if (! $user) {
             $data = $registerService->createUserAndSendToken($data);
         } else {
             $data = $registerService->sendTokenForLogin($user, $data);
@@ -92,10 +95,14 @@ class RegisterController extends Controller
         $data = $validated['data'];
 
         // Prüfen, ob es den User wirklich gibt, wenn nein, kann etwas nicht stimmen
-        if (!$user = User::where('id', $data['user_id'])->where('school_id', $data['school_id'])->where('email', $data['email'])->first()) abort(422, 'Ungültige Anmeldedaten');
+        if (! $user = User::where('id', $data['user_id'])->where('school_id', $data['school_id'])->where('email', $data['email'])->first()) {
+            abort(422, 'Ungültige Anmeldedaten');
+        }
 
         // Prüfen, des Tokens
-        if (!$registerService->checkToken($user, $data)) abort(401, 'Das Token ist falsch oder abgelaufen');
+        if (! $registerService->checkToken($user, $data)) {
+            abort(401, 'Das Token ist falsch oder abgelaufen');
+        }
 
         // E-Mail verified_at  und confirmed_at setzen
         $user->email_verified_at = now();
@@ -114,10 +121,13 @@ class RegisterController extends Controller
         $data = $validated['data'];
 
         // Prüfen, ob es den User wirklich gibt, wenn nein, kann etwas nicht stimmen
-        if (!$user = User::where('id', $data['user_id'])->where('school_id', $data['school_id'])->where('email', $data['email'])->first()) abort(422, 'Ungültige Anmeldedaten');
+        if (! $user = User::where('id', $data['user_id'])->where('school_id', $data['school_id'])->where('email', $data['email'])->first()) {
+            abort(422, 'Ungültige Anmeldedaten');
+        }
 
-        if (!$registerService->checkToken($user, $data)) abort(401, 'Das Token ist falsch oder abgelaufen');
-
+        if (! $registerService->checkToken($user, $data)) {
+            abort(401, 'Das Token ist falsch oder abgelaufen');
+        }
 
         // User-Daten aktualisieren
         $user->update([
@@ -143,12 +153,15 @@ class RegisterController extends Controller
         $data = $validated['data'];
 
         // Prüfen, ob es den User wirklich gibt, wenn nein, kann etwas nicht stimmen
-        if (!$user = User::where('id', $data['user_id'])->where('school_id', $data['school_id'])->where('email', $data['email'])->first()) abort(422, 'Ungültige Anmeldedaten');
+        if (! $user = User::where('id', $data['user_id'])->where('school_id', $data['school_id'])->where('email', $data['email'])->first()) {
+            abort(422, 'Ungültige Anmeldedaten');
+        }
         $user->register_id = $data['register_id'];
         $user->save();
 
-        if (!$registerService->checkToken($user, $data)) abort(401, 'Das Token ist falsch oder abgelaufen');
-
+        if (! $registerService->checkToken($user, $data)) {
+            abort(401, 'Das Token ist falsch oder abgelaufen');
+        }
 
         // User einloggen
         $user->assignRole('register_user');
@@ -167,6 +180,7 @@ class RegisterController extends Controller
         }
 
         $data = $service->loadRegisterAndUser($auth_user);
+
         return response()->json($data, 200);
     }
 
@@ -180,6 +194,7 @@ class RegisterController extends Controller
         $data['is_notify'] = true;
 
         $data = $service->book($auth_user, $data);
+
         return response()->json($data, 200);
     }
 
@@ -194,6 +209,15 @@ class RegisterController extends Controller
         $service->deleteBookings($auth_user, [$validated['booking_id']], true);
     }
 
+    // setActiveRegister
 
-    //setActiveRegister
+    private function isQueueWorking(): bool
+    {
+        $lastHealthAt = SchoolTool::query()->whereNotNull('health_at')->max('health_at');
+        if (! $lastHealthAt) {
+            return true;
+        }
+
+        return Carbon::parse($lastHealthAt)->greaterThan(now()->subMinutes(2));
+    }
 }

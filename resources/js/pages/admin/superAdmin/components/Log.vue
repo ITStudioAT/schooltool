@@ -77,15 +77,28 @@
                     </v-col>
 
                     <!-- Rechte Seite: Log-Inhalt -->
-                    <v-col cols="8" class="pa-0" style="overflow-y: auto; height: 100%;">
-                        <div
-                            v-if="log"
-                            class="pa-4"
-                            style="white-space: pre-wrap; font-family: monospace; font-size: 11px; line-height: 1.6; word-break: break-all;">
-                            {{ log }}
+                    <v-col cols="8" class="pa-0 d-flex flex-column" style="height: 100%;">
+                        <div v-if="log" class="d-flex justify-end align-center px-3 py-1" style="border-bottom: 1px solid rgba(128,128,128,0.2); flex-shrink: 0;">
+                            <v-btn
+                                icon
+                                size="small"
+                                variant="text"
+                                :color="copied ? 'success' : 'default'"
+                                :title="copied ? 'Kopiert!' : 'In Zwischenablage kopieren'"
+                                @click="copyToClipboard">
+                                <v-icon size="18">{{ copied ? 'mdi-check' : 'mdi-content-copy' }}</v-icon>
+                            </v-btn>
                         </div>
-                        <div v-else class="d-flex justify-center align-center text-medium-emphasis" style="height: 100%;">
-                            <span>Wähle eine Log-Datei aus</span>
+                        <div style="overflow-y: auto; flex: 1;">
+                            <div
+                                v-if="log"
+                                class="pa-4"
+                                style="white-space: pre-wrap; font-family: monospace; font-size: 11px; line-height: 1.6; word-break: break-all;">
+                                {{ log }}
+                            </div>
+                            <div v-else class="d-flex justify-center align-center text-medium-emphasis" style="height: 100%;">
+                                <span>Wähle eine Log-Datei aus</span>
+                            </div>
                         </div>
                     </v-col>
                 </v-row>
@@ -121,6 +134,7 @@ export default {
             selected_log: null,
             delete_levels: {},
             is_loaded: false,
+            copied: false,
         }
     },
 
@@ -134,6 +148,7 @@ export default {
             this.delete_levels = {}
             this.selected_log = filename
             this.log = null
+            this.copied = false
             await this.logStore.getLog(filename)
         },
         getDeleteLevel(filename) {
@@ -143,6 +158,11 @@ export default {
             const reset = {}
             Object.keys(this.delete_levels).forEach((key) => (reset[key] = 0))
             this.delete_levels = { ...reset, [filename]: level }
+        },
+        async copyToClipboard() {
+            await navigator.clipboard.writeText(this.log)
+            this.copied = true
+            setTimeout(() => (this.copied = false), 2000)
         },
         async deleteLog(filename) {
             await this.logStore.deleteLog(filename)

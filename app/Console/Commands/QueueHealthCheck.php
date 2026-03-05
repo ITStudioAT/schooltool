@@ -61,15 +61,26 @@ class QueueHealthCheck extends Command
      */
     private function isQueueWorkerRunning(): bool
     {
-        // Windows-kompatible Prozess-Prüfung
-        $command = stripos(PHP_OS, 'WIN') === 0
-            ? 'tasklist /FI "IMAGENAME eq php.exe" /FO CSV'
-            : 'ps aux | grep -E "queue:(work|listen)" | grep -v grep';
+        if ($this->isWindows()) {
+            foreach ($this->windowsQueueWorkerLookupCommands() as $command) {
+                $output = [];
+                exec($command, $output);
 
-        exec($command, $output);
+                foreach ($output as $line) {
+                    if ($this->lineIndicatesQueueWorker($line)) {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        $output = [];
+        exec('ps aux | grep -E "queue:(work|listen)" | grep -v grep', $output);
 
         foreach ($output as $line) {
-            if (str_contains($line, 'queue:work') || str_contains($line, 'queue:listen')) {
+            if ($this->lineIndicatesQueueWorker($line)) {
                 return true;
             }
         }
@@ -83,16 +94,17 @@ class QueueHealthCheck extends Command
     private function checkForStuckJobs(): int
     {
         try {
-            $stuckThreshold = now()->subMinutes(5);
+            $stuckThresholdTimestamp = now()->subMinutes(5)->getTimestamp();
 
             $stuckJobs = DB::table('jobs')
                 ->whereNotNull('reserved_at')
-                ->where('reserved_at', '<', $stuckThreshold)
+                ->where('reserved_at', '<', $stuckThresholdTimestamp)
                 ->count();
 
             return $stuckJobs;
         } catch (\Exception $e) {
-            Log::error('Error checking for stuck jobs: ' . $e->getMessage());
+            Log::error('Error checking for stuck jobs: '.$e->getMessage());
+
             return 0;
         }
     }
@@ -112,20 +124,24 @@ class QueueHealthCheck extends Command
             $this->call('queue:retry', ['id' => 'all']);
             $this->info('✓ Fehlgeschlagene Jobs wurden neu gestartet');
 
-            // Start new queue worker in background
-            if (stripos(PHP_OS, 'WIN') === 0) {
-                // Windows
-                $command = 'start /B php artisan queue:listen --tries=1 > nul 2>&1';
+            if ($this->isWindows()) {
+                $command = sprintf(
+                    'start "" /B "%s" "%s" queue:work --queue=default --tries=1 --sleep=3 --no-interaction > NUL 2>&1',
+                    PHP_BINARY,
+                    base_path('artisan')
+                );
                 pclose(popen($command, 'r'));
                 $this->info('✓ Queue Worker wurde gestartet (Windows)');
             } else {
-                // Linux/Unix
-                exec('nohup php artisan queue:listen --tries=1 > /dev/null 2>&1 &');
+                $command = sprintf(
+                    'nohup "%s" "%s" queue:work --queue=default --tries=1 --sleep=3 --no-interaction > /dev/null 2>&1 &',
+                    PHP_BINARY,
+                    base_path('artisan')
+                );
+                exec($command);
                 $this->info('✓ Queue Worker wurde gestartet (Linux)');
             }
 
-
-            // Wait and verify
             sleep(2);
 
             if ($this->isQueueWorkerRunning()) {
@@ -139,8 +155,8 @@ class QueueHealthCheck extends Command
                 return self::FAILURE;
             }
         } catch (\Exception $e) {
-            $this->error('Fehler beim Neustart: ' . $e->getMessage());
-            Log::error('Queue health check: Restart error - ' . $e->getMessage());
+            $this->error('Fehler beim Neustart: '.$e->getMessage());
+            Log::error('Queue health check: Restart error - '.$e->getMessage());
 
             return self::FAILURE;
         }
@@ -151,15 +167,38 @@ class QueueHealthCheck extends Command
      */
     private function killExistingWorkers(): void
     {
-        if (stripos(PHP_OS, 'WIN') === 0) {
-            // Windows: Kill by window title (if started with 'start')
-            exec('taskkill /FI "WINDOWTITLE eq queue:*" /F 2>nul');
+        if ($this->isWindows()) {
+            exec(
+                'powershell -NoProfile -Command "Get-CimInstance Win32_Process | '.
+                "Where-Object { \$_.CommandLine -match 'queue:(work|listen)' } | ".
+                'ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"'
+            );
         } else {
-            // Linux/Unix
             exec('pkill -f "queue:work"');
             exec('pkill -f "queue:listen"');
         }
 
-        sleep(1); // Give processes time to terminate
+        sleep(1);
+    }
+
+    private function isWindows(): bool
+    {
+        return stripos(PHP_OS, 'WIN') === 0;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function windowsQueueWorkerLookupCommands(): array
+    {
+        return [
+            "powershell -NoProfile -Command \"(Get-CimInstance Win32_Process -Filter \\\"Name = 'php.exe'\\\").CommandLine\"",
+            "wmic process where \"name='php.exe'\" get commandline",
+        ];
+    }
+
+    private function lineIndicatesQueueWorker(string $line): bool
+    {
+        return str_contains($line, 'queue:work') || str_contains($line, 'queue:listen');
     }
 }

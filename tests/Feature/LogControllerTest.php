@@ -10,6 +10,7 @@ use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -66,7 +67,7 @@ test('get_log allows admin role', function () {
 test('get_log returns 404 when log is missing', function () {
     $movedLogs = [];
     foreach ((glob(storage_path('logs/laravel*.log')) ?: []) as $path) {
-        $tempPath = $path . '.pest-hidden-' . uniqid();
+        $tempPath = $path.'.pest-hidden-'.uniqid();
         if (@rename($path, $tempPath)) {
             $movedLogs[] = [$tempPath, $path];
         }
@@ -119,4 +120,48 @@ test('delete_log clears file and writes backup', function () {
 
     expect(file_get_contents($this->logPath))->toBe('');
     expect(file_get_contents($this->backupPath))->toBe($content);
+});
+
+test('restart_queues restarts queues and runs health recovery command', function () {
+    Artisan::shouldReceive('call')->once()->with('cache:clear')->andReturn(0);
+
+    if (class_exists(\Laravel\Horizon\HorizonServiceProvider::class)) {
+        Artisan::shouldReceive('call')->once()->with('horizon:terminate')->andReturn(0);
+    }
+
+    Artisan::shouldReceive('call')->once()->with('queue:restart')->andReturn(0);
+    Artisan::shouldReceive('call')
+        ->once()
+        ->with('queue:health-check', ['--restart' => true])
+        ->andReturn(0);
+
+    $this->actingAs($this->superAdmin, 'sanctum')
+        ->postJson('/api/admin/restart_queues')
+        ->assertNoContent();
+});
+
+test('restart_queues still returns success when queue health recovery check fails', function () {
+    Artisan::shouldReceive('call')->once()->with('cache:clear')->andReturn(0);
+
+    if (class_exists(\Laravel\Horizon\HorizonServiceProvider::class)) {
+        Artisan::shouldReceive('call')->once()->with('horizon:terminate')->andReturn(0);
+    }
+
+    Artisan::shouldReceive('call')->once()->with('queue:restart')->andReturn(0);
+    Artisan::shouldReceive('call')
+        ->once()
+        ->with('queue:health-check', ['--restart' => true])
+        ->andReturn(1);
+
+    $this->actingAs($this->superAdmin, 'sanctum')
+        ->postJson('/api/admin/restart_queues')
+        ->assertNoContent();
+});
+
+test('restart_queues is forbidden for admin role', function () {
+    Artisan::shouldReceive('call')->never();
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->postJson('/api/admin/restart_queues')
+        ->assertForbidden();
 });

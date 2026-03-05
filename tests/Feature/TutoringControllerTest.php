@@ -21,7 +21,6 @@ use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\User;
-use App\Services\TutoringService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
@@ -65,6 +64,7 @@ describe('config', function () {
                 'schools' => [
                     '*' => ['id', 'short_name', 'long_name'],
                 ],
+                'health' => ['queue_working'],
             ]);
 
         $schools = $response->json('schools');
@@ -317,7 +317,7 @@ describe('confirmUser', function () {
             'confirmed_at' => null,
         ]);
 
-        $response = $this->get('/homepage/tutoring/confirm-user?user_id=' . $user->id . '&token=' . $validUuid);
+        $response = $this->get('/homepage/tutoring/confirm-user?user_id='.$user->id.'&token='.$validUuid);
 
         $response->assertStatus(302)
             ->assertRedirect()
@@ -335,7 +335,7 @@ describe('confirmUser', function () {
             'confirmed_at' => null,
         ]);
 
-        $response = $this->get('/homepage/tutoring/confirm-user?user_id=' . $user->id . '&token=' . $wrongUuid);
+        $response = $this->get('/homepage/tutoring/confirm-user?user_id='.$user->id.'&token='.$wrongUuid);
 
         $response->assertStatus(302)
             ->assertRedirect()
@@ -363,7 +363,7 @@ describe('confirmUser', function () {
             'confirmed_at' => null,
         ]);
 
-        $response = $this->get('/homepage/tutoring/confirm-user?user_id=' . $user->id . '&token=' . $validUuid);
+        $response = $this->get('/homepage/tutoring/confirm-user?user_id='.$user->id.'&token='.$validUuid);
 
         $response->assertStatus(403);
     });
@@ -389,7 +389,7 @@ describe('confirmUser', function () {
             'confirmed_at' => null,
         ]);
 
-        $response = $this->get('/homepage/tutoring/confirm-user?user_id=' . $user->id . '&token=' . $validUuid);
+        $response = $this->get('/homepage/tutoring/confirm-user?user_id='.$user->id.'&token='.$validUuid);
 
         $response->assertStatus(302)
             ->assertRedirect()

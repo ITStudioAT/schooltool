@@ -81,7 +81,7 @@
                                 <div class="card-icon">
                                     <v-icon size="40">mdi-account-group</v-icon>
                                 </div>
-                                <h3 class="card-title">Schüler helfen Schülern</h3>
+                                <h3 class="card-title">{{ tutoringDisplayName }}</h3>
                                 <p class="card-description">Nachhilfe von Schülern für Schüler. Gemeinsam zum Erfolg.</p>
                                 <div class="card-action">
                                     <span class="action-text">Starten</span>
@@ -202,7 +202,7 @@
                     <div class="product-copy">
                         <div class="product-label">
                             <v-icon size="18">mdi-account-group</v-icon>
-                            <span>Schüler helfen Schülern</span>
+                            <span>{{ tutoringDisplayName }}</span>
                         </div>
                         <h4 class="product-title">Nachhilfe-Tool transparent organisiert</h4>
                         <p class="product-text">Nachhilfe-Angebote übersichtlich verwaltet. Zuständigkeiten und Status bleiben jederzeit sichtbar.</p>
@@ -382,6 +382,9 @@ export default {
         tutoringStatus() {
             return this.toolStatuses['Nachhilfetool'] || 'missing'
         },
+        tutoringDisplayName() {
+            return 'Schüler helfen Schülern (Testversion)'
+        },
         teachingStatus() {
             return this.toolStatuses['Lehrertool'] || 'missing'
         },
@@ -430,7 +433,7 @@ export default {
             const notification = useNotificationStore()
             const toolLabel = {
                 Anmeldetool: 'Anmeldetool',
-                Nachhilfetool: 'Schüler helfen Schülern',
+                Nachhilfetool: this.tutoringDisplayName,
                 Lehrertool: 'Unterricht',
             }[tool] || tool
 

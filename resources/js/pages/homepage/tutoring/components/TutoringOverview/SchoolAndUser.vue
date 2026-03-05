@@ -154,9 +154,19 @@
                         </div>
                         <div class="mt-4 d-flex flex-column align-center justify-center ga-2">
                             <div>oder</div>
-                            <v-btn color="primary" slim flat rounded="0" data-testid="tutoring-login-unknown-password" @click="unknownPassword(data)">
+                            <v-btn
+                                color="primary"
+                                slim
+                                flat
+                                rounded="0"
+                                data-testid="tutoring-login-unknown-password"
+                                :disabled="!isCodeLoginAvailable"
+                                @click="unknownPassword(data)">
                                 Kennwort unbekannt
                             </v-btn>
+                            <v-alert v-if="!isCodeLoginAvailable" density="compact" type="warning" variant="tonal" class="w-100 mt-2">
+                                !Login mit Code derzeit nicht möglich
+                            </v-alert>
                         </div>
                     </v-form>
                 </v-card-text>
@@ -175,8 +185,11 @@
                         <v-otp-input autofocus v-model="data.token_2fa" />
                         <div class="d-flex flex-row align-center justify-space-between mt-4">
                             <v-btn color="warning" slim flat rounded="0" @click="data.status = ''">Zurück</v-btn>
-                            <v-btn color="success" slim flat rounded="0" type="submit" v-if="data.token_2fa" tabindex="2">Weiter</v-btn>
+                            <v-btn color="success" slim flat rounded="0" type="submit" v-if="data.token_2fa" tabindex="2" :disabled="!isCodeLoginAvailable">Weiter</v-btn>
                         </div>
+                        <v-alert v-if="!isCodeLoginAvailable" density="compact" type="warning" variant="tonal" class="w-100 mt-2">
+                            !Login mit Code derzeit nicht möglich
+                        </v-alert>
                     </v-form>
                 </v-card-text>
             </v-card>
@@ -247,6 +260,10 @@ export default {
             type: Object,
             default: null,
         },
+        queue_working: {
+            type: Boolean,
+            default: null,
+        },
     },
 
     emits: ['cancel-login', 'login-success', 'logout'],
@@ -259,7 +276,18 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useTutoringStore, ['schools', 'selected_school_id', 'data']),
+        ...mapWritableState(useTutoringStore, ['schools', 'selected_school_id', 'data', 'config']),
+        isCodeLoginAvailable() {
+            if (this.queue_working === false) {
+                return false
+            }
+
+            if (this.config?.health?.queue_working === false) {
+                return false
+            }
+
+            return true
+        },
     },
 
     beforeMount() {
@@ -277,6 +305,8 @@ export default {
         },
 
         async loginWithToken(data) {
+            if (!this.isCodeLoginAvailable) return
+
             if (!(await this.tutoringStore.loginWithToken(data))) return
         },
 
@@ -310,6 +340,8 @@ export default {
         },
 
         async unknownPassword(data) {
+            if (!this.isCodeLoginAvailable) return
+
             data['status'] = 'UNKNOWN_PASSWORD'
             if (!(await this.tutoringStore.unknownPassword(data))) return
         },

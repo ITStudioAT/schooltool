@@ -18,7 +18,8 @@
       "mcp__laravel-boost__get-absolute-url",
       "Bash(./vendor/bin/pint --dirty --format agent app/Http/Controllers/Admin/LicenceController.php app/Services/LicenceService.php)",
       "Bash(./vendor/bin/pint app/Http/Controllers/Admin/TeachersListController.php --format agent)",
-      "Bash(xargs ls)"
+      "Bash(xargs ls)",
+      "Bash(./vendor/bin/pint app/Http/Controllers/Admin/LogController.php --format agent)"
     ],
     "additionalDirectories": [
       "C:\\Users\\kron\\.claude\\projects\\c--Dropbox-laravel-schooltool\\memory"

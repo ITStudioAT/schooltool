@@ -67,6 +67,23 @@
                                 }}
                             </span>
                         </div>
+                        <div v-if="isAllowed(['super_admin'])" class="mt-3">
+                            <div v-if="restart_queues_loading" class="restart-status mb-2">
+                                <v-icon size="16" class="restart-status-icon mdi-spin mr-1">mdi-loading</v-icon>
+                                <span class="text-caption restart-status-text">Neustart + Tests laufen... {{ restart_countdown }}s</span>
+                            </div>
+                            <v-btn
+                                size="small"
+                                variant="flat"
+                                color="warning"
+                                prepend-icon="mdi-restart"
+                                :loading="restart_queues_loading"
+                                :disabled="restart_queues_loading || queue_test_status == 'running' || cron_test_status == 'running'"
+                                block
+                                @click="restartQueues">
+                                Queues neu starten
+                            </v-btn>
+                        </div>
                     </div>
 
                     <div class="kpi-card ai-glass-panel">
@@ -523,6 +540,8 @@ export default {
             renewal_dialog_payment_active: false,
             renewal_dialog_current_valid_until: null,
             renewal_dialog_new_valid_until: null,
+            restart_queues_loading: false,
+            restart_countdown: 0,
         }
     },
 
@@ -542,42 +561,76 @@ export default {
         isAllowed(roles) {
             return this.config.user.roles.some((role) => roles.includes(role))
         },
+        async restartQueues() {
+            if (this.restart_queues_loading || this.queue_test_status == 'running' || this.cron_test_status == 'running') return
+            this.restart_queues_loading = true
+            this.restart_countdown = 0
+            const counterInterval = setInterval(() => {
+                this.restart_countdown += 1
+            }, 1000)
+            try {
+                await axios.post('/api/admin/restart_queues')
+                await this.runTests()
+                useNotificationStore().notify({
+                    message: 'Queues wurden neu gestartet und geprüft.',
+                    type: 'success',
+                    timeout: 5000,
+                })
+            } catch (error) {
+                useNotificationStore().notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Neustart der Queues.',
+                    type: 'error',
+                    timeout: 5000,
+                })
+            } finally {
+                clearInterval(counterInterval)
+                this.restart_queues_loading = false
+                this.restart_countdown = 0
+            }
+        },
         async runTests() {
+            if (!this.healthStore) return
+
             // Cron-Job-Status
             this.cron_test_status = 'running'
-            await this.healthStore.checkCronStatus()
-            this.cron_test_result = this.cron_status.is_healthy
-            this.cron_test_status = 'finished'
+            try {
+                await this.healthStore.checkCronStatus()
+                this.cron_test_result = this.cron_status?.is_healthy ?? 0
+            } catch {
+                this.cron_test_result = 0
+            } finally {
+                this.cron_test_status = 'finished'
+            }
 
             this.test_step = 0
             this.all_tests_result = 0
-            this.queue_test_status = 'waiting'
+            this.queue_test_status = 'running'
             this.queue_test_result = 0
 
-            this.queue_test_status = 'running'
-            await this.healthStore.testQueue()
-            // Mehrmals prüfen bis completed
-            let attempts = 0
-            let maxAttempts = 10
-            let status = null
-            let is_completed = false
+            try {
+                await this.healthStore.testQueue()
+                // Mehrmals prüfen bis completed
+                let attempts = 0
+                const maxAttempts = 20
 
-            this.queue_test_result = 999
-            while (attempts < maxAttempts && !is_completed) {
-                status = await this.healthStore.checkQueueStatus(this.data.testId)
-
-                if (status.is_completed) {
-                    this.queue_test_result = 1
-                    break
-                } else {
-                    await new Promise((resolve) => setTimeout(resolve, 1000)) // 1 Sekunde warten
+                this.queue_test_result = 999
+                while (attempts < maxAttempts) {
+                    const status = await this.healthStore.checkQueueStatus(this.data?.testId)
+                    if (status && status.is_completed) {
+                        this.queue_test_result = 1
+                        break
+                    }
+                    await new Promise((resolve) => setTimeout(resolve, 1000))
                     attempts++
                 }
+            } catch {
+                this.queue_test_result = 0
+            } finally {
+                this.queue_test_status = 'finished'
             }
-            this.queue_test_status = 'finished'
 
-            this.all_tests_result = 1
-            if (this.queue_test_result != 1 || this.cron_test_result != 1) this.all_tests_result = 999
+            this.all_tests_result = this.queue_test_result == 1 && this.cron_test_result == 1 ? 1 : 999
             this.test_step = 999
         },
 

@@ -141,11 +141,14 @@
                             color="primary"
                             variant="outlined"
                             rounded="pill"
-                            :disabled="!canContinueWithEmail"
+                            :disabled="!canContinueWithEmail || !isCodeLoginAvailable"
                             @click="continueWithoutPassword">
                             Weiter ohne Kennwort
                         </v-btn>
                     </div>
+                    <v-alert v-if="!isCodeLoginAvailable" class="mt-4" density="compact" type="warning" variant="tonal">
+                        !Login mit Code derzeit nicht möglich
+                    </v-alert>
                 </v-form>
             </div>
         </section>
@@ -169,8 +172,11 @@
                     </div>
                     <div class="login-actions">
                         <v-btn type="button" color="warning" variant="text" rounded="pill" @click="backToEmail">Zurück</v-btn>
-                        <v-btn type="submit" color="success" variant="flat" rounded="pill" :disabled="!canSubmitCode">Code bestätigen</v-btn>
+                        <v-btn type="submit" color="success" variant="flat" rounded="pill" :disabled="!canSubmitCode || !isCodeLoginAvailable">Code bestätigen</v-btn>
                     </div>
+                    <v-alert v-if="!isCodeLoginAvailable" class="mt-4" density="compact" type="warning" variant="tonal">
+                        !Login mit Code derzeit nicht möglich
+                    </v-alert>
                 </v-form>
             </div>
         </section>
@@ -314,6 +320,9 @@ export default {
             if (!value) return false
             return this.required()(value) === true && this.mail()(value) === true && this.maxLength(255)(value) === true
         },
+        isCodeLoginAvailable() {
+            return this.config?.health?.queue_working !== false
+        },
         canSubmitCode() {
             const value = String(this.data.login_code || '').trim()
             return value.length === 6
@@ -374,6 +383,8 @@ export default {
         },
 
         async continueWithoutPassword() {
+            if (!this.isCodeLoginAvailable) return
+
             const isValid = await this.validateLoginForm()
             if (!isValid) return
 
@@ -403,6 +414,7 @@ export default {
         },
 
         async submitCode() {
+            if (!this.isCodeLoginAvailable) return
             if (!this.canSubmitCode) return
 
             this.data.login_code.trim()

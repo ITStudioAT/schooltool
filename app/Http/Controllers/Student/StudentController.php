@@ -9,7 +9,7 @@ use App\Models\SchoolTool;
 use App\Services\LicenceService;
 use App\Services\StudentService;
 use App\Services\UserService;
-use Fruitcake\LaravelDebugbar\Facades\Debugbar;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -26,6 +26,9 @@ class StudentController extends Controller
                 'schooltool' => [
                     'teaching_max_schools_shown' => (int) config('schooltool.teaching_max_schools_shown', 20),
                 ],
+            ],
+            'health' => [
+                'queue_working' => $this->isQueueWorking(),
             ],
         ];
 
@@ -45,27 +48,27 @@ class StudentController extends Controller
         $email = $validated['email'];
 
         $schoolyear_id = SchoolTool::where('school_id', $school_id)->value('active_schoolyear_id');
-        if (!$schoolyear_id) abort(404, 'Keine aktive Schuljahr für die Schule gefunden. Wenden Sie sich an den Administrator.');
+        if (! $schoolyear_id) {
+            abort(404, 'Keine aktive Schuljahr für die Schule gefunden. Wenden Sie sich an den Administrator.');
+        }
 
-
-
-        $userService = new UserService();
+        $userService = new UserService;
         $data = $validated;
 
         // Checken, ob Email in der Schule existiert
         $user = $service->isEmailValidForSchool($email, $school_id);
 
-
-        if (!$user) {
+        if (! $user) {
             // ##### User existiert nicht
 
             // Prüfen, ob der User in der Import116 vorkommt
             $import_user = $service->isStudentInImport116($email, $school_id, $schoolyear_id);
-            if (!$import_user) abort(403, 'Die E-Mail-Adresse ist nicht für diese Schule registriert. Bitte wenden Sie sich an Ihren Lehrer oder Administrator.');
+            if (! $import_user) {
+                abort(403, 'Die E-Mail-Adresse ist nicht für diese Schule registriert. Bitte wenden Sie sich an Ihren Lehrer oder Administrator.');
+            }
 
             $user = $service->createUserFromImport116($import_user);
         }
-
 
         if ($user) {
             // ##### User existiert
@@ -86,7 +89,9 @@ class StudentController extends Controller
 
                 // Prüfen, ob der User in der Import116 vorkommt
                 $import_user = $service->isStudentInImport116($email, $school_id, $schoolyear_id);
-                if (!$import_user) abort(403, 'Die E-Mail-Adresse ist nicht für diese Schule registriert. Bitte wenden Sie sich an Ihren Lehrer oder Administrator.');
+                if (! $import_user) {
+                    abort(403, 'Die E-Mail-Adresse ist nicht für diese Schule registriert. Bitte wenden Sie sich an Ihren Lehrer oder Administrator.');
+                }
 
                 // Student-Rolle zuweisen
                 $user->assignRole('student');
@@ -118,9 +123,11 @@ class StudentController extends Controller
 
         // Checken, ob Email in der Schule existiert
         $user = $service->isEmailValidForSchool($email, $school_id);
-        if (!$user) abort(403, 'Die E-Mail-Adresse ist nicht für diese Schule registriert. Bitte wenden Sie sich an Ihren Lehrer oder Administrator.');
+        if (! $user) {
+            abort(403, 'Die E-Mail-Adresse ist nicht für diese Schule registriert. Bitte wenden Sie sich an Ihren Lehrer oder Administrator.');
+        }
 
-        if (!$service->isTokenValid($user, $validated['login_code'])) {
+        if (! $service->isTokenValid($user, $validated['login_code'])) {
             // Code ist ungültig
             $data['status'] = 'code_not_valid';
         } else {
@@ -148,9 +155,11 @@ class StudentController extends Controller
 
         // Checken, ob Email in der Schule existiert
         $user = $service->isEmailValidForSchool($email, $school_id);
-        if (!$user) abort(403, 'Die E-Mail-Adresse ist nicht für diese Schule registriert. Bitte wenden Sie sich an Ihren Lehrer oder Administrator.');
+        if (! $user) {
+            abort(403, 'Die E-Mail-Adresse ist nicht für diese Schule registriert. Bitte wenden Sie sich an Ihren Lehrer oder Administrator.');
+        }
 
-        if (!$service->isPasswordValid($user, $validated['password'])) {
+        if (! $service->isPasswordValid($user, $validated['password'])) {
             // Code ist ungültig
             $data['status'] = 'password_not_valid';
         } else {
@@ -159,6 +168,7 @@ class StudentController extends Controller
             $data['user'] = new UserResource($user);
             $data['status'] = 'login_ok';
         }
+
         return response()->json($data, 200);
     }
 
@@ -199,5 +209,15 @@ class StudentController extends Controller
             'status' => 'success',
             'message' => 'Passwort erfolgreich geändert',
         ], 200);
+    }
+
+    private function isQueueWorking(): bool
+    {
+        $lastHealthAt = SchoolTool::query()->whereNotNull('health_at')->max('health_at');
+        if (! $lastHealthAt) {
+            return true;
+        }
+
+        return Carbon::parse($lastHealthAt)->greaterThan(now()->subMinutes(2));
     }
 }

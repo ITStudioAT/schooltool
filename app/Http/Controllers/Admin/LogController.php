@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 
 class LogController extends Controller
 {
@@ -17,8 +19,8 @@ class LogController extends Controller
 
         $logs = collect($logFiles)->map(function (string $path): array {
             return [
-                'name'     => basename($path),
-                'size'     => $this->formatBytes(filesize($path)),
+                'name' => basename($path),
+                'size' => $this->formatBytes(filesize($path)),
                 'modified' => date('d.m.Y H:i', filemtime($path)),
             ];
         })->sortByDesc('name')->values();
@@ -36,7 +38,7 @@ class LogController extends Controller
 
         if ($filename) {
             $filename = basename($filename);
-            $logPath  = storage_path('logs/'.$filename);
+            $logPath = storage_path('logs/'.$filename);
         } else {
             $logPath = $this->resolveLogPath();
         }
@@ -49,9 +51,9 @@ class LogController extends Controller
 
         $maxLines = $request->input('lines', 500);
         $maxLines = min($maxLines, 1000);
-        $mode     = $request->input('mode', 'first'); // 'last' oder 'first'
+        $mode = $request->input('mode', 'first'); // 'last' oder 'first'
 
-        $allLines   = file($logPath);
+        $allLines = file($logPath);
         $totalLines = count($allLines);
 
         if ($mode === 'first') {
@@ -79,7 +81,7 @@ class LogController extends Controller
 
         if ($filename) {
             $filename = basename($filename);
-            $logPath  = storage_path('logs/'.$filename);
+            $logPath = storage_path('logs/'.$filename);
         } else {
             $logPath = $this->resolveLogPath();
         }
@@ -97,6 +99,57 @@ class LogController extends Controller
 
         // Leere die Original-Datei
         file_put_contents($logPath, '');
+
+        return response()->noContent();
+    }
+
+    public function restartQueues(): \Illuminate\Http\Response
+    {
+        if (! $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        try {
+            Artisan::call('cache:clear');
+        } catch (\Throwable $exception) {
+            Log::warning('cache:clear failed during queue restart.', [
+                'message' => $exception->getMessage(),
+            ]);
+        }
+
+        if (class_exists(\Laravel\Horizon\HorizonServiceProvider::class)) {
+            try {
+                Artisan::call('horizon:terminate');
+            } catch (\Throwable $exception) {
+                Log::warning('horizon:terminate failed during queue restart.', [
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+        }
+
+        try {
+            Artisan::call('queue:restart');
+        } catch (\Throwable $exception) {
+            Log::warning('queue:restart failed during queue restart.', [
+                'message' => $exception->getMessage(),
+            ]);
+        }
+
+        try {
+            $healthCheckExitCode = Artisan::call('queue:health-check', [
+                '--restart' => true,
+            ]);
+
+            if ($healthCheckExitCode !== 0) {
+                Log::warning('Queue restart recovery command returned non-zero exit code.', [
+                    'exit_code' => $healthCheckExitCode,
+                ]);
+            }
+        } catch (\Throwable $exception) {
+            Log::warning('queue:health-check failed during queue restart.', [
+                'message' => $exception->getMessage(),
+            ]);
+        }
 
         return response()->noContent();
     }

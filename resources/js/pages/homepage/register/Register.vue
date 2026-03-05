@@ -257,6 +257,9 @@
                             <span>Wir haben Ihnen einen Anmeldecode per E-Mail gesendet.</span>
                         </div>
                     </v-alert>
+                    <v-alert v-if="!isCodeLoginAvailable" type="warning" variant="tonal" class="mb-6" border="start">
+                        !Login mit Code derzeit nicht möglich
+                    </v-alert>
 
                     <v-form ref="form" v-model="is_valid" @submit.prevent="loginToken(data)" class="step-form">
                         <div class="otp-label">Bitte den Code eingeben:</div>
@@ -266,7 +269,14 @@
                                 <v-icon start>mdi-refresh</v-icon>
                                 Neustart
                             </v-btn>
-                            <v-btn color="success" variant="flat" size="large" rounded="lg" type="submit" data-testid="register-login-token-submit" :disabled="!data.email">
+                            <v-btn
+                                color="success"
+                                variant="flat"
+                                size="large"
+                                rounded="lg"
+                                type="submit"
+                                data-testid="register-login-token-submit"
+                                :disabled="!data.email || !isCodeLoginAvailable">
                                 Anmelden
                                 <v-icon end>mdi-login</v-icon>
                             </v-btn>
@@ -317,6 +327,9 @@ export default {
 
     computed: {
         ...mapWritableState(useRegisterStore, ['config', 'registers', 'active_register', 'selected_register_id', 'data']),
+        isCodeLoginAvailable() {
+            return this.config?.health?.queue_working !== false
+        },
     },
 
     methods: {
@@ -337,6 +350,8 @@ export default {
         },
 
         async loginToken(data) {
+            if (!this.isCodeLoginAvailable) return
+
             if (!(await this.registerStore.loginToken(data))) return
             this.$router.push('/homepage/register2')
         },

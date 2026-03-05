@@ -84,6 +84,7 @@ test('config returns only selectable schools with valid Lehrertool licence', fun
         ->assertJsonStructure([
             'schools',
             'config' => ['schooltool' => ['teaching_max_schools_shown']],
+            'health' => ['queue_working'],
         ]);
 
     $schools = $response->json('schools');

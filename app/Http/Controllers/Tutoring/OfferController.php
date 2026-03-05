@@ -25,10 +25,9 @@ use App\Services\LicenceService;
 use App\Services\TutoringOfferService;
 use App\Services\UserService;
 use Barryvdh\Debugbar\Facades\Debugbar;
-use DebugBar\DebugBar as DebugBarAlias;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log;
 
 class OfferController extends Controller
 {
@@ -41,7 +40,6 @@ class OfferController extends Controller
         if (! $auth_user = $this->userHasRole(['tutoring_user'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
-
 
         $validated = $request->validated();
         $search_string = $validated['search_string'] ?? null;
@@ -66,7 +64,6 @@ class OfferController extends Controller
         ]);
     }
 
-
     public function loadOffers(OfferLoadOffersRequest $request)
     {
 
@@ -79,7 +76,6 @@ class OfferController extends Controller
 
         // Unterscheiden, ob ein eingeloggter User die Aangebote sehen will oder ein nicht eingeloggter User
 
-
         if ($auth_user) {
             // ANZEIGEN FÜR EINEN EINGELOGTTEN USER
             $school = $auth_user->selectedSchool;
@@ -88,7 +84,9 @@ class OfferController extends Controller
             $school = School::where('short_name', $school_name)->first();
         }
 
-        if (!$school) abort(422, 'Keine Schule ausgewählt');
+        if (! $school) {
+            abort(422, 'Keine Schule ausgewählt');
+        }
         $this->ensureTutoringLicenceForSchool($school);
 
         if ($auth_user) {
@@ -116,7 +114,7 @@ class OfferController extends Controller
                 })
                 // School filter
                 ->where(function ($query) use ($filter, $auth_user, $schoolIds) {
-                    if (!empty($filter['only_in_my_school'])) {
+                    if (! empty($filter['only_in_my_school'])) {
                         $query->where('tutoring_offers.school_id', $auth_user->school_id);
                     } else {
                         $query->where(function ($q) use ($auth_user, $schoolIds) {
@@ -132,9 +130,9 @@ class OfferController extends Controller
                 })
                 // Sex filter
                 ->where(function ($query) use ($filter) {
-                    if (!empty($filter['only_boys'])) {
+                    if (! empty($filter['only_boys'])) {
                         $query->where('users.sex', 'm');
-                    } elseif (!empty($filter['only_girls'])) {
+                    } elseif (! empty($filter['only_girls'])) {
                         $query->where('users.sex', 'f');
                     }
                 })
@@ -175,16 +173,12 @@ class OfferController extends Controller
                 ->select('tutoring_offers.*')
                 ->paginate(config('schooltool.pagination'));
 
-
             return response()->json([
                 'data' => OfferNotLoggedInResource::collection($offers),
                 'meta' => new PaginateResource($offers),
             ]);
         }
     }
-
-
-
 
     /**
      * Store a newly created resource in storage.
@@ -197,10 +191,14 @@ class OfferController extends Controller
 
         $validated = $request->validated();
         $answer = $service->isCreatingPossible($auth_user->school_id, $auth_user->id, $validated);
-        if (!$answer['status']) abort($answer['code'], $answer['message']);
+        if (! $answer['status']) {
+            abort($answer['code'], $answer['message']);
+        }
 
         $offer = $service->create($auth_user->school_id, $auth_user->id, $validated);
-        if ($offer->must_be_accepted) $service->sendOfferToMentor($offer);
+        if ($offer->must_be_accepted) {
+            $service->sendOfferToMentor($offer);
+        }
 
         return response()->json(new OfferResource($offer), 200);
     }
@@ -225,7 +223,9 @@ class OfferController extends Controller
         $validated = $request->validated();
 
         $offer = $service->update($offer, $validated);
-        if ($offer->must_be_accepted) $service->sendOfferToMentor($offer);
+        if ($offer->must_be_accepted) {
+            $service->sendOfferToMentor($offer);
+        }
 
         return response()->json(new OfferResource($offer), 200);
     }
@@ -243,9 +243,13 @@ class OfferController extends Controller
             abort(403, 'Sie können nur eigene Angebote löschen.');
         }
 
-        if ($offer->requests()->exists()) abort(409, 'Das Angebot kann nicht gelöscht werden, da Anfragen existieren.');
+        if ($offer->requests()->exists()) {
+            abort(409, 'Das Angebot kann nicht gelöscht werden, da Anfragen existieren.');
+        }
 
-        if ($offer->must_be_accepted) $service->sendOfferDeletedToMentor($offer);
+        if ($offer->must_be_accepted) {
+            $service->sendOfferDeletedToMentor($offer);
+        }
 
         $offer->delete();
 
@@ -284,7 +288,7 @@ class OfferController extends Controller
             $schooltool = SchoolTool::where('school_id', $auth_user->school_id)->first();
             $max = $schooltool->tutoring_max_offers_per_student;
 
-            if (!$max || $max == 0) {
+            if (! $max || $max == 0) {
                 $offer->is_active = true;
             } else {
                 $activeOffersCount = TutoringOffer::where('user_id', $auth_user->id)->where('school_id', $auth_user->school_id)
@@ -292,7 +296,7 @@ class OfferController extends Controller
                     ->count();
 
                 if ($activeOffersCount >= $max) {
-                    abort(422, 'Du kannst nur maximal ' . $max . ' aktive Nachhilfeangebote haben.');
+                    abort(422, 'Du kannst nur maximal '.$max.' aktive Nachhilfeangebote haben.');
                 } else {
                     $offer->is_active = true;
                 }
@@ -303,6 +307,7 @@ class OfferController extends Controller
         }
 
         $offer->save();
+
         return response()->noContent();
     }
 
@@ -315,7 +320,7 @@ class OfferController extends Controller
         if ($auth['is_auth']) {
             /** @var \App\Models\User $user */
             $user = Auth::user();
-            if (!$user->hasRole('tutoring_user')) {
+            if (! $user->hasRole('tutoring_user')) {
                 UserService::logout();
                 $auth = $authService->getAuth();
             } else {
@@ -323,11 +328,13 @@ class OfferController extends Controller
             }
         }
 
-        if (!$school) {
-            if (!isset($validated['school_name'])) {
+        if (! $school) {
+            if (! isset($validated['school_name'])) {
                 $school = null;
             } else {
-                if (!$school = School::where('short_name', $validated['school_name'])->first()) $school = null;
+                if (! $school = School::where('short_name', $validated['school_name'])->first()) {
+                    $school = null;
+                }
             }
         }
 
@@ -335,13 +342,25 @@ class OfferController extends Controller
             $this->ensureTutoringLicenceForSchool($school);
         }
 
-
         $data = [
             'school' => $school ? new SchoolResource($school) : null,
             'auth' => $auth,
+            'health' => [
+                'queue_working' => $this->isQueueWorking(),
+            ],
         ];
 
         return response()->json($data, 200);
+    }
+
+    private function isQueueWorking(): bool
+    {
+        $lastHealthAt = SchoolTool::query()->whereNotNull('health_at')->max('health_at');
+        if (! $lastHealthAt) {
+            return true;
+        }
+
+        return Carbon::parse($lastHealthAt)->greaterThan(now()->subMinutes(2));
     }
 
     public function clickCount(Request $request)
@@ -374,7 +393,7 @@ class OfferController extends Controller
         // Prüfen ob IP in der letzten Stunde bereits geklickt hat
         $ipExists = collect($clickIps)->contains('ip', $ip);
 
-        if (!$ipExists) {
+        if (! $ipExists) {
             // IP hinzufügen
             $clickIps[] = [
                 'ip' => $ip,
@@ -427,9 +446,9 @@ class OfferController extends Controller
         $user = $offer->user;
 
         if ($validated['action'] == 'confirm') {
-            return redirect('/homepage/tutoring_response?title=' . urlencode($offer->title) . '&subtitle=' . $user->last_name . ' ' . $user->first_name . ' (' . $user->schoolclass . ')&text=' . urlencode($offer->description) . '&status=GENEHMIGT');
+            return redirect('/homepage/tutoring_response?title='.urlencode($offer->title).'&subtitle='.$user->last_name.' '.$user->first_name.' ('.$user->schoolclass.')&text='.urlencode($offer->description).'&status=GENEHMIGT');
         } else {
-            return redirect('/homepage/tutoring_response?title=' . urlencode($offer->title) . '&subtitle=' . $user->last_name . ' ' . $user->first_name . ' (' . $user->schoolclass . ')&text=' . urlencode($offer->description) . '&status=ABGELEHNT');
+            return redirect('/homepage/tutoring_response?title='.urlencode($offer->title).'&subtitle='.$user->last_name.' '.$user->first_name.' ('.$user->schoolclass.')&text='.urlencode($offer->description).'&status=ABGELEHNT');
         }
     }
 
@@ -446,7 +465,9 @@ class OfferController extends Controller
         $message = $validated['request_message'] ?? '';
         $offer = TutoringOffer::findOrFail($offer_id);
 
-        if ($offer->user_id == $auth_user->id) abort(403, 'An sich selbst kann man keine Anfrage stellen');
+        if ($offer->user_id == $auth_user->id) {
+            abort(403, 'An sich selbst kann man keine Anfrage stellen');
+        }
 
         $data = $service->sendOfferRequest($auth_user->id, $offer_id, $message);
 

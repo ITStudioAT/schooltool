@@ -7,9 +7,7 @@ use App\Models\RegisterDateBooking;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
-use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Models\Role;
 
@@ -83,6 +81,7 @@ describe('config', function () {
                 'isLicenceValid',
                 'licence',
                 'registers',
+                'health' => ['queue_working'],
             ])
             ->assertJsonPath('isSchoolValid', true)
             ->assertJsonPath('isLicenceValid', true)
@@ -616,4 +615,3 @@ describe('deleteBooking', function () {
             ->assertJsonValidationErrors(['booking_id']);
     });
 });
-

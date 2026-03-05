@@ -196,6 +196,7 @@
                 :is_login="is_login"
                 :school_name="school_name"
                 :school="school"
+                :queue_working="offer_config?.health?.queue_working"
                 @cancel-login="is_login = false"
                 @login-success="afterLogin"
                 @logout="logout" />

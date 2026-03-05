@@ -402,6 +402,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     /* SANCTUM - super_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:super_admin'])->group(function () {
         Route::post('/admin/delete_log', [\App\Http\Controllers\Admin\LogController::class, 'deleteLog']);
+        Route::post('/admin/restart_queues', [\App\Http\Controllers\Admin\LogController::class, 'restartQueues']);
         Route::get('/admin/impersonation/schools', [\App\Http\Controllers\Admin\ImpersonationController::class, 'schools']);
         Route::get('/admin/impersonation/users', [\App\Http\Controllers\Admin\ImpersonationController::class, 'users']);
         Route::post('/admin/impersonation/start', [\App\Http\Controllers\Admin\ImpersonationController::class, 'start']);

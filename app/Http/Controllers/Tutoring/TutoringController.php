@@ -13,14 +13,12 @@ use App\Http\Requests\Tutoring\LoginWithPasswordRequest;
 use App\Http\Resources\Homepage\SchoolWithLicenceRecource;
 use App\Http\Resources\Homepage\UserResource;
 use App\Http\Resources\Tutoring\SchoolToolResource;
+use App\Models\SchoolTool;
 use App\Models\User;
 use App\Services\Import116Service;
 use App\Services\LicenceService;
 use App\Services\TutoringService;
-use Barryvdh\Debugbar\Facades\Debugbar;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log;
+use Carbon\Carbon;
 
 class TutoringController extends Controller
 {
@@ -30,12 +28,13 @@ class TutoringController extends Controller
 
         $data = [
             'schools' => SchoolWithLicenceRecource::collection($schools),
+            'health' => [
+                'queue_working' => $this->isQueueWorking(),
+            ],
         ];
 
         return response()->json($data, 200);
     }
-
-
 
     public function loadAuth()
     {
@@ -63,9 +62,8 @@ class TutoringController extends Controller
     {
         $validated = $request->validated();
 
-
         // Prüfen, ob Benutzer in User mit der E-Mail-Adresse und mit der Schule existiert
-        // $data['status] = 'NEW_USER' : User existiert nicht    
+        // $data['status] = 'NEW_USER' : User existiert nicht
         // $data['status] = 'USER_FOUND' : User existiert
         $data = $service->checkEmail($validated['data']);
 
@@ -78,7 +76,6 @@ class TutoringController extends Controller
                 $data['status'] = 'USER_FOUND';
             }
         }
-
 
         // Wenn ein Benutzer existiert, dann Rolle tutoring_user zuordnen
         if ($data['status'] == 'USER_FOUND') {
@@ -113,6 +110,7 @@ class TutoringController extends Controller
         $validated = $request->validated();
         $data = $validated['data'];
         $data = $service->confirmEmail($data);
+
         return response()->json($data, 200);
     }
 
@@ -125,6 +123,7 @@ class TutoringController extends Controller
         $data['user_id'] = $user->id;
         $service->sendCodeToUser($user);
         $data['status'] = 'CONFIRM_EMAIL';
+
         return response()->json($data, 200);
     }
 
@@ -136,9 +135,9 @@ class TutoringController extends Controller
 
         if ($service->confirmUser($validated['user_id'], $validated['token'])) {
 
-            return redirect('/homepage/tutoring_response?title=Benutzer wurde erfolgreich bestätigt!&subtitle=' . $user->last_name . ' ' . $user->first_name . ' (' . $user->schoolclass . ')&text=Die Anfrage wurde genehmigt!&status=BESTÄTIGT');
+            return redirect('/homepage/tutoring_response?title=Benutzer wurde erfolgreich bestätigt!&subtitle='.$user->last_name.' '.$user->first_name.' ('.$user->schoolclass.')&text=Die Anfrage wurde genehmigt!&status=BESTÄTIGT');
         } else {
-            return redirect('/homepage/tutoring_response?title=Benutzer wurde nicht bestätigt!&subtitle=' . $user->last_name . ' ' . $user->first_name . ' (' . $user->schoolclass . ')&text=Eventuell erfolgte schon früher die Genehmigung!&status=ZURÜCKGEWIESEN');
+            return redirect('/homepage/tutoring_response?title=Benutzer wurde nicht bestätigt!&subtitle='.$user->last_name.' '.$user->first_name.' ('.$user->schoolclass.')&text=Eventuell erfolgte schon früher die Genehmigung!&status=ZURÜCKGEWIESEN');
         }
     }
 
@@ -150,9 +149,9 @@ class TutoringController extends Controller
 
         if ($service->refuseUser($validated['user_id'], $validated['token'])) {
 
-            return redirect('/homepage/tutoring_response?title=Benutzer wurde abgelehnt!&subtitle=' . $user->last_name . ' ' . $user->first_name . ' (' . $user->schoolclass . ')&text=Die Ablehnung wurde durchgeführt!&status=ABGELEHNT');
+            return redirect('/homepage/tutoring_response?title=Benutzer wurde abgelehnt!&subtitle='.$user->last_name.' '.$user->first_name.' ('.$user->schoolclass.')&text=Die Ablehnung wurde durchgeführt!&status=ABGELEHNT');
         } else {
-            return redirect('/homepage/tutoring_response?title=Benutzer wurde nicht abgelehnt!&subtitle=' . $user->last_name . ' ' . $user->first_name . ' (' . $user->schoolclass . ')&text=Eventuell erfolgte schon früher die Ablehnung!&status=ZURÜCKGEWIESEN');
+            return redirect('/homepage/tutoring_response?title=Benutzer wurde nicht abgelehnt!&subtitle='.$user->last_name.' '.$user->first_name.' ('.$user->schoolclass.')&text=Eventuell erfolgte schon früher die Ablehnung!&status=ZURÜCKGEWIESEN');
         }
     }
 
@@ -162,9 +161,12 @@ class TutoringController extends Controller
         $data = $validated['data'];
 
         $data = $service->checkLoginRequirement($data);
-        if ($data['status'] != 'UNKNOWN_PASSWORD') return response()->json($data, 200);
+        if ($data['status'] != 'UNKNOWN_PASSWORD') {
+            return response()->json($data, 200);
+        }
 
         $data = $service->unknownPassword($data);
+
         return response()->json($data, 200);
     }
 
@@ -174,9 +176,12 @@ class TutoringController extends Controller
         $data = $validated['data'];
 
         $data = $service->checkLoginRequirement($data);
-        if ($data['status'] != 'LOGIN_WITH_TOKEN') return response()->json($data, 200);
+        if ($data['status'] != 'LOGIN_WITH_TOKEN') {
+            return response()->json($data, 200);
+        }
 
         $data = $service->loginWithToken($data);
+
         return response()->json($data, 200);
     }
 
@@ -186,7 +191,9 @@ class TutoringController extends Controller
         $data = $validated['data'];
 
         $data = $service->checkLoginRequirement($data);
-        if (isset($data['status'])) return response()->json($data, 200);
+        if (isset($data['status'])) {
+            return response()->json($data, 200);
+        }
 
         $data = $service->loginWithPassword($data);
 
@@ -201,5 +208,15 @@ class TutoringController extends Controller
         }
 
         abort(403, $status === 'expired' ? 'Lizenz abgelaufen.' : 'Lizenz nicht vorhanden.');
+    }
+
+    private function isQueueWorking(): bool
+    {
+        $lastHealthAt = SchoolTool::query()->whereNotNull('health_at')->max('health_at');
+        if (! $lastHealthAt) {
+            return true;
+        }
+
+        return Carbon::parse($lastHealthAt)->greaterThan(now()->subMinutes(2));
     }
 }

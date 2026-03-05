@@ -57,7 +57,7 @@
                         </v-form>
                         <v-btn block color="success" flat size="large" data-testid="admin-login-continue-password" @click="loginStepEmail()" class="mb-4">Weiter</v-btn>
                         <div class="alt-actions">
-                            <v-btn variant="text" size="small" color="#14293b" data-testid="admin-login-unknown-password" @click="passwordUnknown">Kennwort unbekannt</v-btn>
+                            <v-btn variant="text" size="small" color="#14293b" data-testid="admin-login-unknown-password" :disabled="!isPasswordUnknownAvailable" @click="passwordUnknown">Kennwort unbekannt</v-btn>
                             <span class="alt-sep">·</span>
                             <v-btn variant="text" size="small" color="#14293b" data-testid="admin-login-new-teacher" @click="newTeacherStepEmail">Neuer Lehrer</v-btn>
                             <template v-if="config.register_admin_allowed">
@@ -65,6 +65,15 @@
                                 <v-btn variant="text" size="small" color="success" data-testid="admin-login-register" @click="register">Neu registrieren</v-btn>
                             </template>
                         </div>
+                        <v-alert
+                            v-if="!isPasswordUnknownAvailable"
+                            class="queue-down-hint-alert"
+                            density="comfortable"
+                            type="warning"
+                            variant="tonal"
+                            border="start">
+                            !Anmelden ohne Kennwort derzeit nicht möglich
+                        </v-alert>
                     </div>
 
                     <!-- Step: Select School -->
@@ -214,6 +223,9 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'is_loading', 'error', 'api_response', 'load_config', 'school', 'selected_school_id', 'data']),
+        isPasswordUnknownAvailable() {
+            return this.config?.health?.queue_working !== false
+        },
     },
 
     watch: {
@@ -616,6 +628,10 @@ export default {
     color: rgba(16, 38, 58, 0.3);
     font-size: 0.9rem;
     line-height: 1;
+}
+
+.queue-down-hint-alert {
+    margin: 10px 0 0;
 }
 
 /* Version */
