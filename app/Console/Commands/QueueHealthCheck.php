@@ -29,6 +29,13 @@ class QueueHealthCheck extends Command
     {
         $this->info('Queue Health Check wird ausgeführt...');
 
+        if (! $this->canRunShellCommands()) {
+            $this->error('Shell-Funktionen (exec) sind deaktiviert. Queue-Prozessprüfung ist nicht möglich.');
+            Log::warning('Queue health check skipped because exec() is unavailable.');
+
+            return self::FAILURE;
+        }
+
         $isRunning = $this->isQueueWorkerRunning();
 
         if ($isRunning) {
@@ -63,8 +70,7 @@ class QueueHealthCheck extends Command
     {
         if ($this->isWindows()) {
             foreach ($this->windowsQueueWorkerLookupCommands() as $command) {
-                $output = [];
-                exec($command, $output);
+                $output = $this->runShellCommand($command);
 
                 foreach ($output as $line) {
                     if ($this->lineIndicatesQueueWorker($line)) {
@@ -76,8 +82,7 @@ class QueueHealthCheck extends Command
             return false;
         }
 
-        $output = [];
-        exec('ps aux | grep -E "queue:(work|listen)" | grep -v grep', $output);
+        $output = $this->runShellCommand('ps aux | grep -E "queue:(work|listen)" | grep -v grep');
 
         foreach ($output as $line) {
             if ($this->lineIndicatesQueueWorker($line)) {
@@ -125,6 +130,13 @@ class QueueHealthCheck extends Command
             $this->info('✓ Fehlgeschlagene Jobs wurden neu gestartet');
 
             if ($this->isWindows()) {
+                if (! function_exists('popen') || ! function_exists('pclose')) {
+                    $this->error('Neustart auf Windows nicht möglich: popen/pclose sind deaktiviert.');
+                    Log::warning('Queue health check restart skipped because popen/pclose are unavailable.');
+
+                    return self::FAILURE;
+                }
+
                 $command = sprintf(
                     'start "" /B "%s" "%s" queue:work --queue=default --tries=1 --sleep=3 --no-interaction > NUL 2>&1',
                     PHP_BINARY,
@@ -138,7 +150,7 @@ class QueueHealthCheck extends Command
                     PHP_BINARY,
                     base_path('artisan')
                 );
-                exec($command);
+                $this->runShellCommand($command);
                 $this->info('✓ Queue Worker wurde gestartet (Linux)');
             }
 
@@ -168,14 +180,14 @@ class QueueHealthCheck extends Command
     private function killExistingWorkers(): void
     {
         if ($this->isWindows()) {
-            exec(
+            $this->runShellCommand(
                 'powershell -NoProfile -Command "Get-CimInstance Win32_Process | '.
                 "Where-Object { \$_.CommandLine -match 'queue:(work|listen)' } | ".
                 'ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"'
             );
         } else {
-            exec('pkill -f "queue:work"');
-            exec('pkill -f "queue:listen"');
+            $this->runShellCommand('pkill -f "queue:work"');
+            $this->runShellCommand('pkill -f "queue:listen"');
         }
 
         sleep(1);
@@ -200,5 +212,25 @@ class QueueHealthCheck extends Command
     private function lineIndicatesQueueWorker(string $line): bool
     {
         return str_contains($line, 'queue:work') || str_contains($line, 'queue:listen');
+    }
+
+    private function canRunShellCommands(): bool
+    {
+        return function_exists('exec');
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function runShellCommand(string $command): array
+    {
+        if (! $this->canRunShellCommands()) {
+            return [];
+        }
+
+        $output = [];
+        exec($command, $output);
+
+        return $output;
     }
 }

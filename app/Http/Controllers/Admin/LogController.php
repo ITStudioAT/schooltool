@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
+use Symfony\Component\Console\Exception\CommandNotFoundException;
 
 class LogController extends Controller
 {
@@ -120,6 +121,8 @@ class LogController extends Controller
         if (class_exists(\Laravel\Horizon\HorizonServiceProvider::class)) {
             try {
                 Artisan::call('horizon:terminate');
+            } catch (CommandNotFoundException) {
+                // Horizon command is not available in this environment.
             } catch (\Throwable $exception) {
                 Log::warning('horizon:terminate failed during queue restart.', [
                     'message' => $exception->getMessage(),
@@ -135,20 +138,26 @@ class LogController extends Controller
             ]);
         }
 
-        try {
-            $healthCheckExitCode = Artisan::call('queue:health-check', [
-                '--restart' => true,
-            ]);
+        if (function_exists('exec')) {
+            try {
+                $healthCheckExitCode = Artisan::call('queue:health-check', [
+                    '--restart' => true,
+                ]);
 
-            if ($healthCheckExitCode !== 0) {
-                Log::warning('Queue restart recovery command returned non-zero exit code.', [
-                    'exit_code' => $healthCheckExitCode,
+                if ($healthCheckExitCode !== 0) {
+                    Log::warning('Queue restart recovery command returned non-zero exit code.', [
+                        'exit_code' => $healthCheckExitCode,
+                    ]);
+                }
+            } catch (CommandNotFoundException) {
+                // queue:health-check command is not available in this environment.
+            } catch (\Throwable $exception) {
+                Log::warning('queue:health-check failed during queue restart.', [
+                    'message' => $exception->getMessage(),
                 ]);
             }
-        } catch (\Throwable $exception) {
-            Log::warning('queue:health-check failed during queue restart.', [
-                'message' => $exception->getMessage(),
-            ]);
+        } else {
+            Log::info('queue:health-check skipped during queue restart because exec() is unavailable.');
         }
 
         return response()->noContent();
