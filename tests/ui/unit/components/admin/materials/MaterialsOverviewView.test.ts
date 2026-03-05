@@ -222,6 +222,31 @@ describe('MaterialsOverviewView', () => {
                         permission_label: 'NUR LESEN',
                         is_archived: false,
                         updated_at: '2026-03-03T08:30:00+00:00',
+                        hierarchy: [
+                            {
+                                id: 1,
+                                name: 'Mathematik',
+                                topics: [
+                                    {
+                                        id: 2,
+                                        name: 'Algebra',
+                                        units: [
+                                            {
+                                                id: 3,
+                                                name: 'Einheit 1',
+                                                materials: [
+                                                    {
+                                                        id: 99,
+                                                        title: 'Lineare Gleichungen',
+                                                        status: 'done',
+                                                    },
+                                                ],
+                                            },
+                                        ],
+                                    },
+                                ],
+                            },
+                        ],
                     },
                 ],
             },
@@ -231,7 +256,192 @@ describe('MaterialsOverviewView', () => {
         expect(cards).toHaveLength(2)
         expect(cards[0].ruleId).toBe(20)
         expect(cards[0].fromUserLabel).toBe('Lehrer Zwei')
+        expect(cards[0].materialsCount).toBe(1)
+        expect(Array.isArray(cards[0].hierarchy)).toBe(true)
+        expect(cards[0].hierarchy[0].name).toBe('Mathematik')
+        expect(cards[0].hierarchy[0].topics[0].units[0].materials[0].title).toBe('Lineare Gleichungen')
         expect(cards[1].ruleId).toBe(10)
         expect(cards[1].scopeLabel).toBe('Fach')
+    })
+
+    it('normalizes shared hierarchy materials with optional attachments', () => {
+        const methods = (MaterialsOverviewView as any)?.methods || {}
+        const vm: any = { ...methods }
+
+        const normalized = methods.normalizeSharedHierarchyMaterial.call(vm, {
+            id: 77,
+            title: 'Arbeitsblatt',
+            attachments_count: 2,
+            attachments: [
+                { id: 701, name: 'blatt.pdf', attachment_type: 'file' },
+                { id: 702, name: 'lösung.pdf', attachment_type: 'file' },
+            ],
+        })
+
+        expect(normalized.id).toBe(77)
+        expect(normalized.title).toBe('Arbeitsblatt')
+        expect(normalized.attachmentsCount).toBe(2)
+        expect(Array.isArray(normalized.attachments)).toBe(true)
+        expect(normalized.attachments).toHaveLength(2)
+        expect(normalized.attachments[0].id).toBe(701)
+    })
+
+    it('opens shared material attachments via attachment manager in read-only mode', async () => {
+        const methods = (MaterialsOverviewView as any)?.methods || {}
+        const openAttachmentManager = vi.fn().mockResolvedValue(undefined)
+        const fetchSharedMaterialAttachments = vi.fn().mockResolvedValue([
+            { id: 9001, name: 'aufgabe.pdf', attachment_type: 'file', download_url: '/dl', preview_url: '/pv', shared_rule_id: 77, shared_material_id: 99 },
+        ])
+        const vm: any = {
+            ...methods,
+            openAttachmentManager,
+            fetchSharedMaterialAttachments,
+        }
+
+        await methods.openSharedMaterialAttachments.call(vm, 77, {
+            id: 99,
+            title: 'Lineare Gleichungen',
+        })
+
+        expect(fetchSharedMaterialAttachments).toHaveBeenCalledTimes(1)
+        expect(fetchSharedMaterialAttachments).toHaveBeenCalledWith(77, 99)
+        expect(openAttachmentManager).toHaveBeenCalledTimes(1)
+        expect(openAttachmentManager).toHaveBeenCalledWith(
+            expect.objectContaining({
+                id: 99,
+                title: 'Lineare Gleichungen',
+                attachments: expect.arrayContaining([expect.objectContaining({ id: 9001 })]),
+                is_linked: true,
+                linked_permission: 'read_only',
+                linked_permission_label: 'NUR LESEN',
+            }),
+        )
+    })
+
+    it('refreshes shared download url when attachment url is stale', async () => {
+        const methods = (MaterialsOverviewView as any)?.methods || {}
+        const fetchSharedMaterialAttachments = vi.fn().mockResolvedValue([
+            {
+                id: 5001,
+                name: 'blatt.pdf',
+                download_url: '/api/admin/materials/attachments/5001/download?rule_id=9&material_id=77',
+                preview_url: '/api/admin/materials/attachments/5001/preview?rule_id=9&material_id=77',
+                download_docx_url: '',
+            },
+        ])
+        const vm: any = {
+            ...methods,
+            fetchSharedMaterialAttachments,
+        }
+
+        const attachment: any = {
+            id: 5001,
+            name: 'blatt.pdf',
+            shared_rule_id: 9,
+            shared_material_id: 77,
+            download_url: '',
+            preview_url: '',
+            download_docx_url: '',
+        }
+
+        const refreshedUrl = await methods.refreshSharedAttachmentDownloadUrl.call(vm, attachment)
+        expect(fetchSharedMaterialAttachments).toHaveBeenCalledTimes(1)
+        expect(fetchSharedMaterialAttachments).toHaveBeenCalledWith(9, 77)
+        expect(refreshedUrl).toContain('/attachments/5001/download')
+        expect(String(attachment.download_url)).toContain('/attachments/5001/download')
+        expect(String(attachment.preview_url)).toContain('/attachments/5001/preview')
+    })
+
+    it('keeps file attachments visible when only preview url is available', () => {
+        const methods = (MaterialsOverviewView as any)?.methods || {}
+        const rows = methods.fileAttachments.call({}, {
+            attachments: [
+                { id: 1, attachment_type: 'file', preview_url: '/preview/1', download_url: '' },
+                { id: 2, attachment_type: 'file', preview_url: '', download_url: '/download/2' },
+                { id: 3, attachment_type: 'link', preview_url: '/preview/3', download_url: '' },
+            ],
+        })
+
+        expect(Array.isArray(rows)).toBe(true)
+        expect(rows).toHaveLength(2)
+        expect(rows.map((row: any) => Number(row?.id || 0))).toEqual([1, 2])
+    })
+
+    it('opens shared material detail in read-only dialog mode', async () => {
+        const methods = (MaterialsOverviewView as any)?.methods || {}
+        const fetchSharedMaterialDetail = vi.fn().mockResolvedValue({
+            id: 555,
+            title: 'Geteiltes Detail',
+            attachments: [],
+            classifications: [],
+            linked_permission: 'read_only',
+        })
+        const vm: any = {
+            ...methods,
+            detailDialogCard: null,
+            detailDialogOpen: false,
+            detailDialogLoading: false,
+            detailDialogReadOnlyMode: false,
+            detailDeleteStep: 0,
+            sanitizeDialogCard: methods.sanitizeDialogCard,
+            fetchSharedMaterialDetail,
+        }
+
+        await methods.openSharedMaterialDetail.call(vm, 77, { id: 555, title: 'Geteiltes Detail' })
+
+        expect(fetchSharedMaterialDetail).toHaveBeenCalledTimes(1)
+        expect(fetchSharedMaterialDetail).toHaveBeenCalledWith(77, 555)
+        expect(vm.detailDialogOpen).toBe(true)
+        expect(vm.detailDialogLoading).toBe(false)
+        expect(vm.detailDialogReadOnlyMode).toBe(true)
+        expect(vm.detailDialogCard).toBeTruthy()
+        expect(vm.detailDialogCard.id).toBe(555)
+        expect(vm.detailDialogCard.title).toBe('Geteiltes Detail')
+    })
+
+    it('computes detail dialog read-only actions from override flag', () => {
+        const computed = (MaterialsOverviewView as any)?.computed || {}
+        const vm: any = {
+            readOnlyMaterialActions: false,
+            detailDialogReadOnlyMode: true,
+        }
+
+        expect(computed.detailDialogReadOnlyActions.call(vm)).toBe(true)
+    })
+
+    it('falls back to attachment dialog context when card is not in overview cards', () => {
+        const computed = (MaterialsOverviewView as any)?.computed || {}
+        const methods = (MaterialsOverviewView as any)?.methods || {}
+        const vm: any = {
+            ...methods,
+            cards: [],
+            attachmentDialogCardId: 1234,
+            attachmentDialogCardContext: {
+                id: 1234,
+                is_linked: true,
+                linked_permission: 'read_only',
+            },
+        }
+
+        const dialogCard = computed.attachmentDialogCard.call(vm)
+        expect(dialogCard).toBeTruthy()
+        expect(dialogCard.id).toBe(1234)
+        expect(methods.cardAllowsFieldEditing.call(vm, dialogCard)).toBe(false)
+    })
+
+    it('toggles shared hierarchy cards by rule id', () => {
+        const methods = (MaterialsOverviewView as any)?.methods || {}
+        const vm: any = {
+            ...methods,
+            openSharedHierarchyCards: {},
+        }
+
+        expect(methods.isSharedHierarchyOpen.call(vm, 55)).toBe(false)
+
+        methods.toggleSharedHierarchy.call(vm, 55)
+        expect(methods.isSharedHierarchyOpen.call(vm, 55)).toBe(true)
+
+        methods.toggleSharedHierarchy.call(vm, 55)
+        expect(methods.isSharedHierarchyOpen.call(vm, 55)).toBe(false)
     })
 })

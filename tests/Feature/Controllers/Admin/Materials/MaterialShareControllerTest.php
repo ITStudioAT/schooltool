@@ -348,6 +348,260 @@ test('inbox users includes cross-school direct user shares', function () {
     expect((string) $response->json('data.0.shared_items.0.permission_label'))->toBe('NUR LESEN');
 });
 
+test('inbox material attachments are readable for shared nur lesen users via share-linked urls', function () {
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'first_name' => 'A',
+        'last_name' => 'Creator',
+        'email' => 'creator-attachments@test.local',
+    ]);
+
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Geteilte Datei',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+
+    $disk = (string) config('filesystems.default', 'local');
+    Storage::fake($disk);
+    Storage::disk($disk)->put('materials/source/geteilt.pdf', 'pdf-content-geteilt');
+
+    $attachment = MaterialCardAttachment::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'geteilt.pdf',
+        'file_path' => 'materials/source/geteilt.pdf',
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 1234,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_MATERIAL,
+        'scope_id' => $sourceCard->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $query = http_build_query([
+        'rule_id' => (int) $rule->id,
+        'material_id' => (int) $sourceCard->id,
+    ]);
+
+    $attachmentsResponse = $this->getJson('/api/admin/materials/shares/inbox/material-attachments?'.$query)
+        ->assertStatus(200)
+        ->assertJsonPath('data.0.id', (int) $attachment->id)
+        ->assertJsonPath('data.0.shared_rule_id', (int) $rule->id)
+        ->assertJsonPath('data.0.shared_material_id', (int) $sourceCard->id)
+        ->assertJsonPath('data.0.name', 'geteilt.pdf')
+        ->assertJsonPath('data.0.preview_url', '/api/admin/materials/attachments/'.$attachment->id.'/preview?'.$query)
+        ->assertJsonPath('data.0.download_url', '/api/admin/materials/attachments/'.$attachment->id.'/download?'.$query)
+        ->assertJsonPath('data.0.download_docx_url', '/api/admin/materials/attachments/'.$attachment->id.'/download-docx?'.$query);
+
+    $this->getJson('/api/admin/materials/shares/inbox/material-detail?'.$query)
+        ->assertStatus(200)
+        ->assertJsonPath('data.id', (int) $sourceCard->id)
+        ->assertJsonPath('data.title', 'Geteilte Datei')
+        ->assertJsonPath('data.is_linked', true)
+        ->assertJsonPath('data.linked_permission', MaterialShareTarget::PERMISSION_READ_ONLY)
+        ->assertJsonPath('data.attachments_count', 1)
+        ->assertJsonPath('data.attachments.0.id', (int) $attachment->id)
+        ->assertJsonPath('data.attachments.0.preview_url', '/api/admin/materials/attachments/'.$attachment->id.'/preview?'.$query)
+        ->assertJsonPath('data.attachments.0.download_url', '/api/admin/materials/attachments/'.$attachment->id.'/download?'.$query);
+
+    $downloadUrl = (string) $attachmentsResponse->json('data.0.download_url');
+    $this->get($downloadUrl)
+        ->assertStatus(200);
+
+    $this->get('/api/admin/materials/attachments/'.$attachment->id.'/download')
+        ->assertStatus(403);
+});
+
+test('inbox material attachments keep share urls even when shared file path is missing', function () {
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'creator-missing-file@test.local',
+    ]);
+
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Datei fehlt',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+
+    $attachment = MaterialCardAttachment::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'fehlend.pdf',
+        'file_path' => 'materials/source/fehlend.pdf',
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 1234,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_MATERIAL,
+        'scope_id' => $sourceCard->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $query = http_build_query([
+        'rule_id' => (int) $rule->id,
+        'material_id' => (int) $sourceCard->id,
+    ]);
+
+    $this->getJson('/api/admin/materials/shares/inbox/material-attachments?'.$query)
+        ->assertStatus(200)
+        ->assertJsonPath('data.0.id', (int) $attachment->id)
+        ->assertJsonPath('data.0.preview_url', '/api/admin/materials/attachments/'.$attachment->id.'/preview?'.$query)
+        ->assertJsonPath('data.0.download_url', '/api/admin/materials/attachments/'.$attachment->id.'/download?'.$query)
+        ->assertJsonPath('data.0.download_docx_url', '/api/admin/materials/attachments/'.$attachment->id.'/download-docx?'.$query);
+});
+
+test('inbox shared preview and download work when attachment exists on public disk fallback', function () {
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'creator-public-disk@test.local',
+    ]);
+
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Public Disk Datei',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+
+    Storage::fake('public');
+    Storage::disk('public')->put('materials/source/public-disk.pdf', 'public-disk-content');
+
+    $attachment = MaterialCardAttachment::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'public-disk.pdf',
+        'file_path' => 'materials/source/public-disk.pdf',
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 2048,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_MATERIAL,
+        'scope_id' => $sourceCard->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $query = http_build_query([
+        'rule_id' => (int) $rule->id,
+        'material_id' => (int) $sourceCard->id,
+    ]);
+
+    $attachmentsResponse = $this->getJson('/api/admin/materials/shares/inbox/material-attachments?'.$query)
+        ->assertStatus(200)
+        ->assertJsonPath('data.0.id', (int) $attachment->id)
+        ->assertJsonPath('data.0.preview_url', '/api/admin/materials/attachments/'.$attachment->id.'/preview?'.$query)
+        ->assertJsonPath('data.0.download_url', '/api/admin/materials/attachments/'.$attachment->id.'/download?'.$query);
+
+    $previewUrl = (string) $attachmentsResponse->json('data.0.preview_url');
+    $downloadUrl = (string) $attachmentsResponse->json('data.0.download_url');
+
+    $this->get($previewUrl)->assertStatus(200);
+    $this->get($downloadUrl)->assertStatus(200);
+});
+
+test('inbox shared preview and download work when attachment exists on s3 disk fallback', function () {
+    config()->set('filesystems.default', 'local');
+    Storage::fake('local');
+    Storage::fake('s3');
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'creator-s3-disk@test.local',
+    ]);
+
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'S3 Disk Datei',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+
+    Storage::disk('s3')->put('materials/source/s3-disk.pdf', 's3-disk-content');
+
+    $attachment = MaterialCardAttachment::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 's3-disk.pdf',
+        'file_path' => 'materials/source/s3-disk.pdf',
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 4096,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_MATERIAL,
+        'scope_id' => $sourceCard->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $query = http_build_query([
+        'rule_id' => (int) $rule->id,
+        'material_id' => (int) $sourceCard->id,
+    ]);
+
+    $attachmentsResponse = $this->getJson('/api/admin/materials/shares/inbox/material-attachments?'.$query)
+        ->assertStatus(200)
+        ->assertJsonPath('data.0.id', (int) $attachment->id)
+        ->assertJsonPath('data.0.preview_url', '/api/admin/materials/attachments/'.$attachment->id.'/preview?'.$query)
+        ->assertJsonPath('data.0.download_url', '/api/admin/materials/attachments/'.$attachment->id.'/download?'.$query);
+
+    $previewUrl = (string) $attachmentsResponse->json('data.0.preview_url');
+    $downloadUrl = (string) $attachmentsResponse->json('data.0.download_url');
+
+    $this->get($previewUrl)->assertStatus(200);
+    $this->get($downloadUrl)->assertStatus(200);
+});
+
 test('inbox imported flag is false when imported target card is soft-deleted', function () {
     $this->actingAs($this->materialsAdmin, 'sanctum');
 

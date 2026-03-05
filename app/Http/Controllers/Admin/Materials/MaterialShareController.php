@@ -238,6 +238,135 @@ class MaterialShareController extends Controller
         ]);
     }
 
+    public function inboxMaterialAttachments(Request $request)
+    {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'material_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $materialId = (int) ($data['material_id'] ?? 0);
+        $authUserId = (int) $authUser->id;
+        $authSchoolId = (int) $authUser->school_id;
+
+        $memberGroupIds = UserGroup::query()
+            ->whereHas('members', fn ($query) => $query->where('users.id', $authUserId))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values();
+
+        $rule = $this->resolveAccessibleInboxRule($ruleId, $authUserId, $authSchoolId, $memberGroupIds);
+        if (! $rule) {
+            abort(404, 'Freigabe wurde nicht gefunden.');
+        }
+
+        $sourceCard = $this->resolveInboxSourceCardForRule($rule, $materialId);
+        if (! $sourceCard) {
+            throw ValidationException::withMessages([
+                'material_id' => ['Geteiltes Material wurde nicht gefunden oder gehört nicht zur Freigabe.'],
+            ]);
+        }
+
+        $attachments = $sourceCard->attachments instanceof Collection
+            ? $sourceCard->attachments
+            : collect();
+
+        $serialized = $attachments
+            ->map(fn (MaterialCardAttachment $attachment) => $this->serializeInboxAttachment($attachment, $ruleId, $materialId))
+            ->values();
+
+        return response()->json([
+            'data' => $serialized,
+        ], 200);
+    }
+
+    public function inboxMaterialDetail(Request $request)
+    {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'material_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $materialId = (int) ($data['material_id'] ?? 0);
+        $authUserId = (int) $authUser->id;
+        $authSchoolId = (int) $authUser->school_id;
+
+        $memberGroupIds = UserGroup::query()
+            ->whereHas('members', fn ($query) => $query->where('users.id', $authUserId))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values();
+
+        $rule = $this->resolveAccessibleInboxRule($ruleId, $authUserId, $authSchoolId, $memberGroupIds);
+        if (! $rule) {
+            abort(404, 'Freigabe wurde nicht gefunden.');
+        }
+
+        $sourceCard = $this->resolveInboxSourceCardForRule($rule, $materialId);
+        if (! $sourceCard) {
+            throw ValidationException::withMessages([
+                'material_id' => ['Geteiltes Material wurde nicht gefunden oder gehört nicht zur Freigabe.'],
+            ]);
+        }
+
+        $attachments = $sourceCard->attachments instanceof Collection
+            ? $sourceCard->attachments
+            : collect();
+
+        $serializedAttachments = $attachments
+            ->map(fn (MaterialCardAttachment $attachment) => $this->serializeInboxAttachment($attachment, $ruleId, $materialId))
+            ->values();
+
+        $classifications = $sourceCard->classifications instanceof Collection
+            ? $sourceCard->classifications
+            : collect();
+
+        $serializedClassifications = $classifications
+            ->map(fn (MaterialCardClassification $row) => [
+                'id' => (int) ($row->id ?? 0),
+                'subject_id' => $row->subject_id ? (int) $row->subject_id : null,
+                'topic_id' => $row->topic_id ? (int) $row->topic_id : null,
+                'unit_id' => $row->unit_id ? (int) $row->unit_id : null,
+                'subject' => trim((string) ($row->subject?->name ?? '')),
+                'topic' => trim((string) ($row->topic?->name ?? '')),
+                'unit' => trim((string) ($row->unit?->name ?? '')),
+            ])
+            ->values();
+
+        return response()->json([
+            'data' => [
+                'id' => (int) $sourceCard->id,
+                'school_id' => (int) ($sourceCard->school_id ?? 0),
+                'user_id' => (int) ($sourceCard->user_id ?? 0),
+                'title' => (string) ($sourceCard->title ?? ''),
+                'subject' => $sourceCard->subject,
+                'area' => $sourceCard->area,
+                'unit' => $sourceCard->unit,
+                'type' => $sourceCard->type,
+                'status' => $sourceCard->status,
+                'source_url' => $sourceCard->source_url,
+                'source_text' => $sourceCard->source_text,
+                'notes' => $sourceCard->notes,
+                'is_linked' => true,
+                'linked_permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+                'linked_permission_label' => mb_strtoupper($this->permissionLabel(MaterialShareTarget::PERMISSION_READ_ONLY)),
+                'attachments_count' => $serializedAttachments->count(),
+                'attachments' => $serializedAttachments->all(),
+                'classifications' => $serializedClassifications->all(),
+                'created_at' => optional($sourceCard->created_at)?->toIso8601String(),
+                'updated_at' => optional($sourceCard->updated_at)?->toIso8601String(),
+            ],
+        ], 200);
+    }
+
     public function archiveInboxRule(Request $request)
     {
         $authUser = $this->materialsShareUser();
@@ -1700,6 +1829,35 @@ class MaterialShareController extends Controller
             'status_label' => $statusMeta['label'],
             'status_color' => $statusMeta['color'],
             'attachments_count' => $attachmentsCount,
+        ];
+    }
+
+    private function serializeInboxAttachment(MaterialCardAttachment $attachment, int $ruleId, int $materialId): array
+    {
+        $query = http_build_query([
+            'rule_id' => $ruleId,
+            'material_id' => $materialId,
+        ], '', '&', PHP_QUERY_RFC3986);
+        $querySuffix = $query !== '' ? '?'.$query : '';
+        $isFile = (string) ($attachment->attachment_type ?? '') === MaterialCardAttachment::TYPE_FILE;
+
+        return [
+            'id' => (int) $attachment->id,
+            'material_card_id' => (int) ($attachment->material_card_id ?? 0),
+            'shared_rule_id' => $ruleId,
+            'shared_material_id' => $materialId,
+            'attachment_type' => (string) ($attachment->attachment_type ?? ''),
+            'name' => (string) ($attachment->name ?? ''),
+            'url' => $attachment->url,
+            'source_url' => $attachment->source_url,
+            'file_path' => $attachment->file_path,
+            'mime_type' => $attachment->mime_type,
+            'size_bytes' => $attachment->size_bytes,
+            'downloaded_at' => $attachment->downloaded_at?->toDateTimeString(),
+            'preview_url' => $isFile ? '/api/admin/materials/attachments/'.$attachment->id.'/preview'.$querySuffix : null,
+            'download_url' => $isFile ? '/api/admin/materials/attachments/'.$attachment->id.'/download'.$querySuffix : null,
+            'download_docx_url' => $isFile ? '/api/admin/materials/attachments/'.$attachment->id.'/download-docx'.$querySuffix : null,
+            'created_at' => $attachment->created_at?->toDateTimeString(),
         ];
     }
 

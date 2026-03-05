@@ -13,9 +13,7 @@ return [
     |
     */
 
-    'default' => env('APP_ENV') === 'local'
-        ? env('FILESYSTEM_DISK_LOCAL', 'local')
-        : env('FILESYSTEM_DISK', 'local'),
+    'default' => env('FILESYSTEM_DISK', 'local'),
 
     /*
     |--------------------------------------------------------------------------

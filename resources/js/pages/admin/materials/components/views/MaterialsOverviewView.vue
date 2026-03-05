@@ -192,8 +192,8 @@
                         v-for="item in sharedObjectsForMeCards"
                         :key="`shared-object-${item.ruleId}`"
                         cols="12"
-                        md="6"
-                        xl="4">
+                        :md="isSharedHierarchyOpen(item.ruleId) ? 12 : 6"
+                        :xl="isSharedHierarchyOpen(item.ruleId) ? 12 : 4">
                         <v-card variant="outlined" class="shared-object-card h-100">
                             <v-card-text class="d-flex flex-column ga-3">
                                 <div class="d-flex align-start justify-space-between ga-2">
@@ -226,6 +226,92 @@
                                 <div class="text-caption text-medium-emphasis">
                                     Freigegeben: {{ formatDateTime(item.sharedAt) || '-' }}
                                 </div>
+
+                                <div v-if="item.materialsCount > 0" class="d-flex justify-end">
+                                    <v-btn
+                                        size="small"
+                                        variant="tonal"
+                                        color="primary"
+                                        @click.stop="toggleSharedHierarchy(item.ruleId)">
+                                        {{ isSharedHierarchyOpen(item.ruleId) ? 'Schließen' : 'Anzeigen' }}
+                                    </v-btn>
+                                </div>
+
+                                <v-expand-transition>
+                                    <div v-if="isSharedHierarchyOpen(item.ruleId)" class="inbox-hierarchy-card">
+                                        <div class="inbox-shared-object-title inbox-shared-object-title--all">Alle Materialien ({{ item.materialsCount }})</div>
+                                        <div v-if="item.hierarchy.length === 0" class="text-caption text-medium-emphasis">
+                                            Keine Hierarchie für diese Freigabe verfügbar.
+                                        </div>
+                                        <div v-else class="inbox-shared-hierarchy">
+                                            <div
+                                                v-for="subject in item.hierarchy"
+                                                :key="`shared-hier-subject-${item.ruleId}-${subject.id || subject.name}`"
+                                                class="inbox-hierarchy-subject">
+                                                <div class="inbox-hierarchy-subject-head inbox-hierarchy-level-subject">
+                                                    <div class="inbox-hierarchy-context-line">{{ subject.name }}</div>
+                                                </div>
+                                                <div
+                                                    v-for="topic in subject.topics"
+                                                    :key="`shared-hier-topic-${item.ruleId}-${topic.id || topic.name}`"
+                                                    class="inbox-hierarchy-topic inbox-hierarchy-level-topic">
+                                                    <div class="inbox-hierarchy-topic-head">
+                                                        <div class="inbox-hierarchy-topic-title">{{ topic.name }}</div>
+                                                    </div>
+                                                    <div
+                                                        v-for="unit in topic.units"
+                                                        :key="`shared-hier-unit-${item.ruleId}-${unit.id || unit.name}`"
+                                                        class="inbox-hierarchy-unit inbox-hierarchy-level-unit">
+                                                        <div class="inbox-hierarchy-unit-head">
+                                                            <div class="inbox-hierarchy-unit-title">{{ unit.name }}</div>
+                                                        </div>
+                                                        <div class="inbox-hierarchy-material-lines">
+                                                            <div
+                                                                v-for="material in unit.materials"
+                                                                :key="`shared-hier-material-${item.ruleId}-${material.id || material.title}`"
+                                                                class="inbox-hierarchy-material-line inbox-hierarchy-level-material">
+                                                                <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || undefined" />
+                                                                <span
+                                                                    class="inbox-hierarchy-material-title inbox-hierarchy-material-title-clickable"
+                                                                    role="button"
+                                                                    tabindex="0"
+                                                                    @click.stop="openSharedMaterialDetail(item.ruleId, material)"
+                                                                    @keydown.enter.stop.prevent="openSharedMaterialDetail(item.ruleId, material)"
+                                                                    @keydown.space.stop.prevent="openSharedMaterialDetail(item.ruleId, material)">
+                                                                    {{ material.title }}
+                                                                </span>
+                                                                <v-chip
+                                                                    v-if="material.typeLabel"
+                                                                    size="x-small"
+                                                                    variant="outlined"
+                                                                    :color="material.typeColor || 'primary'">
+                                                                    {{ material.typeLabel }}
+                                                                </v-chip>
+                                                                <span
+                                                                    v-if="material.attachmentsCount > 0"
+                                                                    class="inbox-hierarchy-material-count inbox-hierarchy-material-count-clickable"
+                                                                    role="button"
+                                                                    tabindex="0"
+                                                                    @click.stop="openSharedMaterialAttachments(item.ruleId, material)"
+                                                                    @keydown.enter.stop.prevent="openSharedMaterialAttachments(item.ruleId, material)"
+                                                                    @keydown.space.stop.prevent="openSharedMaterialAttachments(item.ruleId, material)">
+                                                                    <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
+                                                                    {{ material.attachmentsCount }}
+                                                                </span>
+                                                                <v-chip
+                                                                    size="x-small"
+                                                                    variant="tonal"
+                                                                    :color="material.statusColor || statusColor(material.status)">
+                                                                    {{ material.statusLabel || statusLabel(material.status) }}
+                                                                </v-chip>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </v-expand-transition>
                             </v-card-text>
                         </v-card>
                     </v-col>
@@ -540,7 +626,7 @@
         :card="detailDialogCard"
         :is-deleting="isDeletingDetail"
         :is-saving-edit="isSavingEdit"
-        :read-only-material-actions="readOnlyMaterialActions"
+        :read-only-material-actions="detailDialogReadOnlyActions"
         :delete-step="detailDeleteStep"
         :close-dialog-fn="closeDetailDialog"
         :status-color-fn="statusColor"
@@ -991,6 +1077,10 @@ export default {
             type: Boolean,
             default: false,
         },
+        disableSharingFeatures: {
+            type: Boolean,
+            default: false,
+        },
     },
     components: {
         FilePond,
@@ -1024,6 +1114,7 @@ export default {
             attachmentDialogOpen: false,
             attachmentDialogCardId: null,
             attachmentDialogCardTitle: '',
+            attachmentDialogCardContext: null,
             attachmentRows: [],
             isUploadingAttachment: false,
             csrfToken: null,
@@ -1033,6 +1124,7 @@ export default {
             isLoadingSharedObjectsForMe: false,
             sharedObjectsForMeError: '',
             sharedObjectsForMeCards: [],
+            openSharedHierarchyCards: {},
             isLoadingSubjectsContentsOverview: false,
             subjectsContentsOverviewItems: [],
             subjectsContentsOverviewSnapshotKey: '',
@@ -1056,6 +1148,7 @@ export default {
             detailDialogOpen: false,
             detailDialogLoading: false,
             detailDialogCard: null,
+            detailDialogReadOnlyMode: false,
             detailDeleteStep: 0,
             editDeleteStep: 0,
             editDeleteConfirmDialogOpen: false,
@@ -1137,6 +1230,9 @@ export default {
         },
         hasCards() {
             return this.cards.length > 0
+        },
+        detailDialogReadOnlyActions() {
+            return this.readOnlyMaterialActions || this.detailDialogReadOnlyMode
         },
         sortedCards() {
             const list = Array.isArray(this.cards) ? [...this.cards] : []
@@ -1274,7 +1370,17 @@ export default {
         attachmentDialogCard() {
             const cardId = Number(this.attachmentDialogCardId)
             if (!Number.isFinite(cardId) || cardId <= 0) return null
-            return this.cards.find((card) => Number(card?.id) === cardId) || null
+            const cardFromOverview = this.cards.find((card) => Number(card?.id) === cardId)
+            if (cardFromOverview) {
+                return cardFromOverview
+            }
+
+            const contextCardId = Number(this.attachmentDialogCardContext?.id)
+            if (Number.isFinite(contextCardId) && contextCardId === cardId) {
+                return this.attachmentDialogCardContext
+            }
+
+            return null
         },
         attachmentDialogCanEditFields() {
             return this.cardAllowsFieldEditing(this.attachmentDialogCard)
@@ -1862,6 +1968,10 @@ export default {
             }
         },
         canSelectSubjectsContentsSource() {
+            if (this.disableSharingFeatures) {
+                return false
+            }
+
             return String(this.forcedOverviewMode || '').trim() === ''
         },
         setSubjectsContentsSource(value) {
@@ -1930,6 +2040,8 @@ export default {
                     const permission = String(item?.permission || '').trim() || 'read_only'
                     const permissionLabel = String(item?.permission_label || '').trim() || 'NUR LESEN'
                     const sharedAt = String(item?.updated_at || '').trim() || fallbackSharedAt
+                    const hierarchy = this.normalizeSharedHierarchy(item?.hierarchy)
+                    const materialsCount = this.sharedHierarchyMaterialCount(hierarchy)
 
                     cards.push({
                         ruleId,
@@ -1942,6 +2054,8 @@ export default {
                         sharedAt,
                         fromUserLabel,
                         fromSchoolLabel,
+                        hierarchy,
+                        materialsCount,
                     })
                 }
             }
@@ -1957,15 +2071,183 @@ export default {
 
             return cards
         },
+        normalizeSharedHierarchy(hierarchy) {
+            if (!Array.isArray(hierarchy)) return []
+
+            return hierarchy.map((subject) => ({
+                id: Number(subject?.id || 0),
+                name: String(subject?.name || '').trim() || 'Ohne Fach',
+                topics: Array.isArray(subject?.topics)
+                    ? subject.topics.map((topic) => ({
+                        id: Number(topic?.id || 0),
+                        name: String(topic?.name || '').trim() || 'Ohne Thema',
+                        units: Array.isArray(topic?.units)
+                            ? topic.units.map((unit) => ({
+                                id: Number(unit?.id || 0),
+                                name: String(unit?.name || '').trim() || 'Ohne Einheit',
+                                materials: Array.isArray(unit?.materials) ? unit.materials.map((material) => this.normalizeSharedHierarchyMaterial(material)) : [],
+                            }))
+                            : [],
+                    }))
+                    : [],
+            }))
+        },
+        normalizeSharedHierarchyMaterial(material) {
+            return {
+                id: Number(material?.id || 0),
+                title: String(material?.title || '').trim() || 'Material',
+                icon: String(material?.icon || '').trim(),
+                typeLabel: String(material?.type_label || material?.typeLabel || material?.type || '').trim(),
+                typeColor: String(material?.type_color || material?.typeColor || '').trim(),
+                status: String(material?.status || '').trim(),
+                statusLabel: String(material?.status_label || material?.statusLabel || '').trim(),
+                statusColor: String(material?.status_color || material?.statusColor || '').trim(),
+                attachmentsCount: Math.max(0, Number(material?.attachments_count ?? material?.attachmentsCount ?? 0) || 0),
+                attachments: Array.isArray(material?.attachments) ? material.attachments.map((attachment) => ({ ...attachment })) : null,
+            }
+        },
+        async fetchSharedMaterialAttachments(ruleId, materialId) {
+            const response = await axios.get('/api/admin/materials/shares/inbox/material-attachments', {
+                params: {
+                    rule_id: Number(ruleId),
+                    material_id: Number(materialId),
+                },
+            })
+            return Array.isArray(response?.data?.data) ? response.data.data : []
+        },
+        async fetchSharedMaterialDetail(ruleId, materialId) {
+            const response = await axios.get('/api/admin/materials/shares/inbox/material-detail', {
+                params: {
+                    rule_id: Number(ruleId),
+                    material_id: Number(materialId),
+                },
+            })
+            return response?.data?.data || null
+        },
+        async openSharedMaterialDetail(ruleId, material) {
+            const normalizedRuleId = Number(ruleId)
+            const cardId = Number(material?.id)
+            if (!Number.isFinite(normalizedRuleId) || normalizedRuleId <= 0) return
+            if (!Number.isFinite(cardId) || cardId <= 0) return
+
+            this.detailDialogCard = this.sanitizeDialogCard({
+                id: cardId,
+                title: String(material?.title || '').trim() || 'Material',
+                attachments: [],
+                classifications: [],
+                is_linked: true,
+                linked_permission: 'read_only',
+                linked_permission_label: 'NUR LESEN',
+            })
+            this.detailDialogReadOnlyMode = true
+            this.detailDialogOpen = true
+            this.detailDialogLoading = true
+            this.detailDeleteStep = 0
+
+            try {
+                const detail = await this.fetchSharedMaterialDetail(normalizedRuleId, cardId)
+                if (!this.detailDialogOpen) return
+                if (Number(this.detailDialogCard?.id || 0) !== cardId) return
+                if (detail && typeof detail === 'object') {
+                    this.detailDialogCard = this.sanitizeDialogCard(detail)
+                }
+            } catch (error) {
+                const notification = useNotificationStore()
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Material-Details konnten nicht geladen werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+            } finally {
+                this.detailDialogLoading = false
+            }
+        },
+        async openSharedMaterialAttachments(ruleId, material) {
+            const normalizedRuleId = Number(ruleId)
+            const cardId = Number(material?.id)
+            if (!Number.isFinite(normalizedRuleId) || normalizedRuleId <= 0) return
+            if (!Number.isFinite(cardId) || cardId <= 0) return
+
+            let attachments = []
+            try {
+                attachments = await this.fetchSharedMaterialAttachments(normalizedRuleId, cardId)
+            } catch (error) {
+                const notification = useNotificationStore()
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Anhänge konnten nicht geladen werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return
+            }
+
+            await this.openAttachmentManager({
+                id: cardId,
+                title: String(material?.title || '').trim() || 'Material',
+                attachments,
+                is_linked: true,
+                linked_permission: 'read_only',
+                linked_permission_label: 'NUR LESEN',
+            })
+        },
+        sharedHierarchyMaterialCount(hierarchy) {
+            if (!Array.isArray(hierarchy)) return 0
+
+            let count = 0
+            for (const subject of hierarchy) {
+                const topics = Array.isArray(subject?.topics) ? subject.topics : []
+                for (const topic of topics) {
+                    const units = Array.isArray(topic?.units) ? topic.units : []
+                    for (const unit of units) {
+                        const materials = Array.isArray(unit?.materials) ? unit.materials : []
+                        count += materials.length
+                    }
+                }
+            }
+
+            return count
+        },
+        sharedHierarchyKey(ruleId) {
+            return `shared-rule-${Number(ruleId || 0)}`
+        },
+        isSharedHierarchyOpen(ruleId) {
+            const key = this.sharedHierarchyKey(ruleId)
+            return key ? !!this.openSharedHierarchyCards[key] : false
+        },
+        toggleSharedHierarchy(ruleId) {
+            const key = this.sharedHierarchyKey(ruleId)
+            if (!key) return
+            const isOpen = !!this.openSharedHierarchyCards[key]
+            const next = { ...this.openSharedHierarchyCards }
+            if (isOpen) {
+                delete next[key]
+            } else {
+                next[key] = true
+            }
+            this.openSharedHierarchyCards = next
+        },
         async loadSharedObjectsForMe() {
             this.isLoadingSharedObjectsForMe = true
             this.sharedObjectsForMeError = ''
+            const previousOpenHierarchyCards = { ...this.openSharedHierarchyCards }
             try {
                 const response = await axios.get('/api/admin/materials/shares/inbox-users')
                 const rows = Array.isArray(response?.data?.data) ? response.data.data : []
-                this.sharedObjectsForMeCards = this.normalizeSharedObjectsForMeResponse(rows)
+                const nextCards = this.normalizeSharedObjectsForMeResponse(rows)
+                const nextOpenHierarchyCards = {}
+                for (const card of nextCards) {
+                    const key = this.sharedHierarchyKey(card?.ruleId)
+                    if (key && previousOpenHierarchyCards[key]) {
+                        nextOpenHierarchyCards[key] = true
+                    }
+                }
+                this.sharedObjectsForMeCards = nextCards
+                this.openSharedHierarchyCards = nextOpenHierarchyCards
             } catch (error) {
                 this.sharedObjectsForMeCards = []
+                this.openSharedHierarchyCards = {}
                 this.sharedObjectsForMeError = error?.response?.data?.message || 'Freigaben konnten nicht geladen werden.'
             } finally {
                 this.isLoadingSharedObjectsForMe = false
@@ -3341,6 +3623,7 @@ export default {
             const cardId = Number(card?.id)
             if (!Number.isFinite(cardId) || cardId <= 0) return
 
+            this.detailDialogReadOnlyMode = false
             this.detailDialogCard = this.sanitizeDialogCard(card)
             this.detailDialogOpen = true
             this.detailDialogLoading = true
@@ -3365,6 +3648,7 @@ export default {
             this.detailDialogOpen = false
             this.detailDialogLoading = false
             this.detailDialogCard = null
+            this.detailDialogReadOnlyMode = false
             this.detailDeleteStep = 0
             this.returnToDetailOnEditCancel = false
             this.detailCardForEditReturn = null
@@ -3374,6 +3658,7 @@ export default {
         },
         openEditFromDetail() {
             if (!this.detailDialogCard || this.detailDialogLoading || this.isDeletingDetail) return
+            if (this.detailDialogReadOnlyActions) return
 
             const card = this.sanitizeDialogCard(this.detailDialogCard)
             if (!card) return
@@ -4141,6 +4426,9 @@ export default {
                         file_path: String(attachment?.file_path || '').trim(),
                         mime_type: String(attachment?.mime_type || '').trim(),
                         size_bytes: Number(attachment?.size_bytes || 0),
+                        shared_rule_id: Number(attachment?.shared_rule_id || 0) || null,
+                        shared_material_id: Number(attachment?.shared_material_id || 0) || null,
+                        download_docx_url: String(attachment?.download_docx_url || '').trim(),
                     }
                 })
                 .filter(Boolean)
@@ -4332,6 +4620,7 @@ ${content}
             const cardId = Number(card?.id)
             if (!Number.isFinite(cardId) || cardId <= 0) return
 
+            this.attachmentDialogCardContext = this.sanitizeDialogCard(card)
             this.attachmentDialogCardId = cardId
             this.attachmentDialogCardTitle = String(card?.title || '').trim()
             this.attachmentRows = this.toAttachmentRows(card?.attachments)
@@ -4350,6 +4639,7 @@ ${content}
             this.closeTextAttachmentEditor()
             this.attachmentDialogCardId = null
             this.attachmentDialogCardTitle = ''
+            this.attachmentDialogCardContext = null
             this.attachmentRows = []
             this.attachmentDeleteArmedIds = []
             this.attachmentNameEditingIds = []
@@ -4381,6 +4671,7 @@ ${content}
 
             const selectedCard = this.materialCardStore?.selected_card
             if (Number(selectedCard?.id) === id) {
+                this.attachmentDialogCardContext = this.sanitizeDialogCard(selectedCard)
                 this.mergeCardIntoOverview(selectedCard)
                 this.attachmentRows = this.toAttachmentRows(selectedCard?.attachments)
                 const nextTitle = String(selectedCard?.title || '').trim()
@@ -4395,6 +4686,7 @@ ${content}
 
             const refreshedCard = this.materialCardStore?.selected_card
             if (Number(refreshedCard?.id) !== id) return
+            this.attachmentDialogCardContext = this.sanitizeDialogCard(refreshedCard)
             this.mergeCardIntoOverview(refreshedCard)
             this.attachmentRows = this.toAttachmentRows(refreshedCard?.attachments)
             const nextTitle = String(refreshedCard?.title || '').trim()
@@ -4898,16 +5190,45 @@ ${content}
         },
         async downloadAttachment(attachment) {
             const id = Number(attachment?.id)
-            const downloadUrl = String(attachment?.download_url || '').trim()
-            if (!Number.isFinite(id) || id <= 0 || !downloadUrl) return
+            const initialDownloadUrl = String(attachment?.download_url || '').trim()
+            if (!Number.isFinite(id) || id <= 0) return
+            if (!initialDownloadUrl) {
+                const notification = useNotificationStore()
+                notification.notify({
+                    message: 'Datei ist derzeit nicht verfügbar.',
+                    type: 'warning',
+                    timeout: 3000,
+                })
+                return
+            }
             if (this.isDownloadingAttachment(id)) return
 
             this.markAttachmentDownloading(id, true)
 
             try {
-                const response = await axios.get(downloadUrl, {
+                let response = null
+                let downloadUrl = initialDownloadUrl
+
+                const downloadOnce = async (url) => axios.get(url, {
                     responseType: 'blob',
                 })
+
+                try {
+                    response = await downloadOnce(downloadUrl)
+                } catch (error) {
+                    const isNotFound = Number(error?.response?.status || 0) === 404
+                    if (!isNotFound) {
+                        throw error
+                    }
+
+                    const refreshedDownloadUrl = await this.refreshSharedAttachmentDownloadUrl(attachment)
+                    if (!refreshedDownloadUrl) {
+                        throw error
+                    }
+
+                    downloadUrl = refreshedDownloadUrl
+                    response = await downloadOnce(downloadUrl)
+                }
 
                 const disposition = response?.headers?.['content-disposition']
                 const serverFileName = this.filenameFromContentDisposition(disposition)
@@ -4925,9 +5246,13 @@ ${content}
                 URL.revokeObjectURL(objectUrl)
             } catch (error) {
                 const notification = useNotificationStore()
+                const status = Number(error?.response?.status || 0)
+                const isNotFound = status === 404
                 notification.notify({
-                    status: error.response?.status,
-                    message: error.response?.data?.message || 'Datei konnte nicht heruntergeladen werden.',
+                    status: status || error.response?.status,
+                    message: isNotFound
+                        ? 'Datei ist derzeit nicht verfügbar.'
+                        : error.response?.data?.message || 'Datei konnte nicht heruntergeladen werden.',
                     type: 'error',
                     timeout: 3000,
                 })
@@ -4935,12 +5260,45 @@ ${content}
                 this.markAttachmentDownloading(id, false)
             }
         },
+        async refreshSharedAttachmentDownloadUrl(attachment) {
+            const ruleId = Number(attachment?.shared_rule_id || 0)
+            const materialId = Number(attachment?.shared_material_id || 0)
+            const currentId = Number(attachment?.id || 0)
+            if (!Number.isFinite(ruleId) || ruleId <= 0) return ''
+            if (!Number.isFinite(materialId) || materialId <= 0) return ''
+            if (!Number.isFinite(currentId) || currentId <= 0) return ''
+
+            const freshAttachments = await this.fetchSharedMaterialAttachments(ruleId, materialId)
+            if (!Array.isArray(freshAttachments) || freshAttachments.length === 0) {
+                return ''
+            }
+
+            const directMatch = freshAttachments.find((row) => Number(row?.id || 0) === currentId) || null
+            const nameFallback = String(attachment?.name || '').trim()
+            const fallbackMatch = !directMatch && nameFallback !== ''
+                ? freshAttachments.find((row) => String(row?.name || '').trim() === nameFallback) || null
+                : null
+            const target = directMatch || fallbackMatch
+            if (!target) {
+                return ''
+            }
+
+            const nextDownloadUrl = String(target?.download_url || '').trim()
+            const nextPreviewUrl = String(target?.preview_url || '').trim()
+            const nextDocxUrl = String(target?.download_docx_url || '').trim()
+
+            attachment.download_url = nextDownloadUrl
+            attachment.preview_url = nextPreviewUrl
+            attachment.download_docx_url = nextDocxUrl
+
+            return nextDownloadUrl
+        },
         async downloadAttachmentDocx(attachment) {
             const id = Number(attachment?.id)
             if (!Number.isFinite(id) || id <= 0) return
             if (this.isDownloadingAttachment(id)) return
 
-            const downloadUrl = `/api/admin/materials/attachments/${id}/download-docx`
+            const downloadUrl = String(attachment?.download_docx_url || '').trim() || `/api/admin/materials/attachments/${id}/download-docx`
             this.markAttachmentDownloading(id, true)
 
             try {
@@ -4977,8 +5335,21 @@ ${content}
         },
         async previewAttachment(attachment) {
             const id = Number(attachment?.id)
-            const previewUrl = String(attachment?.preview_url || attachment?.download_url || '').trim()
-            if (!Number.isFinite(id) || id <= 0 || !previewUrl) return
+            let previewUrl = String(attachment?.preview_url || attachment?.download_url || '').trim()
+            if (!Number.isFinite(id) || id <= 0) return
+            if (!previewUrl) {
+                await this.refreshSharedAttachmentDownloadUrl(attachment)
+                previewUrl = String(attachment?.preview_url || attachment?.download_url || '').trim()
+            }
+            if (!previewUrl) {
+                const notification = useNotificationStore()
+                notification.notify({
+                    message: 'Datei ist derzeit nicht verfügbar.',
+                    type: 'warning',
+                    timeout: 3000,
+                })
+                return
+            }
             if (this.isPreviewingAttachment(id)) return
 
             const previewWindow = window.open('about:blank', '_blank')
@@ -5002,9 +5373,29 @@ ${content}
                     // noop
                 }
 
-                const response = await axios.get(previewUrl, {
-                    responseType: 'blob',
-                })
+                let response = null
+                const previewOnce = async (url) =>
+                    axios.get(url, {
+                        responseType: 'blob',
+                    })
+
+                try {
+                    response = await previewOnce(previewUrl)
+                } catch (error) {
+                    const isNotFound = Number(error?.response?.status || 0) === 404
+                    if (!isNotFound) {
+                        throw error
+                    }
+
+                    await this.refreshSharedAttachmentDownloadUrl(attachment)
+                    const refreshedPreviewUrl = String(attachment?.preview_url || attachment?.download_url || '').trim()
+                    if (!refreshedPreviewUrl) {
+                        throw error
+                    }
+
+                    previewUrl = refreshedPreviewUrl
+                    response = await previewOnce(previewUrl)
+                }
 
                 const contentType = String(response?.headers?.['content-type'] || '').trim()
                 const blob =
@@ -5027,9 +5418,13 @@ ${content}
                 }
 
                 const notification = useNotificationStore()
+                const status = Number(error?.response?.status || 0)
                 notification.notify({
-                    status: error.response?.status,
-                    message: error.response?.data?.message || 'Vorschau konnte nicht geladen werden.',
+                    status: status || error.response?.status,
+                    message:
+                        status === 404
+                            ? 'Datei ist derzeit nicht verfügbar.'
+                            : error.response?.data?.message || 'Vorschau konnte nicht geladen werden.',
                     type: 'error',
                     timeout: 3000,
                 })
@@ -5039,7 +5434,16 @@ ${content}
         },
         fileAttachments(card) {
             const attachments = Array.isArray(card?.attachments) ? card.attachments : []
-            return attachments.filter((attachment) => String(attachment?.attachment_type || '').trim() === 'file' && String(attachment?.download_url || '').trim() !== '')
+            return attachments.filter((attachment) => {
+                const isFile = String(attachment?.attachment_type || '').trim() === 'file'
+                if (!isFile) {
+                    return false
+                }
+
+                const hasDownloadUrl = String(attachment?.download_url || '').trim() !== ''
+                const hasPreviewUrl = String(attachment?.preview_url || '').trim() !== ''
+                return hasDownloadUrl || hasPreviewUrl
+            })
         },
         cardAttachmentTotalBytes(card) {
             const attachments = Array.isArray(card?.attachments) ? card.attachments : []
@@ -5216,6 +5620,162 @@ ${content}
 .shared-object-card {
     border-color: rgba(35, 61, 76, 0.18) !important;
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0.66) 100%);
+}
+
+.materials-shell {
+    --inbox-font-all-materials: clamp(18px, 1rem + 1vw, 24px);
+    --inbox-font-subject: clamp(16px, 0.9rem + 0.65vw, 20px);
+    --inbox-font-topic: clamp(14px, 0.82rem + 0.45vw, 16px);
+    --inbox-font-unit: clamp(11px, 0.64rem + 0.2vw, 12px);
+    --inbox-font-material: var(--inbox-font-unit);
+}
+
+.inbox-shared-object-title {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: var(--inbox-font-topic);
+    font-weight: 700;
+    color: #233d4c;
+    line-height: 1.25;
+    margin-top: 2px;
+}
+
+.inbox-shared-object-title--all {
+    font-size: var(--inbox-font-all-materials);
+}
+
+.inbox-shared-hierarchy {
+    margin-top: 8px;
+    padding: 10px;
+    --inbox-hierarchy-indent-step: clamp(0.7rem, 1.2vw, 1.1rem);
+    --inbox-hierarchy-guide-color: rgba(31, 111, 139, 0.22);
+}
+
+.inbox-hierarchy-card {
+    margin-top: 8px;
+    background: rgba(255, 255, 255, 0.68);
+    border: 1px solid rgba(35, 61, 76, 0.16);
+    border-radius: 10px;
+}
+
+.inbox-hierarchy-subject + .inbox-hierarchy-subject {
+    margin-top: 10px;
+}
+
+.inbox-hierarchy-topic {
+    margin-top: 6px;
+}
+
+.inbox-hierarchy-subject-head {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.inbox-hierarchy-context-line {
+    font-size: var(--inbox-font-subject);
+    font-weight: 400;
+    color: #3a5668;
+    line-height: 1.25;
+}
+
+.inbox-hierarchy-unit {
+    margin-top: 6px;
+}
+
+.inbox-hierarchy-level-subject {
+    margin-left: 0;
+}
+
+.inbox-hierarchy-level-topic {
+    margin-left: var(--inbox-hierarchy-indent-step);
+    padding-left: 8px;
+    border-left: 1px solid var(--inbox-hierarchy-guide-color);
+}
+
+.inbox-hierarchy-level-unit {
+    margin-left: calc(var(--inbox-hierarchy-indent-step) * 2);
+    padding-left: 8px;
+    border-left: 1px solid var(--inbox-hierarchy-guide-color);
+}
+
+.inbox-hierarchy-level-material {
+    margin-left: calc(var(--inbox-hierarchy-indent-step) * 3);
+    padding-left: 6px;
+    border-left: 1px dotted rgba(31, 111, 139, 0.26);
+}
+
+.inbox-hierarchy-unit-title {
+    font-size: var(--inbox-font-unit);
+    font-weight: 600;
+    color: #3a5668;
+}
+
+.inbox-hierarchy-topic-title {
+    margin-top: 2px;
+    font-size: var(--inbox-font-topic);
+    font-weight: 700;
+    color: #2f4b5c;
+}
+
+.inbox-hierarchy-topic-head {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.inbox-hierarchy-unit-head {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.inbox-hierarchy-material-lines {
+    margin-top: 4px;
+    display: grid;
+    gap: 3px;
+}
+
+.inbox-hierarchy-material-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    font-size: var(--inbox-font-material);
+    font-weight: 400;
+    color: #233d4c;
+}
+
+.inbox-hierarchy-material-title {
+    font-size: var(--inbox-font-material);
+    font-weight: 400;
+    line-height: 1.2;
+}
+
+.inbox-hierarchy-material-title-clickable {
+    cursor: pointer;
+}
+
+.inbox-hierarchy-material-count {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 6px;
+    border-radius: 999px;
+    border: 1px solid rgba(35, 61, 76, 0.2);
+    background: rgba(35, 61, 76, 0.06);
+    font-size: 0.72rem;
+}
+
+.inbox-hierarchy-material-count-clickable {
+    cursor: pointer;
 }
 
 .overview-subjects-tree {

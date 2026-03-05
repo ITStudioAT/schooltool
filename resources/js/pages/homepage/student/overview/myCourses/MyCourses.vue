@@ -108,8 +108,9 @@ export default {
     },
 
     watch: {
-        headerLiveTimerLabel: {
+        activeHeaderTimer: {
             immediate: true,
+            deep: true,
             handler(value) {
                 this.$emit('live-timer-change', value || null)
             },
@@ -184,6 +185,14 @@ export default {
 
                 nextSimulatedEndAtById[String(course.id)] = new Date(nowTs + (durationSeconds * 1000)).toISOString()
             })
+
+            // TESTMODE-FALLBACK: Wenn kein Timer gesetzt wurde, ersten Kurs mit 45 Min. simulieren
+            if (Object.keys(nextSimulatedEndAtById).length === 0) {
+                const firstCourse = (this.courses || []).find((c) => c?.id && !c?.active_course_end_at)
+                if (firstCourse) {
+                    nextSimulatedEndAtById[String(firstCourse.id)] = new Date(nowTs + 45 * 60 * 1000).toISOString()
+                }
+            }
 
             this.simulatedCourseEndAtById = nextSimulatedEndAtById
         },

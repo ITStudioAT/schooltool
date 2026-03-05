@@ -2076,6 +2076,66 @@ test('adding file attachment stores file and allows download', function () {
     expect(strtolower((string) $previewResponse->headers->get('content-type')))->toContain('application/pdf');
 });
 
+test('adding file attachment on s3 keeps canonical relative materials path structure', function () {
+    Config::set('filesystems.default', 's3');
+    Storage::fake('s3');
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'S3 Pfadstruktur Test',
+        'keywords' => [],
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $uploadResponse = $this->post('/api/admin/materials/cards/'.$card->id.'/attachments/file', [
+        'file' => UploadedFile::fake()->create('pfadstruktur.pdf', 120, 'application/pdf'),
+    ]);
+
+    $uploadResponse->assertStatus(200);
+    $attachment = MaterialCardAttachment::findOrFail((int) $uploadResponse->json('id'));
+    $path = (string) ($attachment->file_path ?? '');
+
+    expect($path)->toStartWith('materials/schools/'.$this->school->id.'/users/'.$this->teacher->id.'/cards/'.$card->id.'/')
+        ->and(preg_match('#^materials/schools/\d+/users/\d+/cards/\d+/\d{4}/\d{2}/#', $path))->toBe(1);
+
+    Storage::disk('s3')->assertExists($path);
+});
+
+test('owner attachment download and preview do not use s3 when default disk is local', function () {
+    Config::set('filesystems.default', 'local');
+    Storage::fake('local');
+    Storage::fake('s3');
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'S3 Fallback Quelle',
+        'keywords' => [],
+    ]);
+
+    $path = 'materials/source/s3-fallback.pdf';
+    Storage::disk('s3')->put($path, 's3-fallback-content');
+
+    $attachment = MaterialCardAttachment::query()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 's3-fallback.pdf',
+        'file_path' => $path,
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 1024,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->get('/api/admin/materials/attachments/'.$attachment->id.'/download')
+        ->assertStatus(404);
+
+    $previewResponse = $this->get('/api/admin/materials/attachments/'.$attachment->id.'/preview');
+    $previewResponse->assertStatus(404);
+});
+
 test('excel attachment preview is rendered as html', function () {
     Storage::fake('local');
 

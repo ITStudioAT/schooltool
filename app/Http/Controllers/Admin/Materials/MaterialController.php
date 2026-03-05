@@ -20,12 +20,14 @@ use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
 use App\Models\MaterialCardClassification;
 use App\Models\MaterialInboxImport;
+use App\Models\MaterialShareRule;
 use App\Models\MaterialShareTarget;
 use App\Models\MaterialTopic;
 use App\Models\MaterialTopicInboxImport;
 use App\Models\MaterialUnit;
 use App\Models\MaterialUnitInboxImport;
 use App\Models\User;
+use App\Models\UserGroup;
 use App\Services\Materials\MaterialAttachmentPreviewService;
 use App\Services\Materials\MaterialService;
 use Illuminate\Http\Request;
@@ -599,22 +601,22 @@ class MaterialController extends Controller
         return response()->json(new MaterialCardAttachmentResource($attachment), 200);
     }
 
-    public function downloadAttachment(MaterialCardAttachment $material_card_attachment)
+    public function downloadAttachment(MaterialCardAttachment $material_card_attachment, Request $request)
     {
         $authUser = $this->authorizeForMaterials();
         $material_card_attachment->loadMissing('materialCard');
-        $this->assertIsOwner($authUser->id, (int) $material_card_attachment->materialCard->user_id);
+        $this->assertCanReadAttachment($authUser, $material_card_attachment, $request);
 
         if ($material_card_attachment->attachment_type !== MaterialCardAttachment::TYPE_FILE || ! $material_card_attachment->file_path) {
             abort(404, 'Datei nicht gefunden');
         }
 
-        $disk = Storage::disk(config('filesystems.default'));
         $relativePath = (string) $material_card_attachment->file_path;
-
-        if (! $disk->exists($relativePath)) {
+        $resolvedDisk = $this->resolveAttachmentStorageDisk($relativePath);
+        if ($resolvedDisk === null) {
             abort(404, 'Datei nicht gefunden');
         }
+        $disk = $resolvedDisk;
 
         $name = $this->safeAttachmentDownloadName(
             $material_card_attachment->name ?: basename($relativePath)
@@ -668,23 +670,27 @@ class MaterialController extends Controller
         );
     }
 
-    public function downloadAttachmentDocx(MaterialCardAttachment $material_card_attachment)
+    public function downloadAttachmentDocx(MaterialCardAttachment $material_card_attachment, Request $request)
     {
         $authUser = $this->authorizeForMaterials();
         $material_card_attachment->loadMissing('materialCard');
-        $this->assertIsOwner($authUser->id, (int) $material_card_attachment->materialCard->user_id);
+        $this->assertCanReadAttachment($authUser, $material_card_attachment, $request);
 
         if (! $this->isHtmlAttachment($material_card_attachment)) {
             abort(422, 'DOCX-Export ist nur für Text/HTML-Anhänge verfügbar.');
         }
 
         $relativePath = (string) ($material_card_attachment->file_path ?? '');
-        if ($relativePath === '' || ! Storage::exists($relativePath)) {
+        if ($relativePath === '') {
+            abort(404, 'Datei nicht gefunden');
+        }
+        $disk = $this->resolveAttachmentStorageDisk($relativePath);
+        if ($disk === null) {
             abort(404, 'Datei nicht gefunden');
         }
 
         $name = $material_card_attachment->name ?: basename($relativePath);
-        $rawHtml = (string) Storage::get($relativePath);
+        $rawHtml = (string) $disk->get($relativePath);
         $styledHtml = $this->ensureRichTextStylesForHtmlDownload($rawHtml, $name);
         $bodyHtml = $this->extractHtmlBody($styledHtml);
         $normalizedBodyHtml = $this->normalizeHtmlFragmentForDocx($bodyHtml);
@@ -712,7 +718,7 @@ class MaterialController extends Controller
         }
 
         @unlink($tempPath);
-        $tempDocxPath = $tempPath . '.docx';
+        $tempDocxPath = $tempPath.'.docx';
 
         try {
             $writer = \PhpOffice\PhpWord\IOFactory::createWriter($phpWord, 'Word2007');
@@ -737,17 +743,22 @@ class MaterialController extends Controller
 
     public function previewAttachment(
         MaterialCardAttachment $material_card_attachment,
-        MaterialAttachmentPreviewService $previewService
+        MaterialAttachmentPreviewService $previewService,
+        Request $request
     ) {
         $authUser = $this->authorizeForMaterials();
         $material_card_attachment->loadMissing('materialCard');
-        $this->assertIsOwner($authUser->id, (int) $material_card_attachment->materialCard->user_id);
+        $this->assertCanReadAttachment($authUser, $material_card_attachment, $request);
 
         if ($material_card_attachment->attachment_type !== MaterialCardAttachment::TYPE_FILE || ! $material_card_attachment->file_path) {
             abort(404, 'Datei nicht gefunden');
         }
 
-        $downloadUrl = '/api/admin/materials/attachments/' . $material_card_attachment->id . '/download';
+        $downloadUrl = '/api/admin/materials/attachments/'.$material_card_attachment->id.'/download';
+        $query = trim((string) $request->getQueryString());
+        if ($query !== '') {
+            $downloadUrl .= '?'.$query;
+        }
 
         return $previewService->preview($material_card_attachment, $downloadUrl);
     }
@@ -766,6 +777,150 @@ class MaterialController extends Controller
         if ($authUserId !== $ownerId) {
             abort(403, 'Sie dürfen nur eigene Materialkarten verwalten.');
         }
+    }
+
+    private function resolveAttachmentStorageDisk(string $relativePath): ?\Illuminate\Contracts\Filesystem\Filesystem
+    {
+        $path = trim($relativePath);
+        if ($path === '') {
+            return null;
+        }
+
+        $candidates = array_values(array_unique([
+            (string) config('filesystems.default'),
+            'local',
+            'public',
+        ]));
+
+        foreach ($candidates as $diskName) {
+            if ($diskName === '') {
+                continue;
+            }
+
+            $disk = Storage::disk($diskName);
+            if ($disk->exists($path)) {
+                return $disk;
+            }
+        }
+
+        return null;
+    }
+
+    private function assertCanReadAttachment(User $authUser, MaterialCardAttachment $attachment, Request $request): void
+    {
+        $ownerId = (int) ($attachment->materialCard?->user_id ?? 0);
+        if ((int) $authUser->id === $ownerId) {
+            return;
+        }
+
+        if ($this->isSharedInboxAttachmentReadable($authUser, $attachment, $request)) {
+            return;
+        }
+
+        abort(403, 'Sie dürfen nur eigene Materialkarten verwalten.');
+    }
+
+    private function isSharedInboxAttachmentReadable(User $authUser, MaterialCardAttachment $attachment, Request $request): bool
+    {
+        if (! Schema::hasTable('material_share_rules') || ! Schema::hasTable('material_share_targets')) {
+            return false;
+        }
+
+        $card = $attachment->materialCard;
+        if (! $card) {
+            return false;
+        }
+
+        $ruleId = (int) $request->query('rule_id');
+        $materialId = (int) $request->query('material_id');
+        if ($ruleId <= 0 || $materialId <= 0) {
+            return false;
+        }
+
+        if ((int) $card->id !== $materialId || (int) $attachment->material_card_id !== $materialId) {
+            return false;
+        }
+
+        $authUserId = (int) $authUser->id;
+        $authSchoolId = (int) $authUser->school_id;
+        $memberGroupIds = collect();
+        if (Schema::hasTable('user_groups') && Schema::hasTable('user_group_user')) {
+            $memberGroupIds = UserGroup::query()
+                ->whereHas('members', fn ($query) => $query->where('users.id', $authUserId))
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->values();
+        }
+
+        $rule = MaterialShareRule::query()
+            ->whereKey($ruleId)
+            ->where('is_active', true)
+            ->whereNotNull('created_by_user_id')
+            ->where('created_by_user_id', '!=', $authUserId)
+            ->where(function ($query) use ($authUserId, $authSchoolId, $memberGroupIds) {
+                $query->whereHas('targets', function ($targetQuery) use ($authUserId) {
+                    $targetQuery
+                        ->where('target_type', MaterialShareTarget::TARGET_USER)
+                        ->where('user_id', $authUserId);
+                })->orWhereHas('targets', function ($targetQuery) {
+                    $targetQuery
+                        ->where('target_type', MaterialShareTarget::TARGET_EVERYONE)
+                        ->where('audience_scope', MaterialShareTarget::AUDIENCE_SCOPE_GLOBAL);
+                })->orWhere(function ($schoolWideQuery) use ($authSchoolId) {
+                    $schoolWideQuery
+                        ->where('school_id', $authSchoolId)
+                        ->whereHas('targets', function ($targetQuery) {
+                            $targetQuery
+                                ->where('target_type', MaterialShareTarget::TARGET_EVERYONE)
+                                ->where('audience_scope', MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL);
+                        });
+                });
+
+                if ($memberGroupIds->isNotEmpty()) {
+                    $query->orWhereHas('targets', function ($targetQuery) use ($memberGroupIds) {
+                        $targetQuery
+                            ->where('target_type', MaterialShareTarget::TARGET_GROUP)
+                            ->whereIn('user_group_id', $memberGroupIds->all());
+                    });
+                }
+            })
+            ->first();
+
+        if (! $rule) {
+            return false;
+        }
+
+        if ((int) $rule->school_id !== (int) $card->school_id) {
+            return false;
+        }
+
+        $creatorUserId = (int) ($rule->created_by_user_id ?? 0);
+        if ($creatorUserId > 0 && $creatorUserId !== (int) $card->user_id) {
+            return false;
+        }
+
+        $scopeType = (string) $rule->scope_type;
+        $scopeId = (int) ($rule->scope_id ?? 0);
+        if ($scopeType === MaterialShareRule::SCOPE_ALL) {
+            return true;
+        }
+        if ($scopeType === MaterialShareRule::SCOPE_MATERIAL) {
+            return $scopeId > 0 && $scopeId === $materialId;
+        }
+        if ($scopeType === MaterialShareRule::SCOPE_SUBJECT) {
+            return $scopeId > 0
+                && MaterialCardClassification::query()->where('material_card_id', $materialId)->where('subject_id', $scopeId)->exists();
+        }
+        if ($scopeType === MaterialShareRule::SCOPE_TOPIC) {
+            return $scopeId > 0
+                && MaterialCardClassification::query()->where('material_card_id', $materialId)->where('topic_id', $scopeId)->exists();
+        }
+        if ($scopeType === MaterialShareRule::SCOPE_UNIT) {
+            return $scopeId > 0
+                && MaterialCardClassification::query()->where('material_card_id', $materialId)->where('unit_id', $scopeId)->exists();
+        }
+
+        return false;
     }
 
     private function assertUnitBelongsToOwner(int $authUserId, MaterialUnit $unit): void
@@ -877,7 +1032,7 @@ class MaterialController extends Controller
         if ($document === '') {
             $safeTitle = htmlspecialchars($fileName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
             $document = '<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>'
-                . $safeTitle . '</title></head><body></body></html>';
+                .$safeTitle.'</title></head><body></body></html>';
         }
 
         if (! mb_check_encoding($document, 'UTF-8')) {
@@ -887,7 +1042,7 @@ class MaterialController extends Controller
         if (! preg_match('/<html/i', $document)) {
             $safeTitle = htmlspecialchars($fileName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
             $document = '<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>'
-                . $safeTitle . '</title></head><body>' . $document . '</body></html>';
+                .$safeTitle.'</title></head><body>'.$document.'</body></html>';
         }
 
         if (! preg_match('/<meta[^>]+charset=/i', $document)) {
@@ -900,12 +1055,14 @@ class MaterialController extends Controller
 
         $styleTag = $this->richTextDownloadStyleTag();
         if (preg_match('/<\/head>/i', $document)) {
-            $document = preg_replace('/<\/head>/i', $styleTag . '</head>', $document, 1) ?? $document;
+            $document = preg_replace('/<\/head>/i', $styleTag.'</head>', $document, 1) ?? $document;
+
             return $document;
         }
 
         if (preg_match('/<head[^>]*>/i', $document)) {
-            $document = preg_replace('/<head([^>]*)>/i', '<head$1>' . $styleTag, $document, 1) ?? $document;
+            $document = preg_replace('/<head([^>]*)>/i', '<head$1>'.$styleTag, $document, 1) ?? $document;
+
             return $document;
         }
 
@@ -915,14 +1072,14 @@ class MaterialController extends Controller
     private function richTextDownloadStyleTag(): string
     {
         return '<style id="materials-richtext-download-style">'
-            . 'body{font-family:Arial,sans-serif;line-height:1.55;color:#1a2b3b;margin:14px;}'
-            . 'p{margin:0 0 .65rem 0;}'
-            . 'ul,ol{margin:.45rem 0 .75rem 0;padding-inline-start:1.4rem;}'
-            . 'li{margin:.2rem 0;}'
-            . 'blockquote{margin:.75rem 0;padding:.5rem .75rem;border-left:3px solid #fd802e;background:rgba(253,128,46,.10);border-radius:0 6px 6px 0;}'
-            . 'pre{background:#f5f7fb;border:1px solid #d9e1f3;border-radius:8px;padding:10px 12px;overflow:auto;}'
-            . 'code{background:#f5f7fb;border:1px solid #d9e1f3;border-radius:4px;padding:1px 4px;}'
-            . '</style>';
+            .'body{font-family:Arial,sans-serif;line-height:1.55;color:#1a2b3b;margin:14px;}'
+            .'p{margin:0 0 .65rem 0;}'
+            .'ul,ol{margin:.45rem 0 .75rem 0;padding-inline-start:1.4rem;}'
+            .'li{margin:.2rem 0;}'
+            .'blockquote{margin:.75rem 0;padding:.5rem .75rem;border-left:3px solid #fd802e;background:rgba(253,128,46,.10);border-radius:0 6px 6px 0;}'
+            .'pre{background:#f5f7fb;border:1px solid #d9e1f3;border-radius:8px;padding:10px 12px;overflow:auto;}'
+            .'code{background:#f5f7fb;border:1px solid #d9e1f3;border-radius:4px;padding:1px 4px;}'
+            .'</style>';
     }
 
     private function extractHtmlBody(string $document): string
@@ -947,7 +1104,7 @@ class MaterialController extends Controller
         }
 
         $fragment = $this->normalizeBlockquotesForDocx($fragment);
-        $wrappedHtml = '<!doctype html><html><head><meta charset="UTF-8"></head><body>' . $fragment . '</body></html>';
+        $wrappedHtml = '<!doctype html><html><head><meta charset="UTF-8"></head><body>'.$fragment.'</body></html>';
         $dom = new \DOMDocument('1.0', 'UTF-8');
         $previousState = libxml_use_internal_errors(true);
 
@@ -963,7 +1120,7 @@ class MaterialController extends Controller
                 $flags |= LIBXML_NONET;
             }
 
-            $loaded = $dom->loadHTML('<?xml encoding="UTF-8">' . $wrappedHtml, $flags);
+            $loaded = $dom->loadHTML('<?xml encoding="UTF-8">'.$wrappedHtml, $flags);
             if (! $loaded) {
                 return $fragment;
             }
@@ -1009,9 +1166,9 @@ class MaterialController extends Controller
                 $mergedParagraphs = preg_replace('/^\s*<p\b[^>]*>/iu', '', $mergedParagraphs) ?? $mergedParagraphs;
                 $mergedParagraphs = preg_replace('/<\/p>\s*$/iu', '', $mergedParagraphs) ?? $mergedParagraphs;
 
-                return '<table style="' . $quoteTableStyle . '"><tr><td style="' . $quoteCellStyle . '">'
-                    . trim($mergedParagraphs)
-                    . '</td></tr></table>';
+                return '<table style="'.$quoteTableStyle.'"><tr><td style="'.$quoteCellStyle.'">'
+                    .trim($mergedParagraphs)
+                    .'</td></tr></table>';
             },
             $html
         );
@@ -1048,6 +1205,7 @@ class MaterialController extends Controller
         $normalizedText = trim($text);
         if ($normalizedText === '') {
             $section->addText(' ', ['size' => 12]);
+
             return;
         }
 
@@ -1075,7 +1233,7 @@ class MaterialController extends Controller
 
     private function newDocxDocument(): \PhpOffice\PhpWord\PhpWord
     {
-        $phpWord = new \PhpOffice\PhpWord\PhpWord();
+        $phpWord = new \PhpOffice\PhpWord\PhpWord;
         $phpWord->setDefaultFontSize(12);
 
         $docLocale = $this->docxLanguageFromLaravelLocale();
@@ -1100,7 +1258,7 @@ class MaterialController extends Controller
 
         $normalized = str_replace('_', '-', $raw);
         if (preg_match('/^[a-z]{2}$/i', $normalized) === 1) {
-            return strtolower($normalized) . '-' . strtoupper($normalized);
+            return strtolower($normalized).'-'.strtoupper($normalized);
         }
 
         $parts = array_values(array_filter(explode('-', $normalized), static fn ($part) => $part !== ''));
@@ -1109,7 +1267,7 @@ class MaterialController extends Controller
             $region = strtoupper((string) $parts[1]);
 
             if (preg_match('/^[a-z]{2}$/', $language) === 1 && preg_match('/^[A-Z0-9]{2,4}$/', $region) === 1) {
-                return $language . '-' . $region;
+                return $language.'-'.$region;
             }
         }
 
@@ -1129,7 +1287,7 @@ class MaterialController extends Controller
             return 'Text.docx';
         }
 
-        return mb_substr($withoutTrailingDot, 0, 240) . '.docx';
+        return mb_substr($withoutTrailingDot, 0, 240).'.docx';
     }
 
     private function safeAttachmentDownloadName(string $name): string
