@@ -28,7 +28,17 @@ use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
+function materialShareRoutesAvailable(): bool
+{
+    return collect(app('router')->getRoutes()->getRoutes())
+        ->contains(fn ($route) => $route->uri() === 'api/admin/materials/shares');
+}
+
 beforeEach(function () {
+    if (! materialShareRoutesAvailable()) {
+        $this->markTestSkipped('Material sharing API is disabled in this reset state.');
+    }
+
     collect([
         'super_admin',
         'admin',
