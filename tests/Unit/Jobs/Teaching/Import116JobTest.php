@@ -20,6 +20,8 @@ use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\User;
+use App\Models\UserGroup;
+use App\Models\UserGroupMember;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Spatie\Permission\Models\Role;
@@ -701,6 +703,137 @@ describe('schoolyear_id handling', function () {
         expect($count)->toBe(1)
             ->and($record->schoolyear_id)->toBe($otherSchoolyear->id)
             ->and($record->last_name)->toBe('OtherYear');
+    });
+});
+
+describe('reference synchronization', function () {
+    test('rewires users and import116 student group members to the current import row', function () {
+        $otherSchoolyear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+        ]);
+
+        $oldImport = Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $otherSchoolyear->id,
+            'student_code' => 'SYNC001',
+            'email' => 'sync.student@test.local',
+            'import_user_id' => $this->admin->id,
+        ]);
+
+        $currentImport = Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'student_code' => 'SYNC001',
+            'email' => 'sync.student@test.local',
+            'import_user_id' => $this->admin->id,
+        ]);
+
+        $user = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'email' => 'sync.student@test.local',
+            'import116_id' => $oldImport->id,
+        ]);
+
+        $group = UserGroup::query()->create([
+            'school_id' => $this->school->id,
+            'type' => UserGroup::TYPE_OWN,
+            'name' => 'Sync Import Gruppe',
+            'created_by_user_id' => $this->admin->id,
+        ]);
+
+        $member = $group->groupMembers()->create([
+            'school_id' => $this->school->id,
+            'member_provider' => UserGroupMember::PROVIDER_IMPORT116_STUDENT,
+            'member_ref' => 'import116.student:'.$oldImport->id,
+            'linked_user_id' => $user->id,
+            'source_schoolyear_id' => $otherSchoolyear->id,
+            'display_name' => 'Sync Student',
+            'display_email' => 'sync.student@test.local',
+            'member_type_label' => 'Schüler:in',
+            'source_status' => UserGroupMember::SOURCE_STATUS_ACTIVE,
+            'linked_user_status' => UserGroupMember::LINKED_USER_STATUS_LINKED,
+            'added_by_user_id' => $this->admin->id,
+        ]);
+
+        $job = new Import116Job($this->admin, 'test/path', $this->schoolyear->id);
+        $method = new ReflectionMethod($job, 'syncImport116ReferencesToCurrentRecord');
+        $method->setAccessible(true);
+        $method->invoke($job, (int) $this->school->id, $currentImport);
+
+        expect($user->fresh()->import116_id)->toBe($currentImport->id);
+
+        $member->refresh();
+        expect($member->member_ref)->toBe('import116.student:'.$currentImport->id)
+            ->and($member->source_schoolyear_id)->toBe($this->schoolyear->id);
+    });
+
+    test('removes stale duplicate import116 student group members when the current reference already exists', function () {
+        $otherSchoolyear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+        ]);
+
+        $oldImport = Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $otherSchoolyear->id,
+            'student_code' => 'SYNC002',
+            'email' => 'duplicate.student@test.local',
+            'import_user_id' => $this->admin->id,
+        ]);
+
+        $currentImport = Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'student_code' => 'SYNC002',
+            'email' => 'duplicate.student@test.local',
+            'import_user_id' => $this->admin->id,
+        ]);
+
+        $group = UserGroup::query()->create([
+            'school_id' => $this->school->id,
+            'type' => UserGroup::TYPE_OWN,
+            'name' => 'Sync Duplicate Gruppe',
+            'created_by_user_id' => $this->admin->id,
+        ]);
+
+        $staleMember = $group->groupMembers()->create([
+            'school_id' => $this->school->id,
+            'member_provider' => UserGroupMember::PROVIDER_IMPORT116_STUDENT,
+            'member_ref' => 'import116.student:'.$oldImport->id,
+            'source_schoolyear_id' => $otherSchoolyear->id,
+            'display_name' => 'Duplicate Student',
+            'display_email' => 'duplicate.student@test.local',
+            'member_type_label' => 'Schüler:in',
+            'source_status' => UserGroupMember::SOURCE_STATUS_ACTIVE,
+            'linked_user_status' => UserGroupMember::LINKED_USER_STATUS_NOT_APPLICABLE,
+            'added_by_user_id' => $this->admin->id,
+        ]);
+
+        $group->groupMembers()->create([
+            'school_id' => $this->school->id,
+            'member_provider' => UserGroupMember::PROVIDER_IMPORT116_STUDENT,
+            'member_ref' => 'import116.student:'.$currentImport->id,
+            'source_schoolyear_id' => $this->schoolyear->id,
+            'display_name' => 'Duplicate Student',
+            'display_email' => 'duplicate.student@test.local',
+            'member_type_label' => 'Schüler:in',
+            'source_status' => UserGroupMember::SOURCE_STATUS_ACTIVE,
+            'linked_user_status' => UserGroupMember::LINKED_USER_STATUS_NOT_APPLICABLE,
+            'added_by_user_id' => $this->admin->id,
+        ]);
+
+        $job = new Import116Job($this->admin, 'test/path', $this->schoolyear->id);
+        $method = new ReflectionMethod($job, 'syncImport116ReferencesToCurrentRecord');
+        $method->setAccessible(true);
+        $method->invoke($job, (int) $this->school->id, $currentImport);
+
+        expect(UserGroupMember::query()->whereKey($staleMember->id)->exists())->toBeFalse();
+        expect(
+            UserGroupMember::query()
+                ->where('user_group_id', $group->id)
+                ->where('member_provider', UserGroupMember::PROVIDER_IMPORT116_STUDENT)
+                ->count()
+        )->toBe(1);
     });
 });
 

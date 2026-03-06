@@ -172,7 +172,11 @@ class GroupController extends Controller
         }
 
         if ($this->isParentSchoolGroup($group)) {
-            $contacts = $this->parentContactsForGroup($schoolId, $group, true);
+            $contacts = $this->parentContactAssignablePayloads(
+                $schoolId,
+                $this->parentContactsForGroup($schoolId, $group, true),
+                $group,
+            );
 
             return response()->json([
                 'data' => $contacts->values()->all(),
@@ -180,7 +184,11 @@ class GroupController extends Controller
         }
 
         if ($this->isSystemManagedCourseParentGroup($group)) {
-            $contacts = $this->parentContactsForAutomaticOwnCourseGroup($schoolId, $group, true);
+            $contacts = $this->parentContactAssignablePayloads(
+                $schoolId,
+                $this->parentContactsForAutomaticOwnCourseGroup($schoolId, $group, true),
+                $group,
+            );
 
             return response()->json([
                 'data' => $contacts->values()->all(),
@@ -230,7 +238,11 @@ class GroupController extends Controller
         }
 
         if ($this->isParentSchoolGroup($group)) {
-            $contacts = $this->parentContactsForGroup($schoolId, $group, false);
+            $contacts = $this->parentContactAssignablePayloads(
+                $schoolId,
+                $this->parentContactsForGroup($schoolId, $group, false),
+                $group,
+            );
 
             return response()->json([
                 'data' => $contacts->values()->all(),
@@ -239,7 +251,11 @@ class GroupController extends Controller
         }
 
         if ($this->isSystemManagedCourseParentGroup($group)) {
-            $contacts = $this->parentContactsForAutomaticOwnCourseGroup($schoolId, $group, false);
+            $contacts = $this->parentContactAssignablePayloads(
+                $schoolId,
+                $this->parentContactsForAutomaticOwnCourseGroup($schoolId, $group, false),
+                $group,
+            );
 
             return response()->json([
                 'data' => $contacts->values()->all(),
@@ -448,6 +464,18 @@ class GroupController extends Controller
             'members' => ['nullable', 'array', 'min:1'],
             'members.*.member_provider' => ['required_with:members', 'string', 'max:64'],
             'members.*.member_ref' => ['required_with:members', 'string', 'max:191'],
+            'members.*.linked_user_id' => ['nullable', 'integer'],
+            'members.*.user_id' => ['nullable', 'integer'],
+            'members.*.source_schoolyear_id' => ['nullable', 'integer'],
+            'members.*.display_name' => ['nullable', 'string', 'max:191'],
+            'members.*.display_email' => ['nullable', 'string', 'max:191'],
+            'members.*.display_phone' => ['nullable', 'string', 'max:191'],
+            'members.*.display_schoolclass' => ['nullable', 'string', 'max:191'],
+            'members.*.display_children_label' => ['nullable', 'string', 'max:191'],
+            'members.*.member_type_label' => ['nullable', 'string', 'max:191'],
+            'members.*.source_status' => ['nullable', 'string', 'max:64'],
+            'members.*.linked_user_status' => ['nullable', 'string', 'max:64'],
+            'members.*.meta' => ['nullable', 'array'],
         ]);
 
         $payloads = collect();
@@ -474,7 +502,7 @@ class GroupController extends Controller
                     (string) ($payload['member_provider'] ?? ''),
                     (string) ($payload['member_ref'] ?? ''),
                     $schoolId,
-                );
+                ) ?? $this->fallbackStoredMemberPayloadFromRequest($payload, $schoolId);
             })
             ->filter()
             ->values();
@@ -521,14 +549,21 @@ class GroupController extends Controller
             ->orderByRaw("CASE type WHEN 'school' THEN 1 WHEN 'materials' THEN 2 ELSE 3 END")
             ->orderByRaw('LOWER(name)')
             ->get();
+        $schoolGroupSourceCounts = $this->schoolGroupSourceUserCounts($schoolId);
+        $parentGroupContacts = $this->parentContactsForSchoolGroups($schoolId);
+        $allSchoolMembers = $this->allSchoolMembersCollections($schoolId);
+        $ownCourseSourceCounts = $this->ownCourseSourceUserCounts($groups);
+        $ownCourseParentContacts = $this->parentContactsForAutomaticOwnCourseGroups($groups, $schoolId);
 
         return response()->json([
-            'data' => $groups->map(fn (UserGroup $row) => [
-                'id' => (int) $row->id,
-                'type' => (string) $row->type,
-                'name' => (string) $row->name,
-                'members_count' => (int) ($row->group_members_count ?? 0),
-            ])->values(),
+            'data' => $groups->map(fn (UserGroup $row) => $this->serializeGroup(
+                $row,
+                $schoolGroupSourceCounts,
+                $ownCourseSourceCounts,
+                $parentGroupContacts,
+                $ownCourseParentContacts,
+                $allSchoolMembers
+            ))->values(),
         ]);
     }
 
@@ -807,7 +842,9 @@ class GroupController extends Controller
         $sourceUsersCount = null;
         if ((string) $group->type === UserGroup::TYPE_SCHOOL) {
             $normalizedName = $this->normalizeGroupName((string) $group->name);
-            if ($isAllSchoolMembersGroup) {
+            if (! $isSystemDefault) {
+                $sourceUsersCount = null;
+            } elseif ($isAllSchoolMembersGroup) {
                 $registeredAllSchoolMembers = is_array($allSchoolMembers) ? ($allSchoolMembers['registered'] ?? collect()) : collect();
                 $allSchoolMembersEntries = is_array($allSchoolMembers) ? ($allSchoolMembers['all'] ?? collect()) : collect();
                 $membersCount = (int) $registeredAllSchoolMembers->count();
@@ -2425,10 +2462,18 @@ class GroupController extends Controller
             return [
                 'id' => 'teacher-email:'.$normalizedEmail,
                 'user_id' => $userId,
+                'linked_user_id' => $userId,
                 'import116_id' => null,
                 'name' => $teacherName !== '' ? $teacherName : ($userName !== '' ? $userName : ((string) ($teacher->email ?? 'Lehrer:in'))),
                 'email' => $teacher->email ?: ($user?->email),
                 'schoolclass' => $user?->schoolclass,
+                'member_provider' => UserGroupMember::PROVIDER_TEACHER_LIST_TEACHER,
+                'member_ref' => $this->teacherListTeacherMemberRef((int) $teacher->id),
+                'member_type_label' => 'Lehrer:in',
+                'source_status' => UserGroupMember::SOURCE_STATUS_ACTIVE,
+                'linked_user_status' => $userId
+                    ? UserGroupMember::LINKED_USER_STATUS_LINKED
+                    : UserGroupMember::LINKED_USER_STATUS_NOT_APPLICABLE,
                 'has_user_account' => (bool) $userId,
                 'already_member' => $existingMembers->has($storedKey),
             ];
@@ -2454,10 +2499,16 @@ class GroupController extends Controller
                 return [
                     'id' => 'teacher-role:'.$userId,
                     'user_id' => $userId,
+                    'linked_user_id' => $userId,
                     'import116_id' => null,
                     'name' => $name !== '' ? $name : ((string) ($user->email ?? 'Lehrer:in')),
                     'email' => $user->email,
                     'schoolclass' => $user->schoolclass,
+                    'member_provider' => UserGroupMember::PROVIDER_USER,
+                    'member_ref' => $this->userMemberRef($userId),
+                    'member_type_label' => 'Lehrer:in',
+                    'source_status' => UserGroupMember::SOURCE_STATUS_ACTIVE,
+                    'linked_user_status' => UserGroupMember::LINKED_USER_STATUS_LINKED,
                     'has_user_account' => true,
                     'already_member' => $existingMembers->has($storedKey),
                 ];
@@ -2471,6 +2522,29 @@ class GroupController extends Controller
                 fn (array $entry) => mb_strtolower(trim((string) ($entry['name'] ?? ''))),
                 fn (array $entry) => mb_strtolower(trim((string) ($entry['email'] ?? ''))),
             ])
+            ->values();
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $contacts
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function parentContactAssignablePayloads(int $schoolId, Collection $contacts, ?UserGroup $group = null): Collection
+    {
+        $activeSchoolyearId = $this->activeImportSchoolyearId($schoolId);
+        if (! $activeSchoolyearId) {
+            return collect();
+        }
+
+        $existingMembers = $group ? $this->existingStoredGroupMembers($group) : collect();
+
+        return $contacts
+            ->map(function (array $contact) use ($schoolId, $activeSchoolyearId, $existingMembers) {
+                return $this->serializeAssignableMemberPayload(
+                    $this->payloadForParentContact($schoolId, $activeSchoolyearId, $contact),
+                    $existingMembers,
+                );
+            })
             ->values();
     }
 
@@ -3219,6 +3293,7 @@ class GroupController extends Controller
 
         if ($resolvedPayload) {
             $member->fill([
+                'member_ref' => $resolvedPayload['member_ref'] ?? $member->member_ref,
                 'linked_user_id' => $resolvedPayload['linked_user_id'] ?? null,
                 'source_schoolyear_id' => $resolvedPayload['source_schoolyear_id'] ?? null,
                 'display_name' => $resolvedPayload['display_name'] ?? $member->display_name,
@@ -3279,6 +3354,66 @@ class GroupController extends Controller
     }
 
     /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>|null
+     */
+    private function fallbackStoredMemberPayloadFromRequest(array $payload, int $schoolId): ?array
+    {
+        $provider = trim((string) ($payload['member_provider'] ?? ''));
+        $memberRef = trim((string) ($payload['member_ref'] ?? ''));
+
+        if ($provider === '' || $memberRef === '') {
+            return null;
+        }
+
+        $linkedUserId = (int) ($payload['linked_user_id'] ?? $payload['user_id'] ?? 0);
+        if ($linkedUserId > 0) {
+            $linkedUserId = (int) User::query()
+                ->where('school_id', $schoolId)
+                ->where('id', $linkedUserId)
+                ->value('id');
+        }
+
+        $sourceStatus = (string) ($payload['source_status'] ?? UserGroupMember::SOURCE_STATUS_ACTIVE);
+        if (! in_array($sourceStatus, [
+            UserGroupMember::SOURCE_STATUS_ACTIVE,
+            UserGroupMember::SOURCE_STATUS_MISSING,
+            UserGroupMember::SOURCE_STATUS_OUT_OF_SCOPE,
+        ], true)) {
+            $sourceStatus = UserGroupMember::SOURCE_STATUS_ACTIVE;
+        }
+
+        $linkedUserStatus = (string) ($payload['linked_user_status'] ?? '');
+        if (! in_array($linkedUserStatus, [
+            UserGroupMember::LINKED_USER_STATUS_LINKED,
+            UserGroupMember::LINKED_USER_STATUS_MISSING,
+            UserGroupMember::LINKED_USER_STATUS_NOT_APPLICABLE,
+        ], true)) {
+            $linkedUserStatus = $linkedUserId > 0
+                ? UserGroupMember::LINKED_USER_STATUS_LINKED
+                : UserGroupMember::LINKED_USER_STATUS_NOT_APPLICABLE;
+        }
+
+        return [
+            'member_provider' => $provider,
+            'member_ref' => $memberRef,
+            'linked_user_id' => $linkedUserId > 0 ? $linkedUserId : null,
+            'source_schoolyear_id' => isset($payload['source_schoolyear_id']) && $payload['source_schoolyear_id'] !== null
+                ? (int) $payload['source_schoolyear_id']
+                : null,
+            'display_name' => $payload['display_name'] ?? $payload['name'] ?? null,
+            'display_email' => $payload['display_email'] ?? $payload['email'] ?? null,
+            'display_phone' => $payload['display_phone'] ?? $payload['phone'] ?? null,
+            'display_schoolclass' => $payload['display_schoolclass'] ?? $payload['schoolclass'] ?? null,
+            'display_children_label' => $payload['display_children_label'] ?? $payload['children_label'] ?? null,
+            'member_type_label' => $payload['member_type_label'] ?? null,
+            'source_status' => $sourceStatus,
+            'linked_user_status' => $linkedUserStatus,
+            'meta' => is_array($payload['meta'] ?? null) ? $payload['meta'] : null,
+        ];
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
     private function resolveUserStoredPayload(UserGroupMember $member, int $schoolId): ?array
@@ -3311,7 +3446,10 @@ class GroupController extends Controller
             ->where('id', $importId)
             ->first(['id', 'school_id', 'schoolyear_id', 'class', 'user_id', 'last_name', 'first_name', 'email', 'phone_1', 'phone_2']);
         if (! $import) {
-            return null;
+            $import = $this->fallbackImportStudentForStoredMember($member, $schoolId);
+            if (! $import) {
+                return null;
+            }
         }
 
         $payload = $this->payloadForImportStudent($import, $this->linkedUserForImportStudent($schoolId, $import));
@@ -3321,6 +3459,46 @@ class GroupController extends Controller
         }
 
         return $payload;
+    }
+
+    private function fallbackImportStudentForStoredMember(UserGroupMember $member, int $schoolId): ?Import116
+    {
+        $linkedUser = null;
+        if ((int) $member->linked_user_id > 0) {
+            $linkedUser = User::query()
+                ->where('school_id', $schoolId)
+                ->where('id', (int) $member->linked_user_id)
+                ->first(['id', 'school_id', 'import116_id', 'email']);
+        }
+
+        $userImportId = (int) ($linkedUser?->import116_id ?? 0);
+        if ($userImportId > 0) {
+            $importByUserLink = Import116::query()
+                ->where('school_id', $schoolId)
+                ->where('id', $userImportId)
+                ->first(['id', 'school_id', 'schoolyear_id', 'class', 'user_id', 'last_name', 'first_name', 'email', 'phone_1', 'phone_2']);
+            if ($importByUserLink) {
+                return $importByUserLink;
+            }
+        }
+
+        $normalizedEmail = $this->normalizeEmail($linkedUser?->email ?: $member->display_email);
+        if ($normalizedEmail === '') {
+            return null;
+        }
+
+        $activeSchoolyearId = $this->activeImportSchoolyearId($schoolId);
+
+        return Import116::query()
+            ->where('school_id', $schoolId)
+            ->whereNotNull('email')
+            ->whereRaw('LOWER(TRIM(email)) = ?', [$normalizedEmail])
+            ->orderByRaw(
+                'CASE WHEN schoolyear_id = ? THEN 0 ELSE 1 END',
+                [$activeSchoolyearId ?: -1]
+            )
+            ->orderByDesc('id')
+            ->first(['id', 'school_id', 'schoolyear_id', 'class', 'user_id', 'last_name', 'first_name', 'email', 'phone_1', 'phone_2']);
     }
 
     /**
@@ -3346,13 +3524,13 @@ class GroupController extends Controller
      */
     private function resolveParentContactStoredPayload(UserGroupMember $member, int $schoolId): ?array
     {
-        $parts = explode(':', (string) $member->member_ref, 4);
-        if (count($parts) !== 4) {
+        $parts = explode(':', (string) $member->member_ref, 3);
+        if (count($parts) !== 3) {
             return null;
         }
 
-        $schoolyearId = (int) ($parts[2] ?? 0);
-        $contactKey = base64_decode((string) ($parts[3] ?? ''), true);
+        $schoolyearId = (int) ($parts[1] ?? 0);
+        $contactKey = base64_decode((string) ($parts[2] ?? ''), true);
         if ($schoolyearId <= 0 || ! is_string($contactKey) || $contactKey === '') {
             return null;
         }
