@@ -482,6 +482,7 @@
                                                 <div class="text-caption text-medium-emphasis" v-if="member.schoolclass">Klasse: {{ member.schoolclass }}</div>
                                                 <div class="text-caption text-medium-emphasis" v-if="member.phone">Telefon: {{ member.phone }}</div>
                                                 <div class="text-caption text-medium-emphasis" v-if="member.children_label">Kinder: {{ member.children_label }}</div>
+                                                <div class="text-caption text-warning" v-if="member.status_label">{{ member.status_label }}</div>
                                             </div>
                                         </div>
                                     </div>
@@ -506,7 +507,7 @@
                                     <div>
                                         <div class="admin-card-eyebrow">Zugeordnete Benutzer</div>
                                         <div class="text-caption text-medium-emphasis">
-                                            {{ assignUsersDialog.members.length }} Benutzer in dieser Gruppe
+                                            {{ assignUsersDialog.members.length }} Mitglieder in dieser Gruppe
                                         </div>
                                     </div>
                                     <div class="d-flex flex-wrap ga-2">
@@ -552,10 +553,10 @@
                                     </div>
 
                                     <div class="sa-empty" v-if="assignUsersDialog.membersLoading">
-                                        Lade zugeordnete Benutzer ...
+                                        Lade zugeordnete Mitglieder ...
                                     </div>
                                     <div class="sa-empty" v-else-if="assignUsersDialog.members.length === 0">
-                                        Keine Benutzer zugeordnet.
+                                        Keine Mitglieder zugeordnet.
                                     </div>
                                     <div class="groups-assign-list" v-else>
                                         <div class="groups-assign-list-item" v-for="member in paginatedAssignedMembers()" :key="`group-member-${member.id}`">
@@ -568,6 +569,8 @@
                                                     <div class="font-weight-bold text-body-2">{{ member.name }}</div>
                                                     <div class="text-caption text-medium-emphasis">{{ member.email }}</div>
                                                     <div class="text-caption text-medium-emphasis" v-if="member.schoolclass">Klasse: {{ member.schoolclass }}</div>
+                                                    <div class="text-caption text-medium-emphasis" v-if="member.member_type_label">{{ member.member_type_label }}</div>
+                                                    <div class="text-caption text-warning" v-if="member.status_label">{{ member.status_label }}</div>
                                                 </div>
                                             </div>
                                             <v-btn
@@ -637,6 +640,7 @@
                                         <div class="font-weight-bold text-body-2">{{ user.name }}</div>
                                         <div class="text-caption text-medium-emphasis">{{ user.email }}</div>
                                         <div class="text-caption text-medium-emphasis" v-if="user.schoolclass">Klasse: {{ user.schoolclass }}</div>
+                                        <div class="text-caption text-medium-emphasis" v-if="user.member_type_label">{{ user.member_type_label }}</div>
                                     </div>
                                     <div class="d-flex flex-wrap ga-1 justify-end">
                                         <v-chip
@@ -653,7 +657,7 @@
                                             size="small"
                                             prepend-icon="mdi-account-plus"
                                             :loading="isBusy"
-                                            @click="assignUsersToCurrentGroup([user.id])">
+                                            @click="assignSingleMemberToCurrentGroup(user)">
                                             Zuordnen
                                         </v-btn>
                                         <v-btn
@@ -662,8 +666,8 @@
                                             color="warning"
                                             size="small"
                                             prepend-icon="mdi-account-remove"
-                                            :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(user.id)"
-                                            @click="removeAssignedMember(user)">
+                                            :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(user.assigned_member_id)"
+                                            @click="removeAssignedMember({ id: user.assigned_member_id })">
                                             Entfernen
                                         </v-btn>
                                     </div>
@@ -741,11 +745,11 @@
                                                             {{ course.classes_label }}
                                                         </v-chip>
                                                         <v-chip
-                                                            v-if="myCourseAssignableIds(course).length > 0"
+                                                            v-if="myCourseAssignableMembers(course).length > 0"
                                                             color="success"
                                                             variant="flat"
                                                             size="x-small">
-                                                            {{ myCourseAssignableIds(course).length }} neu
+                                                            {{ myCourseAssignableMembers(course).length }} neu
                                                         </v-chip>
                                                     </div>
                                                     <div class="d-flex flex-wrap ga-1 justify-end">
@@ -754,7 +758,7 @@
                                                             color="success"
                                                             size="small"
                                                             prepend-icon="mdi-account-multiple-plus"
-                                                            :disabled="myCourseAssignableIds(course).length === 0"
+                                                            :disabled="myCourseAssignableMembers(course).length === 0"
                                                             :loading="isBusy"
                                                             @click="assignWholeMyCourse(course)">
                                                             Fach zuordnen
@@ -806,7 +810,7 @@
                                                             <div class="d-flex align-start ga-2 min-w-0">
                                                                 <v-checkbox-btn
                                                                     :model-value="isMyCourseStudentSelected(course.id, student.id)"
-                                                                    :disabled="student.already_member || !student.has_user_account"
+                                                                    :disabled="student.already_member || !memberAssignmentPayload(student)"
                                                                     color="primary"
                                                                     @update:model-value="toggleMyCourseStudentSelection(course.id, student.id)" />
                                                                 <div class="min-w-0">
@@ -823,21 +827,14 @@
                                                                     size="x-small">
                                                                     zugeordnet
                                                                 </v-chip>
-                                                                <v-chip
-                                                                    v-else-if="!student.has_user_account"
-                                                                    color="warning"
-                                                                    variant="flat"
-                                                                    size="x-small">
-                                                                    kein Benutzerkonto
-                                                                </v-chip>
                                                                 <v-btn
-                                                                    v-if="!student.already_member && student.has_user_account"
+                                                                    v-if="!student.already_member && memberAssignmentPayload(student)"
                                                                     flat
                                                                     color="success"
                                                                     size="small"
                                                                     prepend-icon="mdi-account-plus"
                                                                     :loading="isBusy"
-                                                                    @click="assignUsersToCurrentGroup([student.user_id || student.id])">
+                                                                    @click="assignSingleMemberToCurrentGroup(student)">
                                                                     Zuordnen
                                                                 </v-btn>
                                                                 <v-btn
@@ -846,8 +843,8 @@
                                                                     color="warning"
                                                                     size="small"
                                                                     prepend-icon="mdi-account-remove"
-                                                                    :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(student.id)"
-                                                                    @click="removeAssignedMember(student)">
+                                                                    :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(student.assigned_member_id)"
+                                                                    @click="removeAssignedMember({ id: student.assigned_member_id })">
                                                                     Entfernen
                                                                 </v-btn>
                                                             </div>
@@ -965,7 +962,7 @@
                                             size="small"
                                             prepend-icon="mdi-account-plus"
                                             :loading="isBusy"
-                                            @click="assignUsersToCurrentGroup([teacher.id])">
+                                            @click="assignSingleMemberToCurrentGroup(teacher)">
                                             Zuordnen
                                         </v-btn>
                                         <v-btn
@@ -974,8 +971,8 @@
                                             color="warning"
                                             size="small"
                                             prepend-icon="mdi-account-remove"
-                                            :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(teacher.id)"
-                                            @click="removeAssignedMember(teacher)">
+                                            :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(teacher.assigned_member_id)"
+                                            @click="removeAssignedMember({ id: teacher.assigned_member_id })">
                                             Entfernen
                                         </v-btn>
                                     </div>
@@ -1039,21 +1036,14 @@
                                             size="x-small">
                                             zugeordnet
                                         </v-chip>
-                                        <v-chip
-                                            v-else-if="!student.has_user_account"
-                                            color="warning"
-                                            variant="flat"
-                                            size="x-small">
-                                            kein Benutzerkonto
-                                        </v-chip>
                                         <v-btn
-                                            v-if="!student.already_member && student.has_user_account"
+                                            v-if="!student.already_member && memberAssignmentPayload(student)"
                                             flat
                                             color="success"
                                             size="small"
                                             prepend-icon="mdi-account-plus"
                                             :loading="isBusy"
-                                            @click="assignUsersToCurrentGroup([student.user_id || student.id])">
+                                            @click="assignSingleMemberToCurrentGroup(student)">
                                             Zuordnen
                                         </v-btn>
                                         <v-btn
@@ -1062,8 +1052,8 @@
                                             color="warning"
                                             size="small"
                                             prepend-icon="mdi-account-remove"
-                                            :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(student.id)"
-                                            @click="removeAssignedMember(student)">
+                                            :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(student.assigned_member_id)"
+                                            @click="removeAssignedMember({ id: student.assigned_member_id })">
                                             Entfernen
                                         </v-btn>
                                     </div>
@@ -1096,13 +1086,13 @@
                                                 <v-chip color="secondary" variant="flat" size="x-small">
                                                     {{ classGroup.students.length }}
                                                 </v-chip>
-                                                <v-chip
-                                                    v-if="studentClassAssignableIds(classGroup).length > 0"
-                                                    color="success"
-                                                    variant="flat"
-                                                    size="x-small">
-                                                    {{ studentClassAssignableIds(classGroup).length }} neu
-                                                </v-chip>
+                                                        <v-chip
+                                                            v-if="studentClassAssignableMembers(classGroup).length > 0"
+                                                            color="success"
+                                                            variant="flat"
+                                                            size="x-small">
+                                                            {{ studentClassAssignableMembers(classGroup).length }} neu
+                                                        </v-chip>
                                                 <v-chip
                                                     v-if="studentClassAssignedCount(classGroup) > 0"
                                                     color="warning"
@@ -1113,15 +1103,15 @@
                                             </div>
                                             <div class="d-flex flex-wrap ga-1 justify-end">
                                                 <v-btn
-                                                    flat
-                                                    color="success"
-                                                    size="small"
-                                                    prepend-icon="mdi-account-multiple-plus"
-                                                    :disabled="studentClassAssignableIds(classGroup).length === 0"
-                                                    :loading="isBusy"
-                                                    @click="assignWholeStudentClass(classGroup)">
-                                                    Klasse zuordnen
-                                                </v-btn>
+                                                            flat
+                                                            color="success"
+                                                            size="small"
+                                                            prepend-icon="mdi-account-multiple-plus"
+                                                            :disabled="studentClassAssignableMembers(classGroup).length === 0"
+                                                            :loading="isBusy"
+                                                            @click="assignWholeStudentClass(classGroup)">
+                                                            Klasse zuordnen
+                                                        </v-btn>
                                                 <v-btn
                                                     flat
                                                     :color="classGroup.expanded ? 'secondary' : 'primary'"
@@ -1168,11 +1158,11 @@
                                             <div class="groups-assign-list">
                                                 <div class="groups-assign-list-item" v-for="student in classGroup.students" :key="`class-student-${classGroup.key}-${student.import116_id || student.id}`">
                                                     <div class="d-flex align-start ga-2 min-w-0">
-                                                        <v-checkbox-btn
-                                                            :model-value="isStudentInClassSelected(classGroup.key, student.id)"
-                                                            :disabled="student.already_member || !student.has_user_account"
-                                                            color="primary"
-                                                            @update:model-value="toggleStudentInClassSelection(classGroup.key, student.id)" />
+                                                                <v-checkbox-btn
+                                                                    :model-value="isStudentInClassSelected(classGroup.key, student.id)"
+                                                                    :disabled="student.already_member || !memberAssignmentPayload(student)"
+                                                                    color="primary"
+                                                                    @update:model-value="toggleStudentInClassSelection(classGroup.key, student.id)" />
                                                         <div class="min-w-0">
                                                             <div class="font-weight-bold text-body-2">{{ student.name }}</div>
                                                             <div class="text-caption text-medium-emphasis">{{ student.email }}</div>
@@ -1186,33 +1176,26 @@
                                                             size="x-small">
                                                             zugeordnet
                                                         </v-chip>
-                                                        <v-chip
-                                                            v-else-if="!student.has_user_account"
-                                                            color="warning"
-                                                            variant="flat"
-                                                            size="x-small">
-                                                            kein Benutzerkonto
-                                                        </v-chip>
-                                                        <v-btn
-                                                            v-if="!student.already_member && student.has_user_account"
-                                                            flat
-                                                            color="success"
-                                                            size="small"
-                                                            prepend-icon="mdi-account-plus"
-                                                            :loading="isBusy"
-                                                            @click="assignUsersToCurrentGroup([student.user_id || student.id])">
-                                                            Zuordnen
-                                                        </v-btn>
-                                                        <v-btn
-                                                            v-else
-                                                            flat
-                                                            color="warning"
-                                                            size="small"
-                                                            prepend-icon="mdi-account-remove"
-                                                            :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(student.id)"
-                                                            @click="removeAssignedMember(student)">
-                                                            Entfernen
-                                                        </v-btn>
+                                                                <v-btn
+                                                                    v-if="!student.already_member && memberAssignmentPayload(student)"
+                                                                    flat
+                                                                    color="success"
+                                                                    size="small"
+                                                                    prepend-icon="mdi-account-plus"
+                                                                    :loading="isBusy"
+                                                                    @click="assignSingleMemberToCurrentGroup(student)">
+                                                                    Zuordnen
+                                                                </v-btn>
+                                                                <v-btn
+                                                                    v-else
+                                                                    flat
+                                                                    color="warning"
+                                                                    size="small"
+                                                                    prepend-icon="mdi-account-remove"
+                                                                    :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(student.assigned_member_id)"
+                                                                    @click="removeAssignedMember({ id: student.assigned_member_id })">
+                                                                    Entfernen
+                                                                </v-btn>
                                                     </div>
                                                 </div>
                                             </div>
@@ -2007,6 +1990,31 @@ export default {
         isAssignedMemberSelected(userId) {
             return this.assignUsersDialog.selectedMemberIds.some((id) => Number(id) === Number(userId))
         },
+        memberAssignmentPayload(member) {
+            if (!member?.member_provider || !member?.member_ref) {
+                return null
+            }
+
+            return {
+                member_provider: String(member.member_provider),
+                member_ref: String(member.member_ref),
+            }
+        },
+        memberSelectionValue(memberOrValue) {
+            if (memberOrValue && typeof memberOrValue === 'object') {
+                return String(memberOrValue.member_ref || memberOrValue.id || '')
+            }
+
+            return String(memberOrValue || '')
+        },
+        buildSelectedAssignableMemberPayloads(rows = [], selectedValues = []) {
+            const selected = new Set((selectedValues || []).map((value) => this.memberSelectionValue(value)).filter((value) => value !== ''))
+
+            return (rows || [])
+                .filter((row) => selected.has(this.memberSelectionValue(row)))
+                .map((row) => this.memberAssignmentPayload(row))
+                .filter((payload) => !!payload)
+        },
         toggleAssignedMemberSelection(userId) {
             const id = Number(userId)
             const selected = [...this.assignUsersDialog.selectedMemberIds]
@@ -2029,12 +2037,14 @@ export default {
             this.assignUsersDialog.selectedMemberIds = this.assignUsersDialog.selectedMemberIds.filter((id) => memberIds.has(Number(id)))
         },
         isTeacherSearchSelected(userId) {
-            return this.assignUsersDialog.selectedTeacherIds.some((id) => Number(id) === Number(userId))
+            const value = this.memberSelectionValue(userId)
+            return this.assignUsersDialog.selectedTeacherIds.some((id) => this.memberSelectionValue(id) === value)
         },
         toggleTeacherSearchSelection(userId) {
-            const id = Number(userId)
+            const id = this.memberSelectionValue(userId)
+            if (id === '') return
             const selected = [...this.assignUsersDialog.selectedTeacherIds]
-            const index = selected.findIndex((item) => Number(item) === id)
+            const index = selected.findIndex((item) => this.memberSelectionValue(item) === id)
             if (index >= 0) {
                 selected.splice(index, 1)
             } else {
@@ -2044,8 +2054,8 @@ export default {
         },
         selectAllTeacherSearchResults() {
             this.assignUsersDialog.selectedTeacherIds = this.assignUsersDialog.teacherSearchResults
-                .filter((user) => !user.already_member)
-                .map((user) => Number(user.id))
+                .filter((user) => !user.already_member && !!this.memberAssignmentPayload(user))
+                .map((user) => this.memberSelectionValue(user))
         },
         clearTeacherSearchSelection() {
             this.assignUsersDialog.selectedTeacherIds = []
@@ -2053,10 +2063,10 @@ export default {
         syncTeacherSearchSelection() {
             const selectableIds = new Set(
                 this.assignUsersDialog.teacherSearchResults
-                    .filter((user) => !user.already_member)
-                    .map((user) => Number(user.id))
+                    .filter((user) => !user.already_member && !!this.memberAssignmentPayload(user))
+                    .map((user) => this.memberSelectionValue(user))
             )
-            this.assignUsersDialog.selectedTeacherIds = this.assignUsersDialog.selectedTeacherIds.filter((id) => selectableIds.has(Number(id)))
+            this.assignUsersDialog.selectedTeacherIds = this.assignUsersDialog.selectedTeacherIds.filter((id) => selectableIds.has(this.memberSelectionValue(id)))
         },
         resetTeacherSearchResults() {
             this.assignUsersDialog.teacherSearchHasRun = false
@@ -2067,10 +2077,11 @@ export default {
             this.assignUsersDialog.studentSearchHasRun = false
             this.assignUsersDialog.studentSearchResults = []
         },
-        studentClassAssignableIds(classGroup) {
+        studentClassAssignableMembers(classGroup) {
             return (classGroup?.students || [])
-                .filter((student) => !student.already_member && !!student.has_user_account)
-                .map((student) => Number(student.user_id || student.id))
+                .filter((student) => !student.already_member)
+                .map((student) => this.memberAssignmentPayload(student))
+                .filter((payload) => !!payload)
         },
         studentClassAssignedCount(classGroup) {
             return (classGroup?.students || []).filter((student) => !!student.already_member).length
@@ -2079,29 +2090,32 @@ export default {
             return this.assignUsersDialog.studentClasses.find((row) => row.key === classKey) || null
         },
         isStudentInClassSelected(classKey, userId) {
-            if (!userId) return false
+            const value = this.memberSelectionValue(userId)
+            if (value === '') return false
             const classGroup = this.findStudentClassGroup(classKey)
             if (!classGroup) return false
-            return classGroup.selectedIds.some((id) => Number(id) === Number(userId))
+            return classGroup.selectedIds.some((id) => this.memberSelectionValue(id) === value)
         },
         toggleStudentInClassSelection(classKey, userId) {
-            if (!userId) return
+            const value = this.memberSelectionValue(userId)
+            if (value === '') return
             const classGroup = this.findStudentClassGroup(classKey)
             if (!classGroup) return
-            const id = Number(userId)
             const selected = [...classGroup.selectedIds]
-            const index = selected.findIndex((item) => Number(item) === id)
+            const index = selected.findIndex((item) => this.memberSelectionValue(item) === value)
             if (index >= 0) {
                 selected.splice(index, 1)
             } else {
-                selected.push(id)
+                selected.push(value)
             }
             classGroup.selectedIds = selected
         },
         selectAllStudentsInClass(classKey) {
             const classGroup = this.findStudentClassGroup(classKey)
             if (!classGroup) return
-            classGroup.selectedIds = this.studentClassAssignableIds(classGroup)
+            classGroup.selectedIds = (classGroup.students || [])
+                .filter((student) => !student.already_member && !!this.memberAssignmentPayload(student))
+                .map((student) => this.memberSelectionValue(student))
         },
         clearStudentClassSelection(classKey) {
             const classGroup = this.findStudentClassGroup(classKey)
@@ -2177,10 +2191,11 @@ export default {
         findMyCourse(courseId) {
             return this.assignUsersDialog.myCourses.find((row) => Number(row.id) === Number(courseId)) || null
         },
-        myCourseAssignableIds(course) {
+        myCourseAssignableMembers(course) {
             return (course?.students || [])
-                .filter((student) => !student.already_member && !!student.has_user_account)
-                .map((student) => Number(student.user_id || student.id))
+                .filter((student) => !student.already_member)
+                .map((student) => this.memberAssignmentPayload(student))
+                .filter((payload) => !!payload)
         },
         toggleMyCourseExpanded(courseId) {
             const course = this.findMyCourse(courseId)
@@ -2188,26 +2203,29 @@ export default {
             course.expanded = !course.expanded
         },
         isMyCourseStudentSelected(courseId, userId) {
-            if (!userId) return false
+            const value = this.memberSelectionValue(userId)
+            if (value === '') return false
             const course = this.findMyCourse(courseId)
             if (!course) return false
-            return course.selectedIds.some((id) => Number(id) === Number(userId))
+            return course.selectedIds.some((id) => this.memberSelectionValue(id) === value)
         },
         toggleMyCourseStudentSelection(courseId, userId) {
-            if (!userId) return
+            const value = this.memberSelectionValue(userId)
+            if (value === '') return
             const course = this.findMyCourse(courseId)
             if (!course) return
-            const id = Number(userId)
             const next = [...course.selectedIds]
-            const index = next.findIndex((row) => Number(row) === id)
+            const index = next.findIndex((row) => this.memberSelectionValue(row) === value)
             if (index >= 0) next.splice(index, 1)
-            else next.push(id)
+            else next.push(value)
             course.selectedIds = next
         },
         selectAllMyCourseStudents(courseId) {
             const course = this.findMyCourse(courseId)
             if (!course) return
-            course.selectedIds = this.myCourseAssignableIds(course)
+            course.selectedIds = (course.students || [])
+                .filter((student) => !student.already_member && !!this.memberAssignmentPayload(student))
+                .map((student) => this.memberSelectionValue(student))
         },
         clearMyCourseSelection(courseId) {
             const course = this.findMyCourse(courseId)
@@ -2215,16 +2233,16 @@ export default {
             course.selectedIds = []
         },
         async assignWholeMyCourse(course) {
-            const userIds = this.myCourseAssignableIds(course)
-            if (userIds.length === 0) return
-            await this.assignUsersToCurrentGroup(userIds)
+            const members = this.myCourseAssignableMembers(course)
+            if (members.length === 0) return
+            await this.assignUsersToCurrentGroup(members)
         },
         async assignSelectedMyCourseStudents(courseId) {
             const course = this.findMyCourse(courseId)
             if (!course) return
-            const userIds = (course.selectedIds || []).map((id) => Number(id)).filter((id) => id > 0)
-            if (userIds.length === 0) return
-            await this.assignUsersToCurrentGroup(userIds)
+            const members = this.buildSelectedAssignableMemberPayloads(course.students, course.selectedIds)
+            if (members.length === 0) return
+            await this.assignUsersToCurrentGroup(members)
             this.clearMyCourseSelection(courseId)
         },
         onTeacherSearchCleared() {
@@ -2259,7 +2277,7 @@ export default {
             this.assignUsersDialog.removingUserId = member.id
             try {
                 await axios.delete(`/api/admin/groups/${group.id}/members/${member.id}`)
-                this.notifySuccess('Benutzer entfernt.')
+                this.notifySuccess('Mitglied entfernt.')
                 await this.loadGroups()
                 await this.loadAssignedMembers()
                 if (this.assignUsersDialog.userSearchHasRun) {
@@ -2279,7 +2297,7 @@ export default {
                 }
                 await this.loadAssignableGroups()
             } catch (error) {
-                this.notifyError(error, 'Benutzer konnte nicht entfernt werden.')
+                this.notifyError(error, 'Mitglied konnte nicht entfernt werden.')
             } finally {
                 this.assignUsersDialog.removingUserId = null
                 this.is_loading--
@@ -2288,16 +2306,16 @@ export default {
         },
         async removeSelectedAssignedMembers() {
             const group = this.assignUsersDialog.group
-            const userIds = (this.assignUsersDialog.selectedMemberIds || []).map((id) => Number(id)).filter((id) => id > 0)
-            if (!group?.id || this.isBusy || userIds.length === 0) return
+            const memberIds = (this.assignUsersDialog.selectedMemberIds || []).map((id) => Number(id)).filter((id) => id > 0)
+            if (!group?.id || this.isBusy || memberIds.length === 0) return
 
             this.isBusy = true
             this.is_loading++
             this.assignUsersDialog.bulkRemoving = true
             try {
-                const response = await axios.post(`/api/admin/groups/${group.id}/remove-users`, { user_ids: userIds })
-                const removedCount = Number(response.data?.meta?.removed_count ?? userIds.length)
-                this.notifySuccess(`${removedCount} Benutzer entfernt.`)
+                const response = await axios.post(`/api/admin/groups/${group.id}/remove-users`, { member_ids: memberIds })
+                const removedCount = Number(response.data?.meta?.removed_count ?? memberIds.length)
+                this.notifySuccess(`${removedCount} Mitglieder entfernt.`)
                 this.clearAssignedMemberSelection()
                 await this.loadGroups()
                 await this.loadAssignedMembers()
@@ -2318,7 +2336,7 @@ export default {
                 }
                 await this.loadAssignableGroups()
             } catch (error) {
-                this.notifyError(error, 'Benutzer konnten nicht entfernt werden.')
+                this.notifyError(error, 'Mitglieder konnten nicht entfernt werden.')
             } finally {
                 this.assignUsersDialog.bulkRemoving = false
                 this.is_loading--
@@ -2439,16 +2457,16 @@ export default {
             }
         },
         async assignWholeStudentClass(classGroup) {
-            const userIds = this.studentClassAssignableIds(classGroup)
-            if (userIds.length === 0) return
-            await this.assignUsersToCurrentGroup(userIds)
+            const members = this.studentClassAssignableMembers(classGroup)
+            if (members.length === 0) return
+            await this.assignUsersToCurrentGroup(members)
         },
         async assignSelectedStudentsInClass(classKey) {
             const classGroup = this.findStudentClassGroup(classKey)
             if (!classGroup) return
-            const userIds = (classGroup.selectedIds || []).map((id) => Number(id)).filter((id) => id > 0)
-            if (userIds.length === 0) return
-            await this.assignUsersToCurrentGroup(userIds)
+            const members = this.buildSelectedAssignableMemberPayloads(classGroup.students, classGroup.selectedIds)
+            if (members.length === 0) return
+            await this.assignUsersToCurrentGroup(members)
             this.clearStudentClassSelection(classKey)
         },
         async loadAssignableGroups() {
@@ -2473,18 +2491,30 @@ export default {
                 this.assignUsersDialog.sourceGroupsLoading = false
             }
         },
-        async assignUsersToCurrentGroup(userIds = []) {
+        async assignSingleMemberToCurrentGroup(member) {
+            const payload = this.memberAssignmentPayload(member)
+            if (!payload) return
+
+            await this.assignUsersToCurrentGroup([payload])
+        },
+        async assignUsersToCurrentGroup(members = []) {
             const group = this.assignUsersDialog.group
-            if (!group?.id || this.isBusy || !Array.isArray(userIds) || userIds.length === 0) return
+            if (!group?.id || this.isBusy || !Array.isArray(members) || members.length === 0) return
+
+            const normalizedMembers = members
+                .map((member) => this.memberAssignmentPayload(member) || member)
+                .filter((member) => !!member?.member_provider && !!member?.member_ref)
+
+            if (normalizedMembers.length === 0) return
 
             this.isBusy = true
             this.is_loading++
             try {
                 const response = await axios.post(`/api/admin/groups/${group.id}/assign-users`, {
-                    user_ids: userIds,
+                    members: normalizedMembers,
                 })
                 const newCount = Number(response.data?.meta?.new_count ?? 0)
-                this.notifySuccess(newCount > 0 ? `${newCount} Benutzer zugeordnet.` : 'Benutzer waren bereits zugeordnet.')
+                this.notifySuccess(newCount > 0 ? `${newCount} Mitglieder zugeordnet.` : 'Mitglieder waren bereits zugeordnet.')
                 await this.loadGroups()
                 await this.loadAssignedMembers()
                 await this.searchAssignableUsers()
@@ -2502,7 +2532,7 @@ export default {
                 }
                 await this.loadAssignableGroups()
             } catch (error) {
-                this.notifyError(error, 'Benutzer konnten nicht zugeordnet werden.')
+                this.notifyError(error, 'Mitglieder konnten nicht zugeordnet werden.')
             } finally {
                 this.is_loading--
                 this.isBusy = false
@@ -2545,11 +2575,12 @@ export default {
             }
         },
         async assignSelectedTeachers() {
-            const userIds = (this.assignUsersDialog.selectedTeacherIds || [])
-                .map((id) => Number(id))
-                .filter((id) => id > 0)
-            if (userIds.length === 0) return
-            await this.assignUsersToCurrentGroup(userIds)
+            const members = this.buildSelectedAssignableMemberPayloads(
+                this.assignUsersDialog.teacherSearchResults,
+                this.assignUsersDialog.selectedTeacherIds,
+            )
+            if (members.length === 0) return
+            await this.assignUsersToCurrentGroup(members)
             this.clearTeacherSearchSelection()
         },
     },

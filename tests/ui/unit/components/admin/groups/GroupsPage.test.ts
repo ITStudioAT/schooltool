@@ -286,6 +286,39 @@ describe('Groups page header', () => {
         expect(rows.map((row: any) => row.id)).toEqual([2, 1, 3])
     })
 
+    it('builds provider-based assignment payloads and selected member batches', () => {
+        const methods = (Groups as any).methods
+        const ctx = {
+            memberAssignmentPayload: methods.memberAssignmentPayload,
+            memberSelectionValue: methods.memberSelectionValue,
+        }
+
+        expect(methods.memberAssignmentPayload.call(ctx, {
+            member_provider: 'import116.student',
+            member_ref: 'import116.student:11',
+        })).toEqual({
+            member_provider: 'import116.student',
+            member_ref: 'import116.student:11',
+        })
+
+        expect(methods.memberSelectionValue.call(ctx, {
+            member_provider: 'teacher_list.teacher',
+            member_ref: 'teacher_list.teacher:9',
+        })).toBe('teacher_list.teacher|teacher_list.teacher:9')
+
+        expect(methods.buildSelectedAssignableMemberPayloads.call(ctx, [
+            { member_provider: 'import116.student', member_ref: 'import116.student:11' },
+            { member_provider: 'teacher_list.teacher', member_ref: 'teacher_list.teacher:9' },
+            { member_provider: 'user', member_ref: 'user:5' },
+        ], [
+            'teacher_list.teacher|teacher_list.teacher:9',
+            'user|user:5',
+        ])).toEqual([
+            { member_provider: 'teacher_list.teacher', member_ref: 'teacher_list.teacher:9' },
+            { member_provider: 'user', member_ref: 'user:5' },
+        ])
+    })
+
     it('paginates dialog member lists in blocks of 100 entries', () => {
         const methods = (Groups as any).methods
         const members = Array.from({ length: 105 }, (_, index) => ({
@@ -518,7 +551,15 @@ describe('Groups page header', () => {
         expect(source).toContain('v-model="assignUsersDialog.readOnlyPage"')
         expect(source).toContain('v-model="assignUsersDialog.membersPage"')
         expect(source).toContain('class="groups-list-pagination"')
+        expect(source).toContain('memberAssignmentPayload(member)')
+        expect(source).toContain('memberSelectionValue(member)')
+        expect(source).toContain('buildSelectedAssignableMemberPayloads(rows, selectedValues)')
+        expect(source).toContain('members: normalizedMembers')
+        expect(source).toContain('member_ids: memberIds')
+        expect(source).toContain('member_provider')
+        expect(source).toContain('member_ref')
         expect(source).toContain('member.member_type_label')
+        expect(source).toContain('user.member_type_label')
         expect(source).toContain('member.is_registered')
         expect(source).toContain('mdi-check-circle')
         expect(source).toContain('title="Registriert"')
