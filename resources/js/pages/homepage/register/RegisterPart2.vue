@@ -171,6 +171,10 @@
                                     <v-icon size="18" class="mr-2">mdi-account-school</v-icon>
                                     {{ (booking.student_last_name || '') + ' ' + (booking.student_first_name || '') }}
                                 </div>
+                                <div v-for="(sibling, si) in (booking.siblings || [])" :key="si" class="booking-student" style="opacity: 0.75;">
+                                    <v-icon size="18" class="mr-2">mdi-account-multiple</v-icon>
+                                    {{ (sibling.last_name || '') + ' ' + (sibling.first_name || '') }}
+                                </div>
                             </div>
                             <div class="booking-actions">
                                 <v-btn color="error" variant="tonal" size="small" rounded="lg" :data-testid="`register2-booking-delete-${booking.id}`" @click="deleteBooking(booking)">
@@ -255,6 +259,59 @@
                             :rules="active_register.must_student_birthdate ? [required(), date()] : [date()]"
                             data-testid="register2-student-birthdate"
                             class="mb-4" />
+
+                        <!-- Geschwister -->
+                        <div v-for="(sibling, index) in siblings" :key="index" class="sibling-block mb-4">
+                            <div class="sibling-header">
+                                <div class="sibling-label">
+                                    <v-icon size="18" class="mr-1">mdi-account-multiple</v-icon>
+                                    Weiteres Kind {{ index + 2 }}
+                                </div>
+                                <v-btn icon size="x-small" color="error" variant="text" @click="removeSibling(index)">
+                                    <v-icon>mdi-close</v-icon>
+                                </v-btn>
+                            </div>
+                            <v-text-field
+                                v-if="active_register.show_student_last_name"
+                                v-model="sibling.last_name"
+                                label="Nachname des Kindes"
+                                variant="outlined"
+                                prepend-inner-icon="mdi-account"
+                                :rules="[required(), maxLength(255)]"
+                                :data-testid="`register2-sibling-last-name-${index}`"
+                                class="mb-2" />
+                            <v-text-field
+                                v-if="active_register.show_student_first_name"
+                                v-model="sibling.first_name"
+                                label="Vorname des Kindes"
+                                variant="outlined"
+                                prepend-inner-icon="mdi-account-outline"
+                                :rules="[maxLength(255)]"
+                                :data-testid="`register2-sibling-first-name-${index}`"
+                                class="mb-2" />
+                            <v-text-field
+                                v-if="active_register.show_student_birthdate"
+                                v-model="sibling.birthdate"
+                                label="Geburtsdatum (JJJJ-MM-TT)"
+                                variant="outlined"
+                                prepend-inner-icon="mdi-cake-variant"
+                                :rules="[date()]"
+                                :data-testid="`register2-sibling-birthdate-${index}`"
+                                class="mb-0" />
+                        </div>
+
+                        <div class="mb-4" v-if="active_register.allow_siblings">
+                            <v-btn
+                                variant="tonal"
+                                color="primary"
+                                size="small"
+                                prepend-icon="mdi-plus"
+                                data-testid="register2-add-sibling"
+                                @click="addSibling">
+                                Weiteres Kind hinzufügen
+                            </v-btn>
+                        </div>
+
                         <v-text-field
                             v-if="active_register.show_note"
                             v-model="data.note"
@@ -270,7 +327,7 @@
                                 <v-icon start>mdi-arrow-left</v-icon>
                                 Zurück
                             </v-btn>
-                            <v-btn color="success" variant="flat" size="large" rounded="lg" data-testid="register2-submit-booking" type="submit">
+                            <v-btn color="success" variant="flat" size="large" rounded="lg" data-testid="register2-submit-booking" type="submit" :disabled="!is_valid">
                                 <v-icon start>mdi-check</v-icon>
                                 Jetzt buchen
                             </v-btn>
@@ -369,6 +426,7 @@ export default {
             selected_register_date: [],
             action: '',
             is_valid: false,
+            siblings: [],
         }
     },
 
@@ -442,14 +500,24 @@ export default {
                 student_first_name: input?.student_first_name ?? null,
                 student_birthdate: input?.student_birthdate ?? null,
                 note: input?.note ?? null,
+                siblings: this.siblings.length > 0 ? this.siblings : null,
             }
 
             if (!(await this.registerStore.book(data))) return
             this.action = 'booked'
         },
 
+        addSibling() {
+            this.siblings.push({ last_name: '', first_name: '', birthdate: '' })
+        },
+
+        removeSibling(index) {
+            this.siblings.splice(index, 1)
+        },
+
         async bookingFinished() {
             this.action = ''
+            this.siblings = []
             await this.registerStore.loadRegisterAndUser()
             if (this.dates.length > 0) this.selected_date = this.dates[0]
             this.selected_register_date = []
@@ -473,6 +541,7 @@ export default {
         backToDateSelection() {
             this.action = ''
             this.selected_register_date = []
+            this.siblings = []
         },
 
         selectDate(date) {
@@ -1073,6 +1142,29 @@ export default {
 .student-form {
     display: flex;
     flex-direction: column;
+}
+
+/* Sibling Block */
+.sibling-block {
+    background: #f0f4ff;
+    border-radius: 12px;
+    padding: 16px;
+    border: 1px solid #c5cae9;
+}
+
+.sibling-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.sibling-label {
+    display: flex;
+    align-items: center;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #3949ab;
 }
 
 /* Success State */

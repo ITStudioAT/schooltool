@@ -20,6 +20,7 @@ class RegisterDateBookingResource extends JsonResource
             'student_first_name' => $this->student_first_name,
             'student_birthdate' => $this->student_birthdate,
             'note' => $this->note,
+            'siblings' => $this->siblings ?? [],
             'date' => $this->registerDate->date,
             'from' => $this->registerDate->from,
             'to' => $this->registerDate->to,

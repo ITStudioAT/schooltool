@@ -535,6 +535,55 @@ describe('book', function () {
         ]);
     });
 
+    it('creates booking with siblings for authenticated register user', function () {
+        $data = [
+            'data' => [
+                'register_id' => $this->register->id,
+                'register_date_id' => $this->registerDate->id,
+                'student_last_name' => 'Muster',
+                'student_first_name' => 'Max',
+                'student_birthdate' => '2010-01-01',
+                'note' => 'Geschwister Test',
+                'siblings' => [
+                    ['last_name' => 'Muster', 'first_name' => 'Maria', 'birthdate' => '2012-05-15'],
+                    ['last_name' => 'Muster', 'first_name' => 'Anna', 'birthdate' => null],
+                ],
+            ],
+        ];
+
+        $response = $this->actingAs($this->user)->postJson('/api/homepage/register/book', $data);
+
+        $response->assertStatus(200);
+
+        $booking = \App\Models\RegisterDateBooking::where('user_id', $this->user->id)
+            ->where('student_last_name', 'Muster')
+            ->first();
+
+        expect($booking)->not->toBeNull()
+            ->and($booking->siblings)->toHaveCount(2)
+            ->and($booking->siblings[0]['last_name'])->toBe('Muster')
+            ->and($booking->siblings[0]['first_name'])->toBe('Maria')
+            ->and($booking->siblings[1]['first_name'])->toBe('Anna');
+    });
+
+    it('validates sibling last_name is required', function () {
+        $data = [
+            'data' => [
+                'register_id' => $this->register->id,
+                'register_date_id' => $this->registerDate->id,
+                'student_last_name' => 'Student',
+                'siblings' => [
+                    ['first_name' => 'Maria'],
+                ],
+            ],
+        ];
+
+        $response = $this->actingAs($this->user)->postJson('/api/homepage/register/book', $data);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['data.siblings.0.last_name']);
+    });
+
     it('validates required fields', function () {
         $response = $this->actingAs($this->user)->postJson('/api/homepage/register/book', [
             'data' => [],

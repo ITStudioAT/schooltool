@@ -22,7 +22,8 @@
       "Bash(./vendor/bin/pint app/Http/Controllers/Admin/LogController.php --format agent)",
       "Bash(./vendor/bin/pint app/Services/TeachingCourseWorkEntrySyncService.php app/Http/Controllers/Admin/Teaching/TeachingCourseController.php --format agent)",
       "Bash(./vendor/bin/pint app/Services/TeachingCourseWorkEntrySyncService.php --format agent)",
-      "Bash(./vendor/bin/pint app/Console/Commands/Teaching/SyncCourseWorkEntries.php --format agent)"
+      "Bash(./vendor/bin/pint app/Console/Commands/Teaching/SyncCourseWorkEntries.php --format agent)",
+      "Bash(./vendor/bin/pint --dirty --format agent app/Models/RegisterDateBooking.php app/Http/Requests/Homepage/RegisterBookRequest.php app/Services/RegisterDateBookingService.php app/Http/Resources/Admin/RegisterDateBookingResource.php app/Http/Resources/Homepage/RegisterDateBookingResource.php)"
     ],
     "additionalDirectories": [
       "C:\\Users\\kron\\.claude\\projects\\c--Dropbox-laravel-schooltool\\memory"

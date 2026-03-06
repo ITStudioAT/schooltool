@@ -2,10 +2,6 @@
 
 namespace App\Models;
 
-use App\Models\Register;
-use App\Models\RegisterDate;
-use App\Models\School;
-use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -27,6 +23,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property-read RegisterDate|null $registerDate
  * @property-read School|null $school
  * @property-read User|null $user
+ *
  * @method static \Database\Factories\RegisterDateBookingFactory factory($count = null, $state = [])
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDateBooking newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDateBooking newQuery()
@@ -43,6 +40,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDateBooking whereStudentLastName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDateBooking whereUpdatedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|RegisterDateBooking whereUserId($value)
+ *
  * @mixin IdeHelperRegisterDateBooking
  * @mixin \Eloquent
  */
@@ -60,6 +58,11 @@ class RegisterDateBooking extends Model
         'student_first_name',
         'student_birthdate',
         'note',
+        'siblings',
+    ];
+
+    protected $casts = [
+        'siblings' => 'array',
     ];
 
     public function user(): BelongsTo

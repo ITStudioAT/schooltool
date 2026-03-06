@@ -9,6 +9,12 @@ Wir informieren sie darüber, dass folgende Anmeldung gelöscht wurde:
 
 **{{ $data['student_last_name'] . ' ' . $data['student_first_name'] }}**
 
+@if(!empty($data['siblings']))
+@foreach($data['siblings'] as $sibling)
+**{{ $sibling['last_name'] . ' ' . ($sibling['first_name'] ?? '') }}** (Geschwister)
+@endforeach
+@endif
+
 {{  'Datum: ' .  $data['date'] }}<br>
 {{  'Uhrzeit: ' .  $data['from'] . ' - ' . $data['to'] }}<br>
 {{ $data['note'] ?? '' }}

@@ -3,22 +3,19 @@
 namespace App\Services;
 
 use App\Models\Register;
-use Carbon\Carbon;
 use Illuminate\Support\Str;
 use Spatie\LaravelPdf\Enums\Format;
 use Spatie\LaravelPdf\Facades\Pdf;
 use Spatie\SimpleExcel\SimpleExcelWriter;
-use Spatie\Browsershot\Browsershot;
 
 class PrintRegisterService
 {
-
     public function printSupervisor($user, $data)
     {
         $register = Register::findOrFail($data['register_id']);
-        $filename = Str::slug($register->name, '_') . '_' . now()->format('Ymd_His') . '_betreuer.pdf';
+        $filename = Str::slug($register->name, '_').'_'.now()->format('Ymd_His').'_betreuer.pdf';
 
-        $path = storage_path('app/private/pdf/' . $filename);
+        $path = storage_path('app/private/pdf/'.$filename);
 
         $bookings = $register->bookings()
             ->with([
@@ -35,39 +32,34 @@ class PrintRegisterService
             ->get();
 
         $totalsBySupervisor = $bookings
-            ->groupBy(fn($b) => $b->registerDate->supervisor ?? '')
-            ->map->count()
+            ->groupBy(fn ($b) => $b->registerDate->supervisor ?? '')
+            ->map(fn ($group) => $group->sum(fn ($b) => 1 + count($b->siblings ?? [])))
             ->toArray();
 
-        $totalCount = $bookings->count();
-
+        $totalCount = $bookings->sum(fn ($b) => 1 + count($b->siblings ?? []));
 
         $data = [
             'register_name' => $register->name,
             'bookings' => $bookings->toArray(),
             'totals_by_supervisor' => $totalsBySupervisor,
-            'total_count'         => $totalCount,
+            'total_count' => $totalCount,
         ];
 
         Pdf::view('pdfs.registerSupervisor', ['data' => $data])
             ->format(Format::A4)
-            ->headerView('pdfs.registerSupervisor_header', ['title' => $data['register_name'] . ' - Betreuer'])
+            ->headerView('pdfs.registerSupervisor_header', ['title' => $data['register_name'].' - Betreuer'])
             ->footerView('pdfs.registerSupervisor_footer', ['long_name' => $register->school->long_name])
             ->save($path);
-
 
         return $path;
     }
 
-
-
-
     public function printDate($user, $data)
     {
         $register = Register::findOrFail($data['register_id']);
-        $filename = Str::slug($register->name, '_') . '_' . now()->format('Ymd_His') . '_betreuer.pdf';
+        $filename = Str::slug($register->name, '_').'_'.now()->format('Ymd_His').'_betreuer.pdf';
 
-        $path = storage_path('app/private/pdf/' . $filename);
+        $path = storage_path('app/private/pdf/'.$filename);
 
         $bookings = $register->bookings()
             ->with([
@@ -84,29 +76,27 @@ class PrintRegisterService
             ->get();
 
         $totalsByDate = $bookings
-            ->groupBy(fn($b) => $b->registerDate->date ?? '')
-            ->map->count()
+            ->groupBy(fn ($b) => $b->registerDate->date ?? '')
+            ->map(fn ($group) => $group->sum(fn ($b) => 1 + count($b->siblings ?? [])))
             ->toArray();
 
-        $totalCount = $bookings->count();
-
+        $totalCount = $bookings->sum(fn ($b) => 1 + count($b->siblings ?? []));
 
         $data = [
             'register_name' => $register->name,
             'bookings' => $bookings->toArray(),
             'totals_by_date' => $totalsByDate,
-            'total_count'         => $totalCount,
+            'total_count' => $totalCount,
         ];
 
         // info($data['bookings']);
 
-
-
         Pdf::view('pdfs.registerDate', ['data' => $data])
             ->format(Format::A4)
-            ->headerView('pdfs.registerDate_header', ['title' => $data['register_name'] . ' - Datum'])
+            ->headerView('pdfs.registerDate_header', ['title' => $data['register_name'].' - Datum'])
             ->footerView('pdfs.registerDate_footer', ['long_name' => $register->school->long_name])
             ->save($path);
+
         return $path;
     }
 
@@ -114,9 +104,9 @@ class PrintRegisterService
     {
 
         $register = Register::findOrFail($data['register_id']);
-        $filename = Str::slug($register->name, '_') . '_' . now()->format('Ymd_His') . '.xlsx';
+        $filename = Str::slug($register->name, '_').'_'.now()->format('Ymd_His').'.xlsx';
 
-        $path = storage_path('app/private/excel/' . $filename);
+        $path = storage_path('app/private/excel/'.$filename);
 
         $bookings = $register->bookings()
             ->with([
@@ -132,11 +122,10 @@ class PrintRegisterService
             ->select('register_date_bookings.*') // keep main table clean
             ->get();
 
-
-
         $excel = SimpleExcelWriter::create($path)
             ->addHeader(
                 [
+                    'Art',
                     'Datum',
                     'Von',
                     'Bis',
@@ -147,25 +136,44 @@ class PrintRegisterService
                     'Nachname',
                     'Vorname',
                     'Email',
-                    'Telefon'
+                    'Telefon',
                 ]
             );
 
-
         foreach ($bookings as $booking) {
-            $excel->addRow([
+            $baseRow = [
+                'Art' => 'Kind',
                 'Datum' => $booking->registerDate->date,
-                'Von'   => $booking->registerDate->from,
-                'Bis'   => $booking->registerDate->to,
+                'Von' => $booking->registerDate->from,
+                'Bis' => $booking->registerDate->to,
                 'Betreuer' => $booking->registerDate->supervisor,
-                'Kind N.n.'   => $booking->student_last_name,
-                'Kind V.n.'   => $booking->student_first_name,
-                'Geb-Datum'   => $booking->student_birthdate,
-                'Nachname'   => $booking->user->last_name,
-                'Vorname'    => $booking->user->first_name,
-                'Email'      => $booking->user->email,
-                'Telefon'    => $booking->user->phone,
-            ]);
+                'Kind N.n.' => $booking->student_last_name,
+                'Kind V.n.' => $booking->student_first_name,
+                'Geb-Datum' => $booking->student_birthdate,
+                'Nachname' => $booking->user->last_name,
+                'Vorname' => $booking->user->first_name,
+                'Email' => $booking->user->email,
+                'Telefon' => $booking->user->phone,
+            ];
+
+            $excel->addRow($baseRow);
+
+            foreach ($booking->siblings ?? [] as $sibling) {
+                $excel->addRow([
+                    'Art' => 'Geschwister',
+                    'Datum' => $booking->registerDate->date,
+                    'Von' => $booking->registerDate->from,
+                    'Bis' => $booking->registerDate->to,
+                    'Betreuer' => $booking->registerDate->supervisor,
+                    'Kind N.n.' => $sibling['last_name'] ?? '',
+                    'Kind V.n.' => $sibling['first_name'] ?? '',
+                    'Geb-Datum' => $sibling['birthdate'] ?? '',
+                    'Nachname' => $booking->user->last_name,
+                    'Vorname' => $booking->user->first_name,
+                    'Email' => $booking->user->email,
+                    'Telefon' => $booking->user->phone,
+                ]);
+            }
         }
 
         return $path;

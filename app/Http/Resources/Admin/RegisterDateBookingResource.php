@@ -15,15 +15,16 @@ class RegisterDateBookingResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'id'  => $this->id,
-            'last_name'  => $this->user->last_name ?? null,
-            'first_name'  => $this->user->first_name ?? null,
-            'email'  => $this->user->email ?? null,
-            'phone'  => $this->user->phone ?? null,
-            'student_last_name'  => $this->student_last_name,
-            'student_first_name'  => $this->student_first_name,
-            'student_birthdate'  => $this->student_birthdate,
-            'note'  => $this->note,
+            'id' => $this->id,
+            'last_name' => $this->user->last_name ?? null,
+            'first_name' => $this->user->first_name ?? null,
+            'email' => $this->user->email ?? null,
+            'phone' => $this->user->phone ?? null,
+            'student_last_name' => $this->student_last_name,
+            'student_first_name' => $this->student_first_name,
+            'student_birthdate' => $this->student_birthdate,
+            'note' => $this->note,
+            'siblings' => $this->siblings ?? [],
 
         ];
     }

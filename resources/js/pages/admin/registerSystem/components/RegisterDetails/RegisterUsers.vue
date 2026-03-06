@@ -24,12 +24,22 @@
                                             <div class="text-body-1">
                                                 {{ item.last_name + ' ' + item.first_name + ' (' + item.email + ')' }}
                                             </div>
-                                            <div class="text-body-2 d-flex flex-row align-center w-100" v-for="booking in item.registerDateBookings">
+                                            <div class="text-body-2 d-flex flex-row flex-wrap align-center w-100" v-for="booking in item.registerDateBookings">
                                                 <div>{{ booking.student_last_name + ' ' + booking.student_first_name }}</div>
                                                 <div class="d-flex flex-row align-center ml-2" v-if="booking.student_birthdate">
                                                     <v-icon size="x-small" icon="mdi-cake" />
                                                     <div class="ml-1">{{ booking.student_birthdate }}</div>
                                                 </div>
+                                                <template v-for="(sibling, si) in (booking.siblings || [])" :key="si">
+                                                    <div class="ml-3 text-medium-emphasis d-flex flex-row align-center">
+                                                        <v-icon size="x-small" icon="mdi-account-multiple" class="mr-1" />
+                                                        {{ sibling.last_name + ' ' + (sibling.first_name || '') }}
+                                                        <span v-if="sibling.birthdate" class="ml-1 d-flex flex-row align-center">
+                                                            <v-icon size="x-small" icon="mdi-cake" class="mr-1" />
+                                                            {{ sibling.birthdate }}
+                                                        </span>
+                                                    </div>
+                                                </template>
                                             </div>
                                         </div>
                                     </div>

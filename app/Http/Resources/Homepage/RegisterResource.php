@@ -38,6 +38,7 @@ class RegisterResource extends JsonResource
             'show_supervisor' => $this->show_supervisor ? true : false,
 
             'is_active' => $this->is_active ? true : false,
+            'allow_siblings' => $this->allow_siblings ? true : false,
 
             'schoolyear_name' => $this->schoolyear->name,
 

@@ -2,17 +2,10 @@
 
 namespace App\Models;
 
-use App\Models\RegisterDate;
-use App\Models\RegisterDateBooking;
-use App\Models\School;
-use App\Models\Schoolyear;
-use App\Models\User;
-use DebugBar\DebugBar;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Support\Facades\Log;
 
 /**
  * @property int $id
@@ -45,6 +38,7 @@ use Illuminate\Support\Facades\Log;
  * @property-read Schoolyear|null $schoolyear
  * @property-read \Illuminate\Database\Eloquent\Collection<int, User> $users
  * @property-read int|null $users_count
+ *
  * @method static \Database\Factories\RegisterFactory factory($count = null, $state = [])
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register newQuery()
@@ -71,6 +65,7 @@ use Illuminate\Support\Facades\Log;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereShowStudentLastName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereShowSupervisor($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Register whereUpdatedAt($value)
+ *
  * @mixin IdeHelperRegister
  * @mixin \Eloquent
  */
@@ -98,6 +93,7 @@ class Register extends Model
         'is_active',
         'show_note',
         'must_note',
+        'allow_siblings',
     ];
 
     protected $casts = [
@@ -111,6 +107,7 @@ class Register extends Model
         'show_booked' => 'boolean',
         'show_end_time' => 'boolean',
         'show_supervisor' => 'boolean',
+        'allow_siblings' => 'boolean',
     ];
 
     public function schoolyear(): BelongsTo
@@ -122,7 +119,6 @@ class Register extends Model
     {
         return $this->belongsTo(School::class);
     }
-
 
     public function dates()
     {

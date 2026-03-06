@@ -43,6 +43,7 @@ class RegisterUpdateRequest extends FormRequest
             'show_booked' => 'boolean',
             'show_end_time' => 'boolean',
             'show_supervisor' => 'boolean',
+            'allow_siblings' => 'boolean',
         ];
     }
 }

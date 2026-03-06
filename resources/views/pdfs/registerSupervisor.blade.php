@@ -111,8 +111,8 @@
         <tbody>
             @endif
 
-            {{-- data row --}}
-            <tr style="border-bottom: 1px dotted #AAA;">
+            {{-- primary child row --}}
+            <tr style="border-bottom: {{ empty($booking['siblings']) ? '1px dotted #AAA' : 'none' }};">
                 <td>{{ substr($booking['register_date']['date'], 8, 2) . '.' . substr($booking['register_date']['date'], 5, 2) . '.' }}</td>
                 <td>{{ substr($booking['register_date']['from'], 0, 5) . '-' . substr($booking['register_date']['to'], 0, 5) }}</td>
                 <td>{{ $booking['student_last_name'] }}</td>
@@ -123,6 +123,17 @@
                 <td>{{ $booking['user']['email'] }}</td>
                 <td>{{ $booking['user']['phone'] }}</td>
             </tr>
+            {{-- sibling rows --}}
+            @foreach ($booking['siblings'] ?? [] as $si => $sibling)
+            <tr style="border-bottom: {{ $si === count($booking['siblings']) - 1 ? '1px dotted #AAA' : 'none' }}; color: #555; font-style: italic;">
+                <td></td>
+                <td></td>
+                <td>↳ {{ $sibling['last_name'] ?? '' }}</td>
+                <td>{{ $sibling['first_name'] ?? '' }}</td>
+                <td>{{ $sibling['birthdate'] ?? '' }}</td>
+                <td colspan="4"></td>
+            </tr>
+            @endforeach
 
             @php
             $lastSupervisor = $currentSupervisor;

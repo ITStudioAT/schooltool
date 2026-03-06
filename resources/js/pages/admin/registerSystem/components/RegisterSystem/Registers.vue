@@ -108,6 +108,14 @@
                         </v-col>
                     </v-row>
 
+                    <v-divider class="my-4" />
+
+                    <v-row dense>
+                        <v-col cols="12">
+                            <v-checkbox v-model="data.allow_siblings" hide-details label="Mehrere Kinder pro Buchung erlauben (Geschwister)" />
+                        </v-col>
+                    </v-row>
+
                     <div class="d-flex flex-row align-center justify-space-between mt-4">
                         <v-btn color="warning" slim flat @click="abort">Abbruch</v-btn>
                         <v-btn color="success" slim flat type="submit">Speichern</v-btn>
@@ -239,6 +247,7 @@ export default {
                 must_student_first_name: false,
                 show_student_birthdate: false,
                 must_student_birthdate: false,
+                allow_siblings: false,
             }
             this.action = 'create_register'
         },
