@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { describe, expect, it, vi } from 'vitest'
 import Groups from '@/pages/admin/groups/Groups.vue'
 
 describe('Groups page header', () => {
@@ -24,5 +25,516 @@ describe('Groups page header', () => {
             label: 'Schulgruppen, Materialien, Eigene',
             note: 'Löschen nur ohne Mitglieder möglich.',
         })
+    })
+
+    it('opens members dialog in read-only mode when clicking a group row', () => {
+        const methods = (Groups as any).methods
+        const openAssignUsersDialog = vi.fn()
+        const ctx = {
+            selectedGroupIdsByType: { school: null, materials: null, own: null },
+            openAssignUsersDialog,
+        }
+
+        methods.onGroupRowClick.call(ctx, 'school', { id: 42, type: 'school' })
+
+        expect(ctx.selectedGroupIdsByType.school).toBe(42)
+        expect(openAssignUsersDialog).toHaveBeenCalledTimes(1)
+        expect(openAssignUsersDialog).toHaveBeenCalledWith({ id: 42, type: 'school' }, { readOnly: true })
+    })
+
+    it('opens the editable members dialog for manually created own groups', () => {
+        const methods = (Groups as any).methods
+        const openAssignUsersDialog = vi.fn()
+        const ctx = {
+            selectedGroupIdsByType: { school: null, materials: null, own: null },
+            openAssignUsersDialog,
+            showInlineMemberManagementButton: methods.showInlineMemberManagementButton,
+            isAutomaticOwnCourseGroup: methods.isAutomaticOwnCourseGroup,
+        }
+
+        methods.openManageMembersDialog.call(ctx, 'own', { id: 7, type: 'own', can_manage_members: true })
+
+        expect(ctx.selectedGroupIdsByType.own).toBe(7)
+        expect(openAssignUsersDialog).toHaveBeenCalledTimes(1)
+        expect(openAssignUsersDialog).toHaveBeenCalledWith({ id: 7, type: 'own', can_manage_members: true })
+    })
+
+    it('shows the inline member management button for all editable groups only', () => {
+        const methods = (Groups as any).methods
+        const ctx = {}
+
+        expect(methods.showInlineMemberManagementButton.call(ctx, { id: 1, type: 'own', can_manage_members: true })).toBe(true)
+        expect(methods.showInlineMemberManagementButton.call(ctx, { id: 2, type: 'own', can_manage_members: false })).toBe(false)
+        expect(methods.showInlineMemberManagementButton.call(ctx, { id: 3, type: 'own', teaching_course_id: 11, can_manage_members: false })).toBe(false)
+        expect(methods.showInlineMemberManagementButton.call(ctx, { id: 4, type: 'school', can_manage_members: true })).toBe(true)
+        expect(methods.showInlineMemberManagementButton.call(ctx, { id: 5, type: 'materials', can_manage_members: true })).toBe(true)
+    })
+
+    it('shows the auto-managed notice only for read-only system-managed groups', () => {
+        const methods = (Groups as any).methods
+
+        expect(methods.showReadOnlyAutoManagedNotice.call({
+            assignUsersDialog: {
+                readOnly: true,
+                group: { id: 1, can_manage_members: false },
+            },
+        })).toBe(true)
+
+        expect(methods.showReadOnlyAutoManagedNotice.call({
+            assignUsersDialog: {
+                readOnly: true,
+                group: { id: 2, can_manage_members: true },
+            },
+        })).toBe(false)
+
+        expect(methods.showReadOnlyAutoManagedNotice.call({
+            assignUsersDialog: {
+                readOnly: false,
+                group: { id: 3, can_manage_members: false },
+            },
+        })).toBe(false)
+    })
+
+    it('keeps members dialog read-only and loads source-members while skipping assignable-groups', () => {
+        const methods = (Groups as any).methods
+        const loadAssignedMembers = vi.fn()
+        const loadAssignableGroups = vi.fn()
+        const loadSourceMembers = vi.fn()
+        const showSourceMembersPanel = vi.fn(() => true)
+        const notifyError = vi.fn()
+        const ctx: any = {
+            assignUsersDialog: {
+                group: null,
+                readOnly: false,
+                membersExpanded: false,
+                membersPage: 9,
+                members: [],
+                membersLoading: false,
+                selectedMemberIds: [],
+                removingUserId: null,
+                bulkRemoving: false,
+                extraPanel: null,
+                userSearchString: 'x',
+                userSearchResults: [{ id: 1 }],
+                userSearchHasRun: true,
+                teacherSearchString: 'x',
+                teacherSearchResults: [{ id: 2 }],
+                teacherSearchHasRun: true,
+                teacherSearchLoading: false,
+                selectedTeacherIds: [2],
+                teacherShowAll: true,
+                myCoursesLoading: false,
+                myCoursesLoaded: true,
+                myCourses: [{ id: 3 }],
+                studentSearchString: 'x',
+                studentSearchResults: [{ id: 4 }],
+                studentSearchHasRun: true,
+                studentSearchLoading: false,
+                studentClassesVisible: true,
+                studentClassesLoading: false,
+                studentClasses: [{ key: '2B' }],
+                sourceGroups: [{ id: 5 }],
+                sourceGroupId: 5,
+                sourceMembers: [{ id: 9 }],
+                sourceMembersLoading: false,
+                readOnlyPage: 4,
+                readOnlyPanel: 'registered',
+                open: false,
+            },
+            notifyError,
+            loadAssignedMembers,
+            loadAssignableGroups,
+            loadSourceMembers,
+            showSourceMembersPanel,
+        }
+
+        methods.openAssignUsersDialog.call(ctx, { id: 7, type: 'school', can_manage_members: false }, { readOnly: true })
+
+        expect(ctx.assignUsersDialog.open).toBe(true)
+        expect(ctx.assignUsersDialog.readOnly).toBe(true)
+        expect(ctx.assignUsersDialog.membersPage).toBe(1)
+        expect(ctx.assignUsersDialog.readOnlyPage).toBe(1)
+        expect(ctx.assignUsersDialog.readOnlyPanel).toBeNull()
+        expect(showSourceMembersPanel).toHaveBeenCalledTimes(1)
+        expect(loadAssignedMembers).toHaveBeenCalledTimes(1)
+        expect(loadSourceMembers).toHaveBeenCalledTimes(1)
+        expect(loadAssignableGroups).not.toHaveBeenCalled()
+        expect(notifyError).not.toHaveBeenCalled()
+    })
+
+    it('keeps the assigned-members expandable collapsed by default in edit mode', () => {
+        const methods = (Groups as any).methods
+        const loadAssignedMembers = vi.fn()
+        const loadAssignableGroups = vi.fn()
+        const ctx: any = {
+            assignUsersDialog: {
+                group: null,
+                readOnly: true,
+                membersExpanded: true,
+                membersPage: 3,
+                members: [{ id: 1 }],
+                membersLoading: true,
+                selectedMemberIds: [1],
+                removingUserId: 1,
+                bulkRemoving: true,
+                extraPanel: 'group',
+                userSearchString: 'abc',
+                userSearchResults: [{ id: 1 }],
+                userSearchHasRun: true,
+                teacherSearchString: 'x',
+                teacherSearchResults: [{ id: 2 }],
+                teacherSearchHasRun: true,
+                teacherSearchLoading: true,
+                selectedTeacherIds: [2],
+                teacherShowAll: true,
+                myCoursesLoading: true,
+                myCoursesLoaded: true,
+                myCourses: [{ id: 3 }],
+                studentSearchString: 'x',
+                studentSearchResults: [{ id: 4 }],
+                studentSearchHasRun: true,
+                studentSearchLoading: true,
+                studentClassesVisible: true,
+                studentClassesLoading: true,
+                studentClasses: [{ key: '2B' }],
+                sourceGroups: [{ id: 5 }],
+                sourceGroupId: 5,
+                sourceMembers: [{ id: 9 }],
+                sourceMembersLoading: true,
+                readOnlyPage: 7,
+                readOnlyPanel: 'registered',
+                open: false,
+            },
+            notifyError: vi.fn(),
+            loadAssignedMembers,
+            loadAssignableGroups,
+            loadSourceMembers: vi.fn(),
+            showSourceMembersPanel: vi.fn(() => false),
+        }
+
+        methods.openAssignUsersDialog.call(ctx, { id: 8, type: 'own', can_manage_members: true })
+
+        expect(ctx.assignUsersDialog.open).toBe(true)
+        expect(ctx.assignUsersDialog.readOnly).toBe(false)
+        expect(ctx.assignUsersDialog.membersExpanded).toBe(false)
+        expect(ctx.assignUsersDialog.membersPage).toBe(1)
+        expect(ctx.assignUsersDialog.readOnlyPage).toBe(1)
+        expect(loadAssignedMembers).toHaveBeenCalledTimes(1)
+        expect(loadAssignableGroups).toHaveBeenCalledTimes(1)
+    })
+
+    it('shows the source-members panel for automatic own course groups', () => {
+        const methods = (Groups as any).methods
+        const ctx = {
+            assignUsersDialog: {
+                group: { id: 10, type: 'own', teaching_course_id: 77 },
+            },
+            isAutomaticOwnCourseGroup: methods.isAutomaticOwnCourseGroup,
+        }
+
+        expect(methods.showSourceMembersPanel.call(ctx)).toBe(true)
+    })
+
+    it('shows the source-members panel for teacher school groups', () => {
+        const methods = (Groups as any).methods
+        const ctx = {
+            assignUsersDialog: {
+                group: { id: 11, type: 'school', name: 'Lehrer' },
+            },
+            isAutomaticOwnCourseGroup: methods.isAutomaticOwnCourseGroup,
+        }
+
+        expect(methods.showSourceMembersPanel.call(ctx)).toBe(true)
+    })
+
+    it('merges registered and all members into one read-only list and marks registered entries', () => {
+        const methods = (Groups as any).methods
+        const ctx = {
+            assignUsersDialog: {
+                group: { id: 11, type: 'school', name: '1A' },
+                members: [
+                    { id: 7, name: 'Registered User', email: 'registered@test.local' },
+                ],
+                sourceMembers: [
+                    { id: 101, user_id: 7, import116_id: 101, name: 'Registered User', email: 'registered@test.local', already_member: true, has_user_account: true },
+                    { id: 102, user_id: null, import116_id: 102, name: 'Import Only', email: 'import@test.local', has_user_account: false },
+                ],
+            },
+            showSourceMembersPanel: vi.fn(() => true),
+            readOnlyMemberKey: methods.readOnlyMemberKey,
+            mergeReadOnlyMember: methods.mergeReadOnlyMember,
+            sortReadOnlyMembers: methods.sortReadOnlyMembers,
+        }
+
+        const rows = methods.readOnlyCombinedMembers.call(ctx)
+
+        expect(rows).toEqual([
+            { id: 101, user_id: 7, import116_id: 101, name: 'Registered User', email: 'registered@test.local', already_member: true, has_user_account: true, is_registered: true },
+            { id: 102, user_id: null, import116_id: 102, name: 'Import Only', email: 'import@test.local', has_user_account: false, is_registered: false },
+        ])
+    })
+
+    it('sorts read-only members by last_name and first_name', () => {
+        const methods = (Groups as any).methods
+
+        const rows = methods.sortReadOnlyMembers.call({}, [
+            { id: 3, name: 'Zeta User', last_name: 'Zeta', first_name: 'Adam' },
+            { id: 1, name: 'Alpha Berta', last_name: 'Alpha', first_name: 'Berta' },
+            { id: 2, name: 'Alpha Anton', last_name: 'Alpha', first_name: 'Anton' },
+        ])
+
+        expect(rows.map((row: any) => row.id)).toEqual([2, 1, 3])
+    })
+
+    it('paginates dialog member lists in blocks of 100 entries', () => {
+        const methods = (Groups as any).methods
+        const members = Array.from({ length: 105 }, (_, index) => ({
+            id: index + 1,
+            name: `User ${index + 1}`,
+            email: `user${index + 1}@test.local`,
+        }))
+        const ctx = {
+            assignUsersDialog: {
+                members,
+                sourceMembers: [],
+                membersPage: 2,
+                readOnlyPage: 2,
+            },
+            showSourceMembersPanel: vi.fn(() => false),
+            readOnlyCombinedMembers: methods.readOnlyCombinedMembers,
+            sortReadOnlyMembers: (rows: any[]) => rows,
+            dialogPaginationSize: methods.dialogPaginationSize,
+            shouldPaginateDialogList: methods.shouldPaginateDialogList,
+            dialogPaginationPageCount: methods.dialogPaginationPageCount,
+            normalizedDialogPage: methods.normalizedDialogPage,
+            dialogPaginationSlice: methods.dialogPaginationSlice,
+            paginatedAssignedMembers: methods.paginatedAssignedMembers,
+            paginatedReadOnlyCombinedMembers: methods.paginatedReadOnlyCombinedMembers,
+        }
+
+        const assignedRows = methods.paginatedAssignedMembers.call(ctx)
+        const readOnlyRows = methods.paginatedReadOnlyCombinedMembers.call(ctx)
+
+        expect(assignedRows).toHaveLength(5)
+        expect(assignedRows[0].id).toBe(101)
+        expect(assignedRows[4].id).toBe(105)
+        expect(readOnlyRows).toHaveLength(5)
+        expect(readOnlyRows[0]).toMatchObject({ id: 101, is_registered: true })
+        expect(methods.dialogPaginationSummary.call(ctx, 105, 2)).toBe('101-105 von 105')
+    })
+
+    it('clamps dialog pagination to the last available page after list changes', () => {
+        const methods = (Groups as any).methods
+        const ctx = {
+            assignUsersDialog: {
+                members: Array.from({ length: 150 }, (_, index) => ({ id: index + 1, name: `User ${index + 1}` })),
+                sourceMembers: [],
+                membersPage: 4,
+                readOnlyPage: 3,
+            },
+            showSourceMembersPanel: vi.fn(() => false),
+            readOnlyCombinedMembers: methods.readOnlyCombinedMembers,
+            sortReadOnlyMembers: (rows: any[]) => rows,
+            dialogPaginationSize: methods.dialogPaginationSize,
+            dialogPaginationPageCount: methods.dialogPaginationPageCount,
+            normalizedDialogPage: methods.normalizedDialogPage,
+        }
+
+        methods.syncDialogPagination.call(ctx)
+
+        expect(ctx.assignUsersDialog.membersPage).toBe(2)
+        expect(ctx.assignUsersDialog.readOnlyPage).toBe(2)
+    })
+
+    it('splits school groups into Klassen, Lehrer, Eltern, Gesamtgruppen, and Weitere Gruppen panels', () => {
+        const methods = (Groups as any).methods
+        const ctx = {
+            groups: [
+                { id: 1, type: 'school', name: '1A', is_system_default: true },
+                { id: 2, type: 'school', name: 'Lehrer', is_system_default: true },
+                { id: 3, type: 'school', name: '1A Eltern', is_parent_group: true, is_system_default: true },
+                { id: 4, type: 'school', name: '6A', is_system_default: true },
+                { id: 5, type: 'school', name: 'Alle Schulmitglieder', is_system_default: true, is_all_school_members_group: true },
+                { id: 6, type: 'school', name: 'AG Robotik', is_system_default: false },
+                { id: 7, type: 'materials', name: 'Materialteam' },
+            ],
+            groupsByType(type: string) {
+                return this.groups.filter((group: any) => group.type === type)
+            },
+            isTeacherSchoolGroup: methods.isTeacherSchoolGroup,
+            isParentSchoolGroup: methods.isParentSchoolGroup,
+            isAllSchoolMembersGroup: methods.isAllSchoolMembersGroup,
+            isAutomaticSchoolGroup: methods.isAutomaticSchoolGroup,
+        }
+
+        const panels = methods.schoolSectionPanels.call(ctx)
+
+        expect(panels).toEqual([
+            {
+                key: 'classes',
+                title: 'Klassen',
+                metaLabel: '(automatisch erstellt)',
+                icon: 'mdi-google-classroom',
+                groups: [
+                    { id: 1, type: 'school', name: '1A', is_system_default: true },
+                    { id: 4, type: 'school', name: '6A', is_system_default: true },
+                ],
+            },
+            {
+                key: 'teachers',
+                title: 'Lehrer',
+                metaLabel: '(automatisch erstellt)',
+                icon: 'mdi-account-tie',
+                groups: [
+                    { id: 2, type: 'school', name: 'Lehrer', is_system_default: true },
+                ],
+            },
+            {
+                key: 'parents',
+                title: 'Eltern',
+                metaLabel: '(automatisch erstellt)',
+                icon: 'mdi-account-multiple-outline',
+                groups: [
+                    { id: 3, type: 'school', name: '1A Eltern', is_parent_group: true, is_system_default: true },
+                ],
+            },
+            {
+                key: 'school-members',
+                title: 'Gesamtgruppen',
+                metaLabel: '(automatisch erstellt)',
+                icon: 'mdi-account-school-outline',
+                groups: [
+                    { id: 5, type: 'school', name: 'Alle Schulmitglieder', is_system_default: true, is_all_school_members_group: true },
+                ],
+            },
+            {
+                key: 'other-school-groups',
+                title: 'Weitere Gruppen',
+                metaLabel: null,
+                icon: 'mdi-shape-outline',
+                groups: [
+                    { id: 6, type: 'school', name: 'AG Robotik', is_system_default: false },
+                ],
+            },
+        ])
+    })
+
+    it('keeps school expandable panels closed by default', () => {
+        const data = (Groups as any).data()
+
+        expect(data.schoolSectionPanelsOpen).toEqual([])
+    })
+
+    it('keeps own expandable panels closed by default', () => {
+        const data = (Groups as any).data()
+
+        expect(data.ownSectionPanelsOpen).toEqual([])
+    })
+
+    it('splits own groups into Kursgruppen, Eltern Kursgruppen, and Eigene Gruppen panels', () => {
+        const methods = (Groups as any).methods
+        const ctx = {
+            groups: [
+                { id: 1, type: 'own', name: 'Mathematik (1A)', teaching_course_id: 10, teaching_course_group_type: 'students' },
+                { id: 2, type: 'own', name: 'Freie Gruppe', teaching_course_id: null },
+                { id: 3, type: 'own', name: 'Mathematik (1A) Eltern', teaching_course_id: 10, teaching_course_group_type: 'parents', is_parent_group: true },
+                { id: 4, type: 'own', name: 'Deutsch (2B)', teaching_course_id: 11, teaching_course_group_type: 'students' },
+                { id: 5, type: 'materials', name: 'Materialteam' },
+            ],
+            groupsByType(type: string) {
+                return this.groups.filter((group: any) => group.type === type)
+            },
+            isAutomaticOwnCourseGroup: methods.isAutomaticOwnCourseGroup,
+            isAutomaticOwnCourseParentGroup: methods.isAutomaticOwnCourseParentGroup,
+        }
+
+        const panels = methods.ownSectionPanels.call(ctx)
+
+        expect(panels).toEqual([
+            {
+                key: 'course-groups',
+                title: 'Kursgruppen',
+                metaLabel: '(automatisch erstellt)',
+                icon: 'mdi-google-classroom',
+                groups: [
+                    { id: 1, type: 'own', name: 'Mathematik (1A)', teaching_course_id: 10, teaching_course_group_type: 'students' },
+                    { id: 4, type: 'own', name: 'Deutsch (2B)', teaching_course_id: 11, teaching_course_group_type: 'students' },
+                ],
+            },
+            {
+                key: 'course-parent-groups',
+                title: 'Eltern Kursgruppen',
+                metaLabel: '(automatisch erstellt)',
+                icon: 'mdi-account-multiple-outline',
+                groups: [
+                    { id: 3, type: 'own', name: 'Mathematik (1A) Eltern', teaching_course_id: 10, teaching_course_group_type: 'parents', is_parent_group: true },
+                ],
+            },
+            {
+                key: 'own-groups',
+                title: 'Eigene Gruppen',
+                metaLabel: null,
+                icon: 'mdi-account-group-outline',
+                groups: [
+                    { id: 2, type: 'own', name: 'Freie Gruppe', teaching_course_id: null },
+                ],
+            },
+        ])
+    })
+
+    it('keeps the group counter chip in a right-aligned meta area', () => {
+        const source = readFileSync('resources/js/pages/admin/groups/Groups.vue', 'utf8')
+
+        expect(source).toContain('class="groups-row-meta"')
+        expect(source).toContain('class="groups-row-counter-chip"')
+        expect(source).toContain('v-model="schoolSectionPanelsOpen"')
+        expect(source).toContain('v-model="ownSectionPanelsOpen"')
+        expect(source).toContain('showSourceUsersCounter(group)')
+        expect(source).toContain('schoolSectionPanels()')
+        expect(source).toContain('ownSectionPanels()')
+        expect(source).toContain('isParentSchoolGroup(group)')
+        expect(source).toContain('isAllSchoolMembersGroup(group)')
+        expect(source).toContain('isAutomaticSchoolGroup(group)')
+        expect(source).toContain('class="groups-panel-title-wrap"')
+        expect(source).toContain('class="groups-panel-title-meta"')
+        expect(source).toContain("title: 'Klassen'")
+        expect(source).toContain("title: 'Lehrer'")
+        expect(source).toContain("title: 'Eltern'")
+        expect(source).toContain("title: 'Gesamtgruppen'")
+        expect(source).toContain("title: 'Weitere Gruppen'")
+        expect(source).toContain("title: 'Kursgruppen'")
+        expect(source).toContain("title: 'Eltern Kursgruppen'")
+        expect(source).toContain("metaLabel: '(automatisch erstellt)'")
+        expect(source).toContain('readOnlyCombinedMembers()')
+        expect(source).toContain('paginatedReadOnlyCombinedMembers()')
+        expect(source).toContain('paginatedAssignedMembers()')
+        expect(source).toContain('readOnlyCombinedMembersLoading()')
+        expect(source).toContain("return 'Lade Mitglieder ...'")
+        expect(source).toContain("return 'Keine Schulmitglieder gefunden.'")
+        expect(source).toContain('dialogPaginationSize()')
+        expect(source).toContain('shouldPaginateDialogList(readOnlyCombinedMembers().length)')
+        expect(source).toContain('shouldPaginateDialogList(assignUsersDialog.members.length)')
+        expect(source).toContain('dialogPaginationSummary(')
+        expect(source).toContain('v-model="assignUsersDialog.readOnlyPage"')
+        expect(source).toContain('v-model="assignUsersDialog.membersPage"')
+        expect(source).toContain('class="groups-list-pagination"')
+        expect(source).toContain('member.member_type_label')
+        expect(source).toContain('member.is_registered')
+        expect(source).toContain('mdi-check-circle')
+        expect(source).toContain('title="Registriert"')
+        expect(source).toContain('.groups-panel-title-meta {')
+        expect(source).toContain('isDeleteDisabled(group)')
+        expect(source).toContain('deleteButtonTitle(group)')
+        expect(source).toContain('showInlineMemberManagementButton(group)')
+        expect(source).toContain('showReadOnlyAutoManagedNotice()')
+        expect(source).toContain('openManageMembersDialog(section.type, group)')
+        expect(source).toContain('mdi-account-edit-outline')
+        expect(source).toContain('membersExpanded: false')
+        expect(source).not.toContain('openAssignUsersDialog(selectedGroupByType(section.type))')
+        expect(source).not.toContain('mdi-account-plus-outline')
+        expect(source).toContain('.groups-row-meta {')
+        expect(source).toContain('.groups-list-pagination {')
+        expect(source).toContain('justify-content: flex-end;')
+        expect(source).toContain('margin-left: auto;')
     })
 })

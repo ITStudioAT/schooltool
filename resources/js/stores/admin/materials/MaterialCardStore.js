@@ -17,6 +17,7 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             unit: '',
             type: '',
         },
+        snapshotCardsInFlightByKey: {},
     }),
 
     actions: {
@@ -284,6 +285,14 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             return params
         },
 
+        buildSnapshotRequestKey(sourceFilters = {}) {
+            const params = this.buildFilterParams(sourceFilters)
+            const entries = Object.entries(params)
+                .map(([key, value]) => [String(key), String(value)])
+                .sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }))
+            return JSON.stringify(entries)
+        },
+
         async fetchAllCardsPages(baseParams = {}) {
             const allCards = []
             let page = 1
@@ -345,25 +354,42 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
         },
 
         async listAllCardsSnapshot(filters = {}) {
+            const requestKey = this.buildSnapshotRequestKey(filters)
+            const inFlight = this.snapshotCardsInFlightByKey?.[requestKey]
+            if (inFlight) {
+                return await inFlight
+            }
+
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
-            adminStore.is_loading++
+            const requestPromise = (async () => {
+                adminStore.is_loading++
+                try {
+                    const baseParams = this.buildFilterParams(filters)
+                    const result = await this.fetchAllCardsPages(baseParams)
+                    return result.cards
+                } catch (error) {
+                    notification.notify({
+                        status: error.response?.status,
+                        message: error.response?.data?.message || 'Fehler beim Laden der Materialkarten.',
+                        type: 'error',
+                        timeout: 3000,
+                    })
+                    return null
+                } finally {
+                    adminStore.is_loading--
+                    const next = { ...(this.snapshotCardsInFlightByKey || {}) }
+                    delete next[requestKey]
+                    this.snapshotCardsInFlightByKey = next
+                }
+            })()
 
-            try {
-                const baseParams = this.buildFilterParams(filters)
-                const result = await this.fetchAllCardsPages(baseParams)
-                return result.cards
-            } catch (error) {
-                notification.notify({
-                    status: error.response?.status,
-                    message: error.response?.data?.message || 'Fehler beim Laden der Materialkarten.',
-                    type: 'error',
-                    timeout: 3000,
-                })
-                return null
-            } finally {
-                adminStore.is_loading--
+            this.snapshotCardsInFlightByKey = {
+                ...(this.snapshotCardsInFlightByKey || {}),
+                [requestKey]: requestPromise,
             }
+
+            return await requestPromise
         },
 
         async show(id) {

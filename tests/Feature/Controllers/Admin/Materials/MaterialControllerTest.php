@@ -13,6 +13,7 @@ use App\Models\MaterialTopicInboxImport;
 use App\Models\MaterialType;
 use App\Models\MaterialUnit;
 use App\Models\MaterialUnitInboxImport;
+use App\Models\MaterialWorkspace;
 use App\Models\School;
 use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
@@ -27,6 +28,12 @@ use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
+
+function materialShareTablesAvailable(): bool
+{
+    return Schema::hasTable('material_share_rules')
+        && Schema::hasTable('material_share_targets');
+}
 
 beforeEach(function () {
     collect([
@@ -79,6 +86,10 @@ beforeEach(function () {
 
 function createLinkedImportedCard(User $targetUser, School $school, Schoolyear $schoolyear, string $permission): MaterialCard
 {
+    if (! materialShareTablesAvailable()) {
+        throw new \PHPUnit\Framework\SkippedTestError('Material sharing tables are not available in this reset state.');
+    }
+
     $sourceUser = User::factory()->create([
         'school_id' => $school->id,
         'schoolyear_id' => $schoolyear->id,
@@ -250,6 +261,23 @@ test('config exposes user pagination settings for materials overview', function 
         ->assertStatus(200)
         ->assertJsonPath('can_manage_user_settings', true)
         ->assertJsonPath('user_settings.materials_pagination_number', (int) config('schooltool.pagination'));
+});
+
+test('config creates and returns default workspace for current user', function () {
+    $this->actingAs($this->materialsModerator, 'sanctum');
+
+    $response = $this->getJson('/api/admin/materials/config')
+        ->assertStatus(200)
+        ->assertJsonPath('workspace.name', 'Workspace');
+
+    $workspaceId = (int) $response->json('workspace.id');
+    expect($workspaceId)->toBeGreaterThan(0);
+
+    $this->assertDatabaseHas('material_workspaces', [
+        'id' => $workspaceId,
+        'user_id' => (int) $this->materialsModerator->id,
+        'is_default' => 1,
+    ]);
 });
 
 test('config returns default material type options from schooltool config', function () {
@@ -867,6 +895,51 @@ test('teacher can create material card and gets keywords', function () {
         ->and($card->school_id)->toBe($this->teacher->school_id)
         ->and($card->keywords)->toBeArray()
         ->and(count($card->keywords))->toBeGreaterThan(0);
+});
+
+test('subject and material card are assigned to active workspace', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+    $workspaceId = (int) MaterialWorkspace::query()
+        ->where('user_id', (int) $this->teacher->id)
+        ->where('is_default', true)
+        ->value('id');
+
+    if ($workspaceId <= 0) {
+        $workspaceId = (int) $this->getJson('/api/admin/materials/config')->json('workspace.id');
+    }
+
+    $subjectResponse = $this->postJson('/api/admin/materials/subjects', [
+        'data' => [
+            'name' => 'Biologie',
+        ],
+    ])->assertStatus(200);
+
+    $subjectId = (int) $subjectResponse->json('data.id');
+
+    $cardResponse = $this->postJson('/api/admin/materials/cards', [
+        'data' => [
+            'title' => 'Zellenlehre',
+            'classifications' => [
+                [
+                    'subject' => 'Biologie',
+                ],
+            ],
+        ],
+    ])->assertStatus(200);
+
+    $cardId = (int) $cardResponse->json('id');
+
+    $this->assertDatabaseHas('material_subjects', [
+        'id' => $subjectId,
+        'user_id' => (int) $this->teacher->id,
+        'workspace_id' => $workspaceId,
+    ]);
+
+    $this->assertDatabaseHas('material_cards', [
+        'id' => $cardId,
+        'user_id' => (int) $this->teacher->id,
+        'workspace_id' => $workspaceId,
+    ]);
 });
 
 test('quick store creates inbox card', function () {
@@ -2074,6 +2147,66 @@ test('adding file attachment stores file and allows download', function () {
     $previewResponse = $this->get('/api/admin/materials/attachments/'.$attachment->id.'/preview');
     $previewResponse->assertStatus(200);
     expect(strtolower((string) $previewResponse->headers->get('content-type')))->toContain('application/pdf');
+});
+
+test('adding file attachment on s3 keeps canonical relative materials path structure', function () {
+    Config::set('filesystems.default', 's3');
+    Storage::fake('s3');
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'S3 Pfadstruktur Test',
+        'keywords' => [],
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $uploadResponse = $this->post('/api/admin/materials/cards/'.$card->id.'/attachments/file', [
+        'file' => UploadedFile::fake()->create('pfadstruktur.pdf', 120, 'application/pdf'),
+    ]);
+
+    $uploadResponse->assertStatus(200);
+    $attachment = MaterialCardAttachment::findOrFail((int) $uploadResponse->json('id'));
+    $path = (string) ($attachment->file_path ?? '');
+
+    expect($path)->toStartWith('materials/schools/'.$this->school->id.'/users/'.$this->teacher->id.'/cards/'.$card->id.'/')
+        ->and(preg_match('#^materials/schools/\d+/users/\d+/cards/\d+/\d{4}/\d{2}/#', $path))->toBe(1);
+
+    Storage::disk('s3')->assertExists($path);
+});
+
+test('owner attachment download and preview do not use s3 when default disk is local', function () {
+    Config::set('filesystems.default', 'local');
+    Storage::fake('local');
+    Storage::fake('s3');
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'S3 Fallback Quelle',
+        'keywords' => [],
+    ]);
+
+    $path = 'materials/source/s3-fallback.pdf';
+    Storage::disk('s3')->put($path, 's3-fallback-content');
+
+    $attachment = MaterialCardAttachment::query()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 's3-fallback.pdf',
+        'file_path' => $path,
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 1024,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->get('/api/admin/materials/attachments/'.$attachment->id.'/download')
+        ->assertStatus(404);
+
+    $previewResponse = $this->get('/api/admin/materials/attachments/'.$attachment->id.'/preview');
+    $previewResponse->assertStatus(404);
 });
 
 test('excel attachment preview is rendered as html', function () {

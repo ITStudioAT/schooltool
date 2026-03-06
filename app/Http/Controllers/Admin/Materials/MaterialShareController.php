@@ -8,11 +8,12 @@ use App\Models\MaterialCardAttachment;
 use App\Models\MaterialCardClassification;
 use App\Models\MaterialInboxImport;
 use App\Models\MaterialShareRule;
+use App\Models\MaterialShareRuleArchive;
 use App\Models\MaterialShareTarget;
 use App\Models\MaterialStatus;
 use App\Models\MaterialSubject;
-use App\Models\MaterialTopicInboxImport;
 use App\Models\MaterialTopic;
+use App\Models\MaterialTopicInboxImport;
 use App\Models\MaterialType;
 use App\Models\MaterialUnit;
 use App\Models\MaterialUnitInboxImport;
@@ -21,8 +22,9 @@ use App\Models\User;
 use App\Models\UserGroup;
 use App\Services\Materials\MaterialKeywordService;
 use App\Services\Materials\MaterialService;
-use Illuminate\Support\Collection;
+use App\Services\Materials\MaterialWorkspaceService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -52,6 +54,8 @@ class MaterialShareController extends Controller
 
     private ?bool $hasMaterialTopicInboxImportsTableCache = null;
 
+    private ?bool $hasMaterialShareRuleArchivesTableCache = null;
+
     private ?bool $materialTypesUserScopedCache = null;
 
     private ?bool $materialTypesHasIconColumnCache = null;
@@ -59,6 +63,10 @@ class MaterialShareController extends Controller
     private ?bool $materialTypesHasColorColumnCache = null;
 
     private ?bool $materialStatusesHasColorColumnCache = null;
+
+    public function __construct(
+        private readonly MaterialWorkspaceService $workspaceService,
+    ) {}
 
     public function index(Request $request)
     {
@@ -75,14 +83,16 @@ class MaterialShareController extends Controller
         }
 
         $schoolId = (int) $authUser->school_id;
+        $workspaceId = $this->activeWorkspaceIdForUser($authUser);
         $scopeTypeFilter = (string) $request->query('scope_type', '');
         $scopeIdFilter = $request->query('scope_id');
-        $scopeIdFilter = Number_format((float) $scopeIdFilter, 0, '', '') === (string) $scopeIdFilter
+        $scopeIdFilter = number_format((float) $scopeIdFilter, 0, '', '') === (string) $scopeIdFilter
             ? (int) $scopeIdFilter
             : null;
 
         $rules = MaterialShareRule::query()
             ->where('school_id', $schoolId)
+            ->when($workspaceId !== null, fn ($query) => $query->where('workspace_id', $workspaceId))
             ->when($scopeTypeFilter !== '', fn ($query) => $query->where('scope_type', $scopeTypeFilter))
             ->when($scopeTypeFilter !== '' && $scopeIdFilter !== null, fn ($query) => $query->where('scope_id', $scopeIdFilter))
             ->with([
@@ -170,10 +180,11 @@ class MaterialShareController extends Controller
 
         $importedMaterialKeys = $this->resolveImportedInboxMaterialKeys($authUserId);
         $importedRuleIds = $this->resolveImportedInboxRuleIds($authUserId);
+        $archivedRuleIds = $this->resolveArchivedInboxRuleIds($authUserId);
 
         $users = $matchingRules
             ->groupBy(fn (MaterialShareRule $rule) => (int) $rule->created_by_user_id)
-            ->map(function ($creatorRules) use ($authUserId, $schoolId, $memberGroupIds, $importedMaterialKeys, $importedRuleIds) {
+            ->map(function ($creatorRules) use ($authUserId, $schoolId, $memberGroupIds, $importedMaterialKeys, $importedRuleIds, $archivedRuleIds) {
                 $firstRule = $creatorRules->first();
                 $creator = $firstRule?->creator;
                 if (! $creator) {
@@ -187,12 +198,14 @@ class MaterialShareController extends Controller
                     ->first()?->updated_at;
                 $sharedItems = $creatorRules
                     ->sortByDesc(fn (MaterialShareRule $rule) => optional($rule->updated_at)?->getTimestamp() ?? 0)
-                    ->map(function (MaterialShareRule $rule) use ($authUserId, $schoolId, $memberGroupIds, $importedMaterialKeys, $importedRuleIds) {
+                    ->map(function (MaterialShareRule $rule) use ($authUserId, $schoolId, $memberGroupIds, $importedMaterialKeys, $importedRuleIds, $archivedRuleIds) {
                         $permission = $this->resolveRulePermissionForUser($rule, $authUserId, $schoolId, $memberGroupIds);
                         [$scopeLabel, $scopeObjectLabel] = $this->resolveScopeLabels($rule, (int) $rule->school_id);
                         $scopeLabel = (string) $rule->scope_type === MaterialShareRule::SCOPE_ALL ? 'Workspace' : $scopeLabel;
+                        $ruleId = (int) $rule->id;
+
                         return [
-                            'rule_id' => (int) $rule->id,
+                            'rule_id' => $ruleId,
                             'scope_type' => (string) $rule->scope_type,
                             'scope_label' => $scopeLabel,
                             'scope_object_label' => $scopeObjectLabel,
@@ -200,6 +213,7 @@ class MaterialShareController extends Controller
                             'permission' => $permission,
                             'permission_label' => mb_strtoupper($this->permissionLabel($permission)),
                             'is_imported' => $this->isRuleMaterialImported($rule, $importedMaterialKeys, $importedRuleIds),
+                            'is_archived' => isset($archivedRuleIds[$ruleId]),
                             'hierarchy' => $this->resolveScopeHierarchy($rule),
                             'updated_at' => optional($rule->updated_at)?->toIso8601String(),
                         ];
@@ -227,6 +241,229 @@ class MaterialShareController extends Controller
             'meta' => [
                 'needs_migration' => false,
                 'total' => $users->count(),
+            ],
+        ]);
+    }
+
+    public function inboxMaterialAttachments(Request $request)
+    {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'material_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $materialId = (int) ($data['material_id'] ?? 0);
+        $authUserId = (int) $authUser->id;
+        $authSchoolId = (int) $authUser->school_id;
+
+        $memberGroupIds = UserGroup::query()
+            ->whereHas('members', fn ($query) => $query->where('users.id', $authUserId))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values();
+
+        $rule = $this->resolveAccessibleInboxRule($ruleId, $authUserId, $authSchoolId, $memberGroupIds);
+        if (! $rule) {
+            abort(404, 'Freigabe wurde nicht gefunden.');
+        }
+
+        $sourceCard = $this->resolveInboxSourceCardForRule($rule, $materialId);
+        if (! $sourceCard) {
+            throw ValidationException::withMessages([
+                'material_id' => ['Geteiltes Material wurde nicht gefunden oder gehört nicht zur Freigabe.'],
+            ]);
+        }
+
+        $attachments = $sourceCard->attachments instanceof Collection
+            ? $sourceCard->attachments
+            : collect();
+
+        $serialized = $attachments
+            ->map(fn (MaterialCardAttachment $attachment) => $this->serializeInboxAttachment($attachment, $ruleId, $materialId))
+            ->values();
+
+        return response()->json([
+            'data' => $serialized,
+        ], 200);
+    }
+
+    public function inboxMaterialDetail(Request $request)
+    {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'material_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $materialId = (int) ($data['material_id'] ?? 0);
+        $authUserId = (int) $authUser->id;
+        $authSchoolId = (int) $authUser->school_id;
+
+        $memberGroupIds = UserGroup::query()
+            ->whereHas('members', fn ($query) => $query->where('users.id', $authUserId))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values();
+
+        $rule = $this->resolveAccessibleInboxRule($ruleId, $authUserId, $authSchoolId, $memberGroupIds);
+        if (! $rule) {
+            abort(404, 'Freigabe wurde nicht gefunden.');
+        }
+
+        $sourceCard = $this->resolveInboxSourceCardForRule($rule, $materialId);
+        if (! $sourceCard) {
+            throw ValidationException::withMessages([
+                'material_id' => ['Geteiltes Material wurde nicht gefunden oder gehört nicht zur Freigabe.'],
+            ]);
+        }
+
+        $attachments = $sourceCard->attachments instanceof Collection
+            ? $sourceCard->attachments
+            : collect();
+
+        $serializedAttachments = $attachments
+            ->map(fn (MaterialCardAttachment $attachment) => $this->serializeInboxAttachment($attachment, $ruleId, $materialId))
+            ->values();
+
+        $classifications = $sourceCard->classifications instanceof Collection
+            ? $sourceCard->classifications
+            : collect();
+
+        $serializedClassifications = $classifications
+            ->map(fn (MaterialCardClassification $row) => [
+                'id' => (int) ($row->id ?? 0),
+                'subject_id' => $row->subject_id ? (int) $row->subject_id : null,
+                'topic_id' => $row->topic_id ? (int) $row->topic_id : null,
+                'unit_id' => $row->unit_id ? (int) $row->unit_id : null,
+                'subject' => trim((string) ($row->subject?->name ?? '')),
+                'topic' => trim((string) ($row->topic?->name ?? '')),
+                'unit' => trim((string) ($row->unit?->name ?? '')),
+            ])
+            ->values();
+
+        return response()->json([
+            'data' => [
+                'id' => (int) $sourceCard->id,
+                'school_id' => (int) ($sourceCard->school_id ?? 0),
+                'user_id' => (int) ($sourceCard->user_id ?? 0),
+                'title' => (string) ($sourceCard->title ?? ''),
+                'subject' => $sourceCard->subject,
+                'area' => $sourceCard->area,
+                'unit' => $sourceCard->unit,
+                'type' => $sourceCard->type,
+                'status' => $sourceCard->status,
+                'source_url' => $sourceCard->source_url,
+                'source_text' => $sourceCard->source_text,
+                'notes' => $sourceCard->notes,
+                'is_linked' => true,
+                'linked_permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+                'linked_permission_label' => mb_strtoupper($this->permissionLabel(MaterialShareTarget::PERMISSION_READ_ONLY)),
+                'attachments_count' => $serializedAttachments->count(),
+                'attachments' => $serializedAttachments->all(),
+                'classifications' => $serializedClassifications->all(),
+                'created_at' => optional($sourceCard->created_at)?->toIso8601String(),
+                'updated_at' => optional($sourceCard->updated_at)?->toIso8601String(),
+            ],
+        ], 200);
+    }
+
+    public function archiveInboxRule(Request $request)
+    {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        if (! $this->hasMaterialShareRuleArchivesTable()) {
+            abort(409, 'Archiv-Funktion ist erst nach aktueller Migration verfügbar.');
+        }
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $authUserId = (int) $authUser->id;
+        $authSchoolId = (int) $authUser->school_id;
+
+        $memberGroupIds = UserGroup::query()
+            ->whereHas('members', fn ($query) => $query->where('users.id', $authUserId))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values();
+
+        $rule = $this->resolveAccessibleInboxRule($ruleId, $authUserId, $authSchoolId, $memberGroupIds);
+        if (! $rule) {
+            abort(404, 'Freigabe wurde nicht gefunden.');
+        }
+
+        MaterialShareRuleArchive::query()->updateOrCreate(
+            [
+                'target_user_id' => $authUserId,
+                'material_share_rule_id' => $ruleId,
+            ],
+            [
+                'archived_at' => now(),
+            ]
+        );
+
+        return response()->json([
+            'message' => 'Freigabe archiviert.',
+            'data' => [
+                'rule_id' => $ruleId,
+                'is_archived' => true,
+            ],
+        ]);
+    }
+
+    public function unarchiveInboxRule(Request $request)
+    {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        if (! $this->hasMaterialShareRuleArchivesTable()) {
+            abort(409, 'Archiv-Funktion ist erst nach aktueller Migration verfügbar.');
+        }
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $authUserId = (int) $authUser->id;
+        $authSchoolId = (int) $authUser->school_id;
+
+        $memberGroupIds = UserGroup::query()
+            ->whereHas('members', fn ($query) => $query->where('users.id', $authUserId))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values();
+
+        $rule = $this->resolveAccessibleInboxRule($ruleId, $authUserId, $authSchoolId, $memberGroupIds);
+        if (! $rule) {
+            abort(404, 'Freigabe wurde nicht gefunden.');
+        }
+
+        MaterialShareRuleArchive::query()->updateOrCreate(
+            [
+                'target_user_id' => $authUserId,
+                'material_share_rule_id' => $ruleId,
+            ],
+            [
+                'archived_at' => null,
+            ]
+        );
+
+        return response()->json([
+            'message' => 'Freigabe wurde zurück in den Posteingang verschoben.',
+            'data' => [
+                'rule_id' => $ruleId,
+                'is_archived' => false,
             ],
         ]);
     }
@@ -652,7 +889,7 @@ class MaterialShareController extends Controller
 
     private function syncCardClassificationToResolvedTarget(MaterialCard $card, array $targetClassification): void
     {
-        if (!Schema::hasTable('material_card_classifications')) {
+        if (! Schema::hasTable('material_card_classifications')) {
             return;
         }
 
@@ -867,6 +1104,10 @@ class MaterialShareController extends Controller
 
     private function isRuleMaterialImported(MaterialShareRule $rule, array $importedKeys, array $importedRuleIds = []): bool
     {
+        if ((string) $rule->scope_type === MaterialShareRule::SCOPE_ALL) {
+            return false;
+        }
+
         $ruleId = (int) ($rule->id ?? 0);
         if ($ruleId > 0 && isset($importedRuleIds[$ruleId])) {
             return true;
@@ -944,9 +1185,35 @@ class MaterialShareController extends Controller
         return $ruleIds;
     }
 
+    /**
+     * @return array<int,bool>
+     */
+    private function resolveArchivedInboxRuleIds(int $targetUserId): array
+    {
+        if ($targetUserId <= 0 || ! $this->hasMaterialShareRuleArchivesTable()) {
+            return [];
+        }
+
+        $ruleIds = MaterialShareRuleArchive::query()
+            ->where('target_user_id', $targetUserId)
+            ->whereNotNull('archived_at')
+            ->pluck('material_share_rule_id');
+
+        $result = [];
+        foreach ($ruleIds as $ruleId) {
+            $normalizedRuleId = (int) $ruleId;
+            if ($normalizedRuleId <= 0) {
+                continue;
+            }
+            $result[$normalizedRuleId] = true;
+        }
+
+        return $result;
+    }
+
     private function materialImportKey(int $sourceSchoolId, int $sourceMaterialId): string
     {
-        return $sourceSchoolId . ':' . $sourceMaterialId;
+        return $sourceSchoolId.':'.$sourceMaterialId;
     }
 
     private function ensureTargetMaterialType(
@@ -1071,7 +1338,7 @@ class MaterialShareController extends Controller
                 $unit = '';
             }
 
-            $key = mb_strtolower($subject . '|' . $topic . '|' . $unit);
+            $key = mb_strtolower($subject.'|'.$topic.'|'.$unit);
             if (isset($seen[$key])) {
                 continue;
             }
@@ -1129,6 +1396,7 @@ class MaterialShareController extends Controller
                     'source_url' => $sourceAttachment->source_url,
                     'downloaded_at' => $sourceAttachment->downloaded_at,
                 ]);
+
                 continue;
             }
 
@@ -1187,9 +1455,9 @@ class MaterialShareController extends Controller
         }
         $slug = mb_substr($slug, 0, 120);
 
-        $filename = (string) Str::uuid() . '-' . $slug . ($extension !== '' ? '.' . $extension : '');
+        $filename = (string) Str::uuid().'-'.$slug.($extension !== '' ? '.'.$extension : '');
 
-        return $directory . '/' . $filename;
+        return $directory.'/'.$filename;
     }
 
     private function resolveScopePathLabel(MaterialShareRule $rule): string
@@ -1204,7 +1472,8 @@ class MaterialShareController extends Controller
         if ($scopeType === MaterialShareRule::SCOPE_SUBJECT) {
             $subject = $scopeId > 0 ? MaterialSubject::query()->find($scopeId) : null;
             $subjectName = trim((string) ($subject?->name ?: 'Fach'));
-            return $subjectName . ' - Alle Themen - Alle Einheiten';
+
+            return $subjectName.' - Alle Themen - Alle Einheiten';
         }
 
         if ($scopeType === MaterialShareRule::SCOPE_TOPIC) {
@@ -1213,7 +1482,8 @@ class MaterialShareController extends Controller
                 : null;
             $subjectName = trim((string) ($topic?->subject?->name ?: 'Fach'));
             $topicName = trim((string) ($topic?->name ?: 'Thema'));
-            return $subjectName . ' - ' . $topicName . ' - Alle Einheiten';
+
+            return $subjectName.' - '.$topicName.' - Alle Einheiten';
         }
 
         if ($scopeType === MaterialShareRule::SCOPE_UNIT) {
@@ -1223,7 +1493,8 @@ class MaterialShareController extends Controller
             $subjectName = trim((string) ($unit?->topic?->subject?->name ?: 'Fach'));
             $topicName = trim((string) ($unit?->topic?->name ?: 'Thema'));
             $unitName = trim((string) ($unit?->name ?: 'Einheit'));
-            return $subjectName . ' - ' . $topicName . ' - ' . $unitName;
+
+            return $subjectName.' - '.$topicName.' - '.$unitName;
         }
 
         if ($scopeType === MaterialShareRule::SCOPE_MATERIAL) {
@@ -1249,7 +1520,8 @@ class MaterialShareController extends Controller
                     $subjectName = trim((string) ($classification?->subject?->name ?: 'Fach'));
                     $topicName = trim((string) ($classification?->topic?->name ?: 'Thema'));
                     $unitName = trim((string) ($classification?->unit?->name ?: 'Einheit'));
-                    return $subjectName . ' - ' . $topicName . ' - ' . $unitName;
+
+                    return $subjectName.' - '.$topicName.' - '.$unitName;
                 })
                 ->filter()
                 ->unique()
@@ -1264,10 +1536,10 @@ class MaterialShareController extends Controller
             $unitName = trim((string) ($card->unit ?? ''));
             if ($subjectName !== '' || $topicName !== '' || $unitName !== '') {
                 return ($subjectName !== '' ? $subjectName : 'Fach')
-                    . ' - '
-                    . ($topicName !== '' ? $topicName : 'Thema')
-                    . ' - '
-                    . ($unitName !== '' ? $unitName : 'Einheit');
+                    .' - '
+                    .($topicName !== '' ? $topicName : 'Thema')
+                    .' - '
+                    .($unitName !== '' ? $unitName : 'Einheit');
             }
 
             return 'Fach - Thema - Einheit';
@@ -1285,9 +1557,9 @@ class MaterialShareController extends Controller
         $cardsQuery = MaterialCard::query()
             ->where('school_id', (int) $rule->school_id)
             ->with([
-                'classifications.subject:id,name',
-                'classifications.topic:id,name',
-                'classifications.unit:id,name',
+                'classifications.subject:id,name,sort_order',
+                'classifications.topic:id,name,sort_order',
+                'classifications.unit:id,name,sort_order',
             ])
             ->orderBy('title')
             ->orderBy('id');
@@ -1357,39 +1629,42 @@ class MaterialShareController extends Controller
             foreach ($cardRows as $row) {
                 $pathKey = mb_strtolower(
                     (string) $row['subject_name']
-                    . '|'
-                    . (string) $row['topic_name']
-                    . '|'
-                    . (string) $row['unit_name']
+                    .'|'
+                    .(string) $row['topic_name']
+                    .'|'
+                    .(string) $row['unit_name']
                 );
                 if (isset($seenPaths[$pathKey])) {
                     continue;
                 }
                 $seenPaths[$pathKey] = true;
 
-                $subjectKey = (string) ($row['subject_id'] ?? 0) . '|' . $row['subject_name'];
-                if (!isset($subjects[$subjectKey])) {
+                $subjectKey = (string) ($row['subject_id'] ?? 0).'|'.$row['subject_name'];
+                if (! isset($subjects[$subjectKey])) {
                     $subjects[$subjectKey] = [
                         'id' => $row['subject_id'],
                         'name' => $row['subject_name'],
+                        'sort_order' => $this->normalizeHierarchySortOrder($row['subject_sort_order']),
                         'topics' => [],
                     ];
                 }
 
-                $topicKey = (string) ($row['topic_id'] ?? 0) . '|' . $row['topic_name'];
-                if (!isset($subjects[$subjectKey]['topics'][$topicKey])) {
+                $topicKey = (string) ($row['topic_id'] ?? 0).'|'.$row['topic_name'];
+                if (! isset($subjects[$subjectKey]['topics'][$topicKey])) {
                     $subjects[$subjectKey]['topics'][$topicKey] = [
                         'id' => $row['topic_id'],
                         'name' => $row['topic_name'],
+                        'sort_order' => $this->normalizeHierarchySortOrder($row['topic_sort_order']),
                         'units' => [],
                     ];
                 }
 
-                $unitKey = (string) ($row['unit_id'] ?? 0) . '|' . $row['unit_name'];
-                if (!isset($subjects[$subjectKey]['topics'][$topicKey]['units'][$unitKey])) {
+                $unitKey = (string) ($row['unit_id'] ?? 0).'|'.$row['unit_name'];
+                if (! isset($subjects[$subjectKey]['topics'][$topicKey]['units'][$unitKey])) {
                     $subjects[$subjectKey]['topics'][$topicKey]['units'][$unitKey] = [
                         'id' => $row['unit_id'],
                         'name' => $row['unit_name'],
+                        'sort_order' => $this->normalizeHierarchySortOrder($row['unit_sort_order']),
                         'materials' => [],
                     ];
                 }
@@ -1399,38 +1674,42 @@ class MaterialShareController extends Controller
             }
         }
 
-        $subjectRows = collect($subjects)->map(function (array $subject) {
-            $topicRows = collect($subject['topics'] ?? [])->map(function (array $topic) {
-                $unitRows = collect($topic['units'] ?? [])->map(function (array $unit) {
-                    $materials = collect($unit['materials'] ?? [])
-                        ->sortBy(fn (array $material) => mb_strtolower((string) ($material['title'] ?? '')))
-                        ->values();
+        $subjectRows = collect($subjects)
+            ->sortBy(fn (array $subject) => $this->hierarchySortKey($subject))
+            ->values()
+            ->map(function (array $subject) {
+                $topicRows = collect($subject['topics'] ?? [])
+                    ->sortBy(fn (array $topic) => $this->hierarchySortKey($topic))
+                    ->values()
+                    ->map(function (array $topic) {
+                        $unitRows = collect($topic['units'] ?? [])
+                            ->sortBy(fn (array $unit) => $this->hierarchySortKey($unit))
+                            ->values()
+                            ->map(function (array $unit) {
+                                $materials = collect($unit['materials'] ?? [])
+                                    ->sortBy(fn (array $material) => mb_strtolower((string) ($material['title'] ?? '')))
+                                    ->values();
 
-                    return [
-                        'id' => $unit['id'],
-                        'name' => $unit['name'],
-                        'materials' => $materials->all(),
-                    ];
-                })
-                    ->sortBy(fn (array $unit) => mb_strtolower((string) ($unit['name'] ?? '')))
-                    ->values();
+                                return [
+                                    'id' => $unit['id'],
+                                    'name' => $unit['name'],
+                                    'materials' => $materials->all(),
+                                ];
+                            });
+
+                        return [
+                            'id' => $topic['id'],
+                            'name' => $topic['name'],
+                            'units' => $unitRows->all(),
+                        ];
+                    });
 
                 return [
-                    'id' => $topic['id'],
-                    'name' => $topic['name'],
-                    'units' => $unitRows->all(),
+                    'id' => $subject['id'],
+                    'name' => $subject['name'],
+                    'topics' => $topicRows->all(),
                 ];
             })
-                ->sortBy(fn (array $topic) => mb_strtolower((string) ($topic['name'] ?? '')))
-                ->values();
-
-            return [
-                'id' => $subject['id'],
-                'name' => $subject['name'],
-                'topics' => $topicRows->all(),
-            ];
-        })
-            ->sortBy(fn (array $subject) => mb_strtolower((string) ($subject['name'] ?? '')))
             ->values();
 
         return $subjectRows->all();
@@ -1459,10 +1738,13 @@ class MaterialShareController extends Controller
             $rows[] = [
                 'subject_id' => $subjectId > 0 ? $subjectId : null,
                 'subject_name' => trim((string) ($classification->subject?->name ?? '')),
+                'subject_sort_order' => $classification->subject?->sort_order,
                 'topic_id' => $topicId > 0 ? $topicId : null,
                 'topic_name' => trim((string) ($classification->topic?->name ?? '')),
+                'topic_sort_order' => $classification->topic?->sort_order,
                 'unit_id' => $unitId > 0 ? $unitId : null,
                 'unit_name' => trim((string) ($classification->unit?->name ?? '')),
+                'unit_sort_order' => $classification->unit?->sort_order,
             ];
         }
 
@@ -1470,10 +1752,13 @@ class MaterialShareController extends Controller
             $rows[] = [
                 'subject_id' => null,
                 'subject_name' => trim((string) ($card->subject ?? '')),
+                'subject_sort_order' => null,
                 'topic_id' => null,
                 'topic_name' => trim((string) ($card->area ?? '')),
+                'topic_sort_order' => null,
                 'unit_id' => null,
                 'unit_name' => trim((string) ($card->unit ?? '')),
+                'unit_sort_order' => null,
             ];
         }
 
@@ -1481,17 +1766,39 @@ class MaterialShareController extends Controller
             return [
                 'subject_id' => $row['subject_id'],
                 'subject_name' => $this->normalizeHierarchyName($row['subject_name'] ?? '', 'Ohne Fach'),
+                'subject_sort_order' => $row['subject_sort_order'],
                 'topic_id' => $row['topic_id'],
                 'topic_name' => $this->normalizeHierarchyName($row['topic_name'] ?? '', 'Ohne Thema'),
+                'topic_sort_order' => $row['topic_sort_order'],
                 'unit_id' => $row['unit_id'],
                 'unit_name' => $this->normalizeHierarchyName($row['unit_name'] ?? '', 'Ohne Einheit'),
+                'unit_sort_order' => $row['unit_sort_order'],
             ];
         }, $rows);
+    }
+
+    private function normalizeHierarchySortOrder(mixed $sortOrder): int
+    {
+        if (! is_numeric($sortOrder)) {
+            return PHP_INT_MAX;
+        }
+
+        return (int) $sortOrder;
+    }
+
+    private function hierarchySortKey(array $row): string
+    {
+        $sortOrder = $this->normalizeHierarchySortOrder($row['sort_order'] ?? null);
+        $name = mb_strtolower((string) ($row['name'] ?? ''));
+        $id = (int) ($row['id'] ?? 0);
+
+        return sprintf('%010d|%s|%010d', $sortOrder, $name, $id);
     }
 
     private function normalizeHierarchyName(?string $value, string $fallback): string
     {
         $name = trim((string) ($value ?? ''));
+
         return $name !== '' ? $name : $fallback;
     }
 
@@ -1529,6 +1836,35 @@ class MaterialShareController extends Controller
             'status_label' => $statusMeta['label'],
             'status_color' => $statusMeta['color'],
             'attachments_count' => $attachmentsCount,
+        ];
+    }
+
+    private function serializeInboxAttachment(MaterialCardAttachment $attachment, int $ruleId, int $materialId): array
+    {
+        $query = http_build_query([
+            'rule_id' => $ruleId,
+            'material_id' => $materialId,
+        ], '', '&', PHP_QUERY_RFC3986);
+        $querySuffix = $query !== '' ? '?'.$query : '';
+        $isFile = (string) ($attachment->attachment_type ?? '') === MaterialCardAttachment::TYPE_FILE;
+
+        return [
+            'id' => (int) $attachment->id,
+            'material_card_id' => (int) ($attachment->material_card_id ?? 0),
+            'shared_rule_id' => $ruleId,
+            'shared_material_id' => $materialId,
+            'attachment_type' => (string) ($attachment->attachment_type ?? ''),
+            'name' => (string) ($attachment->name ?? ''),
+            'url' => $attachment->url,
+            'source_url' => $attachment->source_url,
+            'file_path' => $attachment->file_path,
+            'mime_type' => $attachment->mime_type,
+            'size_bytes' => $attachment->size_bytes,
+            'downloaded_at' => $attachment->downloaded_at?->toDateTimeString(),
+            'preview_url' => $isFile ? '/api/admin/materials/attachments/'.$attachment->id.'/preview'.$querySuffix : null,
+            'download_url' => $isFile ? '/api/admin/materials/attachments/'.$attachment->id.'/download'.$querySuffix : null,
+            'download_docx_url' => $isFile ? '/api/admin/materials/attachments/'.$attachment->id.'/download-docx'.$querySuffix : null,
+            'created_at' => $attachment->created_at?->toDateTimeString(),
         ];
     }
 
@@ -1576,7 +1912,7 @@ class MaterialShareController extends Controller
             return [];
         }
 
-        $cacheKey = $isUserScoped ? ('user:' . $userId) : ('school:' . $schoolId);
+        $cacheKey = $isUserScoped ? ('user:'.$userId) : ('school:'.$schoolId);
         if (array_key_exists($cacheKey, $this->materialTypeMetaCache)) {
             return $this->materialTypeMetaCache[$cacheKey];
         }
@@ -1748,7 +2084,7 @@ class MaterialShareController extends Controller
         }
 
         if (strlen($color) === 4) {
-            return strtolower('#' . $color[1] . $color[1] . $color[2] . $color[2] . $color[3] . $color[3]);
+            return strtolower('#'.$color[1].$color[1].$color[2].$color[2].$color[3].$color[3]);
         }
 
         return strtolower($color);
@@ -1819,6 +2155,15 @@ class MaterialShareController extends Controller
         }
 
         return $this->hasMaterialTopicInboxImportsTableCache;
+    }
+
+    private function hasMaterialShareRuleArchivesTable(): bool
+    {
+        if ($this->hasMaterialShareRuleArchivesTableCache === null) {
+            $this->hasMaterialShareRuleArchivesTableCache = Schema::hasTable('material_share_rule_archives');
+        }
+
+        return $this->hasMaterialShareRuleArchivesTableCache;
     }
 
     private function materialTypesAreUserScoped(): bool
@@ -1915,7 +2260,6 @@ class MaterialShareController extends Controller
     public function lookupUsers(Request $request)
     {
         $authUser = $this->materialsShareUser();
-        $this->abortIfShareTablesMissing();
 
         $search = trim((string) $request->query('search', ''));
         if ($search === '') {
@@ -1926,12 +2270,17 @@ class MaterialShareController extends Controller
 
         $rows = User::query()
             ->where('school_id', (int) $authUser->school_id)
+            ->whereKeyNot((int) $authUser->id)
+            ->whereHas('roles', function ($query) {
+                $query->whereIn('name', $this->materialsAccessRoleNames());
+            })
             ->where(function ($query) use ($search, $tokens) {
                 $like = '%'.$search.'%';
                 $query
                     ->where('email', 'like', $like)
                     ->orWhere('first_name', 'like', $like)
-                    ->orWhere('last_name', 'like', $like);
+                    ->orWhere('last_name', 'like', $like)
+                    ->orWhere('short', 'like', $like);
 
                 foreach ($tokens as $token) {
                     $token = trim((string) $token);
@@ -1939,22 +2288,25 @@ class MaterialShareController extends Controller
                         continue;
                     }
                     $query->orWhere('first_name', 'like', '%'.$token.'%')
-                        ->orWhere('last_name', 'like', '%'.$token.'%');
+                        ->orWhere('last_name', 'like', '%'.$token.'%')
+                        ->orWhere('short', 'like', '%'.$token.'%');
                 }
             })
             ->orderBy('last_name')
             ->orderBy('first_name')
             ->limit(25)
-            ->get(['id', 'first_name', 'last_name', 'email']);
+            ->get(['id', 'first_name', 'last_name', 'short', 'email']);
 
         return response()->json([
             'data' => $rows->map(function (User $user) {
                 $fullName = trim((string) (($user->last_name ?? '').' '.($user->first_name ?? '')));
+
                 return [
                     'id' => (int) $user->id,
                     'label' => $fullName !== '' ? $fullName : ($user->email ?: 'Benutzer'),
                     'first_name' => (string) ($user->first_name ?? ''),
                     'last_name' => (string) ($user->last_name ?? ''),
+                    'short' => (string) ($user->short ?? ''),
                     'email' => (string) ($user->email ?? ''),
                 ];
             })->values(),
@@ -1964,7 +2316,6 @@ class MaterialShareController extends Controller
     public function lookupGroups(Request $request)
     {
         $authUser = $this->materialsShareUser();
-        $this->abortIfShareTablesMissing();
 
         $type = (string) $request->query('type', '');
         if (! in_array($type, [UserGroup::TYPE_MATERIALS, UserGroup::TYPE_OWN], true)) {
@@ -1997,16 +2348,16 @@ class MaterialShareController extends Controller
     public function lookupSchools(Request $request)
     {
         $authUser = $this->materialsShareUser();
-        $this->abortIfShareTablesMissing();
 
         $schools = School::query()
-            ->selectables()
             ->where('id', '!=', (int) $authUser->school_id)
+            ->orderBy('long_name')
             ->get(['id', 'long_name', 'short_name']);
 
         return response()->json([
             'data' => $schools->map(function (School $school) {
                 $label = trim((string) ($school->long_name ?: $school->short_name ?: 'Schule'));
+
                 return [
                     'id' => (int) $school->id,
                     'label' => $label,
@@ -2017,10 +2368,72 @@ class MaterialShareController extends Controller
         ]);
     }
 
+    public function lookupExternalUser(Request $request)
+    {
+        $authUser = $this->materialsShareUser();
+
+        $data = $request->validate(
+            [
+                'target_school_id' => ['required', 'integer', 'min:1'],
+                'user_email' => ['required', 'string', 'email'],
+            ],
+            [
+                'target_school_id.required' => 'Bitte Schule wählen.',
+                'target_school_id.integer' => 'Bitte Schule wählen.',
+                'target_school_id.min' => 'Bitte Schule wählen.',
+                'user_email.required' => 'Bitte E-Mail-Adresse eingeben.',
+                'user_email.email' => 'Bitte eine gültige E-Mail-Adresse eingeben.',
+            ]
+        );
+
+        $targetSchoolId = (int) $data['target_school_id'];
+        $targetSchool = School::query()
+            ->where('id', '!=', (int) $authUser->school_id)
+            ->orderBy('long_name')
+            ->find($targetSchoolId);
+
+        if (! $targetSchool) {
+            throw ValidationException::withMessages([
+                'target_school_id' => ['Schule wurde nicht gefunden.'],
+            ]);
+        }
+
+        $email = mb_strtolower(trim((string) $data['user_email']));
+        $user = User::query()
+            ->where('school_id', $targetSchoolId)
+            ->whereHas('roles', function ($query) {
+                $query->whereIn('name', $this->materialsAccessRoleNames());
+            })
+            ->whereRaw('LOWER(email) = ?', [$email])
+            ->first(['id', 'school_id', 'first_name', 'last_name', 'email']);
+
+        if (! $user) {
+            return response()->json([
+                'data' => [
+                    'exists' => false,
+                ],
+            ]);
+        }
+
+        $fullName = trim((string) (($user->last_name ?? '').' '.($user->first_name ?? '')));
+
+        return response()->json([
+            'data' => [
+                'exists' => true,
+                'id' => (int) $user->id,
+                'school_id' => (int) $user->school_id,
+                'school_label' => trim((string) ($targetSchool->long_name ?: $targetSchool->short_name ?: 'Schule')),
+                'label' => $fullName !== '' ? $fullName : ((string) $user->email),
+                'email' => (string) $user->email,
+            ],
+        ]);
+    }
+
     public function storeTarget(Request $request)
     {
         $authUser = $this->materialsShareUser();
         $this->abortIfShareTablesMissing();
+        $workspaceId = $this->activeWorkspaceIdForUser($authUser);
 
         $data = $request->validate([
             'scope_type' => ['required', 'string', Rule::in(MaterialShareRule::SCOPES)],
@@ -2041,6 +2454,8 @@ class MaterialShareController extends Controller
                 'scope_id' => ['Für diese Ebene ist eine gültige ID erforderlich.'],
             ]);
         }
+
+        $this->assertPermissionAllowedForScope((string) $data['permission'], $scopeType);
 
         $targetType = (string) $data['target_type'];
         $audienceScope = null;
@@ -2114,6 +2529,7 @@ class MaterialShareController extends Controller
         $rule = MaterialShareRule::query()
             ->where('school_id', (int) $authUser->school_id)
             ->where('created_by_user_id', (int) $authUser->id)
+            ->when($workspaceId !== null, fn ($query) => $query->where('workspace_id', $workspaceId))
             ->where('scope_type', $scopeType)
             ->where('scope_id', $scopeId)
             ->orderByDesc('id')
@@ -2123,6 +2539,7 @@ class MaterialShareController extends Controller
             $rule = MaterialShareRule::create([
                 'school_id' => (int) $authUser->school_id,
                 'created_by_user_id' => (int) $authUser->id,
+                'workspace_id' => $workspaceId,
                 'scope_type' => $scopeType,
                 'scope_id' => $scopeId,
                 'is_active' => true,
@@ -2137,6 +2554,7 @@ class MaterialShareController extends Controller
         $target = $this->findExistingTargetForScope(
             schoolId: (int) $authUser->school_id,
             creatorUserId: (int) $authUser->id,
+            workspaceId: $workspaceId,
             scopeType: $scopeType,
             scopeId: $scopeId,
             targetType: $targetType,
@@ -2146,7 +2564,7 @@ class MaterialShareController extends Controller
         );
 
         if (! $target) {
-            $target = new MaterialShareTarget();
+            $target = new MaterialShareTarget;
         }
 
         $target->material_share_rule_id = (int) $rule->id;
@@ -2216,6 +2634,8 @@ class MaterialShareController extends Controller
             'permission' => ['required', 'string', Rule::in(MaterialShareTarget::PERMISSIONS)],
         ]);
 
+        $this->assertPermissionAllowedForScope((string) $data['permission'], (string) $rule->scope_type);
+
         $material_share_target->permission = (string) $data['permission'];
         $material_share_target->save();
         $rule->touch();
@@ -2279,6 +2699,19 @@ class MaterialShareController extends Controller
         return Schema::hasTable('material_share_rules') && Schema::hasTable('material_share_targets');
     }
 
+    /**
+     * @return array<int, string>
+     */
+    private function materialsAccessRoleNames(): array
+    {
+        return [
+            'super_admin',
+            'admin',
+            'materials_admin',
+            'materials_moderator',
+        ];
+    }
+
     private function abortIfShareTablesMissing(): void
     {
         if ($this->shareTablesAvailable()) {
@@ -2291,6 +2724,7 @@ class MaterialShareController extends Controller
     private function findExistingTargetForScope(
         int $schoolId,
         int $creatorUserId,
+        ?int $workspaceId,
         string $scopeType,
         ?int $scopeId,
         string $targetType,
@@ -2303,15 +2737,31 @@ class MaterialShareController extends Controller
             ->when($targetType === MaterialShareTarget::TARGET_EVERYONE, fn ($query) => $query->where('audience_scope', $audienceScope))
             ->when($targetType === MaterialShareTarget::TARGET_USER, fn ($query) => $query->where('user_id', $userId))
             ->when($targetType === MaterialShareTarget::TARGET_GROUP, fn ($query) => $query->where('user_group_id', $groupId))
-            ->whereHas('rule', function ($query) use ($schoolId, $creatorUserId, $scopeType, $scopeId) {
+            ->whereHas('rule', function ($query) use ($schoolId, $creatorUserId, $workspaceId, $scopeType, $scopeId) {
                 $query
                     ->where('school_id', $schoolId)
                     ->where('created_by_user_id', $creatorUserId)
+                    ->when($workspaceId !== null, fn ($ruleQuery) => $ruleQuery->where('workspace_id', $workspaceId))
                     ->where('scope_type', $scopeType)
                     ->where('scope_id', $scopeId);
             })
             ->orderByDesc('id')
             ->first();
+    }
+
+    private function activeWorkspaceIdForUser(User $user): ?int
+    {
+        if (
+            ! Schema::hasTable('material_workspaces')
+            || ! Schema::hasTable('material_share_rules')
+            || ! Schema::hasColumn('material_share_rules', 'workspace_id')
+        ) {
+            return null;
+        }
+
+        $workspace = $this->workspaceService->resolveActiveWorkspace($user);
+
+        return (int) $workspace->id;
     }
 
     private function serializeRule(MaterialShareRule $rule, int $schoolId): array
@@ -2328,6 +2778,7 @@ class MaterialShareController extends Controller
 
         return [
             'id' => (int) $rule->id,
+            'workspace_id' => $rule->workspace_id ? (int) $rule->workspace_id : null,
             'scope_type' => (string) $rule->scope_type,
             'scope_id' => $rule->scope_id ? (int) $rule->scope_id : null,
             'scope_label' => $scopeLabel,
@@ -2348,6 +2799,7 @@ class MaterialShareController extends Controller
 
         if ($target->target_type === MaterialShareTarget::TARGET_EVERYONE) {
             $audienceScope = (string) ($target->audience_scope ?: MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL);
+
             return [
                 'id' => (int) $target->id,
                 'target_type' => MaterialShareTarget::TARGET_EVERYONE,
@@ -2388,6 +2840,7 @@ class MaterialShareController extends Controller
             $fullName = trim((string) (($user->last_name ?? '').' '.($user->first_name ?? '')));
             $targetSchoolId = (int) ($user->school_id ?? 0);
             $targetSchoolLabel = trim((string) ($user->selectedSchool?->long_name ?: $user->selectedSchool?->short_name ?: ''));
+
             return [
                 'id' => (int) $target->id,
                 'target_type' => MaterialShareTarget::TARGET_USER,
@@ -2405,6 +2858,29 @@ class MaterialShareController extends Controller
         }
 
         return null;
+    }
+
+    private function assertPermissionAllowedForScope(string $permission, string $scopeType): void
+    {
+        if ($permission !== MaterialShareTarget::PERMISSION_FULL_ACCESS) {
+            return;
+        }
+
+        if ($this->scopeAllowsFullAccess($scopeType)) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'permission' => ['VOLLZUGRIFF ist auf dieser Ebene aktuell nicht erlaubt.'],
+        ]);
+    }
+
+    private function scopeAllowsFullAccess(string $scopeType): bool
+    {
+        return in_array($scopeType, [
+            MaterialShareRule::SCOPE_ALL,
+            MaterialShareRule::SCOPE_SUBJECT,
+        ], true);
     }
 
     /**

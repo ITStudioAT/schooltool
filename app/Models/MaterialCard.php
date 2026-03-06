@@ -14,13 +14,17 @@ class MaterialCard extends Model
     use SoftDeletes;
 
     public const STATUS_INBOX = 'inbox';
+
     public const STATUS_IN_PROGRESS = 'in_progress';
+
     public const STATUS_DONE = 'done';
+
     public const STATUS_UPDATE_NEEDED = 'update_needed';
 
     protected $fillable = [
         'school_id',
         'user_id',
+        'workspace_id',
         'title',
         'source_url',
         'source_text',
@@ -40,6 +44,27 @@ class MaterialCard extends Model
         ];
     }
 
+    protected static function booted(): void
+    {
+        static::creating(function (MaterialCard $card): void {
+            if ((int) ($card->workspace_id ?? 0) > 0 || (int) ($card->user_id ?? 0) <= 0) {
+                return;
+            }
+
+            $workspace = MaterialWorkspace::query()->firstOrCreate(
+                [
+                    'user_id' => (int) $card->user_id,
+                    'name' => 'Workspace',
+                ],
+                [
+                    'is_default' => true,
+                ]
+            );
+
+            $card->workspace_id = (int) $workspace->id;
+        });
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
@@ -48,6 +73,11 @@ class MaterialCard extends Model
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
+    }
+
+    public function workspace(): BelongsTo
+    {
+        return $this->belongsTo(MaterialWorkspace::class, 'workspace_id');
     }
 
     public function attachments(): HasMany

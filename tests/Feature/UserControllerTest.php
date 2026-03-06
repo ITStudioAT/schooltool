@@ -293,6 +293,32 @@ test('admin can also load users', function () {
         ->assertStatus(200);
 });
 
+test('users20 load_users supports searching by school class', function () {
+    $classUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'last_name' => 'Class',
+        'first_name' => 'Search',
+        'email' => 'class-search@test.com',
+        'schoolclass' => '7B',
+    ]);
+    $otherClassUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'last_name' => 'Other',
+        'first_name' => 'Class',
+        'email' => 'other-class@test.com',
+        'schoolclass' => '8C',
+    ]);
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $this->getJson('/api/admin/users20/load_users?search_string=7B')
+        ->assertStatus(200)
+        ->assertJsonFragment(['id' => $classUser->id])
+        ->assertJsonMissing(['id' => $otherClassUser->id]);
+});
+
 test('guest is unauthorized from loading users', function () {
     $this->getJson('/api/admin/users20/load_users')
         ->assertStatus(401);

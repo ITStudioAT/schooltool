@@ -1,5 +1,21 @@
 <template>
     <div class="overview-subjects-tree">
+        <div class="overview-subjects-node-row overview-workspace-row">
+            <div class="overview-subjects-node overview-subjects-node--workspace">
+                <v-icon size="20" icon="mdi-briefcase-outline" class="mr-2" />
+                <span>Workspace</span>
+            </div>
+            <v-btn
+                size="x-small"
+                color="primary"
+                variant="tonal"
+                icon="mdi-share-variant-outline"
+                class="overview-share-btn"
+                :title="'Teilen'"
+                :disabled="actionBusy"
+                @click.stop="handleWorkspaceShareClick" />
+        </div>
+
         <ul class="overview-subjects-list">
             <li
                 v-for="subject in items"
@@ -18,11 +34,21 @@
                                 class="ml-1" />
                         </div>
                         <v-btn
+                            v-if="hasPersistedNodeId(subject.id)"
+                            size="x-small"
+                            color="primary"
+                            variant="tonal"
+                            icon="mdi-share-variant-outline"
+                            class="overview-share-btn"
+                            :title="'Teilen'"
+                            :disabled="actionBusy"
+                            @click.stop="handleShareClick({ level: 'subject', id: subject.id, label: subject.name })" />
+                        <v-btn
                             v-if="enableCreateButtons && hasPersistedNodeId(subject.id)"
                             size="x-small"
                             color="primary"
                             variant="tonal"
-                            icon="mdi-plus"
+                            icon="mdi-file-plus-outline"
                             :title="'Neues Material in Fach anlegen'"
                             :disabled="actionBusy"
                             @click="$emit('open-create', {
@@ -31,15 +57,6 @@
                                 topic: '',
                                 unit: '',
                             })" />
-                        <v-btn
-                            v-if="enableShareButtons && hasPersistedNodeId(subject.id)"
-                            size="x-small"
-                            color="primary"
-                            variant="outlined"
-                            prepend-icon="mdi-share-variant-outline"
-                            @click="$emit('open-share', { level: 'subject', id: subject.id, label: subject.name })">
-                            Freigabe
-                        </v-btn>
                     </div>
 
                     <ul v-if="subject.materials.length" class="overview-subjects-material-list">
@@ -55,6 +72,26 @@
                                 @click="$emit('open-material', { id: material.id })">
                                 {{ material.title }}
                             </button>
+                            <v-btn
+                                v-if="hasPersistedNodeId(material.id)"
+                                size="x-small"
+                                color="primary"
+                                variant="tonal"
+                                icon="mdi-share-variant-outline"
+                                class="overview-share-btn overview-share-btn--material"
+                                :title="'Teilen'"
+                                :disabled="actionBusy"
+                                @click.stop="handleShareClick({
+                                    level: 'material',
+                                    id: material.id,
+                                    label: material.title,
+                                    parentLabel: subject.name,
+                                    kindLabel: material.typeLabel || '',
+                                    kindColor: material.typeColor || 'primary',
+                                    statusLabel: statusLabelFn(material.status),
+                                    statusColor: statusColorFn(material.status),
+                                    attachmentsCount: Number(material.attachmentsCount || 0),
+                                })" />
                             <v-chip
                                 v-if="material.isLinked"
                                 size="x-small"
@@ -106,26 +143,6 @@
                                 icon="mdi-share-variant"
                                 :color="shareIndicatorColorFn('material', material.id)"
                                 class="overview-subjects-share-icon" />
-                            <v-btn
-                                v-if="enableShareButtons"
-                                size="x-small"
-                                color="primary"
-                                variant="text"
-                                density="comfortable"
-                                prepend-icon="mdi-share-variant-outline"
-                                @click="$emit('open-share', {
-                                    level: 'material',
-                                    id: material.id,
-                                    label: material.title,
-                                    parentLabel: subject.name,
-                                    kindLabel: material.typeLabel || '',
-                                    kindColor: material.typeColor || 'primary',
-                                    statusLabel: statusLabelFn(material.status),
-                                    statusColor: statusColorFn(material.status),
-                                    attachmentsCount: Number(material.attachmentsCount || 0),
-                                })">
-                                Freigabe
-                            </v-btn>
                         </li>
                     </ul>
 
@@ -159,11 +176,21 @@
                                         class="ml-1" />
                                 </div>
                                 <v-btn
+                                    v-if="hasPersistedNodeId(topic.id)"
+                                    size="x-small"
+                                    color="primary"
+                                    variant="tonal"
+                                    icon="mdi-share-variant-outline"
+                                    class="overview-share-btn"
+                                    :title="'Teilen'"
+                                    :disabled="actionBusy"
+                                    @click.stop="handleShareClick({ level: 'topic', id: topic.id, label: topic.name, parentLabel: subject.name })" />
+                                <v-btn
                                     v-if="enableCreateButtons && hasPersistedNodeId(topic.id) && canCreateMaterialInTopic(topic)"
                                     size="x-small"
                                     color="primary"
                                     variant="tonal"
-                                    icon="mdi-plus"
+                                    icon="mdi-file-plus-outline"
                                     :title="'Neues Material in Thema anlegen'"
                                     :disabled="actionBusy"
                                     @click="$emit('open-create', {
@@ -172,15 +199,6 @@
                                         topic: String(topic.name || '').trim(),
                                         unit: '',
                                     })" />
-                                <v-btn
-                                    v-if="enableShareButtons && hasPersistedNodeId(topic.id)"
-                                    size="x-small"
-                                    color="primary"
-                                    variant="outlined"
-                                    prepend-icon="mdi-share-variant-outline"
-                                    @click="$emit('open-share', { level: 'topic', id: topic.id, label: topic.name, parentLabel: subject.name })">
-                                    Freigabe
-                                </v-btn>
                                 <v-btn
                                     v-if="enableRemoveButtons && hasPersistedNodeId(topic.id) && topic.isLinked"
                                     size="x-small"
@@ -208,6 +226,26 @@
                                         @click="$emit('open-material', { id: material.id })">
                                         {{ material.title }}
                                     </button>
+                                    <v-btn
+                                        v-if="hasPersistedNodeId(material.id)"
+                                        size="x-small"
+                                        color="primary"
+                                        variant="tonal"
+                                        icon="mdi-share-variant-outline"
+                                        class="overview-share-btn overview-share-btn--material"
+                                        :title="'Teilen'"
+                                        :disabled="actionBusy"
+                                        @click.stop="handleShareClick({
+                                            level: 'material',
+                                            id: material.id,
+                                            label: material.title,
+                                            parentLabel: `${subject.name} / ${topic.name}`,
+                                            kindLabel: material.typeLabel || '',
+                                            kindColor: material.typeColor || 'primary',
+                                            statusLabel: statusLabelFn(material.status),
+                                            statusColor: statusColorFn(material.status),
+                                            attachmentsCount: Number(material.attachmentsCount || 0),
+                                        })" />
                                     <v-chip
                                         v-if="material.isLinked"
                                         size="x-small"
@@ -259,26 +297,6 @@
                                         icon="mdi-share-variant"
                                         :color="shareIndicatorColorFn('material', material.id)"
                                         class="overview-subjects-share-icon" />
-                                    <v-btn
-                                        v-if="enableShareButtons"
-                                        size="x-small"
-                                        color="primary"
-                                        variant="text"
-                                        density="comfortable"
-                                        prepend-icon="mdi-share-variant-outline"
-                                        @click="$emit('open-share', {
-                                            level: 'material',
-                                            id: material.id,
-                                            label: material.title,
-                                            parentLabel: `${subject.name} / ${topic.name}`,
-                                            kindLabel: material.typeLabel || '',
-                                            kindColor: material.typeColor || 'primary',
-                                            statusLabel: statusLabelFn(material.status),
-                                            statusColor: statusColorFn(material.status),
-                                            attachmentsCount: Number(material.attachmentsCount || 0),
-                                        })">
-                                        Freigabe
-                                    </v-btn>
                                 </li>
                             </ul>
 
@@ -311,11 +329,21 @@
                                                 class="ml-1" />
                                         </div>
                                         <v-btn
+                                            v-if="hasPersistedNodeId(unit.id)"
+                                            size="x-small"
+                                            color="primary"
+                                            variant="tonal"
+                                            icon="mdi-share-variant-outline"
+                                            class="overview-share-btn"
+                                            :title="'Teilen'"
+                                            :disabled="actionBusy"
+                                            @click.stop="handleShareClick({ level: 'unit', id: unit.id, label: unit.name, parentLabel: `${subject.name} / ${topic.name}` })" />
+                                        <v-btn
                                             v-if="enableCreateButtons && hasPersistedNodeId(unit.id) && canCreateMaterialInUnit(unit)"
                                             size="x-small"
                                             color="primary"
                                             variant="tonal"
-                                            icon="mdi-plus"
+                                            icon="mdi-file-plus-outline"
                                             :title="'Neues Material in Unterpunkt anlegen'"
                                             :disabled="actionBusy"
                                             @click="$emit('open-create', {
@@ -324,15 +352,6 @@
                                                 topic: String(topic.name || '').trim(),
                                                 unit: String(unit.name || '').trim(),
                                             })" />
-                                        <v-btn
-                                            v-if="enableShareButtons && hasPersistedNodeId(unit.id)"
-                                            size="x-small"
-                                            color="primary"
-                                            variant="outlined"
-                                            prepend-icon="mdi-share-variant-outline"
-                                            @click="$emit('open-share', { level: 'unit', id: unit.id, label: unit.name, parentLabel: `${subject.name} / ${topic.name}` })">
-                                            Freigabe
-                                        </v-btn>
                                         <v-btn
                                             v-if="enableRemoveButtons && hasPersistedNodeId(unit.id) && unit.isLinked"
                                             size="x-small"
@@ -360,6 +379,26 @@
                                                 @click="$emit('open-material', { id: material.id })">
                                                 {{ material.title }}
                                             </button>
+                                            <v-btn
+                                                v-if="hasPersistedNodeId(material.id)"
+                                                size="x-small"
+                                                color="primary"
+                                                variant="tonal"
+                                                icon="mdi-share-variant-outline"
+                                                class="overview-share-btn overview-share-btn--material"
+                                                :title="'Teilen'"
+                                                :disabled="actionBusy"
+                                                @click.stop="handleShareClick({
+                                                    level: 'material',
+                                                    id: material.id,
+                                                    label: material.title,
+                                                    parentLabel: `${subject.name} / ${topic.name} / ${unit.name}`,
+                                                    kindLabel: material.typeLabel || '',
+                                                    kindColor: material.typeColor || 'primary',
+                                                    statusLabel: statusLabelFn(material.status),
+                                                    statusColor: statusColorFn(material.status),
+                                                    attachmentsCount: Number(material.attachmentsCount || 0),
+                                                })" />
                                             <v-chip
                                                 v-if="material.isLinked"
                                                 size="x-small"
@@ -411,26 +450,6 @@
                                                 icon="mdi-share-variant"
                                                 :color="shareIndicatorColorFn('material', material.id)"
                                                 class="overview-subjects-share-icon" />
-                                            <v-btn
-                                                v-if="enableShareButtons"
-                                                size="x-small"
-                                                color="primary"
-                                                variant="text"
-                                                density="comfortable"
-                                                prepend-icon="mdi-share-variant-outline"
-                                                @click="$emit('open-share', {
-                                                    level: 'material',
-                                                    id: material.id,
-                                                    label: material.title,
-                                                    parentLabel: `${subject.name} / ${topic.name} / ${unit.name}`,
-                                                    kindLabel: material.typeLabel || '',
-                                                    kindColor: material.typeColor || 'primary',
-                                                    statusLabel: statusLabelFn(material.status),
-                                                    statusColor: statusColorFn(material.status),
-                                                    attachmentsCount: Number(material.attachmentsCount || 0),
-                                                })">
-                                                Freigabe
-                                            </v-btn>
                                         </li>
                                     </ul>
                                 </li>
@@ -547,11 +566,26 @@ export default {
                 attachments: Array.isArray(material?.attachments) ? material.attachments : undefined,
             })
         },
+        handleShareClick(target) {
+            this.$emit('open-share', target)
+        },
+        handleWorkspaceShareClick() {
+            this.$emit('open-share', {
+                level: 'all',
+                id: null,
+                label: 'Workspace',
+                parentLabel: '',
+            })
+        },
     },
 }
 </script>
 
 <style scoped>
+.overview-subjects-tree {
+    --overview-root-gap: 32px;
+}
+
 .overview-subjects-list {
     list-style: none;
     margin: 0;
@@ -561,7 +595,16 @@ export default {
 }
 
 .overview-subjects-tree > .overview-subjects-list {
-    gap: 32px;
+    gap: var(--overview-root-gap);
+}
+
+.overview-workspace-row {
+    margin-bottom: var(--overview-root-gap);
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(20, 93, 120, 0.46);
+    background: linear-gradient(90deg, rgba(20, 93, 120, 0.24) 0%, rgba(20, 93, 120, 0.14) 56%, rgba(255, 255, 255, 0.78) 100%);
+    box-shadow: 0 3px 10px rgba(20, 56, 74, 0.14);
 }
 
 .overview-subjects-list--child {
@@ -616,9 +659,28 @@ export default {
     flex-wrap: wrap;
 }
 
+.overview-share-btn {
+    min-width: auto;
+}
+
+.overview-share-btn--material {
+    min-width: 22px !important;
+    width: 22px;
+    height: 22px;
+}
+
 .overview-subjects-node--subject {
     font-weight: 700;
     background: rgba(35, 61, 76, 0.08);
+}
+
+.overview-subjects-node--workspace {
+    font-weight: 800;
+    font-size: 1.02rem;
+    letter-spacing: 0.01em;
+    color: #0f3140;
+    background: rgba(20, 93, 120, 0.26);
+    border: 1px solid rgba(20, 93, 120, 0.48);
 }
 
 .overview-subjects-node--topic {

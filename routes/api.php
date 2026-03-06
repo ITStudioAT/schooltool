@@ -174,6 +174,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::middleware(['auth:sanctum', 'api-allowed:admin,materials_admin,materials_moderator'])->group(function () {
         Route::apiResource('/admin/groups', \App\Http\Controllers\Admin\GroupController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::get('/admin/groups/{group}/members', [\App\Http\Controllers\Admin\GroupController::class, 'members']);
+        Route::get('/admin/groups/{group}/source-members', [\App\Http\Controllers\Admin\GroupController::class, 'sourceMembers']);
         Route::delete('/admin/groups/{group}/members/{user}', [\App\Http\Controllers\Admin\GroupController::class, 'removeMember']);
         Route::post('/admin/groups/{group}/remove-users', [\App\Http\Controllers\Admin\GroupController::class, 'removeMembers']);
         Route::get('/admin/groups/{group}/assignable-users', [\App\Http\Controllers\Admin\GroupController::class, 'assignableUsers']);
@@ -225,17 +226,6 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /* SANCTUM - admin, materials_admin, materials_moderator */
     Route::middleware(['auth:sanctum', 'api-allowed:admin,materials_admin,materials_moderator', 'tool-licensed:Materialientool'])->group(function () {
-        Route::get('/admin/materials/shares', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'index']);
-        Route::get('/admin/materials/shares/inbox-users', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'inboxUsers']);
-        Route::post('/admin/materials/shares/inbox/material-insert', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'insertInboxMaterial']);
-        Route::post('/admin/materials/shares/inbox/material-original-copy', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'copyInboxMaterialAsOriginal']);
-        Route::patch('/admin/materials/shares/{material_share_rule}', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'updateRule']);
-        Route::get('/admin/materials/shares/lookup-users', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'lookupUsers']);
-        Route::get('/admin/materials/shares/lookup-schools', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'lookupSchools']);
-        Route::get('/admin/materials/shares/lookup-groups', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'lookupGroups']);
-        Route::post('/admin/materials/shares/targets', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'storeTarget']);
-        Route::patch('/admin/materials/shares/targets/{material_share_target}', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'updateTarget']);
-        Route::delete('/admin/materials/shares/targets/{material_share_target}', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'destroyTarget']);
         Route::get('/admin/materials/config', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'config']);
         Route::post('/admin/materials/subjects', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'storeSubject']);
         Route::put('/admin/materials/subjects/{material_subject}', [\App\Http\Controllers\Admin\Materials\MaterialClassificationController::class, 'updateSubject']);
@@ -281,6 +271,22 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/materials/attachments/{material_card_attachment}/preview', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'previewAttachment']);
         Route::get('/admin/materials/attachments/{material_card_attachment}/download', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'downloadAttachment']);
         Route::get('/admin/materials/attachments/{material_card_attachment}/download-docx', [\App\Http\Controllers\Admin\Materials\MaterialController::class, 'downloadAttachmentDocx']);
+        Route::get('/admin/materials/shares', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'index']);
+        Route::patch('/admin/materials/shares/{material_share_rule}', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'updateRule']);
+        Route::post('/admin/materials/shares/targets', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'storeTarget']);
+        Route::patch('/admin/materials/shares/targets/{material_share_target}', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'updateTarget']);
+        Route::delete('/admin/materials/shares/targets/{material_share_target}', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'destroyTarget']);
+        Route::get('/admin/materials/shares/lookup-users', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'lookupUsers']);
+        Route::get('/admin/materials/shares/lookup-groups', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'lookupGroups']);
+        Route::get('/admin/materials/shares/lookup-schools', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'lookupSchools']);
+        Route::get('/admin/materials/shares/lookup-external-user', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'lookupExternalUser']);
+        Route::get('/admin/materials/shares/inbox-users', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'inboxUsers']);
+        Route::get('/admin/materials/shares/inbox/material-attachments', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'inboxMaterialAttachments']);
+        Route::get('/admin/materials/shares/inbox/material-detail', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'inboxMaterialDetail']);
+        Route::post('/admin/materials/shares/inbox/archive', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'archiveInboxRule']);
+        Route::post('/admin/materials/shares/inbox/unarchive', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'unarchiveInboxRule']);
+        Route::post('/admin/materials/shares/inbox/material-original-copy', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'copyInboxMaterialAsOriginal']);
+        Route::post('/admin/materials/shares/inbox/material-insert', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'insertInboxMaterial']);
         Route::post('/admin/materials/uploads/chunk', [\App\Http\Controllers\Admin\Materials\MaterialChunkUploadController::class, 'upload']);
         Route::patch('/admin/materials/uploads/chunk', [\App\Http\Controllers\Admin\Materials\MaterialChunkUploadController::class, 'uploadNext']);
         Route::delete('/admin/materials/uploads/chunk/{upload_id}', [\App\Http\Controllers\Admin\Materials\MaterialChunkUploadController::class, 'destroy']);

@@ -3,9 +3,8 @@
         <MaterialsMenu v-model="main_action" :disabled="isMenuLocked" />
         <v-row class="w-100" dense>
             <v-col cols="12" lg="10" xl="9" class="mx-auto">
-                <MaterialsOverviewView v-if="main_action === 'overview'" />
-                <MaterialsInboxView v-if="main_action === 'inbox'" />
-                <MaterialsSharesView v-if="main_action === 'shares'" />
+                <MaterialsOverviewView v-if="main_action === 'overview'" :disable-sharing-features="true" />
+                <MaterialsFreigabeView v-if="main_action === 'teilen'" />
                 <MaterialsNewView v-if="main_action === 'new_material'" @menu-lock-change="setMenuLocked" />
                 <MaterialsSettingsView
                     v-if="main_action === 'settings'"
@@ -25,9 +24,8 @@
 <script>
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import MaterialsMenu from './components/navigation/MaterialsMenu.vue'
+import MaterialsFreigabeView from './components/views/MaterialsFreigabeView.vue'
 import MaterialsOverviewView from './components/views/MaterialsOverviewView.vue'
-import MaterialsInboxView from './components/views/MaterialsInboxView.vue'
-import MaterialsSharesView from './components/views/MaterialsSharesView.vue'
 import MaterialsNewView from './components/views/MaterialsNewView.vue'
 import MaterialsSettingsView from './components/views/MaterialsSettingsView.vue'
 
@@ -35,9 +33,8 @@ export default {
     name: 'Materials',
     components: {
         MaterialsMenu,
+        MaterialsFreigabeView,
         MaterialsOverviewView,
-        MaterialsInboxView,
-        MaterialsSharesView,
         MaterialsNewView,
         MaterialsSettingsView,
     },
@@ -83,7 +80,7 @@ export default {
         applyRouteSelection() {
             if (this.$route?.path !== '/admin/materials') return
             const queryValue = String(this.$route?.query?.main_action || '').trim()
-            const allowed = ['overview', 'inbox', 'shares', 'subjects', 'new_material', 'settings']
+            const allowed = ['overview', 'teilen', 'subjects', 'new_material', 'settings']
             if (allowed.includes(queryValue)) {
                 this.main_action = queryValue
             }

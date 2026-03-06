@@ -63,12 +63,12 @@ class MaterialAttachmentPreviewService
             abort(404, 'Datei nicht gefunden');
         }
 
-        $disk = Storage::disk(config('filesystems.default'));
-        if (! $disk->exists($relativePath)) {
+        ['disk' => $disk, 'disk_name' => $diskName] = $this->resolveAttachmentDisk($relativePath);
+        if (! $disk) {
             abort(404, 'Datei nicht gefunden');
         }
 
-        ['path' => $absolutePath, 'is_temp' => $isTempFile] = $this->resolveLocalPath($disk, $relativePath);
+        ['path' => $absolutePath, 'is_temp' => $isTempFile] = $this->resolveLocalPath($disk, $relativePath, $diskName);
 
         $fileName = $this->displayName($attachment);
         $extension = $this->fileExtension($attachment);
@@ -151,6 +151,7 @@ class MaterialAttachmentPreviewService
 
         if ($this->isInlineMedia($extension, $mimeType)) {
             $inlineMime = $this->inlineMimeType($extension, $mimeType);
+
             return $this->inlineFileResponse($absolutePath, $inlineMime, $fileName, $isTempFile);
         }
 
@@ -161,6 +162,7 @@ class MaterialAttachmentPreviewService
 
         if (is_string($pdfPreviewPath) && $pdfPreviewPath !== '') {
             $previewName = $this->replaceExtensionWithPdf($fileName);
+
             return $this->inlineFileResponse($pdfPreviewPath, 'application/pdf', $previewName, true);
         }
 
@@ -182,9 +184,9 @@ class MaterialAttachmentPreviewService
     /**
      * @return array{path: string, is_temp: bool}
      */
-    private function resolveLocalPath(\Illuminate\Contracts\Filesystem\Filesystem $disk, string $relativePath): array
+    private function resolveLocalPath(\Illuminate\Contracts\Filesystem\Filesystem $disk, string $relativePath, string $diskName = ''): array
     {
-        if (config('filesystems.default') === 'local') {
+        if ($diskName === 'local') {
             return ['path' => Storage::disk('local')->path($relativePath), 'is_temp' => false];
         }
 
@@ -196,13 +198,43 @@ class MaterialAttachmentPreviewService
         $ext = pathinfo($relativePath, PATHINFO_EXTENSION);
         $tempPath = tempnam(sys_get_temp_dir(), 'st_prev_');
         if ($ext !== '' && is_string($tempPath)) {
-            @rename($tempPath, $tempPath . '.' . $ext);
-            $tempPath .= '.' . $ext;
+            @rename($tempPath, $tempPath.'.'.$ext);
+            $tempPath .= '.'.$ext;
         }
 
         file_put_contents($tempPath, $content);
 
         return ['path' => $tempPath, 'is_temp' => true];
+    }
+
+    /**
+     * @return array{disk:\Illuminate\Contracts\Filesystem\Filesystem|null,disk_name:string}
+     */
+    private function resolveAttachmentDisk(string $relativePath): array
+    {
+        $path = trim($relativePath);
+        if ($path === '') {
+            return ['disk' => null, 'disk_name' => ''];
+        }
+
+        $candidates = array_values(array_unique([
+            (string) config('filesystems.default'),
+            'local',
+            'public',
+        ]));
+
+        foreach ($candidates as $diskName) {
+            if ($diskName === '') {
+                continue;
+            }
+
+            $disk = Storage::disk($diskName);
+            if ($disk->exists($path)) {
+                return ['disk' => $disk, 'disk_name' => $diskName];
+            }
+        }
+
+        return ['disk' => null, 'disk_name' => ''];
     }
 
     private function renderSpreadsheetHtml(string $absolutePath, string $extension): string
@@ -341,7 +373,8 @@ class MaterialAttachmentPreviewService
 
     private function messageResponse(string $fileName, string $message, string $downloadUrl = ''): Response
     {
-        $messageHtml = '<p>' . $this->escapeHtml($message) . '</p>';
+        $messageHtml = '<p>'.$this->escapeHtml($message).'</p>';
+
         return $this->shellHtmlResponse($fileName, $messageHtml, $downloadUrl);
     }
 
@@ -370,7 +403,7 @@ class MaterialAttachmentPreviewService
 
         return $this->shellHtmlResponse(
             $fileName,
-            '<div class="rich-html-preview">' . $bodyHtml . '</div>',
+            '<div class="rich-html-preview">'.$bodyHtml.'</div>',
             $downloadUrl
         );
     }
@@ -446,6 +479,7 @@ class MaterialAttachmentPreviewService
     private function htmlDocumentResponse(string $html, string $fileName): Response
     {
         $document = $this->normalizeGeneratedHtml($html, $fileName);
+
         return response($document, 200, $this->htmlHeaders());
     }
 
@@ -531,11 +565,11 @@ class MaterialAttachmentPreviewService
 
         $styles = $this->defaultRichTextPreviewStyles();
         if (preg_match('/<\/head>/i', $document)) {
-            return preg_replace('/<\/head>/i', $styles . '</head>', $document, 1) ?? $document;
+            return preg_replace('/<\/head>/i', $styles.'</head>', $document, 1) ?? $document;
         }
 
         if (preg_match('/<head[^>]*>/i', $document)) {
-            return preg_replace('/<head([^>]*)>/i', '<head$1>' . $styles, $document, 1) ?? $document;
+            return preg_replace('/<head([^>]*)>/i', '<head$1>'.$styles, $document, 1) ?? $document;
         }
 
         return $document;
@@ -543,7 +577,7 @@ class MaterialAttachmentPreviewService
 
     private function defaultRichTextPreviewStyles(): string
     {
-        return <<<HTML
+        return <<<'HTML'
             <style id="materials-richtext-preview-style">
                 body {
                     font-family: Arial, sans-serif;
@@ -616,6 +650,7 @@ class MaterialAttachmentPreviewService
         }
 
         $mime = $this->normalizeMimeType((string) ($attachment->mime_type ?? ''));
+
         return match ($mime) {
             'application/pdf' => 'pdf',
             'application/msword' => 'doc',
@@ -805,7 +840,7 @@ class MaterialAttachmentPreviewService
             return null;
         }
 
-        $workDir = $tempBaseDir . DIRECTORY_SEPARATOR . uniqid('lo_', true);
+        $workDir = $tempBaseDir.DIRECTORY_SEPARATOR.uniqid('lo_', true);
         if (! @mkdir($workDir, 0775, true) && ! is_dir($workDir)) {
             return null;
         }
@@ -835,7 +870,7 @@ class MaterialAttachmentPreviewService
                 return null;
             }
 
-            $expected = $workDir . DIRECTORY_SEPARATOR . pathinfo($absolutePath, PATHINFO_FILENAME) . '.pdf';
+            $expected = $workDir.DIRECTORY_SEPARATOR.pathinfo($absolutePath, PATHINFO_FILENAME).'.pdf';
             $pdfPath = is_file($expected)
                 ? $expected
                 : ($this->firstPdfInDirectory($workDir) ?? '');
@@ -851,6 +886,7 @@ class MaterialAttachmentPreviewService
 
             if (! @copy($pdfPath, $tempPdf)) {
                 @unlink($tempPdf);
+
                 return null;
             }
 
@@ -885,17 +921,19 @@ class MaterialAttachmentPreviewService
 
         $lines = preg_split('/\R/', trim($probe->getOutput())) ?: [];
         $line = trim((string) ($lines[0] ?? ''));
+
         return $line !== '' ? $line : $configured;
     }
 
     private function firstPdfInDirectory(string $directory): ?string
     {
-        $files = @glob($directory . DIRECTORY_SEPARATOR . '*.pdf');
+        $files = @glob($directory.DIRECTORY_SEPARATOR.'*.pdf');
         if (! is_array($files) || count($files) === 0) {
             return null;
         }
 
         $first = reset($files);
+
         return is_string($first) ? $first : null;
     }
 
@@ -908,6 +946,7 @@ class MaterialAttachmentPreviewService
         $items = @scandir($directory);
         if (! is_array($items)) {
             @rmdir($directory);
+
             return;
         }
 
@@ -916,7 +955,7 @@ class MaterialAttachmentPreviewService
                 continue;
             }
 
-            $path = $directory . DIRECTORY_SEPARATOR . $item;
+            $path = $directory.DIRECTORY_SEPARATOR.$item;
             if (is_dir($path)) {
                 $this->deleteDirectory($path);
             } else {
@@ -935,13 +974,15 @@ class MaterialAttachmentPreviewService
         }
 
         $withoutExt = pathinfo($clean, PATHINFO_FILENAME);
-        return ($withoutExt !== '' ? $withoutExt : 'Vorschau') . '.pdf';
+
+        return ($withoutExt !== '' ? $withoutExt : 'Vorschau').'.pdf';
     }
 
     private function fileSizeBytes($disk, string $relativePath): int
     {
         try {
             $size = (int) $disk->size($relativePath);
+
             return $size > 0 ? $size : 0;
         } catch (\Throwable) {
             return 0;

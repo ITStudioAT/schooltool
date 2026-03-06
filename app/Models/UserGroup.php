@@ -18,12 +18,17 @@ class UserGroup extends Model
         self::TYPE_OWN,
     ];
 
+    public const TEACHING_COURSE_GROUP_TYPE_STUDENTS = 'students';
+    public const TEACHING_COURSE_GROUP_TYPE_PARENTS = 'parents';
+
     protected $fillable = [
         'school_id',
         'type',
         'name',
         'description',
         'created_by_user_id',
+        'teaching_course_id',
+        'teaching_course_group_type',
     ];
 
     public function school(): BelongsTo
@@ -34,6 +39,11 @@ class UserGroup extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
+    public function teachingCourse(): BelongsTo
+    {
+        return $this->belongsTo(TeachingCourse::class);
     }
 
     public function members(): BelongsToMany

@@ -9,6 +9,7 @@
             @refresh="loadCards" />
 
         <MaterialsOverviewFilters
+            v-if="!isSharedSubjectsContentsSource"
             :action-disabled="isLoading || isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null"
             :badge-count-content="badgeCountContent"
             :subject-all-count="subjectAllCount"
@@ -47,12 +48,12 @@
             :is-status-filter-active="isStatusFilterActive"
             :toggle-status-filter="toggleStatusFilter" />
 
-        <v-alert type="info" variant="tonal" class="mb-4">
+        <v-alert v-if="!isSharedSubjectsContentsSource" type="info" variant="tonal" class="mb-4">
             {{ displayedMaterials }}/{{ totalMaterials }} Material{{ totalMaterials === 1 ? '' : 'ien' }} angezeigt.
             <span class="ml-2">• Speicher: angezeigt {{ shownListedAttachmentSizeLabel }} / alle {{ allListedAttachmentSizeLabel }}</span>
         </v-alert>
         <v-alert
-            v-if="deletedMaterialRestoreItems.length > 0 && !deletedMaterialRestoreHidden"
+            v-if="!isSharedSubjectsContentsSource && deletedMaterialRestoreItems.length > 0 && !deletedMaterialRestoreHidden"
             type="warning"
             variant="tonal"
             class="mb-4">
@@ -119,7 +120,7 @@
                 </v-list>
             </div>
         </v-alert>
-        <div v-if="deletedMaterialRestoreItems.length > 0 && deletedMaterialRestoreHidden" class="mb-4 d-flex justify-end">
+        <div v-if="!isSharedSubjectsContentsSource && deletedMaterialRestoreItems.length > 0 && deletedMaterialRestoreHidden" class="mb-4 d-flex justify-end">
             <v-btn
                 size="small"
                 color="warning"
@@ -132,12 +133,39 @@
         </div>
         <MaterialsOverviewSortBar v-if="!isSubjectsContentsOverview" :overview-sort-mode="overviewSortMode" @update:overview-sort-mode="setOverviewSortMode" />
 
-        <v-skeleton-loader v-if="isLoading && !hasCards" type="list-item-three-line@4" />
+        <v-skeleton-loader v-if="!isSharedSubjectsContentsSource && isLoading && !hasCards" type="list-item-three-line@4" />
 
         <template v-else-if="isSubjectsContentsOverview">
             <div class="d-flex flex-wrap align-center ga-2 mb-3">
+                <template v-if="showSubjectsContentsSourceToggle">
+                    <div class="subjects-source-switch">
+                    <v-btn
+                        class="subjects-source-switch__btn"
+                        :class="{ 'subjects-source-switch__btn--active': isWorkspaceSubjectsContentsSource }"
+                        size="small"
+                        color="primary"
+                        prepend-icon="mdi-briefcase-outline"
+                        :variant="isWorkspaceSubjectsContentsSource ? 'flat' : 'text'"
+                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                        @click="setSubjectsContentsSource('workspace')">
+                        Mein Workspace
+                    </v-btn>
+                    <v-btn
+                        class="subjects-source-switch__btn"
+                        :class="{ 'subjects-source-switch__btn--active': !isWorkspaceSubjectsContentsSource }"
+                        size="small"
+                        color="primary"
+                        prepend-icon="mdi-account-multiple-outline"
+                        :variant="!isWorkspaceSubjectsContentsSource ? 'flat' : 'text'"
+                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                        @click="setSubjectsContentsSource('shared')">
+                        Für mich freigegeben
+                    </v-btn>
+                    </div>
+                </template>
+                <v-spacer />
                 <v-btn
-                    v-if="!hideSubjectsOverviewPrintButton"
+                    v-if="isWorkspaceSubjectsContentsSource && !hideSubjectsOverviewPrintButton"
                     size="small"
                     color="primary"
                     variant="outlined"
@@ -148,30 +176,173 @@
                 </v-btn>
             </div>
 
-            <v-progress-linear v-if="isLoadingSubjectsContentsOverview" indeterminate color="primary" rounded class="mb-3" />
+            <template v-if="!isWorkspaceSubjectsContentsSource">
+                <v-progress-linear v-if="isLoadingSharedObjectsForMe" indeterminate color="primary" rounded class="mb-3" />
 
-            <v-alert v-else-if="!subjectsContentsOverviewItems.length" type="info" variant="tonal" class="mb-0">Keine Fachstruktur mit Materialien gefunden.</v-alert>
+                <v-alert v-else-if="sharedObjectsForMeError" type="error" variant="tonal" class="mb-0">
+                    {{ sharedObjectsForMeError }}
+                </v-alert>
 
-            <MaterialsSubjectsContentsTree
-                v-else
-                :items="subjectsContentsOverviewItems"
-                :action-busy="isLoading || isDeletingId !== null || isSavingEdit || isSavingCreate || isRemovingTreeClassification || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null"
-                :enable-share-buttons="enableShareButtons"
-                :enable-create-buttons="!readOnlyMaterialActions"
-                :enable-remove-buttons="!readOnlyMaterialActions"
-                :show-share-indicators="enableShareButtons"
-                :share-indicator-color-fn="shareIndicatorColor"
-                :status-color-fn="statusColor"
-                :status-label-fn="statusLabel"
-                :subject-group-style-fn="subjectGroupStyle"
-                :topic-group-style-fn="topicGroupStyle"
-                @open-material="openDetailDialog"
-                @open-share="openShareDialog"
-                @open-create="openCreateDialogFromTree"
-                @open-attachments="openAttachmentManager"
-                @unlink-linked-material="unlinkLinkedCard"
-                @unlink-linked-topic="unlinkLinkedTopic"
-                @unlink-linked-unit="unlinkLinkedUnit" />
+                <v-alert v-else-if="sharedObjectsForMeCards.length === 0" type="info" variant="tonal" class="mb-0">
+                    Es sind aktuell keine Freigaben für dich vorhanden.
+                </v-alert>
+
+                <v-row v-else dense class="shared-objects-grid">
+                    <v-col
+                        v-for="item in sharedObjectsForMeCards"
+                        :key="`shared-object-${item.ruleId}`"
+                        cols="12"
+                        :md="isSharedHierarchyOpen(item.ruleId) ? 12 : 6"
+                        :xl="isSharedHierarchyOpen(item.ruleId) ? 12 : 4">
+                        <v-card variant="outlined" class="shared-object-card h-100">
+                            <v-card-text class="d-flex flex-column ga-3">
+                                <div class="d-flex align-start justify-space-between ga-2">
+                                    <div>
+                                        <div class="text-subtitle-1 font-weight-bold">
+                                            {{ item.scopeObjectLabel }}
+                                        </div>
+                                        <div class="text-caption text-medium-emphasis">
+                                            {{ item.scopePathLabel }}
+                                        </div>
+                                    </div>
+                                    <v-chip size="x-small" variant="tonal" color="primary">
+                                        <v-icon start size="14">{{ sharedScopeIcon(item.scopeType) }}</v-icon>
+                                        {{ item.scopeLabel }}
+                                    </v-chip>
+                                </div>
+
+                                <div class="d-flex flex-wrap align-center ga-2">
+                                    <v-chip size="x-small" variant="flat" :color="sharedPermissionColor(item.permission)">
+                                        {{ item.permissionLabel }}
+                                    </v-chip>
+                                </div>
+
+                                <div class="text-body-2">
+                                    <span class="font-weight-medium">Von:</span>
+                                    {{ item.fromUserLabel }}
+                                    <span v-if="item.fromSchoolLabel" class="text-medium-emphasis"> · {{ item.fromSchoolLabel }}</span>
+                                </div>
+
+                                <div class="text-caption text-medium-emphasis">
+                                    Freigegeben: {{ formatDateTime(item.sharedAt) || '-' }}
+                                </div>
+
+                                <div v-if="item.materialsCount > 0" class="d-flex justify-end">
+                                    <v-btn
+                                        size="small"
+                                        variant="tonal"
+                                        color="primary"
+                                        @click.stop="toggleSharedHierarchy(item.ruleId)">
+                                        {{ isSharedHierarchyOpen(item.ruleId) ? 'Schließen' : 'Anzeigen' }}
+                                    </v-btn>
+                                </div>
+
+                                <v-expand-transition>
+                                    <div v-if="isSharedHierarchyOpen(item.ruleId)" class="inbox-hierarchy-card">
+                                        <div class="inbox-shared-object-title inbox-shared-object-title--all">Alle Materialien ({{ item.materialsCount }})</div>
+                                        <div v-if="item.hierarchy.length === 0" class="text-caption text-medium-emphasis">
+                                            Keine Hierarchie für diese Freigabe verfügbar.
+                                        </div>
+                                        <div v-else class="inbox-shared-hierarchy">
+                                            <div
+                                                v-for="subject in item.hierarchy"
+                                                :key="`shared-hier-subject-${item.ruleId}-${subject.id || subject.name}`"
+                                                class="inbox-hierarchy-subject">
+                                                <div class="inbox-hierarchy-subject-head inbox-hierarchy-level-subject">
+                                                    <div class="inbox-hierarchy-context-line">{{ subject.name }}</div>
+                                                </div>
+                                                <div
+                                                    v-for="topic in subject.topics"
+                                                    :key="`shared-hier-topic-${item.ruleId}-${topic.id || topic.name}`"
+                                                    class="inbox-hierarchy-topic inbox-hierarchy-level-topic">
+                                                    <div class="inbox-hierarchy-topic-head">
+                                                        <div class="inbox-hierarchy-topic-title">{{ topic.name }}</div>
+                                                    </div>
+                                                    <div
+                                                        v-for="unit in topic.units"
+                                                        :key="`shared-hier-unit-${item.ruleId}-${unit.id || unit.name}`"
+                                                        class="inbox-hierarchy-unit inbox-hierarchy-level-unit">
+                                                        <div class="inbox-hierarchy-unit-head">
+                                                            <div class="inbox-hierarchy-unit-title">{{ unit.name }}</div>
+                                                        </div>
+                                                        <div class="inbox-hierarchy-material-lines">
+                                                            <div
+                                                                v-for="material in unit.materials"
+                                                                :key="`shared-hier-material-${item.ruleId}-${material.id || material.title}`"
+                                                                class="inbox-hierarchy-material-line inbox-hierarchy-level-material">
+                                                                <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || undefined" />
+                                                                <span
+                                                                    class="inbox-hierarchy-material-title inbox-hierarchy-material-title-clickable"
+                                                                    role="button"
+                                                                    tabindex="0"
+                                                                    @click.stop="openSharedMaterialDetail(item.ruleId, material)"
+                                                                    @keydown.enter.stop.prevent="openSharedMaterialDetail(item.ruleId, material)"
+                                                                    @keydown.space.stop.prevent="openSharedMaterialDetail(item.ruleId, material)">
+                                                                    {{ material.title }}
+                                                                </span>
+                                                                <v-chip
+                                                                    v-if="material.typeLabel"
+                                                                    size="x-small"
+                                                                    variant="outlined"
+                                                                    :color="material.typeColor || 'primary'">
+                                                                    {{ material.typeLabel }}
+                                                                </v-chip>
+                                                                <span
+                                                                    v-if="material.attachmentsCount > 0"
+                                                                    class="inbox-hierarchy-material-count inbox-hierarchy-material-count-clickable"
+                                                                    role="button"
+                                                                    tabindex="0"
+                                                                    @click.stop="openSharedMaterialAttachments(item.ruleId, material)"
+                                                                    @keydown.enter.stop.prevent="openSharedMaterialAttachments(item.ruleId, material)"
+                                                                    @keydown.space.stop.prevent="openSharedMaterialAttachments(item.ruleId, material)">
+                                                                    <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
+                                                                    {{ material.attachmentsCount }}
+                                                                </span>
+                                                                <v-chip
+                                                                    size="x-small"
+                                                                    variant="tonal"
+                                                                    :color="material.statusColor || statusColor(material.status)">
+                                                                    {{ material.statusLabel || statusLabel(material.status) }}
+                                                                </v-chip>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </v-expand-transition>
+                            </v-card-text>
+                        </v-card>
+                    </v-col>
+                </v-row>
+            </template>
+            <template v-else>
+                <v-progress-linear v-if="isLoadingSubjectsContentsOverview" indeterminate color="primary" rounded class="mb-3" />
+
+                <v-alert v-else-if="!subjectsContentsOverviewItems.length" type="info" variant="tonal" class="mb-0">Keine Fachstruktur mit Materialien gefunden.</v-alert>
+
+                <MaterialsSubjectsContentsTree
+                    v-else
+                    :items="subjectsContentsOverviewItems"
+                    :action-busy="isLoading || isDeletingId !== null || isSavingEdit || isSavingCreate || isRemovingTreeClassification || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null"
+                    :enable-share-buttons="enableShareButtons"
+                    :enable-create-buttons="!readOnlyMaterialActions"
+                    :enable-remove-buttons="!readOnlyMaterialActions"
+                    :show-share-indicators="enableShareButtons"
+                    :share-indicator-color-fn="shareIndicatorColor"
+                    :status-color-fn="statusColor"
+                    :status-label-fn="statusLabel"
+                    :subject-group-style-fn="subjectGroupStyle"
+                    :topic-group-style-fn="topicGroupStyle"
+                    @open-material="openDetailDialog"
+                    @open-share="openShareDialog"
+                    @open-create="openCreateDialogFromTree"
+                    @open-attachments="openAttachmentManager"
+                    @unlink-linked-material="unlinkLinkedCard"
+                    @unlink-linked-topic="unlinkLinkedTopic"
+                    @unlink-linked-unit="unlinkLinkedUnit" />
+            </template>
         </template>
 
         <template v-else-if="hasCards">
@@ -455,7 +626,7 @@
         :card="detailDialogCard"
         :is-deleting="isDeletingDetail"
         :is-saving-edit="isSavingEdit"
-        :read-only-material-actions="readOnlyMaterialActions"
+        :read-only-material-actions="detailDialogReadOnlyActions"
         :delete-step="detailDeleteStep"
         :close-dialog-fn="closeDetailDialog"
         :status-color-fn="statusColor"
@@ -833,6 +1004,10 @@
         </v-card>
     </v-dialog>
 
+    <MaterialShareDraftDialog
+        v-model="shareDummyDialogOpen"
+        :target="shareTarget" />
+
     <MaterialShareDialog
         v-model="shareDialogOpen"
         :target="shareTarget"
@@ -863,6 +1038,7 @@ import MaterialsOverviewPagination from '../overview/MaterialsOverviewPagination
 import MaterialsOverviewSortBar from '../overview/MaterialsOverviewSortBar.vue'
 import MaterialsSubjectsContentsTree from '../overview/MaterialsSubjectsContentsTree.vue'
 import MaterialDetailDialog from '../overview/dialogs/MaterialDetailDialog.vue'
+import MaterialShareDraftDialog from '../overview/dialogs/MaterialShareDraftDialog.vue'
 import MaterialShareDialog from '../overview/dialogs/MaterialShareDialog.vue'
 
 const FilePond = vueFilePond(FilePondPluginFileValidateType)
@@ -906,6 +1082,10 @@ export default {
             type: Boolean,
             default: false,
         },
+        disableSharingFeatures: {
+            type: Boolean,
+            default: false,
+        },
     },
     components: {
         FilePond,
@@ -921,6 +1101,7 @@ export default {
         MaterialsOverviewSortBar,
         MaterialsSubjectsContentsTree,
         MaterialDetailDialog,
+        MaterialShareDraftDialog,
         MaterialShareDialog,
     },
     data() {
@@ -939,11 +1120,17 @@ export default {
             attachmentDialogOpen: false,
             attachmentDialogCardId: null,
             attachmentDialogCardTitle: '',
+            attachmentDialogCardContext: null,
             attachmentRows: [],
             isUploadingAttachment: false,
             csrfToken: null,
             overviewViewMode: 'list',
             overviewSortMode: 'date',
+            subjectsContentsSource: 'workspace',
+            isLoadingSharedObjectsForMe: false,
+            sharedObjectsForMeError: '',
+            sharedObjectsForMeCards: [],
+            openSharedHierarchyCards: {},
             isLoadingSubjectsContentsOverview: false,
             subjectsContentsOverviewItems: [],
             subjectsContentsOverviewSnapshotKey: '',
@@ -967,6 +1154,7 @@ export default {
             detailDialogOpen: false,
             detailDialogLoading: false,
             detailDialogCard: null,
+            detailDialogReadOnlyMode: false,
             detailDeleteStep: 0,
             editDeleteStep: 0,
             editDeleteConfirmDialogOpen: false,
@@ -985,6 +1173,7 @@ export default {
             attachmentDeleteArmedIds: [],
             attachmentNameEditingIds: [],
             allListedAttachmentBytes: null,
+            allListedAttachmentBytesLoaded: false,
             allListedAttachmentBytesLoading: false,
             allListedAttachmentBytesRequestId: 0,
             filterCountCards: [],
@@ -1000,6 +1189,7 @@ export default {
             textAttachmentEditorBodyHtml: '',
             textAttachmentEditorError: '',
             shareDialogOpen: false,
+            shareDummyDialogOpen: false,
             shareAssignmentsLoading: false,
             shareAssignmentsError: '',
             shareAssignments: [],
@@ -1049,6 +1239,9 @@ export default {
         hasCards() {
             return this.cards.length > 0
         },
+        detailDialogReadOnlyActions() {
+            return this.readOnlyMaterialActions || this.detailDialogReadOnlyMode
+        },
         sortedCards() {
             const list = Array.isArray(this.cards) ? [...this.cards] : []
             if (this.overviewSortMode === 'name') {
@@ -1089,6 +1282,18 @@ export default {
         },
         isSubjectsContentsOverview() {
             return this.overviewViewMode === 'subjects_contents'
+        },
+        showSubjectsContentsSourceToggle() {
+            return this.isSubjectsContentsOverview && this.canSelectSubjectsContentsSource()
+        },
+        isWorkspaceSubjectsContentsSource() {
+            if (!this.canSelectSubjectsContentsSource()) {
+                return true
+            }
+            return this.subjectsContentsSource === 'workspace'
+        },
+        isSharedSubjectsContentsSource() {
+            return this.isSubjectsContentsOverview && !this.isWorkspaceSubjectsContentsSource
         },
         currentMetaPage() {
             const value = Number(this.materialCardStore?.meta?.current_page || this.currentPage)
@@ -1173,7 +1378,17 @@ export default {
         attachmentDialogCard() {
             const cardId = Number(this.attachmentDialogCardId)
             if (!Number.isFinite(cardId) || cardId <= 0) return null
-            return this.cards.find((card) => Number(card?.id) === cardId) || null
+            const cardFromOverview = this.cards.find((card) => Number(card?.id) === cardId)
+            if (cardFromOverview) {
+                return cardFromOverview
+            }
+
+            const contextCardId = Number(this.attachmentDialogCardContext?.id)
+            if (Number.isFinite(contextCardId) && contextCardId === cardId) {
+                return this.attachmentDialogCardContext
+            }
+
+            return null
         },
         attachmentDialogCanEditFields() {
             return this.cardAllowsFieldEditing(this.attachmentDialogCard)
@@ -1557,7 +1772,6 @@ export default {
     },
     methods: {
         openShareDialog(target = {}) {
-            if (!this.enableShareButtons) return
             this.shareTarget = {
                 level: String(target?.level || '').trim(),
                 id: Number.isFinite(Number(target?.id)) ? Number(target.id) : null,
@@ -1569,6 +1783,14 @@ export default {
                 statusColor: String(target?.statusColor || '').trim(),
                 attachmentsCount: Number.isFinite(Number(target?.attachmentsCount)) ? Number(target.attachmentsCount) : null,
             }
+
+            if (!this.enableShareButtons) {
+                this.shareDialogOpen = false
+                this.shareDummyDialogOpen = true
+                return
+            }
+
+            this.shareDummyDialogOpen = false
             this.shareAssignments = []
             this.shareAssignmentsError = ''
             this.shareDialogOpen = true
@@ -1706,6 +1928,7 @@ export default {
         shareScopeType(level) {
             return (
                 {
+                    all: 'all',
                     subject: 'subject',
                     topic: 'topic',
                     unit: 'unit',
@@ -1716,7 +1939,31 @@ export default {
         async loadShareAssignments() {
             const scopeType = this.shareScopeType(this.shareTarget.level)
             const scopeId = Number(this.shareTarget.id || 0)
-            if (!scopeType || scopeId <= 0) {
+            if (!scopeType) {
+                this.shareAssignments = []
+                return
+            }
+
+            if (scopeType === 'all') {
+                this.shareAssignmentsLoading = true
+                this.shareAssignmentsError = ''
+                try {
+                    const response = await axios.get('/api/admin/materials/shares', {
+                        params: {
+                            scope_type: 'all',
+                        },
+                    })
+                    this.shareAssignments = Array.isArray(response.data?.data) ? response.data.data : []
+                } catch (error) {
+                    this.shareAssignments = []
+                    this.shareAssignmentsError = error?.response?.data?.message || 'Freigaben konnten nicht geladen werden.'
+                } finally {
+                    this.shareAssignmentsLoading = false
+                }
+                return
+            }
+
+            if (scopeId <= 0) {
                 this.shareAssignments = []
                 return
             }
@@ -1748,6 +1995,9 @@ export default {
                 return
             }
             this.overviewViewMode = nextMode
+            if (nextMode === 'subjects_contents' && this.canSelectSubjectsContentsSource()) {
+                this.subjectsContentsSource = 'workspace'
+            }
             try {
                 window?.localStorage?.setItem?.('materials.overview.mode', nextMode)
             } catch {
@@ -1755,6 +2005,292 @@ export default {
             }
             if (nextMode === 'subjects_contents') {
                 this.loadSubjectsContentsOverview({ force: true })
+            }
+        },
+        canSelectSubjectsContentsSource() {
+            if (this.disableSharingFeatures) {
+                return false
+            }
+
+            return String(this.forcedOverviewMode || '').trim() === ''
+        },
+        setSubjectsContentsSource(value) {
+            if (!this.canSelectSubjectsContentsSource()) {
+                this.subjectsContentsSource = 'workspace'
+                return
+            }
+
+            if (value !== 'workspace' && value !== 'shared') {
+                return
+            }
+
+            const nextSource = String(value)
+            if (nextSource === this.subjectsContentsSource) {
+                return
+            }
+
+            this.subjectsContentsSource = nextSource
+
+            if (nextSource === 'workspace' && this.isSubjectsContentsOverview) {
+                this.loadSubjectsContentsOverview({ force: true })
+                return
+            }
+            if (nextSource === 'shared' && this.isSubjectsContentsOverview) {
+                this.loadSharedObjectsForMe()
+            }
+        },
+        sharedScopeIcon(scopeType) {
+            const normalized = String(scopeType || '').trim().toLocaleLowerCase()
+            if (normalized === 'all') return 'mdi-briefcase-outline'
+            if (normalized === 'subject') return 'mdi-book-open-page-variant-outline'
+            if (normalized === 'topic') return 'mdi-shape-outline'
+            if (normalized === 'unit') return 'mdi-bookmark-outline'
+            if (normalized === 'material') return 'mdi-file-document-outline'
+            return 'mdi-share-variant-outline'
+        },
+        sharedPermissionColor(permission) {
+            const normalized = String(permission || '').trim().toLocaleLowerCase()
+            if (normalized === 'full_access') return 'error'
+            if (normalized === 'read_write') return 'warning'
+            return 'primary'
+        },
+        normalizeSharedObjectsForMeResponse(rows) {
+            if (!Array.isArray(rows)) return []
+
+            const cards = []
+            for (const userRow of rows) {
+                const fromUserLabel =
+                    String(userRow?.label || '').trim() ||
+                    String(userRow?.email || '').trim() ||
+                    'Benutzer'
+                const fromSchoolLabel = String(userRow?.school_label || '').trim()
+                const fallbackSharedAt = String(userRow?.last_shared_at || '').trim()
+                const sharedItems = Array.isArray(userRow?.shared_items) ? userRow.shared_items : []
+
+                for (const item of sharedItems) {
+                    const ruleId = Number(item?.rule_id || 0)
+                    if (!Number.isFinite(ruleId) || ruleId <= 0 || item?.is_archived) {
+                        continue
+                    }
+
+                    const scopeType = String(item?.scope_type || '').trim() || 'all'
+                    const scopeLabel = String(item?.scope_label || '').trim() || 'Bereich'
+                    const scopeObjectLabel = String(item?.scope_object_label || '').trim() || 'Freigabe'
+                    const scopePathLabel = String(item?.scope_path_label || '').trim() || ''
+                    const permission = String(item?.permission || '').trim() || 'read_only'
+                    const permissionLabel = String(item?.permission_label || '').trim() || 'NUR LESEN'
+                    const sharedAt = String(item?.updated_at || '').trim() || fallbackSharedAt
+                    const hierarchy = this.normalizeSharedHierarchy(item?.hierarchy)
+                    const materialsCount = this.sharedHierarchyMaterialCount(hierarchy)
+
+                    cards.push({
+                        ruleId,
+                        scopeType,
+                        scopeLabel,
+                        scopeObjectLabel,
+                        scopePathLabel,
+                        permission,
+                        permissionLabel,
+                        sharedAt,
+                        fromUserLabel,
+                        fromSchoolLabel,
+                        hierarchy,
+                        materialsCount,
+                    })
+                }
+            }
+
+            cards.sort((left, right) => {
+                const leftTime = Date.parse(String(left?.sharedAt || '')) || 0
+                const rightTime = Date.parse(String(right?.sharedAt || '')) || 0
+                if (leftTime !== rightTime) {
+                    return rightTime - leftTime
+                }
+                return Number(right?.ruleId || 0) - Number(left?.ruleId || 0)
+            })
+
+            return cards
+        },
+        normalizeSharedHierarchy(hierarchy) {
+            if (!Array.isArray(hierarchy)) return []
+
+            return hierarchy.map((subject) => ({
+                id: Number(subject?.id || 0),
+                name: String(subject?.name || '').trim() || 'Ohne Fach',
+                topics: Array.isArray(subject?.topics)
+                    ? subject.topics.map((topic) => ({
+                        id: Number(topic?.id || 0),
+                        name: String(topic?.name || '').trim() || 'Ohne Thema',
+                        units: Array.isArray(topic?.units)
+                            ? topic.units.map((unit) => ({
+                                id: Number(unit?.id || 0),
+                                name: String(unit?.name || '').trim() || 'Ohne Einheit',
+                                materials: Array.isArray(unit?.materials) ? unit.materials.map((material) => this.normalizeSharedHierarchyMaterial(material)) : [],
+                            }))
+                            : [],
+                    }))
+                    : [],
+            }))
+        },
+        normalizeSharedHierarchyMaterial(material) {
+            return {
+                id: Number(material?.id || 0),
+                title: String(material?.title || '').trim() || 'Material',
+                icon: String(material?.icon || '').trim(),
+                typeLabel: String(material?.type_label || material?.typeLabel || material?.type || '').trim(),
+                typeColor: String(material?.type_color || material?.typeColor || '').trim(),
+                status: String(material?.status || '').trim(),
+                statusLabel: String(material?.status_label || material?.statusLabel || '').trim(),
+                statusColor: String(material?.status_color || material?.statusColor || '').trim(),
+                attachmentsCount: Math.max(0, Number(material?.attachments_count ?? material?.attachmentsCount ?? 0) || 0),
+                attachments: Array.isArray(material?.attachments) ? material.attachments.map((attachment) => ({ ...attachment })) : null,
+            }
+        },
+        async fetchSharedMaterialAttachments(ruleId, materialId) {
+            const response = await axios.get('/api/admin/materials/shares/inbox/material-attachments', {
+                params: {
+                    rule_id: Number(ruleId),
+                    material_id: Number(materialId),
+                },
+            })
+            return Array.isArray(response?.data?.data) ? response.data.data : []
+        },
+        async fetchSharedMaterialDetail(ruleId, materialId) {
+            const response = await axios.get('/api/admin/materials/shares/inbox/material-detail', {
+                params: {
+                    rule_id: Number(ruleId),
+                    material_id: Number(materialId),
+                },
+            })
+            return response?.data?.data || null
+        },
+        async openSharedMaterialDetail(ruleId, material) {
+            const normalizedRuleId = Number(ruleId)
+            const cardId = Number(material?.id)
+            if (!Number.isFinite(normalizedRuleId) || normalizedRuleId <= 0) return
+            if (!Number.isFinite(cardId) || cardId <= 0) return
+
+            this.detailDialogCard = this.sanitizeDialogCard({
+                id: cardId,
+                title: String(material?.title || '').trim() || 'Material',
+                attachments: [],
+                classifications: [],
+                is_linked: true,
+                linked_permission: 'read_only',
+                linked_permission_label: 'NUR LESEN',
+            })
+            this.detailDialogReadOnlyMode = true
+            this.detailDialogOpen = true
+            this.detailDialogLoading = true
+            this.detailDeleteStep = 0
+
+            try {
+                const detail = await this.fetchSharedMaterialDetail(normalizedRuleId, cardId)
+                if (!this.detailDialogOpen) return
+                if (Number(this.detailDialogCard?.id || 0) !== cardId) return
+                if (detail && typeof detail === 'object') {
+                    this.detailDialogCard = this.sanitizeDialogCard(detail)
+                }
+            } catch (error) {
+                const notification = useNotificationStore()
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Material-Details konnten nicht geladen werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+            } finally {
+                this.detailDialogLoading = false
+            }
+        },
+        async openSharedMaterialAttachments(ruleId, material) {
+            const normalizedRuleId = Number(ruleId)
+            const cardId = Number(material?.id)
+            if (!Number.isFinite(normalizedRuleId) || normalizedRuleId <= 0) return
+            if (!Number.isFinite(cardId) || cardId <= 0) return
+
+            let attachments = []
+            try {
+                attachments = await this.fetchSharedMaterialAttachments(normalizedRuleId, cardId)
+            } catch (error) {
+                const notification = useNotificationStore()
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Anhänge konnten nicht geladen werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return
+            }
+
+            await this.openAttachmentManager({
+                id: cardId,
+                title: String(material?.title || '').trim() || 'Material',
+                attachments,
+                is_linked: true,
+                linked_permission: 'read_only',
+                linked_permission_label: 'NUR LESEN',
+            })
+        },
+        sharedHierarchyMaterialCount(hierarchy) {
+            if (!Array.isArray(hierarchy)) return 0
+
+            let count = 0
+            for (const subject of hierarchy) {
+                const topics = Array.isArray(subject?.topics) ? subject.topics : []
+                for (const topic of topics) {
+                    const units = Array.isArray(topic?.units) ? topic.units : []
+                    for (const unit of units) {
+                        const materials = Array.isArray(unit?.materials) ? unit.materials : []
+                        count += materials.length
+                    }
+                }
+            }
+
+            return count
+        },
+        sharedHierarchyKey(ruleId) {
+            return `shared-rule-${Number(ruleId || 0)}`
+        },
+        isSharedHierarchyOpen(ruleId) {
+            const key = this.sharedHierarchyKey(ruleId)
+            return key ? !!this.openSharedHierarchyCards[key] : false
+        },
+        toggleSharedHierarchy(ruleId) {
+            const key = this.sharedHierarchyKey(ruleId)
+            if (!key) return
+            const isOpen = !!this.openSharedHierarchyCards[key]
+            const next = { ...this.openSharedHierarchyCards }
+            if (isOpen) {
+                delete next[key]
+            } else {
+                next[key] = true
+            }
+            this.openSharedHierarchyCards = next
+        },
+        async loadSharedObjectsForMe() {
+            this.isLoadingSharedObjectsForMe = true
+            this.sharedObjectsForMeError = ''
+            const previousOpenHierarchyCards = { ...this.openSharedHierarchyCards }
+            try {
+                const response = await axios.get('/api/admin/materials/shares/inbox-users')
+                const rows = Array.isArray(response?.data?.data) ? response.data.data : []
+                const nextCards = this.normalizeSharedObjectsForMeResponse(rows)
+                const nextOpenHierarchyCards = {}
+                for (const card of nextCards) {
+                    const key = this.sharedHierarchyKey(card?.ruleId)
+                    if (key && previousOpenHierarchyCards[key]) {
+                        nextOpenHierarchyCards[key] = true
+                    }
+                }
+                this.sharedObjectsForMeCards = nextCards
+                this.openSharedHierarchyCards = nextOpenHierarchyCards
+            } catch (error) {
+                this.sharedObjectsForMeCards = []
+                this.openSharedHierarchyCards = {}
+                this.sharedObjectsForMeError = error?.response?.data?.message || 'Freigaben konnten nicht geladen werden.'
+            } finally {
+                this.isLoadingSharedObjectsForMe = false
             }
         },
         openSubjectsOverviewScreen() {
@@ -1848,7 +2384,7 @@ export default {
                 this.currentPage = Math.max(1, Math.round(currentPage))
                 const forceFilterCountRefresh = options?.forceFilterCountRefresh === true
                 this.refreshFilterCountCards({ force: forceFilterCountRefresh })
-                this.refreshAllListedAttachmentBytes()
+                this.refreshAllListedAttachmentBytes({ force: forceFilterCountRefresh })
                 if (this.isSubjectsContentsOverview) {
                     await this.loadSubjectsContentsOverview({ force: true })
                 }
@@ -2369,7 +2905,11 @@ export default {
                 return sum + bytes
             }, 0)
         },
-        async refreshAllListedAttachmentBytes() {
+        async refreshAllListedAttachmentBytes({ force = false } = {}) {
+            if (!force && this.allListedAttachmentBytesLoaded) {
+                return
+            }
+
             const requestId = this.allListedAttachmentBytesRequestId + 1
             this.allListedAttachmentBytesRequestId = requestId
 
@@ -2379,8 +2919,10 @@ export default {
 
             if (Array.isArray(snapshot)) {
                 this.allListedAttachmentBytes = this.calculateAttachmentBytesForCards(snapshot)
+                this.allListedAttachmentBytesLoaded = true
             } else {
                 this.allListedAttachmentBytes = null
+                this.allListedAttachmentBytesLoaded = false
             }
             this.allListedAttachmentBytesLoading = false
         },
@@ -3127,6 +3669,7 @@ export default {
             const cardId = Number(card?.id)
             if (!Number.isFinite(cardId) || cardId <= 0) return
 
+            this.detailDialogReadOnlyMode = false
             this.detailDialogCard = this.sanitizeDialogCard(card)
             this.detailDialogOpen = true
             this.detailDialogLoading = true
@@ -3151,6 +3694,7 @@ export default {
             this.detailDialogOpen = false
             this.detailDialogLoading = false
             this.detailDialogCard = null
+            this.detailDialogReadOnlyMode = false
             this.detailDeleteStep = 0
             this.returnToDetailOnEditCancel = false
             this.detailCardForEditReturn = null
@@ -3160,6 +3704,7 @@ export default {
         },
         openEditFromDetail() {
             if (!this.detailDialogCard || this.detailDialogLoading || this.isDeletingDetail) return
+            if (this.detailDialogReadOnlyActions) return
 
             const card = this.sanitizeDialogCard(this.detailDialogCard)
             if (!card) return
@@ -3927,6 +4472,9 @@ export default {
                         file_path: String(attachment?.file_path || '').trim(),
                         mime_type: String(attachment?.mime_type || '').trim(),
                         size_bytes: Number(attachment?.size_bytes || 0),
+                        shared_rule_id: Number(attachment?.shared_rule_id || 0) || null,
+                        shared_material_id: Number(attachment?.shared_material_id || 0) || null,
+                        download_docx_url: String(attachment?.download_docx_url || '').trim(),
                     }
                 })
                 .filter(Boolean)
@@ -4118,6 +4666,7 @@ ${content}
             const cardId = Number(card?.id)
             if (!Number.isFinite(cardId) || cardId <= 0) return
 
+            this.attachmentDialogCardContext = this.sanitizeDialogCard(card)
             this.attachmentDialogCardId = cardId
             this.attachmentDialogCardTitle = String(card?.title || '').trim()
             this.attachmentRows = this.toAttachmentRows(card?.attachments)
@@ -4136,6 +4685,7 @@ ${content}
             this.closeTextAttachmentEditor()
             this.attachmentDialogCardId = null
             this.attachmentDialogCardTitle = ''
+            this.attachmentDialogCardContext = null
             this.attachmentRows = []
             this.attachmentDeleteArmedIds = []
             this.attachmentNameEditingIds = []
@@ -4167,6 +4717,7 @@ ${content}
 
             const selectedCard = this.materialCardStore?.selected_card
             if (Number(selectedCard?.id) === id) {
+                this.attachmentDialogCardContext = this.sanitizeDialogCard(selectedCard)
                 this.mergeCardIntoOverview(selectedCard)
                 this.attachmentRows = this.toAttachmentRows(selectedCard?.attachments)
                 const nextTitle = String(selectedCard?.title || '').trim()
@@ -4181,6 +4732,7 @@ ${content}
 
             const refreshedCard = this.materialCardStore?.selected_card
             if (Number(refreshedCard?.id) !== id) return
+            this.attachmentDialogCardContext = this.sanitizeDialogCard(refreshedCard)
             this.mergeCardIntoOverview(refreshedCard)
             this.attachmentRows = this.toAttachmentRows(refreshedCard?.attachments)
             const nextTitle = String(refreshedCard?.title || '').trim()
@@ -4684,16 +5236,45 @@ ${content}
         },
         async downloadAttachment(attachment) {
             const id = Number(attachment?.id)
-            const downloadUrl = String(attachment?.download_url || '').trim()
-            if (!Number.isFinite(id) || id <= 0 || !downloadUrl) return
+            const initialDownloadUrl = String(attachment?.download_url || '').trim()
+            if (!Number.isFinite(id) || id <= 0) return
+            if (!initialDownloadUrl) {
+                const notification = useNotificationStore()
+                notification.notify({
+                    message: 'Datei ist derzeit nicht verfügbar.',
+                    type: 'warning',
+                    timeout: 3000,
+                })
+                return
+            }
             if (this.isDownloadingAttachment(id)) return
 
             this.markAttachmentDownloading(id, true)
 
             try {
-                const response = await axios.get(downloadUrl, {
+                let response = null
+                let downloadUrl = initialDownloadUrl
+
+                const downloadOnce = async (url) => axios.get(url, {
                     responseType: 'blob',
                 })
+
+                try {
+                    response = await downloadOnce(downloadUrl)
+                } catch (error) {
+                    const isNotFound = Number(error?.response?.status || 0) === 404
+                    if (!isNotFound) {
+                        throw error
+                    }
+
+                    const refreshedDownloadUrl = await this.refreshSharedAttachmentDownloadUrl(attachment)
+                    if (!refreshedDownloadUrl) {
+                        throw error
+                    }
+
+                    downloadUrl = refreshedDownloadUrl
+                    response = await downloadOnce(downloadUrl)
+                }
 
                 const disposition = response?.headers?.['content-disposition']
                 const serverFileName = this.filenameFromContentDisposition(disposition)
@@ -4711,9 +5292,13 @@ ${content}
                 URL.revokeObjectURL(objectUrl)
             } catch (error) {
                 const notification = useNotificationStore()
+                const status = Number(error?.response?.status || 0)
+                const isNotFound = status === 404
                 notification.notify({
-                    status: error.response?.status,
-                    message: error.response?.data?.message || 'Datei konnte nicht heruntergeladen werden.',
+                    status: status || error.response?.status,
+                    message: isNotFound
+                        ? 'Datei ist derzeit nicht verfügbar.'
+                        : error.response?.data?.message || 'Datei konnte nicht heruntergeladen werden.',
                     type: 'error',
                     timeout: 3000,
                 })
@@ -4721,12 +5306,45 @@ ${content}
                 this.markAttachmentDownloading(id, false)
             }
         },
+        async refreshSharedAttachmentDownloadUrl(attachment) {
+            const ruleId = Number(attachment?.shared_rule_id || 0)
+            const materialId = Number(attachment?.shared_material_id || 0)
+            const currentId = Number(attachment?.id || 0)
+            if (!Number.isFinite(ruleId) || ruleId <= 0) return ''
+            if (!Number.isFinite(materialId) || materialId <= 0) return ''
+            if (!Number.isFinite(currentId) || currentId <= 0) return ''
+
+            const freshAttachments = await this.fetchSharedMaterialAttachments(ruleId, materialId)
+            if (!Array.isArray(freshAttachments) || freshAttachments.length === 0) {
+                return ''
+            }
+
+            const directMatch = freshAttachments.find((row) => Number(row?.id || 0) === currentId) || null
+            const nameFallback = String(attachment?.name || '').trim()
+            const fallbackMatch = !directMatch && nameFallback !== ''
+                ? freshAttachments.find((row) => String(row?.name || '').trim() === nameFallback) || null
+                : null
+            const target = directMatch || fallbackMatch
+            if (!target) {
+                return ''
+            }
+
+            const nextDownloadUrl = String(target?.download_url || '').trim()
+            const nextPreviewUrl = String(target?.preview_url || '').trim()
+            const nextDocxUrl = String(target?.download_docx_url || '').trim()
+
+            attachment.download_url = nextDownloadUrl
+            attachment.preview_url = nextPreviewUrl
+            attachment.download_docx_url = nextDocxUrl
+
+            return nextDownloadUrl
+        },
         async downloadAttachmentDocx(attachment) {
             const id = Number(attachment?.id)
             if (!Number.isFinite(id) || id <= 0) return
             if (this.isDownloadingAttachment(id)) return
 
-            const downloadUrl = `/api/admin/materials/attachments/${id}/download-docx`
+            const downloadUrl = String(attachment?.download_docx_url || '').trim() || `/api/admin/materials/attachments/${id}/download-docx`
             this.markAttachmentDownloading(id, true)
 
             try {
@@ -4763,8 +5381,21 @@ ${content}
         },
         async previewAttachment(attachment) {
             const id = Number(attachment?.id)
-            const previewUrl = String(attachment?.preview_url || attachment?.download_url || '').trim()
-            if (!Number.isFinite(id) || id <= 0 || !previewUrl) return
+            let previewUrl = String(attachment?.preview_url || attachment?.download_url || '').trim()
+            if (!Number.isFinite(id) || id <= 0) return
+            if (!previewUrl) {
+                await this.refreshSharedAttachmentDownloadUrl(attachment)
+                previewUrl = String(attachment?.preview_url || attachment?.download_url || '').trim()
+            }
+            if (!previewUrl) {
+                const notification = useNotificationStore()
+                notification.notify({
+                    message: 'Datei ist derzeit nicht verfügbar.',
+                    type: 'warning',
+                    timeout: 3000,
+                })
+                return
+            }
             if (this.isPreviewingAttachment(id)) return
 
             const previewWindow = window.open('about:blank', '_blank')
@@ -4788,9 +5419,29 @@ ${content}
                     // noop
                 }
 
-                const response = await axios.get(previewUrl, {
-                    responseType: 'blob',
-                })
+                let response = null
+                const previewOnce = async (url) =>
+                    axios.get(url, {
+                        responseType: 'blob',
+                    })
+
+                try {
+                    response = await previewOnce(previewUrl)
+                } catch (error) {
+                    const isNotFound = Number(error?.response?.status || 0) === 404
+                    if (!isNotFound) {
+                        throw error
+                    }
+
+                    await this.refreshSharedAttachmentDownloadUrl(attachment)
+                    const refreshedPreviewUrl = String(attachment?.preview_url || attachment?.download_url || '').trim()
+                    if (!refreshedPreviewUrl) {
+                        throw error
+                    }
+
+                    previewUrl = refreshedPreviewUrl
+                    response = await previewOnce(previewUrl)
+                }
 
                 const contentType = String(response?.headers?.['content-type'] || '').trim()
                 const blob =
@@ -4813,9 +5464,13 @@ ${content}
                 }
 
                 const notification = useNotificationStore()
+                const status = Number(error?.response?.status || 0)
                 notification.notify({
-                    status: error.response?.status,
-                    message: error.response?.data?.message || 'Vorschau konnte nicht geladen werden.',
+                    status: status || error.response?.status,
+                    message:
+                        status === 404
+                            ? 'Datei ist derzeit nicht verfügbar.'
+                            : error.response?.data?.message || 'Vorschau konnte nicht geladen werden.',
                     type: 'error',
                     timeout: 3000,
                 })
@@ -4825,7 +5480,16 @@ ${content}
         },
         fileAttachments(card) {
             const attachments = Array.isArray(card?.attachments) ? card.attachments : []
-            return attachments.filter((attachment) => String(attachment?.attachment_type || '').trim() === 'file' && String(attachment?.download_url || '').trim() !== '')
+            return attachments.filter((attachment) => {
+                const isFile = String(attachment?.attachment_type || '').trim() === 'file'
+                if (!isFile) {
+                    return false
+                }
+
+                const hasDownloadUrl = String(attachment?.download_url || '').trim() !== ''
+                const hasPreviewUrl = String(attachment?.preview_url || '').trim() !== ''
+                return hasDownloadUrl || hasPreviewUrl
+            })
         },
         cardAttachmentTotalBytes(card) {
             const attachments = Array.isArray(card?.attachments) ? card.attachments : []
@@ -4972,6 +5636,192 @@ ${content}
 
 .overview-sort-toggle {
     max-width: 100%;
+}
+
+.subjects-source-switch {
+    display: inline-flex;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 999px;
+    border: 1px solid rgba(35, 61, 76, 0.14);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.84) 0%, rgba(245, 236, 228, 0.74) 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+.subjects-source-switch__btn {
+    border-radius: 999px;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 600;
+}
+
+.subjects-source-switch__btn--active {
+    box-shadow: 0 6px 16px rgba(35, 61, 76, 0.2);
+}
+
+.shared-objects-grid {
+    margin: 0;
+}
+
+.shared-object-card {
+    border-color: rgba(35, 61, 76, 0.18) !important;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0.66) 100%);
+}
+
+.materials-shell {
+    --inbox-font-all-materials: clamp(18px, 1rem + 1vw, 24px);
+    --inbox-font-subject: clamp(16px, 0.9rem + 0.65vw, 20px);
+    --inbox-font-topic: clamp(14px, 0.82rem + 0.45vw, 16px);
+    --inbox-font-unit: clamp(11px, 0.64rem + 0.2vw, 12px);
+    --inbox-font-material: var(--inbox-font-unit);
+}
+
+.inbox-shared-object-title {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: var(--inbox-font-topic);
+    font-weight: 700;
+    color: #233d4c;
+    line-height: 1.25;
+    margin-top: 2px;
+}
+
+.inbox-shared-object-title--all {
+    font-size: var(--inbox-font-all-materials);
+}
+
+.inbox-shared-hierarchy {
+    margin-top: 8px;
+    padding: 10px;
+    --inbox-hierarchy-indent-step: clamp(0.7rem, 1.2vw, 1.1rem);
+    --inbox-hierarchy-guide-color: rgba(31, 111, 139, 0.22);
+}
+
+.inbox-hierarchy-card {
+    margin-top: 8px;
+    background: rgba(255, 255, 255, 0.68);
+    border: 1px solid rgba(35, 61, 76, 0.16);
+    border-radius: 10px;
+}
+
+.inbox-hierarchy-subject + .inbox-hierarchy-subject {
+    margin-top: 10px;
+}
+
+.inbox-hierarchy-topic {
+    margin-top: 6px;
+}
+
+.inbox-hierarchy-subject-head {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.inbox-hierarchy-context-line {
+    font-size: var(--inbox-font-subject);
+    font-weight: 400;
+    color: #3a5668;
+    line-height: 1.25;
+}
+
+.inbox-hierarchy-unit {
+    margin-top: 6px;
+}
+
+.inbox-hierarchy-level-subject {
+    margin-left: 0;
+}
+
+.inbox-hierarchy-level-topic {
+    margin-left: var(--inbox-hierarchy-indent-step);
+    padding-left: 8px;
+    border-left: 1px solid var(--inbox-hierarchy-guide-color);
+}
+
+.inbox-hierarchy-level-unit {
+    margin-left: calc(var(--inbox-hierarchy-indent-step) * 2);
+    padding-left: 8px;
+    border-left: 1px solid var(--inbox-hierarchy-guide-color);
+}
+
+.inbox-hierarchy-level-material {
+    margin-left: calc(var(--inbox-hierarchy-indent-step) * 3);
+    padding-left: 6px;
+    border-left: 1px dotted rgba(31, 111, 139, 0.26);
+}
+
+.inbox-hierarchy-unit-title {
+    font-size: var(--inbox-font-unit);
+    font-weight: 600;
+    color: #3a5668;
+}
+
+.inbox-hierarchy-topic-title {
+    margin-top: 2px;
+    font-size: var(--inbox-font-topic);
+    font-weight: 700;
+    color: #2f4b5c;
+}
+
+.inbox-hierarchy-topic-head {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.inbox-hierarchy-unit-head {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.inbox-hierarchy-material-lines {
+    margin-top: 4px;
+    display: grid;
+    gap: 3px;
+}
+
+.inbox-hierarchy-material-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    font-size: var(--inbox-font-material);
+    font-weight: 400;
+    color: #233d4c;
+}
+
+.inbox-hierarchy-material-title {
+    font-size: var(--inbox-font-material);
+    font-weight: 400;
+    line-height: 1.2;
+}
+
+.inbox-hierarchy-material-title-clickable {
+    cursor: pointer;
+}
+
+.inbox-hierarchy-material-count {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 6px;
+    border-radius: 999px;
+    border: 1px solid rgba(35, 61, 76, 0.2);
+    background: rgba(35, 61, 76, 0.06);
+    font-size: 0.72rem;
+}
+
+.inbox-hierarchy-material-count-clickable {
+    cursor: pointer;
 }
 
 .overview-subjects-tree {

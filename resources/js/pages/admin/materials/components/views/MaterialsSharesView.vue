@@ -115,7 +115,7 @@
                                             <v-list density="comfortable" style="min-width: 220px;">
                                                 <v-list-subheader>Berechtigung ändern</v-list-subheader>
                                                 <v-list-item
-                                                    v-for="option in permissionOptions"
+                                                    v-for="option in permissionOptionsForScope(row.scope_type)"
                                                     :key="`share-target-permission-${target.id}-${option.value}`"
                                                     :active="normalizePermission(target.permission) === option.value"
                                                     :disabled="isTargetBusy(target.id)"
@@ -124,6 +124,14 @@
                                                 </v-list-item>
                                             </v-list>
                                         </v-menu>
+                                        <v-btn
+                                            icon="mdi-delete-outline"
+                                            size="x-small"
+                                            color="warning"
+                                            variant="text"
+                                            :disabled="isTargetBusy(target.id)"
+                                            :loading="isTargetBusy(target.id)"
+                                            @click="removeTarget(row, target)" />
                                     </div>
                                 </div>
                             </td>
@@ -256,13 +264,6 @@ export default {
 
             return bestColor
         },
-        permissionOptions() {
-            return [
-                { value: 'full_access', label: 'VOLLZUGRIFF' },
-                { value: 'read_write', label: 'LESEN/SCHREIBEN' },
-                { value: 'read_only', label: 'NUR LESEN' },
-            ]
-        },
     },
     mounted() {
         this.loadShares()
@@ -306,6 +307,32 @@ export default {
             if (normalized === 'read_write') return 'read_write'
             if (normalized === 'read_only') return 'read_only'
             return 'read_only'
+        },
+        normalizeScopeType(scopeType) {
+            const normalized = String(scopeType || '').trim()
+            if (normalized === 'all') return 'all'
+            if (normalized === 'subject') return 'subject'
+            if (normalized === 'topic') return 'topic'
+            if (normalized === 'unit') return 'unit'
+            if (normalized === 'material') return 'material'
+            return ''
+        },
+        scopeAllowsFullAccess(scopeType) {
+            const normalized = this.normalizeScopeType(scopeType)
+            return normalized === 'all' || normalized === 'subject'
+        },
+        permissionOptionsForScope(scopeType) {
+            const options = [
+                { value: 'read_write', label: 'LESEN/SCHREIBEN' },
+                { value: 'read_only', label: 'NUR LESEN' },
+            ]
+            if (this.scopeAllowsFullAccess(scopeType)) {
+                return [{ value: 'full_access', label: 'VOLLZUGRIFF' }, ...options]
+            }
+            return options
+        },
+        permissionAllowedForScope(permission, scopeType) {
+            return this.permissionOptionsForScope(scopeType).some((option) => option.value === this.normalizePermission(permission))
         },
         permissionLabel(permission) {
             const normalized = this.normalizePermission(permission)
@@ -369,6 +396,32 @@ export default {
             this.rows = this.rows.map(mergeRule)
             this.workspaceShareAssignments = this.workspaceShareAssignments.map(mergeRule)
         },
+        removeTargetFromCollections(ruleId, targetId) {
+            const pruneRules = (entries) =>
+                (Array.isArray(entries) ? entries : [])
+                    .map((entry) => {
+                        if (Number(entry?.id || 0) !== ruleId) {
+                            return entry
+                        }
+                        const nextTargets = Array.isArray(entry?.targets)
+                            ? entry.targets.filter((entryTarget) => Number(entryTarget?.id || 0) !== targetId)
+                            : []
+                        return {
+                            ...entry,
+                            targets: nextTargets,
+                            targets_count: nextTargets.length,
+                        }
+                    })
+                    .filter((entry) => {
+                        if (Number(entry?.id || 0) !== ruleId) {
+                            return true
+                        }
+                        return Array.isArray(entry?.targets) && entry.targets.length > 0
+                    })
+
+            this.rows = pruneRules(this.rows)
+            this.workspaceShareAssignments = pruneRules(this.workspaceShareAssignments)
+        },
         async updateRuleActive(row, nextValue) {
             const ruleId = Number(row?.id || 0)
             if (ruleId <= 0) return
@@ -402,6 +455,10 @@ export default {
             const currentPermission = this.normalizePermission(target?.permission)
             if (ruleId <= 0 || targetId <= 0) return
             if (permission === currentPermission) return
+            if (!this.permissionAllowedForScope(permission, row?.scope_type)) {
+                this.errorMessage = 'VOLLZUGRIFF ist auf dieser Ebene aktuell nicht erlaubt.'
+                return
+            }
 
             this.pushTargetBusy(targetId)
             this.errorMessage = ''
@@ -433,6 +490,22 @@ export default {
                 })
             } catch (error) {
                 this.errorMessage = error?.response?.data?.message || 'Berechtigung konnte nicht gespeichert werden.'
+            } finally {
+                this.popTargetBusy(targetId)
+            }
+        },
+        async removeTarget(row, target) {
+            const ruleId = Number(row?.id || 0)
+            const targetId = Number(target?.id || 0)
+            if (ruleId <= 0 || targetId <= 0) return
+
+            this.pushTargetBusy(targetId)
+            this.errorMessage = ''
+            try {
+                await axios.delete(`/api/admin/materials/shares/targets/${targetId}`)
+                this.removeTargetFromCollections(ruleId, targetId)
+            } catch (error) {
+                this.errorMessage = error?.response?.data?.message || 'Freigabe konnte nicht entfernt werden.'
             } finally {
                 this.popTargetBusy(targetId)
             }
