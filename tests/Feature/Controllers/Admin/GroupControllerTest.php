@@ -12,7 +12,10 @@ use App\Models\TeachingCourseStudent;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Models\UserGroupMember;
+use App\Jobs\SyncGroupsJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Queue;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -125,6 +128,36 @@ test('groups index creates class-based school groups with parent groups plus tea
 
     expect($schoolGroups)->toHaveCount(6);
     expect($schoolGroups->pluck('name')->all())->toBe(['1A', '1A Eltern', '2B', '2B Eltern', 'Alle Schulmitglieder', 'Lehrer']);
+});
+
+test('groups index dispatches heavy sync as unique background job and exposes sync meta', function () {
+    Queue::fake();
+    Cache::flush();
+
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    Import116::query()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'class' => '1A',
+        'student_code' => '1009',
+        'last_name' => 'Queue',
+        'first_name' => 'Sync',
+        'email' => 'queue.sync@test.local',
+        'import_date' => now(),
+        'import_user_id' => (int) $this->materialsAdmin->id,
+    ]);
+
+    $response = $this->getJson('/api/admin/groups')->assertSuccessful();
+
+    $response
+        ->assertJsonPath('meta.sync.queued', true)
+        ->assertJsonPath('meta.sync.in_progress', true);
+
+    Queue::assertPushed(SyncGroupsJob::class, function (SyncGroupsJob $job) {
+        return $job->schoolId === (int) $this->school->id
+            && $job->actorUserId === (int) $this->materialsAdmin->id;
+    });
 });
 
 test('school groups only consider import116 rows from the active schoolyear', function () {

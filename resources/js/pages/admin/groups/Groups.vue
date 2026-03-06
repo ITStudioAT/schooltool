@@ -17,9 +17,18 @@
                             <div class="sa-card-eyebrow">Übersicht</div>
                             <h2 class="sa-card-title">Gruppentypen & Rechte</h2>
                         </div>
-                        <v-btn flat color="primary" prepend-icon="mdi-refresh" :loading="isBusy" @click="loadGroups">
-                            Aktualisieren
-                        </v-btn>
+                        <div class="d-flex align-center flex-wrap ga-2">
+                            <v-chip
+                                v-if="syncStatus.in_progress"
+                                color="warning"
+                                variant="flat"
+                                size="small">
+                                Synchronisierung läuft
+                            </v-chip>
+                            <v-btn flat color="primary" prepend-icon="mdi-refresh" :loading="isBusy" @click="loadGroups">
+                                Aktualisieren
+                            </v-btn>
+                        </div>
                     </div>
 
                     <div class="sa-kpi-grid">
@@ -1233,6 +1242,10 @@ export default {
         await this.loadGroups()
     },
 
+    beforeUnmount() {
+        this.clearSyncStatusReload()
+    },
+
     data() {
         return {
             adminStore: null,
@@ -1240,6 +1253,14 @@ export default {
             isBusy: false,
             groups: [],
             apiPermissions: {},
+            syncStatus: {
+                queued: false,
+                running: false,
+                in_progress: false,
+                last_synced_at: null,
+                refresh_after_seconds: 120,
+            },
+            syncReloadTimer: null,
             groupSections: [
                 {
                     type: 'school',
@@ -1526,11 +1547,27 @@ export default {
                 const response = await axios.get('/api/admin/groups')
                 this.groups = Array.isArray(response.data?.data) ? response.data.data : []
                 this.apiPermissions = response.data?.meta?.permissions || {}
+                this.syncStatus = {
+                    queued: !!response.data?.meta?.sync?.queued,
+                    running: !!response.data?.meta?.sync?.running,
+                    in_progress: !!response.data?.meta?.sync?.in_progress,
+                    last_synced_at: response.data?.meta?.sync?.last_synced_at || null,
+                    refresh_after_seconds: Number(response.data?.meta?.sync?.refresh_after_seconds || 120),
+                }
+                this.scheduleSyncStatusReload()
                 this.cleanupSelectedGroups()
                 this.refreshAssignDialogGroupReference()
             } catch (error) {
                 this.groups = []
                 this.apiPermissions = {}
+                this.syncStatus = {
+                    queued: false,
+                    running: false,
+                    in_progress: false,
+                    last_synced_at: null,
+                    refresh_after_seconds: 120,
+                }
+                this.clearSyncStatusReload()
                 this.selectedGroupIdsByType = { school: null, materials: null, own: null }
                 this.refreshAssignDialogGroupReference()
                 this.notifyError(error, 'Gruppen konnten nicht geladen werden.')
@@ -1780,6 +1817,26 @@ export default {
                 const rightName = String(right?.name || '').trim().toLocaleLowerCase('de')
                 return leftName.localeCompare(rightName, 'de', { sensitivity: 'base', numeric: true })
             })
+        },
+
+        clearSyncStatusReload() {
+            if (this.syncReloadTimer) {
+                clearTimeout(this.syncReloadTimer)
+                this.syncReloadTimer = null
+            }
+        },
+
+        scheduleSyncStatusReload() {
+            this.clearSyncStatusReload()
+            if (!this.syncStatus?.in_progress) {
+                return
+            }
+
+            const delaySeconds = Math.max(Number(this.syncStatus?.refresh_after_seconds || 5), 5)
+            this.syncReloadTimer = setTimeout(() => {
+                this.syncReloadTimer = null
+                this.loadGroups()
+            }, Math.min(delaySeconds, 10) * 1000)
         },
         dialogPaginationSize() {
             return 100

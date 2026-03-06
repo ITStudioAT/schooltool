@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\SyncGroupsJob;
 use App\Models\Import116;
 use App\Models\SchoolTool;
 use App\Models\Teacher;
@@ -12,11 +13,14 @@ use App\Models\UserGroup;
 use App\Models\UserGroupMember;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class GroupController extends Controller
 {
+    private const GROUP_SYNC_REFRESH_SECONDS = 120;
+
     public function index(Request $request)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'materials_admin', 'materials_moderator'])) {
@@ -26,12 +30,8 @@ class GroupController extends Controller
 
         $schoolId = $this->currentSchoolId($auth_user);
         $this->ensureDefaultSchoolGroups($schoolId, (int) $auth_user->id);
-        $this->syncTeacherSchoolGroupMembers($schoolId, (int) $auth_user->id);
-        $this->repairMissingImportUserLinksByEmail($schoolId);
-        $this->syncClassSchoolGroupMembers($schoolId, (int) $auth_user->id);
-        $this->syncParentSchoolGroupMembers($schoolId, (int) $auth_user->id);
-        $this->syncAllSchoolMembersGroup($schoolId, (int) $auth_user->id);
-        $this->syncOwnTeachingCourseGroups($auth_user, $schoolId, (int) $auth_user->id);
+        $this->dispatchHeavyGroupsSyncIfNeeded($auth_user, $schoolId);
+        $syncMeta = $this->groupsSyncMeta($schoolId);
 
         $groups = UserGroup::query()
             ->where('school_id', $schoolId)
@@ -53,8 +53,22 @@ class GroupController extends Controller
                     UserGroup::TYPE_MATERIALS => $this->canManageType($auth_user, UserGroup::TYPE_MATERIALS),
                     UserGroup::TYPE_OWN => $this->canManageType($auth_user, UserGroup::TYPE_OWN),
                 ],
+                'sync' => $syncMeta,
             ],
         ]);
+    }
+
+    public function runHeavySync(?User $authUser, int $schoolId, int $actorUserId): void
+    {
+        $this->syncTeacherSchoolGroupMembers($schoolId, $actorUserId);
+        $this->repairMissingImportUserLinksByEmail($schoolId);
+        $this->syncClassSchoolGroupMembers($schoolId, $actorUserId);
+        $this->syncParentSchoolGroupMembers($schoolId, $actorUserId);
+        $this->syncAllSchoolMembersGroup($schoolId, $actorUserId);
+
+        if ($authUser && (int) $authUser->school_id === $schoolId) {
+            $this->syncOwnTeachingCourseGroups($authUser, $schoolId, $actorUserId);
+        }
     }
 
     public function store(Request $request)
@@ -654,6 +668,58 @@ class GroupController extends Controller
         })->values();
 
         return response()->json(['data' => $data]);
+    }
+
+    private function dispatchHeavyGroupsSyncIfNeeded(User $authUser, int $schoolId): void
+    {
+        if (! $this->shouldDispatchHeavyGroupsSync($schoolId)) {
+            return;
+        }
+
+        Cache::put(SyncGroupsJob::queuedCacheKey($schoolId), true, now()->addMinutes(15));
+        SyncGroupsJob::dispatch($schoolId, (int) $authUser->id);
+    }
+
+    private function shouldDispatchHeavyGroupsSync(int $schoolId): bool
+    {
+        if (Cache::get(SyncGroupsJob::runningCacheKey($schoolId), false)) {
+            return false;
+        }
+
+        if (Cache::get(SyncGroupsJob::queuedCacheKey($schoolId), false)) {
+            return false;
+        }
+
+        $lastSyncedAt = Cache::get(SyncGroupsJob::lastSyncedAtCacheKey($schoolId));
+        if (! is_string($lastSyncedAt) || trim($lastSyncedAt) === '') {
+            return true;
+        }
+
+        try {
+            $lastSynced = \Carbon\Carbon::parse($lastSyncedAt);
+        } catch (\Throwable) {
+            return true;
+        }
+
+        return $lastSynced->diffInSeconds(now()) >= self::GROUP_SYNC_REFRESH_SECONDS;
+    }
+
+    /**
+     * @return array<string, bool|int|string|null>
+     */
+    private function groupsSyncMeta(int $schoolId): array
+    {
+        $queued = (bool) Cache::get(SyncGroupsJob::queuedCacheKey($schoolId), false);
+        $running = (bool) Cache::get(SyncGroupsJob::runningCacheKey($schoolId), false);
+        $lastSyncedAt = Cache::get(SyncGroupsJob::lastSyncedAtCacheKey($schoolId));
+
+        return [
+            'queued' => $queued,
+            'running' => $running,
+            'in_progress' => $queued || $running,
+            'last_synced_at' => is_string($lastSyncedAt) && trim($lastSyncedAt) !== '' ? $lastSyncedAt : null,
+            'refresh_after_seconds' => self::GROUP_SYNC_REFRESH_SECONDS,
+        ];
     }
 
     private function currentSchoolId($auth_user): int

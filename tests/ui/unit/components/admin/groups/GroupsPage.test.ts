@@ -319,6 +319,35 @@ describe('Groups page header', () => {
         ])
     })
 
+    it('schedules a reload while group sync is in progress', () => {
+        vi.useFakeTimers()
+
+        try {
+            const methods = (Groups as any).methods
+            const loadGroups = vi.fn()
+            const ctx: any = {
+                syncStatus: {
+                    in_progress: true,
+                    refresh_after_seconds: 8,
+                },
+                syncReloadTimer: null,
+                loadGroups,
+                clearSyncStatusReload: methods.clearSyncStatusReload,
+            }
+
+            methods.scheduleSyncStatusReload.call(ctx)
+
+            expect(ctx.syncReloadTimer).not.toBeNull()
+
+            vi.advanceTimersByTime(8000)
+
+            expect(loadGroups).toHaveBeenCalledTimes(1)
+            expect(ctx.syncReloadTimer).toBeNull()
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
     it('paginates dialog member lists in blocks of 100 entries', () => {
         const methods = (Groups as any).methods
         const members = Array.from({ length: 105 }, (_, index) => ({
@@ -551,6 +580,10 @@ describe('Groups page header', () => {
         expect(source).toContain('v-model="assignUsersDialog.readOnlyPage"')
         expect(source).toContain('v-model="assignUsersDialog.membersPage"')
         expect(source).toContain('class="groups-list-pagination"')
+        expect(source).toContain('Synchronisierung läuft')
+        expect(source).toContain('syncStatus.in_progress')
+        expect(source).toContain('scheduleSyncStatusReload()')
+        expect(source).toContain('clearSyncStatusReload()')
         expect(source).toContain('memberAssignmentPayload(member)')
         expect(source).toContain('memberSelectionValue(member)')
         expect(source).toContain('buildSelectedAssignableMemberPayloads(rows, selectedValues)')
