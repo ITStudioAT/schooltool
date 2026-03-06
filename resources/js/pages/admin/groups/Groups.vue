@@ -61,19 +61,217 @@
                                     @click="openCreateDialog(section.type)">
                                     Gruppe anlegen
                                 </v-btn>
-                                <v-btn
-                                    v-if="canManageType(section.type) && selectedGroupByType(section.type) && selectedGroupByType(section.type).can_manage_members !== false"
-                                    flat
-                                    color="secondary"
-                                    prepend-icon="mdi-account-plus-outline"
-                                    @click="openAssignUsersDialog(selectedGroupByType(section.type))">
-                                    Benutzer zuordnen
-                                </v-btn>
                             </div>
                         </div>
 
                         <div class="sa-empty" v-if="groupsByType(section.type).length === 0">
                             Keine Gruppen vorhanden.
+                        </div>
+
+                        <div v-else-if="section.type === 'school'" class="groups-school-panels">
+                            <v-expansion-panels
+                                v-model="schoolSectionPanelsOpen"
+                                multiple
+                                variant="accordion">
+                                <v-expansion-panel
+                                    v-for="panel in schoolSectionPanels()"
+                                    :key="panel.key"
+                                    :value="panel.key">
+                                    <v-expansion-panel-title>
+                                        <div class="d-flex align-center justify-space-between w-100 ga-3">
+                                            <div class="d-flex align-center ga-2">
+                                                <v-icon size="18">{{ panel.icon }}</v-icon>
+                                                <div class="groups-panel-title-wrap">
+                                                    <span>{{ panel.title }}</span>
+                                                    <span v-if="panel.metaLabel" class="groups-panel-title-meta">{{ panel.metaLabel }}</span>
+                                                </div>
+                                            </div>
+                                            <v-chip color="secondary" variant="flat" size="x-small">
+                                                {{ panel.groups.length }}
+                                            </v-chip>
+                                        </div>
+                                    </v-expansion-panel-title>
+                                    <v-expansion-panel-text>
+                                        <div class="sa-empty" v-if="panel.groups.length === 0">
+                                            Keine Gruppen vorhanden.
+                                        </div>
+                                        <div class="groups-table-wrap" v-else>
+                                            <v-table density="comfortable" class="groups-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Name</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr
+                                                        v-for="group in panel.groups"
+                                                        :key="group.id"
+                                                        class="groups-row"
+                                                        :class="{ 'is-selected': isSelectedGroup(section.type, group.id) }"
+                                                        @click="onGroupRowClick(section.type, group)">
+                                                        <td>
+                                                            <div class="groups-row-main">
+                                                                <div class="groups-row-title">
+                                                                    <div class="font-weight-bold text-body-1">{{ group.name }}</div>
+                                                                </div>
+                                                                <div class="groups-row-meta">
+                                                                    <v-chip
+                                                                        class="groups-row-counter-chip"
+                                                                        :color="group.type === 'school' ? 'info' : (group.members_count > 0 ? 'warning' : 'secondary')"
+                                                                        variant="flat"
+                                                                        size="small">
+                                                                        <template v-if="showSourceUsersCounter(group)">
+                                                                            {{ Number(group.source_users_count || 0) }}/{{ Number(group.members_count || 0) }}
+                                                                        </template>
+                                                                        <template v-else>
+                                                                            {{ Number(group.members_count || 0) }}
+                                                                        </template>
+                                                                    </v-chip>
+                                                                    <div class="d-inline-flex align-center ga-1">
+                                                                        <v-btn
+                                                                            v-if="showInlineMemberManagementButton(group)"
+                                                                            icon="mdi-account-edit-outline"
+                                                                            size="small"
+                                                                            variant="text"
+                                                                            color="secondary"
+                                                                            :title="`${group.name} Mitglieder hinzufügen oder entfernen`"
+                                                                            @click.stop="openManageMembersDialog(section.type, group)" />
+                                                                        <v-btn
+                                                                            v-if="canManageType(section.type) && group.can_edit !== false"
+                                                                            icon="mdi-pencil"
+                                                                            size="small"
+                                                                            variant="text"
+                                                                            color="primary"
+                                                                            :title="`${group.name} bearbeiten`"
+                                                                            @click.stop="openEditDialog(group)" />
+                                                                        <v-btn
+                                                                            v-if="canManageType(section.type) && group.can_delete !== false"
+                                                                            icon="mdi-delete"
+                                                                            size="small"
+                                                                            variant="text"
+                                                                            color="warning"
+                                                                            :disabled="isDeleteDisabled(group)"
+                                                                            :title="deleteButtonTitle(group)"
+                                                                            @click.stop="openDeleteDialog(group)" />
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div
+                                                                v-if="String(group.description || '').trim() !== ''"
+                                                                class="text-caption text-medium-emphasis groups-desc-cell">
+                                                                {{ group.description }}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                            </v-table>
+                                        </div>
+                                    </v-expansion-panel-text>
+                                </v-expansion-panel>
+                            </v-expansion-panels>
+                        </div>
+
+                        <div v-else-if="section.type === 'own'" class="groups-school-panels">
+                            <v-expansion-panels
+                                v-model="ownSectionPanelsOpen"
+                                multiple
+                                variant="accordion">
+                                <v-expansion-panel
+                                    v-for="panel in ownSectionPanels()"
+                                    :key="panel.key"
+                                    :value="panel.key">
+                                    <v-expansion-panel-title>
+                                        <div class="d-flex align-center justify-space-between w-100 ga-3">
+                                            <div class="d-flex align-center ga-2">
+                                                <v-icon size="18">{{ panel.icon }}</v-icon>
+                                                <div class="groups-panel-title-wrap">
+                                                    <span>{{ panel.title }}</span>
+                                                    <span v-if="panel.metaLabel" class="groups-panel-title-meta">{{ panel.metaLabel }}</span>
+                                                </div>
+                                            </div>
+                                            <v-chip color="secondary" variant="flat" size="x-small">
+                                                {{ panel.groups.length }}
+                                            </v-chip>
+                                        </div>
+                                    </v-expansion-panel-title>
+                                    <v-expansion-panel-text>
+                                        <div class="sa-empty" v-if="panel.groups.length === 0">
+                                            Keine Gruppen vorhanden.
+                                        </div>
+                                        <div class="groups-table-wrap" v-else>
+                                            <v-table density="comfortable" class="groups-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Name</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr
+                                                        v-for="group in panel.groups"
+                                                        :key="group.id"
+                                                        class="groups-row"
+                                                        :class="{ 'is-selected': isSelectedGroup(section.type, group.id) }"
+                                                        @click="onGroupRowClick(section.type, group)">
+                                                        <td>
+                                                            <div class="groups-row-main">
+                                                                <div class="groups-row-title">
+                                                                    <div class="font-weight-bold text-body-1">{{ group.name }}</div>
+                                                                </div>
+                                                                <div class="groups-row-meta">
+                                                                    <v-chip
+                                                                        class="groups-row-counter-chip"
+                                                                        :color="group.type === 'school' ? 'info' : (group.members_count > 0 ? 'warning' : 'secondary')"
+                                                                        variant="flat"
+                                                                        size="small">
+                                                                        <template v-if="showSourceUsersCounter(group)">
+                                                                            {{ Number(group.source_users_count || 0) }}/{{ Number(group.members_count || 0) }}
+                                                                        </template>
+                                                                        <template v-else>
+                                                                            {{ Number(group.members_count || 0) }}
+                                                                        </template>
+                                                                    </v-chip>
+                                                                    <div class="d-inline-flex align-center ga-1">
+                                                                        <v-btn
+                                                                            v-if="showInlineMemberManagementButton(group)"
+                                                                            icon="mdi-account-edit-outline"
+                                                                            size="small"
+                                                                            variant="text"
+                                                                            color="secondary"
+                                                                            :title="`${group.name} Mitglieder hinzufügen oder entfernen`"
+                                                                            @click.stop="openManageMembersDialog(section.type, group)" />
+                                                                        <v-btn
+                                                                            v-if="canManageType(section.type) && group.can_edit !== false"
+                                                                            icon="mdi-pencil"
+                                                                            size="small"
+                                                                            variant="text"
+                                                                            color="primary"
+                                                                            :title="`${group.name} bearbeiten`"
+                                                                            @click.stop="openEditDialog(group)" />
+                                                                        <v-btn
+                                                                            v-if="canManageType(section.type) && group.can_delete !== false"
+                                                                            icon="mdi-delete"
+                                                                            size="small"
+                                                                            variant="text"
+                                                                            color="warning"
+                                                                            :disabled="isDeleteDisabled(group)"
+                                                                            :title="deleteButtonTitle(group)"
+                                                                            @click.stop="openDeleteDialog(group)" />
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div
+                                                                v-if="String(group.description || '').trim() !== ''"
+                                                                class="text-caption text-medium-emphasis groups-desc-cell">
+                                                                {{ group.description }}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                            </v-table>
+                                        </div>
+                                    </v-expansion-panel-text>
+                                </v-expansion-panel>
+                            </v-expansion-panels>
                         </div>
 
                         <div class="groups-table-wrap" v-else>
@@ -89,41 +287,52 @@
                                         :key="group.id"
                                         class="groups-row"
                                         :class="{ 'is-selected': isSelectedGroup(section.type, group.id) }"
-                                        @click="selectGroup(section.type, group)">
+                                        @click="onGroupRowClick(section.type, group)">
                                         <td>
-                                            <div class="d-flex align-center justify-space-between flex-wrap ga-2">
-                                                <div class="d-inline-flex align-center flex-wrap ga-2">
+                                            <div class="groups-row-main">
+                                                <div class="groups-row-title">
                                                     <div class="font-weight-bold text-body-1">{{ group.name }}</div>
+                                                </div>
+                                                <div class="groups-row-meta">
                                                     <v-chip
+                                                        class="groups-row-counter-chip"
                                                         :color="group.type === 'school' ? 'info' : (group.members_count > 0 ? 'warning' : 'secondary')"
                                                         variant="flat"
                                                         size="small">
-                                                        <template v-if="group.type === 'school'">
+                                                        <template v-if="showSourceUsersCounter(group)">
                                                             {{ Number(group.source_users_count || 0) }}/{{ Number(group.members_count || 0) }}
                                                         </template>
                                                         <template v-else>
                                                             {{ Number(group.members_count || 0) }}
                                                         </template>
                                                     </v-chip>
-                                                </div>
-                                                <div class="d-inline-flex align-center ga-1">
-                                                    <v-btn
-                                                        v-if="canManageType(section.type) && group.can_edit !== false"
-                                                        icon="mdi-pencil"
-                                                        size="small"
-                                                        variant="text"
-                                                        color="primary"
-                                                        :title="`${group.name} bearbeiten`"
-                                                        @click.stop="openEditDialog(group)" />
-                                                    <v-btn
-                                                        v-if="canManageType(section.type) && group.can_delete !== false"
-                                                        icon="mdi-delete"
-                                                        size="small"
-                                                        variant="text"
-                                                        color="warning"
-                                                        :disabled="group.members_count > 0"
-                                                        :title="group.members_count > 0 ? 'Nur ohne Mitglieder löschbar' : `${group.name} löschen`"
-                                                        @click.stop="openDeleteDialog(group)" />
+                                                    <div class="d-inline-flex align-center ga-1">
+                                                        <v-btn
+                                                            v-if="showInlineMemberManagementButton(group)"
+                                                            icon="mdi-account-edit-outline"
+                                                            size="small"
+                                                            variant="text"
+                                                            color="secondary"
+                                                            :title="`${group.name} Mitglieder hinzufügen oder entfernen`"
+                                                            @click.stop="openManageMembersDialog(section.type, group)" />
+                                                        <v-btn
+                                                            v-if="canManageType(section.type) && group.can_edit !== false"
+                                                            icon="mdi-pencil"
+                                                            size="small"
+                                                            variant="text"
+                                                            color="primary"
+                                                            :title="`${group.name} bearbeiten`"
+                                                            @click.stop="openEditDialog(group)" />
+                                                        <v-btn
+                                                            v-if="canManageType(section.type) && group.can_delete !== false"
+                                                            icon="mdi-delete"
+                                                            size="small"
+                                                            variant="text"
+                                                            color="warning"
+                                                            :disabled="isDeleteDisabled(group)"
+                                                            :title="deleteButtonTitle(group)"
+                                                            @click.stop="openDeleteDialog(group)" />
+                                                    </div>
                                                 </div>
                                             </div>
                                             <div
@@ -195,7 +404,7 @@
                         Mitglieder: {{ deleteDialog.group.members_count }}
                     </div>
                     <v-alert
-                        v-if="deleteDialog.group.members_count > 0"
+                        v-if="showDeleteMembersWarning(deleteDialog.group)"
                         type="warning"
                         variant="tonal"
                         class="mt-3">
@@ -207,7 +416,7 @@
                     <v-btn
                         color="error"
                         variant="flat"
-                        :disabled="!deleteDialog.group || deleteDialog.group.members_count > 0"
+                        :disabled="!deleteDialog.group || isDeleteDisabled(deleteDialog.group)"
                         :loading="isBusy"
                         @click="deleteGroup">
                         Löschen
@@ -223,7 +432,7 @@
                         <div class="text-caption text-medium-emphasis">
                             {{ currentTypeLabel(assignUsersDialog.group?.type) }}
                         </div>
-                        <div>Benutzer zuordnen</div>
+                        <div>{{ assignUsersDialog.readOnly ? 'Gruppenmitglieder' : 'Benutzer zuordnen' }}</div>
                     </div>
                     <v-btn icon="mdi-close" variant="text" @click="closeAssignUsersDialog" />
                 </v-card-title>
@@ -231,91 +440,165 @@
                     <div v-if="assignUsersDialog.group" class="text-body-2 mb-2">
                         Gruppe: <strong>{{ assignUsersDialog.group.name }}</strong>
                     </div>
+                    <v-alert v-if="showReadOnlyAutoManagedNotice()" type="info" variant="tonal" class="mb-3">
+                        Gruppe automatisch erstellt.
+                    </v-alert>
                     <div class="d-grid ga-3">
                         <section class="groups-assign-section">
-                            <div class="d-flex justify-space-between align-center flex-wrap ga-2">
-                                <div>
-                                    <div class="admin-card-eyebrow">Zugeordnete Benutzer</div>
-                                    <div class="text-caption text-medium-emphasis">
-                                        {{ assignUsersDialog.members.length }} Benutzer in dieser Gruppe
+                            <template v-if="assignUsersDialog.readOnly">
+                                <div class="d-flex justify-space-between align-center flex-wrap ga-2 mb-2">
+                                    <div>
+                                        <div class="admin-card-eyebrow">Mitglieder</div>
+                                        <div class="text-caption text-medium-emphasis">
+                                            Registrierte Einträge sind mit einem Symbol markiert.
+                                        </div>
                                     </div>
+                                    <v-chip color="secondary" variant="flat" size="x-small">
+                                        {{ readOnlyCombinedMembers().length }}
+                                    </v-chip>
                                 </div>
-                                <div class="d-flex flex-wrap ga-2">
-                                    <v-btn
-                                        flat
-                                        :color="assignUsersDialog.membersExpanded ? 'secondary' : 'primary'"
-                                        :prepend-icon="assignUsersDialog.membersExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'"
-                                        @click="assignUsersDialog.membersExpanded = !assignUsersDialog.membersExpanded">
-                                        {{ assignUsersDialog.membersExpanded ? 'Ausblenden' : 'Anzeigen' }}
-                                    </v-btn>
+                                <div class="sa-empty" v-if="readOnlyCombinedMembersLoading()">
+                                    {{ readOnlyCombinedMembersLoadingText() }}
                                 </div>
-                            </div>
-
-                            <div v-if="assignUsersDialog.membersExpanded" class="mt-3">
-                                <div class="d-flex flex-wrap ga-2 mb-2" v-if="assignUsersDialog.members.length >= 1">
-                                    <v-btn
-                                        flat
-                                        color="primary"
-                                        size="small"
-                                        prepend-icon="mdi-check-all"
-                                        @click="selectAllAssignedMembers">
-                                        Alle auswählen
-                                    </v-btn>
-                                    <v-btn
-                                        flat
-                                        color="secondary"
-                                        size="small"
-                                        prepend-icon="mdi-close-box-multiple-outline"
-                                        :disabled="assignUsersDialog.selectedMemberIds.length === 0"
-                                        @click="clearAssignedMemberSelection">
-                                        Auswahl aufheben ({{ assignUsersDialog.selectedMemberIds.length }})
-                                    </v-btn>
-                                    <v-btn
-                                        flat
-                                        color="warning"
-                                        size="small"
-                                        prepend-icon="mdi-account-multiple-remove"
-                                        :disabled="assignUsersDialog.selectedMemberIds.length === 0"
-                                        :loading="isBusy && assignUsersDialog.bulkRemoving"
-                                        @click="removeSelectedAssignedMembers">
-                                        Ausgewählte entfernen ({{ assignUsersDialog.selectedMemberIds.length }})
-                                    </v-btn>
-                                </div>
-
-                                <div class="sa-empty" v-if="assignUsersDialog.membersLoading">
-                                    Lade zugeordnete Benutzer ...
-                                </div>
-                                <div class="sa-empty" v-else-if="assignUsersDialog.members.length === 0">
-                                    Keine Benutzer zugeordnet.
+                                <div class="sa-empty" v-else-if="readOnlyCombinedMembers().length === 0">
+                                    {{ readOnlyCombinedMembersEmptyText() }}
                                 </div>
                                 <div class="groups-assign-list" v-else>
-                                    <div class="groups-assign-list-item" v-for="member in assignUsersDialog.members" :key="`group-member-${member.id}`">
-                                        <div class="d-flex align-start ga-2 min-w-0">
-                                            <v-checkbox-btn
-                                                :model-value="isAssignedMemberSelected(member.id)"
-                                                color="primary"
-                                                @update:model-value="toggleAssignedMemberSelection(member.id)" />
+                                    <div class="groups-assign-list-item" v-for="member in paginatedReadOnlyCombinedMembers()" :key="`readonly-member-${readOnlyMemberKey(member) || member.id}`">
+                                        <div class="d-flex align-start justify-space-between ga-2 w-100">
                                             <div class="min-w-0">
-                                                <div class="font-weight-bold text-body-2">{{ member.name }}</div>
-                                                <div class="text-caption text-medium-emphasis">{{ member.email }}</div>
+                                                <div class="d-flex align-center ga-2">
+                                                    <div class="font-weight-bold text-body-2">{{ member.name }}</div>
+                                                    <v-icon
+                                                        v-if="member.is_registered"
+                                                        size="16"
+                                                        color="success"
+                                                        title="Registriert">
+                                                        mdi-check-circle
+                                                    </v-icon>
+                                                </div>
+                                                <div class="text-caption text-medium-emphasis">{{ member.email || 'Keine E-Mail' }}</div>
+                                                <div class="text-caption text-medium-emphasis" v-if="member.member_type_label">{{ member.member_type_label }}</div>
                                                 <div class="text-caption text-medium-emphasis" v-if="member.schoolclass">Klasse: {{ member.schoolclass }}</div>
+                                                <div class="text-caption text-medium-emphasis" v-if="member.phone">Telefon: {{ member.phone }}</div>
+                                                <div class="text-caption text-medium-emphasis" v-if="member.children_label">Kinder: {{ member.children_label }}</div>
                                             </div>
                                         </div>
+                                    </div>
+                                </div>
+                                <div
+                                    v-if="!readOnlyCombinedMembersLoading() && shouldPaginateDialogList(readOnlyCombinedMembers().length)"
+                                    class="groups-list-pagination">
+                                    <div class="text-caption text-medium-emphasis">
+                                        {{ dialogPaginationSummary(readOnlyCombinedMembers().length, assignUsersDialog.readOnlyPage) }}
+                                    </div>
+                                    <v-pagination
+                                        v-model="assignUsersDialog.readOnlyPage"
+                                        :length="dialogPaginationPageCount(readOnlyCombinedMembers().length)"
+                                        :total-visible="5"
+                                        active-color="primary"
+                                        density="comfortable" />
+                                </div>
+                            </template>
+
+                            <template v-else>
+                                <div class="d-flex justify-space-between align-center flex-wrap ga-2">
+                                    <div>
+                                        <div class="admin-card-eyebrow">Zugeordnete Benutzer</div>
+                                        <div class="text-caption text-medium-emphasis">
+                                            {{ assignUsersDialog.members.length }} Benutzer in dieser Gruppe
+                                        </div>
+                                    </div>
+                                    <div class="d-flex flex-wrap ga-2">
+                                        <v-btn
+                                            flat
+                                            :color="assignUsersDialog.membersExpanded ? 'secondary' : 'primary'"
+                                            :prepend-icon="assignUsersDialog.membersExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+                                            @click="assignUsersDialog.membersExpanded = !assignUsersDialog.membersExpanded">
+                                            {{ assignUsersDialog.membersExpanded ? 'Ausblenden' : 'Anzeigen' }}
+                                        </v-btn>
+                                    </div>
+                                </div>
+
+                                <div v-if="assignUsersDialog.membersExpanded" class="mt-3">
+                                    <div class="d-flex flex-wrap ga-2 mb-2" v-if="assignUsersDialog.members.length >= 1">
+                                        <v-btn
+                                            flat
+                                            color="primary"
+                                            size="small"
+                                            prepend-icon="mdi-check-all"
+                                            @click="selectAllAssignedMembers">
+                                            Alle auswählen
+                                        </v-btn>
+                                        <v-btn
+                                            flat
+                                            color="secondary"
+                                            size="small"
+                                            prepend-icon="mdi-close-box-multiple-outline"
+                                            :disabled="assignUsersDialog.selectedMemberIds.length === 0"
+                                            @click="clearAssignedMemberSelection">
+                                            Auswahl aufheben ({{ assignUsersDialog.selectedMemberIds.length }})
+                                        </v-btn>
                                         <v-btn
                                             flat
                                             color="warning"
                                             size="small"
-                                            prepend-icon="mdi-account-remove"
-                                            :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(member.id)"
-                                            @click="removeAssignedMember(member)">
-                                            Entfernen
+                                            prepend-icon="mdi-account-multiple-remove"
+                                            :disabled="assignUsersDialog.selectedMemberIds.length === 0"
+                                            :loading="isBusy && assignUsersDialog.bulkRemoving"
+                                            @click="removeSelectedAssignedMembers">
+                                            Ausgewählte entfernen ({{ assignUsersDialog.selectedMemberIds.length }})
                                         </v-btn>
                                     </div>
+
+                                    <div class="sa-empty" v-if="assignUsersDialog.membersLoading">
+                                        Lade zugeordnete Benutzer ...
+                                    </div>
+                                    <div class="sa-empty" v-else-if="assignUsersDialog.members.length === 0">
+                                        Keine Benutzer zugeordnet.
+                                    </div>
+                                    <div class="groups-assign-list" v-else>
+                                        <div class="groups-assign-list-item" v-for="member in paginatedAssignedMembers()" :key="`group-member-${member.id}`">
+                                            <div class="d-flex align-start ga-2 min-w-0">
+                                                <v-checkbox-btn
+                                                    :model-value="isAssignedMemberSelected(member.id)"
+                                                    color="primary"
+                                                    @update:model-value="toggleAssignedMemberSelection(member.id)" />
+                                                <div class="min-w-0">
+                                                    <div class="font-weight-bold text-body-2">{{ member.name }}</div>
+                                                    <div class="text-caption text-medium-emphasis">{{ member.email }}</div>
+                                                    <div class="text-caption text-medium-emphasis" v-if="member.schoolclass">Klasse: {{ member.schoolclass }}</div>
+                                                </div>
+                                            </div>
+                                            <v-btn
+                                                flat
+                                                color="warning"
+                                                size="small"
+                                                prepend-icon="mdi-account-remove"
+                                                :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(member.id)"
+                                                @click="removeAssignedMember(member)">
+                                                Entfernen
+                                            </v-btn>
+                                        </div>
+                                    </div>
+                                    <div
+                                        v-if="!assignUsersDialog.membersLoading && shouldPaginateDialogList(assignUsersDialog.members.length)"
+                                        class="groups-list-pagination">
+                                        <div class="text-caption text-medium-emphasis">
+                                            {{ dialogPaginationSummary(assignUsersDialog.members.length, assignUsersDialog.membersPage) }}
+                                        </div>
+                                        <v-pagination
+                                            v-model="assignUsersDialog.membersPage"
+                                            :length="dialogPaginationPageCount(assignUsersDialog.members.length)"
+                                            :total-visible="5"
+                                            active-color="primary"
+                                            density="comfortable" />
+                                    </div>
                                 </div>
-                            </div>
+                            </template>
                         </section>
 
-                        <section class="groups-assign-section">
+                        <section v-if="!assignUsersDialog.readOnly" class="groups-assign-section">
                             <div class="d-flex justify-space-between align-center flex-wrap ga-2 mb-2">
                                 <div>
                                     <div class="admin-card-eyebrow">1. Benutzer:innen suchen</div>
@@ -388,7 +671,7 @@
                             </div>
                         </section>
 
-                        <section class="groups-assign-section">
+                        <section v-if="!assignUsersDialog.readOnly" class="groups-assign-section">
                             <div class="admin-card-eyebrow mb-2">Weitere Möglichkeiten</div>
                             <v-expansion-panels
                                 v-model="assignUsersDialog.extraPanel"
@@ -999,6 +1282,8 @@ export default {
                 materials: null,
                 own: null,
             },
+            schoolSectionPanelsOpen: [],
+            ownSectionPanelsOpen: [],
             editDialog: {
                 open: false,
                 mode: 'create',
@@ -1017,7 +1302,8 @@ export default {
             assignUsersDialog: {
                 open: false,
                 group: null,
-                membersExpanded: true,
+                membersExpanded: false,
+                membersPage: 1,
                 members: [],
                 membersLoading: false,
                 selectedMemberIds: [],
@@ -1047,6 +1333,11 @@ export default {
                 sourceGroups: [],
                 sourceGroupsLoading: false,
                 sourceGroupId: null,
+                sourceMembers: [],
+                sourceMembersLoading: false,
+                readOnly: false,
+                readOnlyPage: 1,
+                readOnlyPanel: null,
             },
         }
     },
@@ -1106,6 +1397,116 @@ export default {
 
         groupsByType(type) {
             return this.groups.filter((group) => group.type === type)
+        },
+
+        isTeacherSchoolGroup(group) {
+            const normalizedName = String(group?.name || '').trim().toLowerCase()
+            return normalizedName === 'lehrer' || normalizedName === 'teacher'
+        },
+
+        isParentSchoolGroup(group) {
+            if (!group || group.type !== 'school') return false
+            if (group.is_parent_group === true) return true
+            const normalizedName = String(group?.name || '').trim().toLowerCase()
+            return normalizedName.endsWith(' eltern')
+        },
+
+        isAllSchoolMembersGroup(group) {
+            if (!group || group.type !== 'school') return false
+            if (group.is_all_school_members_group === true) return true
+            return String(group?.name || '').trim().toLowerCase() === 'alle schulmitglieder'
+        },
+
+        isAutomaticOwnCourseParentGroup(group) {
+            return group?.type === 'own'
+                && !!group?.teaching_course_id
+                && (group?.teaching_course_group_type === 'parents' || group?.is_parent_group === true)
+        },
+
+        isParentGroup(group) {
+            return this.isParentSchoolGroup(group) || this.isAutomaticOwnCourseParentGroup(group)
+        },
+
+        isAutomaticSchoolGroup(group) {
+            return group?.type === 'school' && group?.is_system_default === true
+        },
+
+        showSourceUsersCounter(group) {
+            return group?.source_users_count !== null && group?.source_users_count !== undefined
+        },
+
+        schoolSectionPanels() {
+            const schoolGroups = this.groupsByType('school')
+
+            return [
+                {
+                    key: 'classes',
+                    title: 'Klassen',
+                    metaLabel: '(automatisch erstellt)',
+                    icon: 'mdi-google-classroom',
+                    groups: schoolGroups.filter((group) => this.isAutomaticSchoolGroup(group) && !this.isTeacherSchoolGroup(group) && !this.isParentSchoolGroup(group) && !this.isAllSchoolMembersGroup(group)),
+                },
+                {
+                    key: 'teachers',
+                    title: 'Lehrer',
+                    metaLabel: '(automatisch erstellt)',
+                    icon: 'mdi-account-tie',
+                    groups: schoolGroups.filter((group) => this.isAutomaticSchoolGroup(group) && this.isTeacherSchoolGroup(group)),
+                },
+                {
+                    key: 'parents',
+                    title: 'Eltern',
+                    metaLabel: '(automatisch erstellt)',
+                    icon: 'mdi-account-multiple-outline',
+                    groups: schoolGroups.filter((group) => this.isAutomaticSchoolGroup(group) && this.isParentSchoolGroup(group)),
+                },
+                {
+                    key: 'school-members',
+                    title: 'Gesamtgruppen',
+                    metaLabel: '(automatisch erstellt)',
+                    icon: 'mdi-account-school-outline',
+                    groups: schoolGroups.filter((group) => this.isAutomaticSchoolGroup(group) && this.isAllSchoolMembersGroup(group)),
+                },
+                {
+                    key: 'other-school-groups',
+                    title: 'Weitere Gruppen',
+                    metaLabel: null,
+                    icon: 'mdi-shape-outline',
+                    groups: schoolGroups.filter((group) => !this.isAutomaticSchoolGroup(group)),
+                },
+            ]
+        },
+
+        isAutomaticOwnCourseGroup(group) {
+            return group?.type === 'own' && !!group?.teaching_course_id
+        },
+
+        ownSectionPanels() {
+            const ownGroups = this.groupsByType('own')
+
+            return [
+                {
+                    key: 'course-groups',
+                    title: 'Kursgruppen',
+                    metaLabel: '(automatisch erstellt)',
+                    icon: 'mdi-google-classroom',
+                    groups: ownGroups.filter((group) => this.isAutomaticOwnCourseGroup(group) && !this.isAutomaticOwnCourseParentGroup(group)),
+                },
+                {
+                    key: 'course-parent-groups',
+                    title: 'Eltern Kursgruppen',
+                    metaLabel: '(automatisch erstellt)',
+                    icon: 'mdi-account-multiple-outline',
+                    groups: ownGroups.filter((group) => this.isAutomaticOwnCourseParentGroup(group)),
+                },
+                {
+                    key: 'own-groups',
+                    title: 'Eigene Gruppen',
+                    metaLabel: null,
+                    icon: 'mdi-account-group-outline',
+                    groups: ownGroups.filter((group) => !this.isAutomaticOwnCourseGroup(group)),
+                },
+            ]
         },
 
         selectedGroupByType(type) {
@@ -1233,7 +1634,7 @@ export default {
 
         async deleteGroup() {
             const group = this.deleteDialog.group
-            if (!group || this.isBusy || Number(group.members_count || 0) > 0) return
+            if (!group || this.isBusy || this.isDeleteDisabled(group)) return
 
             this.isBusy = true
             this.is_loading++
@@ -1249,10 +1650,201 @@ export default {
                 this.isBusy = false
             }
         },
+        isDeleteDisabled(group) {
+            return group?.can_delete === false
+        },
+        showDeleteMembersWarning(group) {
+            return this.isDeleteDisabled(group) && Number(group?.members_count || 0) > 0
+        },
+        deleteButtonTitle(group) {
+            if (this.showDeleteMembersWarning(group)) {
+                return 'Nur ohne Mitglieder löschbar'
+            }
+            return `${group?.name || 'Gruppe'} löschen`
+        },
+        showInlineMemberManagementButton(group) {
+            return !!group && group?.can_manage_members !== false
+        },
+        showReadOnlyAutoManagedNotice() {
+            return this.assignUsersDialog.readOnly
+                && this.assignUsersDialog.group?.can_manage_members === false
+        },
+        onGroupRowClick(type, group) {
+            if (!group || group.type !== type) return
+            this.selectedGroupIdsByType[type] = group.id
+            this.openAssignUsersDialog(group, { readOnly: true })
+        },
+        openManageMembersDialog(type, group) {
+            if (!group || group.type !== type || !this.showInlineMemberManagementButton(group)) return
+            this.selectedGroupIdsByType[type] = group.id
+            this.openAssignUsersDialog(group)
+        },
         selectGroup(type, group) {
             if (!group || group.type !== type) return
-            const currentId = this.selectedGroupIdsByType[type]
-            this.selectedGroupIdsByType[type] = Number(currentId) === Number(group.id) ? null : group.id
+            this.selectedGroupIdsByType[type] = group.id
+        },
+        showSourceMembersPanel() {
+            const group = this.assignUsersDialog.group
+            if (!group) return false
+            if (this.isAutomaticOwnCourseGroup(group)) return true
+            return group.type === 'school'
+        },
+        readOnlyCombinedMembers() {
+            const registeredMembers = Array.isArray(this.assignUsersDialog?.members)
+                ? this.assignUsersDialog.members
+                : []
+            const sourceMembers = Array.isArray(this.assignUsersDialog?.sourceMembers)
+                ? this.assignUsersDialog.sourceMembers
+                : []
+
+            if (!this.showSourceMembersPanel()) {
+                return this.sortReadOnlyMembers(registeredMembers.map((member) => ({
+                    ...member,
+                    is_registered: true,
+                })))
+            }
+
+            const registeredByKey = new Map()
+            for (const member of registeredMembers) {
+                const key = this.readOnlyMemberKey(member)
+                if (!key) continue
+                registeredByKey.set(key, member)
+            }
+
+            const seenKeys = new Set()
+            const combined = sourceMembers.map((member) => {
+                const key = this.readOnlyMemberKey(member)
+                if (key) {
+                    seenKeys.add(key)
+                }
+                const registeredMember = key ? registeredByKey.get(key) : null
+
+                return this.mergeReadOnlyMember(member, registeredMember, !!registeredMember || member?.already_member === true)
+            })
+
+            for (const member of registeredMembers) {
+                const key = this.readOnlyMemberKey(member)
+                if (key && seenKeys.has(key)) continue
+                combined.push(this.mergeReadOnlyMember(null, member, true))
+            }
+
+            return this.sortReadOnlyMembers(combined)
+        },
+        paginatedReadOnlyCombinedMembers() {
+            return this.dialogPaginationSlice(
+                this.readOnlyCombinedMembers(),
+                this.assignUsersDialog.readOnlyPage,
+            )
+        },
+        paginatedAssignedMembers() {
+            return this.dialogPaginationSlice(
+                this.assignUsersDialog.members,
+                this.assignUsersDialog.membersPage,
+            )
+        },
+        readOnlyCombinedMembersLoading() {
+            return this.assignUsersDialog.membersLoading
+                || (this.showSourceMembersPanel() && this.assignUsersDialog.sourceMembersLoading)
+        },
+        readOnlyCombinedMembersLoadingText() {
+            return 'Lade Mitglieder ...'
+        },
+        readOnlyCombinedMembersEmptyText() {
+            if (this.isAllSchoolMembersGroup(this.assignUsersDialog.group)) {
+                return 'Keine Schulmitglieder gefunden.'
+            }
+            return 'Keine Mitglieder gefunden.'
+        },
+        readOnlyMemberKey(member) {
+            if (!member) return null
+            if (Number(member?.user_id || 0) > 0) {
+                return `user:${Number(member.user_id)}`
+            }
+            if (Number(member?.import116_id || 0) > 0) {
+                return `import:${Number(member.import116_id)}`
+            }
+            if (member?.id !== undefined && member?.id !== null && String(member.id) !== '') {
+                return `id:${String(member.id)}`
+            }
+            return null
+        },
+        mergeReadOnlyMember(sourceMember, registeredMember, isRegistered) {
+            const member = {
+                ...(registeredMember || {}),
+                ...(sourceMember || {}),
+            }
+
+            return {
+                ...member,
+                is_registered: !!isRegistered,
+            }
+        },
+        sortReadOnlyMembers(members) {
+            return [...members].sort((left, right) => {
+                const leftLastName = String(left?.last_name || '').trim().toLocaleLowerCase('de')
+                const rightLastName = String(right?.last_name || '').trim().toLocaleLowerCase('de')
+                if (leftLastName !== rightLastName) {
+                    return leftLastName.localeCompare(rightLastName, 'de', { sensitivity: 'base', numeric: true })
+                }
+
+                const leftFirstName = String(left?.first_name || '').trim().toLocaleLowerCase('de')
+                const rightFirstName = String(right?.first_name || '').trim().toLocaleLowerCase('de')
+                if (leftFirstName !== rightFirstName) {
+                    return leftFirstName.localeCompare(rightFirstName, 'de', { sensitivity: 'base', numeric: true })
+                }
+
+                const leftName = String(left?.name || '').trim().toLocaleLowerCase('de')
+                const rightName = String(right?.name || '').trim().toLocaleLowerCase('de')
+                return leftName.localeCompare(rightName, 'de', { sensitivity: 'base', numeric: true })
+            })
+        },
+        dialogPaginationSize() {
+            return 100
+        },
+        shouldPaginateDialogList(totalItems) {
+            return Number(totalItems || 0) > this.dialogPaginationSize()
+        },
+        dialogPaginationPageCount(totalItems) {
+            return Math.max(1, Math.ceil(Number(totalItems || 0) / this.dialogPaginationSize()))
+        },
+        normalizedDialogPage(page, totalItems) {
+            return Math.min(
+                Math.max(Number(page || 1), 1),
+                this.dialogPaginationPageCount(totalItems),
+            )
+        },
+        dialogPaginationSlice(items, page) {
+            const rows = Array.isArray(items) ? items : []
+            if (!this.shouldPaginateDialogList(rows.length)) {
+                return rows
+            }
+
+            const currentPage = this.normalizedDialogPage(page, rows.length)
+            const start = (currentPage - 1) * this.dialogPaginationSize()
+
+            return rows.slice(start, start + this.dialogPaginationSize())
+        },
+        dialogPaginationSummary(totalItems, page) {
+            const total = Number(totalItems || 0)
+            if (total <= 0) {
+                return ''
+            }
+
+            const currentPage = this.normalizedDialogPage(page, total)
+            const start = ((currentPage - 1) * this.dialogPaginationSize()) + 1
+            const end = Math.min(currentPage * this.dialogPaginationSize(), total)
+
+            return `${start}-${end} von ${total}`
+        },
+        syncDialogPagination() {
+            this.assignUsersDialog.membersPage = this.normalizedDialogPage(
+                this.assignUsersDialog.membersPage,
+                this.assignUsersDialog.members.length,
+            )
+            this.assignUsersDialog.readOnlyPage = this.normalizedDialogPage(
+                this.assignUsersDialog.readOnlyPage,
+                this.readOnlyCombinedMembers().length,
+            )
         },
         isSelectedGroup(type, groupId) {
             return Number(this.selectedGroupIdsByType?.[type] || 0) === Number(groupId)
@@ -1268,9 +1860,10 @@ export default {
             }
             this.selectedGroupIdsByType = next
         },
-        openAssignUsersDialog(group) {
+        openAssignUsersDialog(group, options = {}) {
             if (!group) return
-            if (group.can_manage_members === false) {
+            const readOnly = !!options.readOnly
+            if (!readOnly && group.can_manage_members === false) {
                 this.notifyError(
                     {
                         response: {
@@ -1285,7 +1878,9 @@ export default {
                 return
             }
             this.assignUsersDialog.group = group
-            this.assignUsersDialog.membersExpanded = true
+            this.assignUsersDialog.readOnly = readOnly
+            this.assignUsersDialog.membersExpanded = false
+            this.assignUsersDialog.membersPage = 1
             this.assignUsersDialog.members = []
             this.assignUsersDialog.membersLoading = false
             this.assignUsersDialog.selectedMemberIds = []
@@ -1313,14 +1908,25 @@ export default {
             this.assignUsersDialog.studentClasses = []
             this.assignUsersDialog.sourceGroups = []
             this.assignUsersDialog.sourceGroupId = null
+            this.assignUsersDialog.sourceMembers = []
+            this.assignUsersDialog.sourceMembersLoading = false
+            this.assignUsersDialog.readOnlyPage = 1
+            this.assignUsersDialog.readOnlyPanel = null
             this.assignUsersDialog.open = true
             this.loadAssignedMembers()
-            this.loadAssignableGroups()
+            if (readOnly) {
+                if (this.showSourceMembersPanel()) {
+                    this.loadSourceMembers()
+                }
+            } else {
+                this.loadAssignableGroups()
+            }
         },
         closeAssignUsersDialog() {
             this.assignUsersDialog.open = false
             this.assignUsersDialog.group = null
-            this.assignUsersDialog.membersExpanded = true
+            this.assignUsersDialog.membersExpanded = false
+            this.assignUsersDialog.membersPage = 1
             this.assignUsersDialog.members = []
             this.assignUsersDialog.membersLoading = false
             this.assignUsersDialog.selectedMemberIds = []
@@ -1348,6 +1954,11 @@ export default {
             this.assignUsersDialog.studentClasses = []
             this.assignUsersDialog.sourceGroups = []
             this.assignUsersDialog.sourceGroupId = null
+            this.assignUsersDialog.sourceMembers = []
+            this.assignUsersDialog.sourceMembersLoading = false
+            this.assignUsersDialog.readOnly = false
+            this.assignUsersDialog.readOnlyPage = 1
+            this.assignUsersDialog.readOnlyPanel = null
         },
         refreshAssignDialogGroupReference() {
             if (!this.assignUsersDialog?.group?.id) return
@@ -1370,7 +1981,27 @@ export default {
                 this.assignUsersDialog.selectedMemberIds = []
                 this.notifyError(error, 'Zugeordnete Benutzer konnten nicht geladen werden.')
             } finally {
+                this.syncDialogPagination()
                 this.assignUsersDialog.membersLoading = false
+            }
+        },
+        async loadSourceMembers() {
+            const group = this.assignUsersDialog.group
+            if (!group?.id || !this.showSourceMembersPanel()) {
+                this.assignUsersDialog.sourceMembers = []
+                this.assignUsersDialog.sourceMembersLoading = false
+                return
+            }
+            this.assignUsersDialog.sourceMembersLoading = true
+            try {
+                const response = await axios.get(`/api/admin/groups/${group.id}/source-members`)
+                this.assignUsersDialog.sourceMembers = Array.isArray(response.data?.data) ? response.data.data : []
+            } catch (error) {
+                this.assignUsersDialog.sourceMembers = []
+                this.notifyError(error, 'Import116-Mitglieder konnten nicht geladen werden.')
+            } finally {
+                this.syncDialogPagination()
+                this.assignUsersDialog.sourceMembersLoading = false
             }
         },
         isAssignedMemberSelected(userId) {
@@ -1957,6 +2588,42 @@ export default {
     overflow: hidden;
 }
 
+.groups-school-panels :deep(.v-expansion-panel) {
+    border-radius: 12px !important;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    background: rgba(255, 255, 255, 0.62);
+}
+
+.groups-school-panels :deep(.v-expansion-panel-title) {
+    min-height: 56px;
+    padding: 12px 14px;
+}
+
+.groups-panel-title-wrap {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.groups-panel-title-meta {
+    font-size: 0.78rem;
+    color: rgba(16, 38, 58, 0.66);
+}
+
+.groups-list-pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+}
+
+.groups-school-panels :deep(.v-expansion-panel-text__wrapper) {
+    padding: 0 0 12px;
+}
+
 .groups-table :deep(table) {
     background: transparent !important;
 }
@@ -2006,6 +2673,31 @@ export default {
     margin-top: 4px;
 }
 
+.groups-row-main {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.groups-row-title {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.groups-row-meta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-left: auto;
+    flex: 0 0 auto;
+}
+
+.groups-row-counter-chip {
+    margin-left: auto;
+}
+
 .groups-assign-section {
     border-radius: 12px;
     border: 1px solid rgba(16, 38, 58, 0.08);
@@ -2041,6 +2733,14 @@ export default {
 }
 
 @media (max-width: 720px) {
+    .groups-row-main {
+        flex-wrap: wrap;
+    }
+
+    .groups-row-meta {
+        width: 100%;
+    }
+
     .groups-assign-list-item {
         flex-direction: column;
         align-items: stretch;

@@ -4,8 +4,11 @@ use App\Models\Import116;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolLicence;
+use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\Teacher;
+use App\Models\TeachingCourse;
+use App\Models\TeachingCourseStudent;
 use App\Models\User;
 use App\Models\UserGroup;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -40,6 +43,10 @@ beforeEach(function () {
     $this->schoolyear = Schoolyear::factory()->create([
         'school_id' => $this->school->id,
     ]);
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'active_schoolyear_id' => $this->schoolyear->id,
+    ]);
 
     $this->materialsAdmin = User::factory()->create([
         'school_id' => $this->school->id,
@@ -67,7 +74,7 @@ beforeEach(function () {
     ]);
 });
 
-test('groups index creates class-based school groups from import116 plus teacher exactly once', function () {
+test('groups index creates class-based school groups with parent groups plus teacher and all-school members exactly once', function () {
     $this->actingAs($this->materialsAdmin, 'sanctum');
 
     Import116::query()->create([
@@ -115,8 +122,159 @@ test('groups index creates class-based school groups from import116 plus teacher
         ->orderByRaw('LOWER(name)')
         ->get();
 
-    expect($schoolGroups)->toHaveCount(3);
-    expect($schoolGroups->pluck('name')->all())->toBe(['1A', '2B', 'Lehrer']);
+    expect($schoolGroups)->toHaveCount(6);
+    expect($schoolGroups->pluck('name')->all())->toBe(['1A', '1A Eltern', '2B', '2B Eltern', 'Alle Schulmitglieder', 'Lehrer']);
+});
+
+test('school groups only consider import116 rows from the active schoolyear', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $otherSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $this->school->id,
+    ]);
+
+    $activeImport = Import116::query()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'class' => '1A',
+        'student_code' => '1011',
+        'last_name' => 'Aktiv',
+        'first_name' => 'Schuljahr',
+        'email' => 'active.schoolyear@student.local',
+        'mother_name' => 'Mutter Aktiv',
+        'mother_email' => 'mother.active.schoolyear@test.local',
+        'import_date' => now(),
+        'import_user_id' => (int) $this->materialsAdmin->id,
+    ]);
+    Import116::query()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $otherSchoolyear->id,
+        'class' => '9Z',
+        'student_code' => '1012',
+        'last_name' => 'Alt',
+        'first_name' => 'Schuljahr',
+        'email' => 'other.schoolyear@student.local',
+        'mother_name' => 'Mutter Alt',
+        'mother_email' => 'mother.other.schoolyear@test.local',
+        'import_date' => now(),
+        'import_user_id' => (int) $this->materialsAdmin->id,
+    ]);
+
+    User::factory()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'email' => 'active.schoolyear@student.local',
+        'import116_id' => (int) $activeImport->id,
+    ]);
+
+    $response = $this->getJson('/api/admin/groups')->assertSuccessful();
+    $groups = collect($response->json('data'));
+
+    expect($groups->pluck('name')->all())->toContain('1A', '1A Eltern', 'Alle Schulmitglieder', 'Lehrer');
+    expect($groups->pluck('name')->all())->not->toContain('9Z', '9Z Eltern');
+
+    $allSchoolMembersGroup = $groups->firstWhere('name', 'Alle Schulmitglieder');
+    expect($allSchoolMembersGroup)->not->toBeNull();
+    expect((int) ($allSchoolMembersGroup['members_count'] ?? 0))->toBe(4);
+    expect((int) ($allSchoolMembersGroup['source_users_count'] ?? 0))->toBe(4);
+
+    $allMembersResponse = $this->getJson('/api/admin/groups/'.(int) $allSchoolMembersGroup['id'].'/source-members')
+        ->assertSuccessful();
+
+    $allMembers = collect($allMembersResponse->json('data'));
+    expect($allMembers->pluck('name')->all())->toContain('Aktiv Schuljahr', 'Mutter Aktiv');
+    expect($allMembers->pluck('name')->all())->not->toContain('Alt Schuljahr', 'Mutter Alt');
+});
+
+test('active schoolyear import rows still use matching users regardless of the user schoolyear', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $otherSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $this->school->id,
+    ]);
+
+    $activeImport = Import116::query()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'class' => '1A',
+        'student_code' => '1014',
+        'last_name' => 'Quer',
+        'first_name' => 'Schuljahr',
+        'email' => 'cross.schoolyear@student.local',
+        'import_date' => now(),
+        'import_user_id' => (int) $this->materialsAdmin->id,
+    ]);
+
+    $crossSchoolyearUser = User::factory()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $otherSchoolyear->id,
+        'email' => 'cross.schoolyear@student.local',
+        'import116_id' => null,
+    ]);
+
+    $response = $this->getJson('/api/admin/groups')->assertSuccessful();
+    $groups = collect($response->json('data'));
+
+    $classGroup = $groups->firstWhere('name', '1A');
+    expect($classGroup)->not->toBeNull();
+    expect((int) ($classGroup['members_count'] ?? 0))->toBe(1);
+    expect((int) ($classGroup['source_users_count'] ?? 0))->toBe(1);
+
+    $groupModel = UserGroup::query()
+        ->where('school_id', (int) $this->school->id)
+        ->where('type', UserGroup::TYPE_SCHOOL)
+        ->where('name', '1A')
+        ->firstOrFail();
+
+    $memberIds = $groupModel->members()
+        ->pluck('users.id')
+        ->map(fn ($id) => (int) $id)
+        ->all();
+
+    expect($memberIds)->toContain((int) $crossSchoolyearUser->id);
+    expect((int) ($crossSchoolyearUser->fresh()->import116_id ?? 0))->toBe((int) $activeImport->id);
+});
+
+test('groups index stays successful when old automatic parent groups exist after changing the active schoolyear', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    Import116::query()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'class' => '1A',
+        'student_code' => '1013',
+        'last_name' => 'Vorjahr',
+        'first_name' => 'Kind',
+        'email' => 'old.parent.group@student.local',
+        'mother_name' => 'Mutter Vorjahr',
+        'mother_email' => 'mother.old.parent.group@test.local',
+        'import_date' => now(),
+        'import_user_id' => (int) $this->materialsAdmin->id,
+    ]);
+
+    $this->getJson('/api/admin/groups')->assertSuccessful();
+
+    $oldParentGroup = UserGroup::query()
+        ->where('school_id', (int) $this->school->id)
+        ->where('type', UserGroup::TYPE_SCHOOL)
+        ->where('name', '1A Eltern')
+        ->firstOrFail();
+
+    $newSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $this->school->id,
+    ]);
+
+    SchoolTool::query()
+        ->where('school_id', (int) $this->school->id)
+        ->update(['active_schoolyear_id' => (int) $newSchoolyear->id]);
+
+    $response = $this->getJson('/api/admin/groups')->assertSuccessful();
+    $groups = collect($response->json('data'));
+
+    $parentGroupPayload = $groups->firstWhere('id', (int) $oldParentGroup->id);
+    expect($parentGroupPayload)->not->toBeNull();
+    expect((int) ($parentGroupPayload['members_count'] ?? -1))->toBe(0);
+    expect((int) ($parentGroupPayload['source_users_count'] ?? -1))->toBe(0);
 });
 
 test('default school groups cannot be changed or deleted', function () {
@@ -170,6 +328,47 @@ test('default school groups cannot be changed or deleted', function () {
         'school_id' => (int) $this->school->id,
         'type' => UserGroup::TYPE_SCHOOL,
         'name' => '1A',
+    ]);
+});
+
+test('manual own groups can be deleted even when they still have members', function () {
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $member = User::factory()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'email' => 'own.group.member@test.local',
+    ]);
+
+    $group = UserGroup::query()->create([
+        'school_id' => (int) $this->school->id,
+        'type' => UserGroup::TYPE_OWN,
+        'name' => 'Freie Eigene Gruppe',
+        'description' => null,
+        'created_by_user_id' => (int) $this->adminUser->id,
+    ]);
+
+    $group->members()->attach((int) $member->id, [
+        'added_by_user_id' => (int) $this->adminUser->id,
+    ]);
+
+    $response = $this->getJson('/api/admin/groups')->assertSuccessful();
+    $groupPayload = collect($response->json('data'))->firstWhere('id', (int) $group->id);
+
+    expect($groupPayload)->not->toBeNull();
+    expect((int) ($groupPayload['members_count'] ?? 0))->toBe(1);
+    expect((bool) ($groupPayload['can_delete'] ?? false))->toBeTrue();
+
+    $this->deleteJson('/api/admin/groups/'.(int) $group->id)
+        ->assertSuccessful()
+        ->assertJsonPath('message', 'Gruppe gelöscht.');
+
+    $this->assertDatabaseMissing('user_groups', [
+        'id' => (int) $group->id,
+    ]);
+    $this->assertDatabaseMissing('user_group_members', [
+        'user_group_id' => (int) $group->id,
+        'user_id' => (int) $member->id,
     ]);
 });
 
@@ -231,6 +430,19 @@ test('teacher school group syncs members from lehrerliste emails', function () {
 
     $expectedIds = collect([(int) $teacherUserA->id, (int) $teacherUserB->id])->sort()->values()->all();
     expect($memberIds)->toBe($expectedIds);
+
+    $sourceMembersResponse = $this->getJson('/api/admin/groups/'.(int) $teacherGroup->id.'/source-members')
+        ->assertSuccessful();
+
+    $rows = collect($sourceMembersResponse->json('data'));
+    expect($rows)->toHaveCount(3);
+    expect($rows->firstWhere('email', 'teacher.a@test.local'))->not->toBeNull();
+    expect($rows->firstWhere('email', 'TEACHER.B@test.local'))->not->toBeNull();
+
+    $ghostTeacher = $rows->firstWhere('email', 'no.user@test.local');
+    expect($ghostTeacher)->not->toBeNull();
+    expect((bool) ($ghostTeacher['has_user_account'] ?? true))->toBeFalse();
+    expect((bool) ($ghostTeacher['already_member'] ?? true))->toBeFalse();
 });
 
 test('teacher school group also includes users with teacher role when lehrerliste is empty', function () {
@@ -249,7 +461,24 @@ test('teacher school group also includes users with teacher role when lehrerlist
     $teacherGroup = $groups->firstWhere('name', 'Lehrer');
     expect($teacherGroup)->not->toBeNull();
     expect((int) ($teacherGroup['members_count'] ?? 0))->toBe(1);
-    expect((int) ($teacherGroup['source_users_count'] ?? 0))->toBe(0);
+    expect((int) ($teacherGroup['source_users_count'] ?? 0))->toBe(1);
+
+    $teacherGroupModel = UserGroup::query()
+        ->where('school_id', (int) $this->school->id)
+        ->where('type', UserGroup::TYPE_SCHOOL)
+        ->where('name', 'Lehrer')
+        ->firstOrFail();
+
+    $sourceMembersResponse = $this->getJson('/api/admin/groups/'.(int) $teacherGroupModel->id.'/source-members')
+        ->assertSuccessful();
+
+    $rows = collect($sourceMembersResponse->json('data'));
+    expect($rows)->toHaveCount(1);
+
+    $roleEntry = $rows->firstWhere('user_id', (int) $teacherRoleUser->id);
+    expect($roleEntry)->not->toBeNull();
+    expect((bool) ($roleEntry['has_user_account'] ?? false))->toBeTrue();
+    expect((bool) ($roleEntry['already_member'] ?? false))->toBeTrue();
 });
 
 test('class school groups sync members from import116 linked users', function () {
@@ -471,7 +700,7 @@ test('groups index creates and syncs combined class group for recognizable class
     $response = $this->getJson('/api/admin/groups')->assertSuccessful();
     $groups = collect($response->json('data'));
 
-    expect($groups->pluck('name')->all())->toContain('6A', '6A-M', '6A-R', 'Lehrer');
+    expect($groups->pluck('name')->all())->toContain('6A', '6A Eltern', '6A-M', '6A-M Eltern', '6A-R', '6A-R Eltern', 'Lehrer');
 
     $group6A = $groups->firstWhere('name', '6A');
     expect($group6A)->not->toBeNull();
@@ -535,4 +764,406 @@ test('groups index repairs missing import116 user link by email and assigns clas
         ->all();
 
     expect($memberIds)->toContain((int) $unlinkedUser->id);
+});
+
+test('source members endpoint returns all import116 users for selected class group', function () {
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $importOne = Import116::query()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'class' => '2B',
+        'student_code' => '7001',
+        'last_name' => 'Source',
+        'first_name' => 'One',
+        'email' => 'source.one@test.local',
+        'import_date' => now(),
+        'import_user_id' => (int) $this->adminUser->id,
+    ]);
+    Import116::query()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'class' => '2B',
+        'student_code' => '7002',
+        'last_name' => 'Source',
+        'first_name' => 'Two',
+        'email' => 'source.two@test.local',
+        'import_date' => now(),
+        'import_user_id' => (int) $this->adminUser->id,
+    ]);
+
+    $linkedUser = User::factory()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'email' => 'source.one@test.local',
+        'import116_id' => (int) $importOne->id,
+    ]);
+
+    $groupsResponse = $this->getJson('/api/admin/groups')->assertSuccessful();
+    $groups = collect($groupsResponse->json('data'));
+    $group2B = $groups->firstWhere('name', '2B');
+    expect($group2B)->not->toBeNull();
+
+    $sourceMembersResponse = $this->getJson('/api/admin/groups/'.(int) $group2B['id'].'/source-members')
+        ->assertSuccessful();
+
+    $rows = collect($sourceMembersResponse->json('data'));
+    expect($rows)->toHaveCount(2);
+
+    $firstLinked = $rows->firstWhere('import116_id', (int) $importOne->id);
+    expect($firstLinked)->not->toBeNull();
+    expect((int) ($firstLinked['user_id'] ?? 0))->toBe((int) $linkedUser->id);
+    expect((bool) ($firstLinked['has_user_account'] ?? false))->toBeTrue();
+    expect((bool) ($firstLinked['already_member'] ?? false))->toBeTrue();
+});
+
+test('parent school groups use child registration status and expose registered versus all parent contacts', function () {
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $registeredStudent = Import116::query()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'class' => '1A',
+        'student_code' => '7101',
+        'last_name' => 'Kind',
+        'first_name' => 'Registriert',
+        'email' => 'registered.child@test.local',
+        'mother_name' => 'Mutter Registriert',
+        'mother_email' => 'registered.mother@test.local',
+        'mother_phone_1' => '0664 1000001',
+        'father_name' => 'Vater Registriert',
+        'father_email' => 'registered.father@test.local',
+        'father_phone_1' => '0664 1000002',
+        'import_date' => now(),
+        'import_user_id' => (int) $this->adminUser->id,
+    ]);
+    Import116::query()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'class' => '1A',
+        'student_code' => '7102',
+        'last_name' => 'Kind',
+        'first_name' => 'Importiert',
+        'email' => 'imported.child@test.local',
+        'mother_name' => 'Mutter Importiert',
+        'mother_email' => 'imported.mother@test.local',
+        'mother_phone_1' => '0664 1000003',
+        'import_date' => now(),
+        'import_user_id' => (int) $this->adminUser->id,
+    ]);
+
+    User::factory()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'email' => 'registered.child@test.local',
+        'import116_id' => (int) $registeredStudent->id,
+    ]);
+
+    $groupsResponse = $this->getJson('/api/admin/groups')->assertSuccessful();
+    $groups = collect($groupsResponse->json('data'));
+
+    $parentGroup = $groups->firstWhere('name', '1A Eltern');
+    expect($parentGroup)->not->toBeNull();
+    expect((bool) ($parentGroup['is_parent_group'] ?? false))->toBeTrue();
+    expect((bool) ($parentGroup['can_edit'] ?? true))->toBeFalse();
+    expect((bool) ($parentGroup['can_manage_members'] ?? true))->toBeFalse();
+    expect((int) ($parentGroup['members_count'] ?? 0))->toBe(2);
+    expect((int) ($parentGroup['source_users_count'] ?? 0))->toBe(3);
+
+    $registeredParentsResponse = $this->getJson('/api/admin/groups/'.(int) $parentGroup['id'].'/members')
+        ->assertSuccessful();
+
+    $registeredParents = collect($registeredParentsResponse->json('data'));
+    expect($registeredParents)->toHaveCount(2);
+    expect($registeredParents->pluck('name')->all())->toContain('Mutter Registriert', 'Vater Registriert');
+    expect($registeredParents->pluck('name')->all())->not->toContain('Mutter Importiert');
+    expect((string) ($registeredParents->firstWhere('name', 'Mutter Registriert')['children_label'] ?? ''))->toBe('Kind Registriert');
+
+    $allParentsResponse = $this->getJson('/api/admin/groups/'.(int) $parentGroup['id'].'/source-members')
+        ->assertSuccessful();
+
+    $allParents = collect($allParentsResponse->json('data'));
+    expect($allParents)->toHaveCount(3);
+    expect($allParents->pluck('name')->all())->toContain('Mutter Registriert', 'Vater Registriert', 'Mutter Importiert');
+    expect((string) ($allParents->firstWhere('name', 'Mutter Importiert')['children_label'] ?? ''))->toBe('Kind Importiert');
+});
+
+test('all school members group combines students parents teachers and admins', function () {
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $registeredStudent = Import116::query()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'class' => '1A',
+        'student_code' => '7301',
+        'last_name' => 'Schueler',
+        'first_name' => 'Registriert',
+        'email' => 'school.member.student.registered@test.local',
+        'mother_name' => 'Mutter Registriert',
+        'mother_email' => 'school.member.mother.registered@test.local',
+        'father_name' => 'Vater Registriert',
+        'father_email' => 'school.member.father.registered@test.local',
+        'import_date' => now(),
+        'import_user_id' => (int) $this->adminUser->id,
+    ]);
+    $importOnlyStudent = Import116::query()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'class' => '2B',
+        'student_code' => '7302',
+        'last_name' => 'Schueler',
+        'first_name' => 'Importiert',
+        'email' => 'school.member.student.import@test.local',
+        'mother_name' => 'Mutter Importiert',
+        'mother_email' => 'school.member.mother.import@test.local',
+        'import_date' => now(),
+        'import_user_id' => (int) $this->adminUser->id,
+    ]);
+
+    $studentUser = User::factory()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'email' => 'school.member.student.registered@test.local',
+        'import116_id' => (int) $registeredStudent->id,
+    ]);
+
+    $teacherUser = User::factory()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'email' => 'school.member.teacher@test.local',
+    ]);
+    $teacherUser->assignRole('teacher');
+
+    $materialsModerator = User::factory()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'email' => 'school.member.materials-moderator@test.local',
+    ]);
+    $materialsModerator->assignRole('materials_moderator');
+
+    $superAdmin = User::factory()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'email' => 'school.member.super-admin@test.local',
+    ]);
+    $superAdmin->assignRole('super_admin');
+
+    Teacher::query()->create([
+        'school_id' => (int) $this->school->id,
+        'last_name' => 'Lehrer',
+        'first_name' => 'Mit User',
+        'short' => 'LMU',
+        'email' => 'school.member.teacher@test.local',
+    ]);
+    Teacher::query()->create([
+        'school_id' => (int) $this->school->id,
+        'last_name' => 'Lehrer',
+        'first_name' => 'Ohne User',
+        'short' => 'LOU',
+        'email' => 'school.member.teacher.import@test.local',
+    ]);
+
+    $groupsResponse = $this->getJson('/api/admin/groups')->assertSuccessful();
+    $groups = collect($groupsResponse->json('data'));
+
+    $allSchoolMembersGroup = $groups->firstWhere('name', 'Alle Schulmitglieder');
+    expect($allSchoolMembersGroup)->not->toBeNull();
+    expect((bool) ($allSchoolMembersGroup['is_system_default'] ?? false))->toBeTrue();
+    expect((bool) ($allSchoolMembersGroup['is_all_school_members_group'] ?? false))->toBeTrue();
+    expect((int) ($allSchoolMembersGroup['members_count'] ?? 0))->toBe(8);
+    expect((int) ($allSchoolMembersGroup['source_users_count'] ?? 0))->toBe(11);
+
+    $registeredMembersResponse = $this->getJson('/api/admin/groups/'.(int) $allSchoolMembersGroup['id'].'/members')
+        ->assertSuccessful();
+
+    $registeredMembers = collect($registeredMembersResponse->json('data'));
+    expect($registeredMembers)->toHaveCount(8);
+    expect($registeredMembers->pluck('name')->all())->toContain(
+        (string) trim((string) (($studentUser->last_name ?? '').' '.($studentUser->first_name ?? ''))),
+        'Mutter Registriert',
+        'Vater Registriert'
+    );
+    expect($registeredMembers->pluck('name')->all())->toContain(
+        (string) trim((string) (($teacherUser->last_name ?? '').' '.($teacherUser->first_name ?? ''))),
+        (string) trim((string) (($this->adminUser->last_name ?? '').' '.($this->adminUser->first_name ?? ''))),
+        (string) trim((string) (($this->materialsAdmin->last_name ?? '').' '.($this->materialsAdmin->first_name ?? ''))),
+        (string) trim((string) (($materialsModerator->last_name ?? '').' '.($materialsModerator->first_name ?? ''))),
+        (string) trim((string) (($superAdmin->last_name ?? '').' '.($superAdmin->first_name ?? '')))
+    );
+    expect($registeredMembers->pluck('name')->all())->not->toContain('Mutter Importiert', 'Lehrer Ohne User', 'Schueler Importiert');
+    expect((string) ($registeredMembers->firstWhere('name', 'Mutter Registriert')['member_type_label'] ?? ''))->toBe('Eltern');
+
+    $allMembersResponse = $this->getJson('/api/admin/groups/'.(int) $allSchoolMembersGroup['id'].'/source-members')
+        ->assertSuccessful();
+
+    $allMembers = collect($allMembersResponse->json('data'));
+    expect($allMembers)->toHaveCount(11);
+    expect($allMembers->pluck('name')->all())->toContain('Mutter Importiert', 'Lehrer Ohne User');
+    expect((string) ($allMembers->firstWhere('name', 'Mutter Importiert')['member_type_label'] ?? ''))->toBe('Eltern');
+    expect((string) ($allMembers->firstWhere('email', 'school.member.teacher.import@test.local')['member_type_label'] ?? ''))->toBe('Lehrer:in');
+    expect((string) ($allMembers->firstWhere('email', 'school.member.materials-moderator@test.local')['member_type_label'] ?? ''))->toBe('Admin');
+    expect((string) ($allMembers->firstWhere('import116_id', (int) $importOnlyStudent->id)['member_type_label'] ?? ''))->toBe('Schüler:in');
+});
+
+test('groups index creates and syncs automatic own groups for my teaching courses', function () {
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $registeredStudentOneImport = Import116::query()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'class' => '1A',
+        'student_code' => '8101',
+        'last_name' => 'Course',
+        'first_name' => 'Student One',
+        'email' => 'course.student.one@test.local',
+        'mother_name' => 'Mutter One',
+        'mother_email' => 'mother.one@test.local',
+        'father_name' => 'Vater One',
+        'father_email' => 'father.one@test.local',
+        'import_date' => now(),
+        'import_user_id' => (int) $this->adminUser->id,
+    ]);
+    $registeredStudentTwoImport = Import116::query()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'class' => '2B',
+        'student_code' => '8102',
+        'last_name' => 'Course',
+        'first_name' => 'Student Two',
+        'email' => 'course.student.two@test.local',
+        'mother_name' => 'Mutter Two',
+        'mother_email' => 'mother.two@test.local',
+        'import_date' => now(),
+        'import_user_id' => (int) $this->adminUser->id,
+    ]);
+
+    $studentOne = User::factory()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'email' => 'course.student.one@test.local',
+        'import116_id' => (int) $registeredStudentOneImport->id,
+    ]);
+    $studentTwo = User::factory()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'email' => 'course.student.two@test.local',
+        'import116_id' => (int) $registeredStudentTwoImport->id,
+    ]);
+    $importOnlyStudent = Import116::query()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'class' => '2B',
+        'student_code' => '8001',
+        'last_name' => 'Import',
+        'first_name' => 'Only',
+        'email' => 'course.import.only@test.local',
+        'father_name' => 'Vater Import',
+        'father_email' => 'father.import@test.local',
+        'import_date' => now(),
+        'import_user_id' => (int) $this->adminUser->id,
+    ]);
+
+    $course = TeachingCourse::factory()
+        ->forSchool($this->school)
+        ->forSchoolyear($this->schoolyear)
+        ->forTeacher($this->adminUser)
+        ->withClasses(['2B', '1A'])
+        ->create([
+            'title' => 'Mathematik',
+        ]);
+
+    TeachingCourseStudent::query()->create([
+        'teaching_course_id' => (int) $course->id,
+        'user_id' => (int) $studentOne->id,
+    ]);
+    TeachingCourseStudent::query()->create([
+        'teaching_course_id' => (int) $course->id,
+        'user_id' => (int) $studentTwo->id,
+    ]);
+    TeachingCourseStudent::query()->create([
+        'teaching_course_id' => (int) $course->id,
+        'import116_id' => (int) $importOnlyStudent->id,
+    ]);
+
+    $response = $this->getJson('/api/admin/groups')->assertSuccessful();
+
+    $automaticGroup = UserGroup::query()
+        ->where('school_id', (int) $this->school->id)
+        ->where('type', UserGroup::TYPE_OWN)
+        ->where('teaching_course_id', (int) $course->id)
+        ->where('teaching_course_group_type', UserGroup::TEACHING_COURSE_GROUP_TYPE_STUDENTS)
+        ->firstOrFail();
+
+    expect((string) $automaticGroup->name)->toBe('Mathematik (1A, 2B)');
+    expect($automaticGroup->description)->toBeNull();
+
+    $memberIds = $automaticGroup->members()
+        ->pluck('users.id')
+        ->map(fn ($id) => (int) $id)
+        ->sort()
+        ->values()
+        ->all();
+
+    expect($memberIds)->toBe([
+        (int) $studentOne->id,
+        (int) $studentTwo->id,
+    ]);
+
+    $groupPayload = collect($response->json('data'))
+        ->first(fn (array $group) => (int) ($group['teaching_course_id'] ?? 0) === (int) $course->id
+            && ($group['teaching_course_group_type'] ?? null) === UserGroup::TEACHING_COURSE_GROUP_TYPE_STUDENTS);
+
+    expect($groupPayload)->not->toBeNull();
+    expect((bool) ($groupPayload['can_edit'] ?? true))->toBeFalse();
+    expect((bool) ($groupPayload['can_manage_members'] ?? true))->toBeFalse();
+    expect((bool) ($groupPayload['can_delete'] ?? true))->toBeFalse();
+    expect((int) ($groupPayload['members_count'] ?? 0))->toBe(2);
+    expect((int) ($groupPayload['source_users_count'] ?? 0))->toBe(3);
+
+    $sourceMembersResponse = $this->getJson('/api/admin/groups/'.(int) $automaticGroup->id.'/source-members')
+        ->assertSuccessful();
+
+    $sourceMembers = collect($sourceMembersResponse->json('data'));
+    expect($sourceMembers)->toHaveCount(3);
+    expect($sourceMembers->firstWhere('user_id', (int) $studentOne->id))->not->toBeNull();
+    expect($sourceMembers->firstWhere('user_id', (int) $studentTwo->id))->not->toBeNull();
+
+    $importOnlyPayload = $sourceMembers->firstWhere('import116_id', (int) $importOnlyStudent->id);
+    expect($importOnlyPayload)->not->toBeNull();
+    expect((bool) ($importOnlyPayload['has_user_account'] ?? true))->toBeFalse();
+    expect((bool) ($importOnlyPayload['already_member'] ?? true))->toBeFalse();
+
+    $parentGroup = UserGroup::query()
+        ->where('school_id', (int) $this->school->id)
+        ->where('type', UserGroup::TYPE_OWN)
+        ->where('teaching_course_id', (int) $course->id)
+        ->where('teaching_course_group_type', UserGroup::TEACHING_COURSE_GROUP_TYPE_PARENTS)
+        ->firstOrFail();
+
+    expect((string) $parentGroup->name)->toBe('Mathematik (1A, 2B) Eltern');
+    expect($parentGroup->description)->toBeNull();
+
+    $parentGroupPayload = collect($response->json('data'))
+        ->first(fn (array $group) => (int) ($group['teaching_course_id'] ?? 0) === (int) $course->id
+            && ($group['teaching_course_group_type'] ?? null) === UserGroup::TEACHING_COURSE_GROUP_TYPE_PARENTS);
+
+    expect($parentGroupPayload)->not->toBeNull();
+    expect((bool) ($parentGroupPayload['is_parent_group'] ?? false))->toBeTrue();
+    expect((int) ($parentGroupPayload['members_count'] ?? 0))->toBe(3);
+    expect((int) ($parentGroupPayload['source_users_count'] ?? 0))->toBe(4);
+
+    $registeredParentsResponse = $this->getJson('/api/admin/groups/'.(int) $parentGroup->id.'/members')
+        ->assertSuccessful();
+
+    $registeredParents = collect($registeredParentsResponse->json('data'));
+    expect($registeredParents)->toHaveCount(3);
+    expect($registeredParents->pluck('name')->all())->toContain('Mutter One', 'Vater One', 'Mutter Two');
+    expect($registeredParents->pluck('name')->all())->not->toContain('Vater Import');
+
+    $allParentsResponse = $this->getJson('/api/admin/groups/'.(int) $parentGroup->id.'/source-members')
+        ->assertSuccessful();
+
+    $allParents = collect($allParentsResponse->json('data'));
+    expect($allParents)->toHaveCount(4);
+    expect($allParents->pluck('name')->all())->toContain('Mutter One', 'Vater One', 'Mutter Two', 'Vater Import');
 });

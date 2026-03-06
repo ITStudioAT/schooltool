@@ -10,6 +10,7 @@ use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudent;
 use App\Models\User;
 use App\Services\TeachingCourseService;
+use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -106,7 +107,7 @@ class TeachingCourseController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request, TeachingCourseService $service)
+    public function store(Request $request, TeachingCourseService $service, TeachingCourseWorkEntrySyncService $entrySyncService)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -166,6 +167,7 @@ class TeachingCourseController extends Controller
         ]);
 
         $service->syncCourseStudents($course, $studentsPayload, $studentsDeletedPayload);
+        $entrySyncService->syncNonGroupWorksForCourse($course);
 
         return response()->json(new CourseResource($course), 201);
     }
@@ -181,7 +183,7 @@ class TeachingCourseController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, TeachingCourse $course, TeachingCourseService $service)
+    public function update(Request $request, TeachingCourse $course, TeachingCourseService $service, TeachingCourseWorkEntrySyncService $entrySyncService)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -244,6 +246,7 @@ class TeachingCourseController extends Controller
         ]);
 
         $service->syncCourseStudents($course, $studentsPayload, $studentsDeletedPayload);
+        $entrySyncService->syncNonGroupWorksForCourse($course);
 
         return response()->json(new CourseResource($course));
     }
