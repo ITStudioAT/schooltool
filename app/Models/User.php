@@ -126,6 +126,7 @@ class User extends Authenticatable
 
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory;
+
     use HasRoles;
     use ImpersonateTrait;
     use Notifiable;
@@ -248,6 +249,11 @@ class User extends Authenticatable
     public function materialCards(): HasMany
     {
         return $this->hasMany(MaterialCard::class);
+    }
+
+    public function materialWorkspaces(): HasMany
+    {
+        return $this->hasMany(MaterialWorkspace::class);
     }
 
     public function tutoringOffers(): HasMany

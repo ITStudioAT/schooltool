@@ -1004,6 +1004,10 @@
         </v-card>
     </v-dialog>
 
+    <MaterialShareDraftDialog
+        v-model="shareDummyDialogOpen"
+        :target="shareTarget" />
+
     <MaterialShareDialog
         v-model="shareDialogOpen"
         :target="shareTarget"
@@ -1034,6 +1038,7 @@ import MaterialsOverviewPagination from '../overview/MaterialsOverviewPagination
 import MaterialsOverviewSortBar from '../overview/MaterialsOverviewSortBar.vue'
 import MaterialsSubjectsContentsTree from '../overview/MaterialsSubjectsContentsTree.vue'
 import MaterialDetailDialog from '../overview/dialogs/MaterialDetailDialog.vue'
+import MaterialShareDraftDialog from '../overview/dialogs/MaterialShareDraftDialog.vue'
 import MaterialShareDialog from '../overview/dialogs/MaterialShareDialog.vue'
 
 const FilePond = vueFilePond(FilePondPluginFileValidateType)
@@ -1096,6 +1101,7 @@ export default {
         MaterialsOverviewSortBar,
         MaterialsSubjectsContentsTree,
         MaterialDetailDialog,
+        MaterialShareDraftDialog,
         MaterialShareDialog,
     },
     data() {
@@ -1167,6 +1173,7 @@ export default {
             attachmentDeleteArmedIds: [],
             attachmentNameEditingIds: [],
             allListedAttachmentBytes: null,
+            allListedAttachmentBytesLoaded: false,
             allListedAttachmentBytesLoading: false,
             allListedAttachmentBytesRequestId: 0,
             filterCountCards: [],
@@ -1182,6 +1189,7 @@ export default {
             textAttachmentEditorBodyHtml: '',
             textAttachmentEditorError: '',
             shareDialogOpen: false,
+            shareDummyDialogOpen: false,
             shareAssignmentsLoading: false,
             shareAssignmentsError: '',
             shareAssignments: [],
@@ -1764,7 +1772,6 @@ export default {
     },
     methods: {
         openShareDialog(target = {}) {
-            if (!this.enableShareButtons) return
             this.shareTarget = {
                 level: String(target?.level || '').trim(),
                 id: Number.isFinite(Number(target?.id)) ? Number(target.id) : null,
@@ -1776,6 +1783,14 @@ export default {
                 statusColor: String(target?.statusColor || '').trim(),
                 attachmentsCount: Number.isFinite(Number(target?.attachmentsCount)) ? Number(target.attachmentsCount) : null,
             }
+
+            if (!this.enableShareButtons) {
+                this.shareDialogOpen = false
+                this.shareDummyDialogOpen = true
+                return
+            }
+
+            this.shareDummyDialogOpen = false
             this.shareAssignments = []
             this.shareAssignmentsError = ''
             this.shareDialogOpen = true
@@ -1913,6 +1928,7 @@ export default {
         shareScopeType(level) {
             return (
                 {
+                    all: 'all',
                     subject: 'subject',
                     topic: 'topic',
                     unit: 'unit',
@@ -1923,7 +1939,31 @@ export default {
         async loadShareAssignments() {
             const scopeType = this.shareScopeType(this.shareTarget.level)
             const scopeId = Number(this.shareTarget.id || 0)
-            if (!scopeType || scopeId <= 0) {
+            if (!scopeType) {
+                this.shareAssignments = []
+                return
+            }
+
+            if (scopeType === 'all') {
+                this.shareAssignmentsLoading = true
+                this.shareAssignmentsError = ''
+                try {
+                    const response = await axios.get('/api/admin/materials/shares', {
+                        params: {
+                            scope_type: 'all',
+                        },
+                    })
+                    this.shareAssignments = Array.isArray(response.data?.data) ? response.data.data : []
+                } catch (error) {
+                    this.shareAssignments = []
+                    this.shareAssignmentsError = error?.response?.data?.message || 'Freigaben konnten nicht geladen werden.'
+                } finally {
+                    this.shareAssignmentsLoading = false
+                }
+                return
+            }
+
+            if (scopeId <= 0) {
                 this.shareAssignments = []
                 return
             }
@@ -2344,7 +2384,7 @@ export default {
                 this.currentPage = Math.max(1, Math.round(currentPage))
                 const forceFilterCountRefresh = options?.forceFilterCountRefresh === true
                 this.refreshFilterCountCards({ force: forceFilterCountRefresh })
-                this.refreshAllListedAttachmentBytes()
+                this.refreshAllListedAttachmentBytes({ force: forceFilterCountRefresh })
                 if (this.isSubjectsContentsOverview) {
                     await this.loadSubjectsContentsOverview({ force: true })
                 }
@@ -2865,7 +2905,11 @@ export default {
                 return sum + bytes
             }, 0)
         },
-        async refreshAllListedAttachmentBytes() {
+        async refreshAllListedAttachmentBytes({ force = false } = {}) {
+            if (!force && this.allListedAttachmentBytesLoaded) {
+                return
+            }
+
             const requestId = this.allListedAttachmentBytesRequestId + 1
             this.allListedAttachmentBytesRequestId = requestId
 
@@ -2875,8 +2919,10 @@ export default {
 
             if (Array.isArray(snapshot)) {
                 this.allListedAttachmentBytes = this.calculateAttachmentBytesForCards(snapshot)
+                this.allListedAttachmentBytesLoaded = true
             } else {
                 this.allListedAttachmentBytes = null
+                this.allListedAttachmentBytesLoaded = false
             }
             this.allListedAttachmentBytesLoading = false
         },

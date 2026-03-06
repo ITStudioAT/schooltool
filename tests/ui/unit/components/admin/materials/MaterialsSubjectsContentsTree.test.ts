@@ -17,12 +17,12 @@ const vuetifyStubs = {
     VIcon: { template: '<i><slot /></i>' },
 }
 
-function renderTree(items: any[], options: { enableRemoveButtons?: boolean } = {}) {
+function renderTree(items: any[], options: { enableRemoveButtons?: boolean; enableShareButtons?: boolean } = {}) {
     return render(MaterialsSubjectsContentsTree, {
         props: {
             items,
             actionBusy: false,
-            enableShareButtons: false,
+            enableShareButtons: options.enableShareButtons === true,
             enableCreateButtons: false,
             enableRemoveButtons: options.enableRemoveButtons === true,
             showShareIndicators: false,
@@ -157,5 +157,69 @@ describe('MaterialsSubjectsContentsTree', () => {
         const events = emitted('unlink-linked-topic') || []
         expect(events.length).toBe(1)
         expect((events[0]?.[0] as any)?.id).toBe(11)
+    })
+
+    it('emits open-share also when share actions are disabled (dummy handled by parent)', async () => {
+        const { emitted } = renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [],
+            },
+        ])
+
+        const buttons = screen.getAllByRole('button')
+        await fireEvent.click(buttons[0])
+        await fireEvent.click(buttons[1])
+
+        const events = emitted('open-share') || []
+        expect(events.length).toBe(2)
+        expect((events[0]?.[0] as any)?.level).toBe('all')
+        expect((events[1]?.[0] as any)?.level).toBe('subject')
+    })
+
+    it('emits open-share when share actions are enabled', async () => {
+        const { emitted } = renderTree(
+            [
+                {
+                    id: 1,
+                    name: 'Mathematik',
+                    materials: [],
+                    topics: [],
+                },
+            ],
+            { enableShareButtons: true }
+        )
+
+        const buttons = screen.getAllByRole('button')
+        await fireEvent.click(buttons[1])
+
+        const events = emitted('open-share') || []
+        expect(events.length).toBe(1)
+        expect((events[0]?.[0] as any)?.level).toBe('subject')
+        expect((events[0]?.[0] as any)?.id).toBe(1)
+    })
+
+    it('emits workspace share payload from the workspace teilen symbol', async () => {
+        const { emitted } = renderTree(
+            [
+                {
+                    id: 1,
+                    name: 'Mathematik',
+                    materials: [],
+                    topics: [],
+                },
+            ],
+            { enableShareButtons: true }
+        )
+
+        const buttons = screen.getAllByRole('button')
+        await fireEvent.click(buttons[0])
+
+        const events = emitted('open-share') || []
+        expect(events.length).toBe(1)
+        expect((events[0]?.[0] as any)?.level).toBe('all')
+        expect((events[0]?.[0] as any)?.label).toBe('Workspace')
     })
 })

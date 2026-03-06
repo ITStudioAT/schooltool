@@ -13,6 +13,7 @@ use App\Models\MaterialTopicInboxImport;
 use App\Models\MaterialType;
 use App\Models\MaterialUnit;
 use App\Models\MaterialUnitInboxImport;
+use App\Models\MaterialWorkspace;
 use App\Models\School;
 use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
@@ -260,6 +261,23 @@ test('config exposes user pagination settings for materials overview', function 
         ->assertStatus(200)
         ->assertJsonPath('can_manage_user_settings', true)
         ->assertJsonPath('user_settings.materials_pagination_number', (int) config('schooltool.pagination'));
+});
+
+test('config creates and returns default workspace for current user', function () {
+    $this->actingAs($this->materialsModerator, 'sanctum');
+
+    $response = $this->getJson('/api/admin/materials/config')
+        ->assertStatus(200)
+        ->assertJsonPath('workspace.name', 'Workspace');
+
+    $workspaceId = (int) $response->json('workspace.id');
+    expect($workspaceId)->toBeGreaterThan(0);
+
+    $this->assertDatabaseHas('material_workspaces', [
+        'id' => $workspaceId,
+        'user_id' => (int) $this->materialsModerator->id,
+        'is_default' => 1,
+    ]);
 });
 
 test('config returns default material type options from schooltool config', function () {
@@ -877,6 +895,51 @@ test('teacher can create material card and gets keywords', function () {
         ->and($card->school_id)->toBe($this->teacher->school_id)
         ->and($card->keywords)->toBeArray()
         ->and(count($card->keywords))->toBeGreaterThan(0);
+});
+
+test('subject and material card are assigned to active workspace', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+    $workspaceId = (int) MaterialWorkspace::query()
+        ->where('user_id', (int) $this->teacher->id)
+        ->where('is_default', true)
+        ->value('id');
+
+    if ($workspaceId <= 0) {
+        $workspaceId = (int) $this->getJson('/api/admin/materials/config')->json('workspace.id');
+    }
+
+    $subjectResponse = $this->postJson('/api/admin/materials/subjects', [
+        'data' => [
+            'name' => 'Biologie',
+        ],
+    ])->assertStatus(200);
+
+    $subjectId = (int) $subjectResponse->json('data.id');
+
+    $cardResponse = $this->postJson('/api/admin/materials/cards', [
+        'data' => [
+            'title' => 'Zellenlehre',
+            'classifications' => [
+                [
+                    'subject' => 'Biologie',
+                ],
+            ],
+        ],
+    ])->assertStatus(200);
+
+    $cardId = (int) $cardResponse->json('id');
+
+    $this->assertDatabaseHas('material_subjects', [
+        'id' => $subjectId,
+        'user_id' => (int) $this->teacher->id,
+        'workspace_id' => $workspaceId,
+    ]);
+
+    $this->assertDatabaseHas('material_cards', [
+        'id' => $cardId,
+        'user_id' => (int) $this->teacher->id,
+        'workspace_id' => $workspaceId,
+    ]);
 });
 
 test('quick store creates inbox card', function () {

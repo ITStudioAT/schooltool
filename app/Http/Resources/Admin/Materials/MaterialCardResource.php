@@ -15,6 +15,7 @@ class MaterialCardResource extends JsonResource
             'id' => $this->id,
             'school_id' => $this->school_id,
             'user_id' => $this->user_id,
+            'workspace_id' => $this->workspace_id,
             'title' => $this->title,
             'source_url' => $this->source_url,
             'source_text' => $this->source_text,
@@ -33,7 +34,7 @@ class MaterialCardResource extends JsonResource
             'attachments' => MaterialCardAttachmentResource::collection($this->whenLoaded('attachments')),
             'attachments_count' => $this->when(
                 $this->relationLoaded('attachments'),
-                fn() => $this->attachments->count()
+                fn () => $this->attachments->count()
             ),
             'created_at' => $this->created_at?->toDateTimeString(),
             'updated_at' => $this->updated_at?->toDateTimeString(),

@@ -184,6 +184,39 @@ describe('MaterialsOverviewView', () => {
         expect(loadSubjectsContentsOverview).toHaveBeenCalledWith({ force: true })
     })
 
+    it('openShareDialog opens persistent dummy dialog when share actions are disabled', () => {
+        const methods = (MaterialsOverviewView as any)?.methods || {}
+        const loadShareAssignments = vi.fn()
+        const vm: any = {
+            ...methods,
+            enableShareButtons: false,
+            shareDialogOpen: false,
+            shareDummyDialogOpen: false,
+            shareAssignments: [{ id: 1 }],
+            shareAssignmentsError: 'x',
+            shareTarget: {
+                level: '',
+                id: null,
+                label: '',
+                parentLabel: '',
+            },
+            loadShareAssignments,
+        }
+
+        methods.openShareDialog.call(vm, {
+            level: 'subject',
+            id: 7,
+            label: 'Mathematik',
+        })
+
+        expect(vm.shareDummyDialogOpen).toBe(true)
+        expect(vm.shareDialogOpen).toBe(false)
+        expect(vm.shareTarget.level).toBe('subject')
+        expect(vm.shareTarget.id).toBe(7)
+        expect(vm.shareTarget.label).toBe('Mathematik')
+        expect(loadShareAssignments).not.toHaveBeenCalled()
+    })
+
     it('normalizes and sorts shared objects from inbox users response', () => {
         const methods = (MaterialsOverviewView as any)?.methods || {}
         const vm: any = { ...methods }

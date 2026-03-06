@@ -3001,32 +3001,39 @@ test('lookup users returns only same-school users matching search', function () 
         'schoolyear_id' => $this->schoolyear->id,
         'first_name' => 'Anna',
         'last_name' => 'Muster',
+        'short' => 'ANM',
         'email' => 'anna.muster@test.local',
     ]);
+    $match->assignRole('materials_moderator');
 
-    User::factory()->create([
+    $sameSchoolWithoutMaterialsRole = User::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'first_name' => 'Peter',
         'last_name' => 'Beispiel',
+        'short' => 'PEB',
         'email' => 'peter@example.test',
     ]);
+    $sameSchoolWithoutMaterialsRole->assignRole('user');
 
     $otherSchool = School::factory()->create();
     $otherYear = Schoolyear::factory()->create(['school_id' => $otherSchool->id]);
-    User::factory()->create([
+    $otherSchoolMatch = User::factory()->create([
         'school_id' => $otherSchool->id,
         'schoolyear_id' => $otherYear->id,
         'first_name' => 'Anna',
         'last_name' => 'Extern',
+        'short' => 'AEX',
         'email' => 'anna.extern@test.local',
     ]);
+    $otherSchoolMatch->assignRole('materials_admin');
 
-    $response = $this->getJson('/api/admin/materials/shares/lookup-users?search=Anna')
+    $response = $this->getJson('/api/admin/materials/shares/lookup-users?search=ANM')
         ->assertStatus(200)
         ->assertJsonCount(1, 'data');
 
     expect((int) $response->json('data.0.id'))->toBe((int) $match->id);
+    expect((string) $response->json('data.0.short'))->toBe('ANM');
     expect((string) $response->json('data.0.email'))->toBe('anna.muster@test.local');
 });
 
@@ -3046,6 +3053,7 @@ test('lookup users excludes the authenticated user from search results', functio
         'last_name' => 'Kollege',
         'email' => 'anna.kollege@test.local',
     ]);
+    $match->assignRole('materials_admin');
 
     $response = $this->getJson('/api/admin/materials/shares/lookup-users?search=Anna')
         ->assertStatus(200);
@@ -3069,6 +3077,16 @@ test('lookup external user checks selectable school and email', function () {
         'last_name' => 'Extern',
         'email' => 'eva.extern@test.local',
     ]);
+    $remoteUser->assignRole('materials_admin');
+
+    $remoteUserWithoutMaterialsRole = User::factory()->create([
+        'school_id' => $otherSchool->id,
+        'schoolyear_id' => $otherYear->id,
+        'first_name' => 'Una',
+        'last_name' => 'Role',
+        'email' => 'no.role@test.local',
+    ]);
+    $remoteUserWithoutMaterialsRole->assignRole('user');
 
     $this->getJson('/api/admin/materials/shares/lookup-external-user?'.http_build_query([
         'target_school_id' => $otherSchool->id,
@@ -3083,6 +3101,13 @@ test('lookup external user checks selectable school and email', function () {
     $this->getJson('/api/admin/materials/shares/lookup-external-user?'.http_build_query([
         'target_school_id' => $otherSchool->id,
         'user_email' => 'missing@test.local',
+    ]))
+        ->assertStatus(200)
+        ->assertJsonPath('data.exists', false);
+
+    $this->getJson('/api/admin/materials/shares/lookup-external-user?'.http_build_query([
+        'target_school_id' => $otherSchool->id,
+        'user_email' => 'no.role@test.local',
     ]))
         ->assertStatus(200)
         ->assertJsonPath('data.exists', false);
@@ -3145,7 +3170,7 @@ test('lookup groups validates type and scopes own groups to creator', function (
     expect((string) $materialsResponse->json('data.0.type'))->toBe(UserGroup::TYPE_MATERIALS);
 });
 
-test('lookup schools excludes own school and non-selectable schools', function () {
+test('lookup schools excludes own school and includes other schools regardless of selectable flag', function () {
     $this->actingAs($this->materialsAdmin, 'sanctum');
 
     $this->school->update(['is_selectable' => true]);
@@ -3154,16 +3179,19 @@ test('lookup schools excludes own school and non-selectable schools', function (
         'is_selectable' => true,
         'long_name' => 'Andere Schule',
     ]);
-    School::factory()->create([
+    $nonSelectableOther = School::factory()->create([
         'is_selectable' => false,
         'long_name' => 'Nicht auswählbar',
     ]);
 
     $response = $this->getJson('/api/admin/materials/shares/lookup-schools')
         ->assertStatus(200)
-        ->assertJsonCount(1, 'data');
+        ->assertJsonCount(2, 'data');
 
-    expect((int) $response->json('data.0.id'))->toBe((int) $selectableOther->id);
+    $ids = collect($response->json('data'))->pluck('id')->map(fn ($id) => (int) $id)->all();
+    expect($ids)->toContain((int) $selectableOther->id);
+    expect($ids)->toContain((int) $nonSelectableOther->id);
+    expect($ids)->not->toContain((int) $this->school->id);
 });
 
 test('can create user target for same-school user on workspace scope', function () {
@@ -3623,7 +3651,7 @@ test('inbox users endpoint returns needs migration meta when share tables are mi
         ->assertJsonCount(0, 'data');
 });
 
-test('share mutation and lookup endpoints return 409 when share tables are missing', function () {
+test('share mutation endpoints return 409 when share tables are missing but lookup endpoints still work', function () {
     $this->actingAs($this->materialsAdmin, 'sanctum');
 
     Schema::dropIfExists('material_share_rule_archives');
@@ -3633,16 +3661,16 @@ test('share mutation and lookup endpoints return 409 when share tables are missi
     Schema::dropIfExists('material_share_rules');
 
     $this->getJson('/api/admin/materials/shares/lookup-users?search=test')
-        ->assertStatus(409);
+        ->assertStatus(200);
 
     $this->getJson('/api/admin/materials/shares/lookup-schools')
-        ->assertStatus(409);
+        ->assertStatus(200);
 
     $this->getJson('/api/admin/materials/shares/lookup-external-user?target_school_id=1&user_email=test%40example.com')
-        ->assertStatus(409);
+        ->assertStatus(422);
 
     $this->getJson('/api/admin/materials/shares/lookup-groups?type=materials')
-        ->assertStatus(409);
+        ->assertStatus(200);
 
     $this->postJson('/api/admin/materials/shares/inbox/archive', [
         'rule_id' => 1,

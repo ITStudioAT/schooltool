@@ -14,13 +14,40 @@ class MaterialSubject extends Model
 
     protected $fillable = [
         'user_id',
+        'workspace_id',
         'name',
         'sort_order',
     ];
 
+    protected static function booted(): void
+    {
+        static::creating(function (MaterialSubject $subject): void {
+            if ((int) ($subject->workspace_id ?? 0) > 0 || (int) ($subject->user_id ?? 0) <= 0) {
+                return;
+            }
+
+            $workspace = MaterialWorkspace::query()->firstOrCreate(
+                [
+                    'user_id' => (int) $subject->user_id,
+                    'name' => 'Workspace',
+                ],
+                [
+                    'is_default' => true,
+                ]
+            );
+
+            $subject->workspace_id = (int) $workspace->id;
+        });
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function workspace(): BelongsTo
+    {
+        return $this->belongsTo(MaterialWorkspace::class, 'workspace_id');
     }
 
     public function topics(): HasMany

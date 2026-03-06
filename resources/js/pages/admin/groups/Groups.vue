@@ -62,7 +62,7 @@
                                     Gruppe anlegen
                                 </v-btn>
                                 <v-btn
-                                    v-if="canManageType(section.type) && selectedGroupByType(section.type)"
+                                    v-if="canManageType(section.type) && selectedGroupByType(section.type) && selectedGroupByType(section.type).can_manage_members !== false"
                                     flat
                                     color="secondary"
                                     prepend-icon="mdi-account-plus-outline"
@@ -77,7 +77,7 @@
                         </div>
 
                         <div class="groups-table-wrap" v-else>
-                            <v-table density="compact" class="groups-table">
+                            <v-table density="comfortable" class="groups-table">
                                 <thead>
                                     <tr>
                                         <th>Name</th>
@@ -93,17 +93,22 @@
                                         <td>
                                             <div class="d-flex align-center justify-space-between flex-wrap ga-2">
                                                 <div class="d-inline-flex align-center flex-wrap ga-2">
-                                                    <div class="font-weight-bold text-body-2">{{ group.name }}</div>
+                                                    <div class="font-weight-bold text-body-1">{{ group.name }}</div>
                                                     <v-chip
-                                                        :color="group.members_count > 0 ? 'warning' : 'secondary'"
+                                                        :color="group.type === 'school' ? 'info' : (group.members_count > 0 ? 'warning' : 'secondary')"
                                                         variant="flat"
-                                                        size="x-small">
-                                                        {{ group.members_count }}
+                                                        size="small">
+                                                        <template v-if="group.type === 'school'">
+                                                            {{ Number(group.source_users_count || 0) }}/{{ Number(group.members_count || 0) }}
+                                                        </template>
+                                                        <template v-else>
+                                                            {{ Number(group.members_count || 0) }}
+                                                        </template>
                                                     </v-chip>
                                                 </div>
                                                 <div class="d-inline-flex align-center ga-1">
                                                     <v-btn
-                                                        v-if="canManageType(section.type)"
+                                                        v-if="canManageType(section.type) && group.can_edit !== false"
                                                         icon="mdi-pencil"
                                                         size="small"
                                                         variant="text"
@@ -111,7 +116,7 @@
                                                         :title="`${group.name} bearbeiten`"
                                                         @click.stop="openEditDialog(group)" />
                                                     <v-btn
-                                                        v-if="canManageType(section.type)"
+                                                        v-if="canManageType(section.type) && group.can_delete !== false"
                                                         icon="mdi-delete"
                                                         size="small"
                                                         variant="text"
@@ -121,8 +126,10 @@
                                                         @click.stop="openDeleteDialog(group)" />
                                                 </div>
                                             </div>
-                                            <div class="text-caption text-medium-emphasis groups-desc-cell">
-                                                {{ group.description || 'Keine Beschreibung' }}
+                                            <div
+                                                v-if="String(group.description || '').trim() !== ''"
+                                                class="text-caption text-medium-emphasis groups-desc-cell">
+                                                {{ group.description }}
                                             </div>
                                         </td>
                                     </tr>
@@ -1263,6 +1270,20 @@ export default {
         },
         openAssignUsersDialog(group) {
             if (!group) return
+            if (group.can_manage_members === false) {
+                this.notifyError(
+                    {
+                        response: {
+                            status: 409,
+                            data: {
+                                message: 'Standard-Schulgruppen werden automatisch verwaltet und können nicht manuell bearbeitet werden.',
+                            },
+                        },
+                    },
+                    'Benutzer können für diese Gruppe nicht manuell zugeordnet werden.',
+                )
+                return
+            }
             this.assignUsersDialog.group = group
             this.assignUsersDialog.membersExpanded = true
             this.assignUsersDialog.members = []
@@ -1950,6 +1971,11 @@ export default {
     vertical-align: middle;
 }
 
+.groups-table :deep(tbody td) {
+    padding-top: 14px !important;
+    padding-bottom: 14px !important;
+}
+
 .groups-table :deep(.groups-row) {
     cursor: pointer;
     transition: background-color 0.12s ease, box-shadow 0.12s ease;
@@ -1976,7 +2002,8 @@ export default {
     width: 100%;
     max-width: none;
     white-space: normal;
-    line-height: 1.25;
+    line-height: 1.35;
+    margin-top: 4px;
 }
 
 .groups-assign-section {
@@ -1988,7 +2015,7 @@ export default {
 
 .groups-assign-list {
     display: grid;
-    gap: 8px;
+    gap: 10px;
 }
 
 .groups-assign-list-item {
@@ -1999,7 +2026,7 @@ export default {
     border-radius: 10px;
     border: 1px solid rgba(16, 38, 58, 0.08);
     background: rgba(255, 255, 255, 0.72);
-    padding: 8px 10px;
+    padding: 12px 14px;
 }
 
 .min-w-0 {

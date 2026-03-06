@@ -16,6 +16,7 @@ use App\Models\MaterialTopicInboxImport;
 use App\Models\MaterialType;
 use App\Models\MaterialUnit;
 use App\Models\MaterialUnitInboxImport;
+use App\Models\MaterialWorkspace;
 use App\Models\SchoolTool;
 use App\Models\User;
 use App\Models\UserGroup;
@@ -45,18 +46,27 @@ class MaterialService
 
     private ?bool $hasMaterialTopicInboxImportsTableCache = null;
 
+    /** @var array<int,int> */
+    private array $activeWorkspaceByUserId = [];
+
     public function __construct(
         private readonly MaterialKeywordService $keywordService,
+        private readonly MaterialWorkspaceService $workspaceService,
     ) {}
 
     public function config(User $user): array
     {
         $this->syncLinkedUnitInboxImportsForUser($user);
         $this->syncLinkedTopicInboxImportsForUser($user);
+        $workspace = $this->activeWorkspaceForUser($user);
 
         return [
             'module' => 'materials',
             'school_id' => $user->school_id,
+            'workspace' => [
+                'id' => (int) $workspace->id,
+                'name' => (string) $workspace->name,
+            ],
             'status_values' => $this->statusValuesForUser($user),
             'type_values' => $this->typeValuesForUser($user),
             'default_type_values' => $this->defaultTypeValues(),
@@ -76,9 +86,11 @@ class MaterialService
         $this->syncLinkedInboxImportsForUser($user);
         $this->syncLinkedUnitInboxImportsForUser($user);
         $this->syncLinkedTopicInboxImportsForUser($user);
+        $workspaceId = $this->activeWorkspaceIdForUser($user);
 
         $query = MaterialCard::query()
             ->where('user_id', $user->id)
+            ->where('workspace_id', $workspaceId)
             ->with($this->cardRelations())
             ->orderByDesc('updated_at');
 
@@ -333,10 +345,12 @@ class MaterialService
     public function createCard(User $user, array $data): MaterialCard
     {
         $defaultStatus = $this->defaultStatusValueForUser($user);
+        $workspaceId = $this->activeWorkspaceIdForUser($user);
 
         $card = MaterialCard::create([
             'school_id' => $user->school_id,
             'user_id' => $user->id,
+            'workspace_id' => $workspaceId,
             'title' => $data['title'],
             'source_url' => $data['source_url'] ?? null,
             'source_text' => $data['source_text'] ?? null,
@@ -385,7 +399,11 @@ class MaterialService
     {
         $card->loadMissing('attachments', 'classifications.subject', 'classifications.topic', 'classifications.unit');
         $restoreLimit = $this->restorableDeletedCardsLimit();
-        $this->trimRestorableDeletedCardsForUser((int) $card->user_id, max(0, $restoreLimit - 1));
+        $this->trimRestorableDeletedCardsForUser(
+            userId: (int) $card->user_id,
+            keepCount: max(0, $restoreLimit - 1),
+            workspaceId: (int) ($card->workspace_id ?? 0),
+        );
 
         DB::transaction(function () use ($card) {
             $this->storeDeletedClassificationSnapshot($card);
@@ -405,9 +423,12 @@ class MaterialService
             return null;
         }
 
+        $workspaceId = $this->activeWorkspaceIdForUser($user);
+
         /** @var MaterialCard|null $card */
         $card = MaterialCard::onlyTrashed()
             ->where('user_id', $user->id)
+            ->where('workspace_id', $workspaceId)
             ->orderByDesc('deleted_at')
             ->first();
 
@@ -434,9 +455,12 @@ class MaterialService
             return null;
         }
 
+        $workspaceId = $this->activeWorkspaceIdForUser($user);
+
         /** @var MaterialCard|null $card */
         $card = MaterialCard::onlyTrashed()
             ->where('user_id', $user->id)
+            ->where('workspace_id', $workspaceId)
             ->where('id', $cardId)
             ->first();
 
@@ -463,9 +487,12 @@ class MaterialService
             return false;
         }
 
+        $workspaceId = $this->activeWorkspaceIdForUser($user);
+
         /** @var MaterialCard|null $card */
         $card = MaterialCard::onlyTrashed()
             ->where('user_id', $user->id)
+            ->where('workspace_id', $workspaceId)
             ->where('id', $cardId)
             ->first();
 
@@ -487,8 +514,11 @@ class MaterialService
             return [];
         }
 
+        $workspaceId = $this->activeWorkspaceIdForUser($user);
+
         $cards = MaterialCard::onlyTrashed()
             ->where('user_id', $user->id)
+            ->where('workspace_id', $workspaceId)
             ->orderByDesc('deleted_at')
             ->limit($limit)
             ->get();
@@ -1440,6 +1470,7 @@ class MaterialService
     public function updateSubject(User $user, MaterialSubject $subject, string $name): MaterialSubject
     {
         $this->assertSubjectBelongsToUser($user, $subject);
+        $workspaceId = $this->activeWorkspaceIdForUser($user);
 
         $normalized = $this->normalizeName($name);
         if ($normalized === '') {
@@ -1450,6 +1481,7 @@ class MaterialService
 
         $alreadyExists = MaterialSubject::query()
             ->where('user_id', $user->id)
+            ->where('workspace_id', $workspaceId)
             ->where('name', $normalized)
             ->where('id', '<>', $subject->id)
             ->exists();
@@ -1470,6 +1502,7 @@ class MaterialService
     public function deleteSubject(User $user, MaterialSubject $subject): void
     {
         $this->assertSubjectBelongsToUser($user, $subject);
+        $workspaceId = $this->activeWorkspaceIdForUser($user);
 
         $topicIds = MaterialTopic::query()
             ->where('subject_id', $subject->id)
@@ -1488,7 +1521,7 @@ class MaterialService
                 ->values();
 
         $inUse = (! $topicIds->isEmpty() || ! $unitIds->isEmpty()) && MaterialCardClassification::query()
-            ->whereHas('materialCard')
+            ->whereHas('materialCard', fn ($query) => $query->where('workspace_id', $workspaceId))
             ->where(function ($query) use ($topicIds, $unitIds) {
                 if (! $topicIds->isEmpty()) {
                     $query->whereIn('topic_id', $topicIds->all());
@@ -1513,6 +1546,7 @@ class MaterialService
     public function moveSubject(User $user, MaterialSubject $subject, string $direction): bool
     {
         $this->assertSubjectBelongsToUser($user, $subject);
+        $workspaceId = $this->activeWorkspaceIdForUser($user);
 
         if (! $this->supportsClassificationSortOrder()) {
             throw ValidationException::withMessages([
@@ -1523,6 +1557,7 @@ class MaterialService
         $normalizedDirection = $this->normalizeMoveDirection($direction);
         $orderedIds = MaterialSubject::query()
             ->where('user_id', $user->id)
+            ->where('workspace_id', $workspaceId)
             ->orderBy('sort_order')
             ->orderBy('id')
             ->pluck('id')
@@ -1616,6 +1651,7 @@ class MaterialService
     public function deleteTopic(User $user, MaterialTopic $topic): void
     {
         $this->assertTopicBelongsToUser($user, $topic);
+        $workspaceId = $this->activeWorkspaceIdForUser($user);
 
         $unitIds = MaterialUnit::query()
             ->where('topic_id', $topic->id)
@@ -1625,7 +1661,7 @@ class MaterialService
             ->values();
 
         $inUse = ! $unitIds->isEmpty() && MaterialCardClassification::query()
-            ->whereHas('materialCard')
+            ->whereHas('materialCard', fn ($query) => $query->where('workspace_id', $workspaceId))
             ->whereIn('unit_id', $unitIds->all())
             ->exists();
 
@@ -1736,9 +1772,10 @@ class MaterialService
     public function deleteUnit(User $user, MaterialUnit $unit): void
     {
         $this->assertUnitBelongsToUser($user, $unit);
+        $workspaceId = $this->activeWorkspaceIdForUser($user);
 
         $inUse = MaterialCardClassification::query()
-            ->whereHas('materialCard')
+            ->whereHas('materialCard', fn ($query) => $query->where('workspace_id', $workspaceId))
             ->where('unit_id', $unit->id)
             ->exists();
 
@@ -1887,6 +1924,7 @@ class MaterialService
     public function convertTopicToSubject(User $user, MaterialTopic $topic, string $newSubjectName): MaterialSubject
     {
         $this->assertTopicBelongsToUser($user, $topic);
+        $workspaceId = $this->activeWorkspaceIdForUser($user);
 
         $normalizedName = $this->normalizeName($newSubjectName);
         if ($normalizedName === '') {
@@ -1897,6 +1935,7 @@ class MaterialService
 
         $subjectExists = MaterialSubject::query()
             ->where('user_id', $user->id)
+            ->where('workspace_id', $workspaceId)
             ->where('name', $normalizedName)
             ->exists();
 
@@ -1909,6 +1948,7 @@ class MaterialService
         return DB::transaction(function () use ($user, $topic, $normalizedName) {
             $newSubjectData = [
                 'user_id' => $user->id,
+                'workspace_id' => $this->activeWorkspaceIdForUser($user),
                 'name' => $normalizedName,
             ];
             if ($this->supportsClassificationSortOrder()) {
@@ -2138,8 +2178,11 @@ class MaterialService
             return [];
         }
 
+        $workspaceId = $this->activeWorkspaceIdForUser($user);
+
         $subjectsQuery = MaterialSubject::query()
             ->where('user_id', $user->id)
+            ->where('workspace_id', $workspaceId)
             ->with(['topics.units']);
 
         if ($this->supportsClassificationSortOrder()) {
@@ -2170,7 +2213,7 @@ class MaterialService
         $usageRows = $subjectIds->isEmpty() && $topicIds->isEmpty() && $unitIds->isEmpty()
             ? collect()
             : MaterialCardClassification::query()
-                ->whereHas('materialCard')
+                ->whereHas('materialCard', fn ($query) => $query->where('workspace_id', $workspaceId))
                 ->where(function ($query) use ($subjectIds, $topicIds, $unitIds) {
                     if (! $subjectIds->isEmpty()) {
                         $query->whereIn('subject_id', $subjectIds->all());
@@ -2487,8 +2530,10 @@ class MaterialService
 
     private function firstOrCreateSubject(User $user, string $name): MaterialSubject
     {
+        $workspaceId = $this->activeWorkspaceIdForUser($user);
         $attributes = [
             'user_id' => $user->id,
+            'workspace_id' => $workspaceId,
             'name' => $name,
         ];
 
@@ -2538,8 +2583,10 @@ class MaterialService
 
     private function nextSubjectSortOrder(User $user): int
     {
+        $workspaceId = $this->activeWorkspaceIdForUser($user);
         $max = (int) MaterialSubject::query()
             ->where('user_id', $user->id)
+            ->where('workspace_id', $workspaceId)
             ->max('sort_order');
 
         return max(0, $max) + 1;
@@ -2626,6 +2673,11 @@ class MaterialService
         if ((int) $subject->user_id !== (int) $user->id) {
             abort(403, 'Fach gehört nicht zum aktuellen Benutzer.');
         }
+
+        $workspaceId = $this->activeWorkspaceIdForUser($user);
+        if ((int) ($subject->workspace_id ?? 0) !== $workspaceId) {
+            abort(403, 'Fach liegt nicht im aktiven Workspace.');
+        }
     }
 
     private function assertTopicBelongsToUser(User $user, MaterialTopic $topic): void
@@ -2634,6 +2686,11 @@ class MaterialService
         $subject = $topic->subject;
         if (! $subject instanceof MaterialSubject || (int) $subject->user_id !== (int) $user->id) {
             abort(403, 'Thema gehört nicht zum aktuellen Benutzer.');
+        }
+
+        $workspaceId = $this->activeWorkspaceIdForUser($user);
+        if ((int) ($subject->workspace_id ?? 0) !== $workspaceId) {
+            abort(403, 'Thema liegt nicht im aktiven Workspace.');
         }
     }
 
@@ -2645,6 +2702,11 @@ class MaterialService
 
         if (! $subject instanceof MaterialSubject || (int) $subject->user_id !== (int) $user->id) {
             abort(403, 'Bereich gehört nicht zum aktuellen Benutzer.');
+        }
+
+        $workspaceId = $this->activeWorkspaceIdForUser($user);
+        if ((int) ($subject->workspace_id ?? 0) !== $workspaceId) {
+            abort(403, 'Bereich liegt nicht im aktiven Workspace.');
         }
     }
 
@@ -3881,6 +3943,28 @@ class MaterialService
         return array_fill_keys($memberGroupIds, true);
     }
 
+    private function activeWorkspaceForUser(User $user): MaterialWorkspace
+    {
+        $userId = (int) $user->id;
+        $workspaceId = $this->activeWorkspaceByUserId[$userId] ?? 0;
+        if ($workspaceId > 0) {
+            $cachedWorkspace = MaterialWorkspace::query()->find($workspaceId);
+            if ($cachedWorkspace instanceof MaterialWorkspace) {
+                return $cachedWorkspace;
+            }
+        }
+
+        $workspace = $this->workspaceService->resolveActiveWorkspace($user);
+        $this->activeWorkspaceByUserId[$userId] = (int) $workspace->id;
+
+        return $workspace;
+    }
+
+    private function activeWorkspaceIdForUser(User $user): int
+    {
+        return (int) $this->activeWorkspaceForUser($user)->id;
+    }
+
     private function supportsMaterialInboxImports(): bool
     {
         if ($this->hasMaterialInboxImportsTableCache === null) {
@@ -3926,14 +4010,19 @@ class MaterialService
         return max(1, (int) config('schooltool.materials_restore_deleted_cards_limit', 5));
     }
 
-    private function trimRestorableDeletedCardsForUser(int $userId, int $keepCount): void
+    private function trimRestorableDeletedCardsForUser(int $userId, int $keepCount, ?int $workspaceId = null): void
     {
         $keep = max(0, $keepCount);
-        $deletedCards = MaterialCard::onlyTrashed()
+        $deletedCardsQuery = MaterialCard::onlyTrashed()
             ->where('user_id', $userId)
             ->orderByDesc('deleted_at')
-            ->orderByDesc('id')
-            ->get();
+            ->orderByDesc('id');
+
+        if ((int) ($workspaceId ?? 0) > 0) {
+            $deletedCardsQuery->where('workspace_id', (int) $workspaceId);
+        }
+
+        $deletedCards = $deletedCardsQuery->get();
 
         if ($deletedCards->count() <= $keep) {
             return;

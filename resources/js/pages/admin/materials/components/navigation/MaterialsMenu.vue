@@ -14,6 +14,18 @@
 
         <v-btn
             class="materials-menu-btn"
+            :class="{ 'materials-menu-btn--active': modelValue === 'teilen' }"
+            rounded="pill"
+            size="large"
+            variant="flat"
+            prepend-icon="mdi-share-variant-outline"
+            :disabled="disabled"
+            @click="$emit('update:modelValue', 'teilen')">
+            Teilen
+        </v-btn>
+
+        <v-btn
+            class="materials-menu-btn"
             :class="{ 'materials-menu-btn--active': modelValue === 'subjects' }"
             rounded="pill"
             size="large"

@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\MaterialCard;
+use App\Models\MaterialWorkspace;
 use App\Models\School;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -19,6 +20,22 @@ class MaterialCardFactory extends Factory
         return [
             'school_id' => School::factory(),
             'user_id' => User::factory(),
+            'workspace_id' => function (array $attributes): ?int {
+                $userId = (int) ($attributes['user_id'] ?? 0);
+                if ($userId <= 0) {
+                    return null;
+                }
+
+                return (int) MaterialWorkspace::query()->firstOrCreate(
+                    [
+                        'user_id' => $userId,
+                        'name' => 'Workspace',
+                    ],
+                    [
+                        'is_default' => true,
+                    ]
+                )->id;
+            },
             'title' => fake()->sentence(4),
             'source_url' => fake()->url(),
             'source_text' => fake()->sentence(10),

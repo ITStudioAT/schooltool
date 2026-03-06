@@ -29,10 +29,8 @@ use App\Models\User;
 use App\Services\AdminService;
 use App\Services\UserService;
 use App\Traits\PaginationTrait;
-use Illuminate\Auth\Events\Validated;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Log;
 
 class UserController extends Controller
 {
@@ -55,7 +53,8 @@ class UserController extends Controller
                 $query->where(function ($q) use ($search_string) {
                     $q->where('last_name', 'like', "%{$search_string}%")
                         ->orWhere('first_name', 'like', "%{$search_string}%")
-                        ->orWhere('email', 'like', "%{$search_string}%");
+                        ->orWhere('email', 'like', "%{$search_string}%")
+                        ->orWhere('schoolclass', 'like', "%{$search_string}%");
                 });
             })
             ->when($role, function ($query, $role) {
@@ -67,7 +66,7 @@ class UserController extends Controller
 
         return response()->json([
             'data' => UserResource::collection($users),
-            'meta' => new PaginateResource($users)
+            'meta' => new PaginateResource($users),
         ]);
     }
 
@@ -82,9 +81,9 @@ class UserController extends Controller
         }
 
         $user = $service->update($validated, $auth_user);
+
         return response()->json(new UserResource($user), 200);
     }
-
 
     public function storeUser(UserStoreUserRequest $request, UserService $service)
     {
@@ -97,6 +96,7 @@ class UserController extends Controller
         }
 
         $user = $service->store($auth_user->school_id, $validated);
+
         return response()->json(new UserResource($user), 200);
     }
 
@@ -211,8 +211,6 @@ class UserController extends Controller
         return response()->json(new UserResource($user), 200);
     }
 
-
-
     public function destroy(User $user)
     {
 
@@ -250,7 +248,7 @@ class UserController extends Controller
     {
 
         // Benutzer is_confirmed?
-        if (isset($validated['is_confirmed']) &&  $validated['is_confirmed']) {
+        if (isset($validated['is_confirmed']) && $validated['is_confirmed']) {
             if ($user) {
                 if (! $user->confirmed_at) {
                     $validated['confirmed_at'] = now();
@@ -283,7 +281,6 @@ class UserController extends Controller
     public function updateProfile(UpdateProfileRequest $request, User $user, AdminService $adminService)
     {
 
-
         if (! $auth_user = $this->userHasAtLeastOneRole()) {
             abort(403, 'Sie haben keine Berechtigung');
         }
@@ -293,6 +290,7 @@ class UserController extends Controller
         // Keine E-Mail-Änderung => Update durchführen und zwar für alle User in allen Schulen
         if ($user->email == $validated['email']) {
             User::where('email', $user->email)->update($validated);
+
             return response()->json(new UserResource($user), 200);
         }
 
@@ -302,15 +300,14 @@ class UserController extends Controller
             abort(422, 'Diese E-Mail-Adresse wird bereits verwendet.');
         }
 
-
-
         // Token für 2FA setzen und E-Mail senden
         $data['school'] = $auth_user->selectedSchool;
         $email_90 = $user->email;
-        $user->email =  $validated['email'];
-        $adminService->setToken2Fa($user, $data, "Code für E-Mail-Änderung");
+        $user->email = $validated['email'];
+        $adminService->setToken2Fa($user, $data, 'Code für E-Mail-Änderung');
         $user->email = $email_90;
         $user->save();
+
         return response()->json(['answer' => 'INPUT_CODE', 'email' => $user->email, 'email_new' => $validated['email']]);
     }
 
@@ -343,7 +340,7 @@ class UserController extends Controller
         $validated = $request->validated();
 
         $data['school'] = $user->selectedSchool;
-        $adminService->setToken2Fa($user, $data, "Code für Kennwort-Änderung");
+        $adminService->setToken2Fa($user, $data, 'Code für Kennwort-Änderung');
 
         $data = ['step' => 'PASSWORD_ENTER_TOKEN'];
 
@@ -387,7 +384,7 @@ class UserController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $userService = new UserService();
+        $userService = new UserService;
 
         $result = $userService->check2Fa($user, $validated['is_2fa'], $validated['email_2fa']);
 
@@ -418,7 +415,7 @@ class UserController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $userService = new UserService();
+        $userService = new UserService;
 
         $result = $userService->check2Fa($user, $validated['is_2fa'], $validated['email_2fa']);
 
@@ -448,9 +445,10 @@ class UserController extends Controller
 
         $validated = $request->validated();
 
-        $userService = new UserService();
+        $userService = new UserService;
         $userService->confirm($validated['ids']);
-        //XXXXXXX
+
+        // XXXXXXX
         return response()->json(VerificationResult::EMAIL_SENT, 200);
     }
 
@@ -461,7 +459,7 @@ class UserController extends Controller
         }
         $validated = $request->validated();
 
-        $userService = new UserService();
+        $userService = new UserService;
         $userService->sendVerificationEmail($validated['ids']);
 
         return response()->json(VerificationResult::EMAIL_SENT, 200);
@@ -493,7 +491,7 @@ class UserController extends Controller
         $validated = $request->validated();
         $user = User::where('email', $validated['email'])->first();
 
-        $userService = new UserService();
+        $userService = new UserService;
         $userService->sendVerificationEmail($user->id);
 
         return response()->json(VerificationResult::EMAIL_SENT, 200);
@@ -509,7 +507,7 @@ class UserController extends Controller
         $user_ids = $validated['user_ids'];
         $role_ids = $validated['role_ids'];
 
-        $userService = new UserService();
+        $userService = new UserService;
         $userService->setNewUserRoles($user_ids, $role_ids, $user);
 
         return response()->noContent();

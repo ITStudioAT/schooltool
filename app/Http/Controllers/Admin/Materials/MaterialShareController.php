@@ -22,6 +22,7 @@ use App\Models\User;
 use App\Models\UserGroup;
 use App\Services\Materials\MaterialKeywordService;
 use App\Services\Materials\MaterialService;
+use App\Services\Materials\MaterialWorkspaceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -63,6 +64,10 @@ class MaterialShareController extends Controller
 
     private ?bool $materialStatusesHasColorColumnCache = null;
 
+    public function __construct(
+        private readonly MaterialWorkspaceService $workspaceService,
+    ) {}
+
     public function index(Request $request)
     {
         $authUser = $this->materialsShareUser();
@@ -78,6 +83,7 @@ class MaterialShareController extends Controller
         }
 
         $schoolId = (int) $authUser->school_id;
+        $workspaceId = $this->activeWorkspaceIdForUser($authUser);
         $scopeTypeFilter = (string) $request->query('scope_type', '');
         $scopeIdFilter = $request->query('scope_id');
         $scopeIdFilter = number_format((float) $scopeIdFilter, 0, '', '') === (string) $scopeIdFilter
@@ -86,6 +92,7 @@ class MaterialShareController extends Controller
 
         $rules = MaterialShareRule::query()
             ->where('school_id', $schoolId)
+            ->when($workspaceId !== null, fn ($query) => $query->where('workspace_id', $workspaceId))
             ->when($scopeTypeFilter !== '', fn ($query) => $query->where('scope_type', $scopeTypeFilter))
             ->when($scopeTypeFilter !== '' && $scopeIdFilter !== null, fn ($query) => $query->where('scope_id', $scopeIdFilter))
             ->with([
@@ -2253,7 +2260,6 @@ class MaterialShareController extends Controller
     public function lookupUsers(Request $request)
     {
         $authUser = $this->materialsShareUser();
-        $this->abortIfShareTablesMissing();
 
         $search = trim((string) $request->query('search', ''));
         if ($search === '') {
@@ -2265,12 +2271,16 @@ class MaterialShareController extends Controller
         $rows = User::query()
             ->where('school_id', (int) $authUser->school_id)
             ->whereKeyNot((int) $authUser->id)
+            ->whereHas('roles', function ($query) {
+                $query->whereIn('name', $this->materialsAccessRoleNames());
+            })
             ->where(function ($query) use ($search, $tokens) {
                 $like = '%'.$search.'%';
                 $query
                     ->where('email', 'like', $like)
                     ->orWhere('first_name', 'like', $like)
-                    ->orWhere('last_name', 'like', $like);
+                    ->orWhere('last_name', 'like', $like)
+                    ->orWhere('short', 'like', $like);
 
                 foreach ($tokens as $token) {
                     $token = trim((string) $token);
@@ -2278,13 +2288,14 @@ class MaterialShareController extends Controller
                         continue;
                     }
                     $query->orWhere('first_name', 'like', '%'.$token.'%')
-                        ->orWhere('last_name', 'like', '%'.$token.'%');
+                        ->orWhere('last_name', 'like', '%'.$token.'%')
+                        ->orWhere('short', 'like', '%'.$token.'%');
                 }
             })
             ->orderBy('last_name')
             ->orderBy('first_name')
             ->limit(25)
-            ->get(['id', 'first_name', 'last_name', 'email']);
+            ->get(['id', 'first_name', 'last_name', 'short', 'email']);
 
         return response()->json([
             'data' => $rows->map(function (User $user) {
@@ -2295,6 +2306,7 @@ class MaterialShareController extends Controller
                     'label' => $fullName !== '' ? $fullName : ($user->email ?: 'Benutzer'),
                     'first_name' => (string) ($user->first_name ?? ''),
                     'last_name' => (string) ($user->last_name ?? ''),
+                    'short' => (string) ($user->short ?? ''),
                     'email' => (string) ($user->email ?? ''),
                 ];
             })->values(),
@@ -2304,7 +2316,6 @@ class MaterialShareController extends Controller
     public function lookupGroups(Request $request)
     {
         $authUser = $this->materialsShareUser();
-        $this->abortIfShareTablesMissing();
 
         $type = (string) $request->query('type', '');
         if (! in_array($type, [UserGroup::TYPE_MATERIALS, UserGroup::TYPE_OWN], true)) {
@@ -2337,11 +2348,10 @@ class MaterialShareController extends Controller
     public function lookupSchools(Request $request)
     {
         $authUser = $this->materialsShareUser();
-        $this->abortIfShareTablesMissing();
 
         $schools = School::query()
-            ->selectables()
             ->where('id', '!=', (int) $authUser->school_id)
+            ->orderBy('long_name')
             ->get(['id', 'long_name', 'short_name']);
 
         return response()->json([
@@ -2361,7 +2371,6 @@ class MaterialShareController extends Controller
     public function lookupExternalUser(Request $request)
     {
         $authUser = $this->materialsShareUser();
-        $this->abortIfShareTablesMissing();
 
         $data = $request->validate(
             [
@@ -2379,8 +2388,8 @@ class MaterialShareController extends Controller
 
         $targetSchoolId = (int) $data['target_school_id'];
         $targetSchool = School::query()
-            ->selectables()
             ->where('id', '!=', (int) $authUser->school_id)
+            ->orderBy('long_name')
             ->find($targetSchoolId);
 
         if (! $targetSchool) {
@@ -2392,6 +2401,9 @@ class MaterialShareController extends Controller
         $email = mb_strtolower(trim((string) $data['user_email']));
         $user = User::query()
             ->where('school_id', $targetSchoolId)
+            ->whereHas('roles', function ($query) {
+                $query->whereIn('name', $this->materialsAccessRoleNames());
+            })
             ->whereRaw('LOWER(email) = ?', [$email])
             ->first(['id', 'school_id', 'first_name', 'last_name', 'email']);
 
@@ -2421,6 +2433,7 @@ class MaterialShareController extends Controller
     {
         $authUser = $this->materialsShareUser();
         $this->abortIfShareTablesMissing();
+        $workspaceId = $this->activeWorkspaceIdForUser($authUser);
 
         $data = $request->validate([
             'scope_type' => ['required', 'string', Rule::in(MaterialShareRule::SCOPES)],
@@ -2516,6 +2529,7 @@ class MaterialShareController extends Controller
         $rule = MaterialShareRule::query()
             ->where('school_id', (int) $authUser->school_id)
             ->where('created_by_user_id', (int) $authUser->id)
+            ->when($workspaceId !== null, fn ($query) => $query->where('workspace_id', $workspaceId))
             ->where('scope_type', $scopeType)
             ->where('scope_id', $scopeId)
             ->orderByDesc('id')
@@ -2525,6 +2539,7 @@ class MaterialShareController extends Controller
             $rule = MaterialShareRule::create([
                 'school_id' => (int) $authUser->school_id,
                 'created_by_user_id' => (int) $authUser->id,
+                'workspace_id' => $workspaceId,
                 'scope_type' => $scopeType,
                 'scope_id' => $scopeId,
                 'is_active' => true,
@@ -2539,6 +2554,7 @@ class MaterialShareController extends Controller
         $target = $this->findExistingTargetForScope(
             schoolId: (int) $authUser->school_id,
             creatorUserId: (int) $authUser->id,
+            workspaceId: $workspaceId,
             scopeType: $scopeType,
             scopeId: $scopeId,
             targetType: $targetType,
@@ -2683,6 +2699,19 @@ class MaterialShareController extends Controller
         return Schema::hasTable('material_share_rules') && Schema::hasTable('material_share_targets');
     }
 
+    /**
+     * @return array<int, string>
+     */
+    private function materialsAccessRoleNames(): array
+    {
+        return [
+            'super_admin',
+            'admin',
+            'materials_admin',
+            'materials_moderator',
+        ];
+    }
+
     private function abortIfShareTablesMissing(): void
     {
         if ($this->shareTablesAvailable()) {
@@ -2695,6 +2724,7 @@ class MaterialShareController extends Controller
     private function findExistingTargetForScope(
         int $schoolId,
         int $creatorUserId,
+        ?int $workspaceId,
         string $scopeType,
         ?int $scopeId,
         string $targetType,
@@ -2707,15 +2737,31 @@ class MaterialShareController extends Controller
             ->when($targetType === MaterialShareTarget::TARGET_EVERYONE, fn ($query) => $query->where('audience_scope', $audienceScope))
             ->when($targetType === MaterialShareTarget::TARGET_USER, fn ($query) => $query->where('user_id', $userId))
             ->when($targetType === MaterialShareTarget::TARGET_GROUP, fn ($query) => $query->where('user_group_id', $groupId))
-            ->whereHas('rule', function ($query) use ($schoolId, $creatorUserId, $scopeType, $scopeId) {
+            ->whereHas('rule', function ($query) use ($schoolId, $creatorUserId, $workspaceId, $scopeType, $scopeId) {
                 $query
                     ->where('school_id', $schoolId)
                     ->where('created_by_user_id', $creatorUserId)
+                    ->when($workspaceId !== null, fn ($ruleQuery) => $ruleQuery->where('workspace_id', $workspaceId))
                     ->where('scope_type', $scopeType)
                     ->where('scope_id', $scopeId);
             })
             ->orderByDesc('id')
             ->first();
+    }
+
+    private function activeWorkspaceIdForUser(User $user): ?int
+    {
+        if (
+            ! Schema::hasTable('material_workspaces')
+            || ! Schema::hasTable('material_share_rules')
+            || ! Schema::hasColumn('material_share_rules', 'workspace_id')
+        ) {
+            return null;
+        }
+
+        $workspace = $this->workspaceService->resolveActiveWorkspace($user);
+
+        return (int) $workspace->id;
     }
 
     private function serializeRule(MaterialShareRule $rule, int $schoolId): array
@@ -2732,6 +2778,7 @@ class MaterialShareController extends Controller
 
         return [
             'id' => (int) $rule->id,
+            'workspace_id' => $rule->workspace_id ? (int) $rule->workspace_id : null,
             'scope_type' => (string) $rule->scope_type,
             'scope_id' => $rule->scope_id ? (int) $rule->scope_id : null,
             'scope_label' => $scopeLabel,

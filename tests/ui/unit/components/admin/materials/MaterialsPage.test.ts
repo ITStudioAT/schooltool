@@ -15,11 +15,11 @@ describe('Materials page navigation', () => {
         const method = (Materials as any).methods.applyRouteSelection
 
         const ctxAllowed: any = {
-            $route: { path: '/admin/materials', query: { main_action: 'subjects' } },
+            $route: { path: '/admin/materials', query: { main_action: 'teilen' } },
             main_action: 'overview',
         }
         method.call(ctxAllowed)
-        expect(ctxAllowed.main_action).toBe('subjects')
+        expect(ctxAllowed.main_action).toBe('teilen')
 
         const ctxBlocked: any = {
             $route: { path: '/admin/materials', query: { main_action: 'shares' } },
@@ -52,4 +52,3 @@ describe('Materials page navigation', () => {
         expect(ctx.isMenuLocked).toBe(false)
     })
 })
-
