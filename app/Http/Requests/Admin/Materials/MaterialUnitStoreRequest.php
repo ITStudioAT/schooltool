@@ -18,6 +18,7 @@ class MaterialUnitStoreRequest extends FormRequest
         return [
             'data.topic_id' => $this->topicIdRules(),
             'data.name' => ['required', 'string', 'max:255'],
+            'data.before_unit_id' => ['nullable', 'integer', 'min:1'],
             'data.allow_duplicate' => ['nullable', 'boolean'],
         ];
     }

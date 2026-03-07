@@ -1735,8 +1735,13 @@ class MaterialService
         return true;
     }
 
-    public function createUnit(User $user, MaterialTopic $topic, string $name, bool $allowDuplicate = false): MaterialUnit
-    {
+    public function createUnit(
+        User $user,
+        MaterialTopic $topic,
+        string $name,
+        bool $allowDuplicate = false,
+        ?int $beforeUnitId = null
+    ): MaterialUnit {
         if (! $this->supportsClassificationTables()) {
             throw ValidationException::withMessages([
                 'data.name' => 'Fachstruktur ist noch nicht verfügbar.',
@@ -1753,18 +1758,10 @@ class MaterialService
         }
 
         if ($allowDuplicate) {
-            $data = [
-                'topic_id' => (int) $topic->id,
-                'name' => $normalized,
-            ];
-            if ($this->supportsClassificationSortOrder()) {
-                $data['sort_order'] = $this->nextUnitSortOrder((int) $topic->id);
-            }
-
-            return MaterialUnit::query()->create($data)->fresh();
+            return $this->createUnitWithOptionalPosition($topic, $normalized, $beforeUnitId)->fresh();
         }
 
-        return $this->firstOrCreateUnit($topic, $normalized);
+        return $this->firstOrCreateUnit($topic, $normalized, $beforeUnitId);
     }
 
     public function updateUnit(User $user, MaterialUnit $unit, string $name): MaterialUnit
@@ -2683,7 +2680,7 @@ class MaterialService
         });
     }
 
-    private function firstOrCreateUnit(MaterialTopic $topic, string $name): MaterialUnit
+    private function firstOrCreateUnit(MaterialTopic $topic, string $name, ?int $beforeUnitId = null): MaterialUnit
     {
         $attributes = [
             'topic_id' => $topic->id,
@@ -2694,10 +2691,58 @@ class MaterialService
             return MaterialUnit::query()->firstOrCreate($attributes);
         }
 
-        return MaterialUnit::query()->firstOrCreate(
-            $attributes,
-            ['sort_order' => $this->nextUnitSortOrder((int) $topic->id)]
-        );
+        $existingUnit = MaterialUnit::query()
+            ->where($attributes)
+            ->first();
+        if ($existingUnit instanceof MaterialUnit) {
+            return $existingUnit;
+        }
+
+        return $this->createUnitWithOptionalPosition($topic, $name, $beforeUnitId);
+    }
+
+    private function createUnitWithOptionalPosition(MaterialTopic $topic, string $name, ?int $beforeUnitId = null): MaterialUnit
+    {
+        $attributes = [
+            'topic_id' => (int) $topic->id,
+            'name' => $name,
+        ];
+
+        if (! $this->supportsClassificationSortOrder()) {
+            return MaterialUnit::query()->create($attributes);
+        }
+
+        $normalizedBeforeUnitId = (int) ($beforeUnitId ?? 0);
+        if ($normalizedBeforeUnitId <= 0) {
+            return MaterialUnit::query()->create([
+                ...$attributes,
+                'sort_order' => $this->nextUnitSortOrder((int) $topic->id),
+            ]);
+        }
+
+        $beforeUnit = MaterialUnit::query()
+            ->where('topic_id', (int) $topic->id)
+            ->whereKey($normalizedBeforeUnitId)
+            ->first();
+        if (! $beforeUnit instanceof MaterialUnit) {
+            throw ValidationException::withMessages([
+                'data.before_unit_id' => 'Einfügeposition ist nicht mehr verfügbar.',
+            ]);
+        }
+
+        $targetSortOrder = max(1, (int) ($beforeUnit->sort_order ?? 0));
+
+        return DB::transaction(function () use ($attributes, $topic, $targetSortOrder): MaterialUnit {
+            MaterialUnit::query()
+                ->where('topic_id', (int) $topic->id)
+                ->where('sort_order', '>=', $targetSortOrder)
+                ->increment('sort_order');
+
+            return MaterialUnit::query()->create([
+                ...$attributes,
+                'sort_order' => $targetSortOrder,
+            ]);
+        });
     }
 
     private function nextSubjectSortOrder(User $user, ?int $workspaceId = null): int

@@ -1101,6 +1101,104 @@ test('inbox full access creates original topics at selected position and at end'
     expect((string) $inbox->json('data.0.shared_items.0.hierarchy.0.topics.3.name'))->toBe('Stochastik');
 });
 
+test('inbox full access creates original units at selected position and at end', function () {
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'creator-full-access-unit-insert@test.local',
+    ]);
+
+    $workspace = MaterialWorkspace::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Geteilter Fachraum',
+        'is_default' => true,
+    ]);
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'workspace_id' => $workspace->id,
+        'name' => 'Mathematik',
+        'sort_order' => 1,
+    ]);
+    $topic = MaterialTopic::query()->create([
+        'subject_id' => $subject->id,
+        'name' => 'Algebra',
+        'sort_order' => 1,
+    ]);
+    $unitOne = MaterialUnit::query()->create([
+        'topic_id' => $topic->id,
+        'name' => 'Lineare Gleichungen',
+        'sort_order' => 1,
+    ]);
+    $unitTwo = MaterialUnit::query()->create([
+        'topic_id' => $topic->id,
+        'name' => 'Quadratische Funktionen',
+        'sort_order' => 2,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'scope_id' => null,
+        'workspace_id' => $workspace->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
+    ]);
+
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $appendResponse = $this->postJson('/api/admin/materials/shares/inbox/units', [
+        'rule_id' => (int) $rule->id,
+        'data' => [
+            'topic_id' => (int) $topic->id,
+            'name' => 'Polynome',
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.name', 'Polynome');
+
+    $appendUnit = MaterialUnit::query()->findOrFail((int) $appendResponse->json('data.id'));
+    expect((int) $appendUnit->topic_id)->toBe((int) $topic->id);
+    expect((int) $appendUnit->sort_order)->toBe(3);
+
+    $insertResponse = $this->postJson('/api/admin/materials/shares/inbox/units', [
+        'rule_id' => (int) $rule->id,
+        'data' => [
+            'topic_id' => (int) $topic->id,
+            'name' => 'Wurzeln',
+            'before_unit_id' => (int) $unitTwo->id,
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.name', 'Wurzeln');
+
+    $insertUnit = MaterialUnit::query()->findOrFail((int) $insertResponse->json('data.id'));
+    expect((int) $insertUnit->topic_id)->toBe((int) $topic->id);
+    expect((int) $insertUnit->sort_order)->toBe(2);
+
+    $orderedUnits = MaterialUnit::query()
+        ->where('topic_id', $topic->id)
+        ->orderBy('sort_order')
+        ->pluck('name')
+        ->all();
+
+    expect($orderedUnits)->toEqual(['Lineare Gleichungen', 'Wurzeln', 'Quadratische Funktionen', 'Polynome']);
+
+    $inbox = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertOk();
+
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.name'))->toBe((string) $unitOne->name);
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.0.topics.0.units.1.name'))->toBe('Wurzeln');
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.0.topics.0.units.2.name'))->toBe((string) $unitTwo->name);
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.0.topics.0.units.3.name'))->toBe('Polynome');
+});
+
 test('inbox full access subject topic and unit rename update the original hierarchy', function () {
     $creator = User::factory()->create([
         'school_id' => $this->school->id,

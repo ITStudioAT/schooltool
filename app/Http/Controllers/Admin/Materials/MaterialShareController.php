@@ -15,6 +15,7 @@ use App\Http\Requests\Admin\Materials\MaterialSubjectStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialSubjectUpdateRequest;
 use App\Http\Requests\Admin\Materials\MaterialTopicStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialTopicUpdateRequest;
+use App\Http\Requests\Admin\Materials\MaterialUnitStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialUnitUpdateRequest;
 use App\Models\Import116;
 use App\Models\MaterialCard;
@@ -476,6 +477,48 @@ class MaterialShareController extends Controller
                 'id' => (int) $topic->id,
                 'name' => (string) $topic->name,
                 'subject_id' => (int) $topic->subject_id,
+            ],
+        ], 200);
+    }
+
+    public function storeInboxUnit(
+        MaterialUnitStoreRequest $request,
+        MaterialService $service
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $validated = $request->validated()['data'];
+        $topicId = (int) ($validated['topic_id'] ?? 0);
+        $topic = MaterialTopic::query()->findOrFail($topicId);
+        $context = $this->resolveInboxTopicAccessContext($authUser, $ruleId, $topic);
+        $allowDuplicate = (bool) ($validated['allow_duplicate'] ?? false);
+        $beforeUnitId = (int) ($validated['before_unit_id'] ?? 0);
+        if ($beforeUnitId <= 0) {
+            $beforeUnitId = null;
+        }
+
+        /** @var User $sourceOwner */
+        $sourceOwner = $context['source_owner'];
+
+        $unit = $service->createUnit(
+            $sourceOwner,
+            $topic,
+            (string) ($validated['name'] ?? ''),
+            $allowDuplicate,
+            $beforeUnitId
+        );
+
+        return response()->json([
+            'data' => [
+                'id' => (int) $unit->id,
+                'name' => (string) $unit->name,
+                'topic_id' => (int) $unit->topic_id,
             ],
         ], 200);
     }

@@ -642,7 +642,7 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(screen.getByText('Die Eingabe ist zu lang (max. 255 Zeichen)')).toBeInTheDocument()
 
         await fireEvent.update(input, 'Biologie')
-        await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+        await fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
 
         expect(axiosMock.post).toHaveBeenCalledTimes(1)
         expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/shares/inbox/subjects', {
@@ -768,7 +768,7 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(screen.getByText('Es muss etwas eingegeben werden.')).toBeInTheDocument()
 
         await fireEvent.update(input, 'Analysis')
-        await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+        await fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
 
         expect(axiosMock.post).toHaveBeenCalledTimes(1)
         expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/shares/inbox/topics', {
@@ -850,6 +850,154 @@ describe('MaterialsSubjectsContentsTree', () => {
         })
     })
 
+    it('opens a persistent shared create-unit dialog and inserts before selected unit', async () => {
+        axiosMock.post.mockResolvedValue({
+            data: {
+                data: {
+                    id: 108,
+                    name: 'Wurzeln',
+                    topic_id: 20,
+                },
+            },
+        })
+
+        const { emitted } = renderTree([], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 100,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Alle Materialien',
+                    scopePathLabel: 'Workspace A',
+                    permission: 'full_access',
+                    permissionLabel: 'VOLLZUGRIFF',
+                    fromUserLabel: 'Lehrer Eins',
+                    materialsCount: 0,
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Mathematik',
+                            materials: [],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Algebra',
+                                    materials: [],
+                                    units: [
+                                        {
+                                            id: 30,
+                                            name: 'Lineare Gleichungen',
+                                            materials: [],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
+        await fireEvent.click(screen.getAllByTitle('Bereich hinzufügen')[0])
+
+        expect(screen.getByText('Bereich hinzufügen')).toBeInTheDocument()
+
+        const input = screen.getByRole('textbox', { name: 'Titel' })
+        await fireEvent.update(input, '')
+        await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+        expect(screen.getByText('Es muss etwas eingegeben werden.')).toBeInTheDocument()
+
+        await fireEvent.update(input, 'Wurzeln')
+        await fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
+
+        expect(axiosMock.post).toHaveBeenCalledTimes(1)
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/shares/inbox/units', {
+            rule_id: 100,
+            data: {
+                topic_id: 20,
+                name: 'Wurzeln',
+                before_unit_id: 30,
+            },
+        })
+        expect(screen.queryByText('Bereich hinzufügen')).not.toBeInTheDocument()
+
+        const createdEvents = emitted('shared-node-created') || []
+        expect(createdEvents).toHaveLength(1)
+        expect((createdEvents[0]?.[0] as any)?.ruleId).toBe(100)
+        expect((createdEvents[0]?.[0] as any)?.level).toBe('unit')
+        expect((createdEvents[0]?.[0] as any)?.nodeId).toBe(108)
+        expect((createdEvents[0]?.[0] as any)?.name).toBe('Wurzeln')
+        expect((createdEvents[0]?.[0] as any)?.parentTopicId).toBe(20)
+    })
+
+    it('creates shared unit without insert target when bottom Bereich button is used', async () => {
+        axiosMock.post.mockResolvedValue({
+            data: {
+                data: {
+                    id: 109,
+                    name: 'Kurvendiskussion',
+                    topic_id: 20,
+                },
+            },
+        })
+
+        renderTree([], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 101,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Alle Materialien',
+                    scopePathLabel: 'Workspace A',
+                    permission: 'full_access',
+                    permissionLabel: 'VOLLZUGRIFF',
+                    fromUserLabel: 'Lehrer Eins',
+                    materialsCount: 0,
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Mathematik',
+                            materials: [],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Algebra',
+                                    materials: [],
+                                    units: [
+                                        {
+                                            id: 30,
+                                            name: 'Lineare Gleichungen',
+                                            materials: [],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
+        await fireEvent.click(screen.getAllByTitle('Bereich hinzufügen')[1])
+
+        const input = screen.getByRole('textbox', { name: 'Titel' })
+        await fireEvent.update(input, 'Kurvendiskussion')
+        await fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
+
+        expect(axiosMock.post).toHaveBeenCalledTimes(1)
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/shares/inbox/units', {
+            rule_id: 101,
+            data: {
+                topic_id: 20,
+                name: 'Kurvendiskussion',
+            },
+        })
+    })
+
     it('opens a persistent shared rename dialog, validates the title, and updates the visible name', async () => {
         axiosMock.put.mockResolvedValue({
             data: {
@@ -911,7 +1059,7 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(screen.getByText('Fach umbenennen')).toBeInTheDocument()
 
         await fireEvent.update(input, 'Neue Mathematik')
-        await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+        await fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
 
         expect(axiosMock.put).toHaveBeenCalledTimes(1)
         expect(axiosMock.put).toHaveBeenCalledWith('/api/admin/materials/shares/inbox/subjects/10', {

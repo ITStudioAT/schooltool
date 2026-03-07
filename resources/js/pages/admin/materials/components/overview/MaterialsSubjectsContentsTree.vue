@@ -766,7 +766,7 @@
                                                 :key="`overview-shared-unit-${item.ruleId}-${unit.id || unit.name}`"
                                                 class="overview-subjects-item">
                                                 <div
-                                                    v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)"
+                                                    v-if="sharedItemSupportsUnitCreate(item) && isSharedStructureButtonsVisible(item.ruleId)"
                                                     class="overview-shared-structure-create-row overview-shared-structure-create-row--unit">
                                                     <v-btn
                                                         prepend-icon="mdi-plus"
@@ -778,7 +778,7 @@
                                                         :disabled="actionBusy"
                                                         title="Bereich hinzufügen"
                                                         aria-label="Bereich hinzufügen"
-                                                        @click.stop="previewStructureCreate">
+                                                        @click.stop="openSharedCreateUnitDialog(item, topic, { beforeUnitId: unit?.id })">
                                                         Bereich
                                                     </v-btn>
                                                 </div>
@@ -871,7 +871,7 @@
                                             </li>
                                         </ul>
                                         <div
-                                            v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)"
+                                            v-if="sharedItemSupportsUnitCreate(item) && isSharedStructureButtonsVisible(item.ruleId)"
                                             class="overview-shared-structure-create-row overview-shared-structure-create-row--topic-bottom">
                                             <v-btn
                                                 prepend-icon="mdi-plus"
@@ -883,7 +883,7 @@
                                                 :disabled="actionBusy"
                                                 title="Bereich hinzufügen"
                                                 aria-label="Bereich hinzufügen"
-                                                @click.stop="previewStructureCreate">
+                                                @click.stop="openSharedCreateUnitDialog(item, topic)">
                                                 Bereich
                                             </v-btn>
                                         </div>
@@ -944,7 +944,8 @@
                         :rules="[required(), maxLength(255)]"
                         :error-messages="sharedCreateSubjectDialogError ? [sharedCreateSubjectDialogError] : []"
                         @update:modelValue="handleSharedCreateSubjectTitleInput"
-                        @blur="validateSharedCreateSubjectDialog" />
+                        @blur="validateSharedCreateSubjectDialog"
+                        @keydown.enter.prevent="submitSharedCreateSubjectDialog" />
                 </v-card-text>
                 <v-card-actions class="justify-end">
                     <v-btn variant="text" :disabled="actionBusy || sharedCreateSubjectDialogSaving" @click="closeSharedCreateSubjectDialog">Abbrechen</v-btn>
@@ -969,11 +970,38 @@
                         :rules="[required(), maxLength(255)]"
                         :error-messages="sharedCreateTopicDialogError ? [sharedCreateTopicDialogError] : []"
                         @update:modelValue="handleSharedCreateTopicTitleInput"
-                        @blur="validateSharedCreateTopicDialog" />
+                        @blur="validateSharedCreateTopicDialog"
+                        @keydown.enter.prevent="submitSharedCreateTopicDialog" />
                 </v-card-text>
                 <v-card-actions class="justify-end">
                     <v-btn variant="text" :disabled="actionBusy || sharedCreateTopicDialogSaving" @click="closeSharedCreateTopicDialog">Abbrechen</v-btn>
                     <v-btn color="primary" variant="flat" :loading="sharedCreateTopicDialogSaving" :disabled="actionBusy" @click="submitSharedCreateTopicDialog">Speichern</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="sharedCreateUnitDialog.open" max-width="560" persistent>
+            <v-card rounded="xl">
+                <v-card-title class="text-h6 font-weight-bold">Bereich hinzufügen</v-card-title>
+                <v-card-text>
+                    <div class="text-body-2 text-medium-emphasis mb-3">Neuen Bereich im Original-Workspace anlegen</div>
+                    <v-text-field
+                        :model-value="sharedCreateUnitDialog.title"
+                        label="Titel"
+                        variant="outlined"
+                        density="comfortable"
+                        hide-details="auto"
+                        autofocus
+                        :disabled="actionBusy || sharedCreateUnitDialogSaving"
+                        :rules="[required(), maxLength(255)]"
+                        :error-messages="sharedCreateUnitDialogError ? [sharedCreateUnitDialogError] : []"
+                        @update:modelValue="handleSharedCreateUnitTitleInput"
+                        @blur="validateSharedCreateUnitDialog"
+                        @keydown.enter.prevent="submitSharedCreateUnitDialog" />
+                </v-card-text>
+                <v-card-actions class="justify-end">
+                    <v-btn variant="text" :disabled="actionBusy || sharedCreateUnitDialogSaving" @click="closeSharedCreateUnitDialog">Abbrechen</v-btn>
+                    <v-btn color="primary" variant="flat" :loading="sharedCreateUnitDialogSaving" :disabled="actionBusy" @click="submitSharedCreateUnitDialog">Speichern</v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>
@@ -994,7 +1022,8 @@
                         :rules="[required(), maxLength(255)]"
                         :error-messages="sharedRenameDialogError ? [sharedRenameDialogError] : []"
                         @update:modelValue="handleSharedRenameTitleInput"
-                        @blur="validateSharedRenameDialog" />
+                        @blur="validateSharedRenameDialog"
+                        @keydown.enter.prevent="submitSharedRenameDialog" />
                 </v-card-text>
                 <v-card-actions class="justify-end">
                     <v-btn variant="text" :disabled="actionBusy || sharedRenameDialogSaving" @click="closeSharedRenameDialog">Abbrechen</v-btn>
@@ -1068,6 +1097,16 @@ function createSharedCreateTopicDialogState() {
         ruleId: null,
         subjectId: null,
         beforeTopicId: null,
+        title: '',
+    }
+}
+
+function createSharedCreateUnitDialogState() {
+    return {
+        open: false,
+        ruleId: null,
+        topicId: null,
+        beforeUnitId: null,
         title: '',
     }
 }
@@ -1166,6 +1205,9 @@ export default {
             sharedCreateTopicDialog: createSharedCreateTopicDialogState(),
             sharedCreateTopicDialogError: '',
             sharedCreateTopicDialogSaving: false,
+            sharedCreateUnitDialog: createSharedCreateUnitDialogState(),
+            sharedCreateUnitDialogError: '',
+            sharedCreateUnitDialogSaving: false,
             sharedRenameDialog: createSharedRenameDialogState(),
             sharedRenameDialogError: '',
             sharedRenameDialogSaving: false,
@@ -1260,6 +1302,10 @@ export default {
             const scopeType = this.sharedItemScopeType(item)
             return this.sharedItemHasFullAccess(item) && (scopeType === 'all' || scopeType === 'subject')
         },
+        sharedItemSupportsUnitCreate(item) {
+            const scopeType = this.sharedItemScopeType(item)
+            return this.sharedItemHasFullAccess(item) && (scopeType === 'all' || scopeType === 'subject')
+        },
         sharedRenameLevelLabel(level) {
             if (level === 'subject') return 'Fach'
             if (level === 'topic') return 'Thema'
@@ -1312,6 +1358,31 @@ export default {
 
             this.sharedCreateTopicDialog = createSharedCreateTopicDialogState()
             this.sharedCreateTopicDialogError = ''
+        },
+        openSharedCreateUnitDialog(item, topic, options = {}) {
+            if (this.actionBusy) return
+            if (!this.sharedItemSupportsUnitCreate(item)) return
+
+            const ruleId = Number(item?.ruleId || 0)
+            const topicId = Number(topic?.id || 0)
+            const beforeUnitId = Number(options?.beforeUnitId || 0)
+            if (!Number.isFinite(ruleId) || ruleId <= 0) return
+            if (!Number.isFinite(topicId) || topicId <= 0) return
+
+            this.sharedCreateUnitDialog = {
+                open: true,
+                ruleId,
+                topicId,
+                beforeUnitId: Number.isFinite(beforeUnitId) && beforeUnitId > 0 ? beforeUnitId : null,
+                title: '',
+            }
+            this.sharedCreateUnitDialogError = ''
+        },
+        closeSharedCreateUnitDialog() {
+            if (this.sharedCreateUnitDialogSaving) return
+
+            this.sharedCreateUnitDialog = createSharedCreateUnitDialogState()
+            this.sharedCreateUnitDialogError = ''
         },
         sharedDeleteTitle(level) {
             if (level === 'subject') return 'Fach löschen'
@@ -1420,6 +1491,11 @@ export default {
             this.sharedCreateTopicDialogError = validationMessage
             return validationMessage === ''
         },
+        validateSharedCreateUnitDialog() {
+            const validationMessage = this.sharedRenameTitleValidationMessage(this.sharedCreateUnitDialog?.title)
+            this.sharedCreateUnitDialogError = validationMessage
+            return validationMessage === ''
+        },
         handleSharedCreateSubjectTitleInput(value) {
             this.sharedCreateSubjectDialog = {
                 ...this.sharedCreateSubjectDialog,
@@ -1438,6 +1514,16 @@ export default {
 
             if (this.sharedCreateTopicDialogError !== '') {
                 this.sharedCreateTopicDialogError = this.sharedRenameTitleValidationMessage(value)
+            }
+        },
+        handleSharedCreateUnitTitleInput(value) {
+            this.sharedCreateUnitDialog = {
+                ...this.sharedCreateUnitDialog,
+                title: value,
+            }
+
+            if (this.sharedCreateUnitDialogError !== '') {
+                this.sharedCreateUnitDialogError = this.sharedRenameTitleValidationMessage(value)
             }
         },
         handleSharedRenameTitleInput(value) {
@@ -1553,6 +1639,52 @@ export default {
                 this.sharedCreateTopicDialogError = String(error?.response?.data?.message || 'Thema konnte nicht erstellt werden.')
             } finally {
                 this.sharedCreateTopicDialogSaving = false
+            }
+        },
+        async submitSharedCreateUnitDialog() {
+            if (!this.validateSharedCreateUnitDialog()) return
+            if (this.sharedCreateUnitDialogSaving) return
+
+            const normalizedTitle = String(this.sharedCreateUnitDialog?.title || '').trim()
+            const ruleId = Number(this.sharedCreateUnitDialog?.ruleId || 0)
+            const topicId = Number(this.sharedCreateUnitDialog?.topicId || 0)
+            const beforeUnitId = Number(this.sharedCreateUnitDialog?.beforeUnitId || 0)
+            if (!Number.isFinite(ruleId) || ruleId <= 0 || !Number.isFinite(topicId) || topicId <= 0) {
+                this.sharedCreateUnitDialogError = 'Bereich konnte nicht erstellt werden.'
+                return
+            }
+
+            this.sharedCreateUnitDialogSaving = true
+
+            try {
+                const unitPayload = {
+                    topic_id: topicId,
+                    name: normalizedTitle,
+                }
+                if (Number.isFinite(beforeUnitId) && beforeUnitId > 0) {
+                    unitPayload.before_unit_id = beforeUnitId
+                }
+
+                const response = await axios.post('/api/admin/materials/shares/inbox/units', {
+                    rule_id: ruleId,
+                    data: unitPayload,
+                })
+                const unitId = Number(response?.data?.data?.id || 0)
+                const savedTitle = String(response?.data?.data?.name || normalizedTitle).trim() || normalizedTitle
+
+                this.$emit('shared-node-created', {
+                    ruleId,
+                    level: 'unit',
+                    nodeId: unitId,
+                    name: savedTitle,
+                    parentTopicId: topicId,
+                })
+                this.sharedCreateUnitDialog = createSharedCreateUnitDialogState()
+                this.sharedCreateUnitDialogError = ''
+            } catch (error) {
+                this.sharedCreateUnitDialogError = String(error?.response?.data?.message || 'Bereich konnte nicht erstellt werden.')
+            } finally {
+                this.sharedCreateUnitDialogSaving = false
             }
         },
         async submitSharedRenameDialog() {
