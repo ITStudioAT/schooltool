@@ -263,7 +263,7 @@ describe('MaterialsSubjectsContentsTree', () => {
 
         await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
 
-        expect(screen.getByRole('button', { name: 'Fach/Themen schließen' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Struktur schließen' })).toBeInTheDocument()
         expect(screen.getAllByTitle('Fach hinzufügen').length).toBeGreaterThan(0)
         expect(screen.getAllByTitle('Thema hinzufügen').length).toBeGreaterThan(0)
         expect(screen.queryByTitle(/Neues Material in/i)).not.toBeInTheDocument()
@@ -352,6 +352,62 @@ describe('MaterialsSubjectsContentsTree', () => {
 
         expect(screen.getByText('Thema')).toBeInTheDocument()
         expect(screen.queryByText('Mathematik / Algebra')).not.toBeInTheDocument()
+    })
+
+    it('shows parent subject as context-only for full-access topic shares', async () => {
+        renderTree([], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 702,
+                    scopeType: 'topic',
+                    scopeObjectLabel: 'Algebra',
+                    scopePathLabel: 'Informatik - Algebra - Alle Einheiten',
+                    permission: 'full_access',
+                    permissionLabel: 'VOLLZUGRIFF',
+                    fromUserLabel: 'Lehrer Eins',
+                    materialsCount: 2,
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Informatik',
+                            materials: [
+                                {
+                                    id: 100,
+                                    title: 'Fachmaterial',
+                                    status: 'inbox',
+                                    statusLabel: 'Neu/Idee',
+                                    attachmentsCount: 0,
+                                },
+                            ],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Algebra',
+                                    materials: [],
+                                    units: [],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+
+        const subjectRow = screen.getByText('Informatik').closest('.overview-shared-hierarchy-node') as HTMLElement
+        expect(subjectRow).not.toBeNull()
+        expect(subjectRow.className).toContain('overview-shared-hierarchy-node--context')
+        expect(screen.queryByTitle('Neues Material in Fach anlegen')).not.toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
+
+        expect(screen.getByRole('button', { name: 'Struktur schließen' })).toBeInTheDocument()
+        expect(screen.queryByTitle('Fach nach oben')).not.toBeInTheDocument()
+        expect(screen.queryByTitle('Fach nach unten')).not.toBeInTheDocument()
+        expect(screen.queryByTitle('Fach bearbeiten')).not.toBeInTheDocument()
+        expect(screen.getByTitle('Thema bearbeiten')).toBeInTheDocument()
     })
 
     it('renders multiple shared workspaces in a wrapped row instead of full-width cards', async () => {
@@ -676,7 +732,7 @@ describe('MaterialsSubjectsContentsTree', () => {
 
         await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
 
-        expect(screen.getByRole('button', { name: 'Fach/Themen schließen' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Struktur schließen' })).toBeInTheDocument()
         expect(screen.getAllByRole('button', { name: 'Fach hinzufügen' })).toHaveLength(3)
         expect(screen.getAllByRole('button', { name: 'Thema hinzufügen' })).toHaveLength(4)
         expect(screen.getAllByRole('button', { name: 'Bereich hinzufügen' })).toHaveLength(3)

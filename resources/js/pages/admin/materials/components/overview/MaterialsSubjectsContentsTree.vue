@@ -30,7 +30,7 @@
                 color="primary"
                 :disabled="actionBusy"
                 @click="toggleWorkspaceStructureButtons">
-                {{ isWorkspaceStructureButtonsVisible() ? 'Fach/Themen schließen' : 'Struktur ändern' }}
+                {{ isWorkspaceStructureButtonsVisible() ? 'Struktur schließen' : 'Struktur ändern' }}
             </v-btn>
         </div>
 
@@ -823,7 +823,7 @@
                                 color="primary"
                                 :disabled="actionBusy"
                                 @click="toggleSharedStructureButtons(item.ruleId)">
-                                {{ isSharedStructureButtonsVisible(item.ruleId) ? 'Fach/Themen schließen' : 'Struktur ändern' }}
+                                {{ isSharedStructureButtonsVisible(item.ruleId) ? 'Struktur schließen' : 'Struktur ändern' }}
                             </v-btn>
                         </div>
                         <ul v-if="sharedItemHierarchy(item).length" class="overview-shared-hierarchy-list">
@@ -846,12 +846,14 @@
                                         Fach
                                     </v-btn>
                                 </div>
-                                <div class="overview-subjects-node overview-subjects-node--subject overview-shared-hierarchy-node">
+                                <div
+                                    class="overview-subjects-node overview-subjects-node--subject overview-shared-hierarchy-node"
+                                    :class="{ 'overview-shared-hierarchy-node--context': sharedNodeIsContextOnly(item, 'subject') }">
                                     <div class="overview-shared-hierarchy-node-main">
                                         <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
                                         <span>{{ sharedNodeTitle(item.ruleId, 'subject', subject) }}</span>
                                         <div
-                                            v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)"
+                                            v-if="sharedNodeCanStructureEdit(item, 'subject') && isSharedStructureButtonsVisible(item.ruleId)"
                                             class="overview-shared-hierarchy-node-inline-actions">
                                             <v-btn
                                                 v-if="allowSharedShareButtons && hasPersistedNodeId(subject.id)"
@@ -907,7 +909,7 @@
                                         </div>
                                     </div>
                                     <div
-                                        v-if="sharedItemHasFullAccess(item) && !isSharedStructureButtonsVisible(item.ruleId)"
+                                        v-if="sharedNodeCanAddMaterial(item, 'subject') && !isSharedStructureButtonsVisible(item.ruleId)"
                                         class="overview-shared-node-actions">
                                         <v-btn
                                             v-if="allowSharedShareButtons && hasPersistedNodeId(subject.id)"
@@ -1019,12 +1021,14 @@
                                                 Thema
                                             </v-btn>
                                         </div>
-                                        <div class="overview-subjects-node overview-subjects-node--topic overview-shared-hierarchy-node">
+                                        <div
+                                            class="overview-subjects-node overview-subjects-node--topic overview-shared-hierarchy-node"
+                                            :class="{ 'overview-shared-hierarchy-node--context': sharedNodeIsContextOnly(item, 'topic') }">
                                             <div class="overview-shared-hierarchy-node-main">
                                                 <v-icon size="14" icon="mdi-book-open-page-variant-outline" class="mr-2" />
                                                 <span>{{ sharedNodeTitle(item.ruleId, 'topic', topic) }}</span>
                                                 <div
-                                                    v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)"
+                                                    v-if="sharedNodeCanStructureEdit(item, 'topic') && isSharedStructureButtonsVisible(item.ruleId)"
                                                     class="overview-shared-hierarchy-node-inline-actions">
                                                     <v-btn
                                                         v-if="allowSharedShareButtons && hasPersistedNodeId(topic.id)"
@@ -1081,7 +1085,7 @@
                                                 </div>
                                             </div>
                                             <div
-                                                v-if="sharedItemHasFullAccess(item) && !isSharedStructureButtonsVisible(item.ruleId)"
+                                                v-if="sharedNodeCanAddMaterial(item, 'topic') && !isSharedStructureButtonsVisible(item.ruleId)"
                                                 class="overview-shared-node-actions">
                                                 <v-btn
                                                     v-if="allowSharedShareButtons && hasPersistedNodeId(topic.id)"
@@ -1196,12 +1200,14 @@
                                                         Bereich
                                                     </v-btn>
                                                 </div>
-                                                <div class="overview-subjects-node overview-subjects-node--unit overview-shared-hierarchy-node">
+                                                <div
+                                                    class="overview-subjects-node overview-subjects-node--unit overview-shared-hierarchy-node"
+                                                    :class="{ 'overview-shared-hierarchy-node--context': sharedNodeIsContextOnly(item, 'unit') }">
                                                     <div class="overview-shared-hierarchy-node-main">
                                                         <v-icon size="13" icon="mdi-bookmark-outline" class="mr-2" />
                                                         <span>{{ sharedNodeTitle(item.ruleId, 'unit', unit) }}</span>
                                                         <div
-                                                            v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)"
+                                                            v-if="sharedNodeCanStructureEdit(item, 'unit') && isSharedStructureButtonsVisible(item.ruleId)"
                                                             class="overview-shared-hierarchy-node-inline-actions">
                                                             <v-btn
                                                                 v-if="allowSharedShareButtons && hasPersistedNodeId(unit.id)"
@@ -1258,7 +1264,7 @@
                                                         </div>
                                                     </div>
                                                     <div
-                                                        v-if="sharedItemHasFullAccess(item) && !isSharedStructureButtonsVisible(item.ruleId)"
+                                                        v-if="sharedNodeCanAddMaterial(item, 'unit') && !isSharedStructureButtonsVisible(item.ruleId)"
                                                         class="overview-shared-node-actions">
                                                         <v-btn
                                                             v-if="allowSharedShareButtons && hasPersistedNodeId(unit.id)"
@@ -2090,7 +2096,7 @@ export default {
         },
         openSharedRenameDialog(item, level, node) {
             if (this.actionBusy) return
-            if (!this.sharedItemHasFullAccess(item)) return
+            if (!this.sharedNodeCanStructureEdit(item, level)) return
 
             const overrideKey = this.sharedNodeOverrideKey(item?.ruleId, level, node)
             if (overrideKey === '') return
@@ -2114,7 +2120,7 @@ export default {
         },
         openSharedDeleteDialog(item, level, node) {
             if (this.actionBusy) return
-            if (!this.sharedItemHasFullAccess(item)) return
+            if (!this.sharedNodeCanStructureEdit(item, level)) return
 
             const ruleId = Number(item?.ruleId || 0)
             const nodeId = Number(node?.id || 0)
@@ -2239,7 +2245,7 @@ export default {
         },
         async moveSharedNode(item, level, node, direction) {
             if (this.actionBusy) return
-            if (!this.sharedItemHasFullAccess(item)) return
+            if (!this.sharedNodeCanStructureEdit(item, level)) return
 
             const ruleId = Number(item?.ruleId || 0)
             const nodeId = Number(node?.id || 0)
@@ -2656,6 +2662,8 @@ export default {
             if (!Number.isFinite(nodeId) || nodeId <= 0) return
 
             const normalizedLevel = String(level || '').trim()
+            if (!this.sharedNodeCanAddMaterial(item, normalizedLevel)) return
+
             const subject = normalizedLevel === 'subject' ? node : lineage?.subject
             const topic = normalizedLevel === 'topic' ? node : lineage?.topic
             const unit = normalizedLevel === 'unit' ? node : null
@@ -2670,6 +2678,15 @@ export default {
                 sharedNodeId: nodeId,
             })
         },
+        sharedScopeRank(scopeType) {
+            const normalized = String(scopeType || '').trim().toLowerCase()
+            if (normalized === 'all') return 1
+            if (normalized === 'subject') return 2
+            if (normalized === 'topic') return 3
+            if (normalized === 'unit') return 4
+            if (normalized === 'material') return 5
+            return 0
+        },
         sharedScopeLevel(scopeType) {
             const normalized = String(scopeType || '').trim().toLowerCase()
             if (normalized === 'all') return 'all'
@@ -2678,6 +2695,22 @@ export default {
             if (normalized === 'unit') return 'unit'
             if (normalized === 'material') return 'material'
             return ''
+        },
+        sharedNodeWithinScope(item, level) {
+            const shareScopeLevel = this.sharedScopeLevel(this.sharedItemScopeType(item))
+            const shareScopeRank = this.sharedScopeRank(shareScopeLevel)
+            const nodeScopeRank = this.sharedScopeRank(level)
+            if (shareScopeRank <= 0 || nodeScopeRank <= 0) return false
+            return nodeScopeRank >= shareScopeRank
+        },
+        sharedNodeCanStructureEdit(item, level) {
+            return this.sharedItemHasFullAccess(item) && this.sharedNodeWithinScope(item, level)
+        },
+        sharedNodeCanAddMaterial(item, level) {
+            return this.sharedItemHasFullAccess(item) && this.sharedNodeWithinScope(item, level)
+        },
+        sharedNodeIsContextOnly(item, level) {
+            return this.sharedItemHasFullAccess(item) && !this.sharedNodeWithinScope(item, level)
         },
         handleSharedItemShareClick(item) {
             const level = this.sharedScopeLevel(this.sharedItemScopeType(item))
@@ -3038,6 +3071,10 @@ export default {
     justify-content: space-between;
     width: 100%;
     gap: 10px;
+}
+
+.overview-shared-hierarchy-node--context {
+    opacity: 0.72;
 }
 
 .overview-shared-hierarchy-node-main {
