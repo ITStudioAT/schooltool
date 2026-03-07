@@ -16,7 +16,7 @@ class MaterialSubjectStoreRequest extends FormRequest
     {
         return [
             'data.name' => ['required', 'string', 'max:255'],
+            'data.before_subject_id' => ['nullable', 'integer', 'min:1'],
         ];
     }
 }
-

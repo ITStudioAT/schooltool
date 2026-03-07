@@ -6,6 +6,7 @@ import { defineComponent } from 'vue'
 
 vi.mock('axios', () => ({
     default: {
+        post: vi.fn(),
         put: vi.fn(),
         delete: vi.fn(),
     },
@@ -138,6 +139,7 @@ function renderTree(
                 :expanded-shared-items="expandedSharedItems"
                 @toggle-shared-for-me-expanded="toggleSharedForMeExpanded"
                 @toggle-shared-item-expanded="toggleSharedItemExpanded"
+                @shared-node-created="$emit('shared-node-created', $event)"
                 @open-material="$emit('open-material', $event)"
                 @open-share="$emit('open-share', $event)"
                 @open-create="$emit('open-create', $event)"
@@ -175,6 +177,7 @@ function renderTree(
 
 describe('MaterialsSubjectsContentsTree', () => {
     beforeEach(() => {
+        axiosMock.post.mockReset()
         axiosMock.put.mockReset()
         axiosMock.delete.mockReset()
     })
@@ -545,7 +548,7 @@ describe('MaterialsSubjectsContentsTree', () => {
         await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
 
-        expect(screen.getByRole('button', { name: 'Fach/Themen hinzufügen' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Struktur ändern' })).toBeInTheDocument()
         expect(screen.queryByTitle('Fach hinzufügen')).not.toBeInTheDocument()
         expect(screen.queryByTitle('Thema hinzufügen')).not.toBeInTheDocument()
         expect(screen.getByText('Fachmaterial')).toBeInTheDocument()
@@ -567,13 +570,15 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect((openCreateEvents[0]?.[0] as any)?.subject).toBe('Mathematik')
         expect((openCreateEvents[0]?.[0] as any)?.topic).toBe('Leeres Thema')
 
-        await fireEvent.click(screen.getByRole('button', { name: 'Fach/Themen hinzufügen' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
 
         expect(screen.getByRole('button', { name: 'Fach/Themen schließen' })).toBeInTheDocument()
         expect(screen.getAllByRole('button', { name: 'Fach hinzufügen' })).toHaveLength(3)
         expect(screen.getAllByRole('button', { name: 'Thema hinzufügen' })).toHaveLength(4)
+        expect(screen.getAllByRole('button', { name: 'Bereich hinzufügen' })).toHaveLength(3)
         expect(screen.getAllByTitle('Fach hinzufügen')).toHaveLength(3)
         expect(screen.getAllByTitle('Thema hinzufügen')).toHaveLength(4)
+        expect(screen.getAllByTitle('Bereich hinzufügen')).toHaveLength(3)
         expect(screen.queryByText('Fachmaterial')).not.toBeInTheDocument()
         expect(screen.queryByText('Themamaterial')).not.toBeInTheDocument()
         expect(screen.queryByTitle(/Neues Material in/i)).not.toBeInTheDocument()
@@ -581,6 +586,132 @@ describe('MaterialsSubjectsContentsTree', () => {
 
         const deleteButtons = screen.getAllByTitle(/löschen$/i)
         expect(deleteButtons).toHaveLength(3)
+    })
+
+    it('opens a persistent shared create-subject dialog, validates the title, and emits a refresh event after save', async () => {
+        axiosMock.post.mockResolvedValue({
+            data: {
+                data: {
+                    id: 77,
+                    name: 'Biologie',
+                    workspace_id: 5,
+                },
+            },
+        })
+
+        const { emitted } = renderTree([], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 96,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Alle Materialien',
+                    scopePathLabel: 'Workspace A',
+                    permission: 'full_access',
+                    permissionLabel: 'VOLLZUGRIFF',
+                    fromUserLabel: 'Lehrer Eins',
+                    materialsCount: 0,
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Mathematik',
+                            materials: [],
+                            topics: [],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
+        await fireEvent.click(screen.getAllByTitle('Fach hinzufügen')[0])
+
+        expect(screen.getByText('Fach hinzufügen')).toBeInTheDocument()
+
+        const input = screen.getByRole('textbox', { name: 'Titel' })
+
+        await fireEvent.update(input, '')
+        await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+
+        expect(screen.getByText('Es muss etwas eingegeben werden.')).toBeInTheDocument()
+
+        await fireEvent.update(input, 'x'.repeat(256))
+        await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+
+        expect(screen.getByText('Die Eingabe ist zu lang (max. 255 Zeichen)')).toBeInTheDocument()
+
+        await fireEvent.update(input, 'Biologie')
+        await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+
+        expect(axiosMock.post).toHaveBeenCalledTimes(1)
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/shares/inbox/subjects', {
+            rule_id: 96,
+            data: {
+                name: 'Biologie',
+                before_subject_id: 10,
+            },
+        })
+        expect(screen.queryByText('Fach hinzufügen')).not.toBeInTheDocument()
+
+        const createdEvents = emitted('shared-node-created') || []
+        expect(createdEvents).toHaveLength(1)
+        expect((createdEvents[0]?.[0] as any)?.ruleId).toBe(96)
+        expect((createdEvents[0]?.[0] as any)?.level).toBe('subject')
+        expect((createdEvents[0]?.[0] as any)?.nodeId).toBe(77)
+        expect((createdEvents[0]?.[0] as any)?.name).toBe('Biologie')
+    })
+
+    it('sends shared subject creation without insert target when bottom Fach button is used', async () => {
+        axiosMock.post.mockResolvedValue({
+            data: {
+                data: {
+                    id: 78,
+                    name: 'Biologie',
+                    workspace_id: 5,
+                },
+            },
+        })
+
+        renderTree([], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 97,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Alle Materialien',
+                    scopePathLabel: 'Workspace A',
+                    permission: 'full_access',
+                    permissionLabel: 'VOLLZUGRIFF',
+                    fromUserLabel: 'Lehrer Eins',
+                    materialsCount: 0,
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Mathematik',
+                            materials: [],
+                            topics: [],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
+        await fireEvent.click(screen.getAllByTitle('Fach hinzufügen')[1])
+
+        const input = screen.getByRole('textbox', { name: 'Titel' })
+        await fireEvent.update(input, 'Biologie')
+        await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+
+        expect(axiosMock.post).toHaveBeenCalledTimes(1)
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/shares/inbox/subjects', {
+            rule_id: 97,
+            data: {
+                name: 'Biologie',
+            },
+        })
     })
 
     it('opens a persistent shared rename dialog, validates the title, and updates the visible name', async () => {
@@ -624,7 +755,7 @@ describe('MaterialsSubjectsContentsTree', () => {
 
         await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
-        await fireEvent.click(screen.getByRole('button', { name: 'Fach/Themen hinzufügen' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
         await fireEvent.click(screen.getByTitle('Fach bearbeiten'))
 
         expect(screen.getByText('Fach umbenennen')).toBeInTheDocument()
@@ -693,7 +824,7 @@ describe('MaterialsSubjectsContentsTree', () => {
 
         await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
-        await fireEvent.click(screen.getByRole('button', { name: 'Fach/Themen hinzufügen' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
         await fireEvent.click(screen.getByTitle('Fach löschen'))
 
         const dialog = screen.getByText('Wirklich löschen? Das ist nur möglich, wenn keine Materialien zugeordnet sind.').closest('div')

@@ -11,6 +11,7 @@ use App\Http\Requests\Admin\Materials\MaterialCardQuickStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardRemoteImageAttachmentStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardTempAttachmentStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardUpdateRequest;
+use App\Http\Requests\Admin\Materials\MaterialSubjectStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialSubjectUpdateRequest;
 use App\Http\Requests\Admin\Materials\MaterialTopicUpdateRequest;
 use App\Http\Requests\Admin\Materials\MaterialUnitUpdateRequest;
@@ -393,6 +394,45 @@ class MaterialShareController extends Controller
             'data' => [
                 'id' => (int) $subject->id,
                 'name' => (string) $subject->name,
+            ],
+        ], 200);
+    }
+
+    public function storeInboxSubject(
+        MaterialSubjectStoreRequest $request,
+        MaterialService $service
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $context = $this->resolveInboxSubjectCreateContext($authUser, $ruleId);
+        $validated = $request->validated()['data'];
+
+        /** @var User $sourceOwner */
+        $sourceOwner = $context['source_owner'];
+        $workspaceId = (int) ($context['workspace_id'] ?? 0);
+        $beforeSubjectId = (int) ($validated['before_subject_id'] ?? 0);
+        if ($beforeSubjectId <= 0) {
+            $beforeSubjectId = null;
+        }
+
+        $subject = $service->createSubject(
+            $sourceOwner,
+            (string) ($validated['name'] ?? ''),
+            $workspaceId,
+            $beforeSubjectId
+        );
+
+        return response()->json([
+            'data' => [
+                'id' => (int) $subject->id,
+                'name' => (string) $subject->name,
+                'workspace_id' => (int) ($subject->workspace_id ?? 0),
             ],
         ], 200);
     }
@@ -1547,6 +1587,27 @@ class MaterialShareController extends Controller
         ];
     }
 
+    private function resolveInboxSubjectCreateContext(User $authUser, int $ruleId): array
+    {
+        $ruleContext = $this->resolveInboxRuleAccessContext($authUser, $ruleId);
+        /** @var MaterialShareRule $rule */
+        $rule = $ruleContext['rule'];
+        $permission = (string) ($ruleContext['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY);
+
+        $this->assertInboxPermissionAllowsStructureEdit($permission);
+        $this->assertInboxRuleAllowsSubjectCreate($rule);
+
+        $sourceOwner = $this->resolveInboxStructureOwner(null, $rule);
+        $workspaceId = $this->resolveInboxWorkspaceId($rule, $sourceOwner);
+
+        return [
+            'rule' => $rule,
+            'permission' => $permission,
+            'source_owner' => $sourceOwner,
+            'workspace_id' => $workspaceId,
+        ];
+    }
+
     private function resolveInboxTopicAccessContext(User $authUser, int $ruleId, MaterialTopic $topic): array
     {
         $ruleContext = $this->resolveInboxRuleAccessContext($authUser, $ruleId);
@@ -1700,6 +1761,15 @@ class MaterialShareController extends Controller
         abort(403, 'Diese Freigabe erlaubt keine Bearbeitung der Fachstruktur.');
     }
 
+    private function assertInboxRuleAllowsSubjectCreate(MaterialShareRule $rule): void
+    {
+        if ((string) ($rule->scope_type ?? '') === MaterialShareRule::SCOPE_ALL) {
+            return;
+        }
+
+        abort(403, 'Neue Fächer können nur in einer Workspace-Freigabe angelegt werden.');
+    }
+
     private function assertSubjectMatchesInboxRule(MaterialSubject $subject, MaterialShareRule $rule): void
     {
         $creatorUserId = (int) ($rule->created_by_user_id ?? 0);
@@ -1734,6 +1804,16 @@ class MaterialShareController extends Controller
         }
 
         abort(404, 'Besitzer der Fachstruktur wurde nicht gefunden.');
+    }
+
+    private function resolveInboxWorkspaceId(MaterialShareRule $rule, User $sourceOwner): int
+    {
+        $workspaceId = (int) ($rule->workspace_id ?? 0);
+        if ($workspaceId > 0) {
+            return $workspaceId;
+        }
+
+        return (int) $this->workspaceService->resolveActiveWorkspace($sourceOwner)->id;
     }
 
     private function currentMaterialClassificationPayload(MaterialCard $card): array

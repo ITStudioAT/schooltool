@@ -838,6 +838,176 @@ test('inbox full access creates original materials under subject topic and unit'
     expect((string) ($cards[2]->classifications->first()?->topic?->name ?? ''))->toBe('Algebra');
 });
 
+test('inbox full access creates original subject in shared workspace with next sort order', function () {
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'creator-full-access-subject-create@test.local',
+    ]);
+
+    $workspace = MaterialWorkspace::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Geteilter Fachraum',
+        'is_default' => true,
+    ]);
+
+    MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'workspace_id' => $workspace->id,
+        'name' => 'Mathematik',
+        'sort_order' => 1,
+    ]);
+    MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'workspace_id' => $workspace->id,
+        'name' => 'Physik',
+        'sort_order' => 2,
+    ]);
+    MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'workspace_id' => MaterialWorkspace::query()->create([
+            'user_id' => $creator->id,
+            'name' => 'Anderer Fachraum',
+            'is_default' => false,
+        ])->id,
+        'name' => 'Nicht im geteilten Workspace',
+        'sort_order' => 1,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'scope_id' => null,
+        'workspace_id' => $workspace->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
+    ]);
+
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $response = $this->postJson('/api/admin/materials/shares/inbox/subjects', [
+        'rule_id' => (int) $rule->id,
+        'data' => [
+            'name' => 'Biologie',
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.name', 'Biologie');
+
+    $createdId = (int) $response->json('data.id');
+    $createdSubject = MaterialSubject::query()->findOrFail($createdId);
+
+    expect((int) $createdSubject->user_id)->toBe((int) $creator->id);
+    expect((int) $createdSubject->workspace_id)->toBe((int) $workspace->id);
+    expect((int) $createdSubject->sort_order)->toBe(3);
+
+    $workspaceSubjects = MaterialSubject::query()
+        ->where('user_id', $creator->id)
+        ->where('workspace_id', $workspace->id)
+        ->orderBy('sort_order')
+        ->pluck('name')
+        ->all();
+
+    expect($workspaceSubjects)->toEqual(['Mathematik', 'Physik', 'Biologie']);
+
+    $inbox = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertOk();
+
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.0.name'))->toBe('Mathematik');
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.1.name'))->toBe('Physik');
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.2.name'))->toBe('Biologie');
+});
+
+test('inbox full access creates original subject before selected source subject', function () {
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'creator-full-access-subject-insert-before@test.local',
+    ]);
+
+    $workspace = MaterialWorkspace::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Geteilter Fachraum',
+        'is_default' => true,
+    ]);
+
+    $subjectMathematik = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'workspace_id' => $workspace->id,
+        'name' => 'Mathematik',
+        'sort_order' => 1,
+    ]);
+    $subjectPhysik = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'workspace_id' => $workspace->id,
+        'name' => 'Physik',
+        'sort_order' => 2,
+    ]);
+    MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'workspace_id' => $workspace->id,
+        'name' => 'Chemie',
+        'sort_order' => 3,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'scope_id' => null,
+        'workspace_id' => $workspace->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
+    ]);
+
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $response = $this->postJson('/api/admin/materials/shares/inbox/subjects', [
+        'rule_id' => (int) $rule->id,
+        'data' => [
+            'name' => 'Biologie',
+            'before_subject_id' => (int) $subjectPhysik->id,
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.name', 'Biologie');
+
+    $createdId = (int) $response->json('data.id');
+    $createdSubject = MaterialSubject::query()->findOrFail($createdId);
+
+    expect((int) $createdSubject->user_id)->toBe((int) $creator->id);
+    expect((int) $createdSubject->workspace_id)->toBe((int) $workspace->id);
+    expect((int) $createdSubject->sort_order)->toBe(2);
+
+    $workspaceSubjects = MaterialSubject::query()
+        ->where('user_id', $creator->id)
+        ->where('workspace_id', $workspace->id)
+        ->orderBy('sort_order')
+        ->pluck('name')
+        ->all();
+
+    expect($workspaceSubjects)->toEqual(['Mathematik', 'Biologie', 'Physik', 'Chemie']);
+
+    $inbox = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertOk();
+
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.0.name'))->toBe((string) $subjectMathematik->name);
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.1.name'))->toBe('Biologie');
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.2.name'))->toBe((string) $subjectPhysik->name);
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.3.name'))->toBe('Chemie');
+});
+
 test('inbox full access subject topic and unit rename update the original hierarchy', function () {
     $creator = User::factory()->create([
         'school_id' => $this->school->id,

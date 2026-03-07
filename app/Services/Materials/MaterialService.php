@@ -1452,7 +1452,7 @@ class MaterialService
         return $this->userSettingsForUser($user->fresh());
     }
 
-    public function createSubject(User $user, string $name): MaterialSubject
+    public function createSubject(User $user, string $name, ?int $workspaceId = null, ?int $beforeSubjectId = null): MaterialSubject
     {
         if (! $this->supportsClassificationTables()) {
             throw ValidationException::withMessages([
@@ -1467,7 +1467,7 @@ class MaterialService
             ]);
         }
 
-        return $this->firstOrCreateSubject($user, $normalized);
+        return $this->firstOrCreateSubject($user, $normalized, $workspaceId, $beforeSubjectId);
     }
 
     public function updateSubject(User $user, MaterialSubject $subject, string $name): MaterialSubject
@@ -2563,7 +2563,7 @@ class MaterialService
         return $rows;
     }
 
-    private function firstOrCreateSubject(User $user, string $name, ?int $workspaceId = null): MaterialSubject
+    private function firstOrCreateSubject(User $user, string $name, ?int $workspaceId = null, ?int $beforeSubjectId = null): MaterialSubject
     {
         $workspaceId = (int) ($workspaceId ?? 0);
         if ($workspaceId <= 0) {
@@ -2579,10 +2579,46 @@ class MaterialService
             return MaterialSubject::query()->firstOrCreate($attributes);
         }
 
-        return MaterialSubject::query()->firstOrCreate(
-            $attributes,
-            ['sort_order' => $this->nextSubjectSortOrder($user, $workspaceId)]
-        );
+        $existingSubject = MaterialSubject::query()
+            ->where($attributes)
+            ->first();
+        if ($existingSubject instanceof MaterialSubject) {
+            return $existingSubject;
+        }
+
+        $normalizedBeforeSubjectId = (int) ($beforeSubjectId ?? 0);
+        if ($normalizedBeforeSubjectId <= 0) {
+            return MaterialSubject::query()->create([
+                ...$attributes,
+                'sort_order' => $this->nextSubjectSortOrder($user, $workspaceId),
+            ]);
+        }
+
+        $beforeSubject = MaterialSubject::query()
+            ->where('user_id', $user->id)
+            ->where('workspace_id', $workspaceId)
+            ->whereKey($normalizedBeforeSubjectId)
+            ->first();
+        if (! $beforeSubject instanceof MaterialSubject) {
+            throw ValidationException::withMessages([
+                'data.before_subject_id' => 'Einfügeposition ist nicht mehr verfügbar.',
+            ]);
+        }
+
+        $targetSortOrder = max(1, (int) ($beforeSubject->sort_order ?? 0));
+
+        return DB::transaction(function () use ($attributes, $targetSortOrder, $user, $workspaceId): MaterialSubject {
+            MaterialSubject::query()
+                ->where('user_id', $user->id)
+                ->where('workspace_id', $workspaceId)
+                ->where('sort_order', '>=', $targetSortOrder)
+                ->increment('sort_order');
+
+            return MaterialSubject::query()->create([
+                ...$attributes,
+                'sort_order' => $targetSortOrder,
+            ]);
+        });
     }
 
     private function firstOrCreateTopic(MaterialSubject $subject, string $name): MaterialTopic

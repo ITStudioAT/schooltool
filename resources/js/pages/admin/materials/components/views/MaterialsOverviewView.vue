@@ -439,6 +439,7 @@
                     :shared-objects-for-me-error="sharedObjectsForMeError"
                     :shared-for-me-expanded="subjectsTreeSharedForMeExpanded"
                     :expanded-shared-items="subjectsTreeExpandedSharedItems"
+                    @shared-node-created="refreshSharedStructureTree"
                     @shared-node-renamed="refreshSharedStructureTree"
                     @shared-node-deleted="refreshSharedStructureTree"
                     @open-material="openDetailDialog"

@@ -545,7 +545,7 @@
                                 color="primary"
                                 :disabled="actionBusy"
                                 @click="toggleSharedStructureButtons(item.ruleId)">
-                                {{ isSharedStructureButtonsVisible(item.ruleId) ? 'Fach/Themen schließen' : 'Fach/Themen hinzufügen' }}
+                                {{ isSharedStructureButtonsVisible(item.ruleId) ? 'Fach/Themen schließen' : 'Struktur ändern' }}
                             </v-btn>
                         </div>
                         <ul v-if="sharedItemHierarchy(item).length" class="overview-shared-hierarchy-list">
@@ -553,7 +553,7 @@
                                 v-for="subject in sharedItemHierarchy(item)"
                                 :key="`overview-shared-subject-${item.ruleId}-${subject.id || subject.name}`"
                                 class="overview-shared-hierarchy-item">
-                                <div v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)" class="overview-shared-structure-create-row">
+                                <div v-if="sharedItemSupportsSubjectCreate(item) && isSharedStructureButtonsVisible(item.ruleId)" class="overview-shared-structure-create-row">
                                     <v-btn
                                         prepend-icon="mdi-plus"
                                         size="small"
@@ -564,7 +564,7 @@
                                         :disabled="actionBusy"
                                         title="Fach hinzufügen"
                                         aria-label="Fach hinzufügen"
-                                        @click.stop="previewStructureCreate">
+                                        @click.stop="openSharedCreateSubjectDialog(item, { beforeSubjectId: subject?.id })">
                                         Fach
                                     </v-btn>
                                 </div>
@@ -765,6 +765,23 @@
                                                 v-for="unit in topic.units"
                                                 :key="`overview-shared-unit-${item.ruleId}-${unit.id || unit.name}`"
                                                 class="overview-subjects-item">
+                                                <div
+                                                    v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)"
+                                                    class="overview-shared-structure-create-row overview-shared-structure-create-row--unit">
+                                                    <v-btn
+                                                        prepend-icon="mdi-plus"
+                                                        size="small"
+                                                        density="comfortable"
+                                                        variant="outlined"
+                                                        color="primary"
+                                                        class="overview-shared-structure-create-button overview-shared-structure-create-button--subject"
+                                                        :disabled="actionBusy"
+                                                        title="Bereich hinzufügen"
+                                                        aria-label="Bereich hinzufügen"
+                                                        @click.stop="previewStructureCreate">
+                                                        Bereich
+                                                    </v-btn>
+                                                </div>
                                                 <div class="overview-subjects-node overview-subjects-node--unit overview-shared-hierarchy-node">
                                                     <div class="overview-shared-hierarchy-node-main">
                                                         <v-icon size="13" icon="mdi-bookmark-outline" class="mr-2" />
@@ -853,6 +870,23 @@
                                                 </ul>
                                             </li>
                                         </ul>
+                                        <div
+                                            v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)"
+                                            class="overview-shared-structure-create-row overview-shared-structure-create-row--topic-bottom">
+                                            <v-btn
+                                                prepend-icon="mdi-plus"
+                                                size="small"
+                                                density="comfortable"
+                                                variant="outlined"
+                                                color="primary"
+                                                class="overview-shared-structure-create-button overview-shared-structure-create-button--subject"
+                                                :disabled="actionBusy"
+                                                title="Bereich hinzufügen"
+                                                aria-label="Bereich hinzufügen"
+                                                @click.stop="previewStructureCreate">
+                                                Bereich
+                                            </v-btn>
+                                        </div>
                                     </li>
                                 </ul>
                                 <div v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)" class="overview-shared-structure-create-row overview-shared-structure-create-row--subject-bottom">
@@ -873,7 +907,7 @@
                             </li>
                         </ul>
                         <div
-                            v-if="sharedItemHasFullAccess(item) && sharedItemHierarchy(item).length && isSharedStructureButtonsVisible(item.ruleId)"
+                            v-if="sharedItemSupportsSubjectCreate(item) && sharedItemHierarchy(item).length && isSharedStructureButtonsVisible(item.ruleId)"
                             class="overview-shared-structure-create-row overview-shared-structure-create-row--bottom">
                             <v-btn
                                 prepend-icon="mdi-plus"
@@ -885,7 +919,7 @@
                                 :disabled="actionBusy"
                                 title="Fach hinzufügen"
                                 aria-label="Fach hinzufügen"
-                                @click.stop="previewStructureCreate">
+                                @click.stop="openSharedCreateSubjectDialog(item)">
                                 Fach
                             </v-btn>
                         </div>
@@ -893,6 +927,31 @@
                 </div>
             </div>
         </div>
+
+        <v-dialog v-model="sharedCreateSubjectDialog.open" max-width="560" persistent>
+            <v-card rounded="xl">
+                <v-card-title class="text-h6 font-weight-bold">Fach hinzufügen</v-card-title>
+                <v-card-text>
+                    <div class="text-body-2 text-medium-emphasis mb-3">Neues Fach im Original-Workspace anlegen</div>
+                    <v-text-field
+                        :model-value="sharedCreateSubjectDialog.title"
+                        label="Titel"
+                        variant="outlined"
+                        density="comfortable"
+                        hide-details="auto"
+                        autofocus
+                        :disabled="actionBusy || sharedCreateSubjectDialogSaving"
+                        :rules="[required(), maxLength(255)]"
+                        :error-messages="sharedCreateSubjectDialogError ? [sharedCreateSubjectDialogError] : []"
+                        @update:modelValue="handleSharedCreateSubjectTitleInput"
+                        @blur="validateSharedCreateSubjectDialog" />
+                </v-card-text>
+                <v-card-actions class="justify-end">
+                    <v-btn variant="text" :disabled="actionBusy || sharedCreateSubjectDialogSaving" @click="closeSharedCreateSubjectDialog">Abbrechen</v-btn>
+                    <v-btn color="primary" variant="flat" :loading="sharedCreateSubjectDialogSaving" :disabled="actionBusy" @click="submitSharedCreateSubjectDialog">Speichern</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
 
         <v-dialog v-model="sharedRenameDialog.open" max-width="560" persistent>
             <v-card rounded="xl">
@@ -965,6 +1024,15 @@ function createSharedRenameDialogState() {
         key: '',
         ruleId: null,
         nodeId: null,
+        title: '',
+    }
+}
+
+function createSharedCreateSubjectDialogState() {
+    return {
+        open: false,
+        ruleId: null,
+        beforeSubjectId: null,
         title: '',
     }
 }
@@ -1051,12 +1119,15 @@ export default {
             default: () => ({}),
         },
     },
-    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'open-shared-material', 'open-shared-attachments', 'unlink-linked-material', 'unlink-linked-topic', 'unlink-linked-unit', 'toggle-shared-for-me-expanded', 'toggle-shared-item-expanded', 'shared-node-renamed', 'shared-node-deleted'],
+    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'open-shared-material', 'open-shared-attachments', 'unlink-linked-material', 'unlink-linked-topic', 'unlink-linked-unit', 'toggle-shared-for-me-expanded', 'toggle-shared-item-expanded', 'shared-node-created', 'shared-node-renamed', 'shared-node-deleted'],
     data() {
         return {
             workspaceExpanded: true,
             sharedNodeTitleOverrides: {},
             sharedStructureButtonsVisible: {},
+            sharedCreateSubjectDialog: createSharedCreateSubjectDialogState(),
+            sharedCreateSubjectDialogError: '',
+            sharedCreateSubjectDialogSaving: false,
             sharedRenameDialog: createSharedRenameDialogState(),
             sharedRenameDialogError: '',
             sharedRenameDialogSaving: false,
@@ -1141,11 +1212,39 @@ export default {
         sharedItemHasFullAccess(item) {
             return String(item?.permission || '').trim() === 'full_access'
         },
+        sharedItemScopeType(item) {
+            return String(item?.scopeType || item?.scope_type || 'all').trim().toLowerCase()
+        },
+        sharedItemSupportsSubjectCreate(item) {
+            return this.sharedItemHasFullAccess(item) && this.sharedItemScopeType(item) === 'all'
+        },
         sharedRenameLevelLabel(level) {
             if (level === 'subject') return 'Fach'
             if (level === 'topic') return 'Thema'
             if (level === 'unit') return 'Bereich'
             return 'Element'
+        },
+        openSharedCreateSubjectDialog(item, options = {}) {
+            if (this.actionBusy) return
+            if (!this.sharedItemSupportsSubjectCreate(item)) return
+
+            const ruleId = Number(item?.ruleId || 0)
+            if (!Number.isFinite(ruleId) || ruleId <= 0) return
+            const beforeSubjectId = Number(options?.beforeSubjectId || 0)
+
+            this.sharedCreateSubjectDialog = {
+                open: true,
+                ruleId,
+                beforeSubjectId: Number.isFinite(beforeSubjectId) && beforeSubjectId > 0 ? beforeSubjectId : null,
+                title: '',
+            }
+            this.sharedCreateSubjectDialogError = ''
+        },
+        closeSharedCreateSubjectDialog() {
+            if (this.sharedCreateSubjectDialogSaving) return
+
+            this.sharedCreateSubjectDialog = createSharedCreateSubjectDialogState()
+            this.sharedCreateSubjectDialogError = ''
         },
         sharedDeleteTitle(level) {
             if (level === 'subject') return 'Fach löschen'
@@ -1244,6 +1343,21 @@ export default {
             this.sharedRenameDialogError = validationMessage
             return validationMessage === ''
         },
+        validateSharedCreateSubjectDialog() {
+            const validationMessage = this.sharedRenameTitleValidationMessage(this.sharedCreateSubjectDialog?.title)
+            this.sharedCreateSubjectDialogError = validationMessage
+            return validationMessage === ''
+        },
+        handleSharedCreateSubjectTitleInput(value) {
+            this.sharedCreateSubjectDialog = {
+                ...this.sharedCreateSubjectDialog,
+                title: value,
+            }
+
+            if (this.sharedCreateSubjectDialogError !== '') {
+                this.sharedCreateSubjectDialogError = this.sharedRenameTitleValidationMessage(value)
+            }
+        },
         handleSharedRenameTitleInput(value) {
             this.sharedRenameDialog = {
                 ...this.sharedRenameDialog,
@@ -1269,6 +1383,49 @@ export default {
             if (level === 'topic') return `/api/admin/materials/shares/inbox/topics/${id}`
             if (level === 'unit') return `/api/admin/materials/shares/inbox/units/${id}`
             return ''
+        },
+        async submitSharedCreateSubjectDialog() {
+            if (!this.validateSharedCreateSubjectDialog()) return
+            if (this.sharedCreateSubjectDialogSaving) return
+
+            const normalizedTitle = String(this.sharedCreateSubjectDialog?.title || '').trim()
+            const ruleId = Number(this.sharedCreateSubjectDialog?.ruleId || 0)
+            const beforeSubjectId = Number(this.sharedCreateSubjectDialog?.beforeSubjectId || 0)
+            if (!Number.isFinite(ruleId) || ruleId <= 0) {
+                this.sharedCreateSubjectDialogError = 'Fach konnte nicht erstellt werden.'
+                return
+            }
+
+            this.sharedCreateSubjectDialogSaving = true
+
+            try {
+                const subjectPayload = {
+                    name: normalizedTitle,
+                }
+                if (Number.isFinite(beforeSubjectId) && beforeSubjectId > 0) {
+                    subjectPayload.before_subject_id = beforeSubjectId
+                }
+
+                const response = await axios.post('/api/admin/materials/shares/inbox/subjects', {
+                    rule_id: ruleId,
+                    data: subjectPayload,
+                })
+                const subjectId = Number(response?.data?.data?.id || 0)
+                const savedTitle = String(response?.data?.data?.name || normalizedTitle).trim() || normalizedTitle
+
+                this.$emit('shared-node-created', {
+                    ruleId,
+                    level: 'subject',
+                    nodeId: subjectId,
+                    name: savedTitle,
+                })
+                this.sharedCreateSubjectDialog = createSharedCreateSubjectDialogState()
+                this.sharedCreateSubjectDialogError = ''
+            } catch (error) {
+                this.sharedCreateSubjectDialogError = String(error?.response?.data?.message || 'Fach konnte nicht erstellt werden.')
+            } finally {
+                this.sharedCreateSubjectDialogSaving = false
+            }
         },
         async submitSharedRenameDialog() {
             if (!this.validateSharedRenameDialog()) return
@@ -1753,6 +1910,15 @@ export default {
 
 .overview-shared-structure-create-row--topic {
     margin-left: 24px;
+}
+
+.overview-shared-structure-create-row--unit {
+    margin-left: 40px;
+}
+
+.overview-shared-structure-create-row--topic-bottom {
+    margin-top: 12px;
+    margin-left: 88px;
 }
 
 .overview-shared-structure-create-row--subject-bottom {
