@@ -544,7 +544,16 @@ class GroupController extends Controller
         $groups = UserGroup::query()
             ->where('school_id', $schoolId)
             ->where('id', '!=', $group->id)
-            ->whereHas('groupMembers')
+            ->where(function ($query) use ($group) {
+                if ((string) $group->type === UserGroup::TYPE_MATERIALS) {
+                    $query->where('type', UserGroup::TYPE_MATERIALS)
+                        ->orWhereHas('groupMembers');
+
+                    return;
+                }
+
+                $query->whereHas('groupMembers');
+            })
             ->withCount(['groupMembers', 'members'])
             ->orderByRaw("CASE type WHEN 'school' THEN 1 WHEN 'materials' THEN 2 ELSE 3 END")
             ->orderByRaw('LOWER(name)')
@@ -850,9 +859,8 @@ class GroupController extends Controller
                 $membersCount = (int) $registeredAllSchoolMembers->count();
                 $sourceUsersCount = (int) $allSchoolMembersEntries->count();
             } elseif ($isParentGroup) {
-                $registeredParentContacts = is_array($parentGroupContacts) ? ($parentGroupContacts['registered'][$normalizedName] ?? collect()) : collect();
                 $allParentContacts = is_array($parentGroupContacts) ? ($parentGroupContacts['all'][$normalizedName] ?? collect()) : collect();
-                $membersCount = (int) $registeredParentContacts->count();
+                $membersCount = $linkedMembersCount;
                 $sourceUsersCount = (int) $allParentContacts->count();
             } elseif ($this->isTeacherGroupName($normalizedName)) {
                 $normalizedName = $this->normalizeGroupName($this->defaultTeacherGroupName());
@@ -870,9 +878,8 @@ class GroupController extends Controller
         } elseif ($isSystemManagedCourseGroup && $group->teaching_course_id) {
             $courseId = (int) $group->teaching_course_id;
             if ($this->isSystemManagedCourseParentGroup($group)) {
-                $registeredParentContacts = is_array($ownCourseParentContacts) ? ($ownCourseParentContacts['registered'][$courseId] ?? collect()) : collect();
                 $allParentContacts = is_array($ownCourseParentContacts) ? ($ownCourseParentContacts['all'][$courseId] ?? collect()) : collect();
-                $membersCount = (int) $registeredParentContacts->count();
+                $membersCount = $linkedMembersCount;
                 $sourceUsersCount = (int) $allParentContacts->count();
             } else {
                 $membersCount = $linkedMembersCount;
@@ -880,6 +887,12 @@ class GroupController extends Controller
                     ? (int) ($ownCourseSourceCounts[$courseId] ?? 0)
                     : 0;
             }
+        } elseif ((string) $group->type === UserGroup::TYPE_OWN) {
+            $membersCount = $storedMembersCount;
+            $sourceUsersCount = $linkedMembersCount;
+        } elseif ((string) $group->type === UserGroup::TYPE_MATERIALS) {
+            $membersCount = $storedMembersCount;
+            $sourceUsersCount = $linkedMembersCount;
         }
 
         $canDelete = ! $isSystemDefault
@@ -1123,10 +1136,14 @@ class GroupController extends Controller
 
         return TeachingCourse::query()
             ->whereIn('id', $courseIds->all())
-            ->withCount('teachingCourseStudents')
-            ->get(['id'])
+            ->with([
+                'teachingCourseStudents:id,teaching_course_id,user_id,import116_id',
+                'teachingCourseStudents.user:id,school_id,import116_id,last_name,first_name,email,schoolclass',
+                'teachingCourseStudents.import116:id,school_id,schoolyear_id,class,user_id,last_name,first_name,email',
+            ])
+            ->get(['id', 'school_id'])
             ->mapWithKeys(fn (TeachingCourse $course) => [
-                (int) $course->id => (int) ($course->teaching_course_students_count ?? 0),
+                (int) $course->id => $this->automaticCourseStudentPayloads($course, (int) $course->school_id)->count(),
             ])
             ->all();
     }
@@ -1446,7 +1463,7 @@ class GroupController extends Controller
                     $query->select(['id', 'teaching_course_id', 'user_id', 'import116_id']);
                 },
                 'teachingCourseStudents.user:id,last_name,first_name,email,schoolclass',
-                'teachingCourseStudents.import116:id,class,last_name,first_name,email',
+                'teachingCourseStudents.import116:id,schoolyear_id,class,user_id,last_name,first_name,email',
             ])
             ->first();
 
@@ -1456,28 +1473,33 @@ class GroupController extends Controller
 
         $existingMembers = $this->existingStoredGroupMembers($group);
 
-        return $course->teachingCourseStudents
-            ->map(function ($courseStudent) use ($existingMembers, $schoolId) {
-                $user = $courseStudent->user;
-                $import = $courseStudent->import116;
+        return $this->automaticCourseStudentPayloads($course, $schoolId)
+            ->map(fn (array $payload) => $this->serializeAssignableMemberPayload($payload, $existingMembers))
+            ->values();
+    }
 
-                if ($import) {
-                    return $this->serializeAssignableMemberPayload(
-                        $this->payloadForImportStudent($import, $user ?: $this->linkedUserForImportStudent($schoolId, $import)),
-                        $existingMembers,
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function automaticCourseStudentPayloads(TeachingCourse $course, int $schoolId): Collection
+    {
+        return $course->teachingCourseStudents
+            ->map(function ($courseStudent) use ($schoolId) {
+                if ($courseStudent->import116) {
+                    return $this->payloadForImportStudent(
+                        $courseStudent->import116,
+                        $courseStudent->user ?: $this->linkedUserForImportStudent($schoolId, $courseStudent->import116),
                     );
                 }
 
-                if ($user) {
-                    return $this->serializeAssignableMemberPayload(
-                        $this->payloadForUserSource($user, 'Schüler:in'),
-                        $existingMembers,
-                    );
+                if ($courseStudent->user) {
+                    return $this->payloadForUserSource($courseStudent->user, 'Schüler:in');
                 }
 
                 return null;
             })
             ->filter()
+            ->keyBy(fn (array $payload) => $this->groupMemberDeduplicationKeyFromPayload($payload))
             ->values();
     }
 
@@ -1804,23 +1826,7 @@ class GroupController extends Controller
         $activeImportSchoolyearId = $this->activeImportSchoolyearId($schoolId);
 
         foreach ($courses as $course) {
-            $studentPayloads = $course->teachingCourseStudents
-                ->map(function ($courseStudent) use ($schoolId) {
-                    if ($courseStudent->import116) {
-                        return $this->payloadForImportStudent(
-                            $courseStudent->import116,
-                            $courseStudent->user ?: $this->linkedUserForImportStudent($schoolId, $courseStudent->import116),
-                        );
-                    }
-
-                    if ($courseStudent->user) {
-                        return $this->payloadForUserSource($courseStudent->user, 'Schüler:in');
-                    }
-
-                    return null;
-                })
-                ->filter()
-                ->values();
+            $studentPayloads = $this->automaticCourseStudentPayloads($course, $schoolId);
 
             $studentGroup = $this->firstAutomaticOwnCourseGroup((int) $course->id, UserGroup::TEACHING_COURSE_GROUP_TYPE_STUDENTS);
 
@@ -2730,6 +2736,40 @@ class GroupController extends Controller
         return $this->storedGroupMemberKey((string) $payload['member_provider'], (string) $payload['member_ref']);
     }
 
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function groupMemberDeduplicationKeyFromPayload(array $payload): string
+    {
+        $linkedUserId = $this->payloadLinkedUserId($payload);
+        if ($linkedUserId > 0) {
+            return $this->groupMemberDeduplicationKeyFromLinkedUserId($linkedUserId);
+        }
+
+        return $this->storedGroupMemberKeyFromPayload($payload);
+    }
+
+    private function groupMemberDeduplicationKeyFromLinkedUserId(int $linkedUserId): string
+    {
+        return 'linked-user:'.$linkedUserId;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function payloadLinkedUserId(array $payload): int
+    {
+        if (isset($payload['linked_user_id']) && $payload['linked_user_id'] !== null) {
+            return (int) $payload['linked_user_id'];
+        }
+
+        if (isset($payload['user_id']) && $payload['user_id'] !== null) {
+            return (int) $payload['user_id'];
+        }
+
+        return 0;
+    }
+
     private function normalizeEmail(?string $value): string
     {
         return mb_strtolower(trim((string) ($value ?? '')));
@@ -2909,7 +2949,7 @@ class GroupController extends Controller
     {
         $payloads = $payloads
             ->filter(fn (array $payload) => trim((string) ($payload['member_provider'] ?? '')) !== '' && trim((string) ($payload['member_ref'] ?? '')) !== '')
-            ->keyBy(fn (array $payload) => $this->storedGroupMemberKeyFromPayload($payload));
+            ->keyBy(fn (array $payload) => $this->groupMemberDeduplicationKeyFromPayload($payload));
 
         if ($payloads->isEmpty()) {
             return ['assigned_count' => 0, 'new_count' => 0];
@@ -2918,9 +2958,15 @@ class GroupController extends Controller
         $existingMembers = $group->groupMembers()
             ->get()
             ->keyBy(fn (UserGroupMember $member) => $this->storedGroupMemberKey((string) $member->member_provider, (string) $member->member_ref));
+        $existingMembersByLinkedUser = $group->groupMembers()
+            ->whereNotNull('linked_user_id')
+            ->get()
+            ->keyBy(fn (UserGroupMember $member) => $this->groupMemberDeduplicationKeyFromLinkedUserId((int) $member->linked_user_id));
 
         $newCount = 0;
-        foreach ($payloads as $storedKey => $payload) {
+        foreach ($payloads as $payload) {
+            $storedKey = $this->storedGroupMemberKeyFromPayload($payload);
+            $linkedUserDeduplicationKey = $this->groupMemberDeduplicationKeyFromPayload($payload);
             $attributes = [
                 'school_id' => (int) $group->school_id,
                 'member_provider' => (string) $payload['member_provider'],
@@ -2949,6 +2995,10 @@ class GroupController extends Controller
                 continue;
             }
 
+            if ($linkedUserDeduplicationKey !== $storedKey && $existingMembersByLinkedUser->has($linkedUserDeduplicationKey)) {
+                continue;
+            }
+
             $group->groupMembers()->create($attributes);
             $newCount++;
         }
@@ -2964,9 +3014,17 @@ class GroupController extends Controller
      */
     private function existingStoredGroupMembers(UserGroup $group): Collection
     {
-        return $group->groupMembers()
-            ->get()
-            ->keyBy(fn (UserGroupMember $member) => $this->storedGroupMemberKey((string) $member->member_provider, (string) $member->member_ref));
+        $members = collect();
+
+        foreach ($group->groupMembers()->get() as $member) {
+            $members->put($this->storedGroupMemberKey((string) $member->member_provider, (string) $member->member_ref), $member);
+
+            if ((int) $member->linked_user_id > 0) {
+                $members->put($this->groupMemberDeduplicationKeyFromLinkedUserId((int) $member->linked_user_id), $member);
+            }
+        }
+
+        return $members;
     }
 
     /**

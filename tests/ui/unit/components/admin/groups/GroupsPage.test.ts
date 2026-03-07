@@ -159,6 +159,7 @@ describe('Groups page header', () => {
         expect(ctx.assignUsersDialog.readOnly).toBe(true)
         expect(ctx.assignUsersDialog.membersPage).toBe(1)
         expect(ctx.assignUsersDialog.readOnlyPage).toBe(1)
+        expect(ctx.assignUsersDialog.sourceGroupCollection).toBeNull()
         expect(ctx.assignUsersDialog.readOnlyPanel).toBeNull()
         expect(ctx.assignUsersDialog.sourceGroupCategory).toBeNull()
         expect(ctx.assignUsersDialog.bulkSourceGroupId).toBeNull()
@@ -235,6 +236,7 @@ describe('Groups page header', () => {
         expect(ctx.assignUsersDialog.membersExpanded).toBe(false)
         expect(ctx.assignUsersDialog.membersPage).toBe(1)
         expect(ctx.assignUsersDialog.readOnlyPage).toBe(1)
+        expect(ctx.assignUsersDialog.sourceGroupCollection).toBeNull()
         expect(ctx.assignUsersDialog.sourceGroupCategory).toBeNull()
         expect(ctx.assignUsersDialog.bulkSourceGroupId).toBeNull()
         expect(ctx.assignUsersDialog.sourceGroupId).toBeNull()
@@ -289,6 +291,217 @@ describe('Groups page header', () => {
         expect(buttons.map((button: any) => button.title)).toEqual(['Klassen', 'Lehrer', 'Eltern', 'Weitere Gruppen'])
     })
 
+    it('builds own source category buttons from available own source groups only', () => {
+        const methods = (Groups as any).methods
+        const ctx = {
+            assignUsersDialog: {
+                sourceGroups: [
+                    { id: 1, type: 'own', name: 'Mathematik (1A)', teaching_course_id: 10, teaching_course_group_type: 'students' },
+                    { id: 2, type: 'own', name: 'Mathematik (1A) Eltern', teaching_course_id: 10, teaching_course_group_type: 'parents', is_parent_group: true },
+                    { id: 3, type: 'own', name: 'Freie Gruppe', teaching_course_id: null },
+                    { id: 4, type: 'school', name: '1A', is_system_default: true },
+                ],
+            },
+            ownSourceGroupsPanels: methods.ownSourceGroupsPanels,
+            isAutomaticOwnCourseGroup: methods.isAutomaticOwnCourseGroup,
+            isAutomaticOwnCourseParentGroup: methods.isAutomaticOwnCourseParentGroup,
+        }
+
+        const buttons = methods.ownSourceGroupCategoryButtons.call(ctx)
+
+        expect(buttons.map((button: any) => button.key)).toEqual(['course-groups', 'course-parent-groups', 'own-groups'])
+        expect(buttons.map((button: any) => button.title)).toEqual(['Kursgruppen', 'Eltern Kursgruppen', 'Eigene Gruppen'])
+    })
+
+    it('builds materials source category buttons from available materials source groups only', () => {
+        const methods = (Groups as any).methods
+        const ctx = {
+            assignUsersDialog: {
+                sourceGroups: [
+                    { id: 1, type: 'materials', name: 'Materialteam' },
+                    { id: 2, type: 'materials', name: 'Redaktion' },
+                    { id: 3, type: 'school', name: '1A', is_system_default: true },
+                ],
+            },
+            materialsSourceGroupsPanels: methods.materialsSourceGroupsPanels,
+        }
+
+        const buttons = methods.materialsSourceGroupCategoryButtons.call(ctx)
+
+        expect(buttons.map((button: any) => button.key)).toEqual(['materials-groups'])
+        expect(buttons.map((button: any) => button.title)).toEqual(['Materialgruppen'])
+    })
+
+    it('switches own takeover between school and own source collections', () => {
+        const methods = (Groups as any).methods
+        const ctx: any = {
+            assignUsersDialog: {
+                sourceGroupCollection: null,
+                sourceGroupCategory: 'classes',
+                bulkSourceGroupId: 3,
+                sourceGroupId: 9,
+                selectedSourceGroupMembers: [{ id: 1 }],
+                selectedSourceGroupSourceMembers: [{ id: 2 }],
+                selectedSourceGroupMembersLoading: true,
+            },
+            clearSelectedSourceGroup: methods.clearSelectedSourceGroup,
+            defaultSourceGroupCategoryForCollection: methods.defaultSourceGroupCategoryForCollection,
+        }
+
+        methods.selectSourceGroupCollection.call(ctx, 'school')
+
+        expect(ctx.assignUsersDialog.sourceGroupCollection).toBe('school')
+        expect(ctx.assignUsersDialog.sourceGroupCategory).toBeNull()
+        expect(ctx.assignUsersDialog.bulkSourceGroupId).toBeNull()
+        expect(ctx.assignUsersDialog.sourceGroupId).toBeNull()
+        expect(ctx.assignUsersDialog.selectedSourceGroupMembers).toEqual([])
+
+        methods.selectSourceGroupCollection.call(ctx, 'school')
+
+        expect(ctx.assignUsersDialog.sourceGroupCollection).toBeNull()
+        expect(ctx.assignUsersDialog.sourceGroupCategory).toBeNull()
+    })
+
+    it('offers school, materials, and own takeover sources for own groups in that order', () => {
+        const methods = (Groups as any).methods
+
+        expect(methods.ownSourceGroupCollectionButtons.call({})).toEqual([
+            { key: 'school', title: 'Schulgruppen', icon: 'mdi-domain' },
+            { key: 'materials', title: 'Materialgruppen', icon: 'mdi-folder-multiple-outline' },
+            { key: 'own', title: 'Eigene Gruppen', icon: 'mdi-account-group-outline' },
+        ])
+    })
+
+    it('auto-selects the materials source category when choosing Materialgruppen', () => {
+        const methods = (Groups as any).methods
+        const ctx: any = {
+            assignUsersDialog: {
+                group: { id: 8, type: 'own' },
+                sourceGroupCollection: null,
+                sourceGroupCategory: null,
+                bulkSourceGroupId: 3,
+                sourceGroupId: 9,
+                selectedSourceGroupMembers: [{ id: 1 }],
+                selectedSourceGroupSourceMembers: [{ id: 2 }],
+                selectedSourceGroupMembersLoading: true,
+            },
+            clearSelectedSourceGroup: methods.clearSelectedSourceGroup,
+            defaultSourceGroupCategoryForCollection: methods.defaultSourceGroupCategoryForCollection,
+        }
+
+        methods.selectSourceGroupCollection.call(ctx, 'materials')
+
+        expect(ctx.assignUsersDialog.sourceGroupCollection).toBe('materials')
+        expect(ctx.assignUsersDialog.sourceGroupCategory).toBe('materials-groups')
+        expect(ctx.assignUsersDialog.bulkSourceGroupId).toBeNull()
+        expect(ctx.assignUsersDialog.sourceGroupId).toBeNull()
+        expect(ctx.assignUsersDialog.selectedSourceGroupMembers).toEqual([])
+    })
+
+    it('returns the active source category buttons for own groups based on the selected collection', () => {
+        const methods = (Groups as any).methods
+        const ctx: any = {
+            assignUsersDialog: {
+                group: { id: 8, type: 'own' },
+                sourceGroupCollection: 'own',
+            },
+            schoolSourceGroupCategoryButtons: vi.fn(() => [{ key: 'classes', title: 'Klassen' }]),
+            materialsSourceGroupCategoryButtons: vi.fn(() => [{ key: 'materials-groups', title: 'Materialgruppen' }]),
+            ownSourceGroupCategoryButtons: vi.fn(() => [{ key: 'own-groups', title: 'Eigene Gruppen' }]),
+        }
+
+        expect(methods.activeSourceGroupCategoryButtons.call(ctx)).toEqual([{ key: 'own-groups', title: 'Eigene Gruppen' }])
+
+        ctx.assignUsersDialog.sourceGroupCollection = 'materials'
+
+        expect(methods.activeSourceGroupCategoryButtons.call(ctx)).toEqual([{ key: 'materials-groups', title: 'Materialgruppen' }])
+
+        ctx.assignUsersDialog.sourceGroupCollection = 'school'
+
+        expect(methods.activeSourceGroupCategoryButtons.call(ctx)).toEqual([{ key: 'classes', title: 'Klassen' }])
+    })
+
+    it('returns the active source panel for own groups when Materialgruppen is selected', () => {
+        const methods = (Groups as any).methods
+        const ctx: any = {
+            assignUsersDialog: {
+                group: { id: 8, type: 'own' },
+                sourceGroupCollection: 'materials',
+            },
+            activeSchoolSourceGroupsPanel: vi.fn(() => ({ key: 'classes', groups: [{ id: 1 }] })),
+            activeMaterialsSourceGroupsPanel: vi.fn(() => ({ key: 'materials-groups', groups: [{ id: 2 }] })),
+            activeOwnSourceGroupsPanel: vi.fn(() => ({ key: 'own-groups', groups: [{ id: 3 }] })),
+        }
+
+        expect(methods.activeSourceGroupsPanel.call(ctx)).toEqual({ key: 'materials-groups', groups: [{ id: 2 }] })
+    })
+
+    it('returns the active source category buttons for materials groups based on the selected collection', () => {
+        const methods = (Groups as any).methods
+        const ctx: any = {
+            assignUsersDialog: {
+                group: { id: 8, type: 'materials' },
+                sourceGroupCollection: 'materials',
+            },
+            schoolSourceGroupCategoryButtons: vi.fn(() => [{ key: 'classes', title: 'Klassen' }]),
+            materialsSourceGroupCategoryButtons: vi.fn(() => [{ key: 'materials-groups', title: 'Materialgruppen' }]),
+        }
+
+        expect(methods.activeSourceGroupCategoryButtons.call(ctx)).toEqual([{ key: 'materials-groups', title: 'Materialgruppen' }])
+
+        ctx.assignUsersDialog.sourceGroupCollection = 'school'
+
+        expect(methods.activeSourceGroupCategoryButtons.call(ctx)).toEqual([{ key: 'classes', title: 'Klassen' }])
+    })
+
+    it('returns the active materials source panel and falls back to the first available category', () => {
+        const methods = (Groups as any).methods
+        const ctx = {
+            assignUsersDialog: {
+                sourceGroupCategory: 'missing',
+            },
+            materialsSourceGroupCategoryButtons: vi.fn(() => [
+                { key: 'materials-groups', title: 'Materialgruppen', groups: [{ id: 1 }] },
+            ]),
+        }
+
+        expect(methods.activeMaterialsSourceGroupsPanel.call(ctx)).toEqual({ key: 'materials-groups', title: 'Materialgruppen', groups: [{ id: 1 }] })
+    })
+
+    it('hides the extra category buttons when only one source category exists', () => {
+        const methods = (Groups as any).methods
+
+        expect(methods.shouldShowSourceCategoryButtons.call({
+            activeSourceGroupCategoryButtons: () => [{ key: 'materials-groups', title: 'Materialgruppen' }],
+        })).toBe(false)
+
+        expect(methods.shouldShowSourceCategoryButtons.call({
+            activeSourceGroupCategoryButtons: () => [
+                { key: 'classes', title: 'Klassen' },
+                { key: 'teachers', title: 'Lehrer' },
+            ],
+        })).toBe(true)
+    })
+
+    it('returns the active own source panel and falls back to the first available own category', () => {
+        const methods = (Groups as any).methods
+        const ctx = {
+            assignUsersDialog: {
+                sourceGroupCategory: 'missing',
+            },
+            ownSourceGroupCategoryButtons: vi.fn(() => [
+                { key: 'course-groups', title: 'Kursgruppen', groups: [{ id: 1 }] },
+                { key: 'own-groups', title: 'Eigene Gruppen', groups: [{ id: 2 }] },
+            ]),
+        }
+
+        expect(methods.activeOwnSourceGroupsPanel.call(ctx)).toEqual({ key: 'course-groups', title: 'Kursgruppen', groups: [{ id: 1 }] })
+
+        ctx.assignUsersDialog.sourceGroupCategory = 'own-groups'
+
+        expect(methods.activeOwnSourceGroupsPanel.call(ctx)).toEqual({ key: 'own-groups', title: 'Eigene Gruppen', groups: [{ id: 2 }] })
+    })
+
     it('returns the active school source panel and falls back to the first available category', () => {
         const methods = (Groups as any).methods
         const ctx = {
@@ -315,10 +528,11 @@ describe('Groups page header', () => {
                 sourceGroupCategory: null,
                 sourceGroupId: 99,
             },
-            activeSchoolSourceGroupsPanel: vi.fn(() => ({
+            activeSourceGroupsPanel: vi.fn(() => ({
                 key: 'classes',
                 groups: [{ id: 1 }, { id: 2 }],
             })),
+            clearSelectedSourceGroup: methods.clearSelectedSourceGroup,
         }
 
         methods.selectSchoolSourceGroupCategory.call(ctx, 'classes')
@@ -338,10 +552,11 @@ describe('Groups page header', () => {
                 selectedSourceGroupSourceMembers: [{ id: 2 }],
                 selectedSourceGroupMembersLoading: true,
             },
-            activeSchoolSourceGroupsPanel: vi.fn(() => ({
+            activeSourceGroupsPanel: vi.fn(() => ({
                 key: 'teachers',
                 groups: [{ id: 2 }, { id: 3 }],
             })),
+            clearSelectedSourceGroup: methods.clearSelectedSourceGroup,
         }
 
         methods.selectSchoolSourceGroupCategory.call(ctx, 'teachers')
@@ -407,7 +622,7 @@ describe('Groups page header', () => {
         ])
     })
 
-    it('treats a selected school source category as disabling the user search area', () => {
+    it('treats a selected source category as disabling the user search area', () => {
         const methods = (Groups as any).methods
 
         expect(methods.isSchoolSourceCategorySelected.call({
@@ -427,9 +642,9 @@ describe('Groups page header', () => {
         expect(methods.isSchoolSourceCategorySelected.call({
             assignUsersDialog: {
                 group: { id: 3, type: 'own' },
-                sourceGroupCategory: 'classes',
+                sourceGroupCategory: 'own-groups',
             },
-        })).toBe(false)
+        })).toBe(true)
     })
 
     it('shows the source-members panel for automatic own course groups', () => {
@@ -844,10 +1059,31 @@ describe('Groups page header', () => {
         expect(source).toContain('collapseTakeoverSection()')
         expect(source).toContain('isTakeoverSectionDisabled()')
         expect(source).toContain('schoolSourceGroupCategoryButtons()')
+        expect(source).toContain('ownSourceGroupCategoryButtons()')
+        expect(source).toContain('ownSourceGroupCollectionButtons()')
+        expect(source).toContain('materialsSourceGroupCategoryButtons()')
+        expect(source).toContain('materialsSourceGroupCollectionButtons()')
+        expect(source).toContain('activeMaterialsSourceGroupsPanel()')
+        expect(source).toContain('activeSourceGroupCategoryButtons()')
+        expect(source).toContain('shouldShowSourceCategoryButtons()')
+        expect(source).toContain('activeSourceGroupsPanel()')
+        expect(source).toContain('selectSourceGroupCollection(collection.key)')
+        expect(source).toContain('defaultSourceGroupCategoryForCollection(collectionKey)')
+        expect(source).toContain('selectSourceGroupCategory(panel.key)')
+        expect(source).toContain('source-collection-')
         expect(source).toContain('source-category-')
+        expect(source).toContain('sourceGroupCollection: null')
         expect(source).toContain('sourceGroupCategory: null')
         expect(source).toContain("assignUsersDialog.sourceGroupCategory === panel.key ? 'primary' : 'grey-lighten-1'")
         expect(source).toContain("2. Von Gruppe übernehmen")
+        expect(source).toContain("v-else-if=\"!assignUsersDialog.readOnly && assignUsersDialog.group?.type === 'own'\"")
+        expect(source).toContain("v-else-if=\"!assignUsersDialog.readOnly && assignUsersDialog.group?.type === 'materials'\"")
+        expect(source).toContain('Schulgruppen')
+        expect(source).toContain('Eigene Gruppen')
+        expect(source).toContain('Materialgruppen')
+        expect(source).toContain("title: 'Kursgruppen'")
+        expect(source).toContain("title: 'Eltern Kursgruppen'")
+        expect(source).toContain("title: 'Materialgruppen'")
         expect(source).toContain(":class=\"{ 'groups-assign-section--disabled': isSchoolSourceCategorySelected() }\"")
         expect(source).toContain(":disabled=\"isSchoolSourceCategorySelected()\"")
         expect(source).toContain(":class=\"{ 'groups-assign-section--disabled': isTakeoverSectionDisabled() }\"")

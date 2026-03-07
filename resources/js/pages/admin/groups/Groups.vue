@@ -692,14 +692,12 @@
                         </section>
 
                         <section
-                            v-if="!assignUsersDialog.readOnly"
+                            v-if="!assignUsersDialog.readOnly && assignUsersDialog.group?.type === 'school'"
                             class="groups-assign-section"
                             :class="{ 'groups-assign-section--disabled': isTakeoverSectionDisabled() }">
-                            <div class="admin-card-eyebrow mb-2">
-                                {{ assignUsersDialog.group?.type === 'school' ? '2. Von Gruppe übernehmen' : 'Weitere Möglichkeiten' }}
-                            </div>
+                            <div class="admin-card-eyebrow mb-2">2. Von Gruppe übernehmen</div>
                             <div
-                                v-if="assignUsersDialog.group?.type === 'school' && !isTakeoverSectionDisabled()"
+                                v-if="!isTakeoverSectionDisabled()"
                                 class="d-flex flex-column ga-3">
                                 <div class="d-flex flex-wrap ga-2">
                                     <v-btn
@@ -830,8 +828,321 @@
                                     </div>
                                 </div>
                             </div>
+                        </section>
+
+                        <section
+                            v-else-if="!assignUsersDialog.readOnly && assignUsersDialog.group?.type === 'own'"
+                            class="groups-assign-section"
+                            :class="{ 'groups-assign-section--disabled': isTakeoverSectionDisabled() }">
+                            <div class="admin-card-eyebrow mb-2">2. Von Gruppe übernehmen</div>
+                            <div
+                                v-if="!isTakeoverSectionDisabled()"
+                                class="d-flex flex-column ga-3">
+                                <div class="d-flex flex-wrap ga-2">
+                                    <v-btn
+                                        v-for="collection in ownSourceGroupCollectionButtons()"
+                                        :key="`source-collection-${collection.key}`"
+                                        flat
+                                        :color="assignUsersDialog.sourceGroupCollection === collection.key ? 'primary' : 'grey-lighten-1'"
+                                        :prepend-icon="assignUsersDialog.sourceGroupCollection === collection.key ? 'mdi-check' : collection.icon"
+                                        @click="selectSourceGroupCollection(collection.key)">
+                                        {{ collection.title }}
+                                    </v-btn>
+                                </div>
+
+                                <div v-if="shouldShowSourceCategoryButtons()" class="d-flex flex-wrap ga-2">
+                                    <v-btn
+                                        v-for="panel in activeSourceGroupCategoryButtons()"
+                                        :key="`source-category-${panel.key}`"
+                                        flat
+                                        :color="assignUsersDialog.sourceGroupCategory === panel.key ? 'primary' : 'grey-lighten-1'"
+                                        :prepend-icon="assignUsersDialog.sourceGroupCategory === panel.key ? 'mdi-check' : panel.icon"
+                                        @click="selectSourceGroupCategory(panel.key)">
+                                        {{ panel.title }}
+                                    </v-btn>
+                                </div>
+
+                                <div v-if="activeSourceGroupsPanel() && !selectedSourceGroup()" class="groups-assign-list">
+                                    <div
+                                        class="groups-assign-list-item"
+                                        v-for="sourceGroup in activeSourceGroupsPanel().groups"
+                                        :key="`own-source-group-${sourceGroup.id}`">
+                                        <div class="min-w-0">
+                                            <div class="font-weight-bold text-body-2">{{ sourceGroup.name }}</div>
+                                            <div class="text-caption text-medium-emphasis">
+                                                <template v-if="showSourceUsersCounter(sourceGroup)">
+                                                    {{ Number(sourceGroup.source_users_count || 0) }}/{{ Number(sourceGroup.members_count || 0) }}
+                                                </template>
+                                                <template v-else>
+                                                    {{ Number(sourceGroup.members_count || 0) }}
+                                                </template>
+                                            </div>
+                                        </div>
+                                        <div class="d-flex flex-wrap ga-2 justify-end">
+                                            <v-btn
+                                                flat
+                                                color="primary"
+                                                size="small"
+                                                prepend-icon="mdi-account-multiple-plus"
+                                                :loading="isBusy && Number(assignUsersDialog.bulkSourceGroupId) === Number(sourceGroup.id)"
+                                                @click="assignFromOtherGroup(sourceGroup.id)">
+                                                Alle übernehmen
+                                            </v-btn>
+                                            <v-btn
+                                                flat
+                                                :color="Number(assignUsersDialog.sourceGroupId) === Number(sourceGroup.id) ? 'primary' : 'grey-lighten-1'"
+                                                size="small"
+                                                :prepend-icon="Number(assignUsersDialog.sourceGroupId) === Number(sourceGroup.id) ? 'mdi-check' : 'mdi-format-list-bulleted'"
+                                                @click="toggleSelectedSourceGroup(sourceGroup)">
+                                                {{ Number(assignUsersDialog.sourceGroupId) === Number(sourceGroup.id) ? 'Ausgewählt' : 'Auswählen' }}
+                                            </v-btn>
+                                        </div>
+                                    </div>
+                                    <div v-if="activeSourceGroupsPanel().groups.length === 0" class="sa-empty">
+                                        Keine Gruppen in dieser Kategorie.
+                                    </div>
+                                </div>
+
+                                <div v-if="selectedSourceGroup()" class="groups-assign-selection-panel">
+                                    <div class="d-flex justify-space-between align-center flex-wrap ga-2 mb-2">
+                                        <div>
+                                            <div class="admin-card-eyebrow">Mitglieder aus {{ selectedSourceGroup().name }}</div>
+                                        </div>
+                                        <div class="d-flex align-center flex-wrap ga-2">
+                                            <v-chip
+                                                v-if="showSourceUsersCounter(selectedSourceGroup())"
+                                                color="info"
+                                                variant="flat"
+                                                size="small">
+                                                {{ Number(selectedSourceGroup().source_users_count || 0) }}/{{ Number(selectedSourceGroup().members_count || 0) }}
+                                            </v-chip>
+                                            <v-btn
+                                                flat
+                                                color="grey-lighten-1"
+                                                size="small"
+                                                prepend-icon="mdi-arrow-left"
+                                                @click="clearSelectedSourceGroup()">
+                                                Andere Gruppe wählen
+                                            </v-btn>
+                                        </div>
+                                    </div>
+                                    <div class="sa-empty" v-if="assignUsersDialog.selectedSourceGroupMembersLoading">
+                                        Lade Gruppenmitglieder ...
+                                    </div>
+                                    <div class="sa-empty" v-else-if="selectedSourceGroupCombinedMembers().length === 0">
+                                        Keine Mitglieder vorhanden.
+                                    </div>
+                                    <div class="groups-assign-list" v-else>
+                                        <div
+                                            class="groups-assign-list-item"
+                                            v-for="member in selectedSourceGroupCombinedMembers()"
+                                            :key="`selected-own-source-member-${readOnlyMemberKey(member) || member.id}`">
+                                            <div class="min-w-0">
+                                                <div class="d-flex align-center ga-2">
+                                                    <div class="font-weight-bold text-body-2">{{ member.name }}</div>
+                                                    <v-icon
+                                                        v-if="member.is_registered"
+                                                        size="16"
+                                                        color="success"
+                                                        title="Registriert">
+                                                        mdi-check-circle
+                                                    </v-icon>
+                                                </div>
+                                                <div class="text-caption text-medium-emphasis">{{ member.email || 'Keine E-Mail' }}</div>
+                                                <div class="text-caption text-medium-emphasis" v-if="member.member_type_label">{{ member.member_type_label }}</div>
+                                                <div class="text-caption text-medium-emphasis" v-if="member.schoolclass">Klasse: {{ member.schoolclass }}</div>
+                                                <div class="text-caption text-medium-emphasis" v-if="member.phone">Telefon: {{ member.phone }}</div>
+                                                <div class="text-caption text-medium-emphasis" v-if="member.children_label">Kinder: {{ member.children_label }}</div>
+                                                <div class="text-caption text-warning" v-if="member.status_label">{{ member.status_label }}</div>
+                                            </div>
+                                            <div class="d-flex flex-wrap ga-2 justify-end">
+                                                <v-btn
+                                                    v-if="selectedSourceMemberAssignedRecord(member)"
+                                                    flat
+                                                    color="warning"
+                                                    size="small"
+                                                    prepend-icon="mdi-account-remove"
+                                                    :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(selectedSourceMemberAssignedRecord(member)?.id)"
+                                                    @click="removeAssignedMember({ id: selectedSourceMemberAssignedRecord(member)?.id })">
+                                                    Entfernen
+                                                </v-btn>
+                                                <v-btn
+                                                    v-else-if="memberAssignmentPayload(member)"
+                                                    flat
+                                                    color="success"
+                                                    size="small"
+                                                    prepend-icon="mdi-account-plus"
+                                                    :loading="isBusy"
+                                                    @click="assignSingleMemberToCurrentGroup(member)">
+                                                    Hinzufügen
+                                                </v-btn>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section
+                            v-else-if="!assignUsersDialog.readOnly && assignUsersDialog.group?.type === 'materials'"
+                            class="groups-assign-section"
+                            :class="{ 'groups-assign-section--disabled': isTakeoverSectionDisabled() }">
+                            <div class="admin-card-eyebrow mb-2">2. Von Gruppe übernehmen</div>
+                            <div
+                                v-if="!isTakeoverSectionDisabled()"
+                                class="d-flex flex-column ga-3">
+                                <div class="d-flex flex-wrap ga-2">
+                                    <v-btn
+                                        v-for="collection in materialsSourceGroupCollectionButtons()"
+                                        :key="`source-collection-${collection.key}`"
+                                        flat
+                                        :color="assignUsersDialog.sourceGroupCollection === collection.key ? 'primary' : 'grey-lighten-1'"
+                                        :prepend-icon="assignUsersDialog.sourceGroupCollection === collection.key ? 'mdi-check' : collection.icon"
+                                        @click="selectSourceGroupCollection(collection.key)">
+                                        {{ collection.title }}
+                                    </v-btn>
+                                </div>
+
+                                <div v-if="shouldShowSourceCategoryButtons()" class="d-flex flex-wrap ga-2">
+                                    <v-btn
+                                        v-for="panel in activeSourceGroupCategoryButtons()"
+                                        :key="`source-category-${panel.key}`"
+                                        flat
+                                        :color="assignUsersDialog.sourceGroupCategory === panel.key ? 'primary' : 'grey-lighten-1'"
+                                        :prepend-icon="assignUsersDialog.sourceGroupCategory === panel.key ? 'mdi-check' : panel.icon"
+                                        @click="selectSourceGroupCategory(panel.key)">
+                                        {{ panel.title }}
+                                    </v-btn>
+                                </div>
+
+                                <div v-if="activeSourceGroupsPanel() && !selectedSourceGroup()" class="groups-assign-list">
+                                    <div
+                                        class="groups-assign-list-item"
+                                        v-for="sourceGroup in activeSourceGroupsPanel().groups"
+                                        :key="`materials-source-group-${sourceGroup.id}`">
+                                        <div class="min-w-0">
+                                            <div class="font-weight-bold text-body-2">{{ sourceGroup.name }}</div>
+                                            <div class="text-caption text-medium-emphasis">
+                                                <template v-if="showSourceUsersCounter(sourceGroup)">
+                                                    {{ Number(sourceGroup.source_users_count || 0) }}/{{ Number(sourceGroup.members_count || 0) }}
+                                                </template>
+                                                <template v-else>
+                                                    {{ Number(sourceGroup.members_count || 0) }}
+                                                </template>
+                                            </div>
+                                        </div>
+                                        <div class="d-flex flex-wrap ga-2 justify-end">
+                                            <v-btn
+                                                flat
+                                                color="primary"
+                                                size="small"
+                                                prepend-icon="mdi-account-multiple-plus"
+                                                :loading="isBusy && Number(assignUsersDialog.bulkSourceGroupId) === Number(sourceGroup.id)"
+                                                @click="assignFromOtherGroup(sourceGroup.id)">
+                                                Alle übernehmen
+                                            </v-btn>
+                                            <v-btn
+                                                flat
+                                                :color="Number(assignUsersDialog.sourceGroupId) === Number(sourceGroup.id) ? 'primary' : 'grey-lighten-1'"
+                                                size="small"
+                                                :prepend-icon="Number(assignUsersDialog.sourceGroupId) === Number(sourceGroup.id) ? 'mdi-check' : 'mdi-format-list-bulleted'"
+                                                @click="toggleSelectedSourceGroup(sourceGroup)">
+                                                {{ Number(assignUsersDialog.sourceGroupId) === Number(sourceGroup.id) ? 'Ausgewählt' : 'Auswählen' }}
+                                            </v-btn>
+                                        </div>
+                                    </div>
+                                    <div v-if="activeSourceGroupsPanel().groups.length === 0" class="sa-empty">
+                                        Keine Gruppen in dieser Kategorie.
+                                    </div>
+                                </div>
+
+                                <div v-if="selectedSourceGroup()" class="groups-assign-selection-panel">
+                                    <div class="d-flex justify-space-between align-center flex-wrap ga-2 mb-2">
+                                        <div>
+                                            <div class="admin-card-eyebrow">Mitglieder aus {{ selectedSourceGroup().name }}</div>
+                                        </div>
+                                        <div class="d-flex align-center flex-wrap ga-2">
+                                            <v-chip
+                                                v-if="showSourceUsersCounter(selectedSourceGroup())"
+                                                color="info"
+                                                variant="flat"
+                                                size="small">
+                                                {{ Number(selectedSourceGroup().source_users_count || 0) }}/{{ Number(selectedSourceGroup().members_count || 0) }}
+                                            </v-chip>
+                                            <v-btn
+                                                flat
+                                                color="grey-lighten-1"
+                                                size="small"
+                                                prepend-icon="mdi-arrow-left"
+                                                @click="clearSelectedSourceGroup()">
+                                                Andere Gruppe wählen
+                                            </v-btn>
+                                        </div>
+                                    </div>
+                                    <div class="sa-empty" v-if="assignUsersDialog.selectedSourceGroupMembersLoading">
+                                        Lade Gruppenmitglieder ...
+                                    </div>
+                                    <div class="sa-empty" v-else-if="selectedSourceGroupCombinedMembers().length === 0">
+                                        Keine Mitglieder vorhanden.
+                                    </div>
+                                    <div class="groups-assign-list" v-else>
+                                        <div
+                                            class="groups-assign-list-item"
+                                            v-for="member in selectedSourceGroupCombinedMembers()"
+                                            :key="`selected-materials-source-member-${readOnlyMemberKey(member) || member.id}`">
+                                            <div class="min-w-0">
+                                                <div class="d-flex align-center ga-2">
+                                                    <div class="font-weight-bold text-body-2">{{ member.name }}</div>
+                                                    <v-icon
+                                                        v-if="member.is_registered"
+                                                        size="16"
+                                                        color="success"
+                                                        title="Registriert">
+                                                        mdi-check-circle
+                                                    </v-icon>
+                                                </div>
+                                                <div class="text-caption text-medium-emphasis">{{ member.email || 'Keine E-Mail' }}</div>
+                                                <div class="text-caption text-medium-emphasis" v-if="member.member_type_label">{{ member.member_type_label }}</div>
+                                                <div class="text-caption text-medium-emphasis" v-if="member.schoolclass">Klasse: {{ member.schoolclass }}</div>
+                                                <div class="text-caption text-medium-emphasis" v-if="member.phone">Telefon: {{ member.phone }}</div>
+                                                <div class="text-caption text-medium-emphasis" v-if="member.children_label">Kinder: {{ member.children_label }}</div>
+                                                <div class="text-caption text-warning" v-if="member.status_label">{{ member.status_label }}</div>
+                                            </div>
+                                            <div class="d-flex flex-wrap ga-2 justify-end">
+                                                <v-btn
+                                                    v-if="selectedSourceMemberAssignedRecord(member)"
+                                                    flat
+                                                    color="warning"
+                                                    size="small"
+                                                    prepend-icon="mdi-account-remove"
+                                                    :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(selectedSourceMemberAssignedRecord(member)?.id)"
+                                                    @click="removeAssignedMember({ id: selectedSourceMemberAssignedRecord(member)?.id })">
+                                                    Entfernen
+                                                </v-btn>
+                                                <v-btn
+                                                    v-else-if="memberAssignmentPayload(member)"
+                                                    flat
+                                                    color="success"
+                                                    size="small"
+                                                    prepend-icon="mdi-account-plus"
+                                                    :loading="isBusy"
+                                                    @click="assignSingleMemberToCurrentGroup(member)">
+                                                    Hinzufügen
+                                                </v-btn>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section
+                            v-else-if="!assignUsersDialog.readOnly"
+                            class="groups-assign-section"
+                            :class="{ 'groups-assign-section--disabled': isTakeoverSectionDisabled() }">
+                            <div class="admin-card-eyebrow mb-2">Weitere Möglichkeiten</div>
                             <v-expansion-panels
-                                v-else-if="!isTakeoverSectionDisabled()"
+                                v-if="!isTakeoverSectionDisabled()"
                                 v-model="assignUsersDialog.extraPanel"
                                 @update:modelValue="onExtraPanelChanged"
                                 variant="accordion">
@@ -863,149 +1174,6 @@
                                                 @click="assignFromOtherGroup">
                                                 Übernehmen
                                             </v-btn>
-                                        </div>
-                                    </v-expansion-panel-text>
-                                </v-expansion-panel>
-
-                                <v-expansion-panel
-                                    v-if="assignUsersDialog.group?.type === 'own'"
-                                    value="my-courses">
-                                    <v-expansion-panel-title>
-                                        <div class="d-flex align-center ga-2">
-                                            <v-icon size="18">mdi-book-education-outline</v-icon>
-                                            <span>3. Aus meinen Fächern übernehmen</span>
-                                        </div>
-                                    </v-expansion-panel-title>
-                                    <v-expansion-panel-text>
-                                        <div class="sa-empty" v-if="assignUsersDialog.myCoursesLoading">
-                                            Lade meine Fächer ...
-                                        </div>
-                                        <div class="sa-empty" v-else-if="assignUsersDialog.myCourses.length === 0">
-                                            Keine Fächer gefunden.
-                                        </div>
-                                        <div class="groups-assign-list" v-else>
-                                            <div class="groups-assign-list-item d-block" v-for="course in assignUsersDialog.myCourses" :key="`my-course-${course.id}`">
-                                                <div class="d-flex justify-space-between align-center flex-wrap ga-2">
-                                                    <div class="d-inline-flex align-center flex-wrap ga-2 min-w-0">
-                                                        <div class="font-weight-bold text-body-2">{{ course.title }}</div>
-                                                        <v-chip color="secondary" variant="flat" size="x-small">
-                                                            {{ course.students.length }}
-                                                        </v-chip>
-                                                        <v-chip
-                                                            v-if="course.classes_label"
-                                                            color="primary"
-                                                            variant="flat"
-                                                            size="x-small">
-                                                            {{ course.classes_label }}
-                                                        </v-chip>
-                                                        <v-chip
-                                                            v-if="myCourseAssignableMembers(course).length > 0"
-                                                            color="success"
-                                                            variant="flat"
-                                                            size="x-small">
-                                                            {{ myCourseAssignableMembers(course).length }} neu
-                                                        </v-chip>
-                                                    </div>
-                                                    <div class="d-flex flex-wrap ga-1 justify-end">
-                                                        <v-btn
-                                                            flat
-                                                            color="success"
-                                                            size="small"
-                                                            prepend-icon="mdi-account-multiple-plus"
-                                                            :disabled="myCourseAssignableMembers(course).length === 0"
-                                                            :loading="isBusy"
-                                                            @click="assignWholeMyCourse(course)">
-                                                            Fach zuordnen
-                                                        </v-btn>
-                                                        <v-btn
-                                                            flat
-                                                            :color="course.expanded ? 'secondary' : 'primary'"
-                                                            size="small"
-                                                            :prepend-icon="course.expanded ? 'mdi-chevron-up' : 'mdi-chevron-down'"
-                                                            @click="toggleMyCourseExpanded(course.id)">
-                                                            {{ course.expanded ? 'Ausblenden' : 'Anzeigen' }}
-                                                        </v-btn>
-                                                    </div>
-                                                </div>
-
-                                                <div v-if="course.expanded" class="mt-3">
-                                                    <div class="d-flex flex-wrap ga-2 mb-2">
-                                                        <v-btn
-                                                            flat
-                                                            color="primary"
-                                                            size="small"
-                                                            prepend-icon="mdi-check-all"
-                                                            @click="selectAllMyCourseStudents(course.id)">
-                                                            Alle auswählen
-                                                        </v-btn>
-                                                        <v-btn
-                                                            flat
-                                                            color="secondary"
-                                                            size="small"
-                                                            prepend-icon="mdi-close-box-multiple-outline"
-                                                            :disabled="course.selectedIds.length === 0"
-                                                            @click="clearMyCourseSelection(course.id)">
-                                                            Auswahl aufheben ({{ course.selectedIds.length }})
-                                                        </v-btn>
-                                                        <v-btn
-                                                            flat
-                                                            color="success"
-                                                            size="small"
-                                                            prepend-icon="mdi-account-multiple-plus"
-                                                            :disabled="course.selectedIds.length === 0"
-                                                            :loading="isBusy"
-                                                            @click="assignSelectedMyCourseStudents(course.id)">
-                                                            Ausgewählte zuordnen ({{ course.selectedIds.length }})
-                                                        </v-btn>
-                                                    </div>
-
-                                                    <div class="groups-assign-list">
-                                                        <div class="groups-assign-list-item" v-for="student in course.students" :key="`my-course-student-${course.id}-${student.import116_id || student.id}`">
-                                                            <div class="d-flex align-start ga-2 min-w-0">
-                                                                <v-checkbox-btn
-                                                                    :model-value="isMyCourseStudentSelected(course.id, student.id)"
-                                                                    :disabled="student.already_member || !memberAssignmentPayload(student)"
-                                                                    color="primary"
-                                                                    @update:model-value="toggleMyCourseStudentSelection(course.id, student.id)" />
-                                                                <div class="min-w-0">
-                                                                    <div class="font-weight-bold text-body-2">{{ student.name }}</div>
-                                                                    <div class="text-caption text-medium-emphasis">{{ student.email }}</div>
-                                                                    <div class="text-caption text-medium-emphasis" v-if="student.schoolclass">Klasse: {{ student.schoolclass }}</div>
-                                                                </div>
-                                                            </div>
-                                                            <div class="d-flex flex-wrap ga-1 justify-end">
-                                                                <v-chip
-                                                                    v-if="student.already_member"
-                                                                    color="secondary"
-                                                                    variant="flat"
-                                                                    size="x-small">
-                                                                    zugeordnet
-                                                                </v-chip>
-                                                                <v-btn
-                                                                    v-if="!student.already_member && memberAssignmentPayload(student)"
-                                                                    flat
-                                                                    color="success"
-                                                                    size="small"
-                                                                    prepend-icon="mdi-account-plus"
-                                                                    :loading="isBusy"
-                                                                    @click="assignSingleMemberToCurrentGroup(student)">
-                                                                    Zuordnen
-                                                                </v-btn>
-                                                                <v-btn
-                                                                    v-else
-                                                                    flat
-                                                                    color="warning"
-                                                                    size="small"
-                                                                    prepend-icon="mdi-account-remove"
-                                                                    :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(student.assigned_member_id)"
-                                                                    @click="removeAssignedMember({ id: student.assigned_member_id })">
-                                                                    Entfernen
-                                                                </v-btn>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
                                         </div>
                                     </v-expansion-panel-text>
                                 </v-expansion-panel>
@@ -1132,6 +1300,7 @@ export default {
                 studentClasses: [],
                 sourceGroups: [],
                 sourceGroupsLoading: false,
+                sourceGroupCollection: null,
                 sourceGroupCategory: null,
                 bulkSourceGroupId: null,
                 sourceGroupId: null,
@@ -1356,6 +1525,97 @@ export default {
                 }))
         },
 
+        ownSourceGroupsPanels() {
+            const ownGroups = (this.assignUsersDialog.sourceGroups || []).filter((group) => group.type === 'own')
+
+            return [
+                {
+                    key: 'course-groups',
+                    title: 'Kursgruppen',
+                    groups: ownGroups.filter((group) => this.isAutomaticOwnCourseGroup(group) && !this.isAutomaticOwnCourseParentGroup(group)),
+                },
+                {
+                    key: 'course-parent-groups',
+                    title: 'Eltern Kursgruppen',
+                    groups: ownGroups.filter((group) => this.isAutomaticOwnCourseParentGroup(group)),
+                },
+                {
+                    key: 'own-groups',
+                    title: 'Eigene Gruppen',
+                    groups: ownGroups.filter((group) => !this.isAutomaticOwnCourseGroup(group)),
+                },
+            ]
+        },
+
+        ownSourceGroupCategoryButtons() {
+            const icons = {
+                'course-groups': 'mdi-google-classroom',
+                'course-parent-groups': 'mdi-account-multiple-outline',
+                'own-groups': 'mdi-account-group-outline',
+            }
+
+            return this.ownSourceGroupsPanels()
+                .map((panel) => ({
+                    ...panel,
+                    icon: icons[panel.key] || 'mdi-account-group-outline',
+                }))
+        },
+
+        ownSourceGroupCollectionButtons() {
+            return [
+                {
+                    key: 'school',
+                    title: 'Schulgruppen',
+                    icon: 'mdi-domain',
+                },
+                {
+                    key: 'materials',
+                    title: 'Materialgruppen',
+                    icon: 'mdi-folder-multiple-outline',
+                },
+                {
+                    key: 'own',
+                    title: 'Eigene Gruppen',
+                    icon: 'mdi-account-group-outline',
+                },
+            ]
+        },
+
+        materialsSourceGroupsPanels() {
+            const materialsGroups = (this.assignUsersDialog.sourceGroups || []).filter((group) => group.type === 'materials')
+
+            return [
+                {
+                    key: 'materials-groups',
+                    title: 'Materialgruppen',
+                    groups: materialsGroups,
+                },
+            ]
+        },
+
+        materialsSourceGroupCategoryButtons() {
+            return this.materialsSourceGroupsPanels()
+                .map((panel) => ({
+                    ...panel,
+                    icon: 'mdi-folder-multiple-outline',
+                }))
+        },
+
+        materialsSourceGroupCollectionButtons() {
+            return [
+                {
+                    key: 'school',
+                    title: 'Schulgruppen',
+                    icon: 'mdi-domain',
+                },
+                {
+                    key: 'materials',
+                    title: 'Materialgruppen',
+                    icon: 'mdi-folder-multiple-outline',
+                },
+            ]
+        },
+
         activeSchoolSourceGroupsPanel() {
             const panels = this.schoolSourceGroupCategoryButtons()
             if (panels.length === 0 || !this.assignUsersDialog.sourceGroupCategory) {
@@ -1365,8 +1625,94 @@ export default {
             return panels.find((panel) => panel.key === this.assignUsersDialog.sourceGroupCategory) || panels[0]
         },
 
+        activeOwnSourceGroupsPanel() {
+            const panels = this.ownSourceGroupCategoryButtons()
+            if (panels.length === 0 || !this.assignUsersDialog.sourceGroupCategory) {
+                return null
+            }
+
+            return panels.find((panel) => panel.key === this.assignUsersDialog.sourceGroupCategory) || panels[0]
+        },
+
+        activeMaterialsSourceGroupsPanel() {
+            const panels = this.materialsSourceGroupCategoryButtons()
+            if (panels.length === 0 || !this.assignUsersDialog.sourceGroupCategory) {
+                return null
+            }
+
+            return panels.find((panel) => panel.key === this.assignUsersDialog.sourceGroupCategory) || panels[0]
+        },
+
+        activeSourceGroupCategoryButtons() {
+            if (this.assignUsersDialog.group?.type === 'own') {
+                if (this.assignUsersDialog.sourceGroupCollection === 'school') {
+                    return this.schoolSourceGroupCategoryButtons()
+                }
+
+                if (this.assignUsersDialog.sourceGroupCollection === 'materials') {
+                    return this.materialsSourceGroupCategoryButtons()
+                }
+
+                if (this.assignUsersDialog.sourceGroupCollection === 'own') {
+                    return this.ownSourceGroupCategoryButtons()
+                }
+
+                return []
+            }
+
+            if (this.assignUsersDialog.group?.type === 'materials') {
+                if (this.assignUsersDialog.sourceGroupCollection === 'school') {
+                    return this.schoolSourceGroupCategoryButtons()
+                }
+
+                if (this.assignUsersDialog.sourceGroupCollection === 'materials') {
+                    return this.materialsSourceGroupCategoryButtons()
+                }
+
+                return []
+            }
+
+            return this.schoolSourceGroupCategoryButtons()
+        },
+
+        shouldShowSourceCategoryButtons() {
+            return this.activeSourceGroupCategoryButtons().length > 1
+        },
+
+        activeSourceGroupsPanel() {
+            if (this.assignUsersDialog.group?.type === 'own') {
+                if (this.assignUsersDialog.sourceGroupCollection === 'school') {
+                    return this.activeSchoolSourceGroupsPanel()
+                }
+
+                if (this.assignUsersDialog.sourceGroupCollection === 'materials') {
+                    return this.activeMaterialsSourceGroupsPanel()
+                }
+
+                if (this.assignUsersDialog.sourceGroupCollection === 'own') {
+                    return this.activeOwnSourceGroupsPanel()
+                }
+
+                return null
+            }
+
+            if (this.assignUsersDialog.group?.type === 'materials') {
+                if (this.assignUsersDialog.sourceGroupCollection === 'school') {
+                    return this.activeSchoolSourceGroupsPanel()
+                }
+
+                if (this.assignUsersDialog.sourceGroupCollection === 'materials') {
+                    return this.activeMaterialsSourceGroupsPanel()
+                }
+
+                return null
+            }
+
+            return this.activeSchoolSourceGroupsPanel()
+        },
+
         isSchoolSourceCategorySelected() {
-            return this.assignUsersDialog.group?.type === 'school' && !!this.assignUsersDialog.sourceGroupCategory
+            return !!this.assignUsersDialog.sourceGroupCategory
         },
 
         isTakeoverSectionDisabled() {
@@ -1374,7 +1720,7 @@ export default {
         },
 
         selectedSourceGroup() {
-            const activePanel = this.activeSchoolSourceGroupsPanel()
+            const activePanel = this.activeSourceGroupsPanel()
             if (!activePanel) {
                 return null
             }
@@ -1417,25 +1763,58 @@ export default {
             return this.sortReadOnlyMembers(combined)
         },
 
-        selectSchoolSourceGroupCategory(categoryKey) {
+        selectSourceGroupCollection(collectionKey) {
+            if (this.assignUsersDialog.sourceGroupCollection === collectionKey) {
+                this.assignUsersDialog.sourceGroupCollection = null
+                this.assignUsersDialog.sourceGroupCategory = null
+                this.assignUsersDialog.bulkSourceGroupId = null
+                this.clearSelectedSourceGroup()
+                return
+            }
+
+            this.assignUsersDialog.sourceGroupCollection = collectionKey
+            this.assignUsersDialog.sourceGroupCategory = this.defaultSourceGroupCategoryForCollection(collectionKey)
+            this.assignUsersDialog.bulkSourceGroupId = null
+            this.clearSelectedSourceGroup()
+        },
+
+        defaultSourceGroupCategoryForCollection(collectionKey) {
+            if (collectionKey === 'materials') {
+                return 'materials-groups'
+            }
+
+            return null
+        },
+
+        selectSourceGroupCategory(categoryKey) {
             if (this.assignUsersDialog.sourceGroupCategory === categoryKey) {
                 this.assignUsersDialog.sourceGroupCategory = null
                 this.assignUsersDialog.bulkSourceGroupId = null
-                this.assignUsersDialog.sourceGroupId = null
-                this.assignUsersDialog.selectedSourceGroupMembers = []
-                this.assignUsersDialog.selectedSourceGroupSourceMembers = []
-                this.assignUsersDialog.selectedSourceGroupMembersLoading = false
+                this.clearSelectedSourceGroup()
                 return
             }
 
             this.assignUsersDialog.sourceGroupCategory = categoryKey
-            const activePanel = this.activeSchoolSourceGroupsPanel()
+            const activePanel = this.activeSourceGroupsPanel()
             const activeGroupIds = new Set((activePanel?.groups || []).map((group) => Number(group.id)))
             if (!activeGroupIds.has(Number(this.assignUsersDialog.sourceGroupId))) {
-                this.assignUsersDialog.sourceGroupId = null
-                this.assignUsersDialog.selectedSourceGroupMembers = []
-                this.assignUsersDialog.selectedSourceGroupSourceMembers = []
-                this.assignUsersDialog.selectedSourceGroupMembersLoading = false
+                this.clearSelectedSourceGroup()
+            }
+        },
+
+        selectSchoolSourceGroupCategory(categoryKey) {
+            if (this.assignUsersDialog.sourceGroupCategory === categoryKey) {
+                this.assignUsersDialog.sourceGroupCategory = null
+                this.assignUsersDialog.bulkSourceGroupId = null
+                this.clearSelectedSourceGroup()
+                return
+            }
+
+            this.assignUsersDialog.sourceGroupCategory = categoryKey
+            const activePanel = this.activeSourceGroupsPanel()
+            const activeGroupIds = new Set((activePanel?.groups || []).map((group) => Number(group.id)))
+            if (!activeGroupIds.has(Number(this.assignUsersDialog.sourceGroupId))) {
+                this.clearSelectedSourceGroup()
             }
         },
 
@@ -1463,6 +1842,7 @@ export default {
 
         collapseTakeoverSection() {
             this.assignUsersDialog.extraPanel = null
+            this.assignUsersDialog.sourceGroupCollection = null
             this.assignUsersDialog.sourceGroupCategory = null
             this.assignUsersDialog.bulkSourceGroupId = null
             this.clearSelectedSourceGroup()
@@ -1934,6 +2314,7 @@ export default {
             this.assignUsersDialog.studentClassesLoading = false
             this.assignUsersDialog.studentClasses = []
             this.assignUsersDialog.sourceGroups = []
+            this.assignUsersDialog.sourceGroupCollection = null
             this.assignUsersDialog.sourceGroupCategory = null
             this.assignUsersDialog.bulkSourceGroupId = null
             this.assignUsersDialog.sourceGroupId = null
@@ -1985,6 +2366,7 @@ export default {
             this.assignUsersDialog.studentClassesLoading = false
             this.assignUsersDialog.studentClasses = []
             this.assignUsersDialog.sourceGroups = []
+            this.assignUsersDialog.sourceGroupCollection = null
             this.assignUsersDialog.sourceGroupCategory = null
             this.assignUsersDialog.bulkSourceGroupId = null
             this.assignUsersDialog.sourceGroupId = null
@@ -2547,6 +2929,16 @@ export default {
                     ...row,
                     display_name: `${this.currentTypeLabel(row.type)} | ${row.name} (${row.members_count})`,
                 }))
+                if (['own', 'materials'].includes(String(this.assignUsersDialog.group?.type || ''))) {
+                    const availableCollections = new Set(this.assignUsersDialog.sourceGroups.map((row) => String(row.type)))
+                    if (
+                        this.assignUsersDialog.sourceGroupCollection
+                        && !availableCollections.has(String(this.assignUsersDialog.sourceGroupCollection))
+                    ) {
+                        this.assignUsersDialog.sourceGroupCollection = null
+                        this.assignUsersDialog.sourceGroupCategory = null
+                    }
+                }
                 if (!this.assignUsersDialog.sourceGroups.some((row) => Number(row.id) === Number(this.assignUsersDialog.sourceGroupId))) {
                     this.assignUsersDialog.sourceGroupId = null
                     this.assignUsersDialog.selectedSourceGroupMembers = []
@@ -2555,6 +2947,7 @@ export default {
                 }
             } catch (error) {
                 this.assignUsersDialog.sourceGroups = []
+                this.assignUsersDialog.sourceGroupCollection = null
                 this.assignUsersDialog.sourceGroupCategory = null
                 this.assignUsersDialog.bulkSourceGroupId = null
                 this.assignUsersDialog.sourceGroupId = null

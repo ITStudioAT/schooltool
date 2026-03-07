@@ -340,7 +340,7 @@ test('manual school groups in weitere gruppen do not expose source counters', fu
 
     expect($groupPayload)->not->toBeNull();
     expect((int) ($groupPayload['members_count'] ?? -1))->toBe(1);
-    expect($groupPayload['source_users_count'] ?? 'missing')->toBeNull();
+    expect((int) ($groupPayload['source_users_count'] ?? -1))->toBe(0);
 });
 
 test('default school groups cannot be changed or deleted', function () {
@@ -432,6 +432,7 @@ test('manual own groups can be deleted even when they still have members', funct
 
     expect($groupPayload)->not->toBeNull();
     expect((int) ($groupPayload['members_count'] ?? 0))->toBe(1);
+    expect((int) ($groupPayload['source_users_count'] ?? -1))->toBe(1);
     expect((bool) ($groupPayload['can_delete'] ?? false))->toBeTrue();
 
     $this->deleteJson('/api/admin/groups/'.(int) $group->id)
@@ -1208,6 +1209,11 @@ test('parent school groups use child registration status and expose registered v
         'email' => 'registered.child@test.local',
         'import116_id' => (int) $registeredStudent->id,
     ]);
+    User::factory()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'email' => 'imported.mother@test.local',
+    ]);
 
     $groupsResponse = $this->getJson('/api/admin/groups')->assertSuccessful();
     $groups = collect($groupsResponse->json('data'));
@@ -1217,7 +1223,7 @@ test('parent school groups use child registration status and expose registered v
     expect((bool) ($parentGroup['is_parent_group'] ?? false))->toBeTrue();
     expect((bool) ($parentGroup['can_edit'] ?? true))->toBeFalse();
     expect((bool) ($parentGroup['can_manage_members'] ?? true))->toBeFalse();
-    expect((int) ($parentGroup['members_count'] ?? 0))->toBe(2);
+    expect((int) ($parentGroup['members_count'] ?? 0))->toBe(1);
     expect((int) ($parentGroup['source_users_count'] ?? 0))->toBe(3);
 
     $registeredParentsResponse = $this->getJson('/api/admin/groups/'.(int) $parentGroup['id'].'/members')
@@ -1445,6 +1451,11 @@ test('groups index creates and syncs automatic own groups for my teaching course
         'import_date' => now(),
         'import_user_id' => (int) $this->adminUser->id,
     ]);
+    User::factory()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'email' => 'father.import@test.local',
+    ]);
 
     $course = TeachingCourse::factory()
         ->forSchool($this->school)
@@ -1462,6 +1473,10 @@ test('groups index creates and syncs automatic own groups for my teaching course
     TeachingCourseStudent::query()->create([
         'teaching_course_id' => (int) $course->id,
         'user_id' => (int) $studentTwo->id,
+    ]);
+    TeachingCourseStudent::query()->create([
+        'teaching_course_id' => (int) $course->id,
+        'import116_id' => (int) $registeredStudentTwoImport->id,
     ]);
     TeachingCourseStudent::query()->create([
         'teaching_course_id' => (int) $course->id,
@@ -1532,7 +1547,7 @@ test('groups index creates and syncs automatic own groups for my teaching course
 
     expect($parentGroupPayload)->not->toBeNull();
     expect((bool) ($parentGroupPayload['is_parent_group'] ?? false))->toBeTrue();
-    expect((int) ($parentGroupPayload['members_count'] ?? 0))->toBe(3);
+    expect((int) ($parentGroupPayload['members_count'] ?? 0))->toBe(1);
     expect((int) ($parentGroupPayload['source_users_count'] ?? 0))->toBe(4);
 
     $registeredParentsResponse = $this->getJson('/api/admin/groups/'.(int) $parentGroup->id.'/members')
@@ -1644,4 +1659,70 @@ test('manual own groups can assign mixed member providers and show sync status c
     expect($teacherPayload)->not->toBeNull();
     expect((string) ($teacherPayload['source_status'] ?? ''))->toBe(UserGroupMember::SOURCE_STATUS_MISSING);
     expect((string) ($teacherPayload['status_label'] ?? ''))->toBe('Quelle fehlt');
+});
+
+test('manual group assignment does not store the same linked user twice across different providers', function () {
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $importStudent = Import116::query()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'class' => '2B',
+        'student_code' => '7777',
+        'last_name' => 'Doppelt',
+        'first_name' => 'Mitglied',
+        'email' => 'duplicate.member@test.local',
+        'import_date' => now(),
+        'import_user_id' => (int) $this->adminUser->id,
+    ]);
+
+    $linkedUser = User::factory()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'import116_id' => (int) $importStudent->id,
+        'email' => 'duplicate.member@test.local',
+        'last_name' => 'Doppelt',
+        'first_name' => 'Mitglied',
+        'schoolclass' => '2B',
+    ]);
+
+    $group = UserGroup::query()->create([
+        'school_id' => (int) $this->school->id,
+        'type' => UserGroup::TYPE_OWN,
+        'name' => 'Keine Duplikate',
+        'description' => null,
+        'created_by_user_id' => (int) $this->adminUser->id,
+    ]);
+
+    $this->postJson('/api/admin/groups/'.$group->id.'/assign-users', [
+        'user_ids' => [(int) $linkedUser->id],
+    ])
+        ->assertSuccessful()
+        ->assertJsonPath('meta.new_count', 1)
+        ->assertJsonPath('meta.members_count', 1);
+
+    $this->postJson('/api/admin/groups/'.$group->id.'/assign-users', [
+        'members' => [
+            [
+                'member_provider' => UserGroupMember::PROVIDER_IMPORT116_STUDENT,
+                'member_ref' => 'import116.student:'.$importStudent->id,
+            ],
+        ],
+    ])
+        ->assertSuccessful()
+        ->assertJsonPath('meta.new_count', 0)
+        ->assertJsonPath('meta.members_count', 1);
+
+    expect($group->groupMembers()->count())->toBe(1);
+    expect($group->groupMembers()->value('linked_user_id'))->toBe((int) $linkedUser->id);
+
+    $searchResponse = $this->getJson('/api/admin/groups/'.$group->id.'/assignable-users?search_string=Doppelt')
+        ->assertSuccessful();
+
+    $matchingRows = collect($searchResponse->json('data'))
+        ->where('linked_user_id', (int) $linkedUser->id)
+        ->values();
+
+    expect($matchingRows)->not->toBeEmpty();
+    expect($matchingRows->every(fn (array $row) => ($row['already_member'] ?? false) === true))->toBeTrue();
 });
