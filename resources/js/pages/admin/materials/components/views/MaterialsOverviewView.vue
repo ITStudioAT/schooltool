@@ -444,6 +444,7 @@
                     @shared-node-created="refreshSharedStructureTree"
                     @shared-node-renamed="refreshSharedStructureTree"
                     @shared-node-deleted="refreshSharedStructureTree"
+                    @shared-node-moved="refreshSharedStructureTree"
                     @open-material="openDetailDialog"
                     @open-shared-material="openSharedMaterialFromTree"
                     @open-share="openShareDialog"

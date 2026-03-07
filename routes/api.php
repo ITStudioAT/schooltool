@@ -288,6 +288,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/materials/shares/inbox/subjects', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'storeInboxSubject']);
         Route::post('/admin/materials/shares/inbox/topics', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'storeInboxTopic']);
         Route::post('/admin/materials/shares/inbox/units', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'storeInboxUnit']);
+        Route::post('/admin/materials/shares/inbox/subjects/{material_subject}/move', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'moveInboxSubject']);
+        Route::post('/admin/materials/shares/inbox/topics/{material_topic}/move', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'moveInboxTopic']);
+        Route::post('/admin/materials/shares/inbox/units/{material_unit}/move', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'moveInboxUnit']);
         Route::put('/admin/materials/shares/inbox/subjects/{material_subject}', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'updateInboxSubject']);
         Route::put('/admin/materials/shares/inbox/topics/{material_topic}', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'updateInboxTopic']);
         Route::put('/admin/materials/shares/inbox/units/{material_unit}', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'updateInboxUnit']);

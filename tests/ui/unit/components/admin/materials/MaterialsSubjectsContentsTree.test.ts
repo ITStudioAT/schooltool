@@ -140,6 +140,7 @@ function renderTree(
                 @toggle-shared-for-me-expanded="toggleSharedForMeExpanded"
                 @toggle-shared-item-expanded="toggleSharedItemExpanded"
                 @shared-node-created="$emit('shared-node-created', $event)"
+                @shared-node-moved="$emit('shared-node-moved', $event)"
                 @open-material="$emit('open-material', $event)"
                 @open-share="$emit('open-share', $event)"
                 @open-create="$emit('open-create', $event)"
@@ -586,6 +587,157 @@ describe('MaterialsSubjectsContentsTree', () => {
 
         const deleteButtons = screen.getAllByTitle(/löschen$/i)
         expect(deleteButtons).toHaveLength(3)
+    })
+
+    it('shows shared move buttons in structure mode and emits moved refresh event', async () => {
+        axiosMock.post.mockResolvedValue({ data: {} })
+
+        const { emitted } = renderTree([], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 102,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Alle Materialien',
+                    scopePathLabel: 'Workspace A',
+                    permission: 'full_access',
+                    permissionLabel: 'VOLLZUGRIFF',
+                    fromUserLabel: 'Lehrer Eins',
+                    materialsCount: 0,
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Mathematik',
+                            materials: [],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Algebra',
+                                    materials: [],
+                                    units: [
+                                        {
+                                            id: 30,
+                                            name: 'Lineare Gleichungen',
+                                            materials: [],
+                                        },
+                                        {
+                                            id: 31,
+                                            name: 'Quadratische Gleichungen',
+                                            materials: [],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
+
+        expect(screen.getByTitle('Fach nach oben')).toBeInTheDocument()
+        expect(screen.getByTitle('Thema nach unten')).toBeInTheDocument()
+        expect(screen.getAllByTitle('Bereich nach oben')).toHaveLength(2)
+
+        await fireEvent.click(screen.getAllByTitle('Bereich nach oben')[1])
+
+        expect(axiosMock.post).toHaveBeenCalledTimes(1)
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/shares/inbox/units/31/move', {
+            rule_id: 102,
+            data: {
+                direction: 'up',
+            },
+        })
+
+        const movedEvents = emitted('shared-node-moved') || []
+        expect(movedEvents).toHaveLength(1)
+        expect((movedEvents[0]?.[0] as any)?.ruleId).toBe(102)
+        expect((movedEvents[0]?.[0] as any)?.level).toBe('unit')
+        expect((movedEvents[0]?.[0] as any)?.nodeId).toBe(31)
+        expect((movedEvents[0]?.[0] as any)?.direction).toBe('up')
+    })
+
+    it('disables shared move buttons when a node is already at top or bottom position', async () => {
+        renderTree([], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 103,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Alle Materialien',
+                    scopePathLabel: 'Workspace A',
+                    permission: 'full_access',
+                    permissionLabel: 'VOLLZUGRIFF',
+                    fromUserLabel: 'Lehrer Eins',
+                    materialsCount: 0,
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Mathematik',
+                            materials: [],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Algebra',
+                                    materials: [],
+                                    units: [
+                                        {
+                                            id: 30,
+                                            name: 'Einheit A',
+                                            materials: [],
+                                        },
+                                        {
+                                            id: 31,
+                                            name: 'Einheit B',
+                                            materials: [],
+                                        },
+                                    ],
+                                },
+                                {
+                                    id: 21,
+                                    name: 'Geometrie',
+                                    materials: [],
+                                    units: [],
+                                },
+                            ],
+                        },
+                        {
+                            id: 11,
+                            name: 'Biologie',
+                            materials: [],
+                            topics: [],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
+
+        const mathematikRow = screen.getByText('Mathematik').closest('.overview-shared-hierarchy-node') as HTMLElement
+        const biologieRow = screen.getByText('Biologie').closest('.overview-shared-hierarchy-node') as HTMLElement
+        const algebraRow = screen.getByText('Algebra').closest('.overview-shared-hierarchy-node') as HTMLElement
+        const geometrieRow = screen.getByText('Geometrie').closest('.overview-shared-hierarchy-node') as HTMLElement
+        const einheitARow = screen.getByText('Einheit A').closest('.overview-shared-hierarchy-node') as HTMLElement
+        const einheitBRow = screen.getByText('Einheit B').closest('.overview-shared-hierarchy-node') as HTMLElement
+
+        expect(within(mathematikRow).getByTitle('Fach nach oben')).toBeDisabled()
+        expect(within(mathematikRow).getByTitle('Fach nach unten')).not.toBeDisabled()
+        expect(within(biologieRow).getByTitle('Fach nach oben')).not.toBeDisabled()
+        expect(within(biologieRow).getByTitle('Fach nach unten')).toBeDisabled()
+
+        expect(within(algebraRow).getByTitle('Thema nach oben')).toBeDisabled()
+        expect(within(algebraRow).getByTitle('Thema nach unten')).not.toBeDisabled()
+        expect(within(geometrieRow).getByTitle('Thema nach oben')).not.toBeDisabled()
+        expect(within(geometrieRow).getByTitle('Thema nach unten')).toBeDisabled()
+
+        expect(within(einheitARow).getByTitle('Bereich nach oben')).toBeDisabled()
+        expect(within(einheitARow).getByTitle('Bereich nach unten')).not.toBeDisabled()
+        expect(within(einheitBRow).getByTitle('Bereich nach oben')).not.toBeDisabled()
+        expect(within(einheitBRow).getByTitle('Bereich nach unten')).toBeDisabled()
     })
 
     it('opens a persistent shared create-subject dialog, validates the title, and emits a refresh event after save', async () => {

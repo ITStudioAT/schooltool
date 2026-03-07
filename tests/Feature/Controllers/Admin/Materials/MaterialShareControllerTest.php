@@ -1199,6 +1199,124 @@ test('inbox full access creates original units at selected position and at end',
     expect((string) $inbox->json('data.0.shared_items.0.hierarchy.0.topics.0.units.3.name'))->toBe('Polynome');
 });
 
+test('inbox full access moves original subject topic and unit order', function () {
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'creator-full-access-move@test.local',
+    ]);
+
+    $workspace = MaterialWorkspace::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Geteilter Fachraum',
+        'is_default' => true,
+    ]);
+
+    $subjectOne = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'workspace_id' => $workspace->id,
+        'name' => 'Mathematik',
+        'sort_order' => 1,
+    ]);
+    $subjectTwo = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'workspace_id' => $workspace->id,
+        'name' => 'Physik',
+        'sort_order' => 2,
+    ]);
+
+    $topicOne = MaterialTopic::query()->create([
+        'subject_id' => $subjectOne->id,
+        'name' => 'Algebra',
+        'sort_order' => 1,
+    ]);
+    $topicTwo = MaterialTopic::query()->create([
+        'subject_id' => $subjectOne->id,
+        'name' => 'Geometrie',
+        'sort_order' => 2,
+    ]);
+
+    $unitOne = MaterialUnit::query()->create([
+        'topic_id' => $topicOne->id,
+        'name' => 'Lineare Gleichungen',
+        'sort_order' => 1,
+    ]);
+    $unitTwo = MaterialUnit::query()->create([
+        'topic_id' => $topicOne->id,
+        'name' => 'Quadratische Funktionen',
+        'sort_order' => 2,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'scope_id' => null,
+        'workspace_id' => $workspace->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
+    ]);
+
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $this->postJson('/api/admin/materials/shares/inbox/subjects/'.$subjectTwo->id.'/move', [
+        'rule_id' => (int) $rule->id,
+        'data' => [
+            'direction' => 'up',
+        ],
+    ])->assertNoContent();
+
+    $this->postJson('/api/admin/materials/shares/inbox/topics/'.$topicTwo->id.'/move', [
+        'rule_id' => (int) $rule->id,
+        'data' => [
+            'direction' => 'up',
+        ],
+    ])->assertNoContent();
+
+    $this->postJson('/api/admin/materials/shares/inbox/units/'.$unitTwo->id.'/move', [
+        'rule_id' => (int) $rule->id,
+        'data' => [
+            'direction' => 'up',
+        ],
+    ])->assertNoContent();
+
+    $orderedSubjects = MaterialSubject::query()
+        ->where('workspace_id', $workspace->id)
+        ->orderBy('sort_order')
+        ->pluck('name')
+        ->all();
+    expect($orderedSubjects)->toEqual(['Physik', 'Mathematik']);
+
+    $orderedTopics = MaterialTopic::query()
+        ->where('subject_id', $subjectOne->id)
+        ->orderBy('sort_order')
+        ->pluck('name')
+        ->all();
+    expect($orderedTopics)->toEqual(['Geometrie', 'Algebra']);
+
+    $orderedUnits = MaterialUnit::query()
+        ->where('topic_id', $topicOne->id)
+        ->orderBy('sort_order')
+        ->pluck('name')
+        ->all();
+    expect($orderedUnits)->toEqual(['Quadratische Funktionen', 'Lineare Gleichungen']);
+
+    $inbox = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertOk();
+
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.0.name'))->toBe('Physik');
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.1.name'))->toBe('Mathematik');
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.1.topics.0.name'))->toBe('Geometrie');
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.1.topics.1.name'))->toBe('Algebra');
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.1.topics.1.units.0.name'))->toBe('Quadratische Funktionen');
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.1.topics.1.units.1.name'))->toBe('Lineare Gleichungen');
+});
+
 test('inbox full access subject topic and unit rename update the original hierarchy', function () {
     $creator = User::factory()->create([
         'school_id' => $this->school->id,

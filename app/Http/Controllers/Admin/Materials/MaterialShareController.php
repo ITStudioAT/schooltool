@@ -589,6 +589,87 @@ class MaterialShareController extends Controller
         ], 200);
     }
 
+    public function moveInboxSubject(
+        Request $request,
+        MaterialSubject $material_subject,
+        MaterialService $service
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'data.direction' => ['required', 'string', 'in:up,down'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $context = $this->resolveInboxSubjectAccessContext($authUser, $ruleId, $material_subject);
+
+        /** @var User $sourceOwner */
+        $sourceOwner = $context['source_owner'];
+        $service->moveSubject(
+            $sourceOwner,
+            $material_subject,
+            (string) ($data['data']['direction'] ?? '')
+        );
+
+        return response()->noContent();
+    }
+
+    public function moveInboxTopic(
+        Request $request,
+        MaterialTopic $material_topic,
+        MaterialService $service
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'data.direction' => ['required', 'string', 'in:up,down'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $context = $this->resolveInboxTopicAccessContext($authUser, $ruleId, $material_topic);
+
+        /** @var User $sourceOwner */
+        $sourceOwner = $context['source_owner'];
+        $service->moveTopic(
+            $sourceOwner,
+            $material_topic,
+            (string) ($data['data']['direction'] ?? '')
+        );
+
+        return response()->noContent();
+    }
+
+    public function moveInboxUnit(
+        Request $request,
+        MaterialUnit $material_unit,
+        MaterialService $service
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'data.direction' => ['required', 'string', 'in:up,down'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $context = $this->resolveInboxUnitAccessContext($authUser, $ruleId, $material_unit);
+
+        /** @var User $sourceOwner */
+        $sourceOwner = $context['source_owner'];
+        $service->moveUnit(
+            $sourceOwner,
+            $material_unit,
+            (string) ($data['data']['direction'] ?? '')
+        );
+
+        return response()->noContent();
+    }
+
     public function destroyInboxSubject(
         Request $request,
         MaterialSubject $material_subject,

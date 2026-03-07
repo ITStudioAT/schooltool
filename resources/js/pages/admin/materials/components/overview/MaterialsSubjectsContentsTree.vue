@@ -550,7 +550,7 @@
                         </div>
                         <ul v-if="sharedItemHierarchy(item).length" class="overview-shared-hierarchy-list">
                             <li
-                                v-for="subject in sharedItemHierarchy(item)"
+                                v-for="(subject, subjectIndex) in sharedItemHierarchy(item)"
                                 :key="`overview-shared-subject-${item.ruleId}-${subject.id || subject.name}`"
                                 class="overview-shared-hierarchy-item">
                                 <div v-if="sharedItemSupportsSubjectCreate(item) && isSharedStructureButtonsVisible(item.ruleId)" class="overview-shared-structure-create-row">
@@ -575,6 +575,24 @@
                                         <div
                                             v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)"
                                             class="overview-shared-hierarchy-node-inline-actions">
+                                            <v-btn
+                                                icon="mdi-arrow-up"
+                                                size="x-small"
+                                                density="comfortable"
+                                                variant="text"
+                                                color="primary"
+                                                :disabled="actionBusy || subjectIndex === 0"
+                                                title="Fach nach oben"
+                                                @click.stop="moveSharedNode(item, 'subject', subject, 'up')" />
+                                            <v-btn
+                                                icon="mdi-arrow-down"
+                                                size="x-small"
+                                                density="comfortable"
+                                                variant="text"
+                                                color="primary"
+                                                :disabled="actionBusy || subjectIndex >= (sharedItemHierarchy(item).length - 1)"
+                                                title="Fach nach unten"
+                                                @click.stop="moveSharedNode(item, 'subject', subject, 'down')" />
                                             <v-btn
                                                 icon="mdi-pencil"
                                                 size="x-small"
@@ -656,7 +674,7 @@
 
                                 <ul v-if="subject.topics.length" class="overview-subjects-list overview-subjects-list--child">
                                     <li
-                                        v-for="topic in subject.topics"
+                                        v-for="(topic, topicIndex) in subject.topics"
                                         :key="`overview-shared-topic-${item.ruleId}-${topic.id || topic.name}`"
                                         class="overview-subjects-item overview-subjects-topic-group">
                                         <div v-if="sharedItemSupportsTopicCreate(item) && isSharedStructureButtonsVisible(item.ruleId)" class="overview-shared-structure-create-row overview-shared-structure-create-row--topic">
@@ -681,6 +699,24 @@
                                                 <div
                                                     v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)"
                                                     class="overview-shared-hierarchy-node-inline-actions">
+                                                    <v-btn
+                                                        icon="mdi-arrow-up"
+                                                        size="x-small"
+                                                        density="comfortable"
+                                                        variant="text"
+                                                        color="primary"
+                                                        :disabled="actionBusy || topicIndex === 0"
+                                                        title="Thema nach oben"
+                                                        @click.stop="moveSharedNode(item, 'topic', topic, 'up')" />
+                                                    <v-btn
+                                                        icon="mdi-arrow-down"
+                                                        size="x-small"
+                                                        density="comfortable"
+                                                        variant="text"
+                                                        color="primary"
+                                                        :disabled="actionBusy || topicIndex >= (subject.topics.length - 1)"
+                                                        title="Thema nach unten"
+                                                        @click.stop="moveSharedNode(item, 'topic', topic, 'down')" />
                                                     <v-btn
                                                         icon="mdi-pencil"
                                                         size="x-small"
@@ -762,7 +798,7 @@
 
                                         <ul v-if="topic.units.length" class="overview-subjects-list overview-subjects-list--child">
                                             <li
-                                                v-for="unit in topic.units"
+                                                v-for="(unit, unitIndex) in topic.units"
                                                 :key="`overview-shared-unit-${item.ruleId}-${unit.id || unit.name}`"
                                                 class="overview-subjects-item">
                                                 <div
@@ -789,6 +825,24 @@
                                                         <div
                                                             v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)"
                                                             class="overview-shared-hierarchy-node-inline-actions">
+                                                            <v-btn
+                                                                icon="mdi-arrow-up"
+                                                                size="x-small"
+                                                                density="comfortable"
+                                                                variant="text"
+                                                                color="primary"
+                                                                :disabled="actionBusy || unitIndex === 0"
+                                                                title="Bereich nach oben"
+                                                                @click.stop="moveSharedNode(item, 'unit', unit, 'up')" />
+                                                            <v-btn
+                                                                icon="mdi-arrow-down"
+                                                                size="x-small"
+                                                                density="comfortable"
+                                                                variant="text"
+                                                                color="primary"
+                                                                :disabled="actionBusy || unitIndex >= (topic.units.length - 1)"
+                                                                title="Bereich nach unten"
+                                                                @click.stop="moveSharedNode(item, 'unit', unit, 'down')" />
                                                             <v-btn
                                                                 icon="mdi-pencil"
                                                                 size="x-small"
@@ -1193,7 +1247,7 @@ export default {
             default: () => ({}),
         },
     },
-    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'open-shared-material', 'open-shared-attachments', 'unlink-linked-material', 'unlink-linked-topic', 'unlink-linked-unit', 'toggle-shared-for-me-expanded', 'toggle-shared-item-expanded', 'shared-node-created', 'shared-node-renamed', 'shared-node-deleted'],
+    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'open-shared-material', 'open-shared-attachments', 'unlink-linked-material', 'unlink-linked-topic', 'unlink-linked-unit', 'toggle-shared-for-me-expanded', 'toggle-shared-item-expanded', 'shared-node-created', 'shared-node-renamed', 'shared-node-deleted', 'shared-node-moved'],
     data() {
         return {
             workspaceExpanded: true,
@@ -1551,6 +1605,44 @@ export default {
             if (level === 'topic') return `/api/admin/materials/shares/inbox/topics/${id}`
             if (level === 'unit') return `/api/admin/materials/shares/inbox/units/${id}`
             return ''
+        },
+        sharedMoveEndpoint(level, nodeId) {
+            const id = Number(nodeId || 0)
+            if (!Number.isFinite(id) || id <= 0) return ''
+            if (level === 'subject') return `/api/admin/materials/shares/inbox/subjects/${id}/move`
+            if (level === 'topic') return `/api/admin/materials/shares/inbox/topics/${id}/move`
+            if (level === 'unit') return `/api/admin/materials/shares/inbox/units/${id}/move`
+            return ''
+        },
+        async moveSharedNode(item, level, node, direction) {
+            if (this.actionBusy) return
+            if (!this.sharedItemHasFullAccess(item)) return
+
+            const ruleId = Number(item?.ruleId || 0)
+            const nodeId = Number(node?.id || 0)
+            const endpoint = this.sharedMoveEndpoint(level, nodeId)
+            const normalizedDirection = String(direction || '').trim().toLowerCase()
+            if (endpoint === '') return
+            if (!Number.isFinite(ruleId) || ruleId <= 0) return
+            if (normalizedDirection !== 'up' && normalizedDirection !== 'down') return
+
+            try {
+                await axios.post(endpoint, {
+                    rule_id: ruleId,
+                    data: {
+                        direction: normalizedDirection,
+                    },
+                })
+
+                this.$emit('shared-node-moved', {
+                    ruleId,
+                    level: String(level || ''),
+                    nodeId,
+                    direction: normalizedDirection,
+                })
+            } catch {
+                // Fehler werden bewusst still behandelt; parent refresh bleibt source of truth.
+            }
         },
         async submitSharedCreateSubjectDialog() {
             if (!this.validateSharedCreateSubjectDialog()) return
