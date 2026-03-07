@@ -100,6 +100,16 @@ class AdminNavigationService
             ];
         }
 
+        // RESTAURANT
+        if ($isSuperAdmin || $this->userHasRole(['admin', 'lunch_admin'])) {
+            $menu[] = [
+                'title' => 'Restaurant',
+                'icon' => 'mdi-silverware-fork-knife',
+                'to' => '/admin/restaurant',
+                'is_active' => true,
+            ];
+        }
+
 
 
 

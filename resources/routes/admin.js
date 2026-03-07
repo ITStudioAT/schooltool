@@ -22,6 +22,7 @@ const Teaching = () => import('@/pages/admin/teaching/Teaching.vue')
 const Materials = () => import('@/pages/admin/materials/Materials.vue')
 const MaterialsSubjectsOverview = () => import('@/pages/admin/materials/MaterialsSubjectsOverview.vue')
 const Groups = () => import('@/pages/admin/groups/Groups.vue')
+const Restaurant = () => import('@/pages/admin/restaurant/Restaurant.vue')
 
 const routes = [
     { path: '/admin', component: Index },
@@ -42,6 +43,7 @@ const routes = [
     { path: '/admin/materials', component: Materials },
     { path: '/admin/groups', component: Groups },
     { path: '/admin/materials/subjects-overview', component: MaterialsSubjectsOverview },
+    { path: '/admin/restaurant', component: Restaurant },
 ]
 
 const router = createRouter({

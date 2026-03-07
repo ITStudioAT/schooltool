@@ -48,7 +48,7 @@ class UserGroup extends Model
 
     public function members(): BelongsToMany
     {
-        return $this->belongsToMany(User::class, 'user_group_members')
+        return $this->belongsToMany(User::class, 'user_group_members', 'user_group_id', 'linked_user_id')
             ->withPivot(['added_by_user_id'])
             ->withTimestamps();
     }
