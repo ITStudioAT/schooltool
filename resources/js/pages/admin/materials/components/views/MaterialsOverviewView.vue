@@ -228,7 +228,7 @@
                                     Freigegeben: {{ formatDateTime(item.sharedAt) || '-' }}
                                 </div>
 
-                                <div v-if="item.materialsCount > 0" class="d-flex justify-end">
+                                <div v-if="canExpandSharedHierarchy(item)" class="d-flex justify-end">
                                     <v-btn
                                         size="small"
                                         variant="tonal"
@@ -253,11 +253,97 @@
                                                     <div class="inbox-hierarchy-context-line">{{ subject.name }}</div>
                                                 </div>
                                                 <div
+                                                    v-if="Array.isArray(subject.materials) && subject.materials.length > 0"
+                                                    class="inbox-hierarchy-material-lines">
+                                                    <div
+                                                        v-for="material in subject.materials"
+                                                        :key="`shared-hier-subject-material-${item.ruleId}-${material.id || material.title}`"
+                                                        class="inbox-hierarchy-material-line inbox-hierarchy-level-material">
+                                                        <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || undefined" />
+                                                        <span
+                                                            class="inbox-hierarchy-material-title inbox-hierarchy-material-title-clickable"
+                                                            role="button"
+                                                            tabindex="0"
+                                                            @click.stop="openSharedMaterialDetail(item.ruleId, material)"
+                                                            @keydown.enter.stop.prevent="openSharedMaterialDetail(item.ruleId, material)"
+                                                            @keydown.space.stop.prevent="openSharedMaterialDetail(item.ruleId, material)">
+                                                            {{ material.title }}
+                                                        </span>
+                                                        <v-chip
+                                                            v-if="material.typeLabel"
+                                                            size="x-small"
+                                                            variant="outlined"
+                                                            :color="material.typeColor || 'primary'">
+                                                            {{ material.typeLabel }}
+                                                        </v-chip>
+                                                        <span
+                                                            v-if="material.attachmentsCount > 0"
+                                                            class="inbox-hierarchy-material-count inbox-hierarchy-material-count-clickable"
+                                                            role="button"
+                                                            tabindex="0"
+                                                            @click.stop="openSharedMaterialAttachments(item.ruleId, material)"
+                                                            @keydown.enter.stop.prevent="openSharedMaterialAttachments(item.ruleId, material)"
+                                                            @keydown.space.stop.prevent="openSharedMaterialAttachments(item.ruleId, material)">
+                                                            <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
+                                                            {{ material.attachmentsCount }}
+                                                        </span>
+                                                        <v-chip
+                                                            size="x-small"
+                                                            variant="tonal"
+                                                            :color="material.statusColor || statusColor(material.status)">
+                                                            {{ material.statusLabel || statusLabel(material.status) }}
+                                                        </v-chip>
+                                                    </div>
+                                                </div>
+                                                <div
                                                     v-for="topic in subject.topics"
                                                     :key="`shared-hier-topic-${item.ruleId}-${topic.id || topic.name}`"
                                                     class="inbox-hierarchy-topic inbox-hierarchy-level-topic">
                                                     <div class="inbox-hierarchy-topic-head">
                                                         <div class="inbox-hierarchy-topic-title">{{ topic.name }}</div>
+                                                    </div>
+                                                    <div
+                                                        v-if="Array.isArray(topic.materials) && topic.materials.length > 0"
+                                                        class="inbox-hierarchy-material-lines">
+                                                        <div
+                                                            v-for="material in topic.materials"
+                                                            :key="`shared-hier-topic-material-${item.ruleId}-${material.id || material.title}`"
+                                                            class="inbox-hierarchy-material-line inbox-hierarchy-level-material">
+                                                            <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || undefined" />
+                                                            <span
+                                                                class="inbox-hierarchy-material-title inbox-hierarchy-material-title-clickable"
+                                                                role="button"
+                                                                tabindex="0"
+                                                                @click.stop="openSharedMaterialDetail(item.ruleId, material)"
+                                                                @keydown.enter.stop.prevent="openSharedMaterialDetail(item.ruleId, material)"
+                                                                @keydown.space.stop.prevent="openSharedMaterialDetail(item.ruleId, material)">
+                                                                {{ material.title }}
+                                                            </span>
+                                                            <v-chip
+                                                                v-if="material.typeLabel"
+                                                                size="x-small"
+                                                                variant="outlined"
+                                                                :color="material.typeColor || 'primary'">
+                                                                {{ material.typeLabel }}
+                                                            </v-chip>
+                                                            <span
+                                                                v-if="material.attachmentsCount > 0"
+                                                                class="inbox-hierarchy-material-count inbox-hierarchy-material-count-clickable"
+                                                                role="button"
+                                                                tabindex="0"
+                                                                @click.stop="openSharedMaterialAttachments(item.ruleId, material)"
+                                                                @keydown.enter.stop.prevent="openSharedMaterialAttachments(item.ruleId, material)"
+                                                                @keydown.space.stop.prevent="openSharedMaterialAttachments(item.ruleId, material)">
+                                                                <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
+                                                                {{ material.attachmentsCount }}
+                                                            </span>
+                                                            <v-chip
+                                                                size="x-small"
+                                                                variant="tonal"
+                                                                :color="material.statusColor || statusColor(material.status)">
+                                                                {{ material.statusLabel || statusLabel(material.status) }}
+                                                            </v-chip>
+                                                        </div>
                                                     </div>
                                                     <div
                                                         v-for="unit in topic.units"
@@ -2141,10 +2227,12 @@ export default {
             return hierarchy.map((subject) => ({
                 id: Number(subject?.id || 0),
                 name: String(subject?.name || '').trim() || 'Ohne Fach',
+                materials: Array.isArray(subject?.materials) ? subject.materials.map((material) => this.normalizeSharedHierarchyMaterial(material)) : [],
                 topics: Array.isArray(subject?.topics)
                     ? subject.topics.map((topic) => ({
                         id: Number(topic?.id || 0),
                         name: String(topic?.name || '').trim() || 'Ohne Thema',
+                        materials: Array.isArray(topic?.materials) ? topic.materials.map((material) => this.normalizeSharedHierarchyMaterial(material)) : [],
                         units: Array.isArray(topic?.units)
                             ? topic.units.map((unit) => ({
                                 id: Number(unit?.id || 0),
@@ -2275,8 +2363,12 @@ export default {
 
             let count = 0
             for (const subject of hierarchy) {
+                const subjectMaterials = Array.isArray(subject?.materials) ? subject.materials : []
+                count += subjectMaterials.length
                 const topics = Array.isArray(subject?.topics) ? subject.topics : []
                 for (const topic of topics) {
+                    const topicMaterials = Array.isArray(topic?.materials) ? topic.materials : []
+                    count += topicMaterials.length
                     const units = Array.isArray(topic?.units) ? topic.units : []
                     for (const unit of units) {
                         const materials = Array.isArray(unit?.materials) ? unit.materials : []
@@ -2289,6 +2381,9 @@ export default {
         },
         sharedHierarchyKey(ruleId) {
             return `shared-rule-${Number(ruleId || 0)}`
+        },
+        canExpandSharedHierarchy(item) {
+            return Array.isArray(item?.hierarchy) && item.hierarchy.length > 0
         },
         isSharedHierarchyOpen(ruleId) {
             const key = this.sharedHierarchyKey(ruleId)

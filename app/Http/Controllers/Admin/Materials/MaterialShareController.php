@@ -178,7 +178,7 @@ class MaterialShareController extends Controller
                 'targets:id,material_share_rule_id,target_type,audience_scope,permission,user_group_id,user_id',
             ])
             ->orderByDesc('updated_at')
-            ->get(['id', 'school_id', 'scope_type', 'scope_id', 'created_by_user_id', 'updated_at']);
+            ->get(['id', 'school_id', 'workspace_id', 'scope_type', 'scope_id', 'created_by_user_id', 'updated_at']);
 
         $importedMaterialKeys = $this->resolveImportedInboxMaterialKeys($authUserId);
         $importedRuleIds = $this->resolveImportedInboxRuleIds($authUserId);
@@ -1555,6 +1555,8 @@ class MaterialShareController extends Controller
         $scopeType = (string) $rule->scope_type;
         $scopeId = (int) ($rule->scope_id ?? 0);
         $creatorUserId = (int) ($rule->created_by_user_id ?? 0);
+        $workspaceId = (int) ($rule->workspace_id ?? 0);
+        $subjects = $this->resolveScopeHierarchySkeleton($rule);
 
         $cardsQuery = MaterialCard::query()
             ->where('school_id', (int) $rule->school_id)
@@ -1568,6 +1570,9 @@ class MaterialShareController extends Controller
 
         if ($creatorUserId > 0) {
             $cardsQuery->where('user_id', $creatorUserId);
+        }
+        if ($workspaceId > 0) {
+            $cardsQuery->where('workspace_id', $workspaceId);
         }
 
         if ($this->hasMaterialAttachmentsTable()) {
@@ -1614,11 +1619,9 @@ class MaterialShareController extends Controller
             'source_text',
             'notes',
         ]);
-        if ($cards->isEmpty()) {
+        if ($cards->isEmpty() && $subjects === []) {
             return [];
         }
-
-        $subjects = [];
 
         foreach ($cards as $card) {
             $cardRows = $this->classificationRowsForCardAndScope($card, $scopeType, $scopeId);
@@ -1647,8 +1650,16 @@ class MaterialShareController extends Controller
                         'id' => $row['subject_id'],
                         'name' => $row['subject_name'],
                         'sort_order' => $this->normalizeHierarchySortOrder($row['subject_sort_order']),
+                        'materials' => [],
                         'topics' => [],
                     ];
+                }
+
+                if (($row['attach_level'] ?? 'unit') === 'subject') {
+                    $materialId = (int) ($card->id ?? 0);
+                    $subjects[$subjectKey]['materials'][$materialId] = $materialPayload;
+
+                    continue;
                 }
 
                 $topicKey = (string) ($row['topic_id'] ?? 0).'|'.$row['topic_name'];
@@ -1657,8 +1668,16 @@ class MaterialShareController extends Controller
                         'id' => $row['topic_id'],
                         'name' => $row['topic_name'],
                         'sort_order' => $this->normalizeHierarchySortOrder($row['topic_sort_order']),
+                        'materials' => [],
                         'units' => [],
                     ];
+                }
+
+                if (($row['attach_level'] ?? 'unit') === 'topic') {
+                    $materialId = (int) ($card->id ?? 0);
+                    $subjects[$subjectKey]['topics'][$topicKey]['materials'][$materialId] = $materialPayload;
+
+                    continue;
                 }
 
                 $unitKey = (string) ($row['unit_id'] ?? 0).'|'.$row['unit_name'];
@@ -1680,28 +1699,29 @@ class MaterialShareController extends Controller
             ->sortBy(fn (array $subject) => $this->hierarchySortKey($subject))
             ->values()
             ->map(function (array $subject) {
+                $subjectMaterials = $this->sortHierarchyMaterials($subject['materials'] ?? []);
                 $topicRows = collect($subject['topics'] ?? [])
                     ->sortBy(fn (array $topic) => $this->hierarchySortKey($topic))
                     ->values()
                     ->map(function (array $topic) {
+                        $topicMaterials = $this->sortHierarchyMaterials($topic['materials'] ?? []);
                         $unitRows = collect($topic['units'] ?? [])
                             ->sortBy(fn (array $unit) => $this->hierarchySortKey($unit))
                             ->values()
                             ->map(function (array $unit) {
-                                $materials = collect($unit['materials'] ?? [])
-                                    ->sortBy(fn (array $material) => mb_strtolower((string) ($material['title'] ?? '')))
-                                    ->values();
+                                $materials = $this->sortHierarchyMaterials($unit['materials'] ?? []);
 
                                 return [
                                     'id' => $unit['id'],
                                     'name' => $unit['name'],
-                                    'materials' => $materials->all(),
+                                    'materials' => $materials,
                                 ];
                             });
 
                         return [
                             'id' => $topic['id'],
                             'name' => $topic['name'],
+                            'materials' => $topicMaterials,
                             'units' => $unitRows->all(),
                         ];
                     });
@@ -1709,12 +1729,164 @@ class MaterialShareController extends Controller
                 return [
                     'id' => $subject['id'],
                     'name' => $subject['name'],
+                    'materials' => $subjectMaterials,
                     'topics' => $topicRows->all(),
                 ];
             })
             ->values();
 
         return $subjectRows->all();
+    }
+
+    private function resolveScopeHierarchySkeleton(MaterialShareRule $rule): array
+    {
+        $creatorUserId = (int) ($rule->created_by_user_id ?? 0);
+        $workspaceId = (int) ($rule->workspace_id ?? 0);
+        $scopeType = (string) ($rule->scope_type ?? '');
+        $scopeId = (int) ($rule->scope_id ?? 0);
+
+        if ($creatorUserId <= 0 || $scopeType === MaterialShareRule::SCOPE_MATERIAL) {
+            return [];
+        }
+
+        $subjectQuery = MaterialSubject::query()
+            ->where('user_id', $creatorUserId)
+            ->with([
+                'topics:id,subject_id,name,sort_order',
+                'topics.units:id,topic_id,name,sort_order',
+            ])
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->orderBy('id');
+
+        if ($workspaceId > 0) {
+            $subjectQuery->where('workspace_id', $workspaceId);
+        }
+
+        $subjects = $subjectQuery->get(['id', 'user_id', 'workspace_id', 'name', 'sort_order']);
+        if ($subjects->isEmpty()) {
+            return [];
+        }
+
+        $rows = [];
+        foreach ($subjects as $subject) {
+            $subjectKey = $this->hierarchyNodeKey((int) $subject->id, (string) $subject->name);
+            $topicRows = [];
+
+            foreach ($subject->topics as $topic) {
+                $topicKey = $this->hierarchyNodeKey((int) $topic->id, (string) $topic->name);
+                $unitRows = [];
+
+                foreach ($topic->units as $unit) {
+                    $unitKey = $this->hierarchyNodeKey((int) $unit->id, (string) $unit->name);
+                    $unitRows[$unitKey] = [
+                        'id' => (int) $unit->id,
+                        'name' => $this->normalizeHierarchyName((string) $unit->name, 'Ohne Einheit'),
+                        'sort_order' => $this->normalizeHierarchySortOrder($unit->sort_order),
+                        'materials' => [],
+                    ];
+                }
+
+                $topicRows[$topicKey] = [
+                    'id' => (int) $topic->id,
+                    'name' => $this->normalizeHierarchyName((string) $topic->name, 'Ohne Thema'),
+                    'sort_order' => $this->normalizeHierarchySortOrder($topic->sort_order),
+                    'materials' => [],
+                    'units' => $unitRows,
+                ];
+            }
+
+            $rows[$subjectKey] = [
+                'id' => (int) $subject->id,
+                'name' => $this->normalizeHierarchyName((string) $subject->name, 'Ohne Fach'),
+                'sort_order' => $this->normalizeHierarchySortOrder($subject->sort_order),
+                'materials' => [],
+                'topics' => $topicRows,
+            ];
+        }
+
+        return $this->filterScopeHierarchySkeleton($rows, $scopeType, $scopeId);
+    }
+
+    private function filterScopeHierarchySkeleton(array $subjects, string $scopeType, int $scopeId): array
+    {
+        if ($scopeId <= 0 || $scopeType === MaterialShareRule::SCOPE_ALL) {
+            return $subjects;
+        }
+
+        if ($scopeType === MaterialShareRule::SCOPE_SUBJECT) {
+            return array_filter(
+                $subjects,
+                fn (array $subject) => (int) ($subject['id'] ?? 0) === $scopeId
+            );
+        }
+
+        if ($scopeType === MaterialShareRule::SCOPE_TOPIC) {
+            $filteredSubjects = [];
+
+            foreach ($subjects as $subjectKey => $subject) {
+                $topics = array_filter(
+                    $subject['topics'] ?? [],
+                    fn (array $topic) => (int) ($topic['id'] ?? 0) === $scopeId
+                );
+                if ($topics === []) {
+                    continue;
+                }
+
+                $subject['materials'] = [];
+                $subject['topics'] = $topics;
+                $filteredSubjects[$subjectKey] = $subject;
+            }
+
+            return $filteredSubjects;
+        }
+
+        if ($scopeType === MaterialShareRule::SCOPE_UNIT) {
+            $filteredSubjects = [];
+
+            foreach ($subjects as $subjectKey => $subject) {
+                $topics = [];
+
+                foreach ($subject['topics'] ?? [] as $topicKey => $topic) {
+                    $units = array_filter(
+                        $topic['units'] ?? [],
+                        fn (array $unit) => (int) ($unit['id'] ?? 0) === $scopeId
+                    );
+                    if ($units === []) {
+                        continue;
+                    }
+
+                    $topic['materials'] = [];
+                    $topic['units'] = $units;
+                    $topics[$topicKey] = $topic;
+                }
+
+                if ($topics === []) {
+                    continue;
+                }
+
+                $subject['materials'] = [];
+                $subject['topics'] = $topics;
+                $filteredSubjects[$subjectKey] = $subject;
+            }
+
+            return $filteredSubjects;
+        }
+
+        return [];
+    }
+
+    private function hierarchyNodeKey(int $id, string $name): string
+    {
+        return $id.'|'.trim($name);
+    }
+
+    private function sortHierarchyMaterials(array $materials): array
+    {
+        return collect($materials)
+            ->sortBy(fn (array $material) => mb_strtolower((string) ($material['title'] ?? '')))
+            ->values()
+            ->all();
     }
 
     private function classificationRowsForCardAndScope(MaterialCard $card, string $scopeType, int $scopeId): array
@@ -1747,6 +1919,12 @@ class MaterialShareController extends Controller
                 'unit_id' => $unitId > 0 ? $unitId : null,
                 'unit_name' => trim((string) ($classification->unit?->name ?? '')),
                 'unit_sort_order' => $classification->unit?->sort_order,
+                'attach_level' => $this->resolveHierarchyAttachLevel(
+                    $topicId > 0 ? $topicId : null,
+                    $classification->topic?->name,
+                    $unitId > 0 ? $unitId : null,
+                    $classification->unit?->name,
+                ),
             ];
         }
 
@@ -1761,6 +1939,12 @@ class MaterialShareController extends Controller
                 'unit_id' => null,
                 'unit_name' => trim((string) ($card->unit ?? '')),
                 'unit_sort_order' => null,
+                'attach_level' => $this->resolveHierarchyAttachLevel(
+                    null,
+                    $card->area,
+                    null,
+                    $card->unit,
+                ),
             ];
         }
 
@@ -1775,8 +1959,24 @@ class MaterialShareController extends Controller
                 'unit_id' => $row['unit_id'],
                 'unit_name' => $this->normalizeHierarchyName($row['unit_name'] ?? '', 'Ohne Einheit'),
                 'unit_sort_order' => $row['unit_sort_order'],
+                'attach_level' => (string) ($row['attach_level'] ?? 'unit'),
             ];
         }, $rows);
+    }
+
+    private function resolveHierarchyAttachLevel(?int $topicId, ?string $topicName, ?int $unitId, ?string $unitName): string
+    {
+        $hasTopic = (int) ($topicId ?? 0) > 0 || trim((string) ($topicName ?? '')) !== '';
+        if (! $hasTopic) {
+            return 'subject';
+        }
+
+        $hasUnit = (int) ($unitId ?? 0) > 0 || trim((string) ($unitName ?? '')) !== '';
+        if (! $hasUnit) {
+            return 'topic';
+        }
+
+        return 'unit';
     }
 
     private function normalizeHierarchySortOrder(mixed $sortOrder): int

@@ -238,6 +238,101 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(sharedItem.style.maxWidth).toBe('28rem')
     })
 
+    it('renders empty shared branches and direct materials on subject topic and unit level', async () => {
+        renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [],
+            },
+        ], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 91,
+                    scopeObjectLabel: 'Alle Materialien',
+                    scopePathLabel: 'Workspace A',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Eins',
+                    materialsCount: 3,
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Mathematik',
+                            materials: [
+                                {
+                                    id: 101,
+                                    title: 'Fachmaterial',
+                                    status: 'inbox',
+                                    statusLabel: 'Neu/Idee',
+                                    attachmentsCount: 0,
+                                },
+                            ],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Algebra',
+                                    materials: [
+                                        {
+                                            id: 102,
+                                            title: 'Themamaterial',
+                                            status: 'in_progress',
+                                            statusLabel: 'In Arbeit',
+                                            attachmentsCount: 1,
+                                        },
+                                    ],
+                                    units: [
+                                        {
+                                            id: 30,
+                                            name: 'Leere Einheit',
+                                            materials: [],
+                                        },
+                                        {
+                                            id: 31,
+                                            name: 'Einheit 1',
+                                            materials: [
+                                                {
+                                                    id: 103,
+                                                    title: 'Einheitsmaterial',
+                                                    status: 'done',
+                                                    statusLabel: 'Erledigt',
+                                                    attachmentsCount: 0,
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
+                                {
+                                    id: 21,
+                                    name: 'Geometrie',
+                                    materials: [],
+                                    units: [],
+                                },
+                            ],
+                        },
+                        {
+                            id: 11,
+                            name: 'Biologie',
+                            materials: [],
+                            topics: [],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+
+        expect(screen.getByText('Biologie')).toBeInTheDocument()
+        expect(screen.getByText('Geometrie')).toBeInTheDocument()
+        expect(screen.getByText('Leere Einheit')).toBeInTheDocument()
+        expect(screen.getByText('Fachmaterial')).toBeInTheDocument()
+        expect(screen.getByText('Themamaterial')).toBeInTheDocument()
+        expect(screen.getByText('Einheitsmaterial')).toBeInTheDocument()
+    })
+
     it('renders linked permission chip on a linked topic', () => {
         renderTree([
             {

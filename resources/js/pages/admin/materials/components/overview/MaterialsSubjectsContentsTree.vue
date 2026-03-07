@@ -520,7 +520,7 @@
                     <div v-if="Number(item.materialsCount || 0) > 0" class="overview-shared-item-meta">
                         {{ Number(item.materialsCount || 0) }} Material{{ Number(item.materialsCount || 0) === 1 ? '' : 'ien' }}
                     </div>
-                    <div v-if="Number(item.materialsCount || 0) > 0" class="overview-shared-item-actions">
+                    <div v-if="sharedItemCanExpand(item)" class="overview-shared-item-actions">
                         <v-btn
                             size="small"
                             variant="tonal"
@@ -543,6 +543,46 @@
                                     <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
                                     <span>{{ subject.name }}</span>
                                 </div>
+                                <ul v-if="Array.isArray(subject.materials) && subject.materials.length" class="overview-subjects-material-list">
+                                    <li
+                                        v-for="material in subject.materials"
+                                        :key="`overview-shared-subject-material-${item.ruleId}-${material.id || material.title}`"
+                                        class="overview-subjects-material-item">
+                                        <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || undefined" />
+                                        <button
+                                            type="button"
+                                            class="overview-subjects-material-link"
+                                            :disabled="actionBusy"
+                                            @click="openSharedMaterial(item, material)">
+                                            {{ material.title }}
+                                        </button>
+                                        <v-chip
+                                            v-if="material.typeLabel"
+                                            size="x-small"
+                                            variant="outlined"
+                                            :color="material.typeColor || 'primary'"
+                                            class="overview-subjects-material-type">
+                                            {{ material.typeLabel }}
+                                        </v-chip>
+                                        <button
+                                            v-if="Number(material.attachmentsCount || 0) > 0"
+                                            type="button"
+                                            class="overview-subjects-material-count overview-subjects-material-count--button"
+                                            :disabled="actionBusy"
+                                            title="Anhänge anzeigen"
+                                            @click="openSharedAttachments(item, material)">
+                                            <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
+                                            {{ Number(material.attachmentsCount || 0) }}
+                                        </button>
+                                        <v-chip
+                                            size="x-small"
+                                            variant="tonal"
+                                            :color="material.statusColor || statusColorFn(material.status)"
+                                            class="overview-subjects-material-status">
+                                            {{ material.statusLabel || statusLabelFn(material.status) }}
+                                        </v-chip>
+                                    </li>
+                                </ul>
 
                                 <ul v-if="subject.topics.length" class="overview-subjects-list overview-subjects-list--child">
                                     <li
@@ -553,6 +593,46 @@
                                             <v-icon size="14" icon="mdi-book-open-page-variant-outline" class="mr-2" />
                                             <span>{{ topic.name }}</span>
                                         </div>
+                                        <ul v-if="Array.isArray(topic.materials) && topic.materials.length" class="overview-subjects-material-list">
+                                            <li
+                                                v-for="material in topic.materials"
+                                                :key="`overview-shared-topic-material-${item.ruleId}-${material.id || material.title}`"
+                                                class="overview-subjects-material-item">
+                                                <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || undefined" />
+                                                <button
+                                                    type="button"
+                                                    class="overview-subjects-material-link"
+                                                    :disabled="actionBusy"
+                                                    @click="openSharedMaterial(item, material)">
+                                                    {{ material.title }}
+                                                </button>
+                                                <v-chip
+                                                    v-if="material.typeLabel"
+                                                    size="x-small"
+                                                    variant="outlined"
+                                                    :color="material.typeColor || 'primary'"
+                                                    class="overview-subjects-material-type">
+                                                    {{ material.typeLabel }}
+                                                </v-chip>
+                                                <button
+                                                    v-if="Number(material.attachmentsCount || 0) > 0"
+                                                    type="button"
+                                                    class="overview-subjects-material-count overview-subjects-material-count--button"
+                                                    :disabled="actionBusy"
+                                                    title="Anhänge anzeigen"
+                                                    @click="openSharedAttachments(item, material)">
+                                                    <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
+                                                    {{ Number(material.attachmentsCount || 0) }}
+                                                </button>
+                                                <v-chip
+                                                    size="x-small"
+                                                    variant="tonal"
+                                                    :color="material.statusColor || statusColorFn(material.status)"
+                                                    class="overview-subjects-material-status">
+                                                    {{ material.statusLabel || statusLabelFn(material.status) }}
+                                                </v-chip>
+                                            </li>
+                                        </ul>
 
                                         <ul v-if="topic.units.length" class="overview-subjects-list overview-subjects-list--child">
                                             <li
@@ -738,6 +818,9 @@ export default {
         },
         sharedItemHierarchy(item) {
             return Array.isArray(item?.hierarchy) ? item.hierarchy : []
+        },
+        sharedItemCanExpand(item) {
+            return this.sharedItemHierarchy(item).length > 0
         },
         normalizeLinkedPermission(permission) {
             const normalized = String(permission || '').trim()

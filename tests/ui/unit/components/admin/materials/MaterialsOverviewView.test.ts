@@ -305,11 +305,30 @@ describe('MaterialsOverviewView', () => {
                             {
                                 id: 1,
                                 name: 'Mathematik',
+                                materials: [
+                                    {
+                                        id: 97,
+                                        title: 'Kopfmaterial',
+                                        status: 'done',
+                                    },
+                                ],
                                 topics: [
                                     {
                                         id: 2,
                                         name: 'Algebra',
+                                        materials: [
+                                            {
+                                                id: 98,
+                                                title: 'Themamaterial',
+                                                status: 'in_progress',
+                                            },
+                                        ],
                                         units: [
+                                            {
+                                                id: 4,
+                                                name: 'Leere Einheit',
+                                                materials: [],
+                                            },
                                             {
                                                 id: 3,
                                                 name: 'Einheit 1',
@@ -335,11 +354,14 @@ describe('MaterialsOverviewView', () => {
         expect(cards).toHaveLength(2)
         expect(cards[0].ruleId).toBe(20)
         expect(cards[0].fromUserLabel).toBe('Lehrer Zwei')
-        expect(cards[0].materialsCount).toBe(1)
+        expect(cards[0].materialsCount).toBe(3)
         expect(cards[0].scopePathLabel).toBe('Teamraum Mathematik')
         expect(Array.isArray(cards[0].hierarchy)).toBe(true)
         expect(cards[0].hierarchy[0].name).toBe('Mathematik')
-        expect(cards[0].hierarchy[0].topics[0].units[0].materials[0].title).toBe('Lineare Gleichungen')
+        expect(cards[0].hierarchy[0].materials[0].title).toBe('Kopfmaterial')
+        expect(cards[0].hierarchy[0].topics[0].materials[0].title).toBe('Themamaterial')
+        expect(cards[0].hierarchy[0].topics[0].units[0].name).toBe('Leere Einheit')
+        expect(cards[0].hierarchy[0].topics[0].units[1].materials[0].title).toBe('Lineare Gleichungen')
         expect(cards[1].ruleId).toBe(10)
         expect(cards[1].scopeLabel).toBe('Fach')
     })

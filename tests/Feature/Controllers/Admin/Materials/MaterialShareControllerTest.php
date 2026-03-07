@@ -1,7 +1,7 @@
 <?php
 
-use App\Models\Licence;
 use App\Models\Import116;
+use App\Models\Licence;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
 use App\Models\MaterialCardClassification;
@@ -16,6 +16,7 @@ use App\Models\MaterialTopicInboxImport;
 use App\Models\MaterialType;
 use App\Models\MaterialUnit;
 use App\Models\MaterialUnitInboxImport;
+use App\Models\MaterialWorkspace;
 use App\Models\School;
 use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
@@ -1056,6 +1057,183 @@ test('inbox hierarchy keeps source sort order for subjects topics and units', fu
 
     $unitNames = collect($preferredTopicNode['units'] ?? [])->pluck('name')->all();
     expect($unitNames)->toBe(['Z Einheit', 'A Einheit']);
+});
+
+test('inbox workspace hierarchy includes empty branches and direct materials only from the shared workspace', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'source-hierarchy@test.local',
+    ]);
+
+    $sharedWorkspace = MaterialWorkspace::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Geteilte Struktur',
+        'is_default' => true,
+    ]);
+    $otherWorkspace = MaterialWorkspace::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Andere Struktur',
+        'is_default' => false,
+    ]);
+
+    $mathSubject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'workspace_id' => $sharedWorkspace->id,
+        'name' => 'Mathematik',
+        'sort_order' => 1,
+    ]);
+    $emptySubject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'workspace_id' => $sharedWorkspace->id,
+        'name' => 'Biologie',
+        'sort_order' => 2,
+    ]);
+
+    $algebraTopic = MaterialTopic::query()->create([
+        'subject_id' => $mathSubject->id,
+        'name' => 'Algebra',
+        'sort_order' => 1,
+    ]);
+    MaterialTopic::query()->create([
+        'subject_id' => $mathSubject->id,
+        'name' => 'Geometrie',
+        'sort_order' => 2,
+    ]);
+
+    MaterialUnit::query()->create([
+        'topic_id' => $algebraTopic->id,
+        'name' => 'Leere Einheit',
+        'sort_order' => 1,
+    ]);
+    $filledUnit = MaterialUnit::query()->create([
+        'topic_id' => $algebraTopic->id,
+        'name' => 'Arbeitsblaetter',
+        'sort_order' => 2,
+    ]);
+
+    $subjectMaterial = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'workspace_id' => $sharedWorkspace->id,
+        'title' => 'Fachmaterial',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $subjectMaterial->id,
+        'subject_id' => $mathSubject->id,
+    ]);
+
+    $topicMaterial = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'workspace_id' => $sharedWorkspace->id,
+        'title' => 'Themamaterial',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $topicMaterial->id,
+        'subject_id' => $mathSubject->id,
+        'topic_id' => $algebraTopic->id,
+    ]);
+
+    $unitMaterial = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'workspace_id' => $sharedWorkspace->id,
+        'title' => 'Einheitsmaterial',
+        'status' => MaterialCard::STATUS_DONE,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $unitMaterial->id,
+        'subject_id' => $mathSubject->id,
+        'topic_id' => $algebraTopic->id,
+        'unit_id' => $filledUnit->id,
+    ]);
+
+    $foreignSubject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'workspace_id' => $otherWorkspace->id,
+        'name' => 'Chemie',
+        'sort_order' => 1,
+    ]);
+    $foreignTopic = MaterialTopic::query()->create([
+        'subject_id' => $foreignSubject->id,
+        'name' => 'Organik',
+        'sort_order' => 1,
+    ]);
+    $foreignUnit = MaterialUnit::query()->create([
+        'topic_id' => $foreignTopic->id,
+        'name' => 'Versteckt',
+        'sort_order' => 1,
+    ]);
+    $foreignMaterial = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'workspace_id' => $otherWorkspace->id,
+        'title' => 'Fremdes Material',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $foreignMaterial->id,
+        'subject_id' => $foreignSubject->id,
+        'topic_id' => $foreignTopic->id,
+        'unit_id' => $foreignUnit->id,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'workspace_id' => $sharedWorkspace->id,
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'scope_id' => null,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $response = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertStatus(200);
+
+    $sharedItems = collect($response->json('data.0.shared_items', []));
+    $inboxItem = $sharedItems->first(fn (array $item) => (int) ($item['rule_id'] ?? 0) === (int) $rule->id);
+    expect($inboxItem)->not->toBeNull();
+
+    $hierarchy = collect($inboxItem['hierarchy'] ?? []);
+    expect($hierarchy->pluck('name')->all())->toBe(['Mathematik', 'Biologie']);
+
+    $mathNode = $hierarchy->firstWhere('name', 'Mathematik');
+    expect($mathNode)->not->toBeNull();
+    expect(collect($mathNode['materials'] ?? [])->pluck('title')->all())->toBe(['Fachmaterial']);
+
+    $topicNames = collect($mathNode['topics'] ?? [])->pluck('name')->all();
+    expect($topicNames)->toBe(['Algebra', 'Geometrie']);
+
+    $algebraNode = collect($mathNode['topics'] ?? [])->firstWhere('name', 'Algebra');
+    expect($algebraNode)->not->toBeNull();
+    expect(collect($algebraNode['materials'] ?? [])->pluck('title')->all())->toBe(['Themamaterial']);
+
+    $unitNames = collect($algebraNode['units'] ?? [])->pluck('name')->all();
+    expect($unitNames)->toBe(['Leere Einheit', 'Arbeitsblaetter']);
+
+    $emptyUnitNode = collect($algebraNode['units'] ?? [])->firstWhere('name', 'Leere Einheit');
+    expect($emptyUnitNode)->not->toBeNull();
+    expect($emptyUnitNode['materials'] ?? [])->toBe([]);
+
+    $filledUnitNode = collect($algebraNode['units'] ?? [])->firstWhere('name', 'Arbeitsblaetter');
+    expect($filledUnitNode)->not->toBeNull();
+    expect(collect($filledUnitNode['materials'] ?? [])->pluck('title')->all())->toBe(['Einheitsmaterial']);
+
+    $biologyNode = $hierarchy->firstWhere('name', 'Biologie');
+    expect($biologyNode)->not->toBeNull();
+    expect($biologyNode['topics'] ?? [])->toBe([]);
+    expect($hierarchy->pluck('name')->contains('Chemie'))->toBeFalse();
 });
 
 test('can copy shared material as original into own workspace with taxonomy type status and attachments', function () {
