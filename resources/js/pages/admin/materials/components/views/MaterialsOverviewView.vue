@@ -439,6 +439,8 @@
                     :shared-objects-for-me-error="sharedObjectsForMeError"
                     :shared-for-me-expanded="subjectsTreeSharedForMeExpanded"
                     :expanded-shared-items="subjectsTreeExpandedSharedItems"
+                    @shared-node-renamed="refreshSharedStructureTree"
+                    @shared-node-deleted="refreshSharedStructureTree"
                     @open-material="openDetailDialog"
                     @open-shared-material="openSharedMaterialFromTree"
                     @open-share="openShareDialog"
@@ -776,6 +778,7 @@
             :classification-tree="classificationTree"
             :classification-editor-visible="createClassificationEditorVisible"
             :classification-toggleable="true"
+            :classification-read-only="!!createSharedContext"
             :is-saving="isSavingCreate"
             form-title="Neues Material"
             :form-subline="createDialogSubline"
@@ -1262,6 +1265,7 @@ export default {
             createClassificationEditorVisible: false,
             editClassificationEditorVisible: false,
             createForm: createDefaultEditForm(),
+            createSharedContext: null,
             editForm: createDefaultEditForm(),
             downloadingAttachmentIds: [],
             previewingAttachmentIds: [],
@@ -1491,7 +1495,8 @@ export default {
             return this.normalizedEditLinkedPermission === 'full_access'
         },
         canEditLinkedDeleteMaterial() {
-            return !this.isEditLinkedMaterial
+            if (!this.isEditLinkedMaterial) return true
+            return this.isEditSharedInboxMaterial && this.normalizedEditLinkedPermission === 'full_access'
         },
         editSaveButtonLabel() {
             return this.isEditLinkedReadOnly ? 'Ende' : 'Speichern'
@@ -1924,6 +1929,9 @@ export default {
             const subject = String(payload?.subject || '').trim()
             const topic = String(payload?.topic || '').trim()
             const unit = String(payload?.unit || '').trim()
+            const sharedRuleId = Number(payload?.sharedRuleId || 0)
+            const sharedNodeId = Number(payload?.sharedNodeId || 0)
+            const sharedNodeLevel = String(payload?.sharedNodeLevel || '').trim()
 
             this.createForm = createDefaultEditForm()
             this.createForm.status = this.defaultStatusValue
@@ -1934,6 +1942,13 @@ export default {
                     unit,
                 },
             ]
+            this.createSharedContext = Number.isFinite(sharedRuleId) && sharedRuleId > 0 && Number.isFinite(sharedNodeId) && sharedNodeId > 0
+                ? {
+                    ruleId: sharedRuleId,
+                    nodeId: sharedNodeId,
+                    nodeLevel: sharedNodeLevel,
+                }
+                : null
             this.createClassificationEditorVisible = true
             this.createDialogOpen = true
         },
@@ -2354,6 +2369,10 @@ export default {
                     })
                 }
 
+                if (Number(response?.status || 0) === 204) {
+                    return true
+                }
+
                 return response?.data?.data ?? response?.data ?? null
             } catch (error) {
                 notification.notify({
@@ -2377,6 +2396,42 @@ export default {
                 },
                 successMessage: 'Materialkarte aktualisiert.',
                 errorMessage: 'Fehler beim Aktualisieren der Materialkarte.',
+            })
+        },
+        sharedCreateMaterialEndpoint(context) {
+            const level = String(context?.nodeLevel || '').trim()
+            const nodeId = Number(context?.nodeId || 0)
+            if (!Number.isFinite(nodeId) || nodeId <= 0) return ''
+            if (level === 'subject') return `/api/admin/materials/shares/inbox/subjects/${nodeId}/materials`
+            if (level === 'topic') return `/api/admin/materials/shares/inbox/topics/${nodeId}/materials`
+            if (level === 'unit') return `/api/admin/materials/shares/inbox/units/${nodeId}/materials`
+            return ''
+        },
+        async createSharedMaterial(context, data) {
+            const url = this.sharedCreateMaterialEndpoint(context)
+            if (url === '') return null
+
+            return this.performSharedInboxMutation({
+                method: 'post',
+                url,
+                data: {
+                    rule_id: Number(context?.ruleId || 0),
+                    data,
+                },
+                successMessage: 'Material erstellt.',
+                errorMessage: 'Fehler beim Erstellen des Materials.',
+            })
+        },
+        async deleteSharedMaterial(context) {
+            return this.performSharedInboxMutation({
+                method: 'delete',
+                url: '/api/admin/materials/shares/inbox/material-detail',
+                data: {
+                    rule_id: Number(context?.ruleId || 0),
+                    material_id: Number(context?.materialId || 0),
+                },
+                successMessage: 'Material gelöscht.',
+                errorMessage: 'Fehler beim Löschen des Materials.',
             })
         },
         async addSharedLinkAttachment(context, data) {
@@ -2471,6 +2526,18 @@ export default {
                 },
                 successMessage: 'Anhang umbenannt.',
                 errorMessage: 'Fehler beim Umbenennen des Anhangs.',
+            })
+        },
+        async deleteSharedAttachment(context, attachmentId) {
+            return this.performSharedInboxMutation({
+                method: 'delete',
+                url: `/api/admin/materials/shares/inbox/material-attachments/${Number(attachmentId || 0)}`,
+                data: {
+                    rule_id: Number(context?.ruleId || 0),
+                    material_id: Number(context?.materialId || 0),
+                },
+                successMessage: 'Anhang gelöscht.',
+                errorMessage: 'Fehler beim Löschen des Anhangs.',
             })
         },
         async fetchSharedTextAttachmentContent(context, attachmentId) {
@@ -2633,6 +2700,9 @@ export default {
                 ...this.subjectsTreeExpandedSharedItems,
                 [key]: this.subjectsTreeExpandedSharedItems[key] !== true,
             }
+        },
+        async refreshSharedStructureTree() {
+            await this.loadSharedObjectsForMe()
         },
         canExpandSharedHierarchy(item) {
             return Array.isArray(item?.hierarchy) && item.hierarchy.length > 0
@@ -4312,6 +4382,7 @@ export default {
             this.createDialogOpen = false
             this.createClassificationEditorVisible = false
             this.createForm = createDefaultEditForm()
+            this.createSharedContext = null
             this.createForm.status = this.defaultStatusValue
         },
         async startEditDeleteFlow() {
@@ -4330,6 +4401,18 @@ export default {
             this.editDeleteConfirmAttachmentRows = this.toAttachmentRows(this.attachmentRows)
 
             try {
+                const sharedContext = this.sharedInboxContextForCard(this.editForm)
+                if (sharedContext && this.isEditSharedInboxMaterial) {
+                    const selectedCard = await this.fetchSharedMaterialDetail(sharedContext.ruleId, sharedContext.materialId)
+                    if (!selectedCard) return
+                    if (!this.editDeleteConfirmDialogOpen) return
+                    if (Number(this.editForm?.id) !== cardId) return
+
+                    this.editDeleteConfirmMaterialTitle = String(selectedCard?.title || '').trim()
+                    this.editDeleteConfirmAttachmentRows = this.toAttachmentRows(selectedCard?.attachments)
+                    return
+                }
+
                 const loaded = await this.materialCardStore.show(cardId)
                 if (!loaded) return
                 if (!this.editDeleteConfirmDialogOpen) return
@@ -4437,7 +4520,10 @@ export default {
             if (!this.canEditLinkedDeleteMaterial) return
 
             this.isDeletingId = cardId
-            const deleted = await this.materialCardStore.destroy(cardId)
+            const sharedContext = this.sharedInboxContextForCard(this.editForm)
+            const deleted = sharedContext && this.isEditSharedInboxMaterial
+                ? await this.deleteSharedMaterial(sharedContext)
+                : await this.materialCardStore.destroy(cardId)
             this.isDeletingId = null
             this.editDeleteStep = 0
             this.editDeleteConfirmDialogOpen = false
@@ -4446,7 +4532,11 @@ export default {
             if (deleted) {
                 await this.closeEditDialog(false)
                 await this.loadCards(null, { forceFilterCountRefresh: true })
-                await this.refreshLastDeletedMaterialRestoreInfo()
+                if (sharedContext && this.isEditSharedInboxMaterial) {
+                    await this.loadSharedObjectsForMe()
+                } else {
+                    await this.refreshLastDeletedMaterialRestoreInfo()
+                }
             }
         },
         async closeEditDialog(restoreDetail = true) {
@@ -4607,39 +4697,76 @@ export default {
             this.isSavingCreate = true
             const title = String(this.createForm.title || '').trim()
             const classifications = this.normalizeClassifications(this.createForm.classifications)
+            const sharedCreateContext = this.createSharedContext
+                && Number(this.createSharedContext?.ruleId || 0) > 0
+                && Number(this.createSharedContext?.nodeId || 0) > 0
+                ? {
+                    ruleId: Number(this.createSharedContext.ruleId),
+                    nodeId: Number(this.createSharedContext.nodeId),
+                    nodeLevel: String(this.createSharedContext.nodeLevel || '').trim(),
+                }
+                : null
 
-            const saved = await this.materialCardStore.quickStore({
+            const payload = {
                 title,
                 source_text: this.toNullable(this.createForm.description),
                 type: this.toNullable(this.createForm.type),
                 status: this.toNullable(this.createForm.status) || this.defaultStatusValue,
                 classifications,
-            })
+            }
+            const saved = sharedCreateContext
+                ? await this.createSharedMaterial(sharedCreateContext, payload)
+                : await this.materialCardStore.quickStore(payload)
 
             if (saved?.id) {
+                const sharedAttachmentContext = sharedCreateContext
+                    ? {
+                        ruleId: Number(sharedCreateContext.ruleId),
+                        materialId: Number(saved?.shared_material_id || saved?.id || 0),
+                    }
+                    : null
                 const pendingAttachments = this.toPendingAttachments(this.createForm.pendingAttachments)
                 for (const attachment of pendingAttachments) {
                     if (attachment.attachmentType === 'link' && this.normalizeUrl(attachment.url)) {
                         const normalizedUrl = this.normalizeUrl(attachment.url)
                         const normalizedName = this.toNullable(attachment.title) || this.defaultLinkTitle(attachment.url)
-                        await this.materialCardStore.addLinkAttachment(saved.id, {
-                            url: normalizedUrl,
-                            name: normalizedName,
-                        })
+                        if (sharedAttachmentContext) {
+                            await this.addSharedLinkAttachment(sharedAttachmentContext, {
+                                url: normalizedUrl,
+                                name: normalizedName,
+                            })
+                        } else {
+                            await this.materialCardStore.addLinkAttachment(saved.id, {
+                                url: normalizedUrl,
+                                name: normalizedName,
+                            })
+                        }
 
                         if (attachment.storeImageFile === true) {
-                            await this.materialCardStore.addImageUrlAttachment(saved.id, normalizedUrl, normalizedName)
+                            if (sharedAttachmentContext) {
+                                await this.addSharedImageUrlAttachment(sharedAttachmentContext, normalizedUrl, normalizedName)
+                            } else {
+                                await this.materialCardStore.addImageUrlAttachment(saved.id, normalizedUrl, normalizedName)
+                            }
                         }
                         continue
                     }
 
                     if (attachment.tempUpload) {
-                        await this.materialCardStore.addTempFileAttachment(saved.id, attachment.tempUpload, this.toNullable(attachment.title) || attachment.fileName || '')
+                        if (sharedAttachmentContext) {
+                            await this.addSharedTempFileAttachment(sharedAttachmentContext, attachment.tempUpload, this.toNullable(attachment.title) || attachment.fileName || '')
+                        } else {
+                            await this.materialCardStore.addTempFileAttachment(saved.id, attachment.tempUpload, this.toNullable(attachment.title) || attachment.fileName || '')
+                        }
                         continue
                     }
 
                     if (attachment.file instanceof File) {
-                        await this.materialCardStore.addFileAttachment(saved.id, attachment.file, this.toNullable(attachment.title) || attachment.file.name || '')
+                        if (sharedAttachmentContext) {
+                            await this.addSharedFileAttachment(sharedAttachmentContext, attachment.file, this.toNullable(attachment.title) || attachment.file.name || '')
+                        } else {
+                            await this.materialCardStore.addFileAttachment(saved.id, attachment.file, this.toNullable(attachment.title) || attachment.file.name || '')
+                        }
                     }
                 }
             }
@@ -4647,6 +4774,9 @@ export default {
             this.isSavingCreate = false
 
             if (saved) {
+                if (sharedCreateContext) {
+                    await this.loadSharedObjectsForMe()
+                }
                 await this.closeCreateDialog()
                 await this.loadCards(null, { forceFilterCountRefresh: true })
             }
@@ -5578,7 +5708,10 @@ ${content}
             this.markAttachmentDeleting(id, true)
 
             try {
-                const deleted = await this.materialCardStore.deleteAttachment(id, cardId)
+                const sharedContext = this.sharedInboxContextForAttachment(row)
+                const deleted = sharedContext
+                    ? await this.deleteSharedAttachment(sharedContext, id)
+                    : await this.materialCardStore.deleteAttachment(id, cardId)
                 if (!deleted) return
 
                 this.attachmentRows = this.attachmentRows.filter((item) => item.id !== id)

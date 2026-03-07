@@ -641,6 +641,356 @@ test('inbox read write link attachment stores on the original source material', 
     ]);
 });
 
+test('inbox full access material delete removes the original source material', function () {
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'creator-full-access-delete@test.local',
+    ]);
+
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Löschbares Material',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_MATERIAL,
+        'scope_id' => $sourceCard->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
+    ]);
+
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $this->deleteJson('/api/admin/materials/shares/inbox/material-detail', [
+        'rule_id' => (int) $rule->id,
+        'material_id' => (int) $sourceCard->id,
+    ])->assertNoContent();
+
+    $this->assertSoftDeleted($sourceCard);
+
+    $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertOk()
+        ->assertJsonMissing([
+            'id' => (int) $sourceCard->id,
+            'title' => 'Löschbares Material',
+        ]);
+});
+
+test('inbox full access attachment delete removes the original source attachment', function () {
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'creator-full-access-attachment-delete@test.local',
+    ]);
+
+    Storage::fake(config('filesystems.default', 'local'));
+
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Material mit Anhang',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+
+    $attachmentPath = 'materials/test/anhaenge/aufgabe.pdf';
+    Storage::disk(config('filesystems.default', 'local'))->put($attachmentPath, 'pdf-content');
+
+    $attachment = MaterialCardAttachment::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'Aufgabe',
+        'file_path' => $attachmentPath,
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 11,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_MATERIAL,
+        'scope_id' => $sourceCard->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
+    ]);
+
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $this->deleteJson('/api/admin/materials/shares/inbox/material-attachments/'.$attachment->id, [
+        'rule_id' => (int) $rule->id,
+        'material_id' => (int) $sourceCard->id,
+    ])->assertNoContent();
+
+    $this->assertDatabaseMissing('material_card_attachments', [
+        'id' => (int) $attachment->id,
+    ]);
+    Storage::disk(config('filesystems.default', 'local'))->assertMissing($attachmentPath);
+});
+
+test('inbox full access creates original materials under subject topic and unit', function () {
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'creator-full-access-create@test.local',
+    ]);
+
+    $workspace = MaterialWorkspace::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Geteilter Fachraum',
+        'is_default' => true,
+    ]);
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'workspace_id' => $workspace->id,
+        'name' => 'Mathematik',
+    ]);
+    $topic = MaterialTopic::query()->create([
+        'subject_id' => $subject->id,
+        'name' => 'Algebra',
+    ]);
+    $unit = MaterialUnit::query()->create([
+        'topic_id' => $topic->id,
+        'name' => 'Lineare Gleichungen',
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_SUBJECT,
+        'scope_id' => $subject->id,
+        'workspace_id' => $workspace->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
+    ]);
+
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $this->postJson('/api/admin/materials/shares/inbox/subjects/'.$subject->id.'/materials', [
+        'rule_id' => (int) $rule->id,
+        'data' => [
+            'title' => 'Fachmaterial',
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.title', 'Fachmaterial')
+        ->assertJsonPath('data.shared_rule_id', (int) $rule->id)
+        ->assertJsonPath('data.classifications.0.subject', 'Mathematik')
+        ->assertJsonPath('data.classifications.0.topic', '')
+        ->assertJsonPath('data.classifications.0.unit', '');
+
+    $this->postJson('/api/admin/materials/shares/inbox/topics/'.$topic->id.'/materials', [
+        'rule_id' => (int) $rule->id,
+        'data' => [
+            'title' => 'Themamaterial',
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.title', 'Themamaterial')
+        ->assertJsonPath('data.classifications.0.subject', 'Mathematik')
+        ->assertJsonPath('data.classifications.0.topic', 'Algebra')
+        ->assertJsonPath('data.classifications.0.unit', '');
+
+    $this->postJson('/api/admin/materials/shares/inbox/units/'.$unit->id.'/materials', [
+        'rule_id' => (int) $rule->id,
+        'data' => [
+            'title' => 'Bereichsmaterial',
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.title', 'Bereichsmaterial')
+        ->assertJsonPath('data.classifications.0.subject', 'Mathematik')
+        ->assertJsonPath('data.classifications.0.topic', 'Algebra')
+        ->assertJsonPath('data.classifications.0.unit', 'Lineare Gleichungen');
+
+    $cards = MaterialCard::query()
+        ->where('user_id', $creator->id)
+        ->where('workspace_id', $workspace->id)
+        ->whereIn('title', ['Fachmaterial', 'Themamaterial', 'Bereichsmaterial'])
+        ->with(['classifications.subject', 'classifications.topic', 'classifications.unit'])
+        ->orderBy('title')
+        ->get();
+
+    expect($cards)->toHaveCount(3);
+    expect($cards->pluck('title')->all())->toEqual(['Bereichsmaterial', 'Fachmaterial', 'Themamaterial']);
+    expect((string) ($cards[0]->classifications->first()?->unit?->name ?? ''))->toBe('Lineare Gleichungen');
+    expect((string) ($cards[1]->classifications->first()?->subject?->name ?? ''))->toBe('Mathematik');
+    expect((string) ($cards[1]->classifications->first()?->topic?->name ?? ''))->toBe('');
+    expect((string) ($cards[2]->classifications->first()?->topic?->name ?? ''))->toBe('Algebra');
+});
+
+test('inbox full access subject topic and unit rename update the original hierarchy', function () {
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'creator-full-access-structure@test.local',
+    ]);
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Mathematik',
+    ]);
+    $topic = MaterialTopic::query()->create([
+        'subject_id' => $subject->id,
+        'name' => 'Algebra',
+    ]);
+    $unit = MaterialUnit::query()->create([
+        'topic_id' => $topic->id,
+        'name' => 'Lineare Gleichungen',
+    ]);
+
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Ausgangsmaterial',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => $unit->id,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_SUBJECT,
+        'scope_id' => $subject->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
+    ]);
+
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $this->putJson('/api/admin/materials/shares/inbox/subjects/'.$subject->id, [
+        'rule_id' => (int) $rule->id,
+        'data' => [
+            'name' => 'Neue Mathematik',
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.id', (int) $subject->id)
+        ->assertJsonPath('data.name', 'Neue Mathematik');
+
+    $this->putJson('/api/admin/materials/shares/inbox/topics/'.$topic->id, [
+        'rule_id' => (int) $rule->id,
+        'data' => [
+            'name' => 'Neue Algebra',
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.id', (int) $topic->id)
+        ->assertJsonPath('data.name', 'Neue Algebra');
+
+    $this->putJson('/api/admin/materials/shares/inbox/units/'.$unit->id, [
+        'rule_id' => (int) $rule->id,
+        'data' => [
+            'name' => 'Neue Lineare Gleichungen',
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.id', (int) $unit->id)
+        ->assertJsonPath('data.name', 'Neue Lineare Gleichungen');
+
+    $subject->refresh();
+    $topic->refresh();
+    $unit->refresh();
+
+    expect((string) $subject->name)->toBe('Neue Mathematik');
+    expect((string) $topic->name)->toBe('Neue Algebra');
+    expect((string) $unit->name)->toBe('Neue Lineare Gleichungen');
+
+    $inbox = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertOk();
+
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.0.name'))->toBe('Neue Mathematik');
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.0.topics.0.name'))->toBe('Neue Algebra');
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.0.topics.0.units.0.name'))->toBe('Neue Lineare Gleichungen');
+});
+
+test('inbox full access deletes empty source subject topic and unit', function () {
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'creator-full-access-delete@test.local',
+    ]);
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Leeres Fach',
+    ]);
+    $topic = MaterialTopic::query()->create([
+        'subject_id' => $subject->id,
+        'name' => 'Leeres Thema',
+    ]);
+    $unit = MaterialUnit::query()->create([
+        'topic_id' => $topic->id,
+        'name' => 'Leerer Bereich',
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_SUBJECT,
+        'scope_id' => $subject->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
+    ]);
+
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $this->deleteJson('/api/admin/materials/shares/inbox/units/'.$unit->id, [
+        'rule_id' => (int) $rule->id,
+    ])->assertNoContent();
+
+    $this->deleteJson('/api/admin/materials/shares/inbox/topics/'.$topic->id, [
+        'rule_id' => (int) $rule->id,
+    ])->assertNoContent();
+
+    $this->deleteJson('/api/admin/materials/shares/inbox/subjects/'.$subject->id, [
+        'rule_id' => (int) $rule->id,
+    ])->assertNoContent();
+
+    expect(MaterialUnit::query()->find($unit->id))->toBeNull();
+    expect(MaterialTopic::query()->find($topic->id))->toBeNull();
+    expect(MaterialSubject::query()->find($subject->id))->toBeNull();
+
+    $inbox = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertOk();
+
+    expect($inbox->json('data.0.shared_items.0.hierarchy'))->toBe([]);
+});
+
 test('inbox shared preview and download work when attachment exists on public disk fallback', function () {
     $creator = User::factory()->create([
         'school_id' => $this->school->id,

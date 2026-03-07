@@ -1,7 +1,17 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/vue'
+import axios from 'axios'
 import MaterialsSubjectsContentsTree from '@/pages/admin/materials/components/overview/MaterialsSubjectsContentsTree.vue'
 import { defineComponent } from 'vue'
+
+vi.mock('axios', () => ({
+    default: {
+        put: vi.fn(),
+        delete: vi.fn(),
+    },
+}))
+
+const axiosMock = vi.mocked(axios, true)
 
 const vuetifyStubs = {
     'v-btn': {
@@ -16,6 +26,66 @@ const vuetifyStubs = {
     VChip: { template: '<span><slot /></span>' },
     'v-icon': { template: '<i><slot /></i>' },
     VIcon: { template: '<i><slot /></i>' },
+    'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+    VDialog: { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+    'v-card': { template: '<div><slot /></div>' },
+    VCard: { template: '<div><slot /></div>' },
+    'v-card-title': { template: '<div><slot /></div>' },
+    VCardTitle: { template: '<div><slot /></div>' },
+    'v-card-text': { template: '<div><slot /></div>' },
+    VCardText: { template: '<div><slot /></div>' },
+    'v-card-actions': { template: '<div><slot /></div>' },
+    VCardActions: { template: '<div><slot /></div>' },
+    'v-text-field': {
+        props: ['modelValue', 'label', 'disabled', 'errorMessages'],
+        emits: ['update:modelValue', 'blur'],
+        computed: {
+            normalizedErrorMessages() {
+                if (Array.isArray(this.errorMessages)) {
+                    return this.errorMessages
+                }
+
+                const text = String(this.errorMessages || '').trim()
+                return text !== '' ? [text] : []
+            },
+        },
+        template: `
+            <div>
+                <input
+                    :aria-label="label"
+                    :value="modelValue"
+                    :disabled="disabled"
+                    @input="$emit('update:modelValue', $event.target.value)"
+                    @blur="$emit('blur', $event)" />
+                <div v-for="message in normalizedErrorMessages" :key="message">{{ message }}</div>
+            </div>
+        `,
+    },
+    VTextField: {
+        props: ['modelValue', 'label', 'disabled', 'errorMessages'],
+        emits: ['update:modelValue', 'blur'],
+        computed: {
+            normalizedErrorMessages() {
+                if (Array.isArray(this.errorMessages)) {
+                    return this.errorMessages
+                }
+
+                const text = String(this.errorMessages || '').trim()
+                return text !== '' ? [text] : []
+            },
+        },
+        template: `
+            <div>
+                <input
+                    :aria-label="label"
+                    :value="modelValue"
+                    :disabled="disabled"
+                    @input="$emit('update:modelValue', $event.target.value)"
+                    @blur="$emit('blur', $event)" />
+                <div v-for="message in normalizedErrorMessages" :key="message">{{ message }}</div>
+            </div>
+        `,
+    },
 }
 
 function renderTree(
@@ -104,6 +174,11 @@ function renderTree(
 }
 
 describe('MaterialsSubjectsContentsTree', () => {
+    beforeEach(() => {
+        axiosMock.put.mockReset()
+        axiosMock.delete.mockReset()
+    })
+
     it('collapses and expands the workspace contents', async () => {
         const { container } = renderTree([
             {
@@ -384,6 +459,227 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(screen.getByText('Fachmaterial')).toBeInTheDocument()
         expect(screen.getByText('Themamaterial')).toBeInTheDocument()
         expect(screen.getByText('Einheitsmaterial')).toBeInTheDocument()
+    })
+
+    it('shows full-access create and edit actions and delete actions only for empty shared branches', async () => {
+        const { emitted } = renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [],
+            },
+        ], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 93,
+                    scopeObjectLabel: 'Alle Materialien',
+                    scopePathLabel: 'Workspace A',
+                    permission: 'full_access',
+                    permissionLabel: 'VOLLZUGRIFF',
+                    fromUserLabel: 'Lehrer Eins',
+                    materialsCount: 1,
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Mathematik',
+                            materials: [
+                                {
+                                    id: 101,
+                                    title: 'Fachmaterial',
+                                    status: 'inbox',
+                                    statusLabel: 'Neu/Idee',
+                                    attachmentsCount: 0,
+                                },
+                            ],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Leeres Thema',
+                                    materials: [],
+                                    units: [
+                                        {
+                                            id: 30,
+                                            name: 'Leerer Bereich',
+                                            materials: [],
+                                        },
+                                    ],
+                                },
+                                {
+                                    id: 21,
+                                    name: 'Thema mit Material',
+                                    materials: [
+                                        {
+                                            id: 102,
+                                            title: 'Themamaterial',
+                                            status: 'done',
+                                            statusLabel: 'Erledigt',
+                                            attachmentsCount: 0,
+                                        },
+                                    ],
+                                    units: [],
+                                },
+                            ],
+                        },
+                        {
+                            id: 11,
+                            name: 'Leeres Fach',
+                            materials: [],
+                            topics: [],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+
+        expect(screen.getAllByTitle(/Neues Material in/i)).toHaveLength(5)
+        expect(screen.getAllByTitle(/bearbeiten$/i)).toHaveLength(5)
+        expect(screen.getByTitle('Fach löschen')).toBeInTheDocument()
+        expect(screen.getByTitle('Thema löschen')).toBeInTheDocument()
+        expect(screen.getByTitle('Bereich löschen')).toBeInTheDocument()
+
+        const deleteButtons = screen.getAllByTitle(/löschen$/i)
+        expect(deleteButtons).toHaveLength(3)
+
+        await fireEvent.click(screen.getAllByTitle('Neues Material in Thema anlegen')[0])
+
+        const openCreateEvents = emitted('open-create') || []
+        expect(openCreateEvents).toHaveLength(1)
+        expect((openCreateEvents[0]?.[0] as any)?.sharedRuleId).toBe(93)
+        expect((openCreateEvents[0]?.[0] as any)?.sharedNodeLevel).toBe('topic')
+        expect((openCreateEvents[0]?.[0] as any)?.sharedNodeId).toBe(20)
+        expect((openCreateEvents[0]?.[0] as any)?.subject).toBe('Mathematik')
+        expect((openCreateEvents[0]?.[0] as any)?.topic).toBe('Leeres Thema')
+    })
+
+    it('opens a persistent shared rename dialog, validates the title, and updates the visible name', async () => {
+        axiosMock.put.mockResolvedValue({
+            data: {
+                data: {
+                    id: 10,
+                    name: 'Neue Mathematik',
+                },
+            },
+        })
+
+        renderTree([
+            {
+                id: 1,
+                name: 'Lokales Fach',
+                materials: [],
+                topics: [],
+            },
+        ], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 94,
+                    scopeObjectLabel: 'Alle Materialien',
+                    scopePathLabel: 'Workspace A',
+                    permission: 'full_access',
+                    permissionLabel: 'VOLLZUGRIFF',
+                    fromUserLabel: 'Lehrer Eins',
+                    materialsCount: 0,
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Mathematik',
+                            materials: [],
+                            topics: [],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+        await fireEvent.click(screen.getByTitle('Fach bearbeiten'))
+
+        expect(screen.getByText('Fach umbenennen')).toBeInTheDocument()
+
+        const input = screen.getByRole('textbox', { name: 'Titel' })
+
+        await fireEvent.update(input, '')
+        await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+
+        expect(screen.getByText('Es muss etwas eingegeben werden.')).toBeInTheDocument()
+        expect(screen.getByText('Fach umbenennen')).toBeInTheDocument()
+
+        await fireEvent.update(input, 'x'.repeat(256))
+        await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+
+        expect(screen.getByText('Die Eingabe ist zu lang (max. 255 Zeichen)')).toBeInTheDocument()
+        expect(screen.getByText('Fach umbenennen')).toBeInTheDocument()
+
+        await fireEvent.update(input, 'Neue Mathematik')
+        await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+
+        expect(axiosMock.put).toHaveBeenCalledTimes(1)
+        expect(axiosMock.put).toHaveBeenCalledWith('/api/admin/materials/shares/inbox/subjects/10', {
+            rule_id: 94,
+            data: {
+                name: 'Neue Mathematik',
+            },
+        })
+        expect(screen.queryByText('Fach umbenennen')).not.toBeInTheDocument()
+        expect(screen.getByText('Neue Mathematik')).toBeInTheDocument()
+    })
+
+    it('opens a persistent shared delete dialog and deletes the original empty node', async () => {
+        axiosMock.delete.mockResolvedValue({
+            data: {},
+        })
+
+        renderTree([
+            {
+                id: 1,
+                name: 'Lokales Fach',
+                materials: [],
+                topics: [],
+            },
+        ], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 95,
+                    scopeObjectLabel: 'Alle Materialien',
+                    scopePathLabel: 'Workspace A',
+                    permission: 'full_access',
+                    permissionLabel: 'VOLLZUGRIFF',
+                    fromUserLabel: 'Lehrer Eins',
+                    materialsCount: 0,
+                    hierarchy: [
+                        {
+                            id: 11,
+                            name: 'Leeres Fach',
+                            materials: [],
+                            topics: [],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+        await fireEvent.click(screen.getByTitle('Fach löschen'))
+
+        const dialog = screen.getByText('Wirklich löschen? Das ist nur möglich, wenn keine Materialien zugeordnet sind.').closest('div')
+        expect(screen.getByText('Fach löschen')).toBeInTheDocument()
+        expect(screen.getAllByText('Leeres Fach')).toHaveLength(2)
+        expect(dialog).not.toBeNull()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Löschen' }))
+
+        expect(axiosMock.delete).toHaveBeenCalledTimes(1)
+        expect(axiosMock.delete).toHaveBeenCalledWith('/api/admin/materials/shares/inbox/subjects/11', {
+            data: {
+                rule_id: 95,
+            },
+        })
+        expect(screen.queryByText('Wirklich löschen? Das ist nur möglich, wenn keine Materialien zugeordnet sind.')).not.toBeInTheDocument()
     })
 
     it('renders linked permission chip on a linked topic', () => {

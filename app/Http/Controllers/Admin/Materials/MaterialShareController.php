@@ -7,9 +7,13 @@ use App\Http\Requests\Admin\Materials\MaterialCardAttachmentTextUpdateRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardAttachmentUpdateRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardFileAttachmentStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardLinkAttachmentStoreRequest;
+use App\Http\Requests\Admin\Materials\MaterialCardQuickStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardRemoteImageAttachmentStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardTempAttachmentStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardUpdateRequest;
+use App\Http\Requests\Admin\Materials\MaterialSubjectUpdateRequest;
+use App\Http\Requests\Admin\Materials\MaterialTopicUpdateRequest;
+use App\Http\Requests\Admin\Materials\MaterialUnitUpdateRequest;
 use App\Models\Import116;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
@@ -338,6 +342,300 @@ class MaterialShareController extends Controller
         ], 200);
     }
 
+    public function destroyInboxMaterialDetail(Request $request, MaterialService $service)
+    {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'material_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $materialId = (int) ($data['material_id'] ?? 0);
+        $context = $this->resolveInboxAccessContext($authUser, $ruleId, $materialId);
+        $permission = (string) ($context['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY);
+        $this->assertInboxPermissionAllowsMaterialDelete($permission);
+
+        /** @var MaterialCard $sourceCard */
+        $sourceCard = $context['source_card'];
+        $service->deleteCard($sourceCard);
+
+        return response()->noContent();
+    }
+
+    public function updateInboxSubject(
+        MaterialSubjectUpdateRequest $request,
+        MaterialSubject $material_subject,
+        MaterialService $service
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $context = $this->resolveInboxSubjectAccessContext($authUser, $ruleId, $material_subject);
+        $validated = $request->validated()['data'];
+
+        /** @var User $sourceOwner */
+        $sourceOwner = $context['source_owner'];
+        $subject = $service->updateSubject(
+            $sourceOwner,
+            $material_subject,
+            (string) ($validated['name'] ?? '')
+        );
+
+        return response()->json([
+            'data' => [
+                'id' => (int) $subject->id,
+                'name' => (string) $subject->name,
+            ],
+        ], 200);
+    }
+
+    public function updateInboxTopic(
+        MaterialTopicUpdateRequest $request,
+        MaterialTopic $material_topic,
+        MaterialService $service
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $context = $this->resolveInboxTopicAccessContext($authUser, $ruleId, $material_topic);
+        $validated = $request->validated()['data'];
+
+        /** @var User $sourceOwner */
+        $sourceOwner = $context['source_owner'];
+        $topic = $service->updateTopic(
+            $sourceOwner,
+            $material_topic,
+            (string) ($validated['name'] ?? '')
+        );
+
+        return response()->json([
+            'data' => [
+                'id' => (int) $topic->id,
+                'name' => (string) $topic->name,
+                'subject_id' => (int) $topic->subject_id,
+            ],
+        ], 200);
+    }
+
+    public function updateInboxUnit(
+        MaterialUnitUpdateRequest $request,
+        MaterialUnit $material_unit,
+        MaterialService $service
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $context = $this->resolveInboxUnitAccessContext($authUser, $ruleId, $material_unit);
+        $validated = $request->validated()['data'];
+
+        /** @var User $sourceOwner */
+        $sourceOwner = $context['source_owner'];
+        $unit = $service->updateUnit(
+            $sourceOwner,
+            $material_unit,
+            (string) ($validated['name'] ?? '')
+        );
+
+        return response()->json([
+            'data' => [
+                'id' => (int) $unit->id,
+                'name' => (string) $unit->name,
+                'topic_id' => (int) $unit->topic_id,
+            ],
+        ], 200);
+    }
+
+    public function destroyInboxSubject(
+        Request $request,
+        MaterialSubject $material_subject,
+        MaterialService $service
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $context = $this->resolveInboxSubjectAccessContext($authUser, $ruleId, $material_subject);
+
+        /** @var User $sourceOwner */
+        $sourceOwner = $context['source_owner'];
+        $service->deleteSubject($sourceOwner, $material_subject);
+
+        return response()->noContent();
+    }
+
+    public function destroyInboxTopic(
+        Request $request,
+        MaterialTopic $material_topic,
+        MaterialService $service
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $context = $this->resolveInboxTopicAccessContext($authUser, $ruleId, $material_topic);
+
+        /** @var User $sourceOwner */
+        $sourceOwner = $context['source_owner'];
+        $service->deleteTopic($sourceOwner, $material_topic);
+
+        return response()->noContent();
+    }
+
+    public function destroyInboxUnit(
+        Request $request,
+        MaterialUnit $material_unit,
+        MaterialService $service
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $context = $this->resolveInboxUnitAccessContext($authUser, $ruleId, $material_unit);
+
+        /** @var User $sourceOwner */
+        $sourceOwner = $context['source_owner'];
+        $service->deleteUnit($sourceOwner, $material_unit);
+
+        return response()->noContent();
+    }
+
+    public function storeInboxSubjectMaterial(
+        MaterialCardQuickStoreRequest $request,
+        MaterialSubject $material_subject,
+        MaterialService $service
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $context = $this->resolveInboxSubjectAccessContext($authUser, $ruleId, $material_subject);
+        $permission = (string) ($context['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY);
+        $validated = $request->validated()['data'];
+        $validated['classifications'] = $this->subjectClassificationPayload($material_subject);
+
+        /** @var User $sourceOwner */
+        $sourceOwner = $context['source_owner'];
+        $createdCard = $service->createCard(
+            $sourceOwner,
+            $validated,
+            (int) ($material_subject->workspace_id ?? 0)
+        );
+
+        return response()->json([
+            'data' => $this->serializeInboxMaterialDetail($createdCard, $ruleId, $permission),
+        ], 200);
+    }
+
+    public function storeInboxTopicMaterial(
+        MaterialCardQuickStoreRequest $request,
+        MaterialTopic $material_topic,
+        MaterialService $service
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $context = $this->resolveInboxTopicAccessContext($authUser, $ruleId, $material_topic);
+        $permission = (string) ($context['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY);
+        $validated = $request->validated()['data'];
+        $validated['classifications'] = $this->topicClassificationPayload($material_topic);
+
+        $subject = $material_topic->subject()->first();
+        if (! $subject instanceof MaterialSubject) {
+            abort(404, 'Fach wurde nicht gefunden.');
+        }
+
+        /** @var User $sourceOwner */
+        $sourceOwner = $context['source_owner'];
+        $createdCard = $service->createCard(
+            $sourceOwner,
+            $validated,
+            (int) ($subject->workspace_id ?? 0)
+        );
+
+        return response()->json([
+            'data' => $this->serializeInboxMaterialDetail($createdCard, $ruleId, $permission),
+        ], 200);
+    }
+
+    public function storeInboxUnitMaterial(
+        MaterialCardQuickStoreRequest $request,
+        MaterialUnit $material_unit,
+        MaterialService $service
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $context = $this->resolveInboxUnitAccessContext($authUser, $ruleId, $material_unit);
+        $permission = (string) ($context['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY);
+        $validated = $request->validated()['data'];
+        $validated['classifications'] = $this->unitClassificationPayload($material_unit);
+
+        $subject = $material_unit->topic?->subject;
+        if (! $subject instanceof MaterialSubject) {
+            $material_unit->loadMissing('topic.subject');
+            $subject = $material_unit->topic?->subject;
+        }
+        if (! $subject instanceof MaterialSubject) {
+            abort(404, 'Fach wurde nicht gefunden.');
+        }
+
+        /** @var User $sourceOwner */
+        $sourceOwner = $context['source_owner'];
+        $createdCard = $service->createCard(
+            $sourceOwner,
+            $validated,
+            (int) ($subject->workspace_id ?? 0)
+        );
+
+        return response()->json([
+            'data' => $this->serializeInboxMaterialDetail($createdCard, $ruleId, $permission),
+        ], 200);
+    }
+
     public function storeInboxLinkAttachment(MaterialCardLinkAttachmentStoreRequest $request, MaterialService $service)
     {
         $authUser = $this->materialsShareUser();
@@ -487,6 +785,35 @@ class MaterialShareController extends Controller
         return response()->json([
             'data' => $this->serializeInboxAttachment($attachment->fresh(), $ruleId, $materialId),
         ], 200);
+    }
+
+    public function destroyInboxAttachment(
+        Request $request,
+        MaterialCardAttachment $material_card_attachment,
+        MaterialService $service
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'material_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $materialId = (int) ($data['material_id'] ?? 0);
+        $context = $this->resolveInboxAccessContext($authUser, $ruleId, $materialId);
+        $this->assertInboxPermissionAllowsAttachmentDelete((string) ($context['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY));
+
+        /** @var MaterialCard $sourceCard */
+        $sourceCard = $context['source_card'];
+        if ((int) ($material_card_attachment->material_card_id ?? 0) !== (int) $sourceCard->id) {
+            abort(404, 'Anhang wurde nicht gefunden.');
+        }
+
+        $service->deleteAttachment($material_card_attachment);
+
+        return response()->noContent();
     }
 
     public function inboxTextAttachmentContent(
@@ -1168,15 +1495,9 @@ class MaterialShareController extends Controller
 
     private function resolveInboxAccessContext(User $authUser, int $ruleId, int $materialId): array
     {
-        $authUserId = (int) $authUser->id;
-        $authSchoolId = (int) $authUser->school_id;
-        $memberGroupIds = $this->memberGroupIdsForUser($authUserId);
-
-        $rule = $this->resolveAccessibleInboxRule($ruleId, $authUserId, $authSchoolId, $memberGroupIds);
-        if (! $rule) {
-            abort(404, 'Freigabe wurde nicht gefunden.');
-        }
-
+        $ruleContext = $this->resolveInboxRuleAccessContext($authUser, $ruleId);
+        /** @var MaterialShareRule $rule */
+        $rule = $ruleContext['rule'];
         $sourceCard = $this->resolveInboxSourceCardForRule($rule, $materialId);
         if (! $sourceCard) {
             throw ValidationException::withMessages([
@@ -1187,7 +1508,92 @@ class MaterialShareController extends Controller
         return [
             'rule' => $rule,
             'source_card' => $sourceCard,
+            'permission' => (string) ($ruleContext['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY),
+        ];
+    }
+
+    private function resolveInboxRuleAccessContext(User $authUser, int $ruleId): array
+    {
+        $authUserId = (int) $authUser->id;
+        $authSchoolId = (int) $authUser->school_id;
+        $memberGroupIds = $this->memberGroupIdsForUser($authUserId);
+
+        $rule = $this->resolveAccessibleInboxRule($ruleId, $authUserId, $authSchoolId, $memberGroupIds);
+        if (! $rule) {
+            abort(404, 'Freigabe wurde nicht gefunden.');
+        }
+
+        return [
+            'rule' => $rule,
             'permission' => $this->resolveRulePermissionForUser($rule, $authUserId, $authSchoolId, $memberGroupIds),
+        ];
+    }
+
+    private function resolveInboxSubjectAccessContext(User $authUser, int $ruleId, MaterialSubject $subject): array
+    {
+        $ruleContext = $this->resolveInboxRuleAccessContext($authUser, $ruleId);
+        /** @var MaterialShareRule $rule */
+        $rule = $ruleContext['rule'];
+        $permission = (string) ($ruleContext['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY);
+
+        $this->assertInboxPermissionAllowsStructureEdit($permission);
+        $this->assertInboxRuleAllowsStructureEdit($rule);
+        $this->assertSubjectMatchesInboxRule($subject, $rule);
+
+        return [
+            'rule' => $rule,
+            'permission' => $permission,
+            'source_owner' => $this->resolveInboxStructureOwner($subject->user()->first(), $rule),
+        ];
+    }
+
+    private function resolveInboxTopicAccessContext(User $authUser, int $ruleId, MaterialTopic $topic): array
+    {
+        $ruleContext = $this->resolveInboxRuleAccessContext($authUser, $ruleId);
+        /** @var MaterialShareRule $rule */
+        $rule = $ruleContext['rule'];
+        $permission = (string) ($ruleContext['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY);
+
+        $this->assertInboxPermissionAllowsStructureEdit($permission);
+        $this->assertInboxRuleAllowsStructureEdit($rule);
+
+        $topic->loadMissing('subject.user');
+        $subject = $topic->subject;
+        if (! $subject instanceof MaterialSubject) {
+            abort(404, 'Thema wurde nicht gefunden.');
+        }
+
+        $this->assertSubjectMatchesInboxRule($subject, $rule);
+
+        return [
+            'rule' => $rule,
+            'permission' => $permission,
+            'source_owner' => $this->resolveInboxStructureOwner($subject->user, $rule),
+        ];
+    }
+
+    private function resolveInboxUnitAccessContext(User $authUser, int $ruleId, MaterialUnit $unit): array
+    {
+        $ruleContext = $this->resolveInboxRuleAccessContext($authUser, $ruleId);
+        /** @var MaterialShareRule $rule */
+        $rule = $ruleContext['rule'];
+        $permission = (string) ($ruleContext['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY);
+
+        $this->assertInboxPermissionAllowsStructureEdit($permission);
+        $this->assertInboxRuleAllowsStructureEdit($rule);
+
+        $unit->loadMissing('topic.subject.user');
+        $subject = $unit->topic?->subject;
+        if (! $subject instanceof MaterialSubject) {
+            abort(404, 'Bereich wurde nicht gefunden.');
+        }
+
+        $this->assertSubjectMatchesInboxRule($subject, $rule);
+
+        return [
+            'rule' => $rule,
+            'permission' => $permission,
+            'source_owner' => $this->resolveInboxStructureOwner($subject->user, $rule),
         ];
     }
 
@@ -1258,6 +1664,78 @@ class MaterialShareController extends Controller
         abort(403, 'Bei geteilten Materialien mit NUR LESEN können keine Anhänge hinzugefügt werden.');
     }
 
+    private function assertInboxPermissionAllowsAttachmentDelete(string $permission): void
+    {
+        if ($permission === MaterialShareTarget::PERMISSION_FULL_ACCESS) {
+            return;
+        }
+
+        abort(403, 'Anhänge können bei geteilten Materialien nur mit VOLLZUGRIFF gelöscht werden.');
+    }
+
+    private function assertInboxPermissionAllowsStructureEdit(string $permission): void
+    {
+        if ($permission === MaterialShareTarget::PERMISSION_FULL_ACCESS) {
+            return;
+        }
+
+        abort(403, 'Die Fachstruktur kann nur mit VOLLZUGRIFF bearbeitet werden.');
+    }
+
+    private function assertInboxPermissionAllowsMaterialDelete(string $permission): void
+    {
+        if ($permission === MaterialShareTarget::PERMISSION_FULL_ACCESS) {
+            return;
+        }
+
+        abort(403, 'Dieses geteilte Material kann nur mit VOLLZUGRIFF gelöscht werden.');
+    }
+
+    private function assertInboxRuleAllowsStructureEdit(MaterialShareRule $rule): void
+    {
+        if ($this->scopeAllowsFullAccess((string) ($rule->scope_type ?? ''))) {
+            return;
+        }
+
+        abort(403, 'Diese Freigabe erlaubt keine Bearbeitung der Fachstruktur.');
+    }
+
+    private function assertSubjectMatchesInboxRule(MaterialSubject $subject, MaterialShareRule $rule): void
+    {
+        $creatorUserId = (int) ($rule->created_by_user_id ?? 0);
+        if ($creatorUserId <= 0 || (int) ($subject->user_id ?? 0) !== $creatorUserId) {
+            abort(404, 'Element wurde nicht gefunden.');
+        }
+
+        $workspaceId = (int) ($rule->workspace_id ?? 0);
+        if ($workspaceId > 0 && (int) ($subject->workspace_id ?? 0) !== $workspaceId) {
+            abort(404, 'Element wurde nicht gefunden.');
+        }
+
+        $scopeType = (string) ($rule->scope_type ?? '');
+        $scopeId = (int) ($rule->scope_id ?? 0);
+        if ($scopeType === MaterialShareRule::SCOPE_SUBJECT && $scopeId > 0 && (int) $subject->id !== $scopeId) {
+            abort(404, 'Element wurde nicht gefunden.');
+        }
+    }
+
+    private function resolveInboxStructureOwner(?User $subjectOwner, MaterialShareRule $rule): User
+    {
+        if ($subjectOwner instanceof User) {
+            return $subjectOwner;
+        }
+
+        $creatorId = (int) ($rule->created_by_user_id ?? 0);
+        if ($creatorId > 0) {
+            $creator = User::query()->find($creatorId);
+            if ($creator instanceof User) {
+                return $creator;
+            }
+        }
+
+        abort(404, 'Besitzer der Fachstruktur wurde nicht gefunden.');
+    }
+
     private function currentMaterialClassificationPayload(MaterialCard $card): array
     {
         $classifications = $card->classifications instanceof Collection
@@ -1272,6 +1750,46 @@ class MaterialShareController extends Controller
             ])
             ->values()
             ->all();
+    }
+
+    private function subjectClassificationPayload(MaterialSubject $subject): array
+    {
+        return [[
+            'subject' => trim((string) ($subject->name ?? '')),
+            'topic' => '',
+            'unit' => '',
+        ]];
+    }
+
+    private function topicClassificationPayload(MaterialTopic $topic): array
+    {
+        $topic->loadMissing('subject');
+        $subject = $topic->subject;
+        if (! $subject instanceof MaterialSubject) {
+            abort(404, 'Fach wurde nicht gefunden.');
+        }
+
+        return [[
+            'subject' => trim((string) ($subject->name ?? '')),
+            'topic' => trim((string) ($topic->name ?? '')),
+            'unit' => '',
+        ]];
+    }
+
+    private function unitClassificationPayload(MaterialUnit $unit): array
+    {
+        $unit->loadMissing('topic.subject');
+        $topic = $unit->topic;
+        $subject = $topic?->subject;
+        if (! $topic instanceof MaterialTopic || ! $subject instanceof MaterialSubject) {
+            abort(404, 'Fachstruktur wurde nicht gefunden.');
+        }
+
+        return [[
+            'subject' => trim((string) ($subject->name ?? '')),
+            'topic' => trim((string) ($topic->name ?? '')),
+            'unit' => trim((string) ($unit->name ?? '')),
+        ]];
     }
 
     private function serializeInboxMaterialDetail(MaterialCard $sourceCard, int $ruleId, string $permission): array

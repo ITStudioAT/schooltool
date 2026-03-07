@@ -540,8 +540,40 @@
                                 :key="`overview-shared-subject-${item.ruleId}-${subject.id || subject.name}`"
                                 class="overview-shared-hierarchy-item">
                                 <div class="overview-subjects-node overview-subjects-node--subject overview-shared-hierarchy-node">
-                                    <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
-                                    <span>{{ subject.name }}</span>
+                                    <div class="overview-shared-hierarchy-node-main">
+                                        <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
+                                        <span>{{ sharedNodeTitle(item.ruleId, 'subject', subject) }}</span>
+                                    </div>
+                                    <div v-if="sharedItemHasFullAccess(item)" class="overview-shared-node-actions">
+                                        <v-btn
+                                            icon="mdi-file-plus-outline"
+                                            size="x-small"
+                                            density="comfortable"
+                                            variant="text"
+                                            color="primary"
+                                            :disabled="actionBusy"
+                                            title="Neues Material in Fach anlegen"
+                                            @click.stop="emitSharedCreate(item, 'subject', subject)" />
+                                        <v-btn
+                                            icon="mdi-pencil"
+                                            size="x-small"
+                                            density="comfortable"
+                                            variant="text"
+                                            color="primary"
+                                            :disabled="actionBusy"
+                                            title="Fach bearbeiten"
+                                            @click.stop="openSharedRenameDialog(item, 'subject', subject)" />
+                                        <v-btn
+                                            v-if="sharedSubjectCanDelete(subject)"
+                                            icon="mdi-delete-outline"
+                                            size="x-small"
+                                            density="comfortable"
+                                            variant="text"
+                                            color="warning"
+                                            :disabled="actionBusy"
+                                            title="Fach löschen"
+                                            @click.stop="openSharedDeleteDialog(item, 'subject', subject)" />
+                                    </div>
                                 </div>
                                 <ul v-if="Array.isArray(subject.materials) && subject.materials.length" class="overview-subjects-material-list">
                                     <li
@@ -589,9 +621,41 @@
                                         v-for="topic in subject.topics"
                                         :key="`overview-shared-topic-${item.ruleId}-${topic.id || topic.name}`"
                                         class="overview-subjects-item overview-subjects-topic-group">
-                                        <div class="overview-subjects-node overview-subjects-node--topic">
-                                            <v-icon size="14" icon="mdi-book-open-page-variant-outline" class="mr-2" />
-                                            <span>{{ topic.name }}</span>
+                                        <div class="overview-subjects-node overview-subjects-node--topic overview-shared-hierarchy-node">
+                                            <div class="overview-shared-hierarchy-node-main">
+                                                <v-icon size="14" icon="mdi-book-open-page-variant-outline" class="mr-2" />
+                                                <span>{{ sharedNodeTitle(item.ruleId, 'topic', topic) }}</span>
+                                            </div>
+                                            <div v-if="sharedItemHasFullAccess(item)" class="overview-shared-node-actions">
+                                                <v-btn
+                                                    icon="mdi-file-plus-outline"
+                                                    size="x-small"
+                                                    density="comfortable"
+                                                    variant="text"
+                                                    color="primary"
+                                                    :disabled="actionBusy"
+                                                    title="Neues Material in Thema anlegen"
+                                                    @click.stop="emitSharedCreate(item, 'topic', topic, { subject })" />
+                                                <v-btn
+                                                    icon="mdi-pencil"
+                                                    size="x-small"
+                                                    density="comfortable"
+                                                    variant="text"
+                                                    color="primary"
+                                                    :disabled="actionBusy"
+                                                    title="Thema bearbeiten"
+                                                    @click.stop="openSharedRenameDialog(item, 'topic', topic)" />
+                                                <v-btn
+                                                    v-if="sharedTopicCanDelete(topic)"
+                                                    icon="mdi-delete-outline"
+                                                    size="x-small"
+                                                    density="comfortable"
+                                                    variant="text"
+                                                    color="warning"
+                                                    :disabled="actionBusy"
+                                                    title="Thema löschen"
+                                                    @click.stop="openSharedDeleteDialog(item, 'topic', topic)" />
+                                            </div>
                                         </div>
                                         <ul v-if="Array.isArray(topic.materials) && topic.materials.length" class="overview-subjects-material-list">
                                             <li
@@ -639,9 +703,41 @@
                                                 v-for="unit in topic.units"
                                                 :key="`overview-shared-unit-${item.ruleId}-${unit.id || unit.name}`"
                                                 class="overview-subjects-item">
-                                                <div class="overview-subjects-node overview-subjects-node--unit">
-                                                    <v-icon size="13" icon="mdi-bookmark-outline" class="mr-2" />
-                                                    <span>{{ unit.name }}</span>
+                                                <div class="overview-subjects-node overview-subjects-node--unit overview-shared-hierarchy-node">
+                                                    <div class="overview-shared-hierarchy-node-main">
+                                                        <v-icon size="13" icon="mdi-bookmark-outline" class="mr-2" />
+                                                        <span>{{ sharedNodeTitle(item.ruleId, 'unit', unit) }}</span>
+                                                    </div>
+                                                    <div v-if="sharedItemHasFullAccess(item)" class="overview-shared-node-actions">
+                                                        <v-btn
+                                                            icon="mdi-file-plus-outline"
+                                                            size="x-small"
+                                                            density="comfortable"
+                                                            variant="text"
+                                                            color="primary"
+                                                            :disabled="actionBusy"
+                                                            title="Neues Material in Unterpunkt anlegen"
+                                                            @click.stop="emitSharedCreate(item, 'unit', unit, { subject, topic })" />
+                                                        <v-btn
+                                                            icon="mdi-pencil"
+                                                            size="x-small"
+                                                            density="comfortable"
+                                                            variant="text"
+                                                            color="primary"
+                                                            :disabled="actionBusy"
+                                                            title="Bereich bearbeiten"
+                                                            @click.stop="openSharedRenameDialog(item, 'unit', unit)" />
+                                                        <v-btn
+                                                            v-if="sharedUnitCanDelete(unit)"
+                                                            icon="mdi-delete-outline"
+                                                            size="x-small"
+                                                            density="comfortable"
+                                                            variant="text"
+                                                            color="warning"
+                                                            :disabled="actionBusy"
+                                                            title="Bereich löschen"
+                                                            @click.stop="openSharedDeleteDialog(item, 'unit', unit)" />
+                                                    </div>
                                                 </div>
 
                                                 <ul v-if="unit.materials.length" class="overview-subjects-material-list">
@@ -694,12 +790,98 @@
                 </div>
             </div>
         </div>
+
+        <v-dialog v-model="sharedRenameDialog.open" max-width="560" persistent>
+            <v-card rounded="xl">
+                <v-card-title class="text-h6 font-weight-bold">{{ sharedRenameDialog.levelLabel }} umbenennen</v-card-title>
+                <v-card-text>
+                    <div class="text-body-2 text-medium-emphasis mb-3">Titel ändern</div>
+                    <v-text-field
+                        :model-value="sharedRenameDialog.title"
+                        label="Titel"
+                        variant="outlined"
+                        density="comfortable"
+                        hide-details="auto"
+                        autofocus
+                        :disabled="actionBusy || sharedRenameDialogSaving"
+                        :rules="[required(), maxLength(255)]"
+                        :error-messages="sharedRenameDialogError ? [sharedRenameDialogError] : []"
+                        @update:modelValue="handleSharedRenameTitleInput"
+                        @blur="validateSharedRenameDialog" />
+                </v-card-text>
+                <v-card-actions class="justify-end">
+                    <v-btn variant="text" :disabled="actionBusy || sharedRenameDialogSaving" @click="closeSharedRenameDialog">Abbrechen</v-btn>
+                    <v-btn color="primary" variant="flat" :loading="sharedRenameDialogSaving" :disabled="actionBusy" @click="submitSharedRenameDialog">Speichern</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="sharedDeleteDialog.open" max-width="520" persistent>
+            <v-card rounded="xl">
+                <v-card-title class="text-h6 font-weight-bold">{{ sharedDeleteTitle(sharedDeleteDialog.level) }}</v-card-title>
+                <v-card-text>
+                    <div class="text-body-1 mb-1">{{ sharedDeleteDialog.label || 'Diesen Eintrag' }}</div>
+                    <div class="text-body-2 text-medium-emphasis">
+                        Wirklich löschen? Das ist nur möglich, wenn keine Materialien zugeordnet sind.
+                    </div>
+                    <div v-if="sharedDeleteDialogError" class="text-body-2 text-error mt-3">
+                        {{ sharedDeleteDialogError }}
+                    </div>
+                </v-card-text>
+                <v-card-actions class="justify-end px-4 pb-4">
+                    <v-btn
+                        variant="text"
+                        :disabled="actionBusy || sharedDeleteDialogDeleting"
+                        @click="closeSharedDeleteDialog">
+                        Abbrechen
+                    </v-btn>
+                    <v-btn
+                        color="error"
+                        variant="flat"
+                        prepend-icon="mdi-delete-outline"
+                        :loading="sharedDeleteDialogDeleting"
+                        :disabled="actionBusy"
+                        @click="confirmSharedDeleteDialog">
+                        Löschen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </div>
 </template>
 
 <script>
+import axios from 'axios'
+import { useValidationRulesSetup } from '@/helpers/rules'
+
+function createSharedRenameDialogState() {
+    return {
+        open: false,
+        level: '',
+        levelLabel: '',
+        key: '',
+        ruleId: null,
+        nodeId: null,
+        title: '',
+    }
+}
+
+function createSharedDeleteDialogState() {
+    return {
+        open: false,
+        level: '',
+        levelLabel: '',
+        ruleId: null,
+        nodeId: null,
+        label: '',
+    }
+}
+
 export default {
     name: 'MaterialsSubjectsContentsTree',
+    setup() {
+        return useValidationRulesSetup()
+    },
     props: {
         items: {
             type: Array,
@@ -766,10 +948,17 @@ export default {
             default: () => ({}),
         },
     },
-    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'open-shared-material', 'open-shared-attachments', 'unlink-linked-material', 'unlink-linked-topic', 'unlink-linked-unit', 'toggle-shared-for-me-expanded', 'toggle-shared-item-expanded'],
+    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'open-shared-material', 'open-shared-attachments', 'unlink-linked-material', 'unlink-linked-topic', 'unlink-linked-unit', 'toggle-shared-for-me-expanded', 'toggle-shared-item-expanded', 'shared-node-renamed', 'shared-node-deleted'],
     data() {
         return {
             workspaceExpanded: true,
+            sharedNodeTitleOverrides: {},
+            sharedRenameDialog: createSharedRenameDialogState(),
+            sharedRenameDialogError: '',
+            sharedRenameDialogSaving: false,
+            sharedDeleteDialog: createSharedDeleteDialogState(),
+            sharedDeleteDialogError: '',
+            sharedDeleteDialogDeleting: false,
         }
     },
     methods: {
@@ -824,6 +1013,241 @@ export default {
         },
         sharedItemCanExpand(item) {
             return this.sharedItemHierarchy(item).length > 0
+        },
+        sharedItemHasFullAccess(item) {
+            return String(item?.permission || '').trim() === 'full_access'
+        },
+        sharedRenameLevelLabel(level) {
+            if (level === 'subject') return 'Fach'
+            if (level === 'topic') return 'Thema'
+            if (level === 'unit') return 'Bereich'
+            return 'Element'
+        },
+        sharedDeleteTitle(level) {
+            if (level === 'subject') return 'Fach löschen'
+            if (level === 'topic') return 'Thema löschen'
+            if (level === 'unit') return 'Bereich löschen'
+            return 'Element löschen'
+        },
+        sharedNodeOverrideKey(ruleId, level, node) {
+            const normalizedRuleId = Number(ruleId)
+            const normalizedId = Number(node?.id)
+            if (!Number.isFinite(normalizedRuleId) || normalizedRuleId <= 0) return ''
+
+            if (Number.isFinite(normalizedId) && normalizedId > 0) {
+                return `${normalizedRuleId}:${level}:${normalizedId}`
+            }
+
+            const fallbackName = String(node?.name || '').trim()
+            if (fallbackName === '') return ''
+
+            return `${normalizedRuleId}:${level}:${fallbackName}`
+        },
+        sharedNodeTitle(ruleId, level, node) {
+            const overrideKey = this.sharedNodeOverrideKey(ruleId, level, node)
+            const overriddenTitle = overrideKey !== '' ? String(this.sharedNodeTitleOverrides?.[overrideKey] || '').trim() : ''
+            if (overriddenTitle !== '') {
+                return overriddenTitle
+            }
+
+            return String(node?.name || '').trim()
+        },
+        openSharedRenameDialog(item, level, node) {
+            if (this.actionBusy) return
+            if (!this.sharedItemHasFullAccess(item)) return
+
+            const overrideKey = this.sharedNodeOverrideKey(item?.ruleId, level, node)
+            if (overrideKey === '') return
+
+            this.sharedRenameDialog = {
+                open: true,
+                level,
+                levelLabel: this.sharedRenameLevelLabel(level),
+                key: overrideKey,
+                ruleId: Number(item?.ruleId || 0),
+                nodeId: Number(node?.id || 0),
+                title: this.sharedNodeTitle(item?.ruleId, level, node),
+            }
+            this.sharedRenameDialogError = ''
+        },
+        closeSharedRenameDialog() {
+            if (this.sharedRenameDialogSaving) return
+            this.sharedRenameDialog = createSharedRenameDialogState()
+            this.sharedRenameDialogError = ''
+        },
+        openSharedDeleteDialog(item, level, node) {
+            if (this.actionBusy) return
+            if (!this.sharedItemHasFullAccess(item)) return
+
+            const ruleId = Number(item?.ruleId || 0)
+            const nodeId = Number(node?.id || 0)
+            if (!Number.isFinite(ruleId) || ruleId <= 0) return
+            if (!Number.isFinite(nodeId) || nodeId <= 0) return
+
+            this.sharedDeleteDialog = {
+                open: true,
+                level,
+                levelLabel: this.sharedRenameLevelLabel(level),
+                ruleId,
+                nodeId,
+                label: this.sharedNodeTitle(item?.ruleId, level, node),
+            }
+            this.sharedDeleteDialogError = ''
+        },
+        closeSharedDeleteDialog() {
+            if (this.sharedDeleteDialogDeleting) return
+            this.sharedDeleteDialog = createSharedDeleteDialogState()
+            this.sharedDeleteDialogError = ''
+        },
+        sharedRenameTitleValidationMessage(value) {
+            const normalizedValue = String(value ?? '').trim()
+            const rules = [
+                this.required(),
+                this.maxLength(255),
+            ]
+
+            for (const rule of rules) {
+                const result = rule(normalizedValue)
+                if (result !== true) {
+                    return String(result)
+                }
+            }
+
+            return ''
+        },
+        validateSharedRenameDialog() {
+            const validationMessage = this.sharedRenameTitleValidationMessage(this.sharedRenameDialog?.title)
+            this.sharedRenameDialogError = validationMessage
+            return validationMessage === ''
+        },
+        handleSharedRenameTitleInput(value) {
+            this.sharedRenameDialog = {
+                ...this.sharedRenameDialog,
+                title: value,
+            }
+
+            if (this.sharedRenameDialogError !== '') {
+                this.sharedRenameDialogError = this.sharedRenameTitleValidationMessage(value)
+            }
+        },
+        sharedRenameEndpoint(level, nodeId) {
+            const id = Number(nodeId || 0)
+            if (!Number.isFinite(id) || id <= 0) return ''
+            if (level === 'subject') return `/api/admin/materials/shares/inbox/subjects/${id}`
+            if (level === 'topic') return `/api/admin/materials/shares/inbox/topics/${id}`
+            if (level === 'unit') return `/api/admin/materials/shares/inbox/units/${id}`
+            return ''
+        },
+        sharedDeleteEndpoint(level, nodeId) {
+            const id = Number(nodeId || 0)
+            if (!Number.isFinite(id) || id <= 0) return ''
+            if (level === 'subject') return `/api/admin/materials/shares/inbox/subjects/${id}`
+            if (level === 'topic') return `/api/admin/materials/shares/inbox/topics/${id}`
+            if (level === 'unit') return `/api/admin/materials/shares/inbox/units/${id}`
+            return ''
+        },
+        async submitSharedRenameDialog() {
+            if (!this.validateSharedRenameDialog()) return
+            if (this.sharedRenameDialogSaving) return
+
+            const normalizedTitle = String(this.sharedRenameDialog?.title || '').trim()
+            const endpoint = this.sharedRenameEndpoint(this.sharedRenameDialog?.level, this.sharedRenameDialog?.nodeId)
+            const ruleId = Number(this.sharedRenameDialog?.ruleId || 0)
+            if (endpoint === '' || !Number.isFinite(ruleId) || ruleId <= 0) {
+                this.sharedRenameDialogError = 'Element konnte nicht gespeichert werden.'
+                return
+            }
+
+            this.sharedRenameDialogSaving = true
+
+            try {
+                const response = await axios.put(endpoint, {
+                    rule_id: ruleId,
+                    data: {
+                        name: normalizedTitle,
+                    },
+                })
+                const savedTitle = String(response?.data?.data?.name || normalizedTitle).trim() || normalizedTitle
+
+                this.sharedNodeTitleOverrides = {
+                    ...this.sharedNodeTitleOverrides,
+                    [this.sharedRenameDialog.key]: savedTitle,
+                }
+
+                this.$emit('shared-node-renamed', {
+                    ruleId,
+                    level: String(this.sharedRenameDialog?.level || ''),
+                    nodeId: Number(this.sharedRenameDialog?.nodeId || 0),
+                    name: savedTitle,
+                })
+                this.sharedRenameDialog = createSharedRenameDialogState()
+                this.sharedRenameDialogError = ''
+            } catch (error) {
+                this.sharedRenameDialogError = String(error?.response?.data?.message || 'Element konnte nicht gespeichert werden.')
+            } finally {
+                this.sharedRenameDialogSaving = false
+            }
+        },
+        async confirmSharedDeleteDialog() {
+            if (this.sharedDeleteDialogDeleting) return
+
+            const endpoint = this.sharedDeleteEndpoint(this.sharedDeleteDialog?.level, this.sharedDeleteDialog?.nodeId)
+            const ruleId = Number(this.sharedDeleteDialog?.ruleId || 0)
+            const nodeId = Number(this.sharedDeleteDialog?.nodeId || 0)
+            if (endpoint === '' || !Number.isFinite(ruleId) || ruleId <= 0 || !Number.isFinite(nodeId) || nodeId <= 0) {
+                this.sharedDeleteDialogError = 'Element konnte nicht gelöscht werden.'
+                return
+            }
+
+            this.sharedDeleteDialogDeleting = true
+
+            try {
+                await axios.delete(endpoint, {
+                    data: {
+                        rule_id: ruleId,
+                    },
+                })
+
+                this.$emit('shared-node-deleted', {
+                    ruleId,
+                    level: String(this.sharedDeleteDialog?.level || ''),
+                    nodeId,
+                })
+                this.sharedDeleteDialog = createSharedDeleteDialogState()
+                this.sharedDeleteDialogError = ''
+            } catch (error) {
+                this.sharedDeleteDialogError = String(error?.response?.data?.message || 'Element konnte nicht gelöscht werden.')
+            } finally {
+                this.sharedDeleteDialogDeleting = false
+            }
+        },
+        sharedUnitHasMaterials(unit) {
+            return Array.isArray(unit?.materials) && unit.materials.length > 0
+        },
+        sharedTopicHasMaterials(topic) {
+            if (Array.isArray(topic?.materials) && topic.materials.length > 0) {
+                return true
+            }
+
+            const units = Array.isArray(topic?.units) ? topic.units : []
+            return units.some((unit) => this.sharedUnitHasMaterials(unit))
+        },
+        sharedSubjectHasMaterials(subject) {
+            if (Array.isArray(subject?.materials) && subject.materials.length > 0) {
+                return true
+            }
+
+            const topics = Array.isArray(subject?.topics) ? subject.topics : []
+            return topics.some((topic) => this.sharedTopicHasMaterials(topic))
+        },
+        sharedSubjectCanDelete(subject) {
+            return !this.sharedSubjectHasMaterials(subject)
+        },
+        sharedTopicCanDelete(topic) {
+            return !this.sharedTopicHasMaterials(topic)
+        },
+        sharedUnitCanDelete(unit) {
+            return !this.sharedUnitHasMaterials(unit)
         },
         normalizeLinkedPermission(permission) {
             const normalized = String(permission || '').trim()
@@ -892,6 +1316,27 @@ export default {
             this.$emit('open-shared-attachments', {
                 ruleId,
                 material,
+            })
+        },
+        emitSharedCreate(item, level, node, lineage = {}) {
+            const ruleId = Number(item?.ruleId)
+            const nodeId = Number(node?.id)
+            if (!Number.isFinite(ruleId) || ruleId <= 0) return
+            if (!Number.isFinite(nodeId) || nodeId <= 0) return
+
+            const normalizedLevel = String(level || '').trim()
+            const subject = normalizedLevel === 'subject' ? node : lineage?.subject
+            const topic = normalizedLevel === 'topic' ? node : lineage?.topic
+            const unit = normalizedLevel === 'unit' ? node : null
+
+            this.$emit('open-create', {
+                level: normalizedLevel,
+                subject: String(subject?.name || '').trim(),
+                topic: String(topic?.name || '').trim(),
+                unit: String(unit?.name || '').trim(),
+                sharedRuleId: ruleId,
+                sharedNodeLevel: normalizedLevel,
+                sharedNodeId: nodeId,
             })
         },
         handleShareClick(target) {
@@ -1180,7 +1625,25 @@ export default {
 }
 
 .overview-shared-hierarchy-node {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    gap: 10px;
+}
+
+.overview-shared-hierarchy-node-main {
     display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+
+.overview-shared-node-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
 }
 
 .overview-shared-item-head {

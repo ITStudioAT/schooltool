@@ -221,6 +221,20 @@ describe('MaterialsOverviewView', () => {
         expect(loadSharedObjectsForMe).toHaveBeenCalledTimes(1)
     })
 
+    it('refreshes shared tree data after shared node changes even outside shared source mode', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const loadSharedObjectsForMe = vi.fn().mockResolvedValue(undefined)
+        const vm = {
+            ...methods,
+            isSharedSubjectsContentsSource: false,
+            loadSharedObjectsForMe,
+        }
+
+        await methods.refreshSharedStructureTree.call(vm)
+
+        expect(loadSharedObjectsForMe).toHaveBeenCalledTimes(1)
+    })
+
     it('openShareDialog opens persistent dummy dialog when share actions are disabled', () => {
         const methods = MaterialsOverviewView?.methods || {}
         const loadShareAssignments = vi.fn()
@@ -1032,6 +1046,147 @@ describe('MaterialsOverviewView', () => {
         expect(vm.editForm.linked_permission).toBe('read_write')
     })
 
+    it('preserves shared create context when opening the create dialog from the shared tree', () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const vm = {
+            ...methods,
+            readOnlyMaterialActions: false,
+            isLoading: false,
+            isSavingCreate: false,
+            isSavingEdit: false,
+            isDeletingId: null,
+            defaultStatusValue: 'inbox',
+            createForm: {},
+            createClassificationEditorVisible: false,
+            createDialogOpen: false,
+            createSharedContext: null,
+        }
+
+        methods.openCreateDialogFromTree.call(vm, {
+            level: 'unit',
+            subject: 'Mathematik',
+            topic: 'Algebra',
+            unit: 'A1',
+            sharedRuleId: 77,
+            sharedNodeLevel: 'unit',
+            sharedNodeId: 301,
+        })
+
+        expect(vm.createDialogOpen).toBe(true)
+        expect(vm.createClassificationEditorVisible).toBe(true)
+        expect(vm.createForm.classifications).toEqual([{ subject: 'Mathematik', topic: 'Algebra', unit: 'A1' }])
+        expect(vm.createSharedContext).toEqual({
+            ruleId: 77,
+            nodeId: 301,
+            nodeLevel: 'unit',
+        })
+    })
+
+    it('allows attachment delete actions for shared inbox materials with full access', () => {
+        const computed = MaterialsOverviewView?.computed || {}
+        const vm = {
+            editForm: {
+                is_linked: true,
+                linked_permission: 'full_access',
+                shared_rule_id: 77,
+                shared_material_id: 555,
+            },
+            normalizeLinkedPermission: MaterialsOverviewView?.methods?.normalizeLinkedPermission,
+        }
+
+        vm.normalizedEditLinkedPermission = computed.normalizedEditLinkedPermission.call(vm)
+        vm.isEditLinkedMaterial = computed.isEditLinkedMaterial.call(vm)
+        vm.isEditSharedInboxMaterial = computed.isEditSharedInboxMaterial.call(vm)
+
+        expect(vm.normalizedEditLinkedPermission).toBe('full_access')
+        expect(vm.isEditLinkedMaterial).toBe(true)
+        expect(vm.isEditSharedInboxMaterial).toBe(true)
+        expect(computed.canEditLinkedDeleteAttachments.call(vm)).toBe(true)
+        expect(computed.canEditLinkedDeleteMaterial.call(vm)).toBe(true)
+    })
+
+    it('routes shared full-access material deletes through inbox delete endpoint', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const sharedContext = { ruleId: 77, materialId: 555, permission: 'full_access', permissionLabel: 'VOLLZUGRIFF' }
+        const deleteSharedMaterial = vi.fn().mockResolvedValue({ deleted: true })
+        const closeEditDialog = vi.fn().mockResolvedValue(undefined)
+        const loadCards = vi.fn().mockResolvedValue(undefined)
+        const loadSharedObjectsForMe = vi.fn().mockResolvedValue(undefined)
+        const refreshLastDeletedMaterialRestoreInfo = vi.fn().mockResolvedValue(undefined)
+        const vm = {
+            ...methods,
+            isSavingEdit: false,
+            isDeletingEditedMaterial: false,
+            editDeleteConfirmDialogOpen: true,
+            editDeleteConfirmDialogLoading: false,
+            editDeleteStep: 1,
+            isEditSharedInboxMaterial: true,
+            canEditLinkedDeleteMaterial: true,
+            editForm: {
+                id: 555,
+                shared_rule_id: 77,
+                shared_material_id: 555,
+                linked_permission: 'full_access',
+            },
+            sharedInboxContextForCard: vi.fn().mockReturnValue(sharedContext),
+            deleteSharedMaterial,
+            materialCardStore: {
+                destroy: vi.fn(),
+            },
+            closeEditDialog,
+            loadCards,
+            loadSharedObjectsForMe,
+            refreshLastDeletedMaterialRestoreInfo,
+            isDeletingId: null,
+        }
+
+        await methods.confirmDeleteFromEdit.call(vm)
+
+        expect(deleteSharedMaterial).toHaveBeenCalledTimes(1)
+        expect(deleteSharedMaterial).toHaveBeenCalledWith(sharedContext)
+        expect(vm.materialCardStore.destroy).not.toHaveBeenCalled()
+        expect(closeEditDialog).toHaveBeenCalledWith(false)
+        expect(loadCards).toHaveBeenCalledWith(null, { forceFilterCountRefresh: true })
+        expect(loadSharedObjectsForMe).toHaveBeenCalledTimes(1)
+        expect(refreshLastDeletedMaterialRestoreInfo).not.toHaveBeenCalled()
+    })
+
+    it('routes shared full-access attachment deletes through inbox delete endpoint', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const sharedContext = { ruleId: 77, materialId: 555, permission: 'full_access', permissionLabel: 'VOLLZUGRIFF' }
+        const deleteSharedAttachment = vi.fn().mockResolvedValue({ deleted: true })
+        const vm = {
+            ...methods,
+            attachmentDialogCardId: 555,
+            attachmentDialogCanDeleteAttachments: true,
+            sharedInboxContextForAttachment: vi.fn().mockReturnValue(sharedContext),
+            deleteSharedAttachment,
+            materialCardStore: {
+                deleteAttachment: vi.fn(),
+            },
+            isAttachmentDeleting: vi.fn().mockReturnValue(false),
+            isAttachmentSaving: vi.fn().mockReturnValue(false),
+            isAttachmentDeleteArmed: vi.fn().mockReturnValue(true),
+            markAttachmentDeleting: vi.fn(),
+            markAttachmentDeleteArmed: vi.fn(),
+            removeAttachmentFromCard: vi.fn(),
+            refreshAllListedAttachmentBytes: vi.fn(),
+            attachmentRows: [
+                { id: 901, name: 'aufgabe.pdf' },
+                { id: 902, name: 'bild.png' },
+            ],
+        }
+
+        await methods.removeAttachment.call(vm, { id: 901, shared_rule_id: 77, shared_material_id: 555 })
+
+        expect(deleteSharedAttachment).toHaveBeenCalledTimes(1)
+        expect(deleteSharedAttachment).toHaveBeenCalledWith(sharedContext, 901)
+        expect(vm.materialCardStore.deleteAttachment).not.toHaveBeenCalled()
+        expect(vm.attachmentRows.map((row) => row.id)).toEqual([902])
+        expect(vm.removeAttachmentFromCard).toHaveBeenCalledWith(901)
+        expect(vm.refreshAllListedAttachmentBytes).toHaveBeenCalledTimes(1)
+    })
+
     it('routes shared edit saves through inbox write endpoints', async () => {
         const methods = MaterialsOverviewView?.methods || {}
         const sharedContext = { ruleId: 77, materialId: 555, permission: 'read_write', permissionLabel: 'LESEN/SCHREIBEN' }
@@ -1103,6 +1258,93 @@ describe('MaterialsOverviewView', () => {
         expect(vm.materialCardStore.update).not.toHaveBeenCalled()
         expect(loadSharedObjectsForMe).toHaveBeenCalledTimes(1)
         expect(closeEditDialog).toHaveBeenCalledWith(true)
+        expect(loadCards).toHaveBeenCalledWith(null, { forceFilterCountRefresh: true })
+    })
+
+    it('routes shared create saves through inbox create endpoints', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const createSharedMaterial = vi.fn().mockResolvedValue({
+            id: 777,
+            shared_rule_id: 77,
+            shared_material_id: 777,
+        })
+        const addSharedLinkAttachment = vi.fn().mockResolvedValue({ id: 1 })
+        const addSharedImageUrlAttachment = vi.fn().mockResolvedValue({ id: 2 })
+        const addSharedTempFileAttachment = vi.fn().mockResolvedValue({ id: 3 })
+        const closeCreateDialog = vi.fn().mockResolvedValue(undefined)
+        const loadSharedObjectsForMe = vi.fn().mockResolvedValue(undefined)
+        const loadCards = vi.fn().mockResolvedValue(undefined)
+        const vm = {
+            ...methods,
+            canSaveCreate: true,
+            isSavingCreate: false,
+            isSavingEdit: false,
+            isDeletingId: null,
+            defaultStatusValue: 'inbox',
+            createSharedContext: {
+                ruleId: 77,
+                nodeId: 301,
+                nodeLevel: 'unit',
+            },
+            createForm: {
+                title: 'Neues geteiltes Material',
+                description: 'Beschreibung',
+                type: '',
+                status: 'done',
+                classifications: [{ subject: 'Mathematik', topic: 'Algebra', unit: 'A1' }],
+                pendingAttachments: [
+                    { attachmentType: 'link', url: 'https://example.org/q', title: 'Quelle', storeImageFile: true },
+                    { tempUpload: 'temp-upload-1', title: 'Datei', fileName: 'datei.pdf' },
+                ],
+            },
+            normalizeClassifications: vi.fn((value) => value),
+            toNullable: methods.toNullable,
+            toPendingAttachments: vi.fn((value) => value),
+            normalizeUrl: methods.normalizeUrl,
+            defaultLinkTitle: vi.fn((value) => value),
+            createSharedMaterial,
+            addSharedLinkAttachment,
+            addSharedImageUrlAttachment,
+            addSharedTempFileAttachment,
+            addSharedFileAttachment: vi.fn(),
+            materialCardStore: {
+                quickStore: vi.fn(),
+                addLinkAttachment: vi.fn(),
+                addImageUrlAttachment: vi.fn(),
+                addTempFileAttachment: vi.fn(),
+                addFileAttachment: vi.fn(),
+            },
+            closeCreateDialog,
+            loadSharedObjectsForMe,
+            loadCards,
+        }
+
+        await methods.saveCreate.call(vm)
+
+        expect(createSharedMaterial).toHaveBeenCalledTimes(1)
+        expect(createSharedMaterial).toHaveBeenCalledWith(
+            {
+                ruleId: 77,
+                nodeId: 301,
+                nodeLevel: 'unit',
+            },
+            {
+                title: 'Neues geteiltes Material',
+                source_text: 'Beschreibung',
+                type: null,
+                status: 'done',
+                classifications: [{ subject: 'Mathematik', topic: 'Algebra', unit: 'A1' }],
+            },
+        )
+        expect(addSharedLinkAttachment).toHaveBeenCalledWith({ ruleId: 77, materialId: 777 }, {
+            url: 'https://example.org/q',
+            name: 'Quelle',
+        })
+        expect(addSharedImageUrlAttachment).toHaveBeenCalledWith({ ruleId: 77, materialId: 777 }, 'https://example.org/q', 'Quelle')
+        expect(addSharedTempFileAttachment).toHaveBeenCalledWith({ ruleId: 77, materialId: 777 }, 'temp-upload-1', 'Datei')
+        expect(vm.materialCardStore.quickStore).not.toHaveBeenCalled()
+        expect(loadSharedObjectsForMe).toHaveBeenCalledTimes(1)
+        expect(closeCreateDialog).toHaveBeenCalledTimes(1)
         expect(loadCards).toHaveBeenCalledWith(null, { forceFilterCountRefresh: true })
     })
 
