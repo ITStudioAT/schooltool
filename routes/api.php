@@ -283,6 +283,14 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/materials/shares/inbox-users', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'inboxUsers']);
         Route::get('/admin/materials/shares/inbox/material-attachments', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'inboxMaterialAttachments']);
         Route::get('/admin/materials/shares/inbox/material-detail', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'inboxMaterialDetail']);
+        Route::put('/admin/materials/shares/inbox/material-detail', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'updateInboxMaterialDetail']);
+        Route::post('/admin/materials/shares/inbox/material-attachments/link', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'storeInboxLinkAttachment']);
+        Route::post('/admin/materials/shares/inbox/material-attachments/image-url', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'storeInboxRemoteImageAttachment']);
+        Route::post('/admin/materials/shares/inbox/material-attachments/file', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'storeInboxFileAttachment']);
+        Route::post('/admin/materials/shares/inbox/material-attachments/file-temp', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'storeInboxTempFileAttachment']);
+        Route::patch('/admin/materials/shares/inbox/material-attachments/{material_card_attachment}', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'updateInboxAttachment']);
+        Route::get('/admin/materials/shares/inbox/material-attachments/{material_card_attachment}/text-content', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'inboxTextAttachmentContent']);
+        Route::patch('/admin/materials/shares/inbox/material-attachments/{material_card_attachment}/text-content', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'updateInboxTextAttachmentContent']);
         Route::post('/admin/materials/shares/inbox/archive', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'archiveInboxRule']);
         Route::post('/admin/materials/shares/inbox/unarchive', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'unarchiveInboxRule']);
         Route::post('/admin/materials/shares/inbox/material-original-copy', [\App\Http\Controllers\Admin\Materials\MaterialShareController::class, 'copyInboxMaterialAsOriginal']);

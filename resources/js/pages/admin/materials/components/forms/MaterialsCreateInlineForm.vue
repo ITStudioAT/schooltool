@@ -129,7 +129,7 @@
                         size="x-small"
                         variant="tonal"
                         color="primary"
-                        :disabled="isReadOnly"
+                        :disabled="isClassificationReadOnly"
                         @click="addClassificationAndOpenEditor" />
                 </div>
             </div>
@@ -146,7 +146,7 @@
                         :variant="classificationEditorVisible && activeClassificationIndex === item.index ? 'flat' : 'outlined'"
                         color="primary"
                         class="assigned-chip"
-                        :disabled="isReadOnly"
+                        :disabled="isClassificationReadOnly"
                         @click="openClassificationEditor(item.index)">
                         {{ item.label }}
                     </v-chip>
@@ -171,7 +171,7 @@
                                     size="x-small"
                                     variant="text"
                                     color="primary"
-                                    :disabled="isReadOnly || isSaving || classificationCreateSaving"
+                                    :disabled="isClassificationReadOnly || isSaving || classificationCreateSaving"
                                     :title="'Fach hinzufügen'"
                                     @click="openClassificationCreateField('subject')" />
                             </div>
@@ -185,7 +185,7 @@
                                     density="comfortable"
                                     hide-details="auto"
                                     class="classification-inline-create-field"
-                                    :disabled="isReadOnly || isSaving || classificationCreateSaving"
+                                    :disabled="isClassificationReadOnly || isSaving || classificationCreateSaving"
                                     @update:modelValue="classificationCreateValue = normalizeText($event)"
                                     @keyup.enter="submitClassificationCreateField"
                                     @keydown.esc="cancelClassificationCreateField" />
@@ -195,20 +195,20 @@
                                     variant="flat"
                                     color="primary"
                                     :loading="classificationCreateSaving"
-                                    :disabled="isReadOnly || !canSubmitClassificationCreate"
+                                    :disabled="isClassificationReadOnly || !canSubmitClassificationCreate"
                                     @click="submitClassificationCreateField" />
                                 <v-btn
                                     icon="mdi-close"
                                     size="small"
                                     variant="text"
                                     color="warning"
-                                    :disabled="isReadOnly || classificationCreateSaving"
+                                    :disabled="isClassificationReadOnly || classificationCreateSaving"
                                     @click="cancelClassificationCreateField" />
                             </div>
                             <v-chip-group
                                 :model-value="normalizedClassificationDraft.subject"
                                 column
-                                :disabled="isReadOnly"
+                                :disabled="isClassificationReadOnly"
                                 selected-class="classification-option-chip--selected"
                                 @update:modelValue="updateClassificationDraftField('subject', $event)">
                                 <v-chip
@@ -238,7 +238,7 @@
                                     size="x-small"
                                     variant="text"
                                     color="primary"
-                                    :disabled="isReadOnly || isSaving || classificationCreateSaving || !canOpenTopicCreate"
+                                    :disabled="isClassificationReadOnly || isSaving || classificationCreateSaving || !canOpenTopicCreate"
                                     :title="canOpenTopicCreate ? 'Thema hinzufügen' : 'Zuerst Fach wählen'"
                                     @click="openClassificationCreateField('topic')" />
                             </div>
@@ -252,7 +252,7 @@
                                     density="comfortable"
                                     hide-details="auto"
                                     class="classification-inline-create-field"
-                                    :disabled="isReadOnly || isSaving || classificationCreateSaving"
+                                    :disabled="isClassificationReadOnly || isSaving || classificationCreateSaving"
                                     @update:modelValue="classificationCreateValue = normalizeText($event)"
                                     @keyup.enter="submitClassificationCreateField"
                                     @keydown.esc="cancelClassificationCreateField" />
@@ -262,20 +262,20 @@
                                     variant="flat"
                                     color="primary"
                                     :loading="classificationCreateSaving"
-                                    :disabled="isReadOnly || !canSubmitClassificationCreate"
+                                    :disabled="isClassificationReadOnly || !canSubmitClassificationCreate"
                                     @click="submitClassificationCreateField" />
                                 <v-btn
                                     icon="mdi-close"
                                     size="small"
                                     variant="text"
                                     color="warning"
-                                    :disabled="isReadOnly || classificationCreateSaving"
+                                    :disabled="isClassificationReadOnly || classificationCreateSaving"
                                     @click="cancelClassificationCreateField" />
                             </div>
                             <v-chip-group
                                 :model-value="normalizedClassificationDraft.topic"
                                 column
-                                :disabled="isReadOnly || !normalizeText(normalizedClassificationDraft.subject)"
+                                :disabled="isClassificationReadOnly || !normalizeText(normalizedClassificationDraft.subject)"
                                 selected-class="classification-option-chip--selected"
                                 @update:modelValue="updateClassificationDraftField('topic', $event)">
                                 <v-chip
@@ -305,7 +305,7 @@
                                     size="x-small"
                                     variant="text"
                                     color="primary"
-                                    :disabled="isReadOnly || isSaving || classificationCreateSaving || !canOpenUnitCreate"
+                                    :disabled="isClassificationReadOnly || isSaving || classificationCreateSaving || !canOpenUnitCreate"
                                     :title="canOpenUnitCreate ? 'Bereich hinzufügen' : 'Zuerst Thema wählen'"
                                     @click="openClassificationCreateField('unit')" />
                             </div>
@@ -319,7 +319,7 @@
                                     density="comfortable"
                                     hide-details="auto"
                                     class="classification-inline-create-field"
-                                    :disabled="isReadOnly || isSaving || classificationCreateSaving"
+                                    :disabled="isClassificationReadOnly || isSaving || classificationCreateSaving"
                                     @update:modelValue="classificationCreateValue = normalizeText($event)"
                                     @keyup.enter="submitClassificationCreateField"
                                     @keydown.esc="cancelClassificationCreateField" />
@@ -329,20 +329,20 @@
                                     variant="flat"
                                     color="primary"
                                     :loading="classificationCreateSaving"
-                                    :disabled="isReadOnly || !canSubmitClassificationCreate"
+                                    :disabled="isClassificationReadOnly || !canSubmitClassificationCreate"
                                     @click="submitClassificationCreateField" />
                                 <v-btn
                                     icon="mdi-close"
                                     size="small"
                                     variant="text"
                                     color="warning"
-                                    :disabled="isReadOnly || classificationCreateSaving"
+                                    :disabled="isClassificationReadOnly || classificationCreateSaving"
                                     @click="cancelClassificationCreateField" />
                             </div>
                             <v-chip-group
                                 :model-value="normalizedClassificationDraft.unit"
                                 column
-                                :disabled="isReadOnly || !normalizeText(normalizedClassificationDraft.topic)"
+                                :disabled="isClassificationReadOnly || !normalizeText(normalizedClassificationDraft.topic)"
                                 selected-class="classification-option-chip--selected"
                                 @update:modelValue="updateClassificationDraftField('unit', $event)">
                                 <v-chip
@@ -370,7 +370,7 @@
                                     color="error"
                                     class="classification-action-btn"
                                     :title="'Zuordnung löschen'"
-                                    :disabled="isReadOnly || isSaving || classificationCreateSaving || isClassificationRowEmpty(entry.row)"
+                                    :disabled="isClassificationReadOnly || isSaving || classificationCreateSaving || isClassificationRowEmpty(entry.row)"
                                     @click="removeClassificationRow(entry.index)" />
                                 <v-btn
                                     icon="mdi-close"
@@ -385,7 +385,7 @@
                                     variant="flat"
                                     color="primary"
                                     class="classification-action-btn"
-                                    :disabled="isReadOnly || !canApplyClassificationDraft"
+                                    :disabled="isClassificationReadOnly || !canApplyClassificationDraft"
                                     @click="applyClassificationDraft" />
                             </div>
                         </v-col>
@@ -694,6 +694,10 @@ export default {
             type: Boolean,
             default: false,
         },
+        classificationReadOnly: {
+            type: Boolean,
+            default: false,
+        },
         showContentTools: {
             type: Boolean,
             default: true,
@@ -835,6 +839,9 @@ export default {
         canSave() {
             if (this.isReadOnly) return true
             return String(this.title || '').trim().length > 0
+        },
+        isClassificationReadOnly() {
+            return this.isReadOnly || this.classificationReadOnly
         },
         canAddTextAttachment() {
             const title = this.normalizeText(this.textAttachmentDraftTitle)
@@ -1045,21 +1052,21 @@ export default {
                 || current.unit !== draft.unit
         },
         canApplyClassificationDraft() {
-            if (this.isReadOnly) return false
+            if (this.isClassificationReadOnly) return false
             const index = Number(this.activeClassificationIndex)
             return Number.isInteger(index) && index >= 0 && this.hasClassificationDraftChanges
         },
         canOpenTopicCreate() {
-            if (this.isReadOnly) return false
+            if (this.isClassificationReadOnly) return false
             return this.normalizeText(this.normalizedClassificationDraft.subject) !== ''
         },
         canOpenUnitCreate() {
-            if (this.isReadOnly) return false
+            if (this.isClassificationReadOnly) return false
             return this.normalizeText(this.normalizedClassificationDraft.subject) !== ''
                 && this.normalizeText(this.normalizedClassificationDraft.topic) !== ''
         },
         canSubmitClassificationCreate() {
-            if (this.isReadOnly) return false
+            if (this.isClassificationReadOnly) return false
             if (this.isSaving || this.classificationCreateSaving) return false
             const field = this.normalizeText(this.classificationCreateField).toLocaleLowerCase()
             const name = this.normalizeText(this.classificationCreateValue)
@@ -1089,7 +1096,7 @@ export default {
         openClassificationCreateField(field) {
             const key = this.normalizeText(field).toLocaleLowerCase()
             if (!['subject', 'topic', 'unit'].includes(key)) return
-            if (this.isReadOnly) return
+            if (this.isClassificationReadOnly) return
             if (this.isSaving || this.classificationCreateSaving) return
             if (key === 'topic' && !this.canOpenTopicCreate) return
             if (key === 'unit' && !this.canOpenUnitCreate) return
@@ -1110,7 +1117,7 @@ export default {
         async submitClassificationCreateField() {
             const field = this.normalizeText(this.classificationCreateField).toLocaleLowerCase()
             const name = this.normalizeText(this.classificationCreateValue)
-            if (this.isReadOnly) return
+            if (this.isClassificationReadOnly) return
             if (!['subject', 'topic', 'unit'].includes(field)) return
             if (!name || !this.canSubmitClassificationCreate) return
 
@@ -2244,7 +2251,7 @@ ${bodyHtml}
         updateClassificationDraftField(field, value) {
             const key = String(field || '')
             if (!['subject', 'topic', 'unit'].includes(key)) return
-            if (this.isReadOnly) return
+            if (this.isClassificationReadOnly) return
             if (this.classificationCreateField && this.classificationCreateField !== key && !this.classificationCreateSaving) {
                 this.cancelClassificationCreateField()
             }
@@ -2280,7 +2287,7 @@ ${bodyHtml}
             this.classificationDraftDirty = true
         },
         applyClassificationDraft() {
-            if (this.isReadOnly) return
+            if (this.isClassificationReadOnly) return
             const index = Number(this.activeClassificationIndex)
             if (!Number.isInteger(index) || index < 0) return
 
@@ -2303,7 +2310,7 @@ ${bodyHtml}
             this.$emit('update:classifications', rows)
         },
         updateClassificationField(index, field, value) {
-            if (this.isReadOnly) return
+            if (this.isClassificationReadOnly) return
             const rows = this.toClassificationRows(this.classifications)
             while (rows.length <= index) {
                 rows.push(this.emptyClassificationRow())
@@ -2332,7 +2339,7 @@ ${bodyHtml}
             this.$emit('update:classifications', rows)
         },
         addClassificationAndOpenEditor() {
-            if (this.isReadOnly) return
+            if (this.isClassificationReadOnly) return
             const rows = this.toClassificationRows(this.classifications)
             let targetIndex = rows.findIndex((row) => this.isClassificationRowEmpty(row))
             if (targetIndex < 0) {
@@ -2363,7 +2370,7 @@ ${bodyHtml}
             this.$emit('update:classificationEditorVisible', false)
         },
         openClassificationEditor(index) {
-            if (this.isReadOnly) return
+            if (this.isClassificationReadOnly) return
             const rows = this.visibleClassificationRows
             const parsedIndex = Number(index)
             let safeIndex = Number.isInteger(parsedIndex) ? parsedIndex : 0
@@ -2381,7 +2388,7 @@ ${bodyHtml}
             this.$emit('update:classificationEditorVisible', true)
         },
         removeClassificationRow(index) {
-            if (this.isReadOnly) return
+            if (this.isClassificationReadOnly) return
             const rows = this.toClassificationRows(this.classifications)
             rows.splice(index, 1)
             const nextRows = rows.length ? rows : [this.emptyClassificationRow()]

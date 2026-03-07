@@ -757,13 +757,19 @@ export default {
             type: String,
             default: '',
         },
+        sharedForMeExpanded: {
+            type: Boolean,
+            default: false,
+        },
+        expandedSharedItems: {
+            type: Object,
+            default: () => ({}),
+        },
     },
-    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'open-shared-material', 'open-shared-attachments', 'unlink-linked-material', 'unlink-linked-topic', 'unlink-linked-unit'],
+    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'open-shared-material', 'open-shared-attachments', 'unlink-linked-material', 'unlink-linked-topic', 'unlink-linked-unit', 'toggle-shared-for-me-expanded', 'toggle-shared-item-expanded'],
     data() {
         return {
             workspaceExpanded: true,
-            sharedForMeExpanded: false,
-            expandedSharedItems: {},
         }
     },
     methods: {
@@ -781,7 +787,7 @@ export default {
         toggleSharedForMeExpanded() {
             if (this.actionBusy) return
 
-            this.sharedForMeExpanded = !this.sharedForMeExpanded
+            this.$emit('toggle-shared-for-me-expanded')
         },
         sharedItemKey(ruleId) {
             const normalizedRuleId = Number(ruleId)
@@ -798,10 +804,7 @@ export default {
             const key = this.sharedItemKey(ruleId)
             if (key === '') return
 
-            this.expandedSharedItems = {
-                ...this.expandedSharedItems,
-                [key]: !this.isSharedItemExpanded(ruleId),
-            }
+            this.$emit('toggle-shared-item-expanded', ruleId)
         },
         sharedItemCardStyle(ruleId) {
             if (this.isSharedItemExpanded(ruleId)) {

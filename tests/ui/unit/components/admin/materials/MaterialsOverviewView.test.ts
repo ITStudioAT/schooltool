@@ -366,6 +366,62 @@ describe('MaterialsOverviewView', () => {
         expect(cards[1].scopeLabel).toBe('Fach')
     })
 
+    it('preserves expanded shared tree cards across shared inbox reloads', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const vm = {
+            ...methods,
+            isLoadingSharedObjectsForMe: false,
+            sharedObjectsForMeError: '',
+            sharedObjectsForMeCards: [],
+            openSharedHierarchyCards: {},
+            subjectsTreeExpandedSharedItems: {
+                'shared-item-77': true,
+                'shared-item-99': true,
+            },
+            materialCardStore: {
+                config: {
+                    workspace: {
+                        name: 'Teamraum Mathematik',
+                    },
+                },
+            },
+        }
+
+        const originalAxios = (globalThis as any).axios
+        ;(globalThis as any).axios = {
+            get: vi.fn().mockResolvedValue({
+                data: {
+                    data: [
+                        {
+                            label: 'Lehrer Eins',
+                            shared_items: [
+                                {
+                                    rule_id: 77,
+                                    scope_type: 'all',
+                                    scope_label: 'Workspace',
+                                    scope_object_label: 'Alle Materialien',
+                                    permission: 'read_write',
+                                    permission_label: 'LESEN/SCHREIBEN',
+                                    updated_at: '2026-03-03T08:30:00+00:00',
+                                    hierarchy: [],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            }),
+        }
+        try {
+            await methods.loadSharedObjectsForMe.call(vm)
+        } finally {
+            ;(globalThis as any).axios = originalAxios
+        }
+
+        expect(vm.subjectsTreeExpandedSharedItems).toEqual({
+            'shared-item-77': true,
+        })
+    })
+
     it('renders shared cards with tighter grid breakpoints', () => {
         const beforeMountSpy = vi.spyOn(MaterialsOverviewView, 'beforeMount').mockImplementation(() => {})
 
@@ -578,6 +634,78 @@ describe('MaterialsOverviewView', () => {
         }
     })
 
+    it('keeps the subjects tree mounted while the overview reloads existing items', () => {
+        const beforeMountSpy = vi.spyOn(MaterialsOverviewView, 'beforeMount').mockImplementation(() => {})
+
+        const wrapper = shallowMount(MaterialsOverviewView, {
+            data() {
+                return {
+                    overviewViewMode: 'subjects_contents',
+                    isLoadingSubjectsContentsOverview: true,
+                    subjectsContentsOverviewItems: [
+                        {
+                            id: 1,
+                            name: 'Mathematik',
+                            materials: [],
+                            topics: [],
+                        },
+                    ],
+                }
+            },
+            global: {
+                stubs: {
+                    'v-row': { template: '<div><slot /></div>' },
+                    VRow: { template: '<div><slot /></div>' },
+                    'v-col': { template: '<div><slot /></div>' },
+                    VCol: { template: '<div><slot /></div>' },
+                    'v-card': { template: '<div><slot /></div>' },
+                    VCard: { template: '<div><slot /></div>' },
+                    'v-card-text': { template: '<div><slot /></div>' },
+                    VCardText: { template: '<div><slot /></div>' },
+                    'v-card-title': { template: '<div><slot /></div>' },
+                    VCardTitle: { template: '<div><slot /></div>' },
+                    'v-card-actions': { template: '<div><slot /></div>' },
+                    VCardActions: { template: '<div><slot /></div>' },
+                    'v-chip': { template: '<span><slot /></span>' },
+                    VChip: { template: '<span><slot /></span>' },
+                    'v-icon': { template: '<i><slot /></i>' },
+                    VIcon: { template: '<i><slot /></i>' },
+                    'v-btn': { template: '<button type="button"><slot /></button>' },
+                    VBtn: { template: '<button type="button"><slot /></button>' },
+                    MaterialsSubjectsContentsTree: { template: '<div data-test="subjects-tree" />' },
+                    'materials-subjects-contents-tree': { template: '<div data-test="subjects-tree" />' },
+                    'v-progress-linear': { template: '<div data-test="overview-loader" />' },
+                    VProgressLinear: { template: '<div data-test="overview-loader" />' },
+                    'v-alert': { template: '<div data-test="overview-alert"><slot /></div>' },
+                    VAlert: { template: '<div data-test="overview-alert"><slot /></div>' },
+                    'v-list': { template: '<div><slot /></div>' },
+                    VList: { template: '<div><slot /></div>' },
+                    'v-list-item': { template: '<div><slot /></div>' },
+                    VListItem: { template: '<div><slot /></div>' },
+                    'v-skeleton-loader': { template: '<div />' },
+                    VSkeletonLoader: { template: '<div />' },
+                    'v-text-field': { template: '<input />' },
+                    VTextField: { template: '<input />' },
+                    'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+                    VDialog: { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+                    'v-tooltip': { template: '<div><slot name="activator" :props="{}" /><slot /></div>' },
+                    VTooltip: { template: '<div><slot name="activator" :props="{}" /><slot /></div>' },
+                    'v-expand-transition': { template: '<div><slot /></div>' },
+                    VExpandTransition: { template: '<div><slot /></div>' },
+                    'v-spacer': { template: '<div />' },
+                    VSpacer: { template: '<div />' },
+                },
+            },
+        })
+
+        try {
+            expect(wrapper.find('[data-test="overview-loader"]').exists()).toBe(true)
+            expect(wrapper.find('[data-test="subjects-tree"]').exists()).toBe(true)
+        } finally {
+            beforeMountSpy.mockRestore()
+        }
+    })
+
     it('normalizes shared hierarchy materials with optional attachments', () => {
         const methods = MaterialsOverviewView?.methods || {}
         const vm = { ...methods }
@@ -743,6 +871,7 @@ describe('MaterialsOverviewView', () => {
             detailDialogLoading: false,
             detailDialogReadOnlyMode: false,
             detailDeleteStep: 0,
+            sharedObjectsForMeCards: [],
             sanitizeDialogCard: methods.sanitizeDialogCard,
             fetchSharedMaterialDetail,
         }
@@ -757,6 +886,83 @@ describe('MaterialsOverviewView', () => {
         expect(vm.detailDialogCard).toBeTruthy()
         expect(vm.detailDialogCard.id).toBe(555)
         expect(vm.detailDialogCard.title).toBe('Geteiltes Detail')
+    })
+
+    it('opens shared material detail in writable dialog mode for read write permission', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const computed = MaterialsOverviewView?.computed || {}
+        const fetchSharedMaterialDetail = vi.fn().mockResolvedValue({
+            id: 555,
+            shared_rule_id: 77,
+            shared_material_id: 555,
+            title: 'Geteiltes Detail',
+            attachments: [],
+            classifications: [],
+            linked_permission: 'read_write',
+            linked_permission_label: 'LESEN/SCHREIBEN',
+        })
+        const vm = {
+            ...methods,
+            readOnlyMaterialActions: false,
+            detailDialogCard: null,
+            detailDialogOpen: false,
+            detailDialogLoading: false,
+            detailDialogReadOnlyMode: false,
+            detailDeleteStep: 0,
+            sharedObjectsForMeCards: [
+                {
+                    ruleId: 77,
+                    permission: 'read_write',
+                    permissionLabel: 'LESEN/SCHREIBEN',
+                },
+            ],
+            sanitizeDialogCard: methods.sanitizeDialogCard,
+            fetchSharedMaterialDetail,
+        }
+
+        await methods.openSharedMaterialDetail.call(vm, 77, { id: 555, title: 'Geteiltes Detail' })
+
+        expect(fetchSharedMaterialDetail).toHaveBeenCalledWith(77, 555)
+        expect(vm.detailDialogReadOnlyMode).toBe(false)
+        expect(vm.detailDialogCard.linked_permission).toBe('read_write')
+        expect(vm.detailDialogCard.shared_rule_id).toBe(77)
+        expect(vm.detailDialogCard.shared_material_id).toBe(555)
+        expect(computed.detailDialogReadOnlyActions.call(vm)).toBe(false)
+    })
+
+    it('opens shared material attachments via attachment manager in read write mode', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const openAttachmentManager = vi.fn().mockResolvedValue(undefined)
+        const fetchSharedMaterialAttachments = vi.fn().mockResolvedValue([
+            { id: 9001, name: 'aufgabe.pdf', attachment_type: 'file', download_url: '/dl', preview_url: '/pv', shared_rule_id: 77, shared_material_id: 99 },
+        ])
+        const vm = {
+            ...methods,
+            sharedObjectsForMeCards: [
+                {
+                    ruleId: 77,
+                    permission: 'read_write',
+                    permissionLabel: 'LESEN/SCHREIBEN',
+                },
+            ],
+            openAttachmentManager,
+            fetchSharedMaterialAttachments,
+        }
+
+        await methods.openSharedMaterialAttachments.call(vm, 77, {
+            id: 99,
+            title: 'Lineare Gleichungen',
+        })
+
+        expect(openAttachmentManager).toHaveBeenCalledWith(
+            expect.objectContaining({
+                id: 99,
+                shared_rule_id: 77,
+                shared_material_id: 99,
+                linked_permission: 'read_write',
+                linked_permission_label: 'LESEN/SCHREIBEN',
+            }),
+        )
     })
 
     it('computes detail dialog read-only actions from override flag', () => {
@@ -787,6 +993,152 @@ describe('MaterialsOverviewView', () => {
         expect(dialogCard).toBeTruthy()
         expect(dialogCard.id).toBe(1234)
         expect(methods.cardAllowsFieldEditing.call(vm, dialogCard)).toBe(false)
+    })
+
+    it('preserves shared inbox context when opening the edit dialog', () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const vm = {
+            ...methods,
+            defaultStatusValue: 'inbox',
+            attachmentRows: [],
+            attachmentDeleteArmedIds: [],
+            attachmentNameEditingIds: [],
+            editDeleteStep: 0,
+            editDeleteConfirmDialogOpen: false,
+            editDeleteConfirmDialogLoading: false,
+            editDeleteConfirmMaterialTitle: '',
+            editDeleteConfirmAttachmentRows: [],
+            editClassificationEditorVisible: false,
+            editDialogOpen: false,
+            toAttachmentRows: methods.toAttachmentRows,
+        }
+
+        methods.openEditDialog.call(vm, {
+            id: 555,
+            title: 'Geteiltes Detail',
+            source_text: 'Text',
+            attachments: [],
+            classifications: [{ subject: 'Mathematik', topic: 'Algebra', unit: 'A1' }],
+            is_linked: true,
+            linked_permission: 'read_write',
+            linked_permission_label: 'LESEN/SCHREIBEN',
+            shared_rule_id: 77,
+            shared_material_id: 555,
+        })
+
+        expect(vm.editDialogOpen).toBe(true)
+        expect(vm.editForm.shared_rule_id).toBe(77)
+        expect(vm.editForm.shared_material_id).toBe(555)
+        expect(vm.editForm.linked_permission).toBe('read_write')
+    })
+
+    it('routes shared edit saves through inbox write endpoints', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const sharedContext = { ruleId: 77, materialId: 555, permission: 'read_write', permissionLabel: 'LESEN/SCHREIBEN' }
+        const updateSharedMaterial = vi.fn().mockResolvedValue({ id: 555 })
+        const addSharedLinkAttachment = vi.fn().mockResolvedValue({ id: 1 })
+        const addSharedImageUrlAttachment = vi.fn().mockResolvedValue({ id: 2 })
+        const addSharedTempFileAttachment = vi.fn().mockResolvedValue({ id: 3 })
+        const closeEditDialog = vi.fn().mockResolvedValue(undefined)
+        const loadSharedObjectsForMe = vi.fn().mockResolvedValue(undefined)
+        const loadCards = vi.fn().mockResolvedValue(undefined)
+        const vm = {
+            ...methods,
+            canSaveEdit: true,
+            isSavingEdit: false,
+            isDeletingEditedMaterial: false,
+            isEditLinkedReadOnly: false,
+            defaultStatusValue: 'inbox',
+            editForm: {
+                id: 555,
+                title: 'Bearbeitet',
+                description: 'Neue Beschreibung',
+                classifications: [{ subject: 'Mathematik', topic: 'Algebra', unit: 'A1' }],
+                source_url: '',
+                area: '',
+                unit: '',
+                type: '',
+                status: 'done',
+                notes: 'Neue Notiz',
+                pendingAttachments: [
+                    { attachmentType: 'link', url: 'https://example.org/q', title: 'Quelle', storeImageFile: true },
+                    { tempUpload: 'temp-upload-1', title: 'Datei', fileName: 'datei.pdf' },
+                ],
+                shared_rule_id: 77,
+                shared_material_id: 555,
+                linked_permission: 'read_write',
+            },
+            sharedInboxContextForCard: vi.fn().mockReturnValue(sharedContext),
+            normalizeClassifications: vi.fn((value) => value),
+            toNullable: methods.toNullable,
+            toPendingAttachments: vi.fn((value) => value),
+            normalizeUrl: methods.normalizeUrl,
+            defaultLinkTitle: vi.fn((value) => value),
+            updateSharedMaterial,
+            addSharedLinkAttachment,
+            addSharedImageUrlAttachment,
+            addSharedTempFileAttachment,
+            addSharedFileAttachment: vi.fn(),
+            materialCardStore: {
+                update: vi.fn(),
+                addLinkAttachment: vi.fn(),
+                addImageUrlAttachment: vi.fn(),
+                addTempFileAttachment: vi.fn(),
+                addFileAttachment: vi.fn(),
+            },
+            loadSharedObjectsForMe,
+            closeEditDialog,
+            loadCards,
+        }
+
+        await methods.saveEdit.call(vm)
+
+        expect(updateSharedMaterial).toHaveBeenCalledTimes(1)
+        expect(addSharedLinkAttachment).toHaveBeenCalledWith(sharedContext, {
+            url: 'https://example.org/q',
+            name: 'Quelle',
+        })
+        expect(addSharedImageUrlAttachment).toHaveBeenCalledWith(sharedContext, 'https://example.org/q', 'Quelle')
+        expect(addSharedTempFileAttachment).toHaveBeenCalledWith(sharedContext, 'temp-upload-1', 'Datei')
+        expect(vm.materialCardStore.update).not.toHaveBeenCalled()
+        expect(loadSharedObjectsForMe).toHaveBeenCalledTimes(1)
+        expect(closeEditDialog).toHaveBeenCalledWith(true)
+        expect(loadCards).toHaveBeenCalledWith(null, { forceFilterCountRefresh: true })
+    })
+
+    it('restores shared material detail after closing the shared edit dialog', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const cleanupPendingTempUploads = vi.fn().mockResolvedValue(undefined)
+        const openSharedMaterialDetail = vi.fn().mockResolvedValue(undefined)
+        const openDetailDialog = vi.fn().mockResolvedValue(undefined)
+        const vm = {
+            ...methods,
+            isSavingEdit: false,
+            isDeletingEditedMaterial: false,
+            editForm: {
+                pendingAttachments: [],
+            },
+            cleanupPendingTempUploads,
+            closeTextAttachmentEditor: vi.fn(),
+            returnToDetailOnEditCancel: true,
+            detailCardForEditReturn: {
+                id: 555,
+                title: 'Geteiltes Detail',
+                shared_rule_id: 77,
+                shared_material_id: 555,
+                linked_permission: 'read_write',
+            },
+            sanitizeDialogCard: methods.sanitizeDialogCard,
+            sharedInboxContextForCard: vi.fn().mockReturnValue({ ruleId: 77, materialId: 555, permission: 'read_write', permissionLabel: 'LESEN/SCHREIBEN' }),
+            openSharedMaterialDetail,
+            openDetailDialog,
+        }
+
+        await methods.closeEditDialog.call(vm, true)
+
+        expect(cleanupPendingTempUploads).toHaveBeenCalledTimes(1)
+        expect(openSharedMaterialDetail).toHaveBeenCalledWith(77, expect.objectContaining({ id: 555 }))
+        expect(openDetailDialog).not.toHaveBeenCalled()
     })
 
     it('toggles shared hierarchy cards by rule id', () => {

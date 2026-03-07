@@ -3,6 +3,13 @@
 namespace App\Http\Controllers\Admin\Materials;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\Materials\MaterialCardAttachmentTextUpdateRequest;
+use App\Http\Requests\Admin\Materials\MaterialCardAttachmentUpdateRequest;
+use App\Http\Requests\Admin\Materials\MaterialCardFileAttachmentStoreRequest;
+use App\Http\Requests\Admin\Materials\MaterialCardLinkAttachmentStoreRequest;
+use App\Http\Requests\Admin\Materials\MaterialCardRemoteImageAttachmentStoreRequest;
+use App\Http\Requests\Admin\Materials\MaterialCardTempAttachmentStoreRequest;
+use App\Http\Requests\Admin\Materials\MaterialCardUpdateRequest;
 use App\Models\Import116;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
@@ -259,26 +266,9 @@ class MaterialShareController extends Controller
 
         $ruleId = (int) ($data['rule_id'] ?? 0);
         $materialId = (int) ($data['material_id'] ?? 0);
-        $authUserId = (int) $authUser->id;
-        $authSchoolId = (int) $authUser->school_id;
-
-        $memberGroupIds = UserGroup::query()
-            ->whereHas('members', fn ($query) => $query->where('users.id', $authUserId))
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->values();
-
-        $rule = $this->resolveAccessibleInboxRule($ruleId, $authUserId, $authSchoolId, $memberGroupIds);
-        if (! $rule) {
-            abort(404, 'Freigabe wurde nicht gefunden.');
-        }
-
-        $sourceCard = $this->resolveInboxSourceCardForRule($rule, $materialId);
-        if (! $sourceCard) {
-            throw ValidationException::withMessages([
-                'material_id' => ['Geteiltes Material wurde nicht gefunden oder gehört nicht zur Freigabe.'],
-            ]);
-        }
+        $context = $this->resolveInboxAccessContext($authUser, $ruleId, $materialId);
+        /** @var MaterialCard $sourceCard */
+        $sourceCard = $context['source_card'];
 
         $attachments = $sourceCard->attachments instanceof Collection
             ? $sourceCard->attachments
@@ -305,74 +295,268 @@ class MaterialShareController extends Controller
 
         $ruleId = (int) ($data['rule_id'] ?? 0);
         $materialId = (int) ($data['material_id'] ?? 0);
-        $authUserId = (int) $authUser->id;
-        $authSchoolId = (int) $authUser->school_id;
+        $context = $this->resolveInboxAccessContext($authUser, $ruleId, $materialId);
+        /** @var MaterialCard $sourceCard */
+        $sourceCard = $context['source_card'];
+        $permission = (string) ($context['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY);
 
-        $memberGroupIds = UserGroup::query()
-            ->whereHas('members', fn ($query) => $query->where('users.id', $authUserId))
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->values();
+        return response()->json([
+            'data' => $this->serializeInboxMaterialDetail($sourceCard, $ruleId, $permission),
+        ], 200);
+    }
 
-        $rule = $this->resolveAccessibleInboxRule($ruleId, $authUserId, $authSchoolId, $memberGroupIds);
-        if (! $rule) {
-            abort(404, 'Freigabe wurde nicht gefunden.');
+    public function updateInboxMaterialDetail(MaterialCardUpdateRequest $request, MaterialService $service)
+    {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'material_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $materialId = (int) ($data['material_id'] ?? 0);
+        $context = $this->resolveInboxAccessContext($authUser, $ruleId, $materialId);
+        $permission = (string) ($context['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY);
+        $this->assertInboxPermissionAllowsEdit($permission);
+
+        /** @var MaterialCard $sourceCard */
+        $sourceCard = $context['source_card'];
+        $validated = $request->validated()['data'];
+        $validated['classifications'] = $this->currentMaterialClassificationPayload($sourceCard);
+
+        $sourceOwner = $sourceCard->user()->first();
+        $updatedCard = $service->updateCard(
+            $sourceCard,
+            $validated,
+            $sourceOwner instanceof User ? $sourceOwner : null
+        );
+
+        return response()->json([
+            'data' => $this->serializeInboxMaterialDetail($updatedCard, $ruleId, $permission),
+        ], 200);
+    }
+
+    public function storeInboxLinkAttachment(MaterialCardLinkAttachmentStoreRequest $request, MaterialService $service)
+    {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'material_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $materialId = (int) ($data['material_id'] ?? 0);
+        $context = $this->resolveInboxAccessContext($authUser, $ruleId, $materialId);
+        $this->assertInboxPermissionAllowsAttachmentAppend((string) ($context['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY));
+
+        /** @var MaterialCard $sourceCard */
+        $sourceCard = $context['source_card'];
+        $validated = $request->validated()['data'];
+        $attachment = $service->addLinkAttachment(
+            $sourceCard,
+            (string) ($validated['url'] ?? ''),
+            isset($validated['name']) ? (string) $validated['name'] : null
+        );
+
+        return response()->json([
+            'data' => $this->serializeInboxAttachment($attachment->fresh(), $ruleId, $materialId),
+        ], 200);
+    }
+
+    public function storeInboxRemoteImageAttachment(MaterialCardRemoteImageAttachmentStoreRequest $request, MaterialService $service)
+    {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'material_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $materialId = (int) ($data['material_id'] ?? 0);
+        $context = $this->resolveInboxAccessContext($authUser, $ruleId, $materialId);
+        $this->assertInboxPermissionAllowsAttachmentAppend((string) ($context['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY));
+
+        /** @var MaterialCard $sourceCard */
+        $sourceCard = $context['source_card'];
+        $validated = $request->validated()['data'];
+        $attachment = $service->addImageAttachmentFromUrl(
+            $sourceCard,
+            (string) ($validated['url'] ?? ''),
+            isset($validated['name']) ? (string) $validated['name'] : null
+        );
+
+        return response()->json([
+            'data' => $this->serializeInboxAttachment($attachment->fresh(), $ruleId, $materialId),
+        ], 200);
+    }
+
+    public function storeInboxFileAttachment(MaterialCardFileAttachmentStoreRequest $request, MaterialService $service)
+    {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'material_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $materialId = (int) ($data['material_id'] ?? 0);
+        $context = $this->resolveInboxAccessContext($authUser, $ruleId, $materialId);
+        $this->assertInboxPermissionAllowsAttachmentAppend((string) ($context['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY));
+
+        /** @var MaterialCard $sourceCard */
+        $sourceCard = $context['source_card'];
+        $attachment = $service->addFileAttachment(
+            $sourceCard,
+            $request->file('file'),
+            $request->input('name')
+        );
+
+        return response()->json([
+            'data' => $this->serializeInboxAttachment($attachment->fresh(), $ruleId, $materialId),
+        ], 200);
+    }
+
+    public function storeInboxTempFileAttachment(MaterialCardTempAttachmentStoreRequest $request, MaterialService $service)
+    {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'material_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $materialId = (int) ($data['material_id'] ?? 0);
+        $context = $this->resolveInboxAccessContext($authUser, $ruleId, $materialId);
+        $this->assertInboxPermissionAllowsAttachmentAppend((string) ($context['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY));
+
+        /** @var MaterialCard $sourceCard */
+        $sourceCard = $context['source_card'];
+        $validated = $request->validated()['data'];
+        $attachment = $service->addFileAttachmentFromTempUpload(
+            $authUser,
+            $sourceCard,
+            (string) ($validated['upload_id'] ?? ''),
+            isset($validated['name']) ? (string) $validated['name'] : null
+        );
+
+        return response()->json([
+            'data' => $this->serializeInboxAttachment($attachment->fresh(), $ruleId, $materialId),
+        ], 200);
+    }
+
+    public function updateInboxAttachment(
+        MaterialCardAttachmentUpdateRequest $request,
+        MaterialCardAttachment $material_card_attachment,
+        MaterialService $service
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'material_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $materialId = (int) ($data['material_id'] ?? 0);
+        $context = $this->resolveInboxAccessContext($authUser, $ruleId, $materialId);
+        $this->assertInboxPermissionAllowsEdit((string) ($context['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY));
+
+        /** @var MaterialCard $sourceCard */
+        $sourceCard = $context['source_card'];
+        if ((int) ($material_card_attachment->material_card_id ?? 0) !== (int) $sourceCard->id) {
+            abort(404, 'Anhang wurde nicht gefunden.');
         }
 
-        $sourceCard = $this->resolveInboxSourceCardForRule($rule, $materialId);
-        if (! $sourceCard) {
-            throw ValidationException::withMessages([
-                'material_id' => ['Geteiltes Material wurde nicht gefunden oder gehört nicht zur Freigabe.'],
-            ]);
+        $validated = $request->validated()['data'];
+        $attachment = $service->updateAttachmentName(
+            $material_card_attachment,
+            (string) ($validated['name'] ?? '')
+        );
+
+        return response()->json([
+            'data' => $this->serializeInboxAttachment($attachment->fresh(), $ruleId, $materialId),
+        ], 200);
+    }
+
+    public function inboxTextAttachmentContent(
+        Request $request,
+        MaterialCardAttachment $material_card_attachment,
+        MaterialService $service
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'material_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $materialId = (int) ($data['material_id'] ?? 0);
+        $context = $this->resolveInboxAccessContext($authUser, $ruleId, $materialId);
+        $this->assertInboxPermissionAllowsEdit((string) ($context['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY));
+
+        /** @var MaterialCard $sourceCard */
+        $sourceCard = $context['source_card'];
+        if ((int) ($material_card_attachment->material_card_id ?? 0) !== (int) $sourceCard->id) {
+            abort(404, 'Anhang wurde nicht gefunden.');
         }
 
-        $attachments = $sourceCard->attachments instanceof Collection
-            ? $sourceCard->attachments
-            : collect();
-
-        $serializedAttachments = $attachments
-            ->map(fn (MaterialCardAttachment $attachment) => $this->serializeInboxAttachment($attachment, $ruleId, $materialId))
-            ->values();
-
-        $classifications = $sourceCard->classifications instanceof Collection
-            ? $sourceCard->classifications
-            : collect();
-
-        $serializedClassifications = $classifications
-            ->map(fn (MaterialCardClassification $row) => [
-                'id' => (int) ($row->id ?? 0),
-                'subject_id' => $row->subject_id ? (int) $row->subject_id : null,
-                'topic_id' => $row->topic_id ? (int) $row->topic_id : null,
-                'unit_id' => $row->unit_id ? (int) $row->unit_id : null,
-                'subject' => trim((string) ($row->subject?->name ?? '')),
-                'topic' => trim((string) ($row->topic?->name ?? '')),
-                'unit' => trim((string) ($row->unit?->name ?? '')),
-            ])
-            ->values();
+        $contentHtml = $service->readEditableTextAttachmentContent($material_card_attachment);
 
         return response()->json([
             'data' => [
-                'id' => (int) $sourceCard->id,
-                'school_id' => (int) ($sourceCard->school_id ?? 0),
-                'user_id' => (int) ($sourceCard->user_id ?? 0),
-                'title' => (string) ($sourceCard->title ?? ''),
-                'subject' => $sourceCard->subject,
-                'area' => $sourceCard->area,
-                'unit' => $sourceCard->unit,
-                'type' => $sourceCard->type,
-                'status' => $sourceCard->status,
-                'source_url' => $sourceCard->source_url,
-                'source_text' => $sourceCard->source_text,
-                'notes' => $sourceCard->notes,
-                'is_linked' => true,
-                'linked_permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
-                'linked_permission_label' => mb_strtoupper($this->permissionLabel(MaterialShareTarget::PERMISSION_READ_ONLY)),
-                'attachments_count' => $serializedAttachments->count(),
-                'attachments' => $serializedAttachments->all(),
-                'classifications' => $serializedClassifications->all(),
-                'created_at' => optional($sourceCard->created_at)?->toIso8601String(),
-                'updated_at' => optional($sourceCard->updated_at)?->toIso8601String(),
+                'id' => (int) $material_card_attachment->id,
+                'name' => (string) ($material_card_attachment->name ?? ''),
+                'content_html' => $contentHtml,
             ],
+        ], 200);
+    }
+
+    public function updateInboxTextAttachmentContent(
+        MaterialCardAttachmentTextUpdateRequest $request,
+        MaterialCardAttachment $material_card_attachment,
+        MaterialService $service
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'material_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $materialId = (int) ($data['material_id'] ?? 0);
+        $context = $this->resolveInboxAccessContext($authUser, $ruleId, $materialId);
+        $this->assertInboxPermissionAllowsEdit((string) ($context['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY));
+
+        /** @var MaterialCard $sourceCard */
+        $sourceCard = $context['source_card'];
+        if ((int) ($material_card_attachment->material_card_id ?? 0) !== (int) $sourceCard->id) {
+            abort(404, 'Anhang wurde nicht gefunden.');
+        }
+
+        $validated = $request->validated()['data'];
+        $attachment = $service->updateEditableTextAttachmentContent(
+            $material_card_attachment,
+            (string) ($validated['content_html'] ?? ''),
+            isset($validated['name']) ? (string) $validated['name'] : null
+        );
+
+        return response()->json([
+            'data' => $this->serializeInboxAttachment($attachment->fresh(), $ruleId, $materialId),
         ], 200);
     }
 
@@ -973,6 +1157,40 @@ class MaterialShareController extends Controller
             ->first();
     }
 
+    private function memberGroupIdsForUser(int $authUserId): Collection
+    {
+        return UserGroup::query()
+            ->whereHas('members', fn ($query) => $query->where('users.id', $authUserId))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values();
+    }
+
+    private function resolveInboxAccessContext(User $authUser, int $ruleId, int $materialId): array
+    {
+        $authUserId = (int) $authUser->id;
+        $authSchoolId = (int) $authUser->school_id;
+        $memberGroupIds = $this->memberGroupIdsForUser($authUserId);
+
+        $rule = $this->resolveAccessibleInboxRule($ruleId, $authUserId, $authSchoolId, $memberGroupIds);
+        if (! $rule) {
+            abort(404, 'Freigabe wurde nicht gefunden.');
+        }
+
+        $sourceCard = $this->resolveInboxSourceCardForRule($rule, $materialId);
+        if (! $sourceCard) {
+            throw ValidationException::withMessages([
+                'material_id' => ['Geteiltes Material wurde nicht gefunden oder gehört nicht zur Freigabe.'],
+            ]);
+        }
+
+        return [
+            'rule' => $rule,
+            'source_card' => $sourceCard,
+            'permission' => $this->resolveRulePermissionForUser($rule, $authUserId, $authSchoolId, $memberGroupIds),
+        ];
+    }
+
     private function resolveInboxSourceCardForRule(MaterialShareRule $rule, int $materialId): ?MaterialCard
     {
         if ($materialId <= 0) {
@@ -987,7 +1205,9 @@ class MaterialShareController extends Controller
             ->where('school_id', (int) $rule->school_id)
             ->whereKey($materialId)
             ->when($creatorUserId > 0, fn ($inner) => $inner->where('user_id', $creatorUserId))
+            ->when((int) ($rule->workspace_id ?? 0) > 0, fn ($inner) => $inner->where('workspace_id', (int) $rule->workspace_id))
             ->with([
+                'user:id',
                 'attachments',
                 'classifications.subject:id,name',
                 'classifications.topic:id,name',
@@ -1018,6 +1238,98 @@ class MaterialShareController extends Controller
         }
 
         return $query->first();
+    }
+
+    private function assertInboxPermissionAllowsEdit(string $permission): void
+    {
+        if (in_array($permission, [MaterialShareTarget::PERMISSION_READ_WRITE, MaterialShareTarget::PERMISSION_FULL_ACCESS], true)) {
+            return;
+        }
+
+        abort(403, 'Dieses geteilte Material ist auf NUR LESEN gesetzt.');
+    }
+
+    private function assertInboxPermissionAllowsAttachmentAppend(string $permission): void
+    {
+        if (in_array($permission, [MaterialShareTarget::PERMISSION_READ_WRITE, MaterialShareTarget::PERMISSION_FULL_ACCESS], true)) {
+            return;
+        }
+
+        abort(403, 'Bei geteilten Materialien mit NUR LESEN können keine Anhänge hinzugefügt werden.');
+    }
+
+    private function currentMaterialClassificationPayload(MaterialCard $card): array
+    {
+        $classifications = $card->classifications instanceof Collection
+            ? $card->classifications
+            : collect();
+
+        return $classifications
+            ->map(fn (MaterialCardClassification $row) => [
+                'subject' => trim((string) ($row->subject?->name ?? '')),
+                'topic' => trim((string) ($row->topic?->name ?? '')),
+                'unit' => trim((string) ($row->unit?->name ?? '')),
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function serializeInboxMaterialDetail(MaterialCard $sourceCard, int $ruleId, string $permission): array
+    {
+        $sourceCard->loadMissing([
+            'attachments',
+            'classifications.subject:id,name',
+            'classifications.topic:id,name',
+            'classifications.unit:id,name',
+        ]);
+
+        $materialId = (int) ($sourceCard->id ?? 0);
+        $attachments = $sourceCard->attachments instanceof Collection
+            ? $sourceCard->attachments
+            : collect();
+        $classifications = $sourceCard->classifications instanceof Collection
+            ? $sourceCard->classifications
+            : collect();
+
+        $serializedAttachments = $attachments
+            ->map(fn (MaterialCardAttachment $attachment) => $this->serializeInboxAttachment($attachment, $ruleId, $materialId))
+            ->values();
+        $serializedClassifications = $classifications
+            ->map(fn (MaterialCardClassification $row) => [
+                'id' => (int) ($row->id ?? 0),
+                'subject_id' => $row->subject_id ? (int) $row->subject_id : null,
+                'topic_id' => $row->topic_id ? (int) $row->topic_id : null,
+                'unit_id' => $row->unit_id ? (int) $row->unit_id : null,
+                'subject' => trim((string) ($row->subject?->name ?? '')),
+                'topic' => trim((string) ($row->topic?->name ?? '')),
+                'unit' => trim((string) ($row->unit?->name ?? '')),
+            ])
+            ->values();
+
+        return [
+            'id' => $materialId,
+            'shared_rule_id' => $ruleId,
+            'shared_material_id' => $materialId,
+            'school_id' => (int) ($sourceCard->school_id ?? 0),
+            'user_id' => (int) ($sourceCard->user_id ?? 0),
+            'title' => (string) ($sourceCard->title ?? ''),
+            'subject' => $sourceCard->subject,
+            'area' => $sourceCard->area,
+            'unit' => $sourceCard->unit,
+            'type' => $sourceCard->type,
+            'status' => $sourceCard->status,
+            'source_url' => $sourceCard->source_url,
+            'source_text' => $sourceCard->source_text,
+            'notes' => $sourceCard->notes,
+            'is_linked' => true,
+            'linked_permission' => $permission,
+            'linked_permission_label' => mb_strtoupper($this->permissionLabel($permission)),
+            'attachments_count' => $serializedAttachments->count(),
+            'attachments' => $serializedAttachments->all(),
+            'classifications' => $serializedClassifications->all(),
+            'created_at' => optional($sourceCard->created_at)?->toIso8601String(),
+            'updated_at' => optional($sourceCard->updated_at)?->toIso8601String(),
+        ];
     }
 
     private function resolveSourceUnitIdForInsert(

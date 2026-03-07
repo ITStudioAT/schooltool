@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/vue'
 import MaterialsSubjectsContentsTree from '@/pages/admin/materials/components/overview/MaterialsSubjectsContentsTree.vue'
+import { defineComponent } from 'vue'
 
 const vuetifyStubs = {
     'v-btn': {
@@ -27,26 +28,78 @@ function renderTree(
         sharedObjectsForMeError?: string
     } = {}
 ) {
-    return render(MaterialsSubjectsContentsTree, {
+    const Host = defineComponent({
+        components: { MaterialsSubjectsContentsTree },
+        data() {
+            return {
+                sharedForMeExpanded: false,
+                expandedSharedItems: {},
+            }
+        },
+        methods: {
+            toggleSharedForMeExpanded() {
+                this.sharedForMeExpanded = !this.sharedForMeExpanded
+            },
+            toggleSharedItemExpanded(ruleId: number) {
+                const key = `shared-item-${Number(ruleId || 0)}`
+                this.expandedSharedItems = {
+                    ...this.expandedSharedItems,
+                    [key]: this.expandedSharedItems[key] !== true,
+                }
+            },
+        },
+        template: `
+            <MaterialsSubjectsContentsTree
+                :items="items"
+                :action-busy="false"
+                :enable-share-buttons="enableShareButtons"
+                :enable-create-buttons="false"
+                :enable-remove-buttons="enableRemoveButtons"
+                :show-share-indicators="false"
+                :share-indicator-color-fn="() => ''"
+                :status-color-fn="() => 'primary'"
+                :status-label-fn="() => 'Entwurf'"
+                :subject-group-style-fn="() => ({})"
+                :topic-group-style-fn="() => ({})"
+                :shared-objects-for-me="sharedObjectsForMe"
+                :shared-objects-for-me-loading="sharedObjectsForMeLoading"
+                :shared-objects-for-me-error="sharedObjectsForMeError"
+                :shared-for-me-expanded="sharedForMeExpanded"
+                :expanded-shared-items="expandedSharedItems"
+                @toggle-shared-for-me-expanded="toggleSharedForMeExpanded"
+                @toggle-shared-item-expanded="toggleSharedItemExpanded"
+                @open-material="$emit('open-material', $event)"
+                @open-share="$emit('open-share', $event)"
+                @open-create="$emit('open-create', $event)"
+                @open-attachments="$emit('open-attachments', $event)"
+                @open-shared-material="$emit('open-shared-material', $event)"
+                @open-shared-attachments="$emit('open-shared-attachments', $event)"
+                @unlink-linked-material="$emit('unlink-linked-material', $event)"
+                @unlink-linked-topic="$emit('unlink-linked-topic', $event)"
+                @unlink-linked-unit="$emit('unlink-linked-unit', $event)" />
+        `,
+        props: {
+            items: { type: Array, required: true },
+            enableShareButtons: { type: Boolean, default: false },
+            enableRemoveButtons: { type: Boolean, default: false },
+            sharedObjectsForMe: { type: Array, default: () => [] },
+            sharedObjectsForMeLoading: { type: Boolean, default: false },
+            sharedObjectsForMeError: { type: String, default: '' },
+        },
+    })
+
+    return render(Host, {
         props: {
             items,
-            actionBusy: false,
             enableShareButtons: options.enableShareButtons === true,
-            enableCreateButtons: false,
             enableRemoveButtons: options.enableRemoveButtons === true,
-            showShareIndicators: false,
-            shareIndicatorColorFn: () => '',
-            statusColorFn: () => 'primary',
-            statusLabelFn: () => 'Entwurf',
-            subjectGroupStyleFn: () => ({}),
-            topicGroupStyleFn: () => ({}),
             sharedObjectsForMe: Array.isArray(options.sharedObjectsForMe) ? options.sharedObjectsForMe : [],
             sharedObjectsForMeLoading: options.sharedObjectsForMeLoading === true,
             sharedObjectsForMeError: String(options.sharedObjectsForMeError || ''),
         },
         global: {
             stubs: vuetifyStubs,
-        },
+        }
     })
 }
 

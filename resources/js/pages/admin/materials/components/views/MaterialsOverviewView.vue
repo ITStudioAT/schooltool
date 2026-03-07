@@ -405,7 +405,19 @@
                 </v-row>
             </template>
             <template v-else>
-                <v-progress-linear v-if="isLoadingSubjectsContentsOverview" indeterminate color="primary" rounded class="mb-3" />
+                <v-progress-linear
+                    v-if="isLoadingSubjectsContentsOverview && subjectsContentsOverviewItems.length"
+                    indeterminate
+                    color="primary"
+                    rounded
+                    class="mb-3" />
+
+                <v-progress-linear
+                    v-if="isLoadingSubjectsContentsOverview && !subjectsContentsOverviewItems.length"
+                    indeterminate
+                    color="primary"
+                    rounded
+                    class="mb-3" />
 
                 <v-alert v-else-if="!subjectsContentsOverviewItems.length" type="info" variant="tonal" class="mb-0">Keine Fachstruktur mit Materialien gefunden.</v-alert>
 
@@ -425,12 +437,16 @@
                     :shared-objects-for-me="sharedObjectsForMeCards"
                     :shared-objects-for-me-loading="isLoadingSharedObjectsForMe"
                     :shared-objects-for-me-error="sharedObjectsForMeError"
+                    :shared-for-me-expanded="subjectsTreeSharedForMeExpanded"
+                    :expanded-shared-items="subjectsTreeExpandedSharedItems"
                     @open-material="openDetailDialog"
                     @open-shared-material="openSharedMaterialFromTree"
                     @open-share="openShareDialog"
                     @open-create="openCreateDialogFromTree"
                     @open-attachments="openAttachmentManager"
                     @open-shared-attachments="openSharedMaterialAttachmentsFromTree"
+                    @toggle-shared-for-me-expanded="toggleSubjectsTreeSharedForMeExpanded"
+                    @toggle-shared-item-expanded="toggleSubjectsTreeSharedItemExpanded"
                     @unlink-linked-material="unlinkLinkedCard"
                     @unlink-linked-topic="unlinkLinkedTopic"
                     @unlink-linked-unit="unlinkLinkedUnit" />
@@ -797,6 +813,7 @@
             :classification-toggleable="true"
             :is-saving="isSavingEdit"
             :is-read-only="isEditLinkedReadOnly"
+            :classification-read-only="isEditSharedInboxMaterial"
             :show-content-tools="canEditLinkedAppendContent"
             form-title="Material bearbeiten"
             form-subline="Titel und Beschreibung bearbeiten."
@@ -817,7 +834,7 @@
             @cancel="closeEditDialog">
             <template #extra-content>
                 <div class="mt-4 d-flex flex-wrap justify-end ga-2">
-                    <v-btn color="warning" variant="tonal" prepend-icon="mdi-delete" :disabled="isSavingEdit || isDeletingEditedMaterial || !canEditLinkedDeleteMaterial" @click="startEditDeleteFlow">
+                    <v-btn v-if="canEditLinkedDeleteMaterial" color="warning" variant="tonal" prepend-icon="mdi-delete" :disabled="isSavingEdit || isDeletingEditedMaterial" @click="startEditDeleteFlow">
                         Material löschen
                     </v-btn>
                 </div>
@@ -959,22 +976,23 @@
                                             rel="noopener noreferrer" />
 
                                         <v-btn
+                                            v-if="canEditLinkedDeleteAttachments"
                                             :icon="isAttachmentDeleteArmed(row.id) ? 'mdi-delete' : 'mdi-delete-outline'"
                                             size="small"
                                             :color="isAttachmentDeleteArmed(row.id) ? 'error' : 'warning'"
                                             :variant="isAttachmentDeleteArmed(row.id) ? 'flat' : 'tonal'"
                                             :title="isAttachmentDeleteArmed(row.id) ? 'Jetzt löschen' : 'Löschen'"
                                             :loading="isAttachmentDeleting(row.id)"
-                                            :disabled="isSavingEdit || isAttachmentSaving(row.id) || !canEditLinkedDeleteAttachments"
+                                            :disabled="isSavingEdit || isAttachmentSaving(row.id)"
                                             @click="removeAttachment(row)" />
                                         <v-btn
-                                            v-if="isAttachmentDeleteArmed(row.id)"
+                                            v-if="canEditLinkedDeleteAttachments && isAttachmentDeleteArmed(row.id)"
                                             icon="mdi-undo"
                                             size="small"
                                             color="success"
                                             variant="text"
                                             :title="'Widerrufen'"
-                                            :disabled="isSavingEdit || isAttachmentDeleting(row.id) || isAttachmentSaving(row.id) || !canEditLinkedDeleteAttachments"
+                                            :disabled="isSavingEdit || isAttachmentDeleting(row.id) || isAttachmentSaving(row.id)"
                                             @click="cancelAttachmentDelete(row.id)" />
                                     </div>
                                 </div>
@@ -1150,6 +1168,9 @@ const createDefaultEditForm = () => ({
     notes: '',
     is_linked: false,
     linked_permission: '',
+    linked_permission_label: '',
+    shared_rule_id: null,
+    shared_material_id: null,
 })
 
 export default {
@@ -1223,6 +1244,8 @@ export default {
             isLoadingSharedObjectsForMe: false,
             sharedObjectsForMeError: '',
             sharedObjectsForMeCards: [],
+            subjectsTreeSharedForMeExpanded: false,
+            subjectsTreeExpandedSharedItems: {},
             openSharedHierarchyCards: {},
             isLoadingSubjectsContentsOverview: false,
             subjectsContentsOverviewItems: [],
@@ -1449,6 +1472,11 @@ export default {
         isEditLinkedMaterial() {
             return this.normalizeLinkedPermission(this.editForm?.linked_permission) !== ''
                 || this.editForm?.is_linked === true
+        },
+        isEditSharedInboxMaterial() {
+            const ruleId = Number(this.editForm?.shared_rule_id || 0)
+            const materialId = Number(this.editForm?.shared_material_id || 0)
+            return Number.isFinite(ruleId) && ruleId > 0 && Number.isFinite(materialId) && materialId > 0
         },
         isEditLinkedReadOnly() {
             return this.isEditLinkedMaterial && this.normalizedEditLinkedPermission === 'read_only'
@@ -1953,6 +1981,43 @@ export default {
             if (normalized === 'read_write') return 'LESEN/SCHREIBEN'
             return 'NUR LESEN'
         },
+        sharedRuleCard(ruleId) {
+            const id = Number(ruleId)
+            if (!Number.isFinite(id) || id <= 0) return null
+            const cards = Array.isArray(this.sharedObjectsForMeCards) ? this.sharedObjectsForMeCards : []
+            return cards.find((card) => Number(card?.ruleId || 0) === id) || null
+        },
+        sharedInboxContextForCard(card, fallbackRuleId = null) {
+            const ruleId = Number(card?.shared_rule_id || fallbackRuleId || 0)
+            const materialId = Number(card?.shared_material_id || card?.id || 0)
+            if (!Number.isFinite(ruleId) || ruleId <= 0) return null
+            if (!Number.isFinite(materialId) || materialId <= 0) return null
+
+            const sharedRuleCard = this.sharedRuleCard(ruleId)
+            const permission = this.normalizeLinkedPermission(
+                card?.linked_permission ?? card?.linkedPermission ?? sharedRuleCard?.permission
+            ) || 'read_only'
+            const permissionLabel = String(
+                card?.linked_permission_label
+                || card?.linkedPermissionLabel
+                || sharedRuleCard?.permissionLabel
+                || this.linkedPermissionLabelForPermission(permission)
+            ).trim() || this.linkedPermissionLabelForPermission(permission)
+
+            return {
+                ruleId,
+                materialId,
+                permission,
+                permissionLabel,
+            }
+        },
+        sharedInboxContextForAttachment(attachment) {
+            return this.sharedInboxContextForCard({
+                ...(this.attachmentDialogCardContext || this.attachmentDialogCard || {}),
+                shared_rule_id: attachment?.shared_rule_id ?? this.attachmentDialogCardContext?.shared_rule_id,
+                shared_material_id: attachment?.shared_material_id ?? this.attachmentDialogCardContext?.shared_material_id,
+            })
+        },
         cardAllowsFieldEditing(card) {
             const permission = this.linkedPermissionForCard(card)
             return permission === '' || permission === 'read_write' || permission === 'full_access'
@@ -2276,22 +2341,187 @@ export default {
             })
             return response?.data?.data || null
         },
+        async performSharedInboxMutation(config = {}) {
+            const notification = useNotificationStore()
+
+            try {
+                const response = await axios(config)
+                if (config.successMessage) {
+                    notification.notify({
+                        message: config.successMessage,
+                        type: 'success',
+                        timeout: 2000,
+                    })
+                }
+
+                return response?.data?.data ?? response?.data ?? null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || config.errorMessage || 'Aktion konnte nicht ausgeführt werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+
+                return null
+            }
+        },
+        async updateSharedMaterial(context, data) {
+            return this.performSharedInboxMutation({
+                method: 'put',
+                url: '/api/admin/materials/shares/inbox/material-detail',
+                data: {
+                    rule_id: Number(context?.ruleId || 0),
+                    material_id: Number(context?.materialId || 0),
+                    data,
+                },
+                successMessage: 'Materialkarte aktualisiert.',
+                errorMessage: 'Fehler beim Aktualisieren der Materialkarte.',
+            })
+        },
+        async addSharedLinkAttachment(context, data) {
+            return this.performSharedInboxMutation({
+                method: 'post',
+                url: '/api/admin/materials/shares/inbox/material-attachments/link',
+                data: {
+                    rule_id: Number(context?.ruleId || 0),
+                    material_id: Number(context?.materialId || 0),
+                    data,
+                },
+                successMessage: 'Link-Anhang hinzugefügt.',
+                errorMessage: 'Fehler beim Hinzufügen des Link-Anhangs.',
+            })
+        },
+        async addSharedImageUrlAttachment(context, url, name = '') {
+            const normalizedUrl = String(url ?? '').trim().slice(0, 2048)
+            const normalizedName = String(name ?? '').trim().slice(0, 255)
+
+            if (!normalizedUrl) {
+                const notification = useNotificationStore()
+                notification.notify({
+                    message: 'Ungültige Bild-URL.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+
+                return null
+            }
+
+            return this.performSharedInboxMutation({
+                method: 'post',
+                url: '/api/admin/materials/shares/inbox/material-attachments/image-url',
+                data: {
+                    rule_id: Number(context?.ruleId || 0),
+                    material_id: Number(context?.materialId || 0),
+                    data: {
+                        url: normalizedUrl,
+                        name: normalizedName || null,
+                    },
+                },
+                successMessage: 'Bild-Anhang hinzugefügt.',
+                errorMessage: 'Fehler beim Importieren des Bildes.',
+            })
+        },
+        async addSharedFileAttachment(context, file, name = '') {
+            const formData = new FormData()
+            formData.append('rule_id', String(Number(context?.ruleId || 0)))
+            formData.append('material_id', String(Number(context?.materialId || 0)))
+            formData.append('file', file)
+            if (name) {
+                formData.append('name', name)
+            }
+
+            return this.performSharedInboxMutation({
+                method: 'post',
+                url: '/api/admin/materials/shares/inbox/material-attachments/file',
+                data: formData,
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                },
+                successMessage: 'Datei-Anhang hinzugefügt.',
+                errorMessage: 'Fehler beim Datei-Upload.',
+            })
+        },
+        async addSharedTempFileAttachment(context, uploadId, name = '') {
+            return this.performSharedInboxMutation({
+                method: 'post',
+                url: '/api/admin/materials/shares/inbox/material-attachments/file-temp',
+                data: {
+                    rule_id: Number(context?.ruleId || 0),
+                    material_id: Number(context?.materialId || 0),
+                    data: {
+                        upload_id: String(uploadId ?? '').trim(),
+                        name: String(name ?? '').trim().slice(0, 255) || null,
+                    },
+                },
+                successMessage: 'Datei-Anhang hinzugefügt.',
+                errorMessage: 'Fehler beim Datei-Upload.',
+            })
+        },
+        async renameSharedAttachment(context, attachmentId, name) {
+            return this.performSharedInboxMutation({
+                method: 'patch',
+                url: `/api/admin/materials/shares/inbox/material-attachments/${Number(attachmentId || 0)}`,
+                data: {
+                    rule_id: Number(context?.ruleId || 0),
+                    material_id: Number(context?.materialId || 0),
+                    data: {
+                        name: String(name ?? '').trim().slice(0, 255),
+                    },
+                },
+                successMessage: 'Anhang umbenannt.',
+                errorMessage: 'Fehler beim Umbenennen des Anhangs.',
+            })
+        },
+        async fetchSharedTextAttachmentContent(context, attachmentId) {
+            return this.performSharedInboxMutation({
+                method: 'get',
+                url: `/api/admin/materials/shares/inbox/material-attachments/${Number(attachmentId || 0)}/text-content`,
+                params: {
+                    rule_id: Number(context?.ruleId || 0),
+                    material_id: Number(context?.materialId || 0),
+                },
+                errorMessage: 'Text-Anhang konnte nicht geladen werden.',
+            })
+        },
+        async updateSharedTextAttachmentContent(context, attachmentId, contentHtml, name = '') {
+            return this.performSharedInboxMutation({
+                method: 'patch',
+                url: `/api/admin/materials/shares/inbox/material-attachments/${Number(attachmentId || 0)}/text-content`,
+                data: {
+                    rule_id: Number(context?.ruleId || 0),
+                    material_id: Number(context?.materialId || 0),
+                    data: {
+                        content_html: String(contentHtml ?? '').trim(),
+                        name: String(name ?? '').trim().slice(0, 255) || null,
+                    },
+                },
+                successMessage: 'Text-Anhang aktualisiert.',
+                errorMessage: 'Text-Anhang konnte nicht gespeichert werden.',
+            })
+        },
         async openSharedMaterialDetail(ruleId, material) {
             const normalizedRuleId = Number(ruleId)
             const cardId = Number(material?.id)
             if (!Number.isFinite(normalizedRuleId) || normalizedRuleId <= 0) return
             if (!Number.isFinite(cardId) || cardId <= 0) return
 
+            const sharedContext = this.sharedInboxContextForCard(material, normalizedRuleId)
+            const permission = sharedContext?.permission || 'read_only'
+            const permissionLabel = sharedContext?.permissionLabel || this.linkedPermissionLabelForPermission(permission)
+
             this.detailDialogCard = this.sanitizeDialogCard({
                 id: cardId,
+                shared_rule_id: normalizedRuleId,
+                shared_material_id: cardId,
                 title: String(material?.title || '').trim() || 'Material',
                 attachments: [],
                 classifications: [],
                 is_linked: true,
-                linked_permission: 'read_only',
-                linked_permission_label: 'NUR LESEN',
+                linked_permission: permission,
+                linked_permission_label: permissionLabel,
             })
-            this.detailDialogReadOnlyMode = true
+            this.detailDialogReadOnlyMode = permission === 'read_only'
             this.detailDialogOpen = true
             this.detailDialogLoading = true
             this.detailDeleteStep = 0
@@ -2302,6 +2532,7 @@ export default {
                 if (Number(this.detailDialogCard?.id || 0) !== cardId) return
                 if (detail && typeof detail === 'object') {
                     this.detailDialogCard = this.sanitizeDialogCard(detail)
+                    this.detailDialogReadOnlyMode = this.normalizeLinkedPermission(detail?.linked_permission) === 'read_only'
                 }
             } catch (error) {
                 const notification = useNotificationStore()
@@ -2328,6 +2559,8 @@ export default {
             if (!Number.isFinite(normalizedRuleId) || normalizedRuleId <= 0) return
             if (!Number.isFinite(cardId) || cardId <= 0) return
 
+            const sharedContext = this.sharedInboxContextForCard(material, normalizedRuleId)
+
             let attachments = []
             try {
                 attachments = await this.fetchSharedMaterialAttachments(normalizedRuleId, cardId)
@@ -2344,11 +2577,13 @@ export default {
 
             await this.openAttachmentManager({
                 id: cardId,
+                shared_rule_id: normalizedRuleId,
+                shared_material_id: cardId,
                 title: String(material?.title || '').trim() || 'Material',
                 attachments,
                 is_linked: true,
-                linked_permission: 'read_only',
-                linked_permission_label: 'NUR LESEN',
+                linked_permission: sharedContext?.permission || 'read_only',
+                linked_permission_label: sharedContext?.permissionLabel || 'NUR LESEN',
             })
         },
         openSharedMaterialAttachmentsFromTree(payload = {}) {
@@ -2382,6 +2617,23 @@ export default {
         sharedHierarchyKey(ruleId) {
             return `shared-rule-${Number(ruleId || 0)}`
         },
+        subjectsTreeSharedItemKey(ruleId) {
+            const id = Number(ruleId || 0)
+            if (!Number.isFinite(id) || id <= 0) return ''
+            return `shared-item-${id}`
+        },
+        toggleSubjectsTreeSharedForMeExpanded() {
+            this.subjectsTreeSharedForMeExpanded = !this.subjectsTreeSharedForMeExpanded
+        },
+        toggleSubjectsTreeSharedItemExpanded(ruleId) {
+            const key = this.subjectsTreeSharedItemKey(ruleId)
+            if (!key) return
+
+            this.subjectsTreeExpandedSharedItems = {
+                ...this.subjectsTreeExpandedSharedItems,
+                [key]: this.subjectsTreeExpandedSharedItems[key] !== true,
+            }
+        },
         canExpandSharedHierarchy(item) {
             return Array.isArray(item?.hierarchy) && item.hierarchy.length > 0
         },
@@ -2410,17 +2662,25 @@ export default {
                 const rows = Array.isArray(response?.data?.data) ? response.data.data : []
                 const nextCards = this.normalizeSharedObjectsForMeResponse(rows)
                 const nextOpenHierarchyCards = {}
+                const nextExpandedSharedItems = {}
                 for (const card of nextCards) {
                     const key = this.sharedHierarchyKey(card?.ruleId)
                     if (key && previousOpenHierarchyCards[key]) {
                         nextOpenHierarchyCards[key] = true
                     }
+
+                    const sharedItemKey = this.subjectsTreeSharedItemKey(card?.ruleId)
+                    if (sharedItemKey && this.subjectsTreeExpandedSharedItems[sharedItemKey] === true) {
+                        nextExpandedSharedItems[sharedItemKey] = true
+                    }
                 }
                 this.sharedObjectsForMeCards = nextCards
                 this.openSharedHierarchyCards = nextOpenHierarchyCards
+                this.subjectsTreeExpandedSharedItems = nextExpandedSharedItems
             } catch (error) {
                 this.sharedObjectsForMeCards = []
                 this.openSharedHierarchyCards = {}
+                this.subjectsTreeExpandedSharedItems = {}
                 this.sharedObjectsForMeError = error?.response?.data?.message || 'Freigaben konnten nicht geladen werden.'
             } finally {
                 this.isLoadingSharedObjectsForMe = false
@@ -3568,6 +3828,7 @@ export default {
 
             const cardId = Number(this.attachmentDialogCardId)
             if (!Number.isFinite(cardId) || cardId <= 0) return
+            const sharedContext = this.sharedInboxContextForCard(this.attachmentDialogCardContext || { id: cardId })
 
             const urls = this.extractDropUrls(dt)
             if (!urls.length) return
@@ -3597,16 +3858,23 @@ export default {
                     knownLinks.add(key)
 
                     const attachmentTitle = this.defaultLinkTitle(normalizedUrl)
-                    const linkAdded = await this.materialCardStore.addLinkAttachment(cardId, {
-                        url: normalizedUrl,
-                        name: attachmentTitle,
-                    })
+                    const linkAdded = sharedContext
+                        ? await this.addSharedLinkAttachment(sharedContext, {
+                            url: normalizedUrl,
+                            name: attachmentTitle,
+                        })
+                        : await this.materialCardStore.addLinkAttachment(cardId, {
+                            url: normalizedUrl,
+                            name: attachmentTitle,
+                        })
 
                     if (!linkAdded) continue
                     changed = true
 
                     if (this.isLikelyImageUrl(normalizedUrl)) {
-                        const imageStored = await this.materialCardStore.addImageUrlAttachment(cardId, normalizedUrl, attachmentTitle)
+                        const imageStored = sharedContext
+                            ? await this.addSharedImageUrlAttachment(sharedContext, normalizedUrl, attachmentTitle)
+                            : await this.materialCardStore.addImageUrlAttachment(cardId, normalizedUrl, attachmentTitle)
                         if (imageStored) {
                             changed = true
                         }
@@ -4021,6 +4289,9 @@ export default {
                 notes: card?.notes || '',
                 is_linked: card?.is_linked === true,
                 linked_permission: this.normalizeLinkedPermission(card?.linked_permission),
+                linked_permission_label: String(card?.linked_permission_label || '').trim(),
+                shared_rule_id: Number(card?.shared_rule_id || 0) || null,
+                shared_material_id: Number(card?.shared_material_id || card?.id || 0) || null,
             }
             this.attachmentDialogCardId = Number(card?.id) || null
             this.attachmentRows = this.toAttachmentRows(card?.attachments)
@@ -4186,6 +4457,7 @@ export default {
 
             const shouldRestoreDetail = restoreDetail && this.returnToDetailOnEditCancel && this.detailCardForEditReturn
             const restoreCard = shouldRestoreDetail ? this.sanitizeDialogCard(this.detailCardForEditReturn) : null
+            const restoreSharedContext = restoreCard ? this.sharedInboxContextForCard(restoreCard) : null
 
             this.editDialogOpen = false
             this.editClassificationEditorVisible = false
@@ -4203,7 +4475,11 @@ export default {
             this.detailCardForEditReturn = null
 
             if (restoreCard) {
-                await this.openDetailDialog(restoreCard)
+                if (restoreSharedContext) {
+                    await this.openSharedMaterialDetail(restoreSharedContext.ruleId, restoreCard)
+                } else {
+                    await this.openDetailDialog(restoreCard)
+                }
             }
         },
         openTypeManager() {
@@ -4226,54 +4502,103 @@ export default {
             }
 
             this.isSavingEdit = true
-            const classifications = this.normalizeClassifications(this.editForm.classifications)
-            const payload = {
-                title: String(this.editForm.title || '').trim(),
-                source_url: this.toNullable(this.editForm.source_url),
-                source_text: this.toNullable(this.editForm.description),
-                classifications,
-                area: this.toNullable(this.editForm.area),
-                unit: this.toNullable(this.editForm.unit),
-                type: this.toNullable(this.editForm.type),
-                status: this.toNullable(this.editForm.status) || this.defaultStatusValue,
-                notes: this.toNullable(this.editForm.notes),
-            }
 
-            const updated = await this.materialCardStore.update(this.editForm.id, payload)
+            try {
+                const sharedContext = this.sharedInboxContextForCard(this.editForm)
+                const classifications = this.normalizeClassifications(this.editForm.classifications)
+                const payload = {
+                    title: String(this.editForm.title || '').trim(),
+                    source_url: this.toNullable(this.editForm.source_url),
+                    source_text: this.toNullable(this.editForm.description),
+                    classifications,
+                    area: this.toNullable(this.editForm.area),
+                    unit: this.toNullable(this.editForm.unit),
+                    type: this.toNullable(this.editForm.type),
+                    status: this.toNullable(this.editForm.status) || this.defaultStatusValue,
+                    notes: this.toNullable(this.editForm.notes),
+                }
 
-            if (updated) {
+                const updated = sharedContext
+                    ? await this.updateSharedMaterial(sharedContext, payload)
+                    : await this.materialCardStore.update(this.editForm.id, payload)
+
+                if (!updated) {
+                    return
+                }
+
                 const pendingAttachments = this.toPendingAttachments(this.editForm.pendingAttachments)
                 for (const attachment of pendingAttachments) {
                     if (attachment.attachmentType === 'link' && this.normalizeUrl(attachment.url)) {
                         const normalizedUrl = this.normalizeUrl(attachment.url)
                         const normalizedName = this.toNullable(attachment.title) || this.defaultLinkTitle(attachment.url)
-                        await this.materialCardStore.addLinkAttachment(this.editForm.id, {
-                            url: normalizedUrl,
-                            name: normalizedName,
-                        })
 
-                        if (attachment.storeImageFile === true) {
-                            await this.materialCardStore.addImageUrlAttachment(this.editForm.id, normalizedUrl, normalizedName)
+                        if (sharedContext) {
+                            await this.addSharedLinkAttachment(sharedContext, {
+                                url: normalizedUrl,
+                                name: normalizedName,
+                            })
+
+                            if (attachment.storeImageFile === true) {
+                                await this.addSharedImageUrlAttachment(sharedContext, normalizedUrl, normalizedName)
+                            }
+                        } else {
+                            await this.materialCardStore.addLinkAttachment(this.editForm.id, {
+                                url: normalizedUrl,
+                                name: normalizedName,
+                            })
+
+                            if (attachment.storeImageFile === true) {
+                                await this.materialCardStore.addImageUrlAttachment(this.editForm.id, normalizedUrl, normalizedName)
+                            }
                         }
+
                         continue
                     }
 
                     if (attachment.tempUpload) {
-                        await this.materialCardStore.addTempFileAttachment(this.editForm.id, attachment.tempUpload, this.toNullable(attachment.title) || attachment.fileName || '')
+                        if (sharedContext) {
+                            await this.addSharedTempFileAttachment(
+                                sharedContext,
+                                attachment.tempUpload,
+                                this.toNullable(attachment.title) || attachment.fileName || ''
+                            )
+                        } else {
+                            await this.materialCardStore.addTempFileAttachment(
+                                this.editForm.id,
+                                attachment.tempUpload,
+                                this.toNullable(attachment.title) || attachment.fileName || ''
+                            )
+                        }
+
                         continue
                     }
 
                     if (attachment.file instanceof File) {
-                        await this.materialCardStore.addFileAttachment(this.editForm.id, attachment.file, this.toNullable(attachment.title) || attachment.file.name || '')
+                        if (sharedContext) {
+                            await this.addSharedFileAttachment(
+                                sharedContext,
+                                attachment.file,
+                                this.toNullable(attachment.title) || attachment.file.name || ''
+                            )
+                        } else {
+                            await this.materialCardStore.addFileAttachment(
+                                this.editForm.id,
+                                attachment.file,
+                                this.toNullable(attachment.title) || attachment.file.name || ''
+                            )
+                        }
                     }
                 }
-            }
 
-            this.isSavingEdit = false
+                if (sharedContext) {
+                    await this.loadSharedObjectsForMe()
+                }
 
-            if (updated) {
+                this.isSavingEdit = false
                 await this.closeEditDialog(true)
                 await this.loadCards(null, { forceFilterCountRefresh: true })
+            } finally {
+                this.isSavingEdit = false
             }
         },
         async saveCreate() {
@@ -4738,7 +5063,10 @@ ${content}
             this.textAttachmentEditorBodyHtml = ''
 
             try {
-                const payload = await this.materialCardStore.fetchTextAttachmentContent(id)
+                const sharedContext = this.sharedInboxContextForAttachment(row)
+                const payload = sharedContext
+                    ? await this.fetchSharedTextAttachmentContent(sharedContext, id)
+                    : await this.materialCardStore.fetchTextAttachmentContent(id)
                 if (!payload) {
                     this.textAttachmentEditorError = 'Text-Anhang konnte nicht geladen werden.'
                     return
@@ -4786,7 +5114,14 @@ ${content}
             this.textAttachmentEditorError = ''
 
             try {
-                const updated = await this.materialCardStore.updateTextAttachmentContent(attachmentId, cardId, documentHtml, title)
+                const sharedContext = this.sharedInboxContextForAttachment({
+                    id: attachmentId,
+                    shared_rule_id: this.attachmentDialogCardContext?.shared_rule_id,
+                    shared_material_id: this.attachmentDialogCardContext?.shared_material_id,
+                })
+                const updated = sharedContext
+                    ? await this.updateSharedTextAttachmentContent(sharedContext, attachmentId, documentHtml, title)
+                    : await this.materialCardStore.updateTextAttachmentContent(attachmentId, cardId, documentHtml, title)
                 if (!updated) return
 
                 await this.refreshAttachmentDialogCard(cardId)
@@ -4849,6 +5184,29 @@ ${content}
             const id = Number(cardId)
             if (!Number.isFinite(id) || id <= 0) return
 
+            const sharedContext = this.sharedInboxContextForCard(this.attachmentDialogCardContext || { id })
+            if (sharedContext && sharedContext.materialId === id) {
+                const refreshedCard = await this.fetchSharedMaterialDetail(sharedContext.ruleId, sharedContext.materialId)
+                if (!refreshedCard) return
+
+                await this.loadSharedObjectsForMe()
+
+                const sanitizedCard = this.sanitizeDialogCard(refreshedCard)
+                this.attachmentDialogCardContext = sanitizedCard
+                this.attachmentRows = this.toAttachmentRows(refreshedCard?.attachments)
+                if (this.detailDialogOpen && Number(this.detailDialogCard?.id || 0) === id) {
+                    this.detailDialogCard = sanitizedCard
+                    this.detailDialogReadOnlyMode = this.normalizeLinkedPermission(refreshedCard?.linked_permission) === 'read_only'
+                }
+
+                const nextTitle = String(refreshedCard?.title || '').trim()
+                if (nextTitle) {
+                    this.attachmentDialogCardTitle = nextTitle
+                }
+
+                return
+            }
+
             const selectedCard = this.materialCardStore?.selected_card
             if (Number(selectedCard?.id) === id) {
                 this.attachmentDialogCardContext = this.sanitizeDialogCard(selectedCard)
@@ -4884,6 +5242,7 @@ ${content}
             const cardId = Number(this.attachmentDialogCardId)
             if (!Number.isFinite(cardId) || cardId <= 0) return
             if (this.attachmentDialogBusy) return
+            const sharedContext = this.sharedInboxContextForCard(this.attachmentDialogCardContext || { id: cardId })
 
             const uploadId = String(fileItem?.serverId || '').trim()
             if (!uploadId) {
@@ -4896,7 +5255,9 @@ ${content}
 
             this.isUploadingAttachment = true
             try {
-                const attached = await this.materialCardStore.addTempFileAttachment(cardId, uploadId, title)
+                const attached = sharedContext
+                    ? await this.addSharedTempFileAttachment(sharedContext, uploadId, title)
+                    : await this.materialCardStore.addTempFileAttachment(cardId, uploadId, title)
                 if (!attached) {
                     await this.materialCardStore.deleteTempUpload(uploadId, false)
                     return
@@ -5178,7 +5539,10 @@ ${content}
             this.markAttachmentSaving(id, true)
 
             try {
-                const updated = await this.materialCardStore.renameAttachment(id, cardId, row.name)
+                const sharedContext = this.sharedInboxContextForAttachment(row)
+                const updated = sharedContext
+                    ? await this.renameSharedAttachment(sharedContext, id, row.name)
+                    : await this.materialCardStore.renameAttachment(id, cardId, row.name)
                 if (!updated) return
 
                 const nextName = this.normalizeAttachmentName(updated?.name) || this.normalizeAttachmentName(row.name)
@@ -5243,6 +5607,22 @@ ${content}
 
             card.attachments = attachments
             card.attachments_count = attachments.length
+
+            if (Number(this.attachmentDialogCardContext?.id || 0) === cardId) {
+                this.attachmentDialogCardContext = {
+                    ...this.attachmentDialogCardContext,
+                    attachments: attachments.map((attachment) => ({ ...attachment })),
+                    attachments_count: attachments.length,
+                }
+            }
+
+            if (Number(this.detailDialogCard?.id || 0) === cardId) {
+                this.detailDialogCard = {
+                    ...this.detailDialogCard,
+                    attachments: attachments.map((attachment) => ({ ...attachment })),
+                    attachments_count: attachments.length,
+                }
+            }
         },
         removeAttachmentFromCard(attachmentId) {
             const cardId = Number(this.attachmentDialogCardId)
@@ -5257,6 +5637,22 @@ ${content}
 
             card.attachments = nextAttachments
             card.attachments_count = nextAttachments.length
+
+            if (Number(this.attachmentDialogCardContext?.id || 0) === cardId) {
+                this.attachmentDialogCardContext = {
+                    ...this.attachmentDialogCardContext,
+                    attachments: nextAttachments.map((attachment) => ({ ...attachment })),
+                    attachments_count: nextAttachments.length,
+                }
+            }
+
+            if (Number(this.detailDialogCard?.id || 0) === cardId) {
+                this.detailDialogCard = {
+                    ...this.detailDialogCard,
+                    attachments: nextAttachments.map((attachment) => ({ ...attachment })),
+                    attachments_count: nextAttachments.length,
+                }
+            }
         },
         async copyTextToClipboard(value) {
             const text = String(value || '').trim()

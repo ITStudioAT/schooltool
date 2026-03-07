@@ -493,6 +493,154 @@ test('inbox material attachments keep share urls even when shared file path is m
         ->assertJsonPath('data.0.download_docx_url', '/api/admin/materials/attachments/'.$attachment->id.'/download-docx?'.$query);
 });
 
+test('inbox read write material detail updates the source card while preserving classifications', function () {
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'creator-read-write-update@test.local',
+    ]);
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Mathematik',
+    ]);
+    $topic = MaterialTopic::query()->create([
+        'subject_id' => $subject->id,
+        'name' => 'Algebra',
+    ]);
+    $unit = MaterialUnit::query()->create([
+        'topic_id' => $topic->id,
+        'name' => 'Lineare Gleichungen',
+    ]);
+
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Ausgangsmaterial',
+        'source_text' => 'Version 1',
+        'notes' => 'Alte Notiz',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => $unit->id,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_MATERIAL,
+        'scope_id' => $sourceCard->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_WRITE,
+    ]);
+
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $this->putJson('/api/admin/materials/shares/inbox/material-detail', [
+        'rule_id' => (int) $rule->id,
+        'material_id' => (int) $sourceCard->id,
+        'data' => [
+            'title' => 'Bearbeitetes Material',
+            'source_text' => 'Version 2',
+            'source_url' => 'https://example.org/material',
+            'status' => MaterialCard::STATUS_DONE,
+            'notes' => 'Neue Notiz',
+            'classifications' => [[
+                'subject' => 'Biologie',
+                'topic' => 'Zellen',
+                'unit' => 'Membran',
+            ]],
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.title', 'Bearbeitetes Material')
+        ->assertJsonPath('data.source_text', 'Version 2')
+        ->assertJsonPath('data.source_url', 'https://example.org/material')
+        ->assertJsonPath('data.status', MaterialCard::STATUS_DONE)
+        ->assertJsonPath('data.notes', 'Neue Notiz')
+        ->assertJsonPath('data.linked_permission', MaterialShareTarget::PERMISSION_READ_WRITE)
+        ->assertJsonPath('data.classifications.0.subject', 'Mathematik')
+        ->assertJsonPath('data.classifications.0.topic', 'Algebra')
+        ->assertJsonPath('data.classifications.0.unit', 'Lineare Gleichungen');
+
+    $sourceCard->refresh();
+    $sourceCard->load([
+        'classifications.subject:id,name',
+        'classifications.topic:id,name',
+        'classifications.unit:id,name',
+    ]);
+
+    expect((string) $sourceCard->title)->toBe('Bearbeitetes Material');
+    expect((string) $sourceCard->source_text)->toBe('Version 2');
+    expect((string) $sourceCard->source_url)->toBe('https://example.org/material');
+    expect((string) $sourceCard->status)->toBe(MaterialCard::STATUS_DONE);
+    expect((string) $sourceCard->notes)->toBe('Neue Notiz');
+    expect($sourceCard->classifications)->toHaveCount(1);
+    expect((string) ($sourceCard->classifications->first()?->subject?->name ?? ''))->toBe('Mathematik');
+    expect((string) ($sourceCard->classifications->first()?->topic?->name ?? ''))->toBe('Algebra');
+    expect((string) ($sourceCard->classifications->first()?->unit?->name ?? ''))->toBe('Lineare Gleichungen');
+});
+
+test('inbox read write link attachment stores on the original source material', function () {
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'creator-read-write-link@test.local',
+    ]);
+
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Quellenblatt',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_MATERIAL,
+        'scope_id' => $sourceCard->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_WRITE,
+    ]);
+
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $this->postJson('/api/admin/materials/shares/inbox/material-attachments/link', [
+        'rule_id' => (int) $rule->id,
+        'material_id' => (int) $sourceCard->id,
+        'data' => [
+            'url' => 'https://example.org/quelle',
+            'name' => 'Quelle extern',
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.shared_rule_id', (int) $rule->id)
+        ->assertJsonPath('data.shared_material_id', (int) $sourceCard->id)
+        ->assertJsonPath('data.name', 'Quelle extern')
+        ->assertJsonPath('data.url', 'https://example.org/quelle');
+
+    $this->assertDatabaseHas('material_card_attachments', [
+        'material_card_id' => $sourceCard->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_LINK,
+        'name' => 'Quelle extern',
+        'url' => 'https://example.org/quelle',
+    ]);
+});
+
 test('inbox shared preview and download work when attachment exists on public disk fallback', function () {
     $creator = User::factory()->create([
         'school_id' => $this->school->id,
