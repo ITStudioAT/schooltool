@@ -134,7 +134,12 @@ describe('Groups page header', () => {
                 studentClassesLoading: false,
                 studentClasses: [{ key: '2B' }],
                 sourceGroups: [{ id: 5 }],
+                sourceGroupCategory: 'classes',
+                bulkSourceGroupId: 5,
                 sourceGroupId: 5,
+                selectedSourceGroupMembers: [{ id: 11 }],
+                selectedSourceGroupSourceMembers: [{ id: 12 }],
+                selectedSourceGroupMembersLoading: true,
                 sourceMembers: [{ id: 9 }],
                 sourceMembersLoading: false,
                 readOnlyPage: 4,
@@ -155,6 +160,12 @@ describe('Groups page header', () => {
         expect(ctx.assignUsersDialog.membersPage).toBe(1)
         expect(ctx.assignUsersDialog.readOnlyPage).toBe(1)
         expect(ctx.assignUsersDialog.readOnlyPanel).toBeNull()
+        expect(ctx.assignUsersDialog.sourceGroupCategory).toBeNull()
+        expect(ctx.assignUsersDialog.bulkSourceGroupId).toBeNull()
+        expect(ctx.assignUsersDialog.sourceGroupId).toBeNull()
+        expect(ctx.assignUsersDialog.selectedSourceGroupMembers).toEqual([])
+        expect(ctx.assignUsersDialog.selectedSourceGroupSourceMembers).toEqual([])
+        expect(ctx.assignUsersDialog.selectedSourceGroupMembersLoading).toBe(false)
         expect(showSourceMembersPanel).toHaveBeenCalledTimes(1)
         expect(loadAssignedMembers).toHaveBeenCalledTimes(1)
         expect(loadSourceMembers).toHaveBeenCalledTimes(1)
@@ -198,7 +209,12 @@ describe('Groups page header', () => {
                 studentClassesLoading: true,
                 studentClasses: [{ key: '2B' }],
                 sourceGroups: [{ id: 5 }],
+                sourceGroupCategory: 'teachers',
+                bulkSourceGroupId: 5,
                 sourceGroupId: 5,
+                selectedSourceGroupMembers: [{ id: 11 }],
+                selectedSourceGroupSourceMembers: [{ id: 12 }],
+                selectedSourceGroupMembersLoading: true,
                 sourceMembers: [{ id: 9 }],
                 sourceMembersLoading: true,
                 readOnlyPage: 7,
@@ -219,8 +235,201 @@ describe('Groups page header', () => {
         expect(ctx.assignUsersDialog.membersExpanded).toBe(false)
         expect(ctx.assignUsersDialog.membersPage).toBe(1)
         expect(ctx.assignUsersDialog.readOnlyPage).toBe(1)
+        expect(ctx.assignUsersDialog.sourceGroupCategory).toBeNull()
+        expect(ctx.assignUsersDialog.bulkSourceGroupId).toBeNull()
+        expect(ctx.assignUsersDialog.sourceGroupId).toBeNull()
+        expect(ctx.assignUsersDialog.selectedSourceGroupMembers).toEqual([])
+        expect(ctx.assignUsersDialog.selectedSourceGroupSourceMembers).toEqual([])
+        expect(ctx.assignUsersDialog.selectedSourceGroupMembersLoading).toBe(false)
         expect(loadAssignedMembers).toHaveBeenCalledTimes(1)
         expect(loadAssignableGroups).toHaveBeenCalledTimes(1)
+    })
+
+    it('builds school source category buttons from available school source groups only', () => {
+        const methods = (Groups as any).methods
+        const ctx = {
+            assignUsersDialog: {
+                sourceGroups: [
+                    { id: 1, type: 'school', name: '1A', is_system_default: true },
+                    { id: 2, type: 'school', name: 'Lehrer', is_system_default: true },
+                    { id: 3, type: 'school', name: '1A Eltern', is_system_default: true, is_parent_group: true },
+                    { id: 4, type: 'school', name: 'AG Robotik', is_system_default: false },
+                    { id: 5, type: 'school', name: 'Alle Schulmitglieder', is_system_default: true, is_all_school_members_group: true },
+                    { id: 6, type: 'own', name: 'Eigene Gruppe' },
+                ],
+            },
+            schoolSourceGroupsPanels: methods.schoolSourceGroupsPanels,
+            isAutomaticSchoolGroup: methods.isAutomaticSchoolGroup,
+            isTeacherSchoolGroup: methods.isTeacherSchoolGroup,
+            isParentSchoolGroup: methods.isParentSchoolGroup,
+            isAllSchoolMembersGroup: methods.isAllSchoolMembersGroup,
+        }
+
+        const buttons = methods.schoolSourceGroupCategoryButtons.call(ctx)
+
+        expect(buttons.map((button: any) => button.key)).toEqual(['classes', 'teachers', 'parents', 'other-school-groups'])
+        expect(buttons.map((button: any) => button.title)).toEqual(['Klassen', 'Lehrer', 'Eltern', 'Weitere Gruppen'])
+    })
+
+    it('keeps the four school source categories visible even before concrete groups are chosen', () => {
+        const methods = (Groups as any).methods
+        const ctx = {
+            assignUsersDialog: {
+                sourceGroups: [],
+            },
+            schoolSourceGroupsPanels: methods.schoolSourceGroupsPanels,
+            isAutomaticSchoolGroup: methods.isAutomaticSchoolGroup,
+            isTeacherSchoolGroup: methods.isTeacherSchoolGroup,
+            isParentSchoolGroup: methods.isParentSchoolGroup,
+            isAllSchoolMembersGroup: methods.isAllSchoolMembersGroup,
+        }
+
+        const buttons = methods.schoolSourceGroupCategoryButtons.call(ctx)
+
+        expect(buttons.map((button: any) => button.title)).toEqual(['Klassen', 'Lehrer', 'Eltern', 'Weitere Gruppen'])
+    })
+
+    it('returns the active school source panel and falls back to the first available category', () => {
+        const methods = (Groups as any).methods
+        const ctx = {
+            assignUsersDialog: {
+                sourceGroupCategory: 'missing',
+            },
+            schoolSourceGroupCategoryButtons: vi.fn(() => [
+                { key: 'classes', title: 'Klassen', groups: [{ id: 1 }] },
+                { key: 'teachers', title: 'Lehrer', groups: [{ id: 2 }] },
+            ]),
+        }
+
+        expect(methods.activeSchoolSourceGroupsPanel.call(ctx)).toEqual({ key: 'classes', title: 'Klassen', groups: [{ id: 1 }] })
+
+        ctx.assignUsersDialog.sourceGroupCategory = 'teachers'
+
+        expect(methods.activeSchoolSourceGroupsPanel.call(ctx)).toEqual({ key: 'teachers', title: 'Lehrer', groups: [{ id: 2 }] })
+    })
+
+    it('selects a school source category and clears stale source group selections', () => {
+        const methods = (Groups as any).methods
+        const ctx: any = {
+            assignUsersDialog: {
+                sourceGroupCategory: null,
+                sourceGroupId: 99,
+            },
+            activeSchoolSourceGroupsPanel: vi.fn(() => ({
+                key: 'classes',
+                groups: [{ id: 1 }, { id: 2 }],
+            })),
+        }
+
+        methods.selectSchoolSourceGroupCategory.call(ctx, 'classes')
+
+        expect(ctx.assignUsersDialog.sourceGroupCategory).toBe('classes')
+        expect(ctx.assignUsersDialog.sourceGroupId).toBeNull()
+    })
+
+    it('toggles an already selected school source category off again', () => {
+        const methods = (Groups as any).methods
+        const ctx: any = {
+            assignUsersDialog: {
+                sourceGroupCategory: 'teachers',
+                bulkSourceGroupId: 3,
+                sourceGroupId: 9,
+                selectedSourceGroupMembers: [{ id: 1 }],
+                selectedSourceGroupSourceMembers: [{ id: 2 }],
+                selectedSourceGroupMembersLoading: true,
+            },
+            activeSchoolSourceGroupsPanel: vi.fn(() => ({
+                key: 'teachers',
+                groups: [{ id: 2 }, { id: 3 }],
+            })),
+        }
+
+        methods.selectSchoolSourceGroupCategory.call(ctx, 'teachers')
+
+        expect(ctx.assignUsersDialog.sourceGroupCategory).toBeNull()
+        expect(ctx.assignUsersDialog.bulkSourceGroupId).toBeNull()
+        expect(ctx.assignUsersDialog.sourceGroupId).toBeNull()
+        expect(ctx.assignUsersDialog.selectedSourceGroupMembers).toEqual([])
+        expect(ctx.assignUsersDialog.selectedSourceGroupSourceMembers).toEqual([])
+        expect(ctx.assignUsersDialog.selectedSourceGroupMembersLoading).toBe(false)
+    })
+
+    it('loads members when selecting a source group for auswählen and toggles it off on second click', async () => {
+        const methods = (Groups as any).methods
+        const loadSelectedSourceGroupMembers = vi.fn()
+        const ctx: any = {
+            assignUsersDialog: {
+                sourceGroupId: null,
+                selectedSourceGroupMembers: [],
+                selectedSourceGroupSourceMembers: [],
+                selectedSourceGroupMembersLoading: false,
+            },
+            loadSelectedSourceGroupMembers,
+        }
+
+        await methods.toggleSelectedSourceGroup.call(ctx, { id: 12, name: '1A' })
+
+        expect(ctx.assignUsersDialog.sourceGroupId).toBe(12)
+        expect(loadSelectedSourceGroupMembers).toHaveBeenCalledTimes(1)
+        expect(loadSelectedSourceGroupMembers).toHaveBeenCalledWith({ id: 12, name: '1A' })
+
+        await methods.toggleSelectedSourceGroup.call(ctx, { id: 12, name: '1A' })
+
+        expect(ctx.assignUsersDialog.sourceGroupId).toBeNull()
+        expect(ctx.assignUsersDialog.selectedSourceGroupMembers).toEqual([])
+        expect(ctx.assignUsersDialog.selectedSourceGroupSourceMembers).toEqual([])
+        expect(ctx.assignUsersDialog.selectedSourceGroupMembersLoading).toBe(false)
+    })
+
+    it('merges selected source-group members into one combined list', () => {
+        const methods = (Groups as any).methods
+        const ctx = {
+            assignUsersDialog: {
+                selectedSourceGroupMembers: [
+                    { id: 7, name: 'Registered User', email: 'registered@test.local' },
+                ],
+                selectedSourceGroupSourceMembers: [
+                    { id: 101, user_id: 7, import116_id: 101, name: 'Registered User', email: 'registered@test.local', already_member: true, has_user_account: true },
+                    { id: 102, user_id: null, import116_id: 102, name: 'Import Only', email: 'import@test.local', has_user_account: false },
+                ],
+            },
+            readOnlyMemberKey: methods.readOnlyMemberKey,
+            memberHasUserAccount: methods.memberHasUserAccount,
+            mergeReadOnlyMember: methods.mergeReadOnlyMember,
+            sortReadOnlyMembers: methods.sortReadOnlyMembers,
+        }
+
+        const rows = methods.selectedSourceGroupCombinedMembers.call(ctx)
+
+        expect(rows).toEqual([
+            { id: 101, user_id: 7, import116_id: 101, name: 'Registered User', email: 'registered@test.local', already_member: true, has_user_account: true, is_registered: true },
+            { id: 102, user_id: null, import116_id: 102, name: 'Import Only', email: 'import@test.local', has_user_account: false, is_registered: false },
+        ])
+    })
+
+    it('treats a selected school source category as disabling the user search area', () => {
+        const methods = (Groups as any).methods
+
+        expect(methods.isSchoolSourceCategorySelected.call({
+            assignUsersDialog: {
+                group: { id: 1, type: 'school' },
+                sourceGroupCategory: 'classes',
+            },
+        })).toBe(true)
+
+        expect(methods.isSchoolSourceCategorySelected.call({
+            assignUsersDialog: {
+                group: { id: 2, type: 'school' },
+                sourceGroupCategory: null,
+            },
+        })).toBe(false)
+
+        expect(methods.isSchoolSourceCategorySelected.call({
+            assignUsersDialog: {
+                group: { id: 3, type: 'own' },
+                sourceGroupCategory: 'classes',
+            },
+        })).toBe(false)
     })
 
     it('shows the source-members panel for automatic own course groups', () => {
@@ -262,6 +471,7 @@ describe('Groups page header', () => {
             },
             showSourceMembersPanel: vi.fn(() => true),
             readOnlyMemberKey: methods.readOnlyMemberKey,
+            memberHasUserAccount: methods.memberHasUserAccount,
             mergeReadOnlyMember: methods.mergeReadOnlyMember,
             sortReadOnlyMembers: methods.sortReadOnlyMembers,
         }
@@ -271,6 +481,32 @@ describe('Groups page header', () => {
         expect(rows).toEqual([
             { id: 101, user_id: 7, import116_id: 101, name: 'Registered User', email: 'registered@test.local', already_member: true, has_user_account: true, is_registered: true },
             { id: 102, user_id: null, import116_id: 102, name: 'Import Only', email: 'import@test.local', has_user_account: false, is_registered: false },
+        ])
+    })
+
+    it('does not mark parent contacts without user account as registered', () => {
+        const methods = (Groups as any).methods
+        const ctx = {
+            assignUsersDialog: {
+                group: { id: 12, type: 'school', name: '1A Eltern' },
+                members: [
+                    { id: 'import116.parent_contact:1:abc', name: 'Parent Contact', email: 'parent@test.local', has_user_account: false },
+                ],
+                sourceMembers: [
+                    { id: 'import116.parent_contact:1:abc', name: 'Parent Contact', email: 'parent@test.local', has_user_account: false },
+                ],
+            },
+            showSourceMembersPanel: vi.fn(() => true),
+            readOnlyMemberKey: methods.readOnlyMemberKey,
+            memberHasUserAccount: methods.memberHasUserAccount,
+            mergeReadOnlyMember: methods.mergeReadOnlyMember,
+            sortReadOnlyMembers: methods.sortReadOnlyMembers,
+        }
+
+        const rows = methods.readOnlyCombinedMembers.call(ctx)
+
+        expect(rows).toEqual([
+            { id: 'import116.parent_contact:1:abc', name: 'Parent Contact', email: 'parent@test.local', has_user_account: false, is_registered: false },
         ])
     })
 
@@ -284,6 +520,68 @@ describe('Groups page header', () => {
         ])
 
         expect(rows.map((row: any) => row.id)).toEqual([2, 1, 3])
+    })
+
+    it('builds provider-based assignment payloads and selected member batches', () => {
+        const methods = (Groups as any).methods
+        const ctx = {
+            memberAssignmentPayload: methods.memberAssignmentPayload,
+            memberSelectionValue: methods.memberSelectionValue,
+        }
+
+        expect(methods.memberAssignmentPayload.call(ctx, {
+            member_provider: 'import116.student',
+            member_ref: 'import116.student:11',
+        })).toEqual({
+            member_provider: 'import116.student',
+            member_ref: 'import116.student:11',
+        })
+
+        expect(methods.memberSelectionValue.call(ctx, {
+            member_provider: 'teacher_list.teacher',
+            member_ref: 'teacher_list.teacher:9',
+        })).toBe('teacher_list.teacher|teacher_list.teacher:9')
+
+        expect(methods.buildSelectedAssignableMemberPayloads.call(ctx, [
+            { member_provider: 'import116.student', member_ref: 'import116.student:11' },
+            { member_provider: 'teacher_list.teacher', member_ref: 'teacher_list.teacher:9' },
+            { member_provider: 'user', member_ref: 'user:5' },
+        ], [
+            'teacher_list.teacher|teacher_list.teacher:9',
+            'user|user:5',
+        ])).toEqual([
+            { member_provider: 'teacher_list.teacher', member_ref: 'teacher_list.teacher:9' },
+            { member_provider: 'user', member_ref: 'user:5' },
+        ])
+    })
+
+    it('schedules a reload while group sync is in progress', () => {
+        vi.useFakeTimers()
+
+        try {
+            const methods = (Groups as any).methods
+            const loadGroups = vi.fn()
+            const ctx: any = {
+                syncStatus: {
+                    in_progress: true,
+                    refresh_after_seconds: 8,
+                },
+                syncReloadTimer: null,
+                loadGroups,
+                clearSyncStatusReload: methods.clearSyncStatusReload,
+            }
+
+            methods.scheduleSyncStatusReload.call(ctx)
+
+            expect(ctx.syncReloadTimer).not.toBeNull()
+
+            vi.advanceTimersByTime(8000)
+
+            expect(loadGroups).toHaveBeenCalledTimes(1)
+            expect(ctx.syncReloadTimer).toBeNull()
+        } finally {
+            vi.useRealTimers()
+        }
     })
 
     it('paginates dialog member lists in blocks of 100 entries', () => {
@@ -518,7 +816,19 @@ describe('Groups page header', () => {
         expect(source).toContain('v-model="assignUsersDialog.readOnlyPage"')
         expect(source).toContain('v-model="assignUsersDialog.membersPage"')
         expect(source).toContain('class="groups-list-pagination"')
+        expect(source).toContain('Synchronisierung läuft')
+        expect(source).toContain('syncStatus.in_progress')
+        expect(source).toContain('scheduleSyncStatusReload()')
+        expect(source).toContain('clearSyncStatusReload()')
+        expect(source).toContain('memberAssignmentPayload(member)')
+        expect(source).toContain('memberSelectionValue(member)')
+        expect(source).toContain('buildSelectedAssignableMemberPayloads(rows, selectedValues)')
+        expect(source).toContain('members: normalizedMembers')
+        expect(source).toContain('member_ids: memberIds')
+        expect(source).toContain('member_provider')
+        expect(source).toContain('member_ref')
         expect(source).toContain('member.member_type_label')
+        expect(source).toContain('user.member_type_label')
         expect(source).toContain('member.is_registered')
         expect(source).toContain('mdi-check-circle')
         expect(source).toContain('title="Registriert"')
@@ -530,6 +840,45 @@ describe('Groups page header', () => {
         expect(source).toContain('openManageMembersDialog(section.type, group)')
         expect(source).toContain('mdi-account-edit-outline')
         expect(source).toContain('membersExpanded: false')
+        expect(source).toContain('toggleAssignedMembersExpanded()')
+        expect(source).toContain('collapseTakeoverSection()')
+        expect(source).toContain('isTakeoverSectionDisabled()')
+        expect(source).toContain('schoolSourceGroupCategoryButtons()')
+        expect(source).toContain('source-category-')
+        expect(source).toContain('sourceGroupCategory: null')
+        expect(source).toContain("assignUsersDialog.sourceGroupCategory === panel.key ? 'primary' : 'grey-lighten-1'")
+        expect(source).toContain("2. Von Gruppe übernehmen")
+        expect(source).toContain(":class=\"{ 'groups-assign-section--disabled': isSchoolSourceCategorySelected() }\"")
+        expect(source).toContain(":disabled=\"isSchoolSourceCategorySelected()\"")
+        expect(source).toContain(":class=\"{ 'groups-assign-section--disabled': isTakeoverSectionDisabled() }\"")
+        expect(source).toContain('isSchoolSourceCategorySelected()')
+        expect(source).toContain('school-source-group-')
+        expect(source).toContain('Keine Gruppen in dieser Kategorie.')
+        expect(source).toContain('Alle übernehmen')
+        expect(source).toContain('toggleSelectedSourceGroup(sourceGroup)')
+        expect(source).toContain('selectedSourceGroup()')
+        expect(source).toContain('selectedSourceGroupCombinedMembers()')
+        expect(source).toContain('selectedSourceGroupMembersLoading')
+        expect(source).toContain('loadSelectedSourceGroupMembers(sourceGroup)')
+        expect(source).toContain('clearSelectedSourceGroup()')
+        expect(source).toContain('selectedSourceMemberAssignedRecord(member)')
+        expect(source).toContain('Hinzufügen')
+        expect(source).toContain('Entfernen')
+        expect(source).toContain('display_name: member.display_name ?? member.name ?? null')
+        expect(source).toContain('showSourceUsersCounter(sourceGroup)')
+        expect(source).toContain('Number(sourceGroup.source_users_count || 0) }}/{{ Number(sourceGroup.members_count || 0)')
+        expect(source).toContain('activeSchoolSourceGroupsPanel() && !selectedSourceGroup()')
+        expect(source).toContain('Andere Gruppe wählen')
+        expect(source).toContain('selectSchoolSourceGroupCategory(panel.key)')
+        expect(source).toContain("title: 'Klassen'")
+        expect(source).toContain("title: 'Lehrer'")
+        expect(source).toContain("title: 'Eltern'")
+        expect(source).toContain("title: 'Weitere Gruppen'")
+        expect(source).not.toContain('Keine Schulgruppen verfügbar.')
+        expect(source).not.toContain('Weiter')
+        expect(source).not.toContain('Zurück')
+        expect(source).not.toContain('3. Von Lehrer:innen übernehmen')
+        expect(source).not.toContain('4. Von Schüler:innen übernehmen')
         expect(source).not.toContain('openAssignUsersDialog(selectedGroupByType(section.type))')
         expect(source).not.toContain('mdi-account-plus-outline')
         expect(source).toContain('.groups-row-meta {')

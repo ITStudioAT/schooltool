@@ -8,6 +8,7 @@ use App\Models\Import116Run;
 use App\Models\Import116RunChange;
 use App\Models\SchoolTool;
 use App\Models\User;
+use App\Models\UserGroupMember;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -187,6 +188,8 @@ class Import116Job implements ShouldQueue
                             $placeholderUser->save();
                         }
                     }
+
+                    $this->syncImport116ReferencesToCurrentRecord($schoolId, $record);
 
                     // Keep TeachingCourseStudents in sync: update user_id where still null.
                     if ($record->user_id) {
@@ -385,6 +388,69 @@ class Import116Job implements ShouldQueue
         }
 
         Import116::query()->whereIn('id', $ids)->delete();
+    }
+
+    private function syncImport116ReferencesToCurrentRecord(int $schoolId, Import116 $record): void
+    {
+        $studentCode = trim((string) ($record->student_code ?? ''));
+        if ($studentCode === '') {
+            return;
+        }
+
+        $staleImportIds = Import116::query()
+            ->where('school_id', $schoolId)
+            ->where('student_code', $studentCode)
+            ->where('id', '!=', (int) $record->id)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->values();
+
+        if ($staleImportIds->isEmpty()) {
+            return;
+        }
+
+        if (Schema::hasTable('users')) {
+            User::query()
+                ->where('school_id', $schoolId)
+                ->whereIn('import116_id', $staleImportIds->all())
+                ->update(['import116_id' => (int) $record->id]);
+        }
+
+        if (! Schema::hasTable('user_group_members')) {
+            return;
+        }
+
+        $targetRef = 'import116.student:'.(int) $record->id;
+        $staleRefs = $staleImportIds
+            ->map(fn (int $id) => 'import116.student:'.$id)
+            ->values()
+            ->all();
+
+        $members = UserGroupMember::query()
+            ->where('school_id', $schoolId)
+            ->where('member_provider', UserGroupMember::PROVIDER_IMPORT116_STUDENT)
+            ->whereIn('member_ref', $staleRefs)
+            ->get();
+
+        foreach ($members as $member) {
+            $duplicate = UserGroupMember::query()
+                ->where('user_group_id', (int) $member->user_group_id)
+                ->where('member_provider', UserGroupMember::PROVIDER_IMPORT116_STUDENT)
+                ->where('member_ref', $targetRef)
+                ->where('id', '!=', (int) $member->id)
+                ->exists();
+
+            if ($duplicate) {
+                $member->delete();
+
+                continue;
+            }
+
+            $member->member_ref = $targetRef;
+            $member->source_schoolyear_id = $record->schoolyear_id ? (int) $record->schoolyear_id : null;
+            $member->save();
+        }
     }
 
     private function snapshotImport116(Import116 $record): array

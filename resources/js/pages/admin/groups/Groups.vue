@@ -17,9 +17,18 @@
                             <div class="sa-card-eyebrow">Übersicht</div>
                             <h2 class="sa-card-title">Gruppentypen & Rechte</h2>
                         </div>
-                        <v-btn flat color="primary" prepend-icon="mdi-refresh" :loading="isBusy" @click="loadGroups">
-                            Aktualisieren
-                        </v-btn>
+                        <div class="d-flex align-center flex-wrap ga-2">
+                            <v-chip
+                                v-if="syncStatus.in_progress"
+                                color="warning"
+                                variant="flat"
+                                size="small">
+                                Synchronisierung läuft
+                            </v-chip>
+                            <v-btn flat color="primary" prepend-icon="mdi-refresh" :loading="isBusy" @click="loadGroups">
+                                Aktualisieren
+                            </v-btn>
+                        </div>
                     </div>
 
                     <div class="sa-kpi-grid">
@@ -482,6 +491,7 @@
                                                 <div class="text-caption text-medium-emphasis" v-if="member.schoolclass">Klasse: {{ member.schoolclass }}</div>
                                                 <div class="text-caption text-medium-emphasis" v-if="member.phone">Telefon: {{ member.phone }}</div>
                                                 <div class="text-caption text-medium-emphasis" v-if="member.children_label">Kinder: {{ member.children_label }}</div>
+                                                <div class="text-caption text-warning" v-if="member.status_label">{{ member.status_label }}</div>
                                             </div>
                                         </div>
                                     </div>
@@ -506,7 +516,7 @@
                                     <div>
                                         <div class="admin-card-eyebrow">Zugeordnete Benutzer</div>
                                         <div class="text-caption text-medium-emphasis">
-                                            {{ assignUsersDialog.members.length }} Benutzer in dieser Gruppe
+                                            {{ assignUsersDialog.members.length }} Mitglieder in dieser Gruppe
                                         </div>
                                     </div>
                                     <div class="d-flex flex-wrap ga-2">
@@ -514,7 +524,7 @@
                                             flat
                                             :color="assignUsersDialog.membersExpanded ? 'secondary' : 'primary'"
                                             :prepend-icon="assignUsersDialog.membersExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'"
-                                            @click="assignUsersDialog.membersExpanded = !assignUsersDialog.membersExpanded">
+                                            @click="toggleAssignedMembersExpanded()">
                                             {{ assignUsersDialog.membersExpanded ? 'Ausblenden' : 'Anzeigen' }}
                                         </v-btn>
                                     </div>
@@ -552,10 +562,10 @@
                                     </div>
 
                                     <div class="sa-empty" v-if="assignUsersDialog.membersLoading">
-                                        Lade zugeordnete Benutzer ...
+                                        Lade zugeordnete Mitglieder ...
                                     </div>
                                     <div class="sa-empty" v-else-if="assignUsersDialog.members.length === 0">
-                                        Keine Benutzer zugeordnet.
+                                        Keine Mitglieder zugeordnet.
                                     </div>
                                     <div class="groups-assign-list" v-else>
                                         <div class="groups-assign-list-item" v-for="member in paginatedAssignedMembers()" :key="`group-member-${member.id}`">
@@ -568,6 +578,8 @@
                                                     <div class="font-weight-bold text-body-2">{{ member.name }}</div>
                                                     <div class="text-caption text-medium-emphasis">{{ member.email }}</div>
                                                     <div class="text-caption text-medium-emphasis" v-if="member.schoolclass">Klasse: {{ member.schoolclass }}</div>
+                                                    <div class="text-caption text-medium-emphasis" v-if="member.member_type_label">{{ member.member_type_label }}</div>
+                                                    <div class="text-caption text-warning" v-if="member.status_label">{{ member.status_label }}</div>
                                                 </div>
                                             </div>
                                             <v-btn
@@ -598,7 +610,10 @@
                             </template>
                         </section>
 
-                        <section v-if="!assignUsersDialog.readOnly" class="groups-assign-section">
+                        <section
+                            v-if="!assignUsersDialog.readOnly"
+                            class="groups-assign-section"
+                            :class="{ 'groups-assign-section--disabled': isSchoolSourceCategorySelected() }">
                             <div class="d-flex justify-space-between align-center flex-wrap ga-2 mb-2">
                                 <div>
                                     <div class="admin-card-eyebrow">1. Benutzer:innen suchen</div>
@@ -613,12 +628,14 @@
                                     hide-details
                                     density="comfortable"
                                     class="flex-grow-1"
+                                    :disabled="isSchoolSourceCategorySelected()"
                                     @click:clear="searchAssignableUsers"
                                     @keyup.enter="searchAssignableUsers" />
                                 <v-btn
                                     flat
                                     color="primary"
                                     prepend-icon="mdi-magnify"
+                                    :disabled="isSchoolSourceCategorySelected()"
                                     :loading="assignUsersDialog.userSearchLoading"
                                     @click="searchAssignableUsers">
                                     Suchen
@@ -637,6 +654,7 @@
                                         <div class="font-weight-bold text-body-2">{{ user.name }}</div>
                                         <div class="text-caption text-medium-emphasis">{{ user.email }}</div>
                                         <div class="text-caption text-medium-emphasis" v-if="user.schoolclass">Klasse: {{ user.schoolclass }}</div>
+                                        <div class="text-caption text-medium-emphasis" v-if="user.member_type_label">{{ user.member_type_label }}</div>
                                     </div>
                                     <div class="d-flex flex-wrap ga-1 justify-end">
                                         <v-chip
@@ -652,8 +670,9 @@
                                             color="success"
                                             size="small"
                                             prepend-icon="mdi-account-plus"
+                                            :disabled="isSchoolSourceCategorySelected()"
                                             :loading="isBusy"
-                                            @click="assignUsersToCurrentGroup([user.id])">
+                                            @click="assignSingleMemberToCurrentGroup(user)">
                                             Zuordnen
                                         </v-btn>
                                         <v-btn
@@ -662,8 +681,9 @@
                                             color="warning"
                                             size="small"
                                             prepend-icon="mdi-account-remove"
-                                            :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(user.id)"
-                                            @click="removeAssignedMember(user)">
+                                            :disabled="isSchoolSourceCategorySelected()"
+                                            :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(user.assigned_member_id)"
+                                            @click="removeAssignedMember({ id: user.assigned_member_id })">
                                             Entfernen
                                         </v-btn>
                                     </div>
@@ -671,9 +691,147 @@
                             </div>
                         </section>
 
-                        <section v-if="!assignUsersDialog.readOnly" class="groups-assign-section">
-                            <div class="admin-card-eyebrow mb-2">Weitere Möglichkeiten</div>
+                        <section
+                            v-if="!assignUsersDialog.readOnly"
+                            class="groups-assign-section"
+                            :class="{ 'groups-assign-section--disabled': isTakeoverSectionDisabled() }">
+                            <div class="admin-card-eyebrow mb-2">
+                                {{ assignUsersDialog.group?.type === 'school' ? '2. Von Gruppe übernehmen' : 'Weitere Möglichkeiten' }}
+                            </div>
+                            <div
+                                v-if="assignUsersDialog.group?.type === 'school' && !isTakeoverSectionDisabled()"
+                                class="d-flex flex-column ga-3">
+                                <div class="d-flex flex-wrap ga-2">
+                                    <v-btn
+                                        v-for="panel in schoolSourceGroupCategoryButtons()"
+                                        :key="`source-category-${panel.key}`"
+                                        flat
+                                        :color="assignUsersDialog.sourceGroupCategory === panel.key ? 'primary' : 'grey-lighten-1'"
+                                        :prepend-icon="assignUsersDialog.sourceGroupCategory === panel.key ? 'mdi-check' : panel.icon"
+                                        @click="selectSchoolSourceGroupCategory(panel.key)">
+                                        {{ panel.title }}
+                                    </v-btn>
+                                </div>
+                                <div v-if="activeSchoolSourceGroupsPanel() && !selectedSourceGroup()" class="groups-assign-list">
+                                    <div
+                                        class="groups-assign-list-item"
+                                        v-for="sourceGroup in activeSchoolSourceGroupsPanel().groups"
+                                        :key="`school-source-group-${sourceGroup.id}`">
+                                        <div class="min-w-0">
+                                            <div class="font-weight-bold text-body-2">{{ sourceGroup.name }}</div>
+                                            <div class="text-caption text-medium-emphasis">
+                                                <template v-if="showSourceUsersCounter(sourceGroup)">
+                                                    {{ Number(sourceGroup.source_users_count || 0) }}/{{ Number(sourceGroup.members_count || 0) }}
+                                                </template>
+                                                <template v-else>
+                                                    {{ Number(sourceGroup.members_count || 0) }}
+                                                </template>
+                                            </div>
+                                        </div>
+                                        <div class="d-flex flex-wrap ga-2 justify-end">
+                                            <v-btn
+                                                flat
+                                                color="primary"
+                                                size="small"
+                                                prepend-icon="mdi-account-multiple-plus"
+                                                :loading="isBusy && Number(assignUsersDialog.bulkSourceGroupId) === Number(sourceGroup.id)"
+                                                @click="assignFromOtherGroup(sourceGroup.id)">
+                                                Alle übernehmen
+                                            </v-btn>
+                                            <v-btn
+                                                flat
+                                                :color="Number(assignUsersDialog.sourceGroupId) === Number(sourceGroup.id) ? 'primary' : 'grey-lighten-1'"
+                                                size="small"
+                                                :prepend-icon="Number(assignUsersDialog.sourceGroupId) === Number(sourceGroup.id) ? 'mdi-check' : 'mdi-format-list-bulleted'"
+                                                @click="toggleSelectedSourceGroup(sourceGroup)">
+                                                {{ Number(assignUsersDialog.sourceGroupId) === Number(sourceGroup.id) ? 'Ausgewählt' : 'Auswählen' }}
+                                            </v-btn>
+                                        </div>
+                                    </div>
+                                    <div v-if="activeSchoolSourceGroupsPanel().groups.length === 0" class="sa-empty">
+                                        Keine Gruppen in dieser Kategorie.
+                                    </div>
+                                </div>
+                                <div v-if="selectedSourceGroup()" class="groups-assign-selection-panel">
+                                    <div class="d-flex justify-space-between align-center flex-wrap ga-2 mb-2">
+                                        <div>
+                                            <div class="admin-card-eyebrow">Mitglieder aus {{ selectedSourceGroup().name }}</div>
+                                        </div>
+                                        <div class="d-flex align-center flex-wrap ga-2">
+                                            <v-chip
+                                                v-if="showSourceUsersCounter(selectedSourceGroup())"
+                                                color="info"
+                                                variant="flat"
+                                                size="small">
+                                                {{ Number(selectedSourceGroup().source_users_count || 0) }}/{{ Number(selectedSourceGroup().members_count || 0) }}
+                                            </v-chip>
+                                            <v-btn
+                                                flat
+                                                color="grey-lighten-1"
+                                                size="small"
+                                                prepend-icon="mdi-arrow-left"
+                                                @click="clearSelectedSourceGroup()">
+                                                Andere Gruppe wählen
+                                            </v-btn>
+                                        </div>
+                                    </div>
+                                    <div class="sa-empty" v-if="assignUsersDialog.selectedSourceGroupMembersLoading">
+                                        Lade Gruppenmitglieder ...
+                                    </div>
+                                    <div class="sa-empty" v-else-if="selectedSourceGroupCombinedMembers().length === 0">
+                                        Keine Mitglieder vorhanden.
+                                    </div>
+                                    <div class="groups-assign-list" v-else>
+                                        <div
+                                            class="groups-assign-list-item"
+                                            v-for="member in selectedSourceGroupCombinedMembers()"
+                                            :key="`selected-source-member-${readOnlyMemberKey(member) || member.id}`">
+                                            <div class="min-w-0">
+                                                <div class="d-flex align-center ga-2">
+                                                    <div class="font-weight-bold text-body-2">{{ member.name }}</div>
+                                                    <v-icon
+                                                        v-if="member.is_registered"
+                                                        size="16"
+                                                        color="success"
+                                                        title="Registriert">
+                                                        mdi-check-circle
+                                                    </v-icon>
+                                                </div>
+                                                <div class="text-caption text-medium-emphasis">{{ member.email || 'Keine E-Mail' }}</div>
+                                                <div class="text-caption text-medium-emphasis" v-if="member.member_type_label">{{ member.member_type_label }}</div>
+                                                <div class="text-caption text-medium-emphasis" v-if="member.schoolclass">Klasse: {{ member.schoolclass }}</div>
+                                                <div class="text-caption text-medium-emphasis" v-if="member.phone">Telefon: {{ member.phone }}</div>
+                                                <div class="text-caption text-medium-emphasis" v-if="member.children_label">Kinder: {{ member.children_label }}</div>
+                                                <div class="text-caption text-warning" v-if="member.status_label">{{ member.status_label }}</div>
+                                            </div>
+                                            <div class="d-flex flex-wrap ga-2 justify-end">
+                                                <v-btn
+                                                    v-if="selectedSourceMemberAssignedRecord(member)"
+                                                    flat
+                                                    color="warning"
+                                                    size="small"
+                                                    prepend-icon="mdi-account-remove"
+                                                    :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(selectedSourceMemberAssignedRecord(member)?.id)"
+                                                    @click="removeAssignedMember({ id: selectedSourceMemberAssignedRecord(member)?.id })">
+                                                    Entfernen
+                                                </v-btn>
+                                                <v-btn
+                                                    v-else-if="memberAssignmentPayload(member)"
+                                                    flat
+                                                    color="success"
+                                                    size="small"
+                                                    prepend-icon="mdi-account-plus"
+                                                    :loading="isBusy"
+                                                    @click="assignSingleMemberToCurrentGroup(member)">
+                                                    Hinzufügen
+                                                </v-btn>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                             <v-expansion-panels
+                                v-else-if="!isTakeoverSectionDisabled()"
                                 v-model="assignUsersDialog.extraPanel"
                                 @update:modelValue="onExtraPanelChanged"
                                 variant="accordion">
@@ -681,31 +839,31 @@
                                     <v-expansion-panel-title>
                                         <div class="d-flex align-center ga-2">
                                             <v-icon size="18">mdi-account-multiple-plus</v-icon>
-                                            <span>2. Aus anderer Gruppe übernehmen</span>
+                                            <span>2. Gruppe übernehmen</span>
                                         </div>
                                     </v-expansion-panel-title>
                                     <v-expansion-panel-text>
-                            <div class="d-flex flex-wrap ga-2 align-start">
-                                <v-select
-                                    v-model="assignUsersDialog.sourceGroupId"
-                                    :items="assignUsersDialog.sourceGroups"
-                                    item-title="display_name"
-                                    item-value="id"
-                                    label="Quellgruppe"
-                                    density="comfortable"
-                                    hide-details
-                                    class="flex-grow-1"
-                                    :loading="assignUsersDialog.sourceGroupsLoading" />
-                                <v-btn
-                                    flat
-                                    color="primary"
-                                    prepend-icon="mdi-account-multiple-plus"
-                                    :disabled="!assignUsersDialog.sourceGroupId"
-                                    :loading="isBusy"
-                                    @click="assignFromOtherGroup">
-                                    Übernehmen
-                                </v-btn>
-                            </div>
+                                        <div class="d-flex flex-wrap ga-2 align-start">
+                                            <v-select
+                                                v-model="assignUsersDialog.sourceGroupId"
+                                                :items="assignUsersDialog.sourceGroups"
+                                                item-title="display_name"
+                                                item-value="id"
+                                                label="Quellgruppe"
+                                                density="comfortable"
+                                                hide-details
+                                                class="flex-grow-1"
+                                                :loading="assignUsersDialog.sourceGroupsLoading" />
+                                            <v-btn
+                                                flat
+                                                color="primary"
+                                                prepend-icon="mdi-account-multiple-plus"
+                                                :disabled="!assignUsersDialog.sourceGroupId"
+                                                :loading="isBusy"
+                                                @click="assignFromOtherGroup">
+                                                Übernehmen
+                                            </v-btn>
+                                        </div>
                                     </v-expansion-panel-text>
                                 </v-expansion-panel>
 
@@ -741,11 +899,11 @@
                                                             {{ course.classes_label }}
                                                         </v-chip>
                                                         <v-chip
-                                                            v-if="myCourseAssignableIds(course).length > 0"
+                                                            v-if="myCourseAssignableMembers(course).length > 0"
                                                             color="success"
                                                             variant="flat"
                                                             size="x-small">
-                                                            {{ myCourseAssignableIds(course).length }} neu
+                                                            {{ myCourseAssignableMembers(course).length }} neu
                                                         </v-chip>
                                                     </div>
                                                     <div class="d-flex flex-wrap ga-1 justify-end">
@@ -754,7 +912,7 @@
                                                             color="success"
                                                             size="small"
                                                             prepend-icon="mdi-account-multiple-plus"
-                                                            :disabled="myCourseAssignableIds(course).length === 0"
+                                                            :disabled="myCourseAssignableMembers(course).length === 0"
                                                             :loading="isBusy"
                                                             @click="assignWholeMyCourse(course)">
                                                             Fach zuordnen
@@ -806,7 +964,7 @@
                                                             <div class="d-flex align-start ga-2 min-w-0">
                                                                 <v-checkbox-btn
                                                                     :model-value="isMyCourseStudentSelected(course.id, student.id)"
-                                                                    :disabled="student.already_member || !student.has_user_account"
+                                                                    :disabled="student.already_member || !memberAssignmentPayload(student)"
                                                                     color="primary"
                                                                     @update:model-value="toggleMyCourseStudentSelection(course.id, student.id)" />
                                                                 <div class="min-w-0">
@@ -823,21 +981,14 @@
                                                                     size="x-small">
                                                                     zugeordnet
                                                                 </v-chip>
-                                                                <v-chip
-                                                                    v-else-if="!student.has_user_account"
-                                                                    color="warning"
-                                                                    variant="flat"
-                                                                    size="x-small">
-                                                                    kein Benutzerkonto
-                                                                </v-chip>
                                                                 <v-btn
-                                                                    v-if="!student.already_member && student.has_user_account"
+                                                                    v-if="!student.already_member && memberAssignmentPayload(student)"
                                                                     flat
                                                                     color="success"
                                                                     size="small"
                                                                     prepend-icon="mdi-account-plus"
                                                                     :loading="isBusy"
-                                                                    @click="assignUsersToCurrentGroup([student.user_id || student.id])">
+                                                                    @click="assignSingleMemberToCurrentGroup(student)">
                                                                     Zuordnen
                                                                 </v-btn>
                                                                 <v-btn
@@ -846,8 +997,8 @@
                                                                     color="warning"
                                                                     size="small"
                                                                     prepend-icon="mdi-account-remove"
-                                                                    :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(student.id)"
-                                                                    @click="removeAssignedMember(student)">
+                                                                    :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(student.assigned_member_id)"
+                                                                    @click="removeAssignedMember({ id: student.assigned_member_id })">
                                                                     Entfernen
                                                                 </v-btn>
                                                             </div>
@@ -859,369 +1010,6 @@
                                     </v-expansion-panel-text>
                                 </v-expansion-panel>
 
-                                <v-expansion-panel
-                                    v-if="assignUsersDialog.group?.type === 'school'"
-                                    value="teachers">
-                                    <v-expansion-panel-title>
-                                        <div class="d-flex align-center ga-2">
-                                            <v-icon size="18">mdi-account-tie</v-icon>
-                                            <span>3. Von Lehrer:innen übernehmen</span>
-                                        </div>
-                                    </v-expansion-panel-title>
-                                    <v-expansion-panel-text>
-                            <div class="d-flex justify-space-between align-center flex-wrap ga-2 mb-2">
-                                <div></div>
-                                <v-btn
-                                    flat
-                                    :color="assignUsersDialog.teacherShowAll ? 'secondary' : 'primary'"
-                                    :prepend-icon="assignUsersDialog.teacherShowAll ? 'mdi-eye-off-outline' : 'mdi-account-group-outline'"
-                                    @click="toggleTeacherShowAll">
-                                    {{ assignUsersDialog.teacherShowAll ? 'Gesamtliste ausblenden' : 'Alle Lehrer anzeigen' }}
-                                </v-btn>
-                            </div>
-
-                            <div class="d-flex flex-wrap ga-2 align-start mb-2">
-                                <v-text-field
-                                    v-model="assignUsersDialog.teacherSearchString"
-                                    label="Lehrer suchen"
-                                    clearable
-                                    hide-details
-                                    density="comfortable"
-                                    class="flex-grow-1"
-                                    @click:clear="onTeacherSearchCleared"
-                                    @keyup.enter="searchAssignableTeachers" />
-                                <v-btn
-                                    flat
-                                    color="primary"
-                                    prepend-icon="mdi-magnify"
-                                    :loading="assignUsersDialog.teacherSearchLoading"
-                                    @click="searchAssignableTeachers">
-                                    Suchen
-                                </v-btn>
-                            </div>
-
-                            <div class="d-flex flex-wrap ga-2 mb-2" v-if="assignUsersDialog.teacherSearchHasRun && assignUsersDialog.teacherSearchResults.length > 0">
-                                <v-btn
-                                    flat
-                                    color="primary"
-                                    size="small"
-                                    prepend-icon="mdi-check-all"
-                                    @click="selectAllTeacherSearchResults">
-                                    Alle auswählen
-                                </v-btn>
-                                <v-btn
-                                    flat
-                                    color="secondary"
-                                    size="small"
-                                    prepend-icon="mdi-close-box-multiple-outline"
-                                    :disabled="assignUsersDialog.selectedTeacherIds.length === 0"
-                                    @click="clearTeacherSearchSelection">
-                                    Auswahl aufheben ({{ assignUsersDialog.selectedTeacherIds.length }})
-                                </v-btn>
-                                <v-btn
-                                    flat
-                                    color="success"
-                                    size="small"
-                                    prepend-icon="mdi-account-multiple-plus"
-                                    :disabled="assignUsersDialog.selectedTeacherIds.length === 0"
-                                    :loading="isBusy"
-                                    @click="assignSelectedTeachers">
-                                    Ausgewählte zuordnen ({{ assignUsersDialog.selectedTeacherIds.length }})
-                                </v-btn>
-                            </div>
-
-                            <div class="sa-empty" v-if="!assignUsersDialog.teacherSearchHasRun">
-                                Bitte Lehrer suchen oder "Alle Lehrer anzeigen" verwenden.
-                            </div>
-                            <div class="sa-empty" v-else-if="assignUsersDialog.teacherSearchResults.length === 0">
-                                Keine Lehrer gefunden.
-                            </div>
-                            <div class="groups-assign-list" v-else>
-                                <div class="groups-assign-list-item" v-for="teacher in assignUsersDialog.teacherSearchResults" :key="`assign-teacher-${teacher.id}`">
-                                    <div class="d-flex align-start ga-2 min-w-0">
-                                        <v-checkbox-btn
-                                            :model-value="isTeacherSearchSelected(teacher.id)"
-                                            :disabled="teacher.already_member"
-                                            color="primary"
-                                            @update:model-value="toggleTeacherSearchSelection(teacher.id)" />
-                                        <div class="min-w-0">
-                                            <div class="font-weight-bold text-body-2">{{ teacher.name }}</div>
-                                            <div class="text-caption text-medium-emphasis">{{ teacher.email }}</div>
-                                            <div class="text-caption text-medium-emphasis" v-if="teacher.schoolclass">Klasse: {{ teacher.schoolclass }}</div>
-                                        </div>
-                                    </div>
-                                    <div class="d-flex flex-wrap ga-1 justify-end">
-                                        <v-chip
-                                            v-if="teacher.already_member"
-                                            color="secondary"
-                                            variant="flat"
-                                            size="x-small">
-                                            zugeordnet
-                                        </v-chip>
-                                        <v-btn
-                                            v-if="!teacher.already_member"
-                                            flat
-                                            color="success"
-                                            size="small"
-                                            prepend-icon="mdi-account-plus"
-                                            :loading="isBusy"
-                                            @click="assignUsersToCurrentGroup([teacher.id])">
-                                            Zuordnen
-                                        </v-btn>
-                                        <v-btn
-                                            v-else
-                                            flat
-                                            color="warning"
-                                            size="small"
-                                            prepend-icon="mdi-account-remove"
-                                            :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(teacher.id)"
-                                            @click="removeAssignedMember(teacher)">
-                                            Entfernen
-                                        </v-btn>
-                                    </div>
-                                </div>
-                            </div>
-                                    </v-expansion-panel-text>
-                                </v-expansion-panel>
-
-                                <v-expansion-panel
-                                    v-if="assignUsersDialog.group?.type === 'school'"
-                                    value="students">
-                                    <v-expansion-panel-title>
-                                        <div class="d-flex align-center ga-2">
-                                            <v-icon size="18">mdi-account-school-outline</v-icon>
-                                            <span>4. Von Schüler:innen übernehmen</span>
-                                        </div>
-                                    </v-expansion-panel-title>
-                                    <v-expansion-panel-text>
-                            <div class="d-flex justify-space-between align-center flex-wrap ga-2 mb-2">
-                                <div class="text-caption text-medium-emphasis">Option 1: Suchen</div>
-                            </div>
-
-                            <div class="d-flex flex-wrap ga-2 align-start mb-2">
-                                <v-text-field
-                                    v-model="assignUsersDialog.studentSearchString"
-                                    label="Schüler:in suchen"
-                                    clearable
-                                    hide-details
-                                    density="comfortable"
-                                    class="flex-grow-1"
-                                    @click:clear="searchAssignableStudents"
-                                    @keyup.enter="searchAssignableStudents" />
-                                <v-btn
-                                    flat
-                                    color="primary"
-                                    prepend-icon="mdi-magnify"
-                                    :loading="assignUsersDialog.studentSearchLoading"
-                                    @click="searchAssignableStudents">
-                                    Suchen
-                                </v-btn>
-                            </div>
-
-                            <div class="sa-empty" v-if="!assignUsersDialog.studentSearchHasRun">
-                                Bitte zuerst Schüler:innen suchen.
-                            </div>
-                            <div class="sa-empty" v-else-if="assignUsersDialog.studentSearchResults.length === 0">
-                                Keine Schüler:innen gefunden.
-                            </div>
-                            <div class="groups-assign-list mb-3" v-else>
-                                <div class="groups-assign-list-item" v-for="student in assignUsersDialog.studentSearchResults" :key="`assign-student-${student.import116_id || student.id}`">
-                                    <div class="min-w-0">
-                                        <div class="font-weight-bold text-body-2">{{ student.name }}</div>
-                                        <div class="text-caption text-medium-emphasis">{{ student.email }}</div>
-                                        <div class="text-caption text-medium-emphasis" v-if="student.schoolclass">Klasse: {{ student.schoolclass }}</div>
-                                    </div>
-                                    <div class="d-flex flex-wrap ga-1 justify-end">
-                                        <v-chip
-                                            v-if="student.already_member"
-                                            color="secondary"
-                                            variant="flat"
-                                            size="x-small">
-                                            zugeordnet
-                                        </v-chip>
-                                        <v-chip
-                                            v-else-if="!student.has_user_account"
-                                            color="warning"
-                                            variant="flat"
-                                            size="x-small">
-                                            kein Benutzerkonto
-                                        </v-chip>
-                                        <v-btn
-                                            v-if="!student.already_member && student.has_user_account"
-                                            flat
-                                            color="success"
-                                            size="small"
-                                            prepend-icon="mdi-account-plus"
-                                            :loading="isBusy"
-                                            @click="assignUsersToCurrentGroup([student.user_id || student.id])">
-                                            Zuordnen
-                                        </v-btn>
-                                        <v-btn
-                                            v-else
-                                            flat
-                                            color="warning"
-                                            size="small"
-                                            prepend-icon="mdi-account-remove"
-                                            :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(student.id)"
-                                            @click="removeAssignedMember(student)">
-                                            Entfernen
-                                        </v-btn>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="d-flex justify-space-between align-center flex-wrap ga-2 mb-2">
-                                <div class="text-caption text-medium-emphasis">Option 2: Klassen anzeigen</div>
-                                <v-btn
-                                    flat
-                                    :color="assignUsersDialog.studentClassesVisible ? 'secondary' : 'primary'"
-                                    :prepend-icon="assignUsersDialog.studentClassesVisible ? 'mdi-eye-off-outline' : 'mdi-google-classroom'"
-                                    @click="toggleStudentClassesVisible">
-                                    {{ assignUsersDialog.studentClassesVisible ? 'Klassen ausblenden' : 'Klassen anzeigen' }}
-                                </v-btn>
-                            </div>
-
-                            <div v-if="assignUsersDialog.studentClassesVisible">
-                                <div class="sa-empty" v-if="assignUsersDialog.studentClassesLoading">
-                                    Lade Klassen ...
-                                </div>
-                                <div class="sa-empty" v-else-if="assignUsersDialog.studentClasses.length === 0">
-                                    Keine Klassen mit Schüler:innen gefunden.
-                                </div>
-                                <div class="groups-assign-list" v-else>
-                                    <div class="groups-assign-list-item d-block" v-for="classGroup in assignUsersDialog.studentClasses" :key="`student-class-${classGroup.key}`">
-                                        <div class="d-flex justify-space-between align-center flex-wrap ga-2">
-                                            <div class="d-inline-flex align-center flex-wrap ga-2 min-w-0">
-                                                <div class="font-weight-bold text-body-2">{{ classGroup.label }}</div>
-                                                <v-chip color="secondary" variant="flat" size="x-small">
-                                                    {{ classGroup.students.length }}
-                                                </v-chip>
-                                                <v-chip
-                                                    v-if="studentClassAssignableIds(classGroup).length > 0"
-                                                    color="success"
-                                                    variant="flat"
-                                                    size="x-small">
-                                                    {{ studentClassAssignableIds(classGroup).length }} neu
-                                                </v-chip>
-                                                <v-chip
-                                                    v-if="studentClassAssignedCount(classGroup) > 0"
-                                                    color="warning"
-                                                    variant="flat"
-                                                    size="x-small">
-                                                    {{ studentClassAssignedCount(classGroup) }} zugeordnet
-                                                </v-chip>
-                                            </div>
-                                            <div class="d-flex flex-wrap ga-1 justify-end">
-                                                <v-btn
-                                                    flat
-                                                    color="success"
-                                                    size="small"
-                                                    prepend-icon="mdi-account-multiple-plus"
-                                                    :disabled="studentClassAssignableIds(classGroup).length === 0"
-                                                    :loading="isBusy"
-                                                    @click="assignWholeStudentClass(classGroup)">
-                                                    Klasse zuordnen
-                                                </v-btn>
-                                                <v-btn
-                                                    flat
-                                                    :color="classGroup.expanded ? 'secondary' : 'primary'"
-                                                    size="small"
-                                                    :prepend-icon="classGroup.expanded ? 'mdi-chevron-up' : 'mdi-chevron-down'"
-                                                    @click="toggleStudentClassExpanded(classGroup.key)">
-                                                    {{ classGroup.expanded ? 'Ausblenden' : 'Anzeigen' }}
-                                                </v-btn>
-                                            </div>
-                                        </div>
-
-                                        <div v-if="classGroup.expanded" class="mt-3">
-                                            <div class="text-caption text-medium-emphasis mb-2">Option 3: Schüler:innen auswählen</div>
-                                            <div class="d-flex flex-wrap ga-2 mb-2">
-                                                <v-btn
-                                                    flat
-                                                    color="primary"
-                                                    size="small"
-                                                    prepend-icon="mdi-check-all"
-                                                    @click="selectAllStudentsInClass(classGroup.key)">
-                                                    Alle auswählen
-                                                </v-btn>
-                                                <v-btn
-                                                    flat
-                                                    color="secondary"
-                                                    size="small"
-                                                    prepend-icon="mdi-close-box-multiple-outline"
-                                                    :disabled="classGroup.selectedIds.length === 0"
-                                                    @click="clearStudentClassSelection(classGroup.key)">
-                                                    Auswahl aufheben ({{ classGroup.selectedIds.length }})
-                                                </v-btn>
-                                                <v-btn
-                                                    flat
-                                                    color="success"
-                                                    size="small"
-                                                    prepend-icon="mdi-account-multiple-plus"
-                                                    :disabled="classGroup.selectedIds.length === 0"
-                                                    :loading="isBusy"
-                                                    @click="assignSelectedStudentsInClass(classGroup.key)">
-                                                    Ausgewählte zuordnen ({{ classGroup.selectedIds.length }})
-                                                </v-btn>
-                                            </div>
-
-                                            <div class="groups-assign-list">
-                                                <div class="groups-assign-list-item" v-for="student in classGroup.students" :key="`class-student-${classGroup.key}-${student.import116_id || student.id}`">
-                                                    <div class="d-flex align-start ga-2 min-w-0">
-                                                        <v-checkbox-btn
-                                                            :model-value="isStudentInClassSelected(classGroup.key, student.id)"
-                                                            :disabled="student.already_member || !student.has_user_account"
-                                                            color="primary"
-                                                            @update:model-value="toggleStudentInClassSelection(classGroup.key, student.id)" />
-                                                        <div class="min-w-0">
-                                                            <div class="font-weight-bold text-body-2">{{ student.name }}</div>
-                                                            <div class="text-caption text-medium-emphasis">{{ student.email }}</div>
-                                                        </div>
-                                                    </div>
-                                                    <div class="d-flex flex-wrap ga-1 justify-end">
-                                                        <v-chip
-                                                            v-if="student.already_member"
-                                                            color="secondary"
-                                                            variant="flat"
-                                                            size="x-small">
-                                                            zugeordnet
-                                                        </v-chip>
-                                                        <v-chip
-                                                            v-else-if="!student.has_user_account"
-                                                            color="warning"
-                                                            variant="flat"
-                                                            size="x-small">
-                                                            kein Benutzerkonto
-                                                        </v-chip>
-                                                        <v-btn
-                                                            v-if="!student.already_member && student.has_user_account"
-                                                            flat
-                                                            color="success"
-                                                            size="small"
-                                                            prepend-icon="mdi-account-plus"
-                                                            :loading="isBusy"
-                                                            @click="assignUsersToCurrentGroup([student.user_id || student.id])">
-                                                            Zuordnen
-                                                        </v-btn>
-                                                        <v-btn
-                                                            v-else
-                                                            flat
-                                                            color="warning"
-                                                            size="small"
-                                                            prepend-icon="mdi-account-remove"
-                                                            :loading="isBusy && Number(assignUsersDialog.removingUserId) === Number(student.id)"
-                                                            @click="removeAssignedMember(student)">
-                                                            Entfernen
-                                                        </v-btn>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                                    </v-expansion-panel-text>
-                                </v-expansion-panel>
                             </v-expansion-panels>
                         </section>
                     </div>
@@ -1250,6 +1038,10 @@ export default {
         await this.loadGroups()
     },
 
+    beforeUnmount() {
+        this.clearSyncStatusReload()
+    },
+
     data() {
         return {
             adminStore: null,
@@ -1257,6 +1049,14 @@ export default {
             isBusy: false,
             groups: [],
             apiPermissions: {},
+            syncStatus: {
+                queued: false,
+                running: false,
+                in_progress: false,
+                last_synced_at: null,
+                refresh_after_seconds: 120,
+            },
+            syncReloadTimer: null,
             groupSections: [
                 {
                     type: 'school',
@@ -1332,7 +1132,12 @@ export default {
                 studentClasses: [],
                 sourceGroups: [],
                 sourceGroupsLoading: false,
+                sourceGroupCategory: null,
+                bulkSourceGroupId: null,
                 sourceGroupId: null,
+                selectedSourceGroupMembers: [],
+                selectedSourceGroupSourceMembers: [],
+                selectedSourceGroupMembersLoading: false,
                 sourceMembers: [],
                 sourceMembersLoading: false,
                 readOnly: false,
@@ -1509,6 +1314,185 @@ export default {
             ]
         },
 
+        schoolSourceGroupsPanels() {
+            const schoolGroups = (this.assignUsersDialog.sourceGroups || []).filter((group) => group.type === 'school')
+
+            return [
+                {
+                    key: 'classes',
+                    title: 'Klassen',
+                    groups: schoolGroups.filter((group) => this.isAutomaticSchoolGroup(group) && !this.isTeacherSchoolGroup(group) && !this.isParentSchoolGroup(group) && !this.isAllSchoolMembersGroup(group)),
+                },
+                {
+                    key: 'teachers',
+                    title: 'Lehrer',
+                    groups: schoolGroups.filter((group) => this.isAutomaticSchoolGroup(group) && this.isTeacherSchoolGroup(group)),
+                },
+                {
+                    key: 'parents',
+                    title: 'Eltern',
+                    groups: schoolGroups.filter((group) => this.isAutomaticSchoolGroup(group) && this.isParentSchoolGroup(group)),
+                },
+                {
+                    key: 'other-school-groups',
+                    title: 'Weitere Gruppen',
+                    groups: schoolGroups.filter((group) => !this.isAutomaticSchoolGroup(group)),
+                },
+            ]
+        },
+
+        schoolSourceGroupCategoryButtons() {
+            const icons = {
+                classes: 'mdi-google-classroom',
+                teachers: 'mdi-account-tie-outline',
+                parents: 'mdi-account-multiple-outline',
+                'other-school-groups': 'mdi-shape-outline',
+            }
+
+            return this.schoolSourceGroupsPanels()
+                .map((panel) => ({
+                    ...panel,
+                    icon: icons[panel.key] || 'mdi-account-group-outline',
+                }))
+        },
+
+        activeSchoolSourceGroupsPanel() {
+            const panels = this.schoolSourceGroupCategoryButtons()
+            if (panels.length === 0 || !this.assignUsersDialog.sourceGroupCategory) {
+                return null
+            }
+
+            return panels.find((panel) => panel.key === this.assignUsersDialog.sourceGroupCategory) || panels[0]
+        },
+
+        isSchoolSourceCategorySelected() {
+            return this.assignUsersDialog.group?.type === 'school' && !!this.assignUsersDialog.sourceGroupCategory
+        },
+
+        isTakeoverSectionDisabled() {
+            return !!this.assignUsersDialog.membersExpanded
+        },
+
+        selectedSourceGroup() {
+            const activePanel = this.activeSchoolSourceGroupsPanel()
+            if (!activePanel) {
+                return null
+            }
+
+            return activePanel.groups.find((group) => Number(group.id) === Number(this.assignUsersDialog.sourceGroupId)) || null
+        },
+
+        selectedSourceGroupCombinedMembers() {
+            const registeredMembers = Array.isArray(this.assignUsersDialog?.selectedSourceGroupMembers)
+                ? this.assignUsersDialog.selectedSourceGroupMembers
+                : []
+            const sourceMembers = Array.isArray(this.assignUsersDialog?.selectedSourceGroupSourceMembers)
+                ? this.assignUsersDialog.selectedSourceGroupSourceMembers
+                : []
+
+            const registeredByKey = new Map()
+            for (const member of registeredMembers) {
+                const key = this.readOnlyMemberKey(member)
+                if (!key) continue
+                registeredByKey.set(key, member)
+            }
+
+            const seenKeys = new Set()
+            const combined = sourceMembers.map((member) => {
+                const key = this.readOnlyMemberKey(member)
+                if (key) {
+                    seenKeys.add(key)
+                }
+                const registeredMember = key ? registeredByKey.get(key) : null
+
+                return this.mergeReadOnlyMember(member, registeredMember)
+            })
+
+            for (const member of registeredMembers) {
+                const key = this.readOnlyMemberKey(member)
+                if (key && seenKeys.has(key)) continue
+                combined.push(this.mergeReadOnlyMember(null, member))
+            }
+
+            return this.sortReadOnlyMembers(combined)
+        },
+
+        selectSchoolSourceGroupCategory(categoryKey) {
+            if (this.assignUsersDialog.sourceGroupCategory === categoryKey) {
+                this.assignUsersDialog.sourceGroupCategory = null
+                this.assignUsersDialog.bulkSourceGroupId = null
+                this.assignUsersDialog.sourceGroupId = null
+                this.assignUsersDialog.selectedSourceGroupMembers = []
+                this.assignUsersDialog.selectedSourceGroupSourceMembers = []
+                this.assignUsersDialog.selectedSourceGroupMembersLoading = false
+                return
+            }
+
+            this.assignUsersDialog.sourceGroupCategory = categoryKey
+            const activePanel = this.activeSchoolSourceGroupsPanel()
+            const activeGroupIds = new Set((activePanel?.groups || []).map((group) => Number(group.id)))
+            if (!activeGroupIds.has(Number(this.assignUsersDialog.sourceGroupId))) {
+                this.assignUsersDialog.sourceGroupId = null
+                this.assignUsersDialog.selectedSourceGroupMembers = []
+                this.assignUsersDialog.selectedSourceGroupSourceMembers = []
+                this.assignUsersDialog.selectedSourceGroupMembersLoading = false
+            }
+        },
+
+        async toggleSelectedSourceGroup(sourceGroup) {
+            const sourceGroupId = Number(sourceGroup?.id || 0)
+            if (sourceGroupId <= 0) {
+                return
+            }
+
+            if (Number(this.assignUsersDialog.sourceGroupId) === sourceGroupId) {
+                this.clearSelectedSourceGroup()
+                return
+            }
+
+            this.assignUsersDialog.sourceGroupId = sourceGroupId
+            await this.loadSelectedSourceGroupMembers(sourceGroup)
+        },
+
+        clearSelectedSourceGroup() {
+            this.assignUsersDialog.sourceGroupId = null
+            this.assignUsersDialog.selectedSourceGroupMembers = []
+            this.assignUsersDialog.selectedSourceGroupSourceMembers = []
+            this.assignUsersDialog.selectedSourceGroupMembersLoading = false
+        },
+
+        collapseTakeoverSection() {
+            this.assignUsersDialog.extraPanel = null
+            this.assignUsersDialog.sourceGroupCategory = null
+            this.assignUsersDialog.bulkSourceGroupId = null
+            this.clearSelectedSourceGroup()
+        },
+
+        toggleAssignedMembersExpanded() {
+            this.assignUsersDialog.membersExpanded = !this.assignUsersDialog.membersExpanded
+
+            if (this.assignUsersDialog.membersExpanded) {
+                this.collapseTakeoverSection()
+            }
+        },
+
+        selectedSourceMemberAssignedRecord(member) {
+            const payload = this.memberAssignmentPayload(member)
+            if (payload) {
+                return this.assignUsersDialog.members.find((assignedMember) => (
+                    String(assignedMember?.member_provider || '') === payload.member_provider
+                    && String(assignedMember?.member_ref || '') === payload.member_ref
+                )) || null
+            }
+
+            const memberKey = this.readOnlyMemberKey(member)
+            if (!memberKey) {
+                return null
+            }
+
+            return this.assignUsersDialog.members.find((assignedMember) => this.readOnlyMemberKey(assignedMember) === memberKey) || null
+        },
+
         selectedGroupByType(type) {
             const selectedId = this.selectedGroupIdsByType?.[type] ?? null
             if (!selectedId) return null
@@ -1543,11 +1527,27 @@ export default {
                 const response = await axios.get('/api/admin/groups')
                 this.groups = Array.isArray(response.data?.data) ? response.data.data : []
                 this.apiPermissions = response.data?.meta?.permissions || {}
+                this.syncStatus = {
+                    queued: !!response.data?.meta?.sync?.queued,
+                    running: !!response.data?.meta?.sync?.running,
+                    in_progress: !!response.data?.meta?.sync?.in_progress,
+                    last_synced_at: response.data?.meta?.sync?.last_synced_at || null,
+                    refresh_after_seconds: Number(response.data?.meta?.sync?.refresh_after_seconds || 120),
+                }
+                this.scheduleSyncStatusReload()
                 this.cleanupSelectedGroups()
                 this.refreshAssignDialogGroupReference()
             } catch (error) {
                 this.groups = []
                 this.apiPermissions = {}
+                this.syncStatus = {
+                    queued: false,
+                    running: false,
+                    in_progress: false,
+                    last_synced_at: null,
+                    refresh_after_seconds: 120,
+                }
+                this.clearSyncStatusReload()
                 this.selectedGroupIdsByType = { school: null, materials: null, own: null }
                 this.refreshAssignDialogGroupReference()
                 this.notifyError(error, 'Gruppen konnten nicht geladen werden.')
@@ -1700,7 +1700,7 @@ export default {
             if (!this.showSourceMembersPanel()) {
                 return this.sortReadOnlyMembers(registeredMembers.map((member) => ({
                     ...member,
-                    is_registered: true,
+                    is_registered: this.memberHasUserAccount(member),
                 })))
             }
 
@@ -1719,13 +1719,13 @@ export default {
                 }
                 const registeredMember = key ? registeredByKey.get(key) : null
 
-                return this.mergeReadOnlyMember(member, registeredMember, !!registeredMember || member?.already_member === true)
+                return this.mergeReadOnlyMember(member, registeredMember)
             })
 
             for (const member of registeredMembers) {
                 const key = this.readOnlyMemberKey(member)
                 if (key && seenKeys.has(key)) continue
-                combined.push(this.mergeReadOnlyMember(null, member, true))
+                combined.push(this.mergeReadOnlyMember(null, member))
             }
 
             return this.sortReadOnlyMembers(combined)
@@ -1768,7 +1768,14 @@ export default {
             }
             return null
         },
-        mergeReadOnlyMember(sourceMember, registeredMember, isRegistered) {
+        memberHasUserAccount(member) {
+            return !!(
+                Number(member?.user_id || member?.linked_user_id || 0) > 0
+                || member?.has_user_account === true
+                || member?.is_registered === true
+            )
+        },
+        mergeReadOnlyMember(sourceMember, registeredMember) {
             const member = {
                 ...(registeredMember || {}),
                 ...(sourceMember || {}),
@@ -1776,7 +1783,7 @@ export default {
 
             return {
                 ...member,
-                is_registered: !!isRegistered,
+                is_registered: this.memberHasUserAccount(member),
             }
         },
         sortReadOnlyMembers(members) {
@@ -1797,6 +1804,26 @@ export default {
                 const rightName = String(right?.name || '').trim().toLocaleLowerCase('de')
                 return leftName.localeCompare(rightName, 'de', { sensitivity: 'base', numeric: true })
             })
+        },
+
+        clearSyncStatusReload() {
+            if (this.syncReloadTimer) {
+                clearTimeout(this.syncReloadTimer)
+                this.syncReloadTimer = null
+            }
+        },
+
+        scheduleSyncStatusReload() {
+            this.clearSyncStatusReload()
+            if (!this.syncStatus?.in_progress) {
+                return
+            }
+
+            const delaySeconds = Math.max(Number(this.syncStatus?.refresh_after_seconds || 5), 5)
+            this.syncReloadTimer = setTimeout(() => {
+                this.syncReloadTimer = null
+                this.loadGroups()
+            }, Math.min(delaySeconds, 10) * 1000)
         },
         dialogPaginationSize() {
             return 100
@@ -1907,7 +1934,12 @@ export default {
             this.assignUsersDialog.studentClassesLoading = false
             this.assignUsersDialog.studentClasses = []
             this.assignUsersDialog.sourceGroups = []
+            this.assignUsersDialog.sourceGroupCategory = null
+            this.assignUsersDialog.bulkSourceGroupId = null
             this.assignUsersDialog.sourceGroupId = null
+            this.assignUsersDialog.selectedSourceGroupMembers = []
+            this.assignUsersDialog.selectedSourceGroupSourceMembers = []
+            this.assignUsersDialog.selectedSourceGroupMembersLoading = false
             this.assignUsersDialog.sourceMembers = []
             this.assignUsersDialog.sourceMembersLoading = false
             this.assignUsersDialog.readOnlyPage = 1
@@ -1953,7 +1985,12 @@ export default {
             this.assignUsersDialog.studentClassesLoading = false
             this.assignUsersDialog.studentClasses = []
             this.assignUsersDialog.sourceGroups = []
+            this.assignUsersDialog.sourceGroupCategory = null
+            this.assignUsersDialog.bulkSourceGroupId = null
             this.assignUsersDialog.sourceGroupId = null
+            this.assignUsersDialog.selectedSourceGroupMembers = []
+            this.assignUsersDialog.selectedSourceGroupSourceMembers = []
+            this.assignUsersDialog.selectedSourceGroupMembersLoading = false
             this.assignUsersDialog.sourceMembers = []
             this.assignUsersDialog.sourceMembersLoading = false
             this.assignUsersDialog.readOnly = false
@@ -2007,6 +2044,44 @@ export default {
         isAssignedMemberSelected(userId) {
             return this.assignUsersDialog.selectedMemberIds.some((id) => Number(id) === Number(userId))
         },
+        memberAssignmentPayload(member) {
+            if (!member?.member_provider || !member?.member_ref) {
+                return null
+            }
+
+            return {
+                member_provider: String(member.member_provider),
+                member_ref: String(member.member_ref),
+                linked_user_id: member.linked_user_id ?? member.user_id ?? null,
+                source_schoolyear_id: member.source_schoolyear_id ?? null,
+                display_name: member.display_name ?? member.name ?? null,
+                display_email: member.display_email ?? member.email ?? null,
+                display_phone: member.display_phone ?? member.phone ?? null,
+                display_schoolclass: member.display_schoolclass ?? member.schoolclass ?? null,
+                display_children_label: member.display_children_label ?? member.children_label ?? null,
+                member_type_label: member.member_type_label ?? null,
+                source_status: member.source_status ?? null,
+                linked_user_status: member.linked_user_status ?? (
+                    member.is_registered || member.has_user_account ? 'linked' : null
+                ),
+                meta: member.meta ?? null,
+            }
+        },
+        memberSelectionValue(memberOrValue) {
+            if (memberOrValue && typeof memberOrValue === 'object') {
+                return String(memberOrValue.member_ref || memberOrValue.id || '')
+            }
+
+            return String(memberOrValue || '')
+        },
+        buildSelectedAssignableMemberPayloads(rows = [], selectedValues = []) {
+            const selected = new Set((selectedValues || []).map((value) => this.memberSelectionValue(value)).filter((value) => value !== ''))
+
+            return (rows || [])
+                .filter((row) => selected.has(this.memberSelectionValue(row)))
+                .map((row) => this.memberAssignmentPayload(row))
+                .filter((payload) => !!payload)
+        },
         toggleAssignedMemberSelection(userId) {
             const id = Number(userId)
             const selected = [...this.assignUsersDialog.selectedMemberIds]
@@ -2029,12 +2104,14 @@ export default {
             this.assignUsersDialog.selectedMemberIds = this.assignUsersDialog.selectedMemberIds.filter((id) => memberIds.has(Number(id)))
         },
         isTeacherSearchSelected(userId) {
-            return this.assignUsersDialog.selectedTeacherIds.some((id) => Number(id) === Number(userId))
+            const value = this.memberSelectionValue(userId)
+            return this.assignUsersDialog.selectedTeacherIds.some((id) => this.memberSelectionValue(id) === value)
         },
         toggleTeacherSearchSelection(userId) {
-            const id = Number(userId)
+            const id = this.memberSelectionValue(userId)
+            if (id === '') return
             const selected = [...this.assignUsersDialog.selectedTeacherIds]
-            const index = selected.findIndex((item) => Number(item) === id)
+            const index = selected.findIndex((item) => this.memberSelectionValue(item) === id)
             if (index >= 0) {
                 selected.splice(index, 1)
             } else {
@@ -2044,8 +2121,8 @@ export default {
         },
         selectAllTeacherSearchResults() {
             this.assignUsersDialog.selectedTeacherIds = this.assignUsersDialog.teacherSearchResults
-                .filter((user) => !user.already_member)
-                .map((user) => Number(user.id))
+                .filter((user) => !user.already_member && !!this.memberAssignmentPayload(user))
+                .map((user) => this.memberSelectionValue(user))
         },
         clearTeacherSearchSelection() {
             this.assignUsersDialog.selectedTeacherIds = []
@@ -2053,10 +2130,10 @@ export default {
         syncTeacherSearchSelection() {
             const selectableIds = new Set(
                 this.assignUsersDialog.teacherSearchResults
-                    .filter((user) => !user.already_member)
-                    .map((user) => Number(user.id))
+                    .filter((user) => !user.already_member && !!this.memberAssignmentPayload(user))
+                    .map((user) => this.memberSelectionValue(user))
             )
-            this.assignUsersDialog.selectedTeacherIds = this.assignUsersDialog.selectedTeacherIds.filter((id) => selectableIds.has(Number(id)))
+            this.assignUsersDialog.selectedTeacherIds = this.assignUsersDialog.selectedTeacherIds.filter((id) => selectableIds.has(this.memberSelectionValue(id)))
         },
         resetTeacherSearchResults() {
             this.assignUsersDialog.teacherSearchHasRun = false
@@ -2067,10 +2144,11 @@ export default {
             this.assignUsersDialog.studentSearchHasRun = false
             this.assignUsersDialog.studentSearchResults = []
         },
-        studentClassAssignableIds(classGroup) {
+        studentClassAssignableMembers(classGroup) {
             return (classGroup?.students || [])
-                .filter((student) => !student.already_member && !!student.has_user_account)
-                .map((student) => Number(student.user_id || student.id))
+                .filter((student) => !student.already_member)
+                .map((student) => this.memberAssignmentPayload(student))
+                .filter((payload) => !!payload)
         },
         studentClassAssignedCount(classGroup) {
             return (classGroup?.students || []).filter((student) => !!student.already_member).length
@@ -2079,29 +2157,32 @@ export default {
             return this.assignUsersDialog.studentClasses.find((row) => row.key === classKey) || null
         },
         isStudentInClassSelected(classKey, userId) {
-            if (!userId) return false
+            const value = this.memberSelectionValue(userId)
+            if (value === '') return false
             const classGroup = this.findStudentClassGroup(classKey)
             if (!classGroup) return false
-            return classGroup.selectedIds.some((id) => Number(id) === Number(userId))
+            return classGroup.selectedIds.some((id) => this.memberSelectionValue(id) === value)
         },
         toggleStudentInClassSelection(classKey, userId) {
-            if (!userId) return
+            const value = this.memberSelectionValue(userId)
+            if (value === '') return
             const classGroup = this.findStudentClassGroup(classKey)
             if (!classGroup) return
-            const id = Number(userId)
             const selected = [...classGroup.selectedIds]
-            const index = selected.findIndex((item) => Number(item) === id)
+            const index = selected.findIndex((item) => this.memberSelectionValue(item) === value)
             if (index >= 0) {
                 selected.splice(index, 1)
             } else {
-                selected.push(id)
+                selected.push(value)
             }
             classGroup.selectedIds = selected
         },
         selectAllStudentsInClass(classKey) {
             const classGroup = this.findStudentClassGroup(classKey)
             if (!classGroup) return
-            classGroup.selectedIds = this.studentClassAssignableIds(classGroup)
+            classGroup.selectedIds = (classGroup.students || [])
+                .filter((student) => !student.already_member && !!this.memberAssignmentPayload(student))
+                .map((student) => this.memberSelectionValue(student))
         },
         clearStudentClassSelection(classKey) {
             const classGroup = this.findStudentClassGroup(classKey)
@@ -2177,10 +2258,11 @@ export default {
         findMyCourse(courseId) {
             return this.assignUsersDialog.myCourses.find((row) => Number(row.id) === Number(courseId)) || null
         },
-        myCourseAssignableIds(course) {
+        myCourseAssignableMembers(course) {
             return (course?.students || [])
-                .filter((student) => !student.already_member && !!student.has_user_account)
-                .map((student) => Number(student.user_id || student.id))
+                .filter((student) => !student.already_member)
+                .map((student) => this.memberAssignmentPayload(student))
+                .filter((payload) => !!payload)
         },
         toggleMyCourseExpanded(courseId) {
             const course = this.findMyCourse(courseId)
@@ -2188,26 +2270,29 @@ export default {
             course.expanded = !course.expanded
         },
         isMyCourseStudentSelected(courseId, userId) {
-            if (!userId) return false
+            const value = this.memberSelectionValue(userId)
+            if (value === '') return false
             const course = this.findMyCourse(courseId)
             if (!course) return false
-            return course.selectedIds.some((id) => Number(id) === Number(userId))
+            return course.selectedIds.some((id) => this.memberSelectionValue(id) === value)
         },
         toggleMyCourseStudentSelection(courseId, userId) {
-            if (!userId) return
+            const value = this.memberSelectionValue(userId)
+            if (value === '') return
             const course = this.findMyCourse(courseId)
             if (!course) return
-            const id = Number(userId)
             const next = [...course.selectedIds]
-            const index = next.findIndex((row) => Number(row) === id)
+            const index = next.findIndex((row) => this.memberSelectionValue(row) === value)
             if (index >= 0) next.splice(index, 1)
-            else next.push(id)
+            else next.push(value)
             course.selectedIds = next
         },
         selectAllMyCourseStudents(courseId) {
             const course = this.findMyCourse(courseId)
             if (!course) return
-            course.selectedIds = this.myCourseAssignableIds(course)
+            course.selectedIds = (course.students || [])
+                .filter((student) => !student.already_member && !!this.memberAssignmentPayload(student))
+                .map((student) => this.memberSelectionValue(student))
         },
         clearMyCourseSelection(courseId) {
             const course = this.findMyCourse(courseId)
@@ -2215,16 +2300,16 @@ export default {
             course.selectedIds = []
         },
         async assignWholeMyCourse(course) {
-            const userIds = this.myCourseAssignableIds(course)
-            if (userIds.length === 0) return
-            await this.assignUsersToCurrentGroup(userIds)
+            const members = this.myCourseAssignableMembers(course)
+            if (members.length === 0) return
+            await this.assignUsersToCurrentGroup(members)
         },
         async assignSelectedMyCourseStudents(courseId) {
             const course = this.findMyCourse(courseId)
             if (!course) return
-            const userIds = (course.selectedIds || []).map((id) => Number(id)).filter((id) => id > 0)
-            if (userIds.length === 0) return
-            await this.assignUsersToCurrentGroup(userIds)
+            const members = this.buildSelectedAssignableMemberPayloads(course.students, course.selectedIds)
+            if (members.length === 0) return
+            await this.assignUsersToCurrentGroup(members)
             this.clearMyCourseSelection(courseId)
         },
         onTeacherSearchCleared() {
@@ -2259,7 +2344,7 @@ export default {
             this.assignUsersDialog.removingUserId = member.id
             try {
                 await axios.delete(`/api/admin/groups/${group.id}/members/${member.id}`)
-                this.notifySuccess('Benutzer entfernt.')
+                this.notifySuccess('Mitglied entfernt.')
                 await this.loadGroups()
                 await this.loadAssignedMembers()
                 if (this.assignUsersDialog.userSearchHasRun) {
@@ -2279,7 +2364,7 @@ export default {
                 }
                 await this.loadAssignableGroups()
             } catch (error) {
-                this.notifyError(error, 'Benutzer konnte nicht entfernt werden.')
+                this.notifyError(error, 'Mitglied konnte nicht entfernt werden.')
             } finally {
                 this.assignUsersDialog.removingUserId = null
                 this.is_loading--
@@ -2288,16 +2373,16 @@ export default {
         },
         async removeSelectedAssignedMembers() {
             const group = this.assignUsersDialog.group
-            const userIds = (this.assignUsersDialog.selectedMemberIds || []).map((id) => Number(id)).filter((id) => id > 0)
-            if (!group?.id || this.isBusy || userIds.length === 0) return
+            const memberIds = (this.assignUsersDialog.selectedMemberIds || []).map((id) => Number(id)).filter((id) => id > 0)
+            if (!group?.id || this.isBusy || memberIds.length === 0) return
 
             this.isBusy = true
             this.is_loading++
             this.assignUsersDialog.bulkRemoving = true
             try {
-                const response = await axios.post(`/api/admin/groups/${group.id}/remove-users`, { user_ids: userIds })
-                const removedCount = Number(response.data?.meta?.removed_count ?? userIds.length)
-                this.notifySuccess(`${removedCount} Benutzer entfernt.`)
+                const response = await axios.post(`/api/admin/groups/${group.id}/remove-users`, { member_ids: memberIds })
+                const removedCount = Number(response.data?.meta?.removed_count ?? memberIds.length)
+                this.notifySuccess(`${removedCount} Mitglieder entfernt.`)
                 this.clearAssignedMemberSelection()
                 await this.loadGroups()
                 await this.loadAssignedMembers()
@@ -2318,7 +2403,7 @@ export default {
                 }
                 await this.loadAssignableGroups()
             } catch (error) {
-                this.notifyError(error, 'Benutzer konnten nicht entfernt werden.')
+                this.notifyError(error, 'Mitglieder konnten nicht entfernt werden.')
             } finally {
                 this.assignUsersDialog.bulkRemoving = false
                 this.is_loading--
@@ -2439,16 +2524,16 @@ export default {
             }
         },
         async assignWholeStudentClass(classGroup) {
-            const userIds = this.studentClassAssignableIds(classGroup)
-            if (userIds.length === 0) return
-            await this.assignUsersToCurrentGroup(userIds)
+            const members = this.studentClassAssignableMembers(classGroup)
+            if (members.length === 0) return
+            await this.assignUsersToCurrentGroup(members)
         },
         async assignSelectedStudentsInClass(classKey) {
             const classGroup = this.findStudentClassGroup(classKey)
             if (!classGroup) return
-            const userIds = (classGroup.selectedIds || []).map((id) => Number(id)).filter((id) => id > 0)
-            if (userIds.length === 0) return
-            await this.assignUsersToCurrentGroup(userIds)
+            const members = this.buildSelectedAssignableMemberPayloads(classGroup.students, classGroup.selectedIds)
+            if (members.length === 0) return
+            await this.assignUsersToCurrentGroup(members)
             this.clearStudentClassSelection(classKey)
         },
         async loadAssignableGroups() {
@@ -2464,27 +2549,77 @@ export default {
                 }))
                 if (!this.assignUsersDialog.sourceGroups.some((row) => Number(row.id) === Number(this.assignUsersDialog.sourceGroupId))) {
                     this.assignUsersDialog.sourceGroupId = null
+                    this.assignUsersDialog.selectedSourceGroupMembers = []
+                    this.assignUsersDialog.selectedSourceGroupSourceMembers = []
+                    this.assignUsersDialog.selectedSourceGroupMembersLoading = false
                 }
             } catch (error) {
                 this.assignUsersDialog.sourceGroups = []
+                this.assignUsersDialog.sourceGroupCategory = null
+                this.assignUsersDialog.bulkSourceGroupId = null
                 this.assignUsersDialog.sourceGroupId = null
+                this.assignUsersDialog.selectedSourceGroupMembers = []
+                this.assignUsersDialog.selectedSourceGroupSourceMembers = []
+                this.assignUsersDialog.selectedSourceGroupMembersLoading = false
                 this.notifyError(error, 'Quellgruppen konnten nicht geladen werden.')
             } finally {
                 this.assignUsersDialog.sourceGroupsLoading = false
             }
         },
-        async assignUsersToCurrentGroup(userIds = []) {
+        async loadSelectedSourceGroupMembers(sourceGroup) {
+            const sourceGroupId = Number(sourceGroup?.id || this.assignUsersDialog.sourceGroupId || 0)
+            if (sourceGroupId <= 0) {
+                this.assignUsersDialog.selectedSourceGroupMembers = []
+                this.assignUsersDialog.selectedSourceGroupSourceMembers = []
+                this.assignUsersDialog.selectedSourceGroupMembersLoading = false
+                return
+            }
+
+            this.assignUsersDialog.selectedSourceGroupMembersLoading = true
+            try {
+                const [membersResponse, sourceMembersResponse] = await Promise.all([
+                    axios.get(`/api/admin/groups/${sourceGroupId}/members`),
+                    axios.get(`/api/admin/groups/${sourceGroupId}/source-members`),
+                ])
+
+                this.assignUsersDialog.selectedSourceGroupMembers = Array.isArray(membersResponse.data?.data)
+                    ? membersResponse.data.data
+                    : []
+                this.assignUsersDialog.selectedSourceGroupSourceMembers = Array.isArray(sourceMembersResponse.data?.data)
+                    ? sourceMembersResponse.data.data
+                    : []
+            } catch (error) {
+                this.assignUsersDialog.selectedSourceGroupMembers = []
+                this.assignUsersDialog.selectedSourceGroupSourceMembers = []
+                this.notifyError(error, 'Mitglieder der Quellgruppe konnten nicht geladen werden.')
+            } finally {
+                this.assignUsersDialog.selectedSourceGroupMembersLoading = false
+            }
+        },
+        async assignSingleMemberToCurrentGroup(member) {
+            const payload = this.memberAssignmentPayload(member)
+            if (!payload) return
+
+            await this.assignUsersToCurrentGroup([payload])
+        },
+        async assignUsersToCurrentGroup(members = []) {
             const group = this.assignUsersDialog.group
-            if (!group?.id || this.isBusy || !Array.isArray(userIds) || userIds.length === 0) return
+            if (!group?.id || this.isBusy || !Array.isArray(members) || members.length === 0) return
+
+            const normalizedMembers = members
+                .map((member) => this.memberAssignmentPayload(member) || member)
+                .filter((member) => !!member?.member_provider && !!member?.member_ref)
+
+            if (normalizedMembers.length === 0) return
 
             this.isBusy = true
             this.is_loading++
             try {
                 const response = await axios.post(`/api/admin/groups/${group.id}/assign-users`, {
-                    user_ids: userIds,
+                    members: normalizedMembers,
                 })
                 const newCount = Number(response.data?.meta?.new_count ?? 0)
-                this.notifySuccess(newCount > 0 ? `${newCount} Benutzer zugeordnet.` : 'Benutzer waren bereits zugeordnet.')
+                this.notifySuccess(newCount > 0 ? `${newCount} Mitglieder zugeordnet.` : 'Mitglieder waren bereits zugeordnet.')
                 await this.loadGroups()
                 await this.loadAssignedMembers()
                 await this.searchAssignableUsers()
@@ -2502,22 +2637,23 @@ export default {
                 }
                 await this.loadAssignableGroups()
             } catch (error) {
-                this.notifyError(error, 'Benutzer konnten nicht zugeordnet werden.')
+                this.notifyError(error, 'Mitglieder konnten nicht zugeordnet werden.')
             } finally {
                 this.is_loading--
                 this.isBusy = false
             }
         },
-        async assignFromOtherGroup() {
+        async assignFromOtherGroup(sourceGroupId = null) {
             const group = this.assignUsersDialog.group
-            const sourceGroupId = this.assignUsersDialog.sourceGroupId
-            if (!group?.id || !sourceGroupId || this.isBusy) return
+            const normalizedSourceGroupId = Number(sourceGroupId || this.assignUsersDialog.sourceGroupId || 0)
+            if (!group?.id || normalizedSourceGroupId <= 0 || this.isBusy) return
 
             this.isBusy = true
             this.is_loading++
+            this.assignUsersDialog.bulkSourceGroupId = normalizedSourceGroupId
             try {
                 const response = await axios.post(`/api/admin/groups/${group.id}/assign-from-group`, {
-                    source_group_id: sourceGroupId,
+                    source_group_id: normalizedSourceGroupId,
                 })
                 const newCount = Number(response.data?.meta?.new_count ?? 0)
                 this.notifySuccess(newCount > 0 ? `${newCount} Benutzer aus Gruppe übernommen.` : (response.data?.message || 'Keine neuen Benutzer übernommen.'))
@@ -2540,16 +2676,18 @@ export default {
             } catch (error) {
                 this.notifyError(error, 'Benutzer konnten nicht aus der Gruppe übernommen werden.')
             } finally {
+                this.assignUsersDialog.bulkSourceGroupId = null
                 this.is_loading--
                 this.isBusy = false
             }
         },
         async assignSelectedTeachers() {
-            const userIds = (this.assignUsersDialog.selectedTeacherIds || [])
-                .map((id) => Number(id))
-                .filter((id) => id > 0)
-            if (userIds.length === 0) return
-            await this.assignUsersToCurrentGroup(userIds)
+            const members = this.buildSelectedAssignableMemberPayloads(
+                this.assignUsersDialog.teacherSearchResults,
+                this.assignUsersDialog.selectedTeacherIds,
+            )
+            if (members.length === 0) return
+            await this.assignUsersToCurrentGroup(members)
             this.clearTeacherSearchSelection()
         },
     },
@@ -2705,9 +2843,18 @@ export default {
     padding: 12px;
 }
 
+.groups-assign-section--disabled {
+    opacity: 0.58;
+}
+
 .groups-assign-list {
     display: grid;
     gap: 10px;
+}
+
+.groups-assign-selection-panel {
+    border-top: 1px solid rgba(16, 38, 58, 0.08);
+    padding-top: 12px;
 }
 
 .groups-assign-list-item {

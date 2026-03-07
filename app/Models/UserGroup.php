@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class UserGroup extends Model
 {
@@ -46,10 +47,21 @@ class UserGroup extends Model
         return $this->belongsTo(TeachingCourse::class);
     }
 
+    public function groupMembers(): HasMany
+    {
+        return $this->hasMany(UserGroupMember::class, 'user_group_id');
+    }
+
     public function members(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'user_group_members', 'user_group_id', 'linked_user_id')
-            ->withPivot(['added_by_user_id'])
+            ->withPivot([
+                'added_by_user_id',
+                'member_provider',
+                'member_ref',
+                'source_status',
+                'linked_user_status',
+            ])
             ->withTimestamps();
     }
 }

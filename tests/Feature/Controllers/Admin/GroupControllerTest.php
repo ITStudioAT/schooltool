@@ -11,7 +11,11 @@ use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudent;
 use App\Models\User;
 use App\Models\UserGroup;
+use App\Models\UserGroupMember;
+use App\Jobs\SyncGroupsJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Queue;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -124,6 +128,36 @@ test('groups index creates class-based school groups with parent groups plus tea
 
     expect($schoolGroups)->toHaveCount(6);
     expect($schoolGroups->pluck('name')->all())->toBe(['1A', '1A Eltern', '2B', '2B Eltern', 'Alle Schulmitglieder', 'Lehrer']);
+});
+
+test('groups index dispatches heavy sync as unique background job and exposes sync meta', function () {
+    Queue::fake();
+    Cache::flush();
+
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    Import116::query()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'class' => '1A',
+        'student_code' => '1009',
+        'last_name' => 'Queue',
+        'first_name' => 'Sync',
+        'email' => 'queue.sync@test.local',
+        'import_date' => now(),
+        'import_user_id' => (int) $this->materialsAdmin->id,
+    ]);
+
+    $response = $this->getJson('/api/admin/groups')->assertSuccessful();
+
+    $response
+        ->assertJsonPath('meta.sync.queued', true)
+        ->assertJsonPath('meta.sync.in_progress', true);
+
+    Queue::assertPushed(SyncGroupsJob::class, function (SyncGroupsJob $job) {
+        return $job->schoolId === (int) $this->school->id
+            && $job->actorUserId === (int) $this->materialsAdmin->id;
+    });
 });
 
 test('school groups only consider import116 rows from the active schoolyear', function () {
@@ -277,6 +311,38 @@ test('groups index stays successful when old automatic parent groups exist after
     expect((int) ($parentGroupPayload['source_users_count'] ?? -1))->toBe(0);
 });
 
+test('manual school groups in weitere gruppen do not expose source counters', function () {
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $group = UserGroup::query()->create([
+        'school_id' => (int) $this->school->id,
+        'type' => UserGroup::TYPE_SCHOOL,
+        'name' => 'Biologen',
+        'description' => null,
+        'created_by_user_id' => (int) $this->adminUser->id,
+    ]);
+
+    $group->groupMembers()->create([
+        'school_id' => (int) $this->school->id,
+        'member_provider' => UserGroupMember::PROVIDER_IMPORT116_STUDENT,
+        'member_ref' => 'import116.student:9999',
+        'display_name' => 'Biologe Bruno',
+        'display_email' => 'biologe.bruno@test.local',
+        'display_schoolclass' => '1A',
+        'member_type_label' => 'Schüler:in',
+        'source_status' => UserGroupMember::SOURCE_STATUS_ACTIVE,
+        'linked_user_status' => UserGroupMember::LINKED_USER_STATUS_NOT_APPLICABLE,
+        'added_by_user_id' => (int) $this->adminUser->id,
+    ]);
+
+    $response = $this->getJson('/api/admin/groups')->assertSuccessful();
+    $groupPayload = collect($response->json('data'))->firstWhere('id', (int) $group->id);
+
+    expect($groupPayload)->not->toBeNull();
+    expect((int) ($groupPayload['members_count'] ?? -1))->toBe(1);
+    expect($groupPayload['source_users_count'] ?? 'missing')->toBeNull();
+});
+
 test('default school groups cannot be changed or deleted', function () {
     $this->actingAs($this->adminUser, 'sanctum');
 
@@ -348,7 +414,16 @@ test('manual own groups can be deleted even when they still have members', funct
         'created_by_user_id' => (int) $this->adminUser->id,
     ]);
 
-    $group->members()->attach((int) $member->id, [
+    $group->groupMembers()->create([
+        'school_id' => (int) $this->school->id,
+        'member_provider' => UserGroupMember::PROVIDER_USER,
+        'member_ref' => 'user:'.$member->id,
+        'linked_user_id' => (int) $member->id,
+        'display_name' => (string) trim((string) (($member->last_name ?? '').' '.($member->first_name ?? ''))),
+        'display_email' => $member->email,
+        'member_type_label' => 'Benutzer',
+        'source_status' => UserGroupMember::SOURCE_STATUS_ACTIVE,
+        'linked_user_status' => UserGroupMember::LINKED_USER_STATUS_LINKED,
         'added_by_user_id' => (int) $this->adminUser->id,
     ]);
 
@@ -368,8 +443,283 @@ test('manual own groups can be deleted even when they still have members', funct
     ]);
     $this->assertDatabaseMissing('user_group_members', [
         'user_group_id' => (int) $group->id,
-        'user_id' => (int) $member->id,
+        'linked_user_id' => (int) $member->id,
+        'member_provider' => UserGroupMember::PROVIDER_USER,
     ]);
+});
+
+test('assignable groups expose school group category flags for takeover dialog', function () {
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    Import116::query()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'class' => '1A',
+        'student_code' => '5001',
+        'last_name' => 'Import',
+        'first_name' => 'Only',
+        'email' => 'assignable.import.only@test.local',
+        'import_date' => now(),
+        'import_user_id' => (int) $this->adminUser->id,
+    ]);
+
+    $targetGroup = UserGroup::query()->create([
+        'school_id' => (int) $this->school->id,
+        'type' => UserGroup::TYPE_OWN,
+        'name' => 'Zielgruppe',
+        'description' => null,
+        'created_by_user_id' => (int) $this->adminUser->id,
+    ]);
+
+    $member = User::factory()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'email' => 'assignable-group-member@test.local',
+    ]);
+
+    $attachMember = function (UserGroup $group) use ($member): void {
+        $group->groupMembers()->create([
+            'school_id' => (int) $this->school->id,
+            'member_provider' => UserGroupMember::PROVIDER_USER,
+            'member_ref' => 'user:'.$member->id,
+            'linked_user_id' => (int) $member->id,
+            'display_name' => (string) trim((string) (($member->last_name ?? '').' '.($member->first_name ?? ''))),
+            'display_email' => $member->email,
+            'member_type_label' => 'Benutzer',
+            'source_status' => UserGroupMember::SOURCE_STATUS_ACTIVE,
+            'linked_user_status' => UserGroupMember::LINKED_USER_STATUS_LINKED,
+            'added_by_user_id' => (int) $this->adminUser->id,
+        ]);
+    };
+
+    $classesGroup = UserGroup::query()->create([
+        'school_id' => (int) $this->school->id,
+        'type' => UserGroup::TYPE_SCHOOL,
+        'name' => '1A',
+    ]);
+    $teacherGroup = UserGroup::query()->create([
+        'school_id' => (int) $this->school->id,
+        'type' => UserGroup::TYPE_SCHOOL,
+        'name' => 'Lehrer',
+    ]);
+    $parentGroup = UserGroup::query()->create([
+        'school_id' => (int) $this->school->id,
+        'type' => UserGroup::TYPE_SCHOOL,
+        'name' => '1A Eltern',
+    ]);
+    $otherSchoolGroup = UserGroup::query()->create([
+        'school_id' => (int) $this->school->id,
+        'type' => UserGroup::TYPE_SCHOOL,
+        'name' => 'AG Robotik',
+        'created_by_user_id' => (int) $this->adminUser->id,
+    ]);
+
+    collect([$classesGroup, $teacherGroup, $parentGroup, $otherSchoolGroup])->each($attachMember);
+
+    $rows = collect(
+        $this->getJson('/api/admin/groups/'.$targetGroup->id.'/assignable-groups')
+            ->assertSuccessful()
+            ->json('data')
+    );
+
+    expect($rows->firstWhere('id', (int) $classesGroup->id))->toMatchArray([
+        'name' => '1A',
+        'is_system_default' => true,
+        'is_parent_group' => false,
+        'is_all_school_members_group' => false,
+        'source_users_count' => 1,
+        'members_count' => 0,
+    ]);
+
+    expect($rows->firstWhere('id', (int) $teacherGroup->id))->toMatchArray([
+        'name' => 'Lehrer',
+        'is_system_default' => true,
+        'is_parent_group' => false,
+        'is_all_school_members_group' => false,
+    ]);
+
+    expect($rows->firstWhere('id', (int) $parentGroup->id))->toMatchArray([
+        'name' => '1A Eltern',
+        'is_system_default' => true,
+        'is_parent_group' => true,
+        'is_all_school_members_group' => false,
+    ]);
+
+    expect($rows->firstWhere('id', (int) $otherSchoolGroup->id))->toMatchArray([
+        'name' => 'AG Robotik',
+        'is_system_default' => false,
+        'is_parent_group' => false,
+        'is_all_school_members_group' => false,
+    ]);
+});
+
+test('assign users accepts visible source member snapshots when the live source can no longer be resolved', function () {
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $targetGroup = UserGroup::query()->create([
+        'school_id' => (int) $this->school->id,
+        'type' => UserGroup::TYPE_SCHOOL,
+        'name' => 'Biologen',
+        'description' => null,
+        'created_by_user_id' => (int) $this->adminUser->id,
+    ]);
+
+    $this->postJson('/api/admin/groups/'.$targetGroup->id.'/assign-users', [
+        'members' => [
+            [
+                'member_provider' => UserGroupMember::PROVIDER_TEACHER_LIST_TEACHER,
+                'member_ref' => 'teacher_list.teacher:999999',
+                'display_name' => 'Gelöschte Lehrkraft',
+                'display_email' => 'deleted.teacher@test.local',
+                'member_type_label' => 'Lehrer:in',
+                'source_status' => UserGroupMember::SOURCE_STATUS_MISSING,
+                'linked_user_status' => UserGroupMember::LINKED_USER_STATUS_NOT_APPLICABLE,
+            ],
+        ],
+    ])
+        ->assertSuccessful()
+        ->assertJsonPath('meta.new_count', 1)
+        ->assertJsonPath('meta.members_count', 1);
+
+    $storedMember = $targetGroup->groupMembers()->first();
+
+    expect($storedMember)->not->toBeNull();
+    expect((string) ($storedMember->member_provider ?? ''))->toBe(UserGroupMember::PROVIDER_TEACHER_LIST_TEACHER);
+    expect((string) ($storedMember->member_ref ?? ''))->toBe('teacher_list.teacher:999999');
+    expect((string) ($storedMember->display_name ?? ''))->toBe('Gelöschte Lehrkraft');
+    expect((string) ($storedMember->source_status ?? ''))->toBe(UserGroupMember::SOURCE_STATUS_MISSING);
+});
+
+test('stored parent contact members resolve without quelle fehlt', function () {
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $registeredStudent = Import116::query()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'class' => '1A',
+        'student_code' => '5201',
+        'last_name' => 'Kind',
+        'first_name' => 'Registriert',
+        'email' => 'stored.parent.child@test.local',
+        'mother_name' => 'Mutter Test',
+        'mother_email' => 'stored.parent.mother@test.local',
+        'mother_phone_1' => '0664 1234567',
+        'import_date' => now(),
+        'import_user_id' => (int) $this->adminUser->id,
+    ]);
+
+    User::factory()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'email' => 'stored.parent.child@test.local',
+        'import116_id' => (int) $registeredStudent->id,
+    ]);
+
+    $parentGroupPayload = collect(
+        $this->getJson('/api/admin/groups')->assertSuccessful()->json('data')
+    )->firstWhere('name', '1A Eltern');
+
+    expect($parentGroupPayload)->not->toBeNull();
+
+    $membersResponse = $this->getJson('/api/admin/groups/'.(int) $parentGroupPayload['id'].'/members')
+        ->assertSuccessful();
+
+    $members = collect($membersResponse->json('data'));
+    $motherPayload = $members->firstWhere('email', 'stored.parent.mother@test.local');
+
+    expect($motherPayload)->not->toBeNull();
+    expect((string) ($motherPayload['member_provider'] ?? ''))->toBe(UserGroupMember::PROVIDER_IMPORT116_PARENT_CONTACT);
+    expect((string) ($motherPayload['source_status'] ?? ''))->toBe(UserGroupMember::SOURCE_STATUS_ACTIVE);
+    expect($motherPayload['status_label'] ?? null)->toBeNull();
+});
+
+test('stored import student members survive reimport without showing quelle fehlt', function () {
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $studentUser = User::factory()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'email' => 'paul.ahlgrimm@cdgym.at',
+        'last_name' => 'Ahlgrimm-Siess',
+        'first_name' => 'Paul',
+        'schoolclass' => '2B',
+    ]);
+
+    $oldImport = Import116::query()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'class' => '2B',
+        'student_code' => '9201',
+        'last_name' => 'Ahlgrimm-Siess',
+        'first_name' => 'Paul',
+        'email' => 'paul.ahlgrimm@cdgym.at',
+        'user_id' => (int) $studentUser->id,
+        'import_date' => now()->subDay(),
+        'import_user_id' => (int) $this->adminUser->id,
+    ]);
+
+    $studentUser->forceFill([
+        'import116_id' => (int) $oldImport->id,
+    ])->save();
+
+    $group = UserGroup::query()->create([
+        'school_id' => (int) $this->school->id,
+        'type' => UserGroup::TYPE_OWN,
+        'name' => 'Reimport Testgruppe',
+        'description' => null,
+        'created_by_user_id' => (int) $this->adminUser->id,
+    ]);
+
+    $group->groupMembers()->create([
+        'school_id' => (int) $this->school->id,
+        'member_provider' => UserGroupMember::PROVIDER_IMPORT116_STUDENT,
+        'member_ref' => 'import116.student:'.$oldImport->id,
+        'linked_user_id' => (int) $studentUser->id,
+        'source_schoolyear_id' => (int) $this->schoolyear->id,
+        'display_name' => 'Ahlgrimm-Siess Paul',
+        'display_email' => 'paul.ahlgrimm@cdgym.at',
+        'display_schoolclass' => '2B',
+        'member_type_label' => 'Schüler:in',
+        'source_status' => UserGroupMember::SOURCE_STATUS_ACTIVE,
+        'linked_user_status' => UserGroupMember::LINKED_USER_STATUS_LINKED,
+        'meta' => [
+            'import116_id' => (int) $oldImport->id,
+        ],
+        'added_by_user_id' => (int) $this->adminUser->id,
+    ]);
+
+    Import116::query()->whereKey((int) $oldImport->id)->delete();
+
+    $newImport = Import116::query()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'class' => '2B',
+        'student_code' => '9201',
+        'last_name' => 'Ahlgrimm-Siess',
+        'first_name' => 'Paul',
+        'email' => 'paul.ahlgrimm@cdgym.at',
+        'user_id' => (int) $studentUser->id,
+        'import_date' => now(),
+        'import_user_id' => (int) $this->adminUser->id,
+    ]);
+
+    $studentUser->forceFill([
+        'import116_id' => (int) $newImport->id,
+    ])->save();
+
+    $memberPayload = collect(
+        $this->getJson('/api/admin/groups/'.$group->id.'/members')
+            ->assertSuccessful()
+            ->json('data')
+    )->first();
+
+    expect($memberPayload)->not->toBeNull();
+    expect((string) ($memberPayload['source_status'] ?? ''))->toBe(UserGroupMember::SOURCE_STATUS_ACTIVE);
+    expect($memberPayload['status_label'] ?? null)->toBeNull();
+    expect((int) ($memberPayload['import116_id'] ?? 0))->toBe((int) $newImport->id);
+
+    $storedMember = $group->groupMembers()->first();
+    expect((string) ($storedMember?->member_ref ?? ''))->toBe('import116.student:'.$newImport->id);
 });
 
 test('teacher school group syncs members from lehrerliste emails', function () {
@@ -442,7 +792,7 @@ test('teacher school group syncs members from lehrerliste emails', function () {
     $ghostTeacher = $rows->firstWhere('email', 'no.user@test.local');
     expect($ghostTeacher)->not->toBeNull();
     expect((bool) ($ghostTeacher['has_user_account'] ?? true))->toBeFalse();
-    expect((bool) ($ghostTeacher['already_member'] ?? true))->toBeFalse();
+    expect((bool) ($ghostTeacher['already_member'] ?? false))->toBeTrue();
 });
 
 test('teacher school group also includes users with teacher role when lehrerliste is empty', function () {
@@ -878,6 +1228,8 @@ test('parent school groups use child registration status and expose registered v
     expect($registeredParents->pluck('name')->all())->toContain('Mutter Registriert', 'Vater Registriert');
     expect($registeredParents->pluck('name')->all())->not->toContain('Mutter Importiert');
     expect((string) ($registeredParents->firstWhere('name', 'Mutter Registriert')['children_label'] ?? ''))->toBe('Kind Registriert');
+    expect((string) ($registeredParents->firstWhere('name', 'Mutter Registriert')['member_provider'] ?? ''))->toBe(UserGroupMember::PROVIDER_IMPORT116_PARENT_CONTACT);
+    expect((string) ($registeredParents->firstWhere('name', 'Mutter Registriert')['member_ref'] ?? ''))->toStartWith('import116.parent_contact:');
 
     $allParentsResponse = $this->getJson('/api/admin/groups/'.(int) $parentGroup['id'].'/source-members')
         ->assertSuccessful();
@@ -886,6 +1238,37 @@ test('parent school groups use child registration status and expose registered v
     expect($allParents)->toHaveCount(3);
     expect($allParents->pluck('name')->all())->toContain('Mutter Registriert', 'Vater Registriert', 'Mutter Importiert');
     expect((string) ($allParents->firstWhere('name', 'Mutter Importiert')['children_label'] ?? ''))->toBe('Kind Importiert');
+    expect((string) ($allParents->firstWhere('name', 'Mutter Importiert')['member_provider'] ?? ''))->toBe(UserGroupMember::PROVIDER_IMPORT116_PARENT_CONTACT);
+    expect((string) ($allParents->firstWhere('name', 'Mutter Importiert')['member_ref'] ?? ''))->toStartWith('import116.parent_contact:');
+});
+
+test('teacher source members expose assignable provider references', function () {
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    Teacher::query()->create([
+        'school_id' => (int) $this->school->id,
+        'last_name' => 'Quelle',
+        'first_name' => 'Lehrer',
+        'short' => 'QL',
+        'email' => 'teacher.source.member@test.local',
+    ]);
+
+    $groups = collect($this->getJson('/api/admin/groups')->assertSuccessful()->json('data'));
+    $teacherGroup = $groups->firstWhere('name', 'Lehrer');
+
+    expect($teacherGroup)->not->toBeNull();
+
+    $sourceMembers = collect(
+        $this->getJson('/api/admin/groups/'.(int) $teacherGroup['id'].'/source-members')
+            ->assertSuccessful()
+            ->json('data')
+    );
+
+    $teacherPayload = $sourceMembers->firstWhere('email', 'teacher.source.member@test.local');
+
+    expect($teacherPayload)->not->toBeNull();
+    expect((string) ($teacherPayload['member_provider'] ?? ''))->toBe(UserGroupMember::PROVIDER_TEACHER_LIST_TEACHER);
+    expect((string) ($teacherPayload['member_ref'] ?? ''))->toStartWith('teacher_list.teacher:');
 });
 
 test('all school members group combines students parents teachers and admins', function () {
@@ -1131,7 +1514,7 @@ test('groups index creates and syncs automatic own groups for my teaching course
     $importOnlyPayload = $sourceMembers->firstWhere('import116_id', (int) $importOnlyStudent->id);
     expect($importOnlyPayload)->not->toBeNull();
     expect((bool) ($importOnlyPayload['has_user_account'] ?? true))->toBeFalse();
-    expect((bool) ($importOnlyPayload['already_member'] ?? true))->toBeFalse();
+    expect((bool) ($importOnlyPayload['already_member'] ?? false))->toBeTrue();
 
     $parentGroup = UserGroup::query()
         ->where('school_id', (int) $this->school->id)
@@ -1166,4 +1549,99 @@ test('groups index creates and syncs automatic own groups for my teaching course
     $allParents = collect($allParentsResponse->json('data'));
     expect($allParents)->toHaveCount(4);
     expect($allParents->pluck('name')->all())->toContain('Mutter One', 'Vater One', 'Mutter Two', 'Vater Import');
+});
+
+test('manual own groups can assign mixed member providers and show sync status changes', function () {
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $nextSchoolyear = Schoolyear::factory()->create([
+        'school_id' => (int) $this->school->id,
+    ]);
+
+    $importStudent = Import116::query()->create([
+        'school_id' => (int) $this->school->id,
+        'schoolyear_id' => (int) $this->schoolyear->id,
+        'class' => '3C',
+        'student_code' => '9101',
+        'last_name' => 'Gemischt',
+        'first_name' => 'Schueler',
+        'email' => 'mixed.student@test.local',
+        'import_date' => now(),
+        'import_user_id' => (int) $this->adminUser->id,
+    ]);
+
+    $teacher = Teacher::query()->create([
+        'school_id' => (int) $this->school->id,
+        'last_name' => 'Gemischt',
+        'first_name' => 'Lehrer',
+        'short' => 'GL',
+        'email' => 'mixed.teacher@test.local',
+    ]);
+
+    $group = UserGroup::query()->create([
+        'school_id' => (int) $this->school->id,
+        'type' => UserGroup::TYPE_OWN,
+        'name' => 'Gemischte Gruppe',
+        'description' => null,
+        'created_by_user_id' => (int) $this->adminUser->id,
+    ]);
+
+    $searchResponse = $this->getJson('/api/admin/groups/'.$group->id.'/assignable-users?search_string=Gemischt')
+        ->assertSuccessful();
+
+    $searchRows = collect($searchResponse->json('data'));
+    expect($searchRows->pluck('member_provider')->all())->toContain(
+        UserGroupMember::PROVIDER_IMPORT116_STUDENT,
+        UserGroupMember::PROVIDER_TEACHER_LIST_TEACHER,
+    );
+
+    $this->postJson('/api/admin/groups/'.$group->id.'/assign-users', [
+        'members' => [
+            [
+                'member_provider' => UserGroupMember::PROVIDER_IMPORT116_STUDENT,
+                'member_ref' => 'import116.student:'.$importStudent->id,
+            ],
+            [
+                'member_provider' => UserGroupMember::PROVIDER_TEACHER_LIST_TEACHER,
+                'member_ref' => 'teacher_list.teacher:'.$teacher->id,
+            ],
+        ],
+    ])
+        ->assertSuccessful()
+        ->assertJsonPath('meta.new_count', 2)
+        ->assertJsonPath('meta.members_count', 2);
+
+    $group->refresh();
+
+    expect($group->groupMembers()->count())->toBe(2);
+    expect($group->members()->count())->toBe(0);
+
+    $membersResponse = $this->getJson('/api/admin/groups/'.$group->id.'/members')
+        ->assertSuccessful();
+
+    $members = collect($membersResponse->json('data'));
+    expect($members)->toHaveCount(2);
+    expect($members->firstWhere('member_provider', UserGroupMember::PROVIDER_IMPORT116_STUDENT))->not->toBeNull();
+    expect($members->firstWhere('member_provider', UserGroupMember::PROVIDER_TEACHER_LIST_TEACHER))->not->toBeNull();
+
+    SchoolTool::query()
+        ->where('school_id', (int) $this->school->id)
+        ->update(['active_schoolyear_id' => (int) $nextSchoolyear->id]);
+
+    Teacher::query()->whereKey((int) $teacher->id)->delete();
+
+    $refreshedMembersResponse = $this->getJson('/api/admin/groups/'.$group->id.'/members')
+        ->assertSuccessful();
+
+    $refreshedMembers = collect($refreshedMembersResponse->json('data'));
+
+    $studentPayload = $refreshedMembers->firstWhere('member_provider', UserGroupMember::PROVIDER_IMPORT116_STUDENT);
+    expect($studentPayload)->not->toBeNull();
+    expect((string) ($studentPayload['source_status'] ?? ''))->toBe(UserGroupMember::SOURCE_STATUS_OUT_OF_SCOPE);
+    expect((string) ($studentPayload['status_label'] ?? ''))->toBe('Nicht im aktiven Schuljahr');
+
+    $teacherPayload = $refreshedMembers->firstWhere('member_provider', UserGroupMember::PROVIDER_TEACHER_LIST_TEACHER);
+    expect($teacherPayload)->not->toBeNull();
+    expect((string) ($teacherPayload['source_status'] ?? ''))->toBe(UserGroupMember::SOURCE_STATUS_MISSING);
+    expect((string) ($teacherPayload['status_label'] ?? ''))->toBe('Quelle fehlt');
 });

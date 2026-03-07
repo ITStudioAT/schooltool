@@ -175,7 +175,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/groups', \App\Http\Controllers\Admin\GroupController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::get('/admin/groups/{group}/members', [\App\Http\Controllers\Admin\GroupController::class, 'members']);
         Route::get('/admin/groups/{group}/source-members', [\App\Http\Controllers\Admin\GroupController::class, 'sourceMembers']);
-        Route::delete('/admin/groups/{group}/members/{user}', [\App\Http\Controllers\Admin\GroupController::class, 'removeMember']);
+        Route::delete('/admin/groups/{group}/members/{member}', [\App\Http\Controllers\Admin\GroupController::class, 'removeMember']);
         Route::post('/admin/groups/{group}/remove-users', [\App\Http\Controllers\Admin\GroupController::class, 'removeMembers']);
         Route::get('/admin/groups/{group}/assignable-users', [\App\Http\Controllers\Admin\GroupController::class, 'assignableUsers']);
         Route::post('/admin/groups/{group}/assign-users', [\App\Http\Controllers\Admin\GroupController::class, 'assignUsers']);

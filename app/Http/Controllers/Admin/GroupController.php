@@ -3,19 +3,24 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\SyncGroupsJob;
 use App\Models\Import116;
 use App\Models\SchoolTool;
 use App\Models\Teacher;
 use App\Models\TeachingCourse;
 use App\Models\User;
 use App\Models\UserGroup;
+use App\Models\UserGroupMember;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class GroupController extends Controller
 {
+    private const GROUP_SYNC_REFRESH_SECONDS = 120;
+
     public function index(Request $request)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'materials_admin', 'materials_moderator'])) {
@@ -25,14 +30,12 @@ class GroupController extends Controller
 
         $schoolId = $this->currentSchoolId($auth_user);
         $this->ensureDefaultSchoolGroups($schoolId, (int) $auth_user->id);
-        $this->syncTeacherSchoolGroupMembers($schoolId, (int) $auth_user->id);
-        $this->repairMissingImportUserLinksByEmail($schoolId);
-        $this->syncClassSchoolGroupMembers($schoolId, (int) $auth_user->id);
-        $this->syncOwnTeachingCourseGroups($auth_user, $schoolId, (int) $auth_user->id);
+        $this->dispatchHeavyGroupsSyncIfNeeded($auth_user, $schoolId);
+        $syncMeta = $this->groupsSyncMeta($schoolId);
 
         $groups = UserGroup::query()
             ->where('school_id', $schoolId)
-            ->withCount('members')
+            ->withCount(['groupMembers', 'members'])
             ->orderByRaw("CASE type WHEN 'school' THEN 1 WHEN 'materials' THEN 2 ELSE 3 END")
             ->orderByRaw('LOWER(name)')
             ->get();
@@ -50,8 +53,22 @@ class GroupController extends Controller
                     UserGroup::TYPE_MATERIALS => $this->canManageType($auth_user, UserGroup::TYPE_MATERIALS),
                     UserGroup::TYPE_OWN => $this->canManageType($auth_user, UserGroup::TYPE_OWN),
                 ],
+                'sync' => $syncMeta,
             ],
         ]);
+    }
+
+    public function runHeavySync(?User $authUser, int $schoolId, int $actorUserId): void
+    {
+        $this->syncTeacherSchoolGroupMembers($schoolId, $actorUserId);
+        $this->repairMissingImportUserLinksByEmail($schoolId);
+        $this->syncClassSchoolGroupMembers($schoolId, $actorUserId);
+        $this->syncParentSchoolGroupMembers($schoolId, $actorUserId);
+        $this->syncAllSchoolMembersGroup($schoolId, $actorUserId);
+
+        if ($authUser && (int) $authUser->school_id === $schoolId) {
+            $this->syncOwnTeachingCourseGroups($authUser, $schoolId, $actorUserId);
+        }
     }
 
     public function store(Request $request)
@@ -78,7 +95,7 @@ class GroupController extends Controller
             'created_by_user_id' => $auth_user->id,
         ]);
 
-        $group->loadCount('members');
+        $group->loadCount(['groupMembers', 'members']);
 
         return response()->json([
             'message' => 'Gruppe erstellt.',
@@ -105,7 +122,7 @@ class GroupController extends Controller
         $group->name = trim((string) $validated['name']);
         $group->description = isset($validated['description']) ? trim((string) $validated['description']) : null;
         $group->save();
-        $group->loadCount('members');
+        $group->loadCount(['groupMembers', 'members']);
 
         return response()->json([
             'message' => 'Gruppe gespeichert.',
@@ -124,12 +141,8 @@ class GroupController extends Controller
         $this->assertTypePermission($auth_user, (string) $group->type);
         $this->assertNotSystemManagedGroup($group);
 
-        if ((string) $group->type !== UserGroup::TYPE_OWN && $group->members()->exists()) {
+        if ((string) $group->type !== UserGroup::TYPE_OWN && $group->groupMembers()->exists()) {
             abort(409, 'Gruppe kann nur gelöscht werden, wenn sie keine Mitglieder enthält.');
-        }
-
-        if ((string) $group->type === UserGroup::TYPE_OWN && $group->members()->exists()) {
-            $group->members()->detach();
         }
 
         $group->delete();
@@ -159,7 +172,11 @@ class GroupController extends Controller
         }
 
         if ($this->isParentSchoolGroup($group)) {
-            $contacts = $this->parentContactsForGroup($schoolId, $group, true);
+            $contacts = $this->parentContactAssignablePayloads(
+                $schoolId,
+                $this->parentContactsForGroup($schoolId, $group, true),
+                $group,
+            );
 
             return response()->json([
                 'data' => $contacts->values()->all(),
@@ -167,33 +184,27 @@ class GroupController extends Controller
         }
 
         if ($this->isSystemManagedCourseParentGroup($group)) {
-            $contacts = $this->parentContactsForAutomaticOwnCourseGroup($schoolId, $group, true);
+            $contacts = $this->parentContactAssignablePayloads(
+                $schoolId,
+                $this->parentContactsForAutomaticOwnCourseGroup($schoolId, $group, true),
+                $group,
+            );
 
             return response()->json([
                 'data' => $contacts->values()->all(),
             ]);
         }
 
-        $members = $group->members()
-            ->where('users.school_id', $schoolId)
-            ->orderBy('users.last_name')
-            ->orderBy('users.first_name')
-            ->orderBy('users.email')
-            ->get(['users.id', 'users.last_name', 'users.first_name', 'users.email', 'users.schoolclass']);
+        $this->refreshGroupMembersSyncState($group, $schoolId);
+
+        $members = $group->groupMembers()
+            ->with('linkedUser:id')
+            ->orderByRaw('LOWER(display_name)')
+            ->orderByRaw('LOWER(display_email)')
+            ->get();
 
         return response()->json([
-            'data' => $members->map(function (User $user) {
-                $fullName = trim((string) (($user->last_name ?? '').' '.($user->first_name ?? '')));
-
-                return [
-                    'id' => (int) $user->id,
-                    'name' => $fullName !== '' ? $fullName : ($user->email ?? 'Benutzer'),
-                    'last_name' => $user->last_name,
-                    'first_name' => $user->first_name,
-                    'email' => $user->email,
-                    'schoolclass' => $user->schoolclass,
-                ];
-            })->values(),
+            'data' => $members->map(fn (UserGroupMember $member) => $this->serializeStoredGroupMember($member))->values(),
         ]);
     }
 
@@ -227,7 +238,11 @@ class GroupController extends Controller
         }
 
         if ($this->isParentSchoolGroup($group)) {
-            $contacts = $this->parentContactsForGroup($schoolId, $group, false);
+            $contacts = $this->parentContactAssignablePayloads(
+                $schoolId,
+                $this->parentContactsForGroup($schoolId, $group, false),
+                $group,
+            );
 
             return response()->json([
                 'data' => $contacts->values()->all(),
@@ -236,7 +251,11 @@ class GroupController extends Controller
         }
 
         if ($this->isSystemManagedCourseParentGroup($group)) {
-            $contacts = $this->parentContactsForAutomaticOwnCourseGroup($schoolId, $group, false);
+            $contacts = $this->parentContactAssignablePayloads(
+                $schoolId,
+                $this->parentContactsForAutomaticOwnCourseGroup($schoolId, $group, false),
+                $group,
+            );
 
             return response()->json([
                 'data' => $contacts->values()->all(),
@@ -289,28 +308,16 @@ class GroupController extends Controller
             ->get(['id', 'import116_id', 'last_name', 'first_name', 'email', 'schoolclass'])
             ->keyBy(fn (User $user) => (int) $user->import116_id);
 
-        $existingMemberIds = $group->members()->pluck('users.id')->map(fn ($id) => (int) $id)->all();
+        $existingMembers = $this->existingStoredGroupMembers($group);
 
-        $data = $importRows->map(function (Import116 $import) use ($usersByImportId, $existingMemberIds) {
-            $mappedUser = $usersByImportId->get((int) $import->id);
-            $fullName = trim((string) (($import->last_name ?? '').' '.($import->first_name ?? '')));
-            $userId = $mappedUser ? (int) $mappedUser->id : null;
-
-            return [
-                'id' => (int) $import->id,
-                'import116_id' => (int) $import->id,
-                'user_id' => $userId,
-                'name' => $fullName !== '' ? $fullName : ($import->email ?? 'Schüler:in'),
-                'last_name' => $import->last_name,
-                'first_name' => $import->first_name,
-                'email' => $import->email,
-                'schoolclass' => $import->class,
-                'has_user_account' => (bool) $mappedUser,
-                'already_member' => $mappedUser
-                    ? in_array((int) $mappedUser->id, $existingMemberIds, true)
-                    : false,
-            ];
-        })->values();
+        $data = $importRows
+            ->map(function (Import116 $import) use ($usersByImportId, $existingMembers) {
+                return $this->serializeAssignableMemberPayload(
+                    $this->payloadForImportStudent($import, $usersByImportId->get((int) $import->id)),
+                    $existingMembers,
+                );
+            })
+            ->values();
 
         return response()->json([
             'data' => $data,
@@ -318,7 +325,7 @@ class GroupController extends Controller
         ]);
     }
 
-    public function removeMember(Request $request, UserGroup $group, User $user)
+    public function removeMember(Request $request, UserGroup $group, UserGroupMember $member)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'materials_admin', 'materials_moderator'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -330,15 +337,15 @@ class GroupController extends Controller
         $this->assertTypePermission($auth_user, (string) $group->type);
         $this->assertMembersManageable($group);
 
-        if ((int) $user->school_id !== $schoolId) {
-            abort(404, 'Benutzer nicht gefunden.');
+        if ((int) $member->user_group_id !== (int) $group->id || (int) $member->school_id !== $schoolId) {
+            abort(404, 'Gruppenmitglied nicht gefunden.');
         }
 
-        $group->members()->detach($user->id);
-        $group->loadCount('members');
+        $member->delete();
+        $group->loadCount(['groupMembers', 'members']);
 
         return response()->json([
-            'message' => 'Benutzer wurde aus der Gruppe entfernt.',
+            'message' => 'Mitglied wurde aus der Gruppe entfernt.',
             'group' => $this->serializeGroup($group),
         ]);
     }
@@ -356,34 +363,34 @@ class GroupController extends Controller
         $this->assertMembersManageable($group);
 
         $validated = $request->validate([
-            'user_ids' => ['required', 'array', 'min:1'],
-            'user_ids.*' => ['required', 'integer', 'distinct', 'exists:users,id'],
+            'member_ids' => ['required', 'array', 'min:1'],
+            'member_ids.*' => ['required', 'integer', 'distinct'],
         ]);
 
-        $userIds = collect($validated['user_ids'])
+        $memberIds = collect($validated['member_ids'])
             ->map(fn ($id) => (int) $id)
             ->unique()
             ->values();
 
-        $validUserIds = User::query()
+        $validMemberIds = $group->groupMembers()
             ->where('school_id', $schoolId)
-            ->whereIn('id', $userIds)
+            ->whereIn('id', $memberIds)
             ->pluck('id')
             ->map(fn ($id) => (int) $id)
             ->values();
 
-        if ($validUserIds->isEmpty()) {
-            abort(422, 'Keine passenden Benutzer in der aktuellen Schule gefunden.');
+        if ($validMemberIds->isEmpty()) {
+            abort(422, 'Keine passenden Gruppenmitglieder in der aktuellen Schule gefunden.');
         }
 
-        $group->members()->detach($validUserIds->all());
-        $group->loadCount('members');
+        $group->groupMembers()->whereIn('id', $validMemberIds->all())->delete();
+        $group->loadCount(['groupMembers', 'members']);
 
         return response()->json([
-            'message' => 'Benutzer wurden aus der Gruppe entfernt.',
+            'message' => 'Mitglieder wurden aus der Gruppe entfernt.',
             'meta' => [
-                'removed_count' => $validUserIds->count(),
-                'members_count' => (int) $group->members_count,
+                'removed_count' => $validMemberIds->count(),
+                'members_count' => (int) ($group->group_members_count ?? 0),
             ],
             'group' => $this->serializeGroup($group),
         ]);
@@ -410,108 +417,30 @@ class GroupController extends Controller
         $limit = (int) ($validated['limit'] ?? 25);
         $roleName = trim((string) ($validated['role_name'] ?? ''));
 
+        $existingMembers = $this->existingStoredGroupMembers($group);
+
         if ($roleName === 'student') {
-            return $this->assignableStudentsFromImport116($auth_user, $group, $search, $limit);
+            return $this->assignableStudentsFromImport116($auth_user, $group, $search, $limit, $existingMembers);
         }
 
-        $query = User::query()
-            ->where('school_id', $schoolId)
-            ->orderBy('last_name')
-            ->orderBy('first_name')
-            ->orderBy('email');
+        $payloads = $roleName === 'teacher'
+            ? $this->assignableTeacherPayloads($schoolId, $search, $limit)
+            : $this->combinedAssignablePayloads($schoolId, $search, $limit);
 
-        if (in_array($roleName, ['teacher', 'student'], true)) {
-            $query->whereHas('roles', function ($q) use ($roleName) {
-                $q->where('name', $roleName);
-            });
-        }
+        $data = $payloads
+            ->reject(fn (array $payload) => (int) ($payload['linked_user_id'] ?? 0) === (int) $auth_user->id)
+            ->map(fn (array $payload) => $this->serializeAssignableMemberPayload($payload, $existingMembers))
+            ->values();
 
-        if ($search !== '') {
-            $query->where(function ($q) use ($search) {
-                $q->where('last_name', 'like', "%{$search}%")
-                    ->orWhere('first_name', 'like', "%{$search}%")
-                    ->orWhere('email', 'like', "%{$search}%");
-            });
-        }
-
-        $users = $query->limit($limit)->get(['id', 'last_name', 'first_name', 'email', 'schoolclass']);
-
-        $existingMemberIds = $group->members()->pluck('users.id')->map(fn ($id) => (int) $id)->all();
-
-        return response()->json([
-            'data' => $users->map(function (User $user) use ($existingMemberIds) {
-                $fullName = trim((string) (($user->last_name ?? '').' '.($user->first_name ?? '')));
-
-                return [
-                    'id' => (int) $user->id,
-                    'name' => $fullName !== '' ? $fullName : ($user->email ?? 'Benutzer'),
-                    'last_name' => $user->last_name,
-                    'first_name' => $user->first_name,
-                    'email' => $user->email,
-                    'schoolclass' => $user->schoolclass,
-                    'already_member' => in_array((int) $user->id, $existingMemberIds, true),
-                ];
-            })->values(),
-        ]);
+        return response()->json(['data' => $data]);
     }
 
-    private function assignableStudentsFromImport116($auth_user, UserGroup $group, string $search, int $limit)
+    private function assignableStudentsFromImport116($auth_user, UserGroup $group, string $search, int $limit, Collection $existingMembers)
     {
         $schoolId = $this->currentSchoolId($auth_user);
-        $query = $this->import116QueryForActiveSchoolyear($schoolId)
-            ->orderByRaw('LOWER(class)')
-            ->orderBy('last_name')
-            ->orderBy('first_name')
-            ->orderBy('email');
-
-        if ($search !== '') {
-            $query->where(function ($q) use ($search) {
-                $q->where('last_name', 'like', "%{$search}%")
-                    ->orWhere('first_name', 'like', "%{$search}%")
-                    ->orWhere('email', 'like', "%{$search}%")
-                    ->orWhere('class', 'like', "%{$search}%");
-            });
-        }
-
-        $importRows = $query
-            ->limit($limit)
-            ->get(['id', 'schoolyear_id', 'class', 'last_name', 'first_name', 'email']);
-
-        if ($importRows->isEmpty()) {
-            return response()->json(['data' => []]);
-        }
-
-        $userQuery = User::query()
-            ->where('school_id', $schoolId)
-            ->whereIn('import116_id', $importRows->pluck('id')->map(fn ($id) => (int) $id)->all())
-            ->get(['id', 'import116_id']);
-
-        $usersByImportId = $userQuery
-            ->filter(fn (User $user) => ! empty($user->import116_id))
-            ->keyBy(fn (User $user) => (int) $user->import116_id);
-
-        $existingMemberIds = $group->members()->pluck('users.id')->map(fn ($id) => (int) $id)->all();
-
-        $data = $importRows
-            ->map(function (Import116 $import) use ($usersByImportId, $existingMemberIds) {
-                $mappedUser = $usersByImportId->get((int) $import->id);
-                $fullName = trim((string) (($import->last_name ?? '').' '.($import->first_name ?? '')));
-
-                return [
-                    'id' => $mappedUser ? (int) $mappedUser->id : null,
-                    'user_id' => $mappedUser ? (int) $mappedUser->id : null,
-                    'import116_id' => (int) $import->id,
-                    'name' => $fullName !== '' ? $fullName : ($import->email ?? 'Schüler:in'),
-                    'last_name' => $import->last_name,
-                    'first_name' => $import->first_name,
-                    'email' => $import->email,
-                    'schoolclass' => $import->class,
-                    'has_user_account' => (bool) $mappedUser,
-                    'already_member' => $mappedUser
-                        ? in_array((int) $mappedUser->id, $existingMemberIds, true)
-                        : false,
-                ];
-            })
+        $data = $this->assignableStudentPayloads($schoolId, $search, $limit)
+            ->reject(fn (array $payload) => (int) ($payload['linked_user_id'] ?? 0) === (int) $auth_user->id)
+            ->map(fn (array $payload) => $this->serializeAssignableMemberPayload($payload, $existingMembers))
             ->values();
 
         return response()->json(['data' => $data]);
@@ -530,40 +459,72 @@ class GroupController extends Controller
         $this->assertMembersManageable($group);
 
         $validated = $request->validate([
-            'user_ids' => ['required', 'array', 'min:1'],
+            'user_ids' => ['nullable', 'array', 'min:1'],
             'user_ids.*' => ['required', 'integer', 'distinct', 'exists:users,id'],
+            'members' => ['nullable', 'array', 'min:1'],
+            'members.*.member_provider' => ['required_with:members', 'string', 'max:64'],
+            'members.*.member_ref' => ['required_with:members', 'string', 'max:191'],
+            'members.*.linked_user_id' => ['nullable', 'integer'],
+            'members.*.user_id' => ['nullable', 'integer'],
+            'members.*.source_schoolyear_id' => ['nullable', 'integer'],
+            'members.*.display_name' => ['nullable', 'string', 'max:191'],
+            'members.*.display_email' => ['nullable', 'string', 'max:191'],
+            'members.*.display_phone' => ['nullable', 'string', 'max:191'],
+            'members.*.display_schoolclass' => ['nullable', 'string', 'max:191'],
+            'members.*.display_children_label' => ['nullable', 'string', 'max:191'],
+            'members.*.member_type_label' => ['nullable', 'string', 'max:191'],
+            'members.*.source_status' => ['nullable', 'string', 'max:64'],
+            'members.*.linked_user_status' => ['nullable', 'string', 'max:64'],
+            'members.*.meta' => ['nullable', 'array'],
         ]);
 
-        $userIds = collect($validated['user_ids'])
+        $payloads = collect();
+
+        $userIds = collect($validated['user_ids'] ?? [])
             ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
             ->unique()
             ->values();
+        if ($userIds->isNotEmpty()) {
+            $payloads = $payloads->concat(
+                User::query()
+                    ->where('school_id', $schoolId)
+                    ->whereIn('id', $userIds->all())
+                    ->get(['id', 'school_id', 'schoolyear_id', 'last_name', 'first_name', 'email', 'phone', 'schoolclass'])
+                    ->map(fn (User $user) => $this->payloadForUserSource($user))
+                    ->values()
+            );
+        }
 
-        $validUserIds = User::query()
-            ->where('school_id', $schoolId)
-            ->whereIn('id', $userIds)
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
+        $memberPayloads = collect($validated['members'] ?? [])
+            ->map(function (array $payload) use ($schoolId) {
+                return $this->resolveStoredMemberPayloadByProviderAndRef(
+                    (string) ($payload['member_provider'] ?? ''),
+                    (string) ($payload['member_ref'] ?? ''),
+                    $schoolId,
+                ) ?? $this->fallbackStoredMemberPayloadFromRequest($payload, $schoolId);
+            })
+            ->filter()
             ->values();
 
-        if ($validUserIds->isEmpty()) {
-            abort(422, 'Keine passenden Benutzer in der aktuellen Schule gefunden.');
+        $payloads = $payloads
+            ->concat($memberPayloads)
+            ->unique(fn (array $payload) => $this->storedGroupMemberKeyFromPayload($payload))
+            ->values();
+
+        if ($payloads->isEmpty()) {
+            abort(422, 'Keine passenden Mitglieder in der aktuellen Schule gefunden.');
         }
 
-        $existingIds = $group->members()->whereIn('users.id', $validUserIds)->pluck('users.id')->map(fn ($id) => (int) $id);
-        $attachPayload = [];
-        foreach ($validUserIds as $userId) {
-            $attachPayload[$userId] = ['added_by_user_id' => $auth_user->id];
-        }
-        $group->members()->syncWithoutDetaching($attachPayload);
-        $group->loadCount('members');
+        $result = $this->storeGroupMembers($group, $payloads, (int) $auth_user->id);
+        $group->loadCount(['groupMembers', 'members']);
 
         return response()->json([
-            'message' => 'Benutzer wurden zugeordnet.',
+            'message' => 'Mitglieder wurden zugeordnet.',
             'meta' => [
-                'assigned_count' => $validUserIds->count(),
-                'new_count' => $validUserIds->diff($existingIds)->count(),
-                'members_count' => (int) $group->members_count,
+                'assigned_count' => (int) ($result['assigned_count'] ?? 0),
+                'new_count' => (int) ($result['new_count'] ?? 0),
+                'members_count' => (int) ($group->group_members_count ?? 0),
             ],
             'group' => $this->serializeGroup($group),
         ]);
@@ -583,19 +544,26 @@ class GroupController extends Controller
         $groups = UserGroup::query()
             ->where('school_id', $schoolId)
             ->where('id', '!=', $group->id)
-            ->whereHas('members')
-            ->withCount('members')
+            ->whereHas('groupMembers')
+            ->withCount(['groupMembers', 'members'])
             ->orderByRaw("CASE type WHEN 'school' THEN 1 WHEN 'materials' THEN 2 ELSE 3 END")
             ->orderByRaw('LOWER(name)')
             ->get();
+        $schoolGroupSourceCounts = $this->schoolGroupSourceUserCounts($schoolId);
+        $parentGroupContacts = $this->parentContactsForSchoolGroups($schoolId);
+        $allSchoolMembers = $this->allSchoolMembersCollections($schoolId);
+        $ownCourseSourceCounts = $this->ownCourseSourceUserCounts($groups);
+        $ownCourseParentContacts = $this->parentContactsForAutomaticOwnCourseGroups($groups, $schoolId);
 
         return response()->json([
-            'data' => $groups->map(fn (UserGroup $row) => [
-                'id' => (int) $row->id,
-                'type' => (string) $row->type,
-                'name' => (string) $row->name,
-                'members_count' => (int) ($row->members_count ?? 0),
-            ])->values(),
+            'data' => $groups->map(fn (UserGroup $row) => $this->serializeGroup(
+                $row,
+                $schoolGroupSourceCounts,
+                $ownCourseSourceCounts,
+                $parentGroupContacts,
+                $ownCourseParentContacts,
+                $allSchoolMembers
+            ))->values(),
         ]);
     }
 
@@ -621,15 +589,46 @@ class GroupController extends Controller
             abort(422, 'Quellgruppe und Zielgruppe dürfen nicht identisch sein.');
         }
 
-        $sourceMemberIds = $sourceGroup->members()->pluck('users.id')->map(fn ($id) => (int) $id)->unique()->values();
-        if ($sourceMemberIds->isEmpty()) {
+        $sourcePayloads = $sourceGroup->groupMembers()
+            ->get()
+            ->map(function (UserGroupMember $member) {
+                return [
+                    'member_provider' => (string) $member->member_provider,
+                    'member_ref' => (string) $member->member_ref,
+                    'linked_user_id' => $member->linked_user_id ? (int) $member->linked_user_id : null,
+                    'source_schoolyear_id' => $member->source_schoolyear_id ? (int) $member->source_schoolyear_id : null,
+                    'display_name' => $member->display_name,
+                    'display_email' => $member->display_email,
+                    'display_phone' => $member->display_phone,
+                    'display_schoolclass' => $member->display_schoolclass,
+                    'display_children_label' => $member->display_children_label,
+                    'member_type_label' => $member->member_type_label,
+                    'source_status' => $member->source_status,
+                    'linked_user_status' => $member->linked_user_status,
+                    'meta' => $member->meta,
+                ];
+            })
+            ->values();
+
+        if ($sourcePayloads->isEmpty()) {
             return response()->json([
                 'message' => 'Die Quellgruppe enthält keine Mitglieder.',
                 'meta' => ['assigned_count' => 0, 'new_count' => 0],
             ]);
         }
 
-        return $this->assignUsers(new Request(['user_ids' => $sourceMemberIds->all()]), $group);
+        $result = $this->storeGroupMembers($group, $sourcePayloads, (int) $auth_user->id);
+        $group->loadCount(['groupMembers', 'members']);
+
+        return response()->json([
+            'message' => 'Mitglieder aus der Quellgruppe wurden übernommen.',
+            'meta' => [
+                'assigned_count' => (int) ($result['assigned_count'] ?? 0),
+                'new_count' => (int) ($result['new_count'] ?? 0),
+                'members_count' => (int) ($group->group_members_count ?? 0),
+            ],
+            'group' => $this->serializeGroup($group),
+        ]);
     }
 
     public function myTeachingCourses(Request $request, UserGroup $group)
@@ -666,41 +665,31 @@ class GroupController extends Controller
         }
 
         $courses = $coursesQuery->get(['id', 'school_id', 'schoolyear_id', 'title', 'classes']);
-        $existingMemberIds = $group->members()->pluck('users.id')->map(fn ($id) => (int) $id)->all();
+        $existingMembers = $this->existingStoredGroupMembers($group);
 
-        $data = $courses->map(function (TeachingCourse $course) use ($existingMemberIds) {
+        $data = $courses->map(function (TeachingCourse $course) use ($existingMembers, $schoolId) {
             $students = $course->teachingCourseStudents
-                ->map(function ($courseStudent) use ($existingMemberIds) {
+                ->map(function ($courseStudent) use ($existingMembers, $schoolId) {
                     $user = $courseStudent->user;
                     $import = $courseStudent->import116;
 
-                    $name = null;
-                    $email = null;
-                    $schoolclass = null;
-
-                    if ($user) {
-                        $name = trim((string) (($user->last_name ?? '').' '.($user->first_name ?? '')));
-                        $email = $user->email;
-                        $schoolclass = $user->schoolclass;
-                    } elseif ($import) {
-                        $name = trim((string) (($import->last_name ?? '').' '.($import->first_name ?? '')));
-                        $email = $import->email;
-                        $schoolclass = $import->class;
+                    if ($import) {
+                        return $this->serializeAssignableMemberPayload(
+                            $this->payloadForImportStudent($import, $user ?: $this->linkedUserForImportStudent($schoolId, $import)),
+                            $existingMembers,
+                        );
                     }
 
-                    $userId = $user ? (int) $user->id : null;
+                    if ($user) {
+                        return $this->serializeAssignableMemberPayload(
+                            $this->payloadForUserSource($user, 'Schüler:in'),
+                            $existingMembers,
+                        );
+                    }
 
-                    return [
-                        'id' => $userId,
-                        'user_id' => $userId,
-                        'import116_id' => $courseStudent->import116_id ? (int) $courseStudent->import116_id : null,
-                        'name' => $name !== '' ? $name : ($email ?: 'Schüler:in'),
-                        'email' => $email,
-                        'schoolclass' => $schoolclass,
-                        'has_user_account' => (bool) $userId,
-                        'already_member' => $userId ? in_array($userId, $existingMemberIds, true) : false,
-                    ];
+                    return null;
                 })
+                ->filter()
                 ->values();
 
             $classes = is_array($course->classes) ? array_values(array_filter($course->classes, fn ($v) => trim((string) $v) !== '')) : [];
@@ -714,6 +703,58 @@ class GroupController extends Controller
         })->values();
 
         return response()->json(['data' => $data]);
+    }
+
+    private function dispatchHeavyGroupsSyncIfNeeded(User $authUser, int $schoolId): void
+    {
+        if (! $this->shouldDispatchHeavyGroupsSync($schoolId)) {
+            return;
+        }
+
+        Cache::put(SyncGroupsJob::queuedCacheKey($schoolId), true, now()->addMinutes(15));
+        SyncGroupsJob::dispatch($schoolId, (int) $authUser->id);
+    }
+
+    private function shouldDispatchHeavyGroupsSync(int $schoolId): bool
+    {
+        if (Cache::get(SyncGroupsJob::runningCacheKey($schoolId), false)) {
+            return false;
+        }
+
+        if (Cache::get(SyncGroupsJob::queuedCacheKey($schoolId), false)) {
+            return false;
+        }
+
+        $lastSyncedAt = Cache::get(SyncGroupsJob::lastSyncedAtCacheKey($schoolId));
+        if (! is_string($lastSyncedAt) || trim($lastSyncedAt) === '') {
+            return true;
+        }
+
+        try {
+            $lastSynced = \Carbon\Carbon::parse($lastSyncedAt);
+        } catch (\Throwable) {
+            return true;
+        }
+
+        return $lastSynced->diffInSeconds(now()) >= self::GROUP_SYNC_REFRESH_SECONDS;
+    }
+
+    /**
+     * @return array<string, bool|int|string|null>
+     */
+    private function groupsSyncMeta(int $schoolId): array
+    {
+        $queued = (bool) Cache::get(SyncGroupsJob::queuedCacheKey($schoolId), false);
+        $running = (bool) Cache::get(SyncGroupsJob::runningCacheKey($schoolId), false);
+        $lastSyncedAt = Cache::get(SyncGroupsJob::lastSyncedAtCacheKey($schoolId));
+
+        return [
+            'queued' => $queued,
+            'running' => $running,
+            'in_progress' => $queued || $running,
+            'last_synced_at' => is_string($lastSyncedAt) && trim($lastSyncedAt) !== '' ? $lastSyncedAt : null,
+            'refresh_after_seconds' => self::GROUP_SYNC_REFRESH_SECONDS,
+        ];
     }
 
     private function currentSchoolId($auth_user): int
@@ -790,7 +831,9 @@ class GroupController extends Controller
         ?array $allSchoolMembers = null
     ): array
     {
-        $membersCount = (int) ($group->members_count ?? 0);
+        $storedMembersCount = (int) ($group->group_members_count ?? 0);
+        $linkedMembersCount = (int) ($group->members_count ?? 0);
+        $membersCount = $storedMembersCount > 0 ? $storedMembersCount : $linkedMembersCount;
         $isSystemDefault = $this->isSystemDefaultSchoolGroup($group);
         $isSystemManagedCourseGroup = $this->isSystemManagedCourseGroup($group);
         $isParentGroup = $this->isParentGroup($group);
@@ -799,7 +842,9 @@ class GroupController extends Controller
         $sourceUsersCount = null;
         if ((string) $group->type === UserGroup::TYPE_SCHOOL) {
             $normalizedName = $this->normalizeGroupName((string) $group->name);
-            if ($isAllSchoolMembersGroup) {
+            if (! $isSystemDefault) {
+                $sourceUsersCount = null;
+            } elseif ($isAllSchoolMembersGroup) {
                 $registeredAllSchoolMembers = is_array($allSchoolMembers) ? ($allSchoolMembers['registered'] ?? collect()) : collect();
                 $allSchoolMembersEntries = is_array($allSchoolMembers) ? ($allSchoolMembers['all'] ?? collect()) : collect();
                 $membersCount = (int) $registeredAllSchoolMembers->count();
@@ -812,10 +857,12 @@ class GroupController extends Controller
             } elseif ($this->isTeacherGroupName($normalizedName)) {
                 $normalizedName = $this->normalizeGroupName($this->defaultTeacherGroupName());
                 $displayName = $this->defaultTeacherGroupName();
+                $membersCount = $linkedMembersCount;
                 $sourceUsersCount = is_array($schoolGroupSourceCounts)
                     ? (int) ($schoolGroupSourceCounts[$normalizedName] ?? 0)
                     : null;
             } else {
+                $membersCount = $linkedMembersCount;
                 $sourceUsersCount = is_array($schoolGroupSourceCounts)
                     ? (int) ($schoolGroupSourceCounts[$normalizedName] ?? 0)
                     : null;
@@ -828,6 +875,7 @@ class GroupController extends Controller
                 $membersCount = (int) $registeredParentContacts->count();
                 $sourceUsersCount = (int) $allParentContacts->count();
             } else {
+                $membersCount = $linkedMembersCount;
                 $sourceUsersCount = is_array($ownCourseSourceCounts)
                     ? (int) ($ownCourseSourceCounts[$courseId] ?? 0)
                     : 0;
@@ -1406,44 +1454,30 @@ class GroupController extends Controller
             return collect();
         }
 
-        $existingMemberIds = $group->members()
-            ->pluck('users.id')
-            ->map(fn ($id) => (int) $id)
-            ->all();
+        $existingMembers = $this->existingStoredGroupMembers($group);
 
         return $course->teachingCourseStudents
-            ->map(function ($courseStudent) use ($existingMemberIds) {
+            ->map(function ($courseStudent) use ($existingMembers, $schoolId) {
                 $user = $courseStudent->user;
                 $import = $courseStudent->import116;
 
-                $name = null;
-                $email = null;
-                $schoolclass = null;
-
-                if ($user) {
-                    $name = trim((string) (($user->last_name ?? '').' '.($user->first_name ?? '')));
-                    $email = $user->email;
-                    $schoolclass = $user->schoolclass;
-                } elseif ($import) {
-                    $name = trim((string) (($import->last_name ?? '').' '.($import->first_name ?? '')));
-                    $email = $import->email;
-                    $schoolclass = $import->class;
+                if ($import) {
+                    return $this->serializeAssignableMemberPayload(
+                        $this->payloadForImportStudent($import, $user ?: $this->linkedUserForImportStudent($schoolId, $import)),
+                        $existingMembers,
+                    );
                 }
 
-                $userId = $user ? (int) $user->id : null;
-                $importId = $courseStudent->import116_id ? (int) $courseStudent->import116_id : null;
+                if ($user) {
+                    return $this->serializeAssignableMemberPayload(
+                        $this->payloadForUserSource($user, 'Schüler:in'),
+                        $existingMembers,
+                    );
+                }
 
-                return [
-                    'id' => $importId ?: $userId ?: (int) $courseStudent->id,
-                    'user_id' => $userId,
-                    'import116_id' => $importId,
-                    'name' => $name !== '' ? $name : ($email ?: 'Schüler:in'),
-                    'email' => $email,
-                    'schoolclass' => $schoolclass,
-                    'has_user_account' => (bool) $userId,
-                    'already_member' => $userId ? in_array($userId, $existingMemberIds, true) : false,
-                ];
+                return null;
             })
+            ->filter()
             ->values();
     }
 
@@ -1554,16 +1588,11 @@ class GroupController extends Controller
             $teacherGroup->save();
         }
 
-        $matchingUserIds = $this->resolveTeacherSchoolGroupUserIds($schoolId);
-
-        $syncPayload = [];
-        foreach ($matchingUserIds as $userId) {
-            $syncPayload[$userId] = [
-                'added_by_user_id' => $actorUserId > 0 ? $actorUserId : null,
-            ];
-        }
-
-        $teacherGroup->members()->sync($syncPayload);
+        $this->syncGroupMembersFromPayloads(
+            $teacherGroup,
+            $this->assignableTeacherPayloads($schoolId, '', 5000),
+            $actorUserId,
+        );
     }
 
     private function syncClassSchoolGroupMembers(int $schoolId, int $actorUserId): void
@@ -1580,17 +1609,18 @@ class GroupController extends Controller
         $importIdsByClass = collect($classGroupMappings['by_class'])
             ->map(fn (array $row) => $row['import_ids'])
             ->flatten()
+            ->merge(collect($classGroupMappings['by_family'])->map(fn (array $row) => $row['import_ids'])->flatten())
             ->map(fn ($id) => (int) $id)
             ->unique()
-            ->values()
-            ->all();
+            ->values();
 
-        $usersByImportId = User::query()
-            ->where('school_id', $schoolId)
-            ->whereNotNull('import116_id')
-            ->whereIn('import116_id', $importIdsByClass)
-            ->get(['id', 'import116_id'])
-            ->groupBy(fn (User $user) => (int) $user->import116_id);
+        $importsById = $importIdsByClass->isEmpty()
+            ? collect()
+            : Import116::query()
+                ->where('school_id', $schoolId)
+                ->whereIn('id', $importIdsByClass->all())
+                ->get(['id', 'school_id', 'schoolyear_id', 'class', 'user_id', 'last_name', 'first_name', 'email', 'phone_1', 'phone_2'])
+                ->keyBy(fn (Import116 $import) => (int) $import->id);
 
         $classGroups = UserGroup::query()
             ->where('school_id', $schoolId)
@@ -1606,25 +1636,126 @@ class GroupController extends Controller
             $importIds = $classGroupMappings['by_family'][$normalizedGroupName]['import_ids']
                 ?? $classGroupMappings['by_class'][$normalizedGroupName]['import_ids']
                 ?? [];
-            if (empty($importIds)) {
+            if (empty($importIds) || $this->isParentSchoolGroup($group) || $this->isAllSchoolMembersGroup($group)) {
                 continue;
             }
 
-            $memberIds = collect($importIds)
-                ->flatMap(fn (int $importId) => $usersByImportId->get($importId, collect())->pluck('id'))
-                ->map(fn ($id) => (int) $id)
-                ->unique()
+            $payloads = collect($importIds)
+                ->map(fn (int $importId) => $importsById->get($importId))
+                ->filter()
+                ->map(fn (Import116 $import) => $this->payloadForImportStudent($import, $this->linkedUserForImportStudent($schoolId, $import)))
                 ->values();
 
-            $syncPayload = [];
-            foreach ($memberIds as $userId) {
-                $syncPayload[$userId] = [
-                    'added_by_user_id' => $actorUserId > 0 ? $actorUserId : null,
-                ];
+            $this->syncGroupMembersFromPayloads($group, $payloads, $actorUserId);
+        }
+    }
+
+    private function syncParentSchoolGroupMembers(int $schoolId, int $actorUserId): void
+    {
+        $parentContacts = $this->parentContactsForSchoolGroups($schoolId);
+        $activeSchoolyearId = $this->activeImportSchoolyearId($schoolId);
+        if (! $activeSchoolyearId) {
+            return;
+        }
+
+        $groups = UserGroup::query()
+            ->where('school_id', $schoolId)
+            ->where('type', UserGroup::TYPE_SCHOOL)
+            ->get();
+
+        foreach ($groups as $group) {
+            if (! $this->isParentSchoolGroup($group)) {
+                continue;
             }
 
-            $group->members()->sync($syncPayload);
+            $normalizedGroupName = $this->normalizeGroupName((string) $group->name);
+            $payloads = collect($parentContacts['all'][$normalizedGroupName] ?? [])
+                ->map(fn (array $contact) => $this->payloadForParentContact($schoolId, $activeSchoolyearId, $contact))
+                ->values();
+
+            $this->syncGroupMembersFromPayloads($group, $payloads, $actorUserId);
         }
+    }
+
+    private function syncAllSchoolMembersGroup(int $schoolId, int $actorUserId): void
+    {
+        $group = UserGroup::query()
+            ->where('school_id', $schoolId)
+            ->where('type', UserGroup::TYPE_SCHOOL)
+            ->whereRaw('LOWER(TRIM(name)) = ?', [$this->normalizeGroupName($this->defaultAllSchoolMembersGroupName())])
+            ->first();
+
+        if (! $group) {
+            return;
+        }
+
+        $payloads = $this->allSchoolMembersCollections($schoolId)['all']
+            ->map(fn (array $entry) => $this->payloadFromAllSchoolEntry($schoolId, $entry))
+            ->filter()
+            ->values();
+
+        $this->syncGroupMembersFromPayloads($group, $payloads, $actorUserId);
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     * @return array<string, mixed>|null
+     */
+    private function payloadFromAllSchoolEntry(int $schoolId, array $entry): ?array
+    {
+        $memberTypeLabel = (string) ($entry['member_type_label'] ?? '');
+        $userId = (int) ($entry['user_id'] ?? 0);
+        $import116Id = (int) ($entry['import116_id'] ?? 0);
+
+        if ($import116Id > 0 && str_contains($memberTypeLabel, 'Schüler:in')) {
+            $import = Import116::query()
+                ->where('school_id', $schoolId)
+                ->where('id', $import116Id)
+                ->first(['id', 'school_id', 'schoolyear_id', 'class', 'user_id', 'last_name', 'first_name', 'email', 'phone_1', 'phone_2']);
+            if ($import) {
+                $linkedUser = $userId > 0
+                    ? User::query()->where('school_id', $schoolId)->where('id', $userId)->first(['id', 'school_id', 'import116_id', 'last_name', 'first_name', 'email', 'schoolclass'])
+                    : $this->linkedUserForImportStudent($schoolId, $import);
+
+                return $this->payloadForImportStudent($import, $linkedUser);
+            }
+        }
+
+        if (str_contains($memberTypeLabel, 'Eltern')) {
+            $activeSchoolyearId = $this->activeImportSchoolyearId($schoolId);
+            if (! $activeSchoolyearId) {
+                return null;
+            }
+
+            return $this->payloadForParentContact($schoolId, $activeSchoolyearId, [
+                'name' => $entry['name'] ?? 'Erziehungsberechtigte:r',
+                'email' => $entry['email'] ?? null,
+                'phone' => $entry['phone'] ?? null,
+                'schoolclass' => $entry['schoolclass'] ?? null,
+                'children_label' => $entry['children_label'] ?? null,
+            ]);
+        }
+
+        if ($userId > 0) {
+            $user = User::query()
+                ->where('school_id', $schoolId)
+                ->where('id', $userId)
+                ->first(['id', 'school_id', 'schoolyear_id', 'last_name', 'first_name', 'email', 'phone', 'schoolclass']);
+
+            return $user ? $this->payloadForUserSource($user, $memberTypeLabel !== '' ? $memberTypeLabel : 'Benutzer') : null;
+        }
+
+        if (str_contains($memberTypeLabel, 'Lehrer:in')) {
+            $teacher = Teacher::query()
+                ->where('school_id', $schoolId)
+                ->whereNotNull('email')
+                ->whereRaw('LOWER(TRIM(email)) = ?', [$this->normalizeEmail((string) ($entry['email'] ?? ''))])
+                ->first(['id', 'school_id', 'last_name', 'first_name', 'email', 'short']);
+
+            return $teacher ? $this->payloadForTeacherSource($teacher, $this->linkedUserByEmail($schoolId, $teacher->email)) : null;
+        }
+
+        return null;
     }
 
     private function syncOwnTeachingCourseGroups($authUser, int $schoolId, int $actorUserId): void
@@ -1640,6 +1771,8 @@ class GroupController extends Controller
             ->where('user_id', (int) $authUser->id)
             ->with([
                 'teachingCourseStudents:id,teaching_course_id,user_id,import116_id',
+                'teachingCourseStudents.user:id,school_id,schoolyear_id,import116_id,last_name,first_name,email,phone,schoolclass',
+                'teachingCourseStudents.import116:id,school_id,schoolyear_id,class,user_id,last_name,first_name,email,phone_1,phone_2,mother_name,mother_email,mother_phone_1,mother_phone_2,father_name,father_email,father_phone_1,father_phone_2',
             ])
             ->orderByRaw('LOWER(title)')
             ->orderBy('id');
@@ -1668,50 +1801,26 @@ class GroupController extends Controller
             UserGroup::query()->whereIn('id', $staleGroupIds)->delete();
         }
 
-        $importIds = $courses
-            ->flatMap(fn (TeachingCourse $course) => $course->teachingCourseStudents->pluck('import116_id'))
-            ->filter(fn ($id) => ! empty($id))
-            ->map(fn ($id) => (int) $id)
-            ->unique()
-            ->values();
-
-        $usersByImportId = $importIds->isEmpty()
-            ? collect()
-            : User::query()
-                ->where('school_id', $schoolId)
-                ->whereNotNull('import116_id')
-                ->whereIn('import116_id', $importIds->all())
-                ->get(['id', 'import116_id'])
-                ->groupBy(fn (User $user) => (int) $user->import116_id);
+        $activeImportSchoolyearId = $this->activeImportSchoolyearId($schoolId);
 
         foreach ($courses as $course) {
-            $memberIds = $course->teachingCourseStudents
-                ->flatMap(function ($courseStudent) use ($usersByImportId) {
-                    if ($courseStudent->user_id) {
-                        return [(int) $courseStudent->user_id];
+            $studentPayloads = $course->teachingCourseStudents
+                ->map(function ($courseStudent) use ($schoolId) {
+                    if ($courseStudent->import116) {
+                        return $this->payloadForImportStudent(
+                            $courseStudent->import116,
+                            $courseStudent->user ?: $this->linkedUserForImportStudent($schoolId, $courseStudent->import116),
+                        );
                     }
 
-                    if ($courseStudent->import116_id) {
-                        return $usersByImportId
-                            ->get((int) $courseStudent->import116_id, collect())
-                            ->pluck('id')
-                            ->map(fn ($id) => (int) $id)
-                            ->all();
+                    if ($courseStudent->user) {
+                        return $this->payloadForUserSource($courseStudent->user, 'Schüler:in');
                     }
 
-                    return [];
+                    return null;
                 })
-                ->map(fn ($id) => (int) $id)
-                ->filter(fn (int $id) => $id > 0)
-                ->unique()
+                ->filter()
                 ->values();
-
-            $syncPayload = [];
-            foreach ($memberIds as $userId) {
-                $syncPayload[$userId] = [
-                    'added_by_user_id' => $actorUserId > 0 ? $actorUserId : null,
-                ];
-            }
 
             $studentGroup = $this->firstAutomaticOwnCourseGroup((int) $course->id, UserGroup::TEACHING_COURSE_GROUP_TYPE_STUDENTS);
 
@@ -1740,7 +1849,7 @@ class GroupController extends Controller
                 }
             }
 
-            $studentGroup->members()->sync($syncPayload);
+            $this->syncGroupMembersFromPayloads($studentGroup, $studentPayloads, $actorUserId);
 
             $parentGroup = $this->firstAutomaticOwnCourseGroup((int) $course->id, UserGroup::TEACHING_COURSE_GROUP_TYPE_PARENTS);
 
@@ -1769,7 +1878,58 @@ class GroupController extends Controller
                 }
             }
 
-            $parentGroup->members()->sync([]);
+            $parentImportIds = $course->teachingCourseStudents
+                ->flatMap(function ($courseStudent) {
+                    $ids = [];
+                    if ($courseStudent->import116) {
+                        $ids[] = (int) $courseStudent->import116->id;
+                    }
+                    if ((int) ($courseStudent->user?->import116_id ?? 0) > 0) {
+                        $ids[] = (int) $courseStudent->user->import116_id;
+                    }
+
+                    return $ids;
+                })
+                ->filter(fn ($id) => (int) $id > 0)
+                ->unique()
+                ->values();
+
+            $parentImportRows = $parentImportIds->isEmpty()
+                ? collect()
+                : Import116::query()
+                    ->where('school_id', $schoolId)
+                    ->whereIn('id', $parentImportIds->all())
+                    ->get([
+                        'id',
+                        'schoolyear_id',
+                        'class',
+                        'user_id',
+                        'last_name',
+                        'first_name',
+                        'mother_name',
+                        'mother_email',
+                        'mother_phone_1',
+                        'mother_phone_2',
+                        'father_name',
+                        'father_email',
+                        'father_phone_1',
+                        'father_phone_2',
+                    ]);
+
+            $usersByImportId = $parentImportIds->isEmpty()
+                ? collect()
+                : User::query()
+                    ->where('school_id', $schoolId)
+                    ->whereNotNull('import116_id')
+                    ->whereIn('import116_id', $parentImportIds->all())
+                    ->get(['id', 'import116_id'])
+                    ->keyBy(fn (User $user) => (int) $user->import116_id);
+
+            $parentPayloads = $this->buildParentContacts($parentImportRows, $usersByImportId, false)
+                ->map(fn (array $contact) => $this->payloadForParentContact($schoolId, $activeImportSchoolyearId ?: (int) $course->schoolyear_id, $contact))
+                ->values();
+
+            $this->syncGroupMembersFromPayloads($parentGroup, $parentPayloads, $actorUserId);
         }
     }
 
@@ -2260,9 +2420,7 @@ class GroupController extends Controller
      */
     private function teacherSourceMembers(int $schoolId, ?UserGroup $group = null): Collection
     {
-        $existingMemberIds = $group
-            ? $group->members()->pluck('users.id')->map(fn ($id) => (int) $id)->all()
-            : [];
+        $existingMembers = $group ? $this->existingStoredGroupMembers($group) : collect();
 
         $teacherRowsByEmail = collect();
         if (Schema::hasTable('teachers')) {
@@ -2291,21 +2449,33 @@ class GroupController extends Controller
                 ->get(['id', 'last_name', 'first_name', 'email', 'schoolclass'])
                 ->keyBy(fn (User $user) => mb_strtolower(trim((string) ($user->email ?? ''))));
 
-        $entries = collect($teacherRowsByEmail->all())->map(function (Teacher $teacher, string $normalizedEmail) use ($matchedUsersByEmail, $existingMemberIds) {
+        $entries = collect($teacherRowsByEmail->all())->map(function (Teacher $teacher, string $normalizedEmail) use ($matchedUsersByEmail, $existingMembers) {
             $user = $matchedUsersByEmail->get($normalizedEmail);
             $teacherName = trim((string) (($teacher->last_name ?? '').' '.($teacher->first_name ?? '')));
             $userName = $user ? trim((string) (($user->last_name ?? '').' '.($user->first_name ?? ''))) : '';
             $userId = $user ? (int) $user->id : null;
+            $storedKey = $this->storedGroupMemberKey(
+                UserGroupMember::PROVIDER_TEACHER_LIST_TEACHER,
+                $this->teacherListTeacherMemberRef((int) $teacher->id),
+            );
 
             return [
                 'id' => 'teacher-email:'.$normalizedEmail,
                 'user_id' => $userId,
+                'linked_user_id' => $userId,
                 'import116_id' => null,
                 'name' => $teacherName !== '' ? $teacherName : ($userName !== '' ? $userName : ((string) ($teacher->email ?? 'Lehrer:in'))),
                 'email' => $teacher->email ?: ($user?->email),
                 'schoolclass' => $user?->schoolclass,
+                'member_provider' => UserGroupMember::PROVIDER_TEACHER_LIST_TEACHER,
+                'member_ref' => $this->teacherListTeacherMemberRef((int) $teacher->id),
+                'member_type_label' => 'Lehrer:in',
+                'source_status' => UserGroupMember::SOURCE_STATUS_ACTIVE,
+                'linked_user_status' => $userId
+                    ? UserGroupMember::LINKED_USER_STATUS_LINKED
+                    : UserGroupMember::LINKED_USER_STATUS_NOT_APPLICABLE,
                 'has_user_account' => (bool) $userId,
-                'already_member' => $userId ? in_array($userId, $existingMemberIds, true) : false,
+                'already_member' => $existingMembers->has($storedKey),
             ];
         })->values();
 
@@ -2318,19 +2488,29 @@ class GroupController extends Controller
 
                 return $normalizedEmail !== '' && $teacherRowsByEmail->has($normalizedEmail);
             })
-            ->map(function (User $user) use ($existingMemberIds) {
+            ->map(function (User $user) use ($existingMembers) {
                 $name = trim((string) (($user->last_name ?? '').' '.($user->first_name ?? '')));
                 $userId = (int) $user->id;
+                $storedKey = $this->storedGroupMemberKey(
+                    UserGroupMember::PROVIDER_USER,
+                    $this->userMemberRef($userId),
+                );
 
                 return [
                     'id' => 'teacher-role:'.$userId,
                     'user_id' => $userId,
+                    'linked_user_id' => $userId,
                     'import116_id' => null,
                     'name' => $name !== '' ? $name : ((string) ($user->email ?? 'Lehrer:in')),
                     'email' => $user->email,
                     'schoolclass' => $user->schoolclass,
+                    'member_provider' => UserGroupMember::PROVIDER_USER,
+                    'member_ref' => $this->userMemberRef($userId),
+                    'member_type_label' => 'Lehrer:in',
+                    'source_status' => UserGroupMember::SOURCE_STATUS_ACTIVE,
+                    'linked_user_status' => UserGroupMember::LINKED_USER_STATUS_LINKED,
                     'has_user_account' => true,
-                    'already_member' => in_array($userId, $existingMemberIds, true),
+                    'already_member' => $existingMembers->has($storedKey),
                 ];
             })
             ->values()
@@ -2342,6 +2522,29 @@ class GroupController extends Controller
                 fn (array $entry) => mb_strtolower(trim((string) ($entry['name'] ?? ''))),
                 fn (array $entry) => mb_strtolower(trim((string) ($entry['email'] ?? ''))),
             ])
+            ->values();
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $contacts
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function parentContactAssignablePayloads(int $schoolId, Collection $contacts, ?UserGroup $group = null): Collection
+    {
+        $activeSchoolyearId = $this->activeImportSchoolyearId($schoolId);
+        if (! $activeSchoolyearId) {
+            return collect();
+        }
+
+        $existingMembers = $group ? $this->existingStoredGroupMembers($group) : collect();
+
+        return $contacts
+            ->map(function (array $contact) use ($schoolId, $activeSchoolyearId, $existingMembers) {
+                return $this->serializeAssignableMemberPayload(
+                    $this->payloadForParentContact($schoolId, $activeSchoolyearId, $contact),
+                    $existingMembers,
+                );
+            })
             ->values();
     }
 
@@ -2492,5 +2695,957 @@ class GroupController extends Controller
             ->unique()
             ->values()
             ->all();
+    }
+
+    private function userMemberRef(int $userId): string
+    {
+        return 'user:'.$userId;
+    }
+
+    private function import116StudentMemberRef(int $importId): string
+    {
+        return 'import116.student:'.$importId;
+    }
+
+    private function teacherListTeacherMemberRef(int $teacherId): string
+    {
+        return 'teacher_list.teacher:'.$teacherId;
+    }
+
+    private function import116ParentContactMemberRef(int $schoolyearId, string $contactKey): string
+    {
+        return 'import116.parent_contact:'.$schoolyearId.':'.base64_encode($contactKey);
+    }
+
+    private function storedGroupMemberKey(string $provider, string $memberRef): string
+    {
+        return $provider.'|'.$memberRef;
+    }
+
+    /**
+     * @param  array{member_provider:string,member_ref:string}  $payload
+     */
+    private function storedGroupMemberKeyFromPayload(array $payload): string
+    {
+        return $this->storedGroupMemberKey((string) $payload['member_provider'], (string) $payload['member_ref']);
+    }
+
+    private function normalizeEmail(?string $value): string
+    {
+        return mb_strtolower(trim((string) ($value ?? '')));
+    }
+
+    private function linkedUserByEmail(int $schoolId, ?string $email): ?User
+    {
+        $normalizedEmail = $this->normalizeEmail($email);
+        if ($normalizedEmail === '') {
+            return null;
+        }
+
+        return User::query()
+            ->where('school_id', $schoolId)
+            ->whereNotNull('email')
+            ->whereRaw('LOWER(TRIM(email)) = ?', [$normalizedEmail])
+            ->orderBy('id')
+            ->first(['id', 'school_id', 'import116_id', 'last_name', 'first_name', 'email', 'schoolclass']);
+    }
+
+    private function linkedUserForImportStudent(int $schoolId, Import116 $import): ?User
+    {
+        $directUserId = (int) ($import->user_id ?? 0);
+        if ($directUserId > 0) {
+            $directUser = User::query()
+                ->where('school_id', $schoolId)
+                ->where('id', $directUserId)
+                ->first(['id', 'school_id', 'import116_id', 'last_name', 'first_name', 'email', 'schoolclass']);
+            if ($directUser) {
+                return $directUser;
+            }
+        }
+
+        $linkedByImportId = User::query()
+            ->where('school_id', $schoolId)
+            ->where('import116_id', (int) $import->id)
+            ->orderBy('id')
+            ->first(['id', 'school_id', 'import116_id', 'last_name', 'first_name', 'email', 'schoolclass']);
+        if ($linkedByImportId) {
+            return $linkedByImportId;
+        }
+
+        return $this->linkedUserByEmail($schoolId, $import->email);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function payloadForUserSource(User $user, string $memberTypeLabel = 'Benutzer'): array
+    {
+        $name = trim((string) (($user->last_name ?? '').' '.($user->first_name ?? '')));
+
+        return [
+            'member_provider' => UserGroupMember::PROVIDER_USER,
+            'member_ref' => $this->userMemberRef((int) $user->id),
+            'linked_user_id' => (int) $user->id,
+            'source_schoolyear_id' => $user->schoolyear_id ? (int) $user->schoolyear_id : null,
+            'display_name' => $name !== '' ? $name : ($user->email ?? 'Benutzer'),
+            'display_email' => $user->email,
+            'display_phone' => $user->phone,
+            'display_schoolclass' => $user->schoolclass,
+            'display_children_label' => null,
+            'member_type_label' => $memberTypeLabel,
+            'source_status' => UserGroupMember::SOURCE_STATUS_ACTIVE,
+            'linked_user_status' => UserGroupMember::LINKED_USER_STATUS_LINKED,
+            'meta' => [
+                'user_id' => (int) $user->id,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function payloadForImportStudent(Import116 $import, ?User $linkedUser = null): array
+    {
+        $name = $linkedUser
+            ? trim((string) (($linkedUser->last_name ?? '').' '.($linkedUser->first_name ?? '')))
+            : trim((string) (($import->last_name ?? '').' '.($import->first_name ?? '')));
+        $email = $linkedUser?->email ?: $import->email;
+        $schoolclass = $linkedUser?->schoolclass ?: $import->class;
+
+        return [
+            'member_provider' => UserGroupMember::PROVIDER_IMPORT116_STUDENT,
+            'member_ref' => $this->import116StudentMemberRef((int) $import->id),
+            'linked_user_id' => $linkedUser ? (int) $linkedUser->id : null,
+            'source_schoolyear_id' => $import->schoolyear_id ? (int) $import->schoolyear_id : null,
+            'display_name' => $name !== '' ? $name : ($email ?: 'Schüler:in'),
+            'display_email' => $email,
+            'display_phone' => trim((string) implode(' / ', collect([
+                trim((string) ($import->phone_1 ?? '')),
+                trim((string) ($import->phone_2 ?? '')),
+            ])->filter()->unique()->all())),
+            'display_schoolclass' => $schoolclass,
+            'display_children_label' => null,
+            'member_type_label' => 'Schüler:in',
+            'source_status' => UserGroupMember::SOURCE_STATUS_ACTIVE,
+            'linked_user_status' => $linkedUser
+                ? UserGroupMember::LINKED_USER_STATUS_LINKED
+                : UserGroupMember::LINKED_USER_STATUS_NOT_APPLICABLE,
+            'meta' => [
+                'import116_id' => (int) $import->id,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function payloadForTeacherSource(Teacher $teacher, ?User $linkedUser = null): array
+    {
+        $teacherName = trim((string) (($teacher->last_name ?? '').' '.($teacher->first_name ?? '')));
+        $userName = $linkedUser
+            ? trim((string) (($linkedUser->last_name ?? '').' '.($linkedUser->first_name ?? '')))
+            : '';
+
+        return [
+            'member_provider' => UserGroupMember::PROVIDER_TEACHER_LIST_TEACHER,
+            'member_ref' => $this->teacherListTeacherMemberRef((int) $teacher->id),
+            'linked_user_id' => $linkedUser ? (int) $linkedUser->id : null,
+            'source_schoolyear_id' => null,
+            'display_name' => $teacherName !== '' ? $teacherName : ($userName !== '' ? $userName : ($teacher->email ?? 'Lehrer:in')),
+            'display_email' => $teacher->email ?: ($linkedUser?->email),
+            'display_phone' => null,
+            'display_schoolclass' => $linkedUser?->schoolclass,
+            'display_children_label' => null,
+            'member_type_label' => 'Lehrer:in',
+            'source_status' => UserGroupMember::SOURCE_STATUS_ACTIVE,
+            'linked_user_status' => $linkedUser
+                ? UserGroupMember::LINKED_USER_STATUS_LINKED
+                : UserGroupMember::LINKED_USER_STATUS_NOT_APPLICABLE,
+            'meta' => [
+                'teacher_id' => (int) $teacher->id,
+            ],
+        ];
+    }
+
+    /**
+     * @param  array{name:string,email:string,phone:string,schoolclass?:string|null,children_label?:string|null,id?:string}  $contact
+     * @return array<string, mixed>
+     */
+    private function payloadForParentContact(int $schoolId, int $schoolyearId, array $contact): array
+    {
+        $linkedUser = $this->linkedUserByEmail($schoolId, $contact['email'] ?? null);
+        $contactKey = $this->parentContactKey([
+            'name' => $contact['name'] ?? '',
+            'email' => $contact['email'] ?? '',
+            'phone' => $contact['phone'] ?? '',
+        ]);
+
+        return [
+            'member_provider' => UserGroupMember::PROVIDER_IMPORT116_PARENT_CONTACT,
+            'member_ref' => $this->import116ParentContactMemberRef($schoolyearId, $contactKey),
+            'linked_user_id' => $linkedUser ? (int) $linkedUser->id : null,
+            'source_schoolyear_id' => $schoolyearId,
+            'display_name' => $contact['name'] ?? 'Erziehungsberechtigte:r',
+            'display_email' => $contact['email'] ?? null,
+            'display_phone' => $contact['phone'] ?? null,
+            'display_schoolclass' => $contact['schoolclass'] ?? null,
+            'display_children_label' => $contact['children_label'] ?? null,
+            'member_type_label' => 'Eltern',
+            'source_status' => UserGroupMember::SOURCE_STATUS_ACTIVE,
+            'linked_user_status' => $linkedUser
+                ? UserGroupMember::LINKED_USER_STATUS_LINKED
+                : UserGroupMember::LINKED_USER_STATUS_NOT_APPLICABLE,
+            'meta' => [
+                'contact_key' => $contactKey,
+            ],
+        ];
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $payloads
+     * @return array{assigned_count:int,new_count:int}
+     */
+    private function storeGroupMembers(UserGroup $group, Collection $payloads, int $actorUserId): array
+    {
+        $payloads = $payloads
+            ->filter(fn (array $payload) => trim((string) ($payload['member_provider'] ?? '')) !== '' && trim((string) ($payload['member_ref'] ?? '')) !== '')
+            ->keyBy(fn (array $payload) => $this->storedGroupMemberKeyFromPayload($payload));
+
+        if ($payloads->isEmpty()) {
+            return ['assigned_count' => 0, 'new_count' => 0];
+        }
+
+        $existingMembers = $group->groupMembers()
+            ->get()
+            ->keyBy(fn (UserGroupMember $member) => $this->storedGroupMemberKey((string) $member->member_provider, (string) $member->member_ref));
+
+        $newCount = 0;
+        foreach ($payloads as $storedKey => $payload) {
+            $attributes = [
+                'school_id' => (int) $group->school_id,
+                'member_provider' => (string) $payload['member_provider'],
+                'member_ref' => (string) $payload['member_ref'],
+                'linked_user_id' => isset($payload['linked_user_id']) && $payload['linked_user_id'] !== null ? (int) $payload['linked_user_id'] : null,
+                'source_schoolyear_id' => isset($payload['source_schoolyear_id']) && $payload['source_schoolyear_id'] !== null ? (int) $payload['source_schoolyear_id'] : null,
+                'display_name' => $payload['display_name'] ?? null,
+                'display_email' => $payload['display_email'] ?? null,
+                'display_phone' => $payload['display_phone'] ?? null,
+                'display_schoolclass' => $payload['display_schoolclass'] ?? null,
+                'display_children_label' => $payload['display_children_label'] ?? null,
+                'member_type_label' => $payload['member_type_label'] ?? null,
+                'source_status' => $payload['source_status'] ?? UserGroupMember::SOURCE_STATUS_ACTIVE,
+                'linked_user_status' => $payload['linked_user_status'] ?? UserGroupMember::LINKED_USER_STATUS_NOT_APPLICABLE,
+                'meta' => $payload['meta'] ?? null,
+                'added_by_user_id' => $actorUserId > 0 ? $actorUserId : null,
+            ];
+
+            /** @var UserGroupMember|null $existingMember */
+            $existingMember = $existingMembers->get($storedKey);
+            if ($existingMember) {
+                $existingMember->fill($attributes);
+                if ($existingMember->isDirty()) {
+                    $existingMember->save();
+                }
+                continue;
+            }
+
+            $group->groupMembers()->create($attributes);
+            $newCount++;
+        }
+
+        return [
+            'assigned_count' => $payloads->count(),
+            'new_count' => $newCount,
+        ];
+    }
+
+    /**
+     * @return Collection<string, UserGroupMember>
+     */
+    private function existingStoredGroupMembers(UserGroup $group): Collection
+    {
+        return $group->groupMembers()
+            ->get()
+            ->keyBy(fn (UserGroupMember $member) => $this->storedGroupMemberKey((string) $member->member_provider, (string) $member->member_ref));
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @param  Collection<string, UserGroupMember>  $existingMembers
+     * @return array<string, mixed>
+     */
+    private function serializeAssignableMemberPayload(array $payload, Collection $existingMembers): array
+    {
+        $storedKey = $this->storedGroupMemberKeyFromPayload($payload);
+        /** @var UserGroupMember|null $existingMember */
+        $existingMember = $existingMembers->get($storedKey);
+
+        $provider = (string) ($payload['member_provider'] ?? '');
+        $memberRef = (string) ($payload['member_ref'] ?? '');
+        $import116Id = null;
+        if ($provider === UserGroupMember::PROVIDER_IMPORT116_STUDENT) {
+            $import116Id = (int) preg_replace('/[^0-9]/', '', $memberRef);
+        }
+
+        return [
+            'id' => $memberRef,
+            'user_id' => isset($payload['linked_user_id']) && $payload['linked_user_id'] !== null ? (int) $payload['linked_user_id'] : null,
+            'linked_user_id' => isset($payload['linked_user_id']) && $payload['linked_user_id'] !== null ? (int) $payload['linked_user_id'] : null,
+            'import116_id' => $import116Id,
+            'name' => $payload['display_name'] ?? ($payload['display_email'] ?? 'Mitglied'),
+            'email' => $payload['display_email'] ?? null,
+            'schoolclass' => $payload['display_schoolclass'] ?? null,
+            'phone' => $payload['display_phone'] ?? null,
+            'children_label' => $payload['display_children_label'] ?? null,
+            'member_type_label' => $payload['member_type_label'] ?? null,
+            'member_provider' => $provider,
+            'member_ref' => $memberRef,
+            'has_user_account' => ($payload['linked_user_status'] ?? null) === UserGroupMember::LINKED_USER_STATUS_LINKED,
+            'already_member' => $existingMember !== null,
+            'assigned_member_id' => $existingMember ? (int) $existingMember->id : null,
+            'status_label' => $existingMember ? $this->groupMemberStatusLabel($existingMember) : null,
+        ];
+    }
+
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function assignableStudentPayloads(int $schoolId, string $search, int $limit): Collection
+    {
+        $query = $this->import116QueryForActiveSchoolyear($schoolId)
+            ->orderByRaw('LOWER(class)')
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->orderBy('email');
+
+        if ($search !== '') {
+            $query->where(function ($builder) use ($search) {
+                $builder->where('last_name', 'like', "%{$search}%")
+                    ->orWhere('first_name', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhere('class', 'like', "%{$search}%");
+            });
+        }
+
+        return $query
+            ->limit($limit)
+            ->get(['id', 'school_id', 'schoolyear_id', 'class', 'user_id', 'last_name', 'first_name', 'email', 'phone_1', 'phone_2'])
+            ->map(fn (Import116 $import) => $this->payloadForImportStudent($import, $this->linkedUserForImportStudent($schoolId, $import)))
+            ->values();
+    }
+
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function assignableTeacherPayloads(int $schoolId, string $search, int $limit): Collection
+    {
+        $teacherRows = Teacher::query()
+            ->where('school_id', $schoolId)
+            ->when($search !== '', function ($query) use ($search) {
+                $query->where(function ($builder) use ($search) {
+                    $builder->where('last_name', 'like', "%{$search}%")
+                        ->orWhere('first_name', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%")
+                        ->orWhere('short', 'like', "%{$search}%");
+                });
+            })
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->orderBy('email')
+            ->limit($limit)
+            ->get(['id', 'school_id', 'last_name', 'first_name', 'email', 'short']);
+
+        $teacherPayloads = $teacherRows
+            ->map(fn (Teacher $teacher) => $this->payloadForTeacherSource($teacher, $this->linkedUserByEmail($schoolId, $teacher->email)))
+            ->values();
+
+        $matchedTeacherEmails = $teacherRows
+            ->map(fn (Teacher $teacher) => $this->normalizeEmail($teacher->email))
+            ->filter(fn (string $email) => $email !== '')
+            ->unique()
+            ->values()
+            ->all();
+
+        $roleTeacherPayloads = User::query()
+            ->where('school_id', $schoolId)
+            ->whereHas('roles', fn ($query) => $query->where('name', 'teacher'))
+            ->when($search !== '', function ($query) use ($search) {
+                $query->where(function ($builder) use ($search) {
+                    $builder->where('last_name', 'like', "%{$search}%")
+                        ->orWhere('first_name', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%");
+                });
+            })
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->orderBy('email')
+            ->limit($limit)
+            ->get(['id', 'school_id', 'schoolyear_id', 'last_name', 'first_name', 'email', 'phone', 'schoolclass'])
+            ->reject(fn (User $user) => in_array($this->normalizeEmail($user->email), $matchedTeacherEmails, true))
+            ->map(fn (User $user) => $this->payloadForUserSource($user, 'Lehrer:in'))
+            ->values();
+
+        return $teacherPayloads
+            ->concat($roleTeacherPayloads)
+            ->values();
+    }
+
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function assignableParentPayloads(int $schoolId, string $search, int $limit): Collection
+    {
+        $query = $this->import116QueryForActiveSchoolyear($schoolId)
+            ->orderByRaw('LOWER(class)')
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->orderBy('email');
+
+        if ($search !== '') {
+            $query->where(function ($builder) use ($search) {
+                $builder->where('last_name', 'like', "%{$search}%")
+                    ->orWhere('first_name', 'like', "%{$search}%")
+                    ->orWhere('class', 'like', "%{$search}%")
+                    ->orWhere('mother_name', 'like', "%{$search}%")
+                    ->orWhere('mother_email', 'like', "%{$search}%")
+                    ->orWhere('father_name', 'like', "%{$search}%")
+                    ->orWhere('father_email', 'like', "%{$search}%");
+            });
+        }
+
+        $rows = $query
+            ->limit(max($limit * 3, $limit))
+            ->get([
+                'id',
+                'schoolyear_id',
+                'class',
+                'user_id',
+                'last_name',
+                'first_name',
+                'mother_name',
+                'mother_email',
+                'mother_phone_1',
+                'mother_phone_2',
+                'father_name',
+                'father_email',
+                'father_phone_1',
+                'father_phone_2',
+            ]);
+
+        if ($rows->isEmpty()) {
+            return collect();
+        }
+
+        $usersByImportId = User::query()
+            ->where('school_id', $schoolId)
+            ->whereNotNull('import116_id')
+            ->whereIn('import116_id', $rows->pluck('id')->map(fn ($id) => (int) $id)->all())
+            ->get(['id', 'import116_id'])
+            ->keyBy(fn (User $user) => (int) $user->import116_id);
+
+        $activeSchoolyearId = $this->activeImportSchoolyearId($schoolId);
+
+        return $this->buildParentContacts($rows, $usersByImportId, false)
+            ->map(fn (array $contact) => $this->payloadForParentContact($schoolId, $activeSchoolyearId ?? (int) ($rows->first()->schoolyear_id ?? 0), $contact))
+            ->filter(fn (array $payload) => $this->searchMatchesPayload($payload, $search))
+            ->take($limit)
+            ->values();
+    }
+
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function assignableAdminPayloads(int $schoolId, string $search, int $limit): Collection
+    {
+        return User::query()
+            ->where('school_id', $schoolId)
+            ->whereHas('roles', fn ($query) => $query->whereIn('name', $this->adminRoleNames()))
+            ->when($search !== '', function ($query) use ($search) {
+                $query->where(function ($builder) use ($search) {
+                    $builder->where('last_name', 'like', "%{$search}%")
+                        ->orWhere('first_name', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%");
+                });
+            })
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->orderBy('email')
+            ->limit($limit)
+            ->get(['id', 'school_id', 'schoolyear_id', 'last_name', 'first_name', 'email', 'phone', 'schoolclass'])
+            ->map(fn (User $user) => $this->payloadForUserSource($user, 'Admin'))
+            ->values();
+    }
+
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function combinedAssignablePayloads(int $schoolId, string $search, int $limit): Collection
+    {
+        $seenLinkedUsers = [];
+        $seenKeys = [];
+        $merged = collect();
+
+        foreach ([
+            $this->assignableStudentPayloads($schoolId, $search, $limit),
+            $this->assignableTeacherPayloads($schoolId, $search, $limit),
+            $this->assignableParentPayloads($schoolId, $search, $limit),
+            $this->assignableAdminPayloads($schoolId, $search, $limit),
+        ] as $payloadCollection) {
+            foreach ($payloadCollection as $payload) {
+                $storedKey = $this->storedGroupMemberKeyFromPayload($payload);
+                if (isset($seenKeys[$storedKey])) {
+                    continue;
+                }
+
+                $linkedUserId = isset($payload['linked_user_id']) && $payload['linked_user_id'] !== null
+                    ? (int) $payload['linked_user_id']
+                    : 0;
+
+                if ((string) ($payload['member_provider'] ?? '') === UserGroupMember::PROVIDER_USER && $linkedUserId > 0 && isset($seenLinkedUsers[$linkedUserId])) {
+                    continue;
+                }
+
+                $seenKeys[$storedKey] = true;
+                if ($linkedUserId > 0) {
+                    $seenLinkedUsers[$linkedUserId] = true;
+                }
+                $merged->push($payload);
+            }
+        }
+
+        return $merged->take($limit)->values();
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function searchMatchesPayload(array $payload, string $search): bool
+    {
+        $search = trim($search);
+        if ($search === '') {
+            return true;
+        }
+
+        $needle = mb_strtolower($search);
+        $haystacks = [
+            $payload['display_name'] ?? '',
+            $payload['display_email'] ?? '',
+            $payload['display_schoolclass'] ?? '',
+            $payload['display_children_label'] ?? '',
+            $payload['member_type_label'] ?? '',
+        ];
+
+        foreach ($haystacks as $haystack) {
+            if (str_contains(mb_strtolower((string) $haystack), $needle)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $payloads
+     */
+    private function syncGroupMembersFromPayloads(UserGroup $group, Collection $payloads, int $actorUserId): void
+    {
+        $payloads = $payloads
+            ->filter(fn (array $payload) => trim((string) ($payload['member_provider'] ?? '')) !== '' && trim((string) ($payload['member_ref'] ?? '')) !== '')
+            ->values();
+
+        $this->storeGroupMembers($group, $payloads, $actorUserId);
+
+        $validKeys = $payloads
+            ->map(fn (array $payload) => $this->storedGroupMemberKeyFromPayload($payload))
+            ->unique()
+            ->values()
+            ->all();
+
+        $staleIds = $group->groupMembers()
+            ->get()
+            ->reject(fn (UserGroupMember $member) => in_array($this->storedGroupMemberKey((string) $member->member_provider, (string) $member->member_ref), $validKeys, true))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if (! empty($staleIds)) {
+            $group->groupMembers()->whereIn('id', $staleIds)->delete();
+        }
+    }
+
+    /**
+     * @return Collection<int, UserGroupMember>
+     */
+    private function refreshGroupMembersSyncState(UserGroup $group, int $schoolId): Collection
+    {
+        $members = $group->groupMembers()->get();
+
+        foreach ($members as $member) {
+            $this->refreshSingleGroupMemberSyncState($member, $schoolId);
+        }
+
+        return $members;
+    }
+
+    private function refreshSingleGroupMemberSyncState(UserGroupMember $member, int $schoolId): void
+    {
+        $resolvedPayload = $this->resolveStoredMemberPayload($member, $schoolId);
+
+        if ($resolvedPayload) {
+            $member->fill([
+                'member_ref' => $resolvedPayload['member_ref'] ?? $member->member_ref,
+                'linked_user_id' => $resolvedPayload['linked_user_id'] ?? null,
+                'source_schoolyear_id' => $resolvedPayload['source_schoolyear_id'] ?? null,
+                'display_name' => $resolvedPayload['display_name'] ?? $member->display_name,
+                'display_email' => $resolvedPayload['display_email'] ?? $member->display_email,
+                'display_phone' => $resolvedPayload['display_phone'] ?? $member->display_phone,
+                'display_schoolclass' => $resolvedPayload['display_schoolclass'] ?? $member->display_schoolclass,
+                'display_children_label' => $resolvedPayload['display_children_label'] ?? $member->display_children_label,
+                'member_type_label' => $resolvedPayload['member_type_label'] ?? $member->member_type_label,
+                'source_status' => $resolvedPayload['source_status'] ?? UserGroupMember::SOURCE_STATUS_ACTIVE,
+                'linked_user_status' => $resolvedPayload['linked_user_status'] ?? UserGroupMember::LINKED_USER_STATUS_NOT_APPLICABLE,
+                'meta' => $resolvedPayload['meta'] ?? $member->meta,
+            ]);
+        } else {
+            $member->source_status = UserGroupMember::SOURCE_STATUS_MISSING;
+            if ($member->linked_user_id) {
+                $linkedUserExists = User::query()
+                    ->where('school_id', $schoolId)
+                    ->where('id', (int) $member->linked_user_id)
+                    ->exists();
+                $member->linked_user_status = $linkedUserExists
+                    ? UserGroupMember::LINKED_USER_STATUS_LINKED
+                    : UserGroupMember::LINKED_USER_STATUS_MISSING;
+            } else {
+                $member->linked_user_status = UserGroupMember::LINKED_USER_STATUS_NOT_APPLICABLE;
+            }
+        }
+
+        if ($member->isDirty()) {
+            $member->save();
+        }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function resolveStoredMemberPayload(UserGroupMember $member, int $schoolId): ?array
+    {
+        return match ((string) $member->member_provider) {
+            UserGroupMember::PROVIDER_USER => $this->resolveUserStoredPayload($member, $schoolId),
+            UserGroupMember::PROVIDER_IMPORT116_STUDENT => $this->resolveImportStudentStoredPayload($member, $schoolId),
+            UserGroupMember::PROVIDER_TEACHER_LIST_TEACHER => $this->resolveTeacherStoredPayload($member, $schoolId),
+            UserGroupMember::PROVIDER_IMPORT116_PARENT_CONTACT => $this->resolveParentContactStoredPayload($member, $schoolId),
+            default => null,
+        };
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function resolveStoredMemberPayloadByProviderAndRef(string $provider, string $memberRef, int $schoolId): ?array
+    {
+        $member = new UserGroupMember([
+            'member_provider' => $provider,
+            'member_ref' => $memberRef,
+        ]);
+
+        return $this->resolveStoredMemberPayload($member, $schoolId);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>|null
+     */
+    private function fallbackStoredMemberPayloadFromRequest(array $payload, int $schoolId): ?array
+    {
+        $provider = trim((string) ($payload['member_provider'] ?? ''));
+        $memberRef = trim((string) ($payload['member_ref'] ?? ''));
+
+        if ($provider === '' || $memberRef === '') {
+            return null;
+        }
+
+        $linkedUserId = (int) ($payload['linked_user_id'] ?? $payload['user_id'] ?? 0);
+        if ($linkedUserId > 0) {
+            $linkedUserId = (int) User::query()
+                ->where('school_id', $schoolId)
+                ->where('id', $linkedUserId)
+                ->value('id');
+        }
+
+        $sourceStatus = (string) ($payload['source_status'] ?? UserGroupMember::SOURCE_STATUS_ACTIVE);
+        if (! in_array($sourceStatus, [
+            UserGroupMember::SOURCE_STATUS_ACTIVE,
+            UserGroupMember::SOURCE_STATUS_MISSING,
+            UserGroupMember::SOURCE_STATUS_OUT_OF_SCOPE,
+        ], true)) {
+            $sourceStatus = UserGroupMember::SOURCE_STATUS_ACTIVE;
+        }
+
+        $linkedUserStatus = (string) ($payload['linked_user_status'] ?? '');
+        if (! in_array($linkedUserStatus, [
+            UserGroupMember::LINKED_USER_STATUS_LINKED,
+            UserGroupMember::LINKED_USER_STATUS_MISSING,
+            UserGroupMember::LINKED_USER_STATUS_NOT_APPLICABLE,
+        ], true)) {
+            $linkedUserStatus = $linkedUserId > 0
+                ? UserGroupMember::LINKED_USER_STATUS_LINKED
+                : UserGroupMember::LINKED_USER_STATUS_NOT_APPLICABLE;
+        }
+
+        return [
+            'member_provider' => $provider,
+            'member_ref' => $memberRef,
+            'linked_user_id' => $linkedUserId > 0 ? $linkedUserId : null,
+            'source_schoolyear_id' => isset($payload['source_schoolyear_id']) && $payload['source_schoolyear_id'] !== null
+                ? (int) $payload['source_schoolyear_id']
+                : null,
+            'display_name' => $payload['display_name'] ?? $payload['name'] ?? null,
+            'display_email' => $payload['display_email'] ?? $payload['email'] ?? null,
+            'display_phone' => $payload['display_phone'] ?? $payload['phone'] ?? null,
+            'display_schoolclass' => $payload['display_schoolclass'] ?? $payload['schoolclass'] ?? null,
+            'display_children_label' => $payload['display_children_label'] ?? $payload['children_label'] ?? null,
+            'member_type_label' => $payload['member_type_label'] ?? null,
+            'source_status' => $sourceStatus,
+            'linked_user_status' => $linkedUserStatus,
+            'meta' => is_array($payload['meta'] ?? null) ? $payload['meta'] : null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function resolveUserStoredPayload(UserGroupMember $member, int $schoolId): ?array
+    {
+        $userId = (int) preg_replace('/[^0-9]/', '', (string) $member->member_ref);
+        if ($userId <= 0) {
+            return null;
+        }
+
+        $user = User::query()
+            ->where('school_id', $schoolId)
+            ->where('id', $userId)
+            ->first(['id', 'school_id', 'schoolyear_id', 'last_name', 'first_name', 'email', 'phone', 'schoolclass']);
+
+        return $user ? $this->payloadForUserSource($user, (string) ($member->member_type_label ?: 'Benutzer')) : null;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function resolveImportStudentStoredPayload(UserGroupMember $member, int $schoolId): ?array
+    {
+        $importId = (int) preg_replace('/[^0-9]/', '', (string) $member->member_ref);
+        if ($importId <= 0) {
+            return null;
+        }
+
+        $import = Import116::query()
+            ->where('school_id', $schoolId)
+            ->where('id', $importId)
+            ->first(['id', 'school_id', 'schoolyear_id', 'class', 'user_id', 'last_name', 'first_name', 'email', 'phone_1', 'phone_2']);
+        if (! $import) {
+            $import = $this->fallbackImportStudentForStoredMember($member, $schoolId);
+            if (! $import) {
+                return null;
+            }
+        }
+
+        $payload = $this->payloadForImportStudent($import, $this->linkedUserForImportStudent($schoolId, $import));
+        $activeSchoolyearId = $this->activeImportSchoolyearId($schoolId);
+        if ($activeSchoolyearId && (int) $import->schoolyear_id !== $activeSchoolyearId) {
+            $payload['source_status'] = UserGroupMember::SOURCE_STATUS_OUT_OF_SCOPE;
+        }
+
+        return $payload;
+    }
+
+    private function fallbackImportStudentForStoredMember(UserGroupMember $member, int $schoolId): ?Import116
+    {
+        $linkedUser = null;
+        if ((int) $member->linked_user_id > 0) {
+            $linkedUser = User::query()
+                ->where('school_id', $schoolId)
+                ->where('id', (int) $member->linked_user_id)
+                ->first(['id', 'school_id', 'import116_id', 'email']);
+        }
+
+        $userImportId = (int) ($linkedUser?->import116_id ?? 0);
+        if ($userImportId > 0) {
+            $importByUserLink = Import116::query()
+                ->where('school_id', $schoolId)
+                ->where('id', $userImportId)
+                ->first(['id', 'school_id', 'schoolyear_id', 'class', 'user_id', 'last_name', 'first_name', 'email', 'phone_1', 'phone_2']);
+            if ($importByUserLink) {
+                return $importByUserLink;
+            }
+        }
+
+        $normalizedEmail = $this->normalizeEmail($linkedUser?->email ?: $member->display_email);
+        if ($normalizedEmail === '') {
+            return null;
+        }
+
+        $activeSchoolyearId = $this->activeImportSchoolyearId($schoolId);
+
+        return Import116::query()
+            ->where('school_id', $schoolId)
+            ->whereNotNull('email')
+            ->whereRaw('LOWER(TRIM(email)) = ?', [$normalizedEmail])
+            ->orderByRaw(
+                'CASE WHEN schoolyear_id = ? THEN 0 ELSE 1 END',
+                [$activeSchoolyearId ?: -1]
+            )
+            ->orderByDesc('id')
+            ->first(['id', 'school_id', 'schoolyear_id', 'class', 'user_id', 'last_name', 'first_name', 'email', 'phone_1', 'phone_2']);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function resolveTeacherStoredPayload(UserGroupMember $member, int $schoolId): ?array
+    {
+        $teacherId = (int) preg_replace('/[^0-9]/', '', (string) $member->member_ref);
+        if ($teacherId <= 0) {
+            return null;
+        }
+
+        $teacher = Teacher::query()
+            ->where('school_id', $schoolId)
+            ->where('id', $teacherId)
+            ->first(['id', 'school_id', 'last_name', 'first_name', 'email', 'short']);
+
+        return $teacher ? $this->payloadForTeacherSource($teacher, $this->linkedUserByEmail($schoolId, $teacher->email)) : null;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function resolveParentContactStoredPayload(UserGroupMember $member, int $schoolId): ?array
+    {
+        $parts = explode(':', (string) $member->member_ref, 3);
+        if (count($parts) !== 3) {
+            return null;
+        }
+
+        $schoolyearId = (int) ($parts[1] ?? 0);
+        $contactKey = base64_decode((string) ($parts[2] ?? ''), true);
+        if ($schoolyearId <= 0 || ! is_string($contactKey) || $contactKey === '') {
+            return null;
+        }
+
+        $payload = $this->parentContactPayloadForSchoolyearAndKey($schoolId, $schoolyearId, $contactKey);
+        if (! $payload) {
+            return null;
+        }
+
+        $activeSchoolyearId = $this->activeImportSchoolyearId($schoolId);
+        if ($activeSchoolyearId && $activeSchoolyearId !== $schoolyearId) {
+            $payload['source_status'] = UserGroupMember::SOURCE_STATUS_OUT_OF_SCOPE;
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function parentContactPayloadForSchoolyearAndKey(int $schoolId, int $schoolyearId, string $contactKey): ?array
+    {
+        if (! Schema::hasTable('import116')) {
+            return null;
+        }
+
+        $rows = Import116::query()
+            ->where('school_id', $schoolId)
+            ->where('schoolyear_id', $schoolyearId)
+            ->get([
+                'id',
+                'schoolyear_id',
+                'class',
+                'user_id',
+                'last_name',
+                'first_name',
+                'mother_name',
+                'mother_email',
+                'mother_phone_1',
+                'mother_phone_2',
+                'father_name',
+                'father_email',
+                'father_phone_1',
+                'father_phone_2',
+            ]);
+
+        if ($rows->isEmpty()) {
+            return null;
+        }
+
+        $importIds = $rows->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $usersByImportId = User::query()
+            ->where('school_id', $schoolId)
+            ->whereNotNull('import116_id')
+            ->whereIn('import116_id', $importIds)
+            ->get(['id', 'import116_id'])
+            ->keyBy(fn (User $user) => (int) $user->import116_id);
+
+        $contact = $this->buildParentContacts($rows, $usersByImportId, false)
+            ->first(fn (array $row) => $this->parentContactKey([
+                'name' => $row['name'] ?? '',
+                'email' => $row['email'] ?? '',
+                'phone' => $row['phone'] ?? '',
+            ]) === $contactKey);
+
+        return $contact ? $this->payloadForParentContact($schoolId, $schoolyearId, $contact) : null;
+    }
+
+    private function groupMemberStatusLabel(UserGroupMember $member): ?string
+    {
+        if ((string) $member->source_status === UserGroupMember::SOURCE_STATUS_OUT_OF_SCOPE) {
+            return 'Nicht im aktiven Schuljahr';
+        }
+        if ((string) $member->source_status === UserGroupMember::SOURCE_STATUS_MISSING) {
+            return 'Quelle fehlt';
+        }
+        if ((string) $member->linked_user_status === UserGroupMember::LINKED_USER_STATUS_MISSING) {
+            return 'Benutzerkonto fehlt';
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeStoredGroupMember(UserGroupMember $member): array
+    {
+        $provider = (string) $member->member_provider;
+        $memberRef = (string) $member->member_ref;
+        $statusLabel = $this->groupMemberStatusLabel($member);
+
+        $import116Id = null;
+        if ($provider === UserGroupMember::PROVIDER_IMPORT116_STUDENT) {
+            $import116Id = (int) preg_replace('/[^0-9]/', '', $memberRef);
+        }
+
+        return [
+            'id' => (int) $member->id,
+            'user_id' => $member->linked_user_id ? (int) $member->linked_user_id : null,
+            'linked_user_id' => $member->linked_user_id ? (int) $member->linked_user_id : null,
+            'import116_id' => $import116Id,
+            'name' => (string) ($member->display_name ?: ($member->display_email ?: 'Mitglied')),
+            'email' => $member->display_email,
+            'schoolclass' => $member->display_schoolclass,
+            'phone' => $member->display_phone,
+            'children_label' => $member->display_children_label,
+            'member_type_label' => $member->member_type_label,
+            'member_provider' => $provider,
+            'member_ref' => $memberRef,
+            'has_user_account' => (string) $member->linked_user_status === UserGroupMember::LINKED_USER_STATUS_LINKED,
+            'source_status' => (string) $member->source_status,
+            'linked_user_status' => (string) $member->linked_user_status,
+            'is_missing' => $statusLabel !== null,
+            'status_label' => $statusLabel,
+        ];
     }
 }
