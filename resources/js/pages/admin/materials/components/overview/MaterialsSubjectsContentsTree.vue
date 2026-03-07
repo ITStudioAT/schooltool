@@ -2710,7 +2710,7 @@ export default {
             return this.sharedItemHasFullAccess(item) && this.sharedNodeWithinScope(item, level)
         },
         sharedNodeIsContextOnly(item, level) {
-            return this.sharedItemHasFullAccess(item) && !this.sharedNodeWithinScope(item, level)
+            return !this.sharedNodeWithinScope(item, level)
         },
         handleSharedItemShareClick(item) {
             const level = this.sharedScopeLevel(this.sharedItemScopeType(item))

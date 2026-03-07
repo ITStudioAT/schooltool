@@ -355,7 +355,7 @@ describe('MaterialsSubjectsContentsTree', () => {
     })
 
     it('shows parent subject as context-only for full-access topic shares', async () => {
-        renderTree([], {
+        const { container } = renderTree([], {
             sharedObjectsForMe: [
                 {
                     ruleId: 702,
@@ -408,6 +408,145 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(screen.queryByTitle('Fach nach unten')).not.toBeInTheDocument()
         expect(screen.queryByTitle('Fach bearbeiten')).not.toBeInTheDocument()
         expect(screen.getByTitle('Thema bearbeiten')).toBeInTheDocument()
+    })
+
+    it('shows parent subject and topic as context-only for full-access unit shares', async () => {
+        const { container } = renderTree([], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 703,
+                    scopeType: 'unit',
+                    scopeObjectLabel: 'Lineare Gleichungen',
+                    scopePathLabel: 'Informatik - Algebra - Lineare Gleichungen',
+                    permission: 'full_access',
+                    permissionLabel: 'VOLLZUGRIFF',
+                    fromUserLabel: 'Lehrer Eins',
+                    materialsCount: 2,
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Informatik',
+                            materials: [
+                                {
+                                    id: 100,
+                                    title: 'Fachmaterial',
+                                    status: 'inbox',
+                                    statusLabel: 'Neu/Idee',
+                                    attachmentsCount: 0,
+                                },
+                            ],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Algebra',
+                                    materials: [
+                                        {
+                                            id: 101,
+                                            title: 'Themamaterial',
+                                            status: 'inbox',
+                                            statusLabel: 'Neu/Idee',
+                                            attachmentsCount: 0,
+                                        },
+                                    ],
+                                    units: [
+                                        {
+                                            id: 30,
+                                            name: 'Lineare Gleichungen',
+                                            materials: [],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+
+        const sharedItem = container.querySelector('.overview-shared-item') as HTMLElement
+        const subjectRow = screen.getByText('Informatik').closest('.overview-shared-hierarchy-node') as HTMLElement
+        const topicRow = screen.getByText('Algebra').closest('.overview-shared-hierarchy-node') as HTMLElement
+        const unitRow = within(sharedItem).getByTitle('Neues Material in Unterpunkt anlegen').closest('.overview-shared-hierarchy-node') as HTMLElement
+
+        expect(subjectRow).not.toBeNull()
+        expect(topicRow).not.toBeNull()
+        expect(unitRow).not.toBeNull()
+
+        expect(subjectRow.className).toContain('overview-shared-hierarchy-node--context')
+        expect(topicRow.className).toContain('overview-shared-hierarchy-node--context')
+        expect(unitRow.className).not.toContain('overview-shared-hierarchy-node--context')
+
+        expect(screen.queryByTitle('Neues Material in Fach anlegen')).not.toBeInTheDocument()
+        expect(screen.queryByTitle('Neues Material in Thema anlegen')).not.toBeInTheDocument()
+        expect(screen.getByTitle('Neues Material in Unterpunkt anlegen')).toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
+
+        expect(screen.queryByTitle('Fach bearbeiten')).not.toBeInTheDocument()
+        expect(screen.queryByTitle('Thema bearbeiten')).not.toBeInTheDocument()
+        expect(screen.getByTitle('Bereich bearbeiten')).toBeInTheDocument()
+    })
+
+    it('shows subject/topic/unit as context-only for material scoped shares', async () => {
+        const { container } = renderTree([], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 704,
+                    scopeType: 'material',
+                    scopeObjectLabel: 'Materialkarte A',
+                    scopePathLabel: 'Informatik - Algebra - Lineare Gleichungen',
+                    permission: 'read_write',
+                    permissionLabel: 'LESEN/SCHREIBEN',
+                    fromUserLabel: 'Lehrer Eins',
+                    materialsCount: 1,
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Informatik',
+                            materials: [],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Algebra',
+                                    materials: [],
+                                    units: [
+                                        {
+                                            id: 30,
+                                            name: 'Lineare Gleichungen',
+                                            materials: [
+                                                {
+                                                    id: 401,
+                                                    title: 'Materialkarte A',
+                                                    status: 'inbox',
+                                                    statusLabel: 'Neu/Idee',
+                                                    attachmentsCount: 0,
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+
+        const sharedItem = container.querySelector('.overview-shared-item') as HTMLElement
+        const subjectRow = screen.getByText('Informatik').closest('.overview-shared-hierarchy-node') as HTMLElement
+        const topicRow = screen.getByText('Algebra').closest('.overview-shared-hierarchy-node') as HTMLElement
+        const unitRow = screen.getByText('Lineare Gleichungen').closest('.overview-shared-hierarchy-node') as HTMLElement
+
+        expect(sharedItem).not.toBeNull()
+        expect(subjectRow.className).toContain('overview-shared-hierarchy-node--context')
+        expect(topicRow.className).toContain('overview-shared-hierarchy-node--context')
+        expect(unitRow.className).toContain('overview-shared-hierarchy-node--context')
     })
 
     it('renders multiple shared workspaces in a wrapped row instead of full-width cards', async () => {
