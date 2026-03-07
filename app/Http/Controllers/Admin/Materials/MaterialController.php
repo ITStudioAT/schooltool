@@ -606,13 +606,14 @@ class MaterialController extends Controller
         $authUser = $this->authorizeForMaterials();
         $material_card_attachment->loadMissing('materialCard');
         $this->assertCanReadAttachment($authUser, $material_card_attachment, $request);
+        $allowSharedDiskFallback = $this->isSharedInboxAttachmentReadable($authUser, $material_card_attachment, $request);
 
         if ($material_card_attachment->attachment_type !== MaterialCardAttachment::TYPE_FILE || ! $material_card_attachment->file_path) {
             abort(404, 'Datei nicht gefunden');
         }
 
         $relativePath = (string) $material_card_attachment->file_path;
-        $resolvedDisk = $this->resolveAttachmentStorageDisk($relativePath);
+        $resolvedDisk = $this->resolveAttachmentStorageDisk($relativePath, $allowSharedDiskFallback);
         if ($resolvedDisk === null) {
             abort(404, 'Datei nicht gefunden');
         }
@@ -675,6 +676,7 @@ class MaterialController extends Controller
         $authUser = $this->authorizeForMaterials();
         $material_card_attachment->loadMissing('materialCard');
         $this->assertCanReadAttachment($authUser, $material_card_attachment, $request);
+        $allowSharedDiskFallback = $this->isSharedInboxAttachmentReadable($authUser, $material_card_attachment, $request);
 
         if (! $this->isHtmlAttachment($material_card_attachment)) {
             abort(422, 'DOCX-Export ist nur für Text/HTML-Anhänge verfügbar.');
@@ -684,7 +686,7 @@ class MaterialController extends Controller
         if ($relativePath === '') {
             abort(404, 'Datei nicht gefunden');
         }
-        $disk = $this->resolveAttachmentStorageDisk($relativePath);
+        $disk = $this->resolveAttachmentStorageDisk($relativePath, $allowSharedDiskFallback);
         if ($disk === null) {
             abort(404, 'Datei nicht gefunden');
         }
@@ -749,6 +751,7 @@ class MaterialController extends Controller
         $authUser = $this->authorizeForMaterials();
         $material_card_attachment->loadMissing('materialCard');
         $this->assertCanReadAttachment($authUser, $material_card_attachment, $request);
+        $allowSharedDiskFallback = $this->isSharedInboxAttachmentReadable($authUser, $material_card_attachment, $request);
 
         if ($material_card_attachment->attachment_type !== MaterialCardAttachment::TYPE_FILE || ! $material_card_attachment->file_path) {
             abort(404, 'Datei nicht gefunden');
@@ -760,7 +763,11 @@ class MaterialController extends Controller
             $downloadUrl .= '?'.$query;
         }
 
-        return $previewService->preview($material_card_attachment, $downloadUrl);
+        return $previewService->preview(
+            $material_card_attachment,
+            $downloadUrl,
+            $this->attachmentStorageDiskCandidates($allowSharedDiskFallback)
+        );
     }
 
     private function authorizeForMaterials()
@@ -779,24 +786,33 @@ class MaterialController extends Controller
         }
     }
 
-    private function resolveAttachmentStorageDisk(string $relativePath): ?\Illuminate\Contracts\Filesystem\Filesystem
+    /**
+     * @return array<int, string>
+     */
+    private function attachmentStorageDiskCandidates(bool $allowSharedDiskFallback = false): array
+    {
+        $candidates = [
+            (string) config('filesystems.default'),
+            'local',
+            'public',
+        ];
+
+        if ($allowSharedDiskFallback) {
+            $configuredDisks = array_keys((array) config('filesystems.disks', []));
+            $candidates = [...$candidates, ...$configuredDisks];
+        }
+
+        return array_values(array_filter(array_unique($candidates), static fn (string $diskName): bool => $diskName !== ''));
+    }
+
+    private function resolveAttachmentStorageDisk(string $relativePath, bool $allowSharedDiskFallback = false): ?\Illuminate\Contracts\Filesystem\Filesystem
     {
         $path = trim($relativePath);
         if ($path === '') {
             return null;
         }
 
-        $candidates = array_values(array_unique([
-            (string) config('filesystems.default'),
-            'local',
-            'public',
-        ]));
-
-        foreach ($candidates as $diskName) {
-            if ($diskName === '') {
-                continue;
-            }
-
+        foreach ($this->attachmentStorageDiskCandidates($allowSharedDiskFallback) as $diskName) {
             $disk = Storage::disk($diskName);
             if ($disk->exists($path)) {
                 return $disk;

@@ -4,8 +4,8 @@ import MaterialsOverviewView from '@/pages/admin/materials/components/views/Mate
 
 describe('MaterialsOverviewView', () => {
     it('keeps linked topic metadata from classification tree in subjects overview', () => {
-        const methods = (MaterialsOverviewView as any)?.methods || {}
-        const vm: any = {
+        const methods = MaterialsOverviewView?.methods || {}
+        const vm = {
             ...methods,
             typeOptions: [],
             statusOptions: [],
@@ -39,8 +39,8 @@ describe('MaterialsOverviewView', () => {
     })
 
     it('keeps duplicate unit names separated by unit_id in subjects overview', () => {
-        const methods = (MaterialsOverviewView as any)?.methods || {}
-        const vm: any = {
+        const methods = MaterialsOverviewView?.methods || {}
+        const vm = {
             ...methods,
             typeOptions: [],
             statusOptions: [],
@@ -117,7 +117,7 @@ describe('MaterialsOverviewView', () => {
         expect(Array.isArray(topic.units)).toBe(true)
         expect(topic.units).toHaveLength(2)
 
-        const unitsById = new Map(topic.units.map((unit: any) => [Number(unit?.id || 0), unit]))
+        const unitsById = new Map(topic.units.map((unit) => [Number(unit?.id || 0), unit]))
         const firstUnit = unitsById.get(100)
         const secondUnit = unitsById.get(101)
 
@@ -130,9 +130,9 @@ describe('MaterialsOverviewView', () => {
     })
 
     it('hides source toggle and forces workspace source when overview mode is forced', () => {
-        const methods = (MaterialsOverviewView as any)?.methods || {}
-        const computed = (MaterialsOverviewView as any)?.computed || {}
-        const vm: any = {
+        const methods = MaterialsOverviewView?.methods || {}
+        const computed = MaterialsOverviewView?.computed || {}
+        const vm = {
             ...methods,
             forcedOverviewMode: 'subjects_contents',
             overviewViewMode: 'subjects_contents',
@@ -145,10 +145,10 @@ describe('MaterialsOverviewView', () => {
     })
 
     it('switches subjects source and loads shared/workspace data', () => {
-        const methods = (MaterialsOverviewView as any)?.methods || {}
+        const methods = MaterialsOverviewView?.methods || {}
         const loadSubjectsContentsOverview = vi.fn()
         const loadSharedObjectsForMe = vi.fn()
-        const vm: any = {
+        const vm = {
             ...methods,
             forcedOverviewMode: '',
             subjectsContentsSource: 'workspace',
@@ -169,10 +169,10 @@ describe('MaterialsOverviewView', () => {
     })
 
     it('resets subjects source to workspace when switching to subjects overview mode', () => {
-        const methods = (MaterialsOverviewView as any)?.methods || {}
+        const methods = MaterialsOverviewView?.methods || {}
         const loadSubjectsContentsOverview = vi.fn()
         const loadSharedObjectsForMe = vi.fn()
-        const vm: any = {
+        const vm = {
             ...methods,
             forcedOverviewMode: '',
             overviewViewMode: 'list',
@@ -190,13 +190,13 @@ describe('MaterialsOverviewView', () => {
     })
 
     it('loads shared objects together with subjects contents on initial card load', async () => {
-        const methods = (MaterialsOverviewView as any)?.methods || {}
+        const methods = MaterialsOverviewView?.methods || {}
         const index = vi.fn().mockResolvedValue(true)
         const loadSubjectsContentsOverview = vi.fn().mockResolvedValue(undefined)
         const loadSharedObjectsForMe = vi.fn().mockResolvedValue(undefined)
         const refreshFilterCountCards = vi.fn()
         const refreshAllListedAttachmentBytes = vi.fn()
-        const vm: any = {
+        const vm = {
             ...methods,
             isLoading: false,
             currentPage: 1,
@@ -222,9 +222,9 @@ describe('MaterialsOverviewView', () => {
     })
 
     it('openShareDialog opens persistent dummy dialog when share actions are disabled', () => {
-        const methods = (MaterialsOverviewView as any)?.methods || {}
+        const methods = MaterialsOverviewView?.methods || {}
         const loadShareAssignments = vi.fn()
-        const vm: any = {
+        const vm = {
             ...methods,
             enableShareButtons: false,
             shareDialogOpen: false,
@@ -255,8 +255,8 @@ describe('MaterialsOverviewView', () => {
     })
 
     it('normalizes and sorts shared objects from inbox users response', () => {
-        const methods = (MaterialsOverviewView as any)?.methods || {}
-        const vm: any = {
+        const methods = MaterialsOverviewView?.methods || {}
+        const vm = {
             ...methods,
             materialCardStore: {
                 config: {
@@ -345,6 +345,8 @@ describe('MaterialsOverviewView', () => {
     })
 
     it('renders shared cards with tighter grid breakpoints', () => {
+        const beforeMountSpy = vi.spyOn(MaterialsOverviewView, 'beforeMount').mockImplementation(() => {})
+
         const wrapper = shallowMount(MaterialsOverviewView, {
             data() {
                 return {
@@ -387,6 +389,10 @@ describe('MaterialsOverviewView', () => {
                     VCard: { template: '<div><slot /></div>' },
                     'v-card-text': { template: '<div><slot /></div>' },
                     VCardText: { template: '<div><slot /></div>' },
+                    'v-card-title': { template: '<div><slot /></div>' },
+                    VCardTitle: { template: '<div><slot /></div>' },
+                    'v-card-actions': { template: '<div><slot /></div>' },
+                    VCardActions: { template: '<div><slot /></div>' },
                     'v-chip': { template: '<span><slot /></span>' },
                     VChip: { template: '<span><slot /></span>' },
                     'v-icon': { template: '<i><slot /></i>' },
@@ -395,8 +401,20 @@ describe('MaterialsOverviewView', () => {
                     VBtn: { template: '<button type="button"><slot /></button>' },
                     'v-alert': { template: '<div><slot /></div>' },
                     VAlert: { template: '<div><slot /></div>' },
+                    'v-list': { template: '<div><slot /></div>' },
+                    VList: { template: '<div><slot /></div>' },
+                    'v-list-item': { template: '<div><slot /></div>' },
+                    VListItem: { template: '<div><slot /></div>' },
                     'v-progress-linear': { template: '<div />' },
                     VProgressLinear: { template: '<div />' },
+                    'v-skeleton-loader': { template: '<div />' },
+                    VSkeletonLoader: { template: '<div />' },
+                    'v-text-field': { template: '<input />' },
+                    VTextField: { template: '<input />' },
+                    'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+                    VDialog: { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+                    'v-tooltip': { template: '<div><slot name="activator" :props="{}" /><slot /></div>' },
+                    VTooltip: { template: '<div><slot name="activator" :props="{}" /><slot /></div>' },
                     'v-expand-transition': { template: '<div><slot /></div>' },
                     VExpandTransition: { template: '<div><slot /></div>' },
                     'v-spacer': { template: '<div />' },
@@ -405,18 +423,22 @@ describe('MaterialsOverviewView', () => {
             },
         })
 
-        const column = wrapper.get('[data-test="shared-col"]')
+        try {
+            const column = wrapper.get('[data-test="shared-col"]')
 
-        expect(column.attributes('data-cols')).toBe('12')
-        expect(column.attributes('data-sm')).toBe('6')
-        expect(column.attributes('data-md')).toBe('4')
-        expect(column.attributes('data-xl')).toBe('3')
-        expect(wrapper.html()).toContain('Teamraum Mathematik')
+            expect(column.attributes('data-cols')).toBe('12')
+            expect(column.attributes('data-sm')).toBe('6')
+            expect(column.attributes('data-md')).toBe('4')
+            expect(column.attributes('data-xl')).toBe('3')
+            expect(wrapper.html()).toContain('Teamraum Mathematik')
+        } finally {
+            beforeMountSpy.mockRestore()
+        }
     })
 
     it('normalizes shared hierarchy materials with optional attachments', () => {
-        const methods = (MaterialsOverviewView as any)?.methods || {}
-        const vm: any = { ...methods }
+        const methods = MaterialsOverviewView?.methods || {}
+        const vm = { ...methods }
 
         const normalized = methods.normalizeSharedHierarchyMaterial.call(vm, {
             id: 77,
@@ -437,12 +459,12 @@ describe('MaterialsOverviewView', () => {
     })
 
     it('opens shared material attachments via attachment manager in read-only mode', async () => {
-        const methods = (MaterialsOverviewView as any)?.methods || {}
+        const methods = MaterialsOverviewView?.methods || {}
         const openAttachmentManager = vi.fn().mockResolvedValue(undefined)
         const fetchSharedMaterialAttachments = vi.fn().mockResolvedValue([
             { id: 9001, name: 'aufgabe.pdf', attachment_type: 'file', download_url: '/dl', preview_url: '/pv', shared_rule_id: 77, shared_material_id: 99 },
         ])
-        const vm: any = {
+        const vm = {
             ...methods,
             openAttachmentManager,
             fetchSharedMaterialAttachments,
@@ -469,7 +491,7 @@ describe('MaterialsOverviewView', () => {
     })
 
     it('refreshes shared download url when attachment url is stale', async () => {
-        const methods = (MaterialsOverviewView as any)?.methods || {}
+        const methods = MaterialsOverviewView?.methods || {}
         const fetchSharedMaterialAttachments = vi.fn().mockResolvedValue([
             {
                 id: 5001,
@@ -479,12 +501,12 @@ describe('MaterialsOverviewView', () => {
                 download_docx_url: '',
             },
         ])
-        const vm: any = {
+        const vm = {
             ...methods,
             fetchSharedMaterialAttachments,
         }
 
-        const attachment: any = {
+        const attachment = {
             id: 5001,
             name: 'blatt.pdf',
             shared_rule_id: 9,
@@ -503,7 +525,7 @@ describe('MaterialsOverviewView', () => {
     })
 
     it('keeps file attachments visible when only preview url is available', () => {
-        const methods = (MaterialsOverviewView as any)?.methods || {}
+        const methods = MaterialsOverviewView?.methods || {}
         const rows = methods.fileAttachments.call({}, {
             attachments: [
                 { id: 1, attachment_type: 'file', preview_url: '/preview/1', download_url: '' },
@@ -514,11 +536,11 @@ describe('MaterialsOverviewView', () => {
 
         expect(Array.isArray(rows)).toBe(true)
         expect(rows).toHaveLength(2)
-        expect(rows.map((row: any) => Number(row?.id || 0))).toEqual([1, 2])
+        expect(rows.map((row) => Number(row?.id || 0))).toEqual([1, 2])
     })
 
     it('opens shared material detail in read-only dialog mode', async () => {
-        const methods = (MaterialsOverviewView as any)?.methods || {}
+        const methods = MaterialsOverviewView?.methods || {}
         const fetchSharedMaterialDetail = vi.fn().mockResolvedValue({
             id: 555,
             title: 'Geteiltes Detail',
@@ -526,7 +548,7 @@ describe('MaterialsOverviewView', () => {
             classifications: [],
             linked_permission: 'read_only',
         })
-        const vm: any = {
+        const vm = {
             ...methods,
             detailDialogCard: null,
             detailDialogOpen: false,
@@ -550,8 +572,8 @@ describe('MaterialsOverviewView', () => {
     })
 
     it('computes detail dialog read-only actions from override flag', () => {
-        const computed = (MaterialsOverviewView as any)?.computed || {}
-        const vm: any = {
+        const computed = MaterialsOverviewView?.computed || {}
+        const vm = {
             readOnlyMaterialActions: false,
             detailDialogReadOnlyMode: true,
         }
@@ -560,9 +582,9 @@ describe('MaterialsOverviewView', () => {
     })
 
     it('falls back to attachment dialog context when card is not in overview cards', () => {
-        const computed = (MaterialsOverviewView as any)?.computed || {}
-        const methods = (MaterialsOverviewView as any)?.methods || {}
-        const vm: any = {
+        const computed = MaterialsOverviewView?.computed || {}
+        const methods = MaterialsOverviewView?.methods || {}
+        const vm = {
             ...methods,
             cards: [],
             attachmentDialogCardId: 1234,
@@ -580,8 +602,8 @@ describe('MaterialsOverviewView', () => {
     })
 
     it('toggles shared hierarchy cards by rule id', () => {
-        const methods = (MaterialsOverviewView as any)?.methods || {}
-        const vm: any = {
+        const methods = MaterialsOverviewView?.methods || {}
+        const vm = {
             ...methods,
             openSharedHierarchyCards: {},
         }

@@ -56,14 +56,17 @@ class MaterialAttachmentPreviewService
      */
     private array $archiveExtensions = ['zip', 'rar', '7z', 'tar', 'gz', 'bz2'];
 
-    public function preview(MaterialCardAttachment $attachment, string $downloadUrl = ''): Response
+    /**
+     * @param  array<int, string>  $diskCandidates
+     */
+    public function preview(MaterialCardAttachment $attachment, string $downloadUrl = '', array $diskCandidates = []): Response
     {
         $relativePath = (string) ($attachment->file_path ?? '');
         if ($relativePath === '') {
             abort(404, 'Datei nicht gefunden');
         }
 
-        ['disk' => $disk, 'disk_name' => $diskName] = $this->resolveAttachmentDisk($relativePath);
+        ['disk' => $disk, 'disk_name' => $diskName] = $this->resolveAttachmentDisk($relativePath, $diskCandidates);
         if (! $disk) {
             abort(404, 'Datei nicht gefunden');
         }
@@ -210,24 +213,26 @@ class MaterialAttachmentPreviewService
     /**
      * @return array{disk:\Illuminate\Contracts\Filesystem\Filesystem|null,disk_name:string}
      */
-    private function resolveAttachmentDisk(string $relativePath): array
+    /**
+     * @param  array<int, string>  $candidateDiskNames
+     * @return array{disk:\Illuminate\Contracts\Filesystem\Filesystem|null,disk_name:string}
+     */
+    private function resolveAttachmentDisk(string $relativePath, array $candidateDiskNames = []): array
     {
         $path = trim($relativePath);
         if ($path === '') {
             return ['disk' => null, 'disk_name' => ''];
         }
 
-        $candidates = array_values(array_unique([
-            (string) config('filesystems.default'),
-            'local',
-            'public',
-        ]));
+        $candidates = $candidateDiskNames !== []
+            ? array_values(array_filter(array_unique($candidateDiskNames), static fn (string $diskName): bool => $diskName !== ''))
+            : array_values(array_filter(array_unique([
+                (string) config('filesystems.default'),
+                'local',
+                'public',
+            ]), static fn (string $diskName): bool => $diskName !== ''));
 
         foreach ($candidates as $diskName) {
-            if ($diskName === '') {
-                continue;
-            }
-
             $disk = Storage::disk($diskName);
             if ($disk->exists($path)) {
                 return ['disk' => $disk, 'disk_name' => $diskName];
