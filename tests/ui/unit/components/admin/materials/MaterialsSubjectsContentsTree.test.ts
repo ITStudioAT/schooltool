@@ -714,6 +714,142 @@ describe('MaterialsSubjectsContentsTree', () => {
         })
     })
 
+    it('opens a persistent shared create-topic dialog and inserts before selected topic', async () => {
+        axiosMock.post.mockResolvedValue({
+            data: {
+                data: {
+                    id: 88,
+                    name: 'Analysis',
+                    subject_id: 10,
+                },
+            },
+        })
+
+        const { emitted } = renderTree([], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 98,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Alle Materialien',
+                    scopePathLabel: 'Workspace A',
+                    permission: 'full_access',
+                    permissionLabel: 'VOLLZUGRIFF',
+                    fromUserLabel: 'Lehrer Eins',
+                    materialsCount: 0,
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Mathematik',
+                            materials: [],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Algebra',
+                                    materials: [],
+                                    units: [],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
+        await fireEvent.click(screen.getAllByTitle('Thema hinzufügen')[0])
+
+        expect(screen.getByText('Thema hinzufügen')).toBeInTheDocument()
+
+        const input = screen.getByRole('textbox', { name: 'Titel' })
+        await fireEvent.update(input, '')
+        await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+        expect(screen.getByText('Es muss etwas eingegeben werden.')).toBeInTheDocument()
+
+        await fireEvent.update(input, 'Analysis')
+        await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+
+        expect(axiosMock.post).toHaveBeenCalledTimes(1)
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/shares/inbox/topics', {
+            rule_id: 98,
+            data: {
+                subject_id: 10,
+                name: 'Analysis',
+                before_topic_id: 20,
+            },
+        })
+        expect(screen.queryByText('Thema hinzufügen')).not.toBeInTheDocument()
+
+        const createdEvents = emitted('shared-node-created') || []
+        expect(createdEvents).toHaveLength(1)
+        expect((createdEvents[0]?.[0] as any)?.ruleId).toBe(98)
+        expect((createdEvents[0]?.[0] as any)?.level).toBe('topic')
+        expect((createdEvents[0]?.[0] as any)?.nodeId).toBe(88)
+        expect((createdEvents[0]?.[0] as any)?.name).toBe('Analysis')
+        expect((createdEvents[0]?.[0] as any)?.parentSubjectId).toBe(10)
+    })
+
+    it('creates shared topic without insert target when bottom Thema button is used', async () => {
+        axiosMock.post.mockResolvedValue({
+            data: {
+                data: {
+                    id: 89,
+                    name: 'Geometrie',
+                    subject_id: 10,
+                },
+            },
+        })
+
+        renderTree([], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 99,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Alle Materialien',
+                    scopePathLabel: 'Workspace A',
+                    permission: 'full_access',
+                    permissionLabel: 'VOLLZUGRIFF',
+                    fromUserLabel: 'Lehrer Eins',
+                    materialsCount: 0,
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Mathematik',
+                            materials: [],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Algebra',
+                                    materials: [],
+                                    units: [],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
+        await fireEvent.click(screen.getAllByTitle('Thema hinzufügen')[1])
+
+        const input = screen.getByRole('textbox', { name: 'Titel' })
+        await fireEvent.update(input, 'Geometrie')
+        await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+
+        expect(axiosMock.post).toHaveBeenCalledTimes(1)
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/shares/inbox/topics', {
+            rule_id: 99,
+            data: {
+                subject_id: 10,
+                name: 'Geometrie',
+            },
+        })
+    })
+
     it('opens a persistent shared rename dialog, validates the title, and updates the visible name', async () => {
         axiosMock.put.mockResolvedValue({
             data: {

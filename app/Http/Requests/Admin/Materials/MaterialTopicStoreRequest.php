@@ -18,6 +18,7 @@ class MaterialTopicStoreRequest extends FormRequest
         return [
             'data.subject_id' => $this->subjectIdRules(),
             'data.name' => ['required', 'string', 'max:255'],
+            'data.before_topic_id' => ['nullable', 'integer', 'min:1'],
             'data.allow_duplicate' => ['nullable', 'boolean'],
         ];
     }

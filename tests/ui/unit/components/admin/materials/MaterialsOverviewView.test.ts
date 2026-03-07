@@ -286,15 +286,48 @@ describe('MaterialsOverviewView', () => {
                 school_label: 'CDGym',
                 shared_items: [
                     {
+                        rule_id: 15,
+                        scope_type: 'material',
+                        scope_label: 'Material',
+                        scope_object_label: 'Zettel',
+                        scope_path_label: 'Informatik - Algebra - Einheit 1',
+                        permission: 'read_write',
+                        permission_label: 'LESEN/SCHREIBEN',
+                        is_archived: false,
+                        updated_at: '2026-03-05T10:00:00+00:00',
+                    },
+                    {
                         rule_id: 10,
                         scope_type: 'subject',
                         scope_label: 'Fach',
                         scope_object_label: 'Mathematik',
-                        scope_path_label: 'Mathematik',
+                        scope_path_label: 'Informatik - Alle Themen - Alle Einheiten',
                         permission: 'read_write',
                         permission_label: 'LESEN/SCHREIBEN',
                         is_archived: false,
                         updated_at: '2026-03-01T10:00:00+00:00',
+                    },
+                    {
+                        rule_id: 9,
+                        scope_type: 'subject',
+                        scope_label: 'Fach',
+                        scope_object_label: 'Biologie',
+                        scope_path_label: 'Biologie - Alle Themen - Alle Einheiten',
+                        permission: 'read_only',
+                        permission_label: 'NUR LESEN',
+                        is_archived: false,
+                        updated_at: '2026-03-06T09:00:00+00:00',
+                    },
+                    {
+                        rule_id: 16,
+                        scope_type: 'material',
+                        scope_label: 'Material',
+                        scope_object_label: 'Arbeitsblatt',
+                        scope_path_label: 'Biologie - Einstieg',
+                        permission: 'read_only',
+                        permission_label: 'NUR LESEN',
+                        is_archived: false,
+                        updated_at: '2026-03-02T10:00:00+00:00',
                     },
                     {
                         rule_id: 11,
@@ -360,15 +393,38 @@ describe('MaterialsOverviewView', () => {
                             },
                         ],
                     },
+                    {
+                        rule_id: 13,
+                        scope_type: 'unit',
+                        scope_label: 'Bereich',
+                        scope_object_label: 'Bereich A',
+                        scope_path_label: 'Informatik - Thema 1 - Bereich A',
+                        permission: 'full_access',
+                        permission_label: 'VOLLZUGRIFF',
+                        is_archived: false,
+                        updated_at: '2026-03-01T08:30:00+00:00',
+                    },
+                    {
+                        rule_id: 14,
+                        scope_type: 'unit',
+                        scope_label: 'Bereich',
+                        scope_object_label: 'Bereich B',
+                        scope_path_label: 'Informatik - Thema 1 - Bereich B',
+                        permission: 'full_access',
+                        permission_label: 'VOLLZUGRIFF',
+                        is_archived: false,
+                        updated_at: '2026-03-04T08:30:00+00:00',
+                    },
                 ],
             },
         ])
 
         expect(Array.isArray(cards)).toBe(true)
-        expect(cards).toHaveLength(2)
+        expect(cards).toHaveLength(7)
         expect(cards[0].ruleId).toBe(20)
         expect(cards[0].fromUserLabel).toBe('Lehrer Zwei')
         expect(cards[0].materialsCount).toBe(3)
+        expect(cards[0].scopeObjectLabel).toBe('Teamraum Mathematik')
         expect(cards[0].scopePathLabel).toBe('Teamraum Mathematik')
         expect(Array.isArray(cards[0].hierarchy)).toBe(true)
         expect(cards[0].hierarchy[0].name).toBe('Mathematik')
@@ -376,8 +432,67 @@ describe('MaterialsOverviewView', () => {
         expect(cards[0].hierarchy[0].topics[0].materials[0].title).toBe('Themamaterial')
         expect(cards[0].hierarchy[0].topics[0].units[0].name).toBe('Leere Einheit')
         expect(cards[0].hierarchy[0].topics[0].units[1].materials[0].title).toBe('Lineare Gleichungen')
-        expect(cards[1].ruleId).toBe(10)
+        expect(cards[1].ruleId).toBe(9)
+        expect(cards[1].scopePathLabel).toBe('Fach')
+        expect(cards[2].ruleId).toBe(10)
+        expect(cards[2].scopePathLabel).toBe('Fach')
+        expect(cards[3].ruleId).toBe(13)
+        expect(cards[4].ruleId).toBe(14)
+        expect(cards[5].ruleId).toBe(16)
+        expect(cards[6].ruleId).toBe(15)
         expect(cards[1].scopeLabel).toBe('Fach')
+    })
+
+    it('keeps the active shared object as first card', () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const vm = {
+            ...methods,
+            activeSharedRuleId: 15,
+            materialCardStore: {
+                config: {
+                    workspace: {
+                        name: 'Teamraum Mathematik',
+                    },
+                },
+            },
+        }
+
+        const cards = methods.normalizeSharedObjectsForMeResponse.call(vm, [
+            {
+                label: 'Lehrer Eins',
+                shared_items: [
+                    {
+                        rule_id: 10,
+                        scope_type: 'subject',
+                        scope_label: 'Fach',
+                        scope_object_label: 'Mathematik',
+                        scope_path_label: 'Mathematik - Alle Themen - Alle Einheiten',
+                        permission: 'read_write',
+                        permission_label: 'LESEN/SCHREIBEN',
+                    },
+                    {
+                        rule_id: 15,
+                        scope_type: 'material',
+                        scope_label: 'Material',
+                        scope_object_label: 'Zettel',
+                        scope_path_label: 'Informatik - Algebra - Einheit 1',
+                        permission: 'read_write',
+                        permission_label: 'LESEN/SCHREIBEN',
+                    },
+                    {
+                        rule_id: 20,
+                        scope_type: 'all',
+                        scope_label: 'Workspace',
+                        scope_object_label: 'Alle Materialien',
+                        permission: 'read_only',
+                        permission_label: 'NUR LESEN',
+                    },
+                ],
+            },
+        ])
+
+        expect(cards).toHaveLength(3)
+        expect(cards[0].ruleId).toBe(15)
     })
 
     it('preserves expanded shared tree cards across shared inbox reloads', async () => {
@@ -1397,5 +1512,48 @@ describe('MaterialsOverviewView', () => {
 
         methods.toggleSharedHierarchy.call(vm, 55)
         expect(methods.isSharedHierarchyOpen.call(vm, 55)).toBe(false)
+    })
+
+    it('keeps only one shared tree item expanded at a time', () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const vm = {
+            ...methods,
+            subjectsTreeExpandedSharedItems: {},
+        }
+
+        methods.toggleSubjectsTreeSharedItemExpanded.call(vm, 11)
+        expect(vm.subjectsTreeExpandedSharedItems).toEqual({
+            'shared-item-11': true,
+        })
+
+        methods.toggleSubjectsTreeSharedItemExpanded.call(vm, 22)
+        expect(vm.subjectsTreeExpandedSharedItems).toEqual({
+            'shared-item-22': true,
+        })
+
+        methods.toggleSubjectsTreeSharedItemExpanded.call(vm, 22)
+        expect(vm.subjectsTreeExpandedSharedItems).toEqual({})
+    })
+
+    it('moves the active shared tree card to top when expanded', () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const vm = {
+            ...methods,
+            activeSharedRuleId: null,
+            subjectsTreeExpandedSharedItems: {},
+            sharedObjectsForMeCards: [
+                { ruleId: 10, scopeType: 'subject', scopeObjectLabel: 'Mathematik', scopePathLabel: 'Fach' },
+                { ruleId: 20, scopeType: 'all', scopeObjectLabel: 'Alle Materialien', scopePathLabel: 'Workspace A' },
+                { ruleId: 30, scopeType: 'unit', scopeObjectLabel: 'Bereich A', scopePathLabel: 'Bereich A' },
+            ],
+        }
+
+        methods.toggleSubjectsTreeSharedItemExpanded.call(vm, 30)
+
+        expect(vm.subjectsTreeExpandedSharedItems).toEqual({
+            'shared-item-30': true,
+        })
+        expect(vm.activeSharedRuleId).toBe(30)
+        expect(vm.sharedObjectsForMeCards[0]?.ruleId).toBe(30)
     })
 })

@@ -1008,6 +1008,99 @@ test('inbox full access creates original subject before selected source subject'
     expect((string) $inbox->json('data.0.shared_items.0.hierarchy.3.name'))->toBe('Chemie');
 });
 
+test('inbox full access creates original topics at selected position and at end', function () {
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'creator-full-access-topic-insert@test.local',
+    ]);
+
+    $workspace = MaterialWorkspace::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Geteilter Fachraum',
+        'is_default' => true,
+    ]);
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'workspace_id' => $workspace->id,
+        'name' => 'Mathematik',
+        'sort_order' => 1,
+    ]);
+    $topicAlgebra = MaterialTopic::query()->create([
+        'subject_id' => $subject->id,
+        'name' => 'Algebra',
+        'sort_order' => 1,
+    ]);
+    $topicGeometrie = MaterialTopic::query()->create([
+        'subject_id' => $subject->id,
+        'name' => 'Geometrie',
+        'sort_order' => 2,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'scope_id' => null,
+        'workspace_id' => $workspace->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
+    ]);
+
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $appendResponse = $this->postJson('/api/admin/materials/shares/inbox/topics', [
+        'rule_id' => (int) $rule->id,
+        'data' => [
+            'subject_id' => (int) $subject->id,
+            'name' => 'Stochastik',
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.name', 'Stochastik');
+
+    $appendTopic = MaterialTopic::query()->findOrFail((int) $appendResponse->json('data.id'));
+    expect((int) $appendTopic->subject_id)->toBe((int) $subject->id);
+    expect((int) $appendTopic->sort_order)->toBe(3);
+
+    $insertResponse = $this->postJson('/api/admin/materials/shares/inbox/topics', [
+        'rule_id' => (int) $rule->id,
+        'data' => [
+            'subject_id' => (int) $subject->id,
+            'name' => 'Analysis',
+            'before_topic_id' => (int) $topicGeometrie->id,
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.name', 'Analysis');
+
+    $insertTopic = MaterialTopic::query()->findOrFail((int) $insertResponse->json('data.id'));
+    expect((int) $insertTopic->subject_id)->toBe((int) $subject->id);
+    expect((int) $insertTopic->sort_order)->toBe(2);
+
+    $orderedTopics = MaterialTopic::query()
+        ->where('subject_id', $subject->id)
+        ->orderBy('sort_order')
+        ->pluck('name')
+        ->all();
+
+    expect($orderedTopics)->toEqual(['Algebra', 'Analysis', 'Geometrie', 'Stochastik']);
+
+    $inbox = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertOk();
+
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.0.topics.0.name'))->toBe((string) $topicAlgebra->name);
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.0.topics.1.name'))->toBe('Analysis');
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.0.topics.2.name'))->toBe((string) $topicGeometrie->name);
+    expect((string) $inbox->json('data.0.shared_items.0.hierarchy.0.topics.3.name'))->toBe('Stochastik');
+});
+
 test('inbox full access subject topic and unit rename update the original hierarchy', function () {
     $creator = User::factory()->create([
         'school_id' => $this->school->id,

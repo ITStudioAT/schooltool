@@ -659,7 +659,7 @@
                                         v-for="topic in subject.topics"
                                         :key="`overview-shared-topic-${item.ruleId}-${topic.id || topic.name}`"
                                         class="overview-subjects-item overview-subjects-topic-group">
-                                        <div v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)" class="overview-shared-structure-create-row overview-shared-structure-create-row--topic">
+                                        <div v-if="sharedItemSupportsTopicCreate(item) && isSharedStructureButtonsVisible(item.ruleId)" class="overview-shared-structure-create-row overview-shared-structure-create-row--topic">
                                             <v-btn
                                                 prepend-icon="mdi-plus"
                                                 size="small"
@@ -670,7 +670,7 @@
                                                 :disabled="actionBusy"
                                                 title="Thema hinzufügen"
                                                 aria-label="Thema hinzufügen"
-                                                @click.stop="previewStructureCreate">
+                                                @click.stop="openSharedCreateTopicDialog(item, subject, { beforeTopicId: topic?.id })">
                                                 Thema
                                             </v-btn>
                                         </div>
@@ -889,7 +889,7 @@
                                         </div>
                                     </li>
                                 </ul>
-                                <div v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)" class="overview-shared-structure-create-row overview-shared-structure-create-row--subject-bottom">
+                                <div v-if="sharedItemSupportsTopicCreate(item) && isSharedStructureButtonsVisible(item.ruleId)" class="overview-shared-structure-create-row overview-shared-structure-create-row--subject-bottom">
                                     <v-btn
                                         prepend-icon="mdi-plus"
                                         size="small"
@@ -900,7 +900,7 @@
                                         :disabled="actionBusy"
                                         title="Thema hinzufügen"
                                         aria-label="Thema hinzufügen"
-                                        @click.stop="previewStructureCreate">
+                                        @click.stop="openSharedCreateTopicDialog(item, subject)">
                                         Thema
                                     </v-btn>
                                 </div>
@@ -949,6 +949,31 @@
                 <v-card-actions class="justify-end">
                     <v-btn variant="text" :disabled="actionBusy || sharedCreateSubjectDialogSaving" @click="closeSharedCreateSubjectDialog">Abbrechen</v-btn>
                     <v-btn color="primary" variant="flat" :loading="sharedCreateSubjectDialogSaving" :disabled="actionBusy" @click="submitSharedCreateSubjectDialog">Speichern</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="sharedCreateTopicDialog.open" max-width="560" persistent>
+            <v-card rounded="xl">
+                <v-card-title class="text-h6 font-weight-bold">Thema hinzufügen</v-card-title>
+                <v-card-text>
+                    <div class="text-body-2 text-medium-emphasis mb-3">Neues Thema im Original-Workspace anlegen</div>
+                    <v-text-field
+                        :model-value="sharedCreateTopicDialog.title"
+                        label="Titel"
+                        variant="outlined"
+                        density="comfortable"
+                        hide-details="auto"
+                        autofocus
+                        :disabled="actionBusy || sharedCreateTopicDialogSaving"
+                        :rules="[required(), maxLength(255)]"
+                        :error-messages="sharedCreateTopicDialogError ? [sharedCreateTopicDialogError] : []"
+                        @update:modelValue="handleSharedCreateTopicTitleInput"
+                        @blur="validateSharedCreateTopicDialog" />
+                </v-card-text>
+                <v-card-actions class="justify-end">
+                    <v-btn variant="text" :disabled="actionBusy || sharedCreateTopicDialogSaving" @click="closeSharedCreateTopicDialog">Abbrechen</v-btn>
+                    <v-btn color="primary" variant="flat" :loading="sharedCreateTopicDialogSaving" :disabled="actionBusy" @click="submitSharedCreateTopicDialog">Speichern</v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>
@@ -1033,6 +1058,16 @@ function createSharedCreateSubjectDialogState() {
         open: false,
         ruleId: null,
         beforeSubjectId: null,
+        title: '',
+    }
+}
+
+function createSharedCreateTopicDialogState() {
+    return {
+        open: false,
+        ruleId: null,
+        subjectId: null,
+        beforeTopicId: null,
         title: '',
     }
 }
@@ -1128,6 +1163,9 @@ export default {
             sharedCreateSubjectDialog: createSharedCreateSubjectDialogState(),
             sharedCreateSubjectDialogError: '',
             sharedCreateSubjectDialogSaving: false,
+            sharedCreateTopicDialog: createSharedCreateTopicDialogState(),
+            sharedCreateTopicDialogError: '',
+            sharedCreateTopicDialogSaving: false,
             sharedRenameDialog: createSharedRenameDialogState(),
             sharedRenameDialogError: '',
             sharedRenameDialogSaving: false,
@@ -1218,6 +1256,10 @@ export default {
         sharedItemSupportsSubjectCreate(item) {
             return this.sharedItemHasFullAccess(item) && this.sharedItemScopeType(item) === 'all'
         },
+        sharedItemSupportsTopicCreate(item) {
+            const scopeType = this.sharedItemScopeType(item)
+            return this.sharedItemHasFullAccess(item) && (scopeType === 'all' || scopeType === 'subject')
+        },
         sharedRenameLevelLabel(level) {
             if (level === 'subject') return 'Fach'
             if (level === 'topic') return 'Thema'
@@ -1245,6 +1287,31 @@ export default {
 
             this.sharedCreateSubjectDialog = createSharedCreateSubjectDialogState()
             this.sharedCreateSubjectDialogError = ''
+        },
+        openSharedCreateTopicDialog(item, subject, options = {}) {
+            if (this.actionBusy) return
+            if (!this.sharedItemSupportsTopicCreate(item)) return
+
+            const ruleId = Number(item?.ruleId || 0)
+            const subjectId = Number(subject?.id || 0)
+            const beforeTopicId = Number(options?.beforeTopicId || 0)
+            if (!Number.isFinite(ruleId) || ruleId <= 0) return
+            if (!Number.isFinite(subjectId) || subjectId <= 0) return
+
+            this.sharedCreateTopicDialog = {
+                open: true,
+                ruleId,
+                subjectId,
+                beforeTopicId: Number.isFinite(beforeTopicId) && beforeTopicId > 0 ? beforeTopicId : null,
+                title: '',
+            }
+            this.sharedCreateTopicDialogError = ''
+        },
+        closeSharedCreateTopicDialog() {
+            if (this.sharedCreateTopicDialogSaving) return
+
+            this.sharedCreateTopicDialog = createSharedCreateTopicDialogState()
+            this.sharedCreateTopicDialogError = ''
         },
         sharedDeleteTitle(level) {
             if (level === 'subject') return 'Fach löschen'
@@ -1348,6 +1415,11 @@ export default {
             this.sharedCreateSubjectDialogError = validationMessage
             return validationMessage === ''
         },
+        validateSharedCreateTopicDialog() {
+            const validationMessage = this.sharedRenameTitleValidationMessage(this.sharedCreateTopicDialog?.title)
+            this.sharedCreateTopicDialogError = validationMessage
+            return validationMessage === ''
+        },
         handleSharedCreateSubjectTitleInput(value) {
             this.sharedCreateSubjectDialog = {
                 ...this.sharedCreateSubjectDialog,
@@ -1356,6 +1428,16 @@ export default {
 
             if (this.sharedCreateSubjectDialogError !== '') {
                 this.sharedCreateSubjectDialogError = this.sharedRenameTitleValidationMessage(value)
+            }
+        },
+        handleSharedCreateTopicTitleInput(value) {
+            this.sharedCreateTopicDialog = {
+                ...this.sharedCreateTopicDialog,
+                title: value,
+            }
+
+            if (this.sharedCreateTopicDialogError !== '') {
+                this.sharedCreateTopicDialogError = this.sharedRenameTitleValidationMessage(value)
             }
         },
         handleSharedRenameTitleInput(value) {
@@ -1425,6 +1507,52 @@ export default {
                 this.sharedCreateSubjectDialogError = String(error?.response?.data?.message || 'Fach konnte nicht erstellt werden.')
             } finally {
                 this.sharedCreateSubjectDialogSaving = false
+            }
+        },
+        async submitSharedCreateTopicDialog() {
+            if (!this.validateSharedCreateTopicDialog()) return
+            if (this.sharedCreateTopicDialogSaving) return
+
+            const normalizedTitle = String(this.sharedCreateTopicDialog?.title || '').trim()
+            const ruleId = Number(this.sharedCreateTopicDialog?.ruleId || 0)
+            const subjectId = Number(this.sharedCreateTopicDialog?.subjectId || 0)
+            const beforeTopicId = Number(this.sharedCreateTopicDialog?.beforeTopicId || 0)
+            if (!Number.isFinite(ruleId) || ruleId <= 0 || !Number.isFinite(subjectId) || subjectId <= 0) {
+                this.sharedCreateTopicDialogError = 'Thema konnte nicht erstellt werden.'
+                return
+            }
+
+            this.sharedCreateTopicDialogSaving = true
+
+            try {
+                const topicPayload = {
+                    subject_id: subjectId,
+                    name: normalizedTitle,
+                }
+                if (Number.isFinite(beforeTopicId) && beforeTopicId > 0) {
+                    topicPayload.before_topic_id = beforeTopicId
+                }
+
+                const response = await axios.post('/api/admin/materials/shares/inbox/topics', {
+                    rule_id: ruleId,
+                    data: topicPayload,
+                })
+                const topicId = Number(response?.data?.data?.id || 0)
+                const savedTitle = String(response?.data?.data?.name || normalizedTitle).trim() || normalizedTitle
+
+                this.$emit('shared-node-created', {
+                    ruleId,
+                    level: 'topic',
+                    nodeId: topicId,
+                    name: savedTitle,
+                    parentSubjectId: subjectId,
+                })
+                this.sharedCreateTopicDialog = createSharedCreateTopicDialogState()
+                this.sharedCreateTopicDialogError = ''
+            } catch (error) {
+                this.sharedCreateTopicDialogError = String(error?.response?.data?.message || 'Thema konnte nicht erstellt werden.')
+            } finally {
+                this.sharedCreateTopicDialogSaving = false
             }
         },
         async submitSharedRenameDialog() {

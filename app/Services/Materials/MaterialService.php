@@ -1595,8 +1595,13 @@ class MaterialService
         return true;
     }
 
-    public function createTopic(User $user, MaterialSubject $subject, string $name, bool $allowDuplicate = false): MaterialTopic
-    {
+    public function createTopic(
+        User $user,
+        MaterialSubject $subject,
+        string $name,
+        bool $allowDuplicate = false,
+        ?int $beforeTopicId = null
+    ): MaterialTopic {
         if (! $this->supportsClassificationTables()) {
             throw ValidationException::withMessages([
                 'data.name' => 'Fachstruktur ist noch nicht verfügbar.',
@@ -1621,18 +1626,10 @@ class MaterialService
                 return $existingTopic->fresh();
             }
 
-            $data = [
-                'subject_id' => (int) $subject->id,
-                'name' => $normalized,
-            ];
-            if ($this->supportsClassificationSortOrder()) {
-                $data['sort_order'] = $this->nextTopicSortOrder((int) $subject->id);
-            }
-
-            return MaterialTopic::query()->create($data)->fresh();
+            return $this->createTopicWithOptionalPosition($subject, $normalized, $beforeTopicId)->fresh();
         }
 
-        return $this->firstOrCreateTopic($subject, $normalized);
+        return $this->firstOrCreateTopic($subject, $normalized, $beforeTopicId);
     }
 
     public function updateTopic(User $user, MaterialTopic $topic, string $name): MaterialTopic
@@ -2621,7 +2618,7 @@ class MaterialService
         });
     }
 
-    private function firstOrCreateTopic(MaterialSubject $subject, string $name): MaterialTopic
+    private function firstOrCreateTopic(MaterialSubject $subject, string $name, ?int $beforeTopicId = null): MaterialTopic
     {
         $attributes = [
             'subject_id' => $subject->id,
@@ -2632,10 +2629,58 @@ class MaterialService
             return MaterialTopic::query()->firstOrCreate($attributes);
         }
 
-        return MaterialTopic::query()->firstOrCreate(
-            $attributes,
-            ['sort_order' => $this->nextTopicSortOrder((int) $subject->id)]
-        );
+        $existingTopic = MaterialTopic::query()
+            ->where($attributes)
+            ->first();
+        if ($existingTopic instanceof MaterialTopic) {
+            return $existingTopic;
+        }
+
+        return $this->createTopicWithOptionalPosition($subject, $name, $beforeTopicId);
+    }
+
+    private function createTopicWithOptionalPosition(MaterialSubject $subject, string $name, ?int $beforeTopicId = null): MaterialTopic
+    {
+        $attributes = [
+            'subject_id' => (int) $subject->id,
+            'name' => $name,
+        ];
+
+        if (! $this->supportsClassificationSortOrder()) {
+            return MaterialTopic::query()->create($attributes);
+        }
+
+        $normalizedBeforeTopicId = (int) ($beforeTopicId ?? 0);
+        if ($normalizedBeforeTopicId <= 0) {
+            return MaterialTopic::query()->create([
+                ...$attributes,
+                'sort_order' => $this->nextTopicSortOrder((int) $subject->id),
+            ]);
+        }
+
+        $beforeTopic = MaterialTopic::query()
+            ->where('subject_id', (int) $subject->id)
+            ->whereKey($normalizedBeforeTopicId)
+            ->first();
+        if (! $beforeTopic instanceof MaterialTopic) {
+            throw ValidationException::withMessages([
+                'data.before_topic_id' => 'Einfügeposition ist nicht mehr verfügbar.',
+            ]);
+        }
+
+        $targetSortOrder = max(1, (int) ($beforeTopic->sort_order ?? 0));
+
+        return DB::transaction(function () use ($attributes, $subject, $targetSortOrder): MaterialTopic {
+            MaterialTopic::query()
+                ->where('subject_id', (int) $subject->id)
+                ->where('sort_order', '>=', $targetSortOrder)
+                ->increment('sort_order');
+
+            return MaterialTopic::query()->create([
+                ...$attributes,
+                'sort_order' => $targetSortOrder,
+            ]);
+        });
     }
 
     private function firstOrCreateUnit(MaterialTopic $topic, string $name): MaterialUnit

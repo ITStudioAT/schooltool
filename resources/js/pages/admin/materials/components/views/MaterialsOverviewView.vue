@@ -240,7 +240,9 @@
 
                                 <v-expand-transition>
                                     <div v-if="isSharedHierarchyOpen(item.ruleId)" class="inbox-hierarchy-card">
-                                        <div class="inbox-shared-object-title inbox-shared-object-title--all">Alle Materialien ({{ item.materialsCount }})</div>
+                                        <div class="inbox-shared-object-title inbox-shared-object-title--all">
+                                            {{ item.scopeObjectLabel || 'Freigabe' }} ({{ item.materialsCount }})
+                                        </div>
                                         <div v-if="item.hierarchy.length === 0" class="text-caption text-medium-emphasis">
                                             Keine Hierarchie für diese Freigabe verfügbar.
                                         </div>
@@ -1248,6 +1250,7 @@ export default {
             isLoadingSharedObjectsForMe: false,
             sharedObjectsForMeError: '',
             sharedObjectsForMeCards: [],
+            activeSharedRuleId: null,
             subjectsTreeSharedForMeExpanded: false,
             subjectsTreeExpandedSharedItems: {},
             openSharedHierarchyCards: {},
@@ -2237,12 +2240,91 @@ export default {
         resolveSharedScopePathLabel(scopeType, scopePathLabel) {
             const normalizedScopeType = String(scopeType || '').trim().toLocaleLowerCase()
             if (normalizedScopeType !== 'all') {
+                if (normalizedScopeType === 'subject') {
+                    const normalizedPath = String(scopePathLabel || '').trim()
+                    if (normalizedPath.endsWith(' - Alle Themen - Alle Einheiten')) {
+                        return 'Fach'
+                    }
+                }
                 return scopePathLabel
             }
 
             const workspaceName = this.activeWorkspaceName()
 
             return workspaceName || scopePathLabel
+        },
+        resolveSharedScopeObjectLabel(scopeType, scopeObjectLabel, scopePathLabel) {
+            const normalizedScopeType = String(scopeType || '').trim().toLocaleLowerCase()
+            const objectLabel = String(scopeObjectLabel || '').trim()
+            if (normalizedScopeType !== 'all') {
+                return objectLabel || 'Freigabe'
+            }
+
+            const normalizedObjectLabel = objectLabel.toLocaleLowerCase()
+            if (normalizedObjectLabel === 'alle materialien') {
+                const workspaceLabel = String(scopePathLabel || '').trim()
+                if (workspaceLabel !== '') {
+                    return workspaceLabel
+                }
+            }
+
+            return objectLabel || String(scopePathLabel || '').trim() || 'Freigabe'
+        },
+        sharedScopeSortOrder(scopeType) {
+            const normalizedScopeType = String(scopeType || '').trim().toLocaleLowerCase()
+            if (normalizedScopeType === 'all') return 1
+            if (normalizedScopeType === 'subject') return 2
+            if (normalizedScopeType === 'topic') return 2
+            if (normalizedScopeType === 'unit') return 4
+            if (normalizedScopeType === 'material') return 5
+            return 9
+        },
+        sharedScopeAlphabeticKey(card) {
+            const scopeType = String(card?.scopeType || '').trim().toLocaleLowerCase()
+            if (scopeType === 'all') {
+                return String(card?.scopePathLabel || card?.scopeObjectLabel || '').trim().toLocaleLowerCase()
+            }
+
+            return String(card?.scopeObjectLabel || card?.scopePathLabel || '').trim().toLocaleLowerCase()
+        },
+        sharedCardsWithActiveFirst(cards, activeRuleId = null) {
+            const list = Array.isArray(cards) ? [...cards] : []
+            const resolvedActiveRuleId = Number(activeRuleId || 0)
+            const hasActiveRule = Number.isFinite(resolvedActiveRuleId) && resolvedActiveRuleId > 0
+
+            list.sort((left, right) => {
+                const leftScopeOrder = this.sharedScopeSortOrder(left?.scopeType)
+                const rightScopeOrder = this.sharedScopeSortOrder(right?.scopeType)
+                if (leftScopeOrder !== rightScopeOrder) {
+                    return leftScopeOrder - rightScopeOrder
+                }
+
+                const leftKey = this.sharedScopeAlphabeticKey(left)
+                const rightKey = this.sharedScopeAlphabeticKey(right)
+                if (leftKey !== rightKey) {
+                    return leftKey.localeCompare(rightKey, undefined, { sensitivity: 'base' })
+                }
+
+                return Number(left?.ruleId || 0) - Number(right?.ruleId || 0)
+            })
+
+            if (!hasActiveRule) {
+                return list
+            }
+
+            const activeIndex = list.findIndex((card) => Number(card?.ruleId || 0) === resolvedActiveRuleId)
+            if (activeIndex <= 0) {
+                return list
+            }
+
+            const [activeCard] = list.splice(activeIndex, 1)
+            return [activeCard, ...list]
+        },
+        reorderSharedObjectsForActiveRule(ruleId = null) {
+            const resolvedRuleId = Number(ruleId || 0)
+            const hasActiveRule = Number.isFinite(resolvedRuleId) && resolvedRuleId > 0
+            this.activeSharedRuleId = hasActiveRule ? resolvedRuleId : null
+            this.sharedObjectsForMeCards = this.sharedCardsWithActiveFirst(this.sharedObjectsForMeCards, this.activeSharedRuleId)
         },
         normalizeSharedObjectsForMeResponse(rows) {
             if (!Array.isArray(rows)) return []
@@ -2265,9 +2347,10 @@ export default {
 
                     const scopeType = String(item?.scope_type || '').trim() || 'all'
                     const scopeLabel = String(item?.scope_label || '').trim() || 'Bereich'
-                    const scopeObjectLabel = String(item?.scope_object_label || '').trim() || 'Freigabe'
+                    const rawScopeObjectLabel = String(item?.scope_object_label || '').trim() || 'Freigabe'
                     const rawScopePathLabel = String(item?.scope_path_label || '').trim() || ''
                     const scopePathLabel = this.resolveSharedScopePathLabel(scopeType, rawScopePathLabel)
+                    const scopeObjectLabel = this.resolveSharedScopeObjectLabel(scopeType, rawScopeObjectLabel, scopePathLabel)
                     const permission = String(item?.permission || '').trim() || 'read_only'
                     const permissionLabel = String(item?.permission_label || '').trim() || 'NUR LESEN'
                     const sharedAt = String(item?.updated_at || '').trim() || fallbackSharedAt
@@ -2291,16 +2374,7 @@ export default {
                 }
             }
 
-            cards.sort((left, right) => {
-                const leftTime = Date.parse(String(left?.sharedAt || '')) || 0
-                const rightTime = Date.parse(String(right?.sharedAt || '')) || 0
-                if (leftTime !== rightTime) {
-                    return rightTime - leftTime
-                }
-                return Number(right?.ruleId || 0) - Number(left?.ruleId || 0)
-            })
-
-            return cards
+            return this.sharedCardsWithActiveFirst(cards, this.activeSharedRuleId)
         },
         normalizeSharedHierarchy(hierarchy) {
             if (!Array.isArray(hierarchy)) return []
@@ -2697,10 +2771,17 @@ export default {
             const key = this.subjectsTreeSharedItemKey(ruleId)
             if (!key) return
 
-            this.subjectsTreeExpandedSharedItems = {
-                ...this.subjectsTreeExpandedSharedItems,
-                [key]: this.subjectsTreeExpandedSharedItems[key] !== true,
+            const isCurrentlyOpen = this.subjectsTreeExpandedSharedItems[key] === true
+            if (isCurrentlyOpen) {
+                this.subjectsTreeExpandedSharedItems = {}
+                this.reorderSharedObjectsForActiveRule(null)
+                return
             }
+
+            this.subjectsTreeExpandedSharedItems = {
+                [key]: true,
+            }
+            this.reorderSharedObjectsForActiveRule(ruleId)
         },
         async refreshSharedStructureTree() {
             await this.loadSharedObjectsForMe()
@@ -2716,13 +2797,15 @@ export default {
             const key = this.sharedHierarchyKey(ruleId)
             if (!key) return
             const isOpen = !!this.openSharedHierarchyCards[key]
-            const next = { ...this.openSharedHierarchyCards }
             if (isOpen) {
-                delete next[key]
+                this.openSharedHierarchyCards = {}
+                this.reorderSharedObjectsForActiveRule(null)
             } else {
-                next[key] = true
+                this.openSharedHierarchyCards = {
+                    [key]: true,
+                }
+                this.reorderSharedObjectsForActiveRule(ruleId)
             }
-            this.openSharedHierarchyCards = next
         },
         async loadSharedObjectsForMe() {
             this.isLoadingSharedObjectsForMe = true
@@ -2746,10 +2829,18 @@ export default {
                     }
                 }
                 this.sharedObjectsForMeCards = nextCards
+                const activeStillExists = this.sharedObjectsForMeCards.some(
+                    (card) => Number(card?.ruleId || 0) === Number(this.activeSharedRuleId || 0)
+                )
+                if (!activeStillExists) {
+                    this.activeSharedRuleId = null
+                }
+                this.sharedObjectsForMeCards = this.sharedCardsWithActiveFirst(this.sharedObjectsForMeCards, this.activeSharedRuleId)
                 this.openSharedHierarchyCards = nextOpenHierarchyCards
                 this.subjectsTreeExpandedSharedItems = nextExpandedSharedItems
             } catch (error) {
                 this.sharedObjectsForMeCards = []
+                this.activeSharedRuleId = null
                 this.openSharedHierarchyCards = {}
                 this.subjectsTreeExpandedSharedItems = {}
                 this.sharedObjectsForMeError = error?.response?.data?.message || 'Freigaben konnten nicht geladen werden.'

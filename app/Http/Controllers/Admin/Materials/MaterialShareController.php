@@ -13,6 +13,7 @@ use App\Http\Requests\Admin\Materials\MaterialCardTempAttachmentStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardUpdateRequest;
 use App\Http\Requests\Admin\Materials\MaterialSubjectStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialSubjectUpdateRequest;
+use App\Http\Requests\Admin\Materials\MaterialTopicStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialTopicUpdateRequest;
 use App\Http\Requests\Admin\Materials\MaterialUnitUpdateRequest;
 use App\Models\Import116;
@@ -433,6 +434,48 @@ class MaterialShareController extends Controller
                 'id' => (int) $subject->id,
                 'name' => (string) $subject->name,
                 'workspace_id' => (int) ($subject->workspace_id ?? 0),
+            ],
+        ], 200);
+    }
+
+    public function storeInboxTopic(
+        MaterialTopicStoreRequest $request,
+        MaterialService $service
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $validated = $request->validated()['data'];
+        $subjectId = (int) ($validated['subject_id'] ?? 0);
+        $subject = MaterialSubject::query()->findOrFail($subjectId);
+        $context = $this->resolveInboxSubjectAccessContext($authUser, $ruleId, $subject);
+        $allowDuplicate = (bool) ($validated['allow_duplicate'] ?? false);
+        $beforeTopicId = (int) ($validated['before_topic_id'] ?? 0);
+        if ($beforeTopicId <= 0) {
+            $beforeTopicId = null;
+        }
+
+        /** @var User $sourceOwner */
+        $sourceOwner = $context['source_owner'];
+
+        $topic = $service->createTopic(
+            $sourceOwner,
+            $subject,
+            (string) ($validated['name'] ?? ''),
+            $allowDuplicate,
+            $beforeTopicId
+        );
+
+        return response()->json([
+            'data' => [
+                'id' => (int) $topic->id,
+                'name' => (string) $topic->name,
+                'subject_id' => (int) $topic->subject_id,
             ],
         ], 200);
     }
