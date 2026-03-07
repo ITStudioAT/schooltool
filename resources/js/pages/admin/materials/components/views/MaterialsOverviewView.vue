@@ -192,9 +192,9 @@
                         v-for="item in sharedObjectsForMeCards"
                         :key="`shared-object-${item.ruleId}`"
                         cols="12"
-                        :sm="isSharedHierarchyOpen(item.ruleId) ? 12 : 6"
-                        :md="isSharedHierarchyOpen(item.ruleId) ? 12 : 4"
-                        :xl="isSharedHierarchyOpen(item.ruleId) ? 12 : 3">
+                        :sm="6"
+                        :md="4"
+                        :xl="3">
                         <v-card variant="outlined" class="shared-object-card h-100">
                             <v-card-text class="d-flex flex-column ga-2 pa-4">
                                 <div class="d-flex align-start justify-space-between ga-2">
@@ -340,9 +340,11 @@
                     :shared-objects-for-me-loading="isLoadingSharedObjectsForMe"
                     :shared-objects-for-me-error="sharedObjectsForMeError"
                     @open-material="openDetailDialog"
+                    @open-shared-material="openSharedMaterialFromTree"
                     @open-share="openShareDialog"
                     @open-create="openCreateDialogFromTree"
                     @open-attachments="openAttachmentManager"
+                    @open-shared-attachments="openSharedMaterialAttachmentsFromTree"
                     @unlink-linked-material="unlinkLinkedCard"
                     @unlink-linked-topic="unlinkLinkedTopic"
                     @unlink-linked-unit="unlinkLinkedUnit" />
@@ -2225,6 +2227,13 @@ export default {
                 this.detailDialogLoading = false
             }
         },
+        openSharedMaterialFromTree(payload = {}) {
+            const ruleId = Number(payload?.ruleId)
+            const material = payload?.material || null
+            if (!Number.isFinite(ruleId) || ruleId <= 0 || !material) return
+
+            return this.openSharedMaterialDetail(ruleId, material)
+        },
         async openSharedMaterialAttachments(ruleId, material) {
             const normalizedRuleId = Number(ruleId)
             const cardId = Number(material?.id)
@@ -2253,6 +2262,13 @@ export default {
                 linked_permission: 'read_only',
                 linked_permission_label: 'NUR LESEN',
             })
+        },
+        openSharedMaterialAttachmentsFromTree(payload = {}) {
+            const ruleId = Number(payload?.ruleId)
+            const material = payload?.material || null
+            if (!Number.isFinite(ruleId) || ruleId <= 0 || !material) return
+
+            return this.openSharedMaterialAttachments(ruleId, material)
         },
         sharedHierarchyMaterialCount(hierarchy) {
             if (!Array.isArray(hierarchy)) return 0

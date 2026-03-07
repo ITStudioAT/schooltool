@@ -436,6 +436,126 @@ describe('MaterialsOverviewView', () => {
         }
     })
 
+    it('keeps shared cards side by side even when a hierarchy card is open', () => {
+        const beforeMountSpy = vi.spyOn(MaterialsOverviewView, 'beforeMount').mockImplementation(() => {})
+
+        const wrapper = shallowMount(MaterialsOverviewView, {
+            data() {
+                return {
+                    overviewViewMode: 'subjects_contents',
+                    subjectsContentsSource: 'shared',
+                    isLoadingSharedObjectsForMe: false,
+                    sharedObjectsForMeError: '',
+                    sharedObjectsForMeCards: [
+                        {
+                            ruleId: 20,
+                            scopeType: 'all',
+                            scopeLabel: 'Workspace',
+                            scopeObjectLabel: 'Alle Materialien',
+                            scopePathLabel: 'Teamraum Mathematik',
+                            permission: 'read_only',
+                            permissionLabel: 'NUR LESEN',
+                            fromUserLabel: 'Lehrer Zwei',
+                            fromSchoolLabel: 'Abendgymnasium',
+                            sharedAt: '2026-03-03T08:30:00+00:00',
+                            hierarchy: [
+                                {
+                                    id: 1,
+                                    name: 'Mathematik',
+                                    topics: [
+                                        {
+                                            id: 2,
+                                            name: 'Algebra',
+                                            units: [
+                                                {
+                                                    id: 3,
+                                                    name: 'Einheit 1',
+                                                    materials: [
+                                                        {
+                                                            id: 99,
+                                                            title: 'Lineare Gleichungen',
+                                                            statusLabel: 'Erledigt',
+                                                            status: 'done',
+                                                            attachmentsCount: 0,
+                                                        },
+                                                    ],
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
+                            ],
+                            materialsCount: 1,
+                        },
+                    ],
+                    openSharedHierarchyCards: {
+                        'shared-rule-20': true,
+                    },
+                }
+            },
+            global: {
+                stubs: {
+                    'v-row': { template: '<div><slot /></div>' },
+                    VRow: { template: '<div><slot /></div>' },
+                    'v-col': {
+                        props: ['cols', 'sm', 'md', 'xl'],
+                        template: '<div data-test="shared-col" :data-cols="cols" :data-sm="sm" :data-md="md" :data-xl="xl"><slot /></div>',
+                    },
+                    VCol: {
+                        props: ['cols', 'sm', 'md', 'xl'],
+                        template: '<div data-test="shared-col" :data-cols="cols" :data-sm="sm" :data-md="md" :data-xl="xl"><slot /></div>',
+                    },
+                    'v-card': { template: '<div><slot /></div>' },
+                    VCard: { template: '<div><slot /></div>' },
+                    'v-card-text': { template: '<div><slot /></div>' },
+                    VCardText: { template: '<div><slot /></div>' },
+                    'v-card-title': { template: '<div><slot /></div>' },
+                    VCardTitle: { template: '<div><slot /></div>' },
+                    'v-card-actions': { template: '<div><slot /></div>' },
+                    VCardActions: { template: '<div><slot /></div>' },
+                    'v-chip': { template: '<span><slot /></span>' },
+                    VChip: { template: '<span><slot /></span>' },
+                    'v-icon': { template: '<i><slot /></i>' },
+                    VIcon: { template: '<i><slot /></i>' },
+                    'v-btn': { template: '<button type="button"><slot /></button>' },
+                    VBtn: { template: '<button type="button"><slot /></button>' },
+                    'v-alert': { template: '<div><slot /></div>' },
+                    VAlert: { template: '<div><slot /></div>' },
+                    'v-list': { template: '<div><slot /></div>' },
+                    VList: { template: '<div><slot /></div>' },
+                    'v-list-item': { template: '<div><slot /></div>' },
+                    VListItem: { template: '<div><slot /></div>' },
+                    'v-progress-linear': { template: '<div />' },
+                    VProgressLinear: { template: '<div />' },
+                    'v-skeleton-loader': { template: '<div />' },
+                    VSkeletonLoader: { template: '<div />' },
+                    'v-text-field': { template: '<input />' },
+                    VTextField: { template: '<input />' },
+                    'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+                    VDialog: { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+                    'v-tooltip': { template: '<div><slot name="activator" :props="{}" /><slot /></div>' },
+                    VTooltip: { template: '<div><slot name="activator" :props="{}" /><slot /></div>' },
+                    'v-expand-transition': { template: '<div><slot /></div>' },
+                    VExpandTransition: { template: '<div><slot /></div>' },
+                    'v-spacer': { template: '<div />' },
+                    VSpacer: { template: '<div />' },
+                },
+            },
+        })
+
+        try {
+            const column = wrapper.get('[data-test="shared-col"]')
+
+            expect(column.attributes('data-cols')).toBe('12')
+            expect(column.attributes('data-sm')).toBe('6')
+            expect(column.attributes('data-md')).toBe('4')
+            expect(column.attributes('data-xl')).toBe('3')
+            expect(wrapper.html()).toContain('Lineare Gleichungen')
+        } finally {
+            beforeMountSpy.mockRestore()
+        }
+    })
+
     it('normalizes shared hierarchy materials with optional attachments', () => {
         const methods = MaterialsOverviewView?.methods || {}
         const vm = { ...methods }
@@ -488,6 +608,52 @@ describe('MaterialsOverviewView', () => {
                 linked_permission_label: 'NUR LESEN',
             }),
         )
+    })
+
+    it('routes shared tree material clicks into the read-only shared detail handler', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const openSharedMaterialDetail = vi.fn()
+        const vm = {
+            ...methods,
+            openSharedMaterialDetail,
+        }
+
+        await methods.openSharedMaterialFromTree.call(vm, {
+            ruleId: 77,
+            material: {
+                id: 99,
+                title: 'Lineare Gleichungen',
+            },
+        })
+
+        expect(openSharedMaterialDetail).toHaveBeenCalledTimes(1)
+        expect(openSharedMaterialDetail).toHaveBeenCalledWith(77, {
+            id: 99,
+            title: 'Lineare Gleichungen',
+        })
+    })
+
+    it('routes shared tree attachment clicks into the read-only shared attachment handler', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const openSharedMaterialAttachments = vi.fn()
+        const vm = {
+            ...methods,
+            openSharedMaterialAttachments,
+        }
+
+        await methods.openSharedMaterialAttachmentsFromTree.call(vm, {
+            ruleId: 77,
+            material: {
+                id: 99,
+                title: 'Lineare Gleichungen',
+            },
+        })
+
+        expect(openSharedMaterialAttachments).toHaveBeenCalledTimes(1)
+        expect(openSharedMaterialAttachments).toHaveBeenCalledWith(77, {
+            id: 99,
+            title: 'Lineare Gleichungen',
+        })
     })
 
     it('refreshes shared download url when attachment url is stale', async () => {

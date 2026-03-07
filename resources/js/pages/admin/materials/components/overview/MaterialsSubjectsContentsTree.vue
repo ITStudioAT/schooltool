@@ -495,7 +495,9 @@
                 <div
                     v-for="item in sharedObjectsForMe"
                     :key="`overview-shared-item-${item.ruleId || item.scopeObjectLabel || item.scopePathLabel}`"
-                    class="overview-shared-item">
+                    class="overview-shared-item"
+                    :class="{ 'overview-shared-item--expanded': isSharedItemExpanded(item.ruleId) }"
+                    :style="sharedItemCardStyle(item.ruleId)">
                     <div class="overview-shared-item-head">
                         <div class="overview-shared-item-title">
                             {{ item.scopeObjectLabel || item.scopeLabel || 'Freigabe' }}
@@ -517,6 +519,97 @@
                     </div>
                     <div v-if="Number(item.materialsCount || 0) > 0" class="overview-shared-item-meta">
                         {{ Number(item.materialsCount || 0) }} Material{{ Number(item.materialsCount || 0) === 1 ? '' : 'ien' }}
+                    </div>
+                    <div v-if="Number(item.materialsCount || 0) > 0" class="overview-shared-item-actions">
+                        <v-btn
+                            size="small"
+                            variant="tonal"
+                            color="primary"
+                            :disabled="actionBusy"
+                            @click="toggleSharedItemExpanded(item.ruleId)">
+                            {{ isSharedItemExpanded(item.ruleId) ? 'Schließen' : 'Anzeigen' }}
+                        </v-btn>
+                    </div>
+                    <div v-if="isSharedItemExpanded(item.ruleId)" class="overview-shared-hierarchy">
+                        <div v-if="!sharedItemHierarchy(item).length" class="overview-shared-state">
+                            Keine Fachstruktur für diese Freigabe vorhanden.
+                        </div>
+                        <ul v-else class="overview-shared-hierarchy-list">
+                            <li
+                                v-for="subject in sharedItemHierarchy(item)"
+                                :key="`overview-shared-subject-${item.ruleId}-${subject.id || subject.name}`"
+                                class="overview-shared-hierarchy-item">
+                                <div class="overview-subjects-node overview-subjects-node--subject overview-shared-hierarchy-node">
+                                    <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
+                                    <span>{{ subject.name }}</span>
+                                </div>
+
+                                <ul v-if="subject.topics.length" class="overview-subjects-list overview-subjects-list--child">
+                                    <li
+                                        v-for="topic in subject.topics"
+                                        :key="`overview-shared-topic-${item.ruleId}-${topic.id || topic.name}`"
+                                        class="overview-subjects-item overview-subjects-topic-group">
+                                        <div class="overview-subjects-node overview-subjects-node--topic">
+                                            <v-icon size="14" icon="mdi-book-open-page-variant-outline" class="mr-2" />
+                                            <span>{{ topic.name }}</span>
+                                        </div>
+
+                                        <ul v-if="topic.units.length" class="overview-subjects-list overview-subjects-list--child">
+                                            <li
+                                                v-for="unit in topic.units"
+                                                :key="`overview-shared-unit-${item.ruleId}-${unit.id || unit.name}`"
+                                                class="overview-subjects-item">
+                                                <div class="overview-subjects-node overview-subjects-node--unit">
+                                                    <v-icon size="13" icon="mdi-bookmark-outline" class="mr-2" />
+                                                    <span>{{ unit.name }}</span>
+                                                </div>
+
+                                                <ul v-if="unit.materials.length" class="overview-subjects-material-list">
+                                                    <li
+                                                        v-for="material in unit.materials"
+                                                        :key="`overview-shared-material-${item.ruleId}-${material.id || material.title}`"
+                                                        class="overview-subjects-material-item">
+                                                        <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || undefined" />
+                                                        <button
+                                                            type="button"
+                                                            class="overview-subjects-material-link"
+                                                            :disabled="actionBusy"
+                                                            @click="openSharedMaterial(item, material)">
+                                                            {{ material.title }}
+                                                        </button>
+                                                        <v-chip
+                                                            v-if="material.typeLabel"
+                                                            size="x-small"
+                                                            variant="outlined"
+                                                            :color="material.typeColor || 'primary'"
+                                                            class="overview-subjects-material-type">
+                                                            {{ material.typeLabel }}
+                                                        </v-chip>
+                                                        <button
+                                                            v-if="Number(material.attachmentsCount || 0) > 0"
+                                                            type="button"
+                                                            class="overview-subjects-material-count overview-subjects-material-count--button"
+                                                            :disabled="actionBusy"
+                                                            title="Anhänge anzeigen"
+                                                            @click="openSharedAttachments(item, material)">
+                                                            <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
+                                                            {{ Number(material.attachmentsCount || 0) }}
+                                                        </button>
+                                                        <v-chip
+                                                            size="x-small"
+                                                            variant="tonal"
+                                                            :color="material.statusColor || statusColorFn(material.status)"
+                                                            class="overview-subjects-material-status">
+                                                            {{ material.statusLabel || statusLabelFn(material.status) }}
+                                                        </v-chip>
+                                                    </li>
+                                                </ul>
+                                            </li>
+                                        </ul>
+                                    </li>
+                                </ul>
+                            </li>
+                        </ul>
                     </div>
                 </div>
             </div>
@@ -585,11 +678,12 @@ export default {
             default: '',
         },
     },
-    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'unlink-linked-material', 'unlink-linked-topic', 'unlink-linked-unit'],
+    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'open-shared-material', 'open-shared-attachments', 'unlink-linked-material', 'unlink-linked-topic', 'unlink-linked-unit'],
     data() {
         return {
             workspaceExpanded: true,
             sharedForMeExpanded: false,
+            expandedSharedItems: {},
         }
     },
     methods: {
@@ -608,6 +702,42 @@ export default {
             if (this.actionBusy) return
 
             this.sharedForMeExpanded = !this.sharedForMeExpanded
+        },
+        sharedItemKey(ruleId) {
+            const normalizedRuleId = Number(ruleId)
+            if (!Number.isFinite(normalizedRuleId) || normalizedRuleId <= 0) return ''
+            return `shared-item-${normalizedRuleId}`
+        },
+        isSharedItemExpanded(ruleId) {
+            const key = this.sharedItemKey(ruleId)
+            return key !== '' ? this.expandedSharedItems[key] === true : false
+        },
+        toggleSharedItemExpanded(ruleId) {
+            if (this.actionBusy) return
+
+            const key = this.sharedItemKey(ruleId)
+            if (key === '') return
+
+            this.expandedSharedItems = {
+                ...this.expandedSharedItems,
+                [key]: !this.isSharedItemExpanded(ruleId),
+            }
+        },
+        sharedItemCardStyle(ruleId) {
+            if (this.isSharedItemExpanded(ruleId)) {
+                return {
+                    flex: '1 1 100%',
+                    maxWidth: '100%',
+                }
+            }
+
+            return {
+                flex: '1 1 24rem',
+                maxWidth: '28rem',
+            }
+        },
+        sharedItemHierarchy(item) {
+            return Array.isArray(item?.hierarchy) ? item.hierarchy : []
         },
         normalizeLinkedPermission(permission) {
             const normalized = String(permission || '').trim()
@@ -654,6 +784,28 @@ export default {
                 id: cardId,
                 title: String(material?.title || '').trim(),
                 attachments: Array.isArray(material?.attachments) ? material.attachments : undefined,
+            })
+        },
+        openSharedMaterial(item, material) {
+            const ruleId = Number(item?.ruleId)
+            const materialId = Number(material?.id)
+            if (!Number.isFinite(ruleId) || ruleId <= 0) return
+            if (!Number.isFinite(materialId) || materialId <= 0) return
+
+            this.$emit('open-shared-material', {
+                ruleId,
+                material,
+            })
+        },
+        openSharedAttachments(item, material) {
+            const ruleId = Number(item?.ruleId)
+            const materialId = Number(material?.id)
+            if (!Number.isFinite(ruleId) || ruleId <= 0) return
+            if (!Number.isFinite(materialId) || materialId <= 0) return
+
+            this.$emit('open-shared-attachments', {
+                ruleId,
+                material,
             })
         },
         handleShareClick(target) {
@@ -903,7 +1055,10 @@ export default {
 }
 
 .overview-shared-items {
-    display: grid;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    justify-content: flex-start;
     gap: 12px;
 }
 
@@ -912,6 +1067,34 @@ export default {
     border-radius: 12px;
     border: 1px solid rgba(53, 84, 117, 0.16);
     background: rgba(255, 255, 255, 0.72);
+}
+
+.overview-shared-item-actions {
+    margin-top: 10px;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.overview-shared-hierarchy {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed rgba(53, 84, 117, 0.24);
+}
+
+.overview-shared-hierarchy-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 10px;
+}
+
+.overview-shared-hierarchy-item {
+    min-width: 0;
+}
+
+.overview-shared-hierarchy-node {
+    display: inline-flex;
 }
 
 .overview-shared-item-head {

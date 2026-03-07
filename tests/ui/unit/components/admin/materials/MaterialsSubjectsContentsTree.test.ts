@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/vue'
+import { fireEvent, render, screen, within } from '@testing-library/vue'
 import MaterialsSubjectsContentsTree from '@/pages/admin/materials/components/overview/MaterialsSubjectsContentsTree.vue'
 
 const vuetifyStubs = {
@@ -76,7 +76,7 @@ describe('MaterialsSubjectsContentsTree', () => {
     })
 
     it('shows shared objects when Für mich geteilt is expanded', async () => {
-        renderTree([
+        const { container } = renderTree([
             {
                 id: 1,
                 name: 'Mathematik',
@@ -105,6 +105,137 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(screen.getByText('Geteilte Mathematik')).toBeInTheDocument()
         expect(screen.getByText('Mathematik / Algebra')).toBeInTheDocument()
         expect(screen.getByText(/Von: Lehrer Eins/i)).toBeInTheDocument()
+
+        const sharedItem = container.querySelector('.overview-shared-item')
+        expect(sharedItem).not.toBeNull()
+        expect((sharedItem as HTMLElement).style.flex).toContain('24rem')
+        expect((sharedItem as HTMLElement).style.maxWidth).toBe('28rem')
+    })
+
+    it('renders multiple shared workspaces in a wrapped row instead of full-width cards', async () => {
+        const { container } = renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [],
+            },
+        ], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 77,
+                    scopeObjectLabel: 'Alle Materialien',
+                    scopePathLabel: 'Workspace A',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Eins',
+                    materialsCount: 3,
+                },
+                {
+                    ruleId: 78,
+                    scopeObjectLabel: 'Alle Materialien',
+                    scopePathLabel: 'Workspace B',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Zwei',
+                    materialsCount: 4,
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+
+        const sharedItems = Array.from(container.querySelectorAll('.overview-shared-item'))
+        expect(sharedItems).toHaveLength(2)
+        expect((sharedItems[0] as HTMLElement).style.flex).toContain('24rem')
+        expect((sharedItems[1] as HTMLElement).style.maxWidth).toBe('28rem')
+        expect(screen.getByText('Workspace A')).toBeInTheDocument()
+        expect(screen.getByText('Workspace B')).toBeInTheDocument()
+    })
+
+    it('toggles shared workspace hierarchy and emits read-only shared material actions', async () => {
+        const { emitted, container } = renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [],
+            },
+        ], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 77,
+                    scopeObjectLabel: 'Alle Materialien',
+                    scopePathLabel: 'Workspace A',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Eins',
+                    materialsCount: 1,
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Mathematik',
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Algebra',
+                                    units: [
+                                        {
+                                            id: 30,
+                                            name: 'Einheit 1',
+                                            materials: [
+                                                {
+                                                    id: 99,
+                                                    title: 'Lineare Gleichungen',
+                                                    typeLabel: 'Arbeitsblatt',
+                                                    status: 'done',
+                                                    statusLabel: 'Erledigt',
+                                                    attachmentsCount: 2,
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+
+        expect(screen.queryByText('Lineare Gleichungen')).not.toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+
+        expect(screen.getByText('Lineare Gleichungen')).toBeInTheDocument()
+        expect(screen.getByText('Arbeitsblatt')).toBeInTheDocument()
+        expect(screen.getByText('Erledigt')).toBeInTheDocument()
+        const sharedItem = container.querySelector('.overview-shared-item') as HTMLElement
+        expect(sharedItem).not.toBeNull()
+        expect(sharedItem.style.flex).toContain('100%')
+        expect(sharedItem.style.maxWidth).toBe('100%')
+        expect(sharedItem.className).toContain('overview-shared-item--expanded')
+        expect(within(sharedItem).queryByTitle('Teilen')).toBeNull()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Lineare Gleichungen' }))
+        await fireEvent.click(screen.getByRole('button', { name: '2' }))
+
+        const openSharedMaterialEvents = emitted('open-shared-material') || []
+        expect(openSharedMaterialEvents).toHaveLength(1)
+        expect((openSharedMaterialEvents[0]?.[0] as any)?.ruleId).toBe(77)
+        expect((openSharedMaterialEvents[0]?.[0] as any)?.material?.id).toBe(99)
+
+        const openSharedAttachmentEvents = emitted('open-shared-attachments') || []
+        expect(openSharedAttachmentEvents).toHaveLength(1)
+        expect((openSharedAttachmentEvents[0]?.[0] as any)?.ruleId).toBe(77)
+        expect((openSharedAttachmentEvents[0]?.[0] as any)?.material?.id).toBe(99)
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Schließen' }))
+        expect(screen.queryByText('Lineare Gleichungen')).not.toBeInTheDocument()
+        expect(sharedItem.style.flex).toContain('24rem')
+        expect(sharedItem.style.maxWidth).toBe('28rem')
     })
 
     it('renders linked permission chip on a linked topic', () => {
