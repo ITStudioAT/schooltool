@@ -1,10 +1,16 @@
 <template>
     <div class="overview-subjects-tree">
         <div class="overview-subjects-node-row overview-workspace-row">
-            <div class="overview-subjects-node overview-subjects-node--workspace">
+            <button
+                type="button"
+                class="overview-subjects-node overview-subjects-node--workspace overview-subjects-node--workspace-toggle"
+                :disabled="actionBusy"
+                :aria-expanded="workspaceExpanded ? 'true' : 'false'"
+                @click="toggleWorkspaceExpanded">
+                <v-icon size="18" :icon="workspaceExpanded ? 'mdi-chevron-down' : 'mdi-chevron-right'" class="mr-1" />
                 <v-icon size="20" icon="mdi-briefcase-outline" class="mr-2" />
                 <span>Workspace</span>
-            </div>
+            </button>
             <v-btn
                 size="x-small"
                 color="primary"
@@ -16,7 +22,7 @@
                 @click.stop="handleWorkspaceShareClick" />
         </div>
 
-        <ul class="overview-subjects-list">
+        <ul v-if="workspaceExpanded" class="overview-subjects-list">
             <li
                 v-for="subject in items"
                 :key="`overview-subjects-subject-${subject.id || subject.name}`"
@@ -459,6 +465,62 @@
                 </div>
             </li>
         </ul>
+
+        <div
+            class="overview-subjects-node-row overview-workspace-row overview-shared-row"
+            :class="{ 'overview-shared-row--spaced': workspaceExpanded }">
+            <button
+                type="button"
+                class="overview-subjects-node overview-subjects-node--workspace overview-subjects-node--workspace-toggle overview-subjects-node--shared-toggle"
+                :disabled="actionBusy"
+                :aria-expanded="sharedForMeExpanded ? 'true' : 'false'"
+                @click="toggleSharedForMeExpanded">
+                <v-icon size="18" :icon="sharedForMeExpanded ? 'mdi-chevron-down' : 'mdi-chevron-right'" class="mr-1" />
+                <v-icon size="20" icon="mdi-account-group-outline" class="mr-2" />
+                <span>Für mich geteilt</span>
+            </button>
+        </div>
+
+        <div v-if="sharedForMeExpanded" class="overview-shared-content">
+            <div v-if="sharedObjectsForMeLoading" class="overview-shared-state">
+                Freigaben werden geladen...
+            </div>
+            <div v-else-if="sharedObjectsForMeError" class="overview-shared-state overview-shared-state--error">
+                {{ sharedObjectsForMeError }}
+            </div>
+            <div v-else-if="!sharedObjectsForMe.length" class="overview-shared-state">
+                Keine Freigaben für dich vorhanden.
+            </div>
+            <div v-else class="overview-shared-items">
+                <div
+                    v-for="item in sharedObjectsForMe"
+                    :key="`overview-shared-item-${item.ruleId || item.scopeObjectLabel || item.scopePathLabel}`"
+                    class="overview-shared-item">
+                    <div class="overview-shared-item-head">
+                        <div class="overview-shared-item-title">
+                            {{ item.scopeObjectLabel || item.scopeLabel || 'Freigabe' }}
+                        </div>
+                        <v-chip
+                            v-if="item.permissionLabel"
+                            size="x-small"
+                            variant="flat"
+                            :color="linkedPermissionChipColor(item.permission)">
+                            {{ item.permissionLabel }}
+                        </v-chip>
+                    </div>
+                    <div v-if="item.scopePathLabel" class="overview-shared-item-path">
+                        {{ item.scopePathLabel }}
+                    </div>
+                    <div class="overview-shared-item-meta">
+                        Von: {{ item.fromUserLabel || 'Benutzer' }}
+                        <span v-if="item.fromSchoolLabel"> · {{ item.fromSchoolLabel }}</span>
+                    </div>
+                    <div v-if="Number(item.materialsCount || 0) > 0" class="overview-shared-item-meta">
+                        {{ Number(item.materialsCount || 0) }} Material{{ Number(item.materialsCount || 0) === 1 ? '' : 'ien' }}
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </template>
 
@@ -510,14 +572,42 @@ export default {
             type: Function,
             required: true,
         },
+        sharedObjectsForMe: {
+            type: Array,
+            default: () => [],
+        },
+        sharedObjectsForMeLoading: {
+            type: Boolean,
+            default: false,
+        },
+        sharedObjectsForMeError: {
+            type: String,
+            default: '',
+        },
     },
     emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'unlink-linked-material', 'unlink-linked-topic', 'unlink-linked-unit'],
+    data() {
+        return {
+            workspaceExpanded: true,
+            sharedForMeExpanded: false,
+        }
+    },
     methods: {
         linkedPermissionChipColor(permission) {
             const normalized = String(permission || '').trim()
             if (normalized === 'full_access') return 'error'
             if (normalized === 'read_write') return 'warning'
             return 'primary'
+        },
+        toggleWorkspaceExpanded() {
+            if (this.actionBusy) return
+
+            this.workspaceExpanded = !this.workspaceExpanded
+        },
+        toggleSharedForMeExpanded() {
+            if (this.actionBusy) return
+
+            this.sharedForMeExpanded = !this.sharedForMeExpanded
         },
         normalizeLinkedPermission(permission) {
             const normalized = String(permission || '').trim()
@@ -607,6 +697,15 @@ export default {
     box-shadow: 0 3px 10px rgba(20, 56, 74, 0.14);
 }
 
+.overview-shared-row {
+    margin-bottom: 0;
+    background: linear-gradient(90deg, rgba(53, 84, 117, 0.18) 0%, rgba(53, 84, 117, 0.1) 56%, rgba(255, 255, 255, 0.78) 100%);
+}
+
+.overview-shared-row--spaced {
+    margin-top: 40px;
+}
+
 .overview-subjects-list--child {
     margin-top: 6px;
     margin-left: 34px;
@@ -681,6 +780,21 @@ export default {
     color: #0f3140;
     background: rgba(20, 93, 120, 0.26);
     border: 1px solid rgba(20, 93, 120, 0.48);
+}
+
+.overview-subjects-node--workspace-toggle {
+    border: 1px solid rgba(20, 93, 120, 0.48);
+    cursor: pointer;
+}
+
+.overview-subjects-node--workspace-toggle:disabled {
+    cursor: default;
+    opacity: 0.7;
+}
+
+.overview-subjects-node--shared-toggle {
+    background: rgba(53, 84, 117, 0.2);
+    border-color: rgba(53, 84, 117, 0.4);
 }
 
 .overview-subjects-node--topic {
@@ -776,5 +890,53 @@ export default {
 .overview-subjects-share-icon {
     margin-left: 2px;
     opacity: 0.95;
+}
+
+.overview-shared-content {
+    margin-top: 10px;
+    padding: 16px 18px;
+    border-radius: 12px;
+    border: 1px dashed rgba(53, 84, 117, 0.28);
+    background: rgba(53, 84, 117, 0.06);
+    color: #2e4a5a;
+    font-weight: 600;
+}
+
+.overview-shared-items {
+    display: grid;
+    gap: 12px;
+}
+
+.overview-shared-item {
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(53, 84, 117, 0.16);
+    background: rgba(255, 255, 255, 0.72);
+}
+
+.overview-shared-item-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.overview-shared-item-title {
+    font-weight: 700;
+    color: #17384a;
+}
+
+.overview-shared-item-path,
+.overview-shared-item-meta,
+.overview-shared-state {
+    margin-top: 4px;
+    color: #3a5668;
+    font-size: 0.92rem;
+    font-weight: 500;
+}
+
+.overview-shared-state--error {
+    color: #a52626;
 }
 </style>

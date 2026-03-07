@@ -5,11 +5,11 @@ import MaterialsSubjectsContentsTree from '@/pages/admin/materials/components/ov
 const vuetifyStubs = {
     'v-btn': {
         emits: ['click'],
-        template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+        template: '<button type="button" v-bind="$attrs" @click="$emit(\'click\', $event)"><slot /></button>',
     },
     VBtn: {
         emits: ['click'],
-        template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+        template: '<button type="button" v-bind="$attrs" @click="$emit(\'click\', $event)"><slot /></button>',
     },
     'v-chip': { template: '<span><slot /></span>' },
     VChip: { template: '<span><slot /></span>' },
@@ -17,7 +17,16 @@ const vuetifyStubs = {
     VIcon: { template: '<i><slot /></i>' },
 }
 
-function renderTree(items: any[], options: { enableRemoveButtons?: boolean; enableShareButtons?: boolean } = {}) {
+function renderTree(
+    items: any[],
+    options: {
+        enableRemoveButtons?: boolean
+        enableShareButtons?: boolean
+        sharedObjectsForMe?: any[]
+        sharedObjectsForMeLoading?: boolean
+        sharedObjectsForMeError?: string
+    } = {}
+) {
     return render(MaterialsSubjectsContentsTree, {
         props: {
             items,
@@ -31,6 +40,9 @@ function renderTree(items: any[], options: { enableRemoveButtons?: boolean; enab
             statusLabelFn: () => 'Entwurf',
             subjectGroupStyleFn: () => ({}),
             topicGroupStyleFn: () => ({}),
+            sharedObjectsForMe: Array.isArray(options.sharedObjectsForMe) ? options.sharedObjectsForMe : [],
+            sharedObjectsForMeLoading: options.sharedObjectsForMeLoading === true,
+            sharedObjectsForMeError: String(options.sharedObjectsForMeError || ''),
         },
         global: {
             stubs: vuetifyStubs,
@@ -39,6 +51,62 @@ function renderTree(items: any[], options: { enableRemoveButtons?: boolean; enab
 }
 
 describe('MaterialsSubjectsContentsTree', () => {
+    it('collapses and expands the workspace contents', async () => {
+        const { container } = renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [],
+            },
+        ])
+
+        expect(screen.getByText('Mathematik')).toBeInTheDocument()
+        expect(container.querySelector('.overview-shared-row--spaced')).not.toBeNull()
+
+        await fireEvent.click(screen.getByRole('button', { name: /workspace/i }))
+
+        expect(screen.queryByText('Mathematik')).not.toBeInTheDocument()
+        expect(container.querySelector('.overview-shared-row--spaced')).toBeNull()
+
+        await fireEvent.click(screen.getByRole('button', { name: /workspace/i }))
+
+        expect(screen.getByText('Mathematik')).toBeInTheDocument()
+        expect(container.querySelector('.overview-shared-row--spaced')).not.toBeNull()
+    })
+
+    it('shows shared objects when Für mich geteilt is expanded', async () => {
+        renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [],
+            },
+        ], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 77,
+                    scopeObjectLabel: 'Geteilte Mathematik',
+                    scopePathLabel: 'Mathematik / Algebra',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Eins',
+                    fromSchoolLabel: 'CDGym',
+                    materialsCount: 3,
+                },
+            ],
+        })
+
+        expect(screen.queryByText('Geteilte Mathematik')).not.toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+
+        expect(screen.getByText('Geteilte Mathematik')).toBeInTheDocument()
+        expect(screen.getByText('Mathematik / Algebra')).toBeInTheDocument()
+        expect(screen.getByText(/Von: Lehrer Eins/i)).toBeInTheDocument()
+    })
+
     it('renders linked permission chip on a linked topic', () => {
         renderTree([
             {
@@ -169,9 +237,9 @@ describe('MaterialsSubjectsContentsTree', () => {
             },
         ])
 
-        const buttons = screen.getAllByRole('button')
-        await fireEvent.click(buttons[0])
-        await fireEvent.click(buttons[1])
+        const shareButtons = screen.getAllByTitle('Teilen')
+        await fireEvent.click(shareButtons[0])
+        await fireEvent.click(shareButtons[1])
 
         const events = emitted('open-share') || []
         expect(events.length).toBe(2)
@@ -192,8 +260,8 @@ describe('MaterialsSubjectsContentsTree', () => {
             { enableShareButtons: true }
         )
 
-        const buttons = screen.getAllByRole('button')
-        await fireEvent.click(buttons[1])
+        const shareButtons = screen.getAllByTitle('Teilen')
+        await fireEvent.click(shareButtons[1])
 
         const events = emitted('open-share') || []
         expect(events.length).toBe(1)
@@ -214,8 +282,8 @@ describe('MaterialsSubjectsContentsTree', () => {
             { enableShareButtons: true }
         )
 
-        const buttons = screen.getAllByRole('button')
-        await fireEvent.click(buttons[0])
+        const shareButtons = screen.getAllByTitle('Teilen')
+        await fireEvent.click(shareButtons[0])
 
         const events = emitted('open-share') || []
         expect(events.length).toBe(1)

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { shallowMount } from '@vue/test-utils'
 import MaterialsOverviewView from '@/pages/admin/materials/components/views/MaterialsOverviewView.vue'
 
 describe('MaterialsOverviewView', () => {
@@ -164,17 +165,20 @@ describe('MaterialsOverviewView', () => {
         methods.setSubjectsContentsSource.call(vm, 'workspace')
         expect(vm.subjectsContentsSource).toBe('workspace')
         expect(loadSubjectsContentsOverview).toHaveBeenCalledWith({ force: true })
+        expect(loadSharedObjectsForMe).toHaveBeenCalledTimes(2)
     })
 
     it('resets subjects source to workspace when switching to subjects overview mode', () => {
         const methods = (MaterialsOverviewView as any)?.methods || {}
         const loadSubjectsContentsOverview = vi.fn()
+        const loadSharedObjectsForMe = vi.fn()
         const vm: any = {
             ...methods,
             forcedOverviewMode: '',
             overviewViewMode: 'list',
             subjectsContentsSource: 'shared',
             loadSubjectsContentsOverview,
+            loadSharedObjectsForMe,
         }
 
         methods.setOverviewMode.call(vm, 'subjects_contents')
@@ -182,6 +186,39 @@ describe('MaterialsOverviewView', () => {
         expect(vm.overviewViewMode).toBe('subjects_contents')
         expect(vm.subjectsContentsSource).toBe('workspace')
         expect(loadSubjectsContentsOverview).toHaveBeenCalledWith({ force: true })
+        expect(loadSharedObjectsForMe).toHaveBeenCalledTimes(1)
+    })
+
+    it('loads shared objects together with subjects contents on initial card load', async () => {
+        const methods = (MaterialsOverviewView as any)?.methods || {}
+        const index = vi.fn().mockResolvedValue(true)
+        const loadSubjectsContentsOverview = vi.fn().mockResolvedValue(undefined)
+        const loadSharedObjectsForMe = vi.fn().mockResolvedValue(undefined)
+        const refreshFilterCountCards = vi.fn()
+        const refreshAllListedAttachmentBytes = vi.fn()
+        const vm: any = {
+            ...methods,
+            isLoading: false,
+            currentPage: 1,
+            isSubjectsContentsOverview: true,
+            materialCardStore: {
+                index,
+                meta: {
+                    current_page: 1,
+                    last_page: 1,
+                },
+            },
+            refreshFilterCountCards,
+            refreshAllListedAttachmentBytes,
+            loadSubjectsContentsOverview,
+            loadSharedObjectsForMe,
+        }
+
+        await methods.loadCards.call(vm)
+
+        expect(index).toHaveBeenCalledWith(1)
+        expect(loadSubjectsContentsOverview).toHaveBeenCalledWith({ force: true })
+        expect(loadSharedObjectsForMe).toHaveBeenCalledTimes(1)
     })
 
     it('openShareDialog opens persistent dummy dialog when share actions are disabled', () => {
@@ -219,7 +256,16 @@ describe('MaterialsOverviewView', () => {
 
     it('normalizes and sorts shared objects from inbox users response', () => {
         const methods = (MaterialsOverviewView as any)?.methods || {}
-        const vm: any = { ...methods }
+        const vm: any = {
+            ...methods,
+            materialCardStore: {
+                config: {
+                    workspace: {
+                        name: 'Teamraum Mathematik',
+                    },
+                },
+            },
+        }
         const cards = methods.normalizeSharedObjectsForMeResponse.call(vm, [
             {
                 label: 'Lehrer Eins',
@@ -290,11 +336,82 @@ describe('MaterialsOverviewView', () => {
         expect(cards[0].ruleId).toBe(20)
         expect(cards[0].fromUserLabel).toBe('Lehrer Zwei')
         expect(cards[0].materialsCount).toBe(1)
+        expect(cards[0].scopePathLabel).toBe('Teamraum Mathematik')
         expect(Array.isArray(cards[0].hierarchy)).toBe(true)
         expect(cards[0].hierarchy[0].name).toBe('Mathematik')
         expect(cards[0].hierarchy[0].topics[0].units[0].materials[0].title).toBe('Lineare Gleichungen')
         expect(cards[1].ruleId).toBe(10)
         expect(cards[1].scopeLabel).toBe('Fach')
+    })
+
+    it('renders shared cards with tighter grid breakpoints', () => {
+        const wrapper = shallowMount(MaterialsOverviewView, {
+            data() {
+                return {
+                    overviewViewMode: 'subjects_contents',
+                    subjectsContentsSource: 'shared',
+                    isLoadingSharedObjectsForMe: false,
+                    sharedObjectsForMeError: '',
+                    sharedObjectsForMeCards: [
+                        {
+                            ruleId: 20,
+                            scopeType: 'all',
+                            scopeLabel: 'Workspace',
+                            scopeObjectLabel: 'Alle Materialien',
+                            scopePathLabel: 'Teamraum Mathematik',
+                            permission: 'read_only',
+                            permissionLabel: 'NUR LESEN',
+                            fromUserLabel: 'Lehrer Zwei',
+                            fromSchoolLabel: 'Abendgymnasium',
+                            sharedAt: '2026-03-03T08:30:00+00:00',
+                            hierarchy: [],
+                            materialsCount: 0,
+                        },
+                    ],
+                    openSharedHierarchyCards: {},
+                }
+            },
+            global: {
+                stubs: {
+                    'v-row': { template: '<div><slot /></div>' },
+                    VRow: { template: '<div><slot /></div>' },
+                    'v-col': {
+                        props: ['cols', 'sm', 'md', 'xl'],
+                        template: '<div data-test="shared-col" :data-cols="cols" :data-sm="sm" :data-md="md" :data-xl="xl"><slot /></div>',
+                    },
+                    VCol: {
+                        props: ['cols', 'sm', 'md', 'xl'],
+                        template: '<div data-test="shared-col" :data-cols="cols" :data-sm="sm" :data-md="md" :data-xl="xl"><slot /></div>',
+                    },
+                    'v-card': { template: '<div><slot /></div>' },
+                    VCard: { template: '<div><slot /></div>' },
+                    'v-card-text': { template: '<div><slot /></div>' },
+                    VCardText: { template: '<div><slot /></div>' },
+                    'v-chip': { template: '<span><slot /></span>' },
+                    VChip: { template: '<span><slot /></span>' },
+                    'v-icon': { template: '<i><slot /></i>' },
+                    VIcon: { template: '<i><slot /></i>' },
+                    'v-btn': { template: '<button type="button"><slot /></button>' },
+                    VBtn: { template: '<button type="button"><slot /></button>' },
+                    'v-alert': { template: '<div><slot /></div>' },
+                    VAlert: { template: '<div><slot /></div>' },
+                    'v-progress-linear': { template: '<div />' },
+                    VProgressLinear: { template: '<div />' },
+                    'v-expand-transition': { template: '<div><slot /></div>' },
+                    VExpandTransition: { template: '<div><slot /></div>' },
+                    'v-spacer': { template: '<div />' },
+                    VSpacer: { template: '<div />' },
+                },
+            },
+        })
+
+        const column = wrapper.get('[data-test="shared-col"]')
+
+        expect(column.attributes('data-cols')).toBe('12')
+        expect(column.attributes('data-sm')).toBe('6')
+        expect(column.attributes('data-md')).toBe('4')
+        expect(column.attributes('data-xl')).toBe('3')
+        expect(wrapper.html()).toContain('Teamraum Mathematik')
     })
 
     it('normalizes shared hierarchy materials with optional attachments', () => {

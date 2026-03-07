@@ -192,10 +192,11 @@
                         v-for="item in sharedObjectsForMeCards"
                         :key="`shared-object-${item.ruleId}`"
                         cols="12"
-                        :md="isSharedHierarchyOpen(item.ruleId) ? 12 : 6"
-                        :xl="isSharedHierarchyOpen(item.ruleId) ? 12 : 4">
+                        :sm="isSharedHierarchyOpen(item.ruleId) ? 12 : 6"
+                        :md="isSharedHierarchyOpen(item.ruleId) ? 12 : 4"
+                        :xl="isSharedHierarchyOpen(item.ruleId) ? 12 : 3">
                         <v-card variant="outlined" class="shared-object-card h-100">
-                            <v-card-text class="d-flex flex-column ga-3">
+                            <v-card-text class="d-flex flex-column ga-2 pa-4">
                                 <div class="d-flex align-start justify-space-between ga-2">
                                     <div>
                                         <div class="text-subtitle-1 font-weight-bold">
@@ -335,6 +336,9 @@
                     :status-label-fn="statusLabel"
                     :subject-group-style-fn="subjectGroupStyle"
                     :topic-group-style-fn="topicGroupStyle"
+                    :shared-objects-for-me="sharedObjectsForMeCards"
+                    :shared-objects-for-me-loading="isLoadingSharedObjectsForMe"
+                    :shared-objects-for-me-error="sharedObjectsForMeError"
                     @open-material="openDetailDialog"
                     @open-share="openShareDialog"
                     @open-create="openCreateDialogFromTree"
@@ -1992,6 +1996,7 @@ export default {
             if (nextMode === this.overviewViewMode) {
                 if (nextMode === 'subjects_contents') {
                     this.loadSubjectsContentsOverview({ force: true })
+                    this.loadSharedObjectsForMe()
                 }
                 return
             }
@@ -2006,6 +2011,7 @@ export default {
             }
             if (nextMode === 'subjects_contents') {
                 this.loadSubjectsContentsOverview({ force: true })
+                this.loadSharedObjectsForMe()
             }
         },
         canSelectSubjectsContentsSource() {
@@ -2034,6 +2040,7 @@ export default {
 
             if (nextSource === 'workspace' && this.isSubjectsContentsOverview) {
                 this.loadSubjectsContentsOverview({ force: true })
+                this.loadSharedObjectsForMe()
                 return
             }
             if (nextSource === 'shared' && this.isSubjectsContentsOverview) {
@@ -2054,6 +2061,19 @@ export default {
             if (normalized === 'full_access') return 'error'
             if (normalized === 'read_write') return 'warning'
             return 'primary'
+        },
+        activeWorkspaceName() {
+            return String(this.materialCardStore?.config?.workspace?.name || '').trim()
+        },
+        resolveSharedScopePathLabel(scopeType, scopePathLabel) {
+            const normalizedScopeType = String(scopeType || '').trim().toLocaleLowerCase()
+            if (normalizedScopeType !== 'all') {
+                return scopePathLabel
+            }
+
+            const workspaceName = this.activeWorkspaceName()
+
+            return workspaceName || scopePathLabel
         },
         normalizeSharedObjectsForMeResponse(rows) {
             if (!Array.isArray(rows)) return []
@@ -2077,7 +2097,8 @@ export default {
                     const scopeType = String(item?.scope_type || '').trim() || 'all'
                     const scopeLabel = String(item?.scope_label || '').trim() || 'Bereich'
                     const scopeObjectLabel = String(item?.scope_object_label || '').trim() || 'Freigabe'
-                    const scopePathLabel = String(item?.scope_path_label || '').trim() || ''
+                    const rawScopePathLabel = String(item?.scope_path_label || '').trim() || ''
+                    const scopePathLabel = this.resolveSharedScopePathLabel(scopeType, rawScopePathLabel)
                     const permission = String(item?.permission || '').trim() || 'read_only'
                     const permissionLabel = String(item?.permission_label || '').trim() || 'NUR LESEN'
                     const sharedAt = String(item?.updated_at || '').trim() || fallbackSharedAt
@@ -2388,6 +2409,7 @@ export default {
                 this.refreshAllListedAttachmentBytes({ force: forceFilterCountRefresh })
                 if (this.isSubjectsContentsOverview) {
                     await this.loadSubjectsContentsOverview({ force: true })
+                    await this.loadSharedObjectsForMe()
                 }
             }
             this.isLoading = false
