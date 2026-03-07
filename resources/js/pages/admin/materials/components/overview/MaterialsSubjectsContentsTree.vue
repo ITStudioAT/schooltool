@@ -767,7 +767,7 @@
                         </div>
                         <div class="overview-shared-item-head-actions">
                             <v-btn
-                                v-if="sharedItemHasFullAccess(item)"
+                                v-if="allowSharedShareButtons && sharedItemHasFullAccess(item)"
                                 size="x-small"
                                 color="primary"
                                 variant="tonal"
@@ -789,7 +789,7 @@
                         {{ sharedItemTypeLabel(item) }}
                     </div>
                     <div
-                        v-if="item.scopePathLabel && String(item.scopePathLabel || '').trim() !== sharedItemTypeLabel(item)"
+                        v-if="!['topic', 'material', 'unit'].includes(sharedItemScopeType(item)) && item.scopePathLabel && String(item.scopePathLabel || '').trim() !== sharedItemTypeLabel(item)"
                         class="overview-shared-item-meta">
                         {{ item.scopePathLabel }}
                     </div>
@@ -854,7 +854,7 @@
                                             v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)"
                                             class="overview-shared-hierarchy-node-inline-actions">
                                             <v-btn
-                                                v-if="hasPersistedNodeId(subject.id)"
+                                                v-if="allowSharedShareButtons && hasPersistedNodeId(subject.id)"
                                                 icon="mdi-share-variant-outline"
                                                 size="x-small"
                                                 density="comfortable"
@@ -910,7 +910,7 @@
                                         v-if="sharedItemHasFullAccess(item) && !isSharedStructureButtonsVisible(item.ruleId)"
                                         class="overview-shared-node-actions">
                                         <v-btn
-                                            v-if="hasPersistedNodeId(subject.id)"
+                                            v-if="allowSharedShareButtons && hasPersistedNodeId(subject.id)"
                                             icon="mdi-share-variant-outline"
                                             size="x-small"
                                             density="comfortable"
@@ -952,7 +952,7 @@
                                             {{ material.title }}
                                         </button>
                                         <v-btn
-                                            v-if="sharedItemHasFullAccess(item) && hasPersistedNodeId(material.id)"
+                                            v-if="allowSharedShareButtons && sharedItemHasFullAccess(item) && hasPersistedNodeId(material.id)"
                                             size="x-small"
                                             color="primary"
                                             variant="tonal"
@@ -1027,7 +1027,7 @@
                                                     v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)"
                                                     class="overview-shared-hierarchy-node-inline-actions">
                                                     <v-btn
-                                                        v-if="hasPersistedNodeId(topic.id)"
+                                                        v-if="allowSharedShareButtons && hasPersistedNodeId(topic.id)"
                                                         icon="mdi-share-variant-outline"
                                                         size="x-small"
                                                         density="comfortable"
@@ -1084,7 +1084,7 @@
                                                 v-if="sharedItemHasFullAccess(item) && !isSharedStructureButtonsVisible(item.ruleId)"
                                                 class="overview-shared-node-actions">
                                                 <v-btn
-                                                    v-if="hasPersistedNodeId(topic.id)"
+                                                    v-if="allowSharedShareButtons && hasPersistedNodeId(topic.id)"
                                                     icon="mdi-share-variant-outline"
                                                     size="x-small"
                                                     density="comfortable"
@@ -1127,7 +1127,7 @@
                                                     {{ material.title }}
                                                 </button>
                                                 <v-btn
-                                                    v-if="sharedItemHasFullAccess(item) && hasPersistedNodeId(material.id)"
+                                                    v-if="allowSharedShareButtons && sharedItemHasFullAccess(item) && hasPersistedNodeId(material.id)"
                                                     size="x-small"
                                                     color="primary"
                                                     variant="tonal"
@@ -1204,7 +1204,7 @@
                                                             v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)"
                                                             class="overview-shared-hierarchy-node-inline-actions">
                                                             <v-btn
-                                                                v-if="hasPersistedNodeId(unit.id)"
+                                                                v-if="allowSharedShareButtons && hasPersistedNodeId(unit.id)"
                                                                 icon="mdi-share-variant-outline"
                                                                 size="x-small"
                                                                 density="comfortable"
@@ -1261,7 +1261,7 @@
                                                         v-if="sharedItemHasFullAccess(item) && !isSharedStructureButtonsVisible(item.ruleId)"
                                                         class="overview-shared-node-actions">
                                                         <v-btn
-                                                            v-if="hasPersistedNodeId(unit.id)"
+                                                            v-if="allowSharedShareButtons && hasPersistedNodeId(unit.id)"
                                                             icon="mdi-share-variant-outline"
                                                             size="x-small"
                                                             density="comfortable"
@@ -1305,7 +1305,7 @@
                                                             {{ material.title }}
                                                         </button>
                                                         <v-btn
-                                                            v-if="sharedItemHasFullAccess(item) && hasPersistedNodeId(material.id)"
+                                                            v-if="allowSharedShareButtons && sharedItemHasFullAccess(item) && hasPersistedNodeId(material.id)"
                                                             size="x-small"
                                                             color="primary"
                                                             variant="tonal"
@@ -1625,6 +1625,10 @@ export default {
             default: false,
         },
         enableShareButtons: {
+            type: Boolean,
+            default: false,
+        },
+        allowSharedShareButtons: {
             type: Boolean,
             default: false,
         },

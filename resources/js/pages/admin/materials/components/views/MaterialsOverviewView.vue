@@ -202,7 +202,7 @@
                                         <div class="text-subtitle-1 font-weight-bold">
                                             {{ item.scopeObjectLabel }}
                                         </div>
-                                        <div class="text-caption text-medium-emphasis">
+                                        <div v-if="!['topic', 'material', 'unit'].includes(String(item.scopeType || '').trim().toLocaleLowerCase()) && String(item.scopePathLabel || '').trim() !== ''" class="text-caption text-medium-emphasis">
                                             {{ item.scopePathLabel }}
                                         </div>
                                     </div>

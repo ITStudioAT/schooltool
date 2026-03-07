@@ -3759,8 +3759,6 @@ class MaterialShareController extends Controller
             ]);
         }
 
-        $this->assertPermissionAllowedForScope((string) $data['permission'], $scopeType);
-
         $targetType = (string) $data['target_type'];
         $audienceScope = null;
         $userId = null;
@@ -3937,8 +3935,6 @@ class MaterialShareController extends Controller
         $data = $request->validate([
             'permission' => ['required', 'string', Rule::in(MaterialShareTarget::PERMISSIONS)],
         ]);
-
-        $this->assertPermissionAllowedForScope((string) $data['permission'], (string) $rule->scope_type);
 
         $material_share_target->permission = (string) $data['permission'];
         $material_share_target->save();
@@ -4164,21 +4160,6 @@ class MaterialShareController extends Controller
         return null;
     }
 
-    private function assertPermissionAllowedForScope(string $permission, string $scopeType): void
-    {
-        if ($permission !== MaterialShareTarget::PERMISSION_FULL_ACCESS) {
-            return;
-        }
-
-        if ($this->scopeAllowsFullAccess($scopeType)) {
-            return;
-        }
-
-        throw ValidationException::withMessages([
-            'permission' => ['VOLLZUGRIFF ist auf dieser Ebene aktuell nicht erlaubt.'],
-        ]);
-    }
-
     private function scopeAllowsFullAccess(string $scopeType): bool
     {
         return in_array($scopeType, [
@@ -4196,7 +4177,7 @@ class MaterialShareController extends Controller
         $scopeId = $rule->scope_id ? (int) $rule->scope_id : null;
 
         if ($scopeType === MaterialShareRule::SCOPE_ALL) {
-            return ['Alles', 'Alle Materialien'];
+            return ['Workspace', 'Alle Materialien'];
         }
 
         if (! $scopeId) {
@@ -4230,7 +4211,7 @@ class MaterialShareController extends Controller
     private function scopeTypeLabel(string $scopeType): string
     {
         return match ($scopeType) {
-            MaterialShareRule::SCOPE_ALL => 'Alles',
+            MaterialShareRule::SCOPE_ALL => 'Workspace',
             MaterialShareRule::SCOPE_SUBJECT => 'Fach',
             MaterialShareRule::SCOPE_TOPIC => 'Thema',
             MaterialShareRule::SCOPE_UNIT => 'Einheit',

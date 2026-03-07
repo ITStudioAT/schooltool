@@ -351,7 +351,7 @@ describe('MaterialsSubjectsContentsTree', () => {
         await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
 
         expect(screen.getByText('Thema')).toBeInTheDocument()
-        expect(screen.getByText('Mathematik / Algebra')).toBeInTheDocument()
+        expect(screen.queryByText('Mathematik / Algebra')).not.toBeInTheDocument()
     })
 
     it('renders multiple shared workspaces in a wrapped row instead of full-width cards', async () => {
@@ -658,24 +658,11 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(screen.getAllByTitle('Neues Material in Fach anlegen')).toHaveLength(2)
         const sharedItem = container.querySelector('.overview-shared-item') as HTMLElement
         expect(sharedItem).not.toBeNull()
-        expect(within(sharedItem).getAllByTitle('Teilen')).toHaveLength(8)
+        expect(within(sharedItem).queryByTitle('Teilen')).toBeNull()
         expect(screen.queryByTitle(/bearbeiten$/i)).not.toBeInTheDocument()
         expect(screen.queryByTitle('Fach löschen')).not.toBeInTheDocument()
         expect(screen.queryByTitle('Thema löschen')).not.toBeInTheDocument()
         expect(screen.queryByTitle('Bereich löschen')).not.toBeInTheDocument()
-
-        await fireEvent.click(within(sharedItem).getAllByTitle('Teilen')[0])
-        await fireEvent.click(within(screen.getByText('Leeres Fach').closest('.overview-shared-hierarchy-node') as HTMLElement).getByTitle('Teilen'))
-        await fireEvent.click(within(screen.getByText('Fachmaterial').closest('.overview-subjects-material-item') as HTMLElement).getByTitle('Teilen'))
-
-        const openShareEvents = emitted('open-share') || []
-        expect(openShareEvents).toHaveLength(3)
-        expect((openShareEvents[0]?.[0] as any)?.level).toBe('all')
-        expect((openShareEvents[0]?.[0] as any)?.id).toBeNull()
-        expect((openShareEvents[1]?.[0] as any)?.level).toBe('subject')
-        expect((openShareEvents[1]?.[0] as any)?.id).toBe(11)
-        expect((openShareEvents[2]?.[0] as any)?.level).toBe('material')
-        expect((openShareEvents[2]?.[0] as any)?.id).toBe(101)
 
         await fireEvent.click(screen.getAllByTitle('Neues Material in Thema anlegen')[0])
 
@@ -699,7 +686,7 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(screen.queryByText('Fachmaterial')).not.toBeInTheDocument()
         expect(screen.queryByText('Themamaterial')).not.toBeInTheDocument()
         expect(screen.queryByTitle(/Neues Material in/i)).not.toBeInTheDocument()
-        expect(within(sharedItem).getAllByTitle('Teilen')).toHaveLength(6)
+        expect(within(sharedItem).queryByTitle('Teilen')).toBeNull()
         expect(screen.getAllByTitle(/bearbeiten$/i)).toHaveLength(5)
 
         const deleteButtons = screen.getAllByTitle(/löschen$/i)

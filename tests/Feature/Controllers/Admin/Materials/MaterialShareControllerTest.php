@@ -4079,7 +4079,7 @@ test('materials admin can update share target permission', function () {
     ]);
 });
 
-test('full access is only allowed for workspace and subject scopes when storing targets', function () {
+test('full access is allowed for all scopes when storing targets', function () {
     $this->actingAs($this->materialsAdmin, 'sanctum');
 
     $subject = MaterialSubject::query()->create([
@@ -4091,6 +4091,17 @@ test('full access is only allowed for workspace and subject scopes when storing 
         'subject_id' => $subject->id,
         'name' => 'Algebra',
         'sort_order' => 1,
+    ]);
+    $unit = MaterialUnit::query()->create([
+        'topic_id' => $topic->id,
+        'name' => 'Kapitel A',
+        'sort_order' => 1,
+    ]);
+    $card = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->materialsAdmin->id,
+        'title' => 'Arbeitsblatt A',
+        'status' => MaterialCard::STATUS_INBOX,
     ]);
 
     $this->postJson('/api/admin/materials/shares/targets', [
@@ -4111,11 +4122,34 @@ test('full access is only allowed for workspace and subject scopes when storing 
         'audience_scope' => MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL,
         'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
     ])
-        ->assertStatus(422)
-        ->assertJsonValidationErrors(['permission']);
+        ->assertStatus(200)
+        ->assertJsonPath('rule.scope_type', MaterialShareRule::SCOPE_TOPIC)
+        ->assertJsonPath('rule.targets.0.permission', MaterialShareTarget::PERMISSION_FULL_ACCESS);
+
+    $this->postJson('/api/admin/materials/shares/targets', [
+        'scope_type' => MaterialShareRule::SCOPE_UNIT,
+        'scope_id' => $unit->id,
+        'target_type' => MaterialShareTarget::TARGET_EVERYONE,
+        'audience_scope' => MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL,
+        'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
+    ])
+        ->assertStatus(200)
+        ->assertJsonPath('rule.scope_type', MaterialShareRule::SCOPE_UNIT)
+        ->assertJsonPath('rule.targets.0.permission', MaterialShareTarget::PERMISSION_FULL_ACCESS);
+
+    $this->postJson('/api/admin/materials/shares/targets', [
+        'scope_type' => MaterialShareRule::SCOPE_MATERIAL,
+        'scope_id' => $card->id,
+        'target_type' => MaterialShareTarget::TARGET_EVERYONE,
+        'audience_scope' => MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL,
+        'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
+    ])
+        ->assertStatus(200)
+        ->assertJsonPath('rule.scope_type', MaterialShareRule::SCOPE_MATERIAL)
+        ->assertJsonPath('rule.targets.0.permission', MaterialShareTarget::PERMISSION_FULL_ACCESS);
 });
 
-test('updating target to full access is blocked for unit scope', function () {
+test('updating target to full access works for unit scope', function () {
     $this->actingAs($this->materialsAdmin, 'sanctum');
 
     $subject = MaterialSubject::query()->create([
@@ -4147,8 +4181,8 @@ test('updating target to full access is blocked for unit scope', function () {
     $this->patchJson('/api/admin/materials/shares/targets/'.$targetId, [
         'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
     ])
-        ->assertStatus(422)
-        ->assertJsonValidationErrors(['permission']);
+        ->assertStatus(200)
+        ->assertJsonPath('rule.targets.0.permission', MaterialShareTarget::PERMISSION_FULL_ACCESS);
 });
 
 test('lookup users returns only same-school users matching search', function () {

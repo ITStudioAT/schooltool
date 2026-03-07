@@ -382,19 +382,12 @@ export default {
             if (normalized === 'read_write') return 'read_write'
             return 'read_only'
         },
-        scopeAllowsFullAccess(scopeType) {
-            const normalized = String(scopeType || '').trim()
-            return normalized === 'all' || normalized === 'subject'
-        },
-        allowedShareModesForScope(scopeType) {
-            const base = [
+        allowedShareModesForScope() {
+            return [
+                { value: 'full_access', label: 'Vollzugriff' },
                 { value: 'read_write', label: 'Lesen/Schreiben' },
                 { value: 'read_only', label: 'Nur Lesen' },
             ]
-            if (this.scopeAllowsFullAccess(scopeType)) {
-                return [{ value: 'full_access', label: 'Vollzugriff' }, ...base]
-            }
-            return base
         },
         ensureShareModeForScope(scopeType) {
             const allowedModes = this.allowedShareModesForScope(scopeType).map((mode) => mode.value)

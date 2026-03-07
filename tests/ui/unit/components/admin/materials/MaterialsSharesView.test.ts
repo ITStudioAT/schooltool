@@ -139,14 +139,14 @@ describe('MaterialsSharesView', () => {
         })).toBe('Materialteam')
     })
 
-    it('limits permission options by scope type', () => {
+    it('offers all permission options for each scope type', () => {
         const ctx = createViewCtx()
 
         expect(ctx.permissionOptionsForScope('all').map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_only'])
         expect(ctx.permissionOptionsForScope('subject').map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_only'])
-        expect(ctx.permissionOptionsForScope('topic').map((entry: any) => entry.value)).toEqual(['read_write', 'read_only'])
-        expect(ctx.permissionOptionsForScope('unit').map((entry: any) => entry.value)).toEqual(['read_write', 'read_only'])
-        expect(ctx.permissionOptionsForScope('material').map((entry: any) => entry.value)).toEqual(['read_write', 'read_only'])
+        expect(ctx.permissionOptionsForScope('topic').map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_only'])
+        expect(ctx.permissionOptionsForScope('unit').map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_only'])
+        expect(ctx.permissionOptionsForScope('material').map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_only'])
     })
 
     it('loadShares stores rows and needsMigration meta', async () => {
@@ -236,15 +236,27 @@ describe('MaterialsSharesView', () => {
         expect(ctx.statusBusyIds).toEqual([])
     })
 
-    it('updateTargetPermission blocks forbidden full access for non-workspace scopes', async () => {
+    it('updateTargetPermission allows full access for unit scope', async () => {
+        axiosMock.patch.mockResolvedValue({
+            data: {
+                rule: {
+                    id: 12,
+                    scope_type: 'unit',
+                    targets: [{ id: 88, permission: 'full_access', permission_label: 'VOLLZUGRIFF' }],
+                },
+            },
+        })
+
         const ctx = createViewCtx({
             rows: [{ id: 12, is_active: true, scope_type: 'unit', targets: [{ id: 88, permission: 'read_only' }] }],
         })
 
         await ctx.updateTargetPermission({ id: 12, scope_type: 'unit' }, { id: 88, permission: 'read_only' }, 'full_access')
 
-        expect(axiosMock.patch).not.toHaveBeenCalled()
-        expect(ctx.errorMessage).toBe('VOLLZUGRIFF ist auf dieser Ebene aktuell nicht erlaubt.')
+        expect(axiosMock.patch).toHaveBeenCalledWith('/api/admin/materials/shares/targets/88', {
+            permission: 'full_access',
+        })
+        expect(ctx.errorMessage).toBe('')
     })
 
     it('removeTarget deletes a share target and updates local rows', async () => {
@@ -259,14 +271,6 @@ describe('MaterialsSharesView', () => {
                     targets: [{ id: 88, permission: 'read_only' }, { id: 89, permission: 'read_write' }],
                 },
             ],
-            workspaceShareAssignments: [
-                {
-                    id: 12,
-                    scope_type: 'all',
-                    targets_count: 2,
-                    targets: [{ id: 88, permission: 'read_only' }, { id: 89, permission: 'read_write' }],
-                },
-            ],
         })
 
         await ctx.removeTarget({ id: 12 }, { id: 88 })
@@ -274,7 +278,6 @@ describe('MaterialsSharesView', () => {
         expect(axiosMock.delete).toHaveBeenCalledWith('/api/admin/materials/shares/targets/88')
         expect(ctx.rows[0].targets.map((target: any) => target.id)).toEqual([89])
         expect(ctx.rows[0].targets_count).toBe(1)
-        expect(ctx.workspaceShareAssignments[0].targets.map((target: any) => target.id)).toEqual([89])
         expect(ctx.targetBusyIds).toEqual([])
         expect(ctx.errorMessage).toBe('')
     })
@@ -313,66 +316,6 @@ describe('MaterialsSharesView', () => {
         expect(ctx.errorMessage).toBe('Löschen fehlgeschlagen.')
         expect(ctx.targetBusyIds).toEqual([])
         expect(ctx.rows[0].targets).toHaveLength(1)
-    })
-
-    it('opens workspace share dialog and triggers assignment loading', () => {
-        const ctx = createViewCtx({
-            loadWorkspaceShareAssignments: vi.fn(),
-            workspaceShareAssignments: [{ id: 1 }],
-            workspaceShareAssignmentsError: 'x',
-            workspaceShareDialogOpen: false,
-        })
-
-        ctx.openWorkspaceShareDialog()
-
-        expect(ctx.workspaceShareDialogOpen).toBe(true)
-        expect(ctx.workspaceShareAssignments).toEqual([])
-        expect(ctx.workspaceShareAssignmentsError).toBe('')
-        expect(ctx.loadWorkspaceShareAssignments).toHaveBeenCalledTimes(1)
-    })
-
-    it('handleWorkspaceSharesChanged refreshes overview and workspace assignments', () => {
-        const ctx = createViewCtx({
-            loadWorkspaceShareAssignments: vi.fn(),
-            loadShares: vi.fn(),
-        })
-
-        ctx.handleWorkspaceSharesChanged()
-
-        expect(ctx.loadWorkspaceShareAssignments).toHaveBeenCalledTimes(1)
-        expect(ctx.loadShares).toHaveBeenCalledTimes(1)
-    })
-
-    it('loadWorkspaceShareAssignments stores filtered all-scope assignments', async () => {
-        axiosMock.get.mockResolvedValue({
-            data: {
-                data: [
-                    { id: 1, scope_type: 'all' },
-                    { id: 2, scope_type: 'subject' },
-                ],
-            },
-        })
-
-        const ctx = createViewCtx()
-        await ctx.loadWorkspaceShareAssignments()
-
-        expect(axiosMock.get).toHaveBeenCalledWith('/api/admin/materials/shares', { params: { scope_type: 'all' } })
-        expect(ctx.workspaceShareAssignments).toEqual([{ id: 1, scope_type: 'all' }, { id: 2, scope_type: 'subject' }])
-        expect(ctx.workspaceShareAssignmentsError).toBe('')
-        expect(ctx.workspaceShareAssignmentsLoading).toBe(false)
-    })
-
-    it('loadWorkspaceShareAssignments stores error state on failure', async () => {
-        axiosMock.get.mockRejectedValue({
-            response: { data: { message: 'Workspace-Freigaben kaputt' } },
-        })
-
-        const ctx = createViewCtx()
-        await ctx.loadWorkspaceShareAssignments()
-
-        expect(ctx.workspaceShareAssignments).toEqual([])
-        expect(ctx.workspaceShareAssignmentsError).toBe('Workspace-Freigaben kaputt')
-        expect(ctx.workspaceShareAssignmentsLoading).toBe(false)
     })
 
     it('renders migration warning state', async () => {

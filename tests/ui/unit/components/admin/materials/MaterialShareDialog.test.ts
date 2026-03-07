@@ -217,15 +217,15 @@ describe('MaterialShareDialog', () => {
         expect(ctx.targetActionBusyKeys).toEqual([])
     })
 
-    it('limits full access mode to workspace and subject scopes', () => {
+    it('allows full access mode for all scope types', () => {
         const unitCtx = createDialogCtx({
             target: { level: 'unit', id: 9, label: 'Kapitel A' },
             shareMode: 'full_access',
         })
 
-        expect(unitCtx.availableShareModes.map((entry: any) => entry.value)).toEqual(['read_write', 'read_only'])
+        expect(unitCtx.availableShareModes.map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_only'])
         unitCtx.ensureShareModeForScope('unit')
-        expect(unitCtx.shareMode).toBe('read_write')
+        expect(unitCtx.shareMode).toBe('full_access')
 
         const subjectCtx = createDialogCtx({
             target: { level: 'subject', id: 12, label: 'Mathematik' },
@@ -233,7 +233,7 @@ describe('MaterialShareDialog', () => {
         expect(subjectCtx.availableShareModes.map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_only'])
     })
 
-    it('requestStoreTarget coerces forbidden full access to read_write', async () => {
+    it('requestStoreTarget keeps full access for topic scope', async () => {
         axiosMock.post.mockResolvedValue({ data: {} })
 
         const ctx = createDialogCtx({
@@ -246,11 +246,11 @@ describe('MaterialShareDialog', () => {
         expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/shares/targets', {
             scope_type: 'topic',
             scope_id: 22,
-            permission: 'read_write',
+            permission: 'full_access',
             target_type: 'everyone',
             audience_scope: 'school',
         })
-        expect(ctx.shareMode).toBe('read_write')
+        expect(ctx.shareMode).toBe('full_access')
     })
 
     it('removeAssignedTarget deletes target and emits refresh events', async () => {

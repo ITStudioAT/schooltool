@@ -218,31 +218,12 @@ export default {
             if (normalized === 'read_only') return 'read_only'
             return 'read_only'
         },
-        normalizeScopeType(scopeType) {
-            const normalized = String(scopeType || '').trim()
-            if (normalized === 'all') return 'all'
-            if (normalized === 'subject') return 'subject'
-            if (normalized === 'topic') return 'topic'
-            if (normalized === 'unit') return 'unit'
-            if (normalized === 'material') return 'material'
-            return ''
-        },
-        scopeAllowsFullAccess(scopeType) {
-            const normalized = this.normalizeScopeType(scopeType)
-            return normalized === 'all' || normalized === 'subject'
-        },
-        permissionOptionsForScope(scopeType) {
-            const options = [
+        permissionOptionsForScope() {
+            return [
+                { value: 'full_access', label: 'VOLLZUGRIFF' },
                 { value: 'read_write', label: 'LESEN/SCHREIBEN' },
                 { value: 'read_only', label: 'NUR LESEN' },
             ]
-            if (this.scopeAllowsFullAccess(scopeType)) {
-                return [{ value: 'full_access', label: 'VOLLZUGRIFF' }, ...options]
-            }
-            return options
-        },
-        permissionAllowedForScope(permission, scopeType) {
-            return this.permissionOptionsForScope(scopeType).some((option) => option.value === this.normalizePermission(permission))
         },
         permissionLabel(permission) {
             const normalized = this.normalizePermission(permission)
@@ -363,10 +344,6 @@ export default {
             const currentPermission = this.normalizePermission(target?.permission)
             if (ruleId <= 0 || targetId <= 0) return
             if (permission === currentPermission) return
-            if (!this.permissionAllowedForScope(permission, row?.scope_type)) {
-                this.errorMessage = 'VOLLZUGRIFF ist auf dieser Ebene aktuell nicht erlaubt.'
-                return
-            }
 
             this.pushTargetBusy(targetId)
             this.errorMessage = ''
