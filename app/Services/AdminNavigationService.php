@@ -78,6 +78,16 @@ class AdminNavigationService
             }
         }
 
+        // ABA
+        if ($isSuperAdmin || $this->userHasRole(['admin', 'aba_teacher'])) {
+            $menu[] = [
+                'title' => 'ABA',
+                'icon' => 'mdi-certificate-outline',
+                'to' => '/admin/aba',
+                'is_active' => true,
+            ];
+        }
+
         // MATERIALS
         if ($isSuperAdmin || $this->userHasRole(['admin', 'materials_admin', 'materials_moderator'])) {
             if ($isSuperAdmin || $materialsLicenceStatus !== 'missing') {
@@ -109,9 +119,6 @@ class AdminNavigationService
                 'is_active' => true,
             ];
         }
-
-
-
 
         // PROFILE
         $menu[] = ['title' => $user_name, 'icon' => 'mdi-account', 'to' => '/admin/profile', 'is_active' => true];

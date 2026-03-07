@@ -16,6 +16,7 @@
         "intervention/image": "^3.11",
         "itstudioat/spa": "^0.3.3",
         "lab404/laravel-impersonate": "^1.7",
+        "laravel/ai": "^0.2.6",
         "laravel/framework": "^12.34",
         "laravel/horizon": "^5.41",
         "laravel/tinker": "^2.10.1",
