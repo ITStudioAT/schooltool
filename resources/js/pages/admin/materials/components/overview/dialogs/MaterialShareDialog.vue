@@ -146,43 +146,21 @@
                             <v-expansion-panel>
                                 <v-expansion-panel-title>
                                     <div class="d-flex align-center ga-2 flex-wrap">
-                                        <v-icon icon="mdi-folder-account-outline" size="18" />
-                                        <span class="font-weight-medium">4. Materialiengruppe wählen</span>
+                                        <v-icon icon="mdi-account-group-outline" size="18" />
+                                        <span class="font-weight-medium">4. Gruppe</span>
                                     </div>
                                 </v-expansion-panel-title>
                                 <v-expansion-panel-text>
-                                    <v-select v-model="selectedMaterialsGroupId" :items="materialsGroups" item-title="label" item-value="id" label="Materialiengruppe" variant="outlined" density="comfortable" clearable hide-details="auto" :loading="materialsGroupsLoading" @update:menu="onGroupsMenuOpen('materials', $event)" />
-                                    <v-alert v-if="materialsGroupsError" type="warning" variant="tonal" density="compact" class="mt-2 mb-0">{{ materialsGroupsError }}</v-alert>
-                                    <div class="d-flex flex-wrap ga-2 mt-2 align-center">
-                                        <v-chip v-if="selectedMaterialsGroupLabel" size="small" variant="tonal" color="primary">{{ selectedMaterialsGroupLabel }}</v-chip>
-                                        <template v-if="selectedMaterialsGroupId && assignedGroupTarget(selectedMaterialsGroupId)">
-                                            <v-chip size="x-small" color="success" variant="flat">zugeordnet</v-chip>
-                                            <v-chip size="x-small" :color="permissionChipColor(assignedGroupTarget(selectedMaterialsGroupId)?.permission)" variant="tonal">{{ assignedGroupTarget(selectedMaterialsGroupId)?.permission_label || '-' }}</v-chip>
-                                            <v-btn size="small" color="warning" variant="flat" prepend-icon="mdi-account-remove-outline" :loading="actionTargetIdBusy(assignedGroupTarget(selectedMaterialsGroupId)?.id)" :disabled="!selectedMaterialsGroupId" @click="removeAssignedTarget(assignedGroupTarget(selectedMaterialsGroupId))">Entfernen</v-btn>
-                                        </template>
-                                        <v-btn v-else size="small" color="primary" variant="flat" prepend-icon="mdi-arrow-right" :disabled="!selectedMaterialsGroupId" :loading="actionTargetKeyBusy(`group:${selectedMaterialsGroupId || 0}`)" @click="stageSelectedGroup('materials')">Auswählen</v-btn>
-                                    </div>
-                                </v-expansion-panel-text>
-                            </v-expansion-panel>
-
-                            <v-expansion-panel>
-                                <v-expansion-panel-title>
-                                    <div class="d-flex align-center ga-2 flex-wrap">
-                                        <v-icon icon="mdi-account-multiple-outline" size="18" />
-                                        <span class="font-weight-medium">5. Eigene Gruppe wählen</span>
-                                    </div>
-                                </v-expansion-panel-title>
-                                <v-expansion-panel-text>
-                                    <v-select v-model="selectedOwnGroupId" :items="ownGroups" item-title="label" item-value="id" label="Eigene Gruppe" variant="outlined" density="comfortable" clearable hide-details="auto" :loading="ownGroupsLoading" @update:menu="onGroupsMenuOpen('own', $event)" />
-                                    <v-alert v-if="ownGroupsError" type="warning" variant="tonal" density="compact" class="mt-2 mb-0">{{ ownGroupsError }}</v-alert>
-                                    <div class="d-flex flex-wrap ga-2 mt-2 align-center">
-                                        <v-chip v-if="selectedOwnGroupLabel" size="small" variant="tonal" color="primary">{{ selectedOwnGroupLabel }}</v-chip>
-                                        <template v-if="selectedOwnGroupId && assignedGroupTarget(selectedOwnGroupId)">
-                                            <v-chip size="x-small" color="success" variant="flat">zugeordnet</v-chip>
-                                            <v-chip size="x-small" :color="permissionChipColor(assignedGroupTarget(selectedOwnGroupId)?.permission)" variant="tonal">{{ assignedGroupTarget(selectedOwnGroupId)?.permission_label || '-' }}</v-chip>
-                                            <v-btn size="small" color="warning" variant="flat" prepend-icon="mdi-account-remove-outline" :loading="actionTargetIdBusy(assignedGroupTarget(selectedOwnGroupId)?.id)" :disabled="!selectedOwnGroupId" @click="removeAssignedTarget(assignedGroupTarget(selectedOwnGroupId))">Entfernen</v-btn>
-                                        </template>
-                                        <v-btn v-else size="small" color="primary" variant="flat" prepend-icon="mdi-arrow-right" :disabled="!selectedOwnGroupId" :loading="actionTargetKeyBusy(`group:${selectedOwnGroupId || 0}`)" @click="stageSelectedGroup('own')">Auswählen</v-btn>
+                                    <div class="text-caption text-medium-emphasis mb-2">Mastergruppen</div>
+                                    <div class="d-flex flex-wrap ga-2">
+                                        <v-btn
+                                            v-for="groupMaster in groupMasterOptions"
+                                            :key="`group-master-${groupMaster.value}`"
+                                            size="small"
+                                            variant="outlined"
+                                            color="primary">
+                                            {{ groupMaster.label }}
+                                        </v-btn>
                                     </div>
                                 </v-expansion-panel-text>
                             </v-expansion-panel>
@@ -329,6 +307,13 @@ export default {
         selectedOwnGroupLabel() {
             const id = Number(this.selectedOwnGroupId)
             return this.ownGroups.find((group) => Number(group.id) === id)?.label || ''
+        },
+        groupMasterOptions() {
+            return [
+                { value: 'school', label: 'Schulgruppen' },
+                { value: 'materials', label: 'Materialiengruppen' },
+                { value: 'own', label: 'Eigene Gruppen' },
+            ]
         },
         confirmingPendingShareTarget() {
             const busyKey = String(this.pendingShareTarget?.busyKey || '').trim()

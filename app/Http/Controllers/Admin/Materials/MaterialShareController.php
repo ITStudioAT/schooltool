@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Materials;
 
 use App\Http\Controllers\Controller;
+use App\Models\Import116;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
 use App\Models\MaterialCardClassification;
@@ -18,6 +19,7 @@ use App\Models\MaterialType;
 use App\Models\MaterialUnit;
 use App\Models\MaterialUnitInboxImport;
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Services\Materials\MaterialKeywordService;
@@ -2318,19 +2320,37 @@ class MaterialShareController extends Controller
         $authUser = $this->materialsShareUser();
 
         $type = (string) $request->query('type', '');
-        if (! in_array($type, [UserGroup::TYPE_MATERIALS, UserGroup::TYPE_OWN], true)) {
+        $category = (string) $request->query('category', '');
+        $validCategoriesByType = [
+            UserGroup::TYPE_SCHOOL => ['classes', 'teachers', 'parents', 'own'],
+            UserGroup::TYPE_MATERIALS => [],
+            UserGroup::TYPE_OWN => ['course_groups', 'course_parent_groups', 'own'],
+        ];
+
+        if (! array_key_exists($type, $validCategoriesByType)) {
             throw ValidationException::withMessages([
                 'type' => ['Ungültiger Gruppentyp.'],
             ]);
         }
 
+        if ($category !== '' && ! in_array($category, $validCategoriesByType[$type], true)) {
+            throw ValidationException::withMessages([
+                'category' => ['Ungültige Gruppenkategorie.'],
+            ]);
+        }
+
+        $schoolId = (int) $authUser->school_id;
         $groups = UserGroup::query()
-            ->where('school_id', (int) $authUser->school_id)
+            ->where('school_id', $schoolId)
             ->where('type', $type)
             ->when($type === UserGroup::TYPE_OWN, fn ($query) => $query->where('created_by_user_id', (int) $authUser->id))
             ->withCount('members')
             ->orderBy('name')
-            ->get(['id', 'school_id', 'type', 'name', 'description', 'created_by_user_id']);
+            ->get(['id', 'school_id', 'type', 'name', 'description', 'created_by_user_id', 'teaching_course_id', 'teaching_course_group_type']);
+
+        $groups = $groups
+            ->filter(fn (UserGroup $group) => $this->matchesLookupGroupCategory($group, $category, $schoolId))
+            ->values();
 
         return response()->json([
             'data' => $groups->map(fn (UserGroup $group) => [
@@ -2341,6 +2361,13 @@ class MaterialShareController extends Controller
                 'description' => (string) ($group->description ?? ''),
                 'members_count' => (int) ($group->members_count ?? 0),
                 'label' => (string) $group->name,
+                'is_system_default' => $this->isSystemDefaultSchoolGroup($group, $schoolId),
+                'is_parent_group' => $this->isParentSchoolGroup($group) || $this->isSystemManagedCourseParentGroup($group),
+                'is_all_school_members_group' => $this->isAllSchoolMembersGroup($group),
+                'teaching_course_id' => $group->teaching_course_id ? (int) $group->teaching_course_id : null,
+                'teaching_course_group_type' => $this->isSystemManagedCourseGroup($group)
+                    ? $this->teachingCourseGroupType($group)
+                    : null,
             ])->values(),
         ]);
     }
@@ -2943,6 +2970,294 @@ class MaterialShareController extends Controller
             UserGroup::TYPE_SCHOOL => 'Schulgruppe',
             default => $groupType,
         };
+    }
+
+    private function matchesLookupGroupCategory(UserGroup $group, string $category, int $schoolId): bool
+    {
+        if ($category === '') {
+            return true;
+        }
+
+        return match ((string) $group->type) {
+            UserGroup::TYPE_SCHOOL => match ($category) {
+                'classes' => $this->isSystemDefaultSchoolGroup($group, $schoolId)
+                    && ! $this->isTeacherGroupName($this->normalizeGroupName((string) $group->name))
+                    && ! $this->isParentSchoolGroup($group)
+                    && ! $this->isAllSchoolMembersGroup($group),
+                'teachers' => $this->isSystemDefaultSchoolGroup($group, $schoolId)
+                    && $this->isTeacherGroupName($this->normalizeGroupName((string) $group->name)),
+                'parents' => $this->isSystemDefaultSchoolGroup($group, $schoolId)
+                    && $this->isParentSchoolGroup($group),
+                'own' => ! $this->isSystemDefaultSchoolGroup($group, $schoolId),
+                default => false,
+            },
+            UserGroup::TYPE_OWN => match ($category) {
+                'course_groups' => $this->isSystemManagedCourseGroup($group)
+                    && ! $this->isSystemManagedCourseParentGroup($group),
+                'course_parent_groups' => $this->isSystemManagedCourseParentGroup($group),
+                'own' => ! $this->isSystemManagedCourseGroup($group),
+                default => false,
+            },
+            default => true,
+        };
+    }
+
+    private function isSystemDefaultSchoolGroup(UserGroup $group, int $schoolId): bool
+    {
+        if ((string) $group->type !== UserGroup::TYPE_SCHOOL) {
+            return false;
+        }
+
+        if ($this->isTeacherGroupName($this->normalizeGroupName((string) $group->name))) {
+            return true;
+        }
+
+        return array_key_exists(
+            $this->normalizeGroupName((string) $group->name),
+            $this->requiredSchoolGroupNames($schoolId)
+        );
+    }
+
+    private function requiredSchoolGroupNames(int $schoolId): array
+    {
+        $names = [
+            $this->defaultTeacherGroupName(),
+            $this->defaultAllSchoolMembersGroupName(),
+        ];
+
+        $classGroups = $this->buildImportClassGroupMappings($schoolId);
+        foreach ($classGroups['by_class'] as $classData) {
+            $names[] = $classData['name'];
+            $names[] = $this->parentGroupName((string) $classData['name']);
+        }
+
+        foreach ($classGroups['by_family'] as $familyData) {
+            $names[] = $familyData['name'];
+            $names[] = $this->parentGroupName((string) $familyData['name']);
+        }
+
+        $normalizedMap = [];
+        foreach ($names as $name) {
+            $normalizedName = $this->normalizeGroupName($name);
+            if ($normalizedName === '' || isset($normalizedMap[$normalizedName])) {
+                continue;
+            }
+
+            $normalizedMap[$normalizedName] = $name;
+        }
+
+        return collect($normalizedMap)
+            ->sortBy(fn (string $name) => $this->normalizeGroupName($name))
+            ->all();
+    }
+
+    /**
+     * @return array{
+     *     by_class: array<string, array{name: string, import_ids: array<int, int>}>,
+     *     by_family: array<string, array{name: string, import_ids: array<int, int>}>
+     * }
+     */
+    private function buildImportClassGroupMappings(int $schoolId): array
+    {
+        $result = [
+            'by_class' => [],
+            'by_family' => [],
+        ];
+
+        if (! Schema::hasTable('import116')) {
+            return $result;
+        }
+
+        $importRows = $this->import116QueryForActiveSchoolyear($schoolId)
+            ->whereNotNull('class')
+            ->orderByRaw('LOWER(class)')
+            ->orderBy('id')
+            ->get(['id', 'class']);
+
+        if ($importRows->isEmpty()) {
+            return $result;
+        }
+
+        $familiesWithVariants = [];
+
+        foreach ($importRows as $row) {
+            $className = trim((string) ($row->class ?? ''));
+            if ($className === '') {
+                continue;
+            }
+
+            $normalizedClassName = $this->normalizeGroupName($className);
+            if (! isset($result['by_class'][$normalizedClassName])) {
+                $result['by_class'][$normalizedClassName] = [
+                    'name' => $className,
+                    'import_ids' => [],
+                ];
+            }
+            $result['by_class'][$normalizedClassName]['import_ids'][] = (int) $row->id;
+
+            $familyClassName = $this->detectCombinedClassFamilyName($className);
+            if (! is_string($familyClassName) || $familyClassName === '') {
+                continue;
+            }
+
+            $normalizedFamilyName = $this->normalizeGroupName($familyClassName);
+            if (! isset($familiesWithVariants[$normalizedFamilyName])) {
+                $familiesWithVariants[$normalizedFamilyName] = [
+                    'name' => $familyClassName,
+                    'import_ids' => [],
+                    'class_names' => [],
+                ];
+            }
+
+            $familiesWithVariants[$normalizedFamilyName]['import_ids'][] = (int) $row->id;
+            $familiesWithVariants[$normalizedFamilyName]['class_names'][$normalizedClassName] = true;
+        }
+
+        foreach ($result['by_class'] as $normalizedClassName => $classData) {
+            $result['by_class'][$normalizedClassName]['import_ids'] = collect($classData['import_ids'])
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values()
+                ->all();
+        }
+
+        foreach ($familiesWithVariants as $normalizedFamilyName => $familyData) {
+            if (count($familyData['class_names']) < 2) {
+                continue;
+            }
+
+            $result['by_family'][$normalizedFamilyName] = [
+                'name' => (string) $familyData['name'],
+                'import_ids' => collect($familyData['import_ids'])
+                    ->map(fn ($id) => (int) $id)
+                    ->unique()
+                    ->values()
+                    ->all(),
+            ];
+        }
+
+        return $result;
+    }
+
+    private function detectCombinedClassFamilyName(string $className): ?string
+    {
+        $value = trim((string) preg_replace('/\s+/u', ' ', $className));
+        if ($value === '') {
+            return null;
+        }
+
+        $base = null;
+        if (preg_match('/^(.+?)[\\-_\\/|:;]+.+$/u', $value, $matches) === 1) {
+            $base = trim((string) ($matches[1] ?? ''));
+        } else {
+            $parts = preg_split('/\s+/u', $value) ?: [];
+            if (count($parts) >= 2) {
+                $base = trim((string) ($parts[0] ?? ''));
+            } elseif (preg_match('/^(\\d{1,2}[[:alpha:]]{1,2})([[:alpha:]]{1,3})$/u', preg_replace('/\s+/u', '', $value) ?: '', $matches) === 1) {
+                $base = trim((string) ($matches[1] ?? ''));
+            }
+        }
+
+        if (! is_string($base) || $base === '') {
+            return null;
+        }
+
+        $base = preg_replace('/\s+/u', '', $base) ?: '';
+        if ($base === '') {
+            return null;
+        }
+
+        if (preg_match('/^\\d{1,2}[[:alpha:]]{1,3}$/u', $base) !== 1) {
+            return null;
+        }
+
+        return mb_strtoupper($base);
+    }
+
+    private function import116QueryForActiveSchoolyear(int $schoolId)
+    {
+        $query = Import116::query()->where('school_id', $schoolId);
+        $activeSchoolyearId = $this->activeImportSchoolyearId($schoolId);
+
+        if ($activeSchoolyearId) {
+            return $query->where('schoolyear_id', $activeSchoolyearId);
+        }
+
+        return $query->whereRaw('1 = 0');
+    }
+
+    private function activeImportSchoolyearId(int $schoolId): ?int
+    {
+        if (! Schema::hasTable('school_tools')) {
+            return null;
+        }
+
+        $schoolyearId = SchoolTool::query()
+            ->where('school_id', $schoolId)
+            ->value('active_schoolyear_id');
+
+        return $schoolyearId ? (int) $schoolyearId : null;
+    }
+
+    private function normalizeGroupName(string $name): string
+    {
+        return mb_strtolower(trim((string) preg_replace('/\s+/u', ' ', $name)));
+    }
+
+    private function defaultTeacherGroupName(): string
+    {
+        return 'Lehrer';
+    }
+
+    private function defaultAllSchoolMembersGroupName(): string
+    {
+        return 'Alle Schulmitglieder';
+    }
+
+    private function parentGroupName(string $baseGroupName): string
+    {
+        return trim($baseGroupName).' Eltern';
+    }
+
+    private function isTeacherGroupName(string $normalizedGroupName): bool
+    {
+        return in_array(
+            $normalizedGroupName,
+            [
+                $this->normalizeGroupName($this->defaultTeacherGroupName()),
+                $this->normalizeGroupName('Teacher'),
+            ],
+            true
+        );
+    }
+
+    private function isParentSchoolGroup(UserGroup $group): bool
+    {
+        return (string) $group->type === UserGroup::TYPE_SCHOOL
+            && str_ends_with($this->normalizeGroupName((string) $group->name), $this->normalizeGroupName(' Eltern'));
+    }
+
+    private function isAllSchoolMembersGroup(UserGroup $group): bool
+    {
+        return (string) $group->type === UserGroup::TYPE_SCHOOL
+            && $this->normalizeGroupName((string) $group->name) === $this->normalizeGroupName($this->defaultAllSchoolMembersGroupName());
+    }
+
+    private function teachingCourseGroupType(UserGroup $group): string
+    {
+        return (string) ($group->teaching_course_group_type ?: UserGroup::TEACHING_COURSE_GROUP_TYPE_STUDENTS);
+    }
+
+    private function isSystemManagedCourseGroup(UserGroup $group): bool
+    {
+        return (string) $group->type === UserGroup::TYPE_OWN
+            && ! empty($group->teaching_course_id);
+    }
+
+    private function isSystemManagedCourseParentGroup(UserGroup $group): bool
+    {
+        return $this->isSystemManagedCourseGroup($group)
+            && $this->teachingCourseGroupType($group) === UserGroup::TEACHING_COURSE_GROUP_TYPE_PARENTS;
     }
 
     private function permissionLabel(string $permission): string

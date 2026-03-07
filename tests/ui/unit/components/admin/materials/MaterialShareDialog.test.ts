@@ -71,6 +71,16 @@ describe('MaterialShareDialog', () => {
         expect(ctx.assignedExternalUserTarget?.id).toBe(102)
     })
 
+    it('exposes the master group options for the group share panel', () => {
+        const ctx = createDialogCtx()
+
+        expect(ctx.groupMasterOptions).toEqual([
+            { value: 'school', label: 'Schulgruppen' },
+            { value: 'materials', label: 'Materialiengruppen' },
+            { value: 'own', label: 'Eigene Gruppen' },
+        ])
+    })
+
     it('stages everyone and external-user share payloads', async () => {
         const ctx = createDialogCtx({
             shareEveryoneScope: 'global',

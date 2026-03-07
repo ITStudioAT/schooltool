@@ -5,6 +5,7 @@ import MaterialShareDraftDialog from '@/pages/admin/materials/components/overvie
 vi.mock('axios', () => ({
     default: {
         get: vi.fn(),
+        post: vi.fn(),
     },
 }))
 
@@ -35,19 +36,16 @@ describe('MaterialShareDraftDialog', () => {
 
     beforeEach(() => {
         axiosMock.get.mockReset()
+        axiosMock.post.mockReset()
     })
 
-    it('initializes dialog state and lazily loads groups + schools', () => {
-        const loadGroupOptions = vi.fn()
+    it('initializes dialog state and lazily loads schools', () => {
         const loadExternalSchools = vi.fn()
         const ctx = createDialogCtx({
-            loadGroupOptions,
             loadExternalSchools,
-            groupsLoaded: false,
             externalSchoolsLoaded: false,
             recipientMode: 'group',
             shareMode: 'full_access',
-            selectedGroupId: 3,
             selectedExternalSchoolId: 5,
             externalUserEmail: 'x@y.z',
         })
@@ -56,11 +54,148 @@ describe('MaterialShareDraftDialog', () => {
 
         expect(ctx.recipientMode).toBe('same_school_person')
         expect(ctx.shareMode).toBe('read_only')
-        expect(ctx.selectedGroupId).toBeNull()
         expect(ctx.selectedExternalSchoolId).toBeNull()
         expect(ctx.externalUserEmail).toBe('')
-        expect(loadGroupOptions).toHaveBeenCalledTimes(1)
         expect(loadExternalSchools).toHaveBeenCalledTimes(1)
+    })
+
+    it('exposes the staged group master and category options', () => {
+        const ctx = createDialogCtx()
+
+        expect(ctx.groupMasterOptions).toEqual([
+            { value: 'school', label: 'Schulgruppen' },
+            { value: 'materials', label: 'Materialgruppen' },
+            { value: 'own', label: 'Eigene Gruppen' },
+        ])
+        expect(ctx.schoolGroupCategoryOptions).toEqual([
+            { value: 'classes', label: 'Klassen' },
+            { value: 'teachers', label: 'Lehrer' },
+            { value: 'parents', label: 'Eltern' },
+            { value: 'own', label: 'Eigene Gruppen' },
+        ])
+        expect(ctx.ownGroupCategoryOptions).toEqual([
+            { value: 'course_groups', label: 'Kursgruppen' },
+            { value: 'course_parent_groups', label: 'Eltern Kursgruppen' },
+            { value: 'own', label: 'Eigene Gruppen' },
+        ])
+    })
+
+    it('loads material groups when selecting the material group master', async () => {
+        const ctx = createDialogCtx()
+
+        axiosMock.get.mockResolvedValueOnce({
+            data: {
+                data: [
+                    { id: 7, label: 'Materialgruppe A' },
+                    { id: 9, name: 'Materialgruppe B' },
+                ],
+            },
+        })
+
+        ctx.selectGroupMaster('school')
+        expect(ctx.selectedGroupMaster).toBe('school')
+
+        await ctx.selectGroupMaster('materials')
+
+        expect(ctx.selectedGroupMaster).toBe('materials')
+        expect(axiosMock.get).toHaveBeenCalledWith('/api/admin/materials/shares/lookup-groups', {
+            params: { type: 'materials' },
+        })
+        expect(ctx.materialsGroupOptions).toEqual([
+            { id: 7, label: 'Materialgruppe A', typeLabel: 'Materialgruppe' },
+            { id: 9, label: 'Materialgruppe B', typeLabel: 'Materialgruppe' },
+        ])
+        expect(ctx.materialsGroupsLoaded).toBe(true)
+
+        ctx.selectGroupMaster('own')
+        expect(ctx.selectedGroupMaster).toBe('own')
+    })
+
+    it('loads school groups when selecting a school category', async () => {
+        const ctx = createDialogCtx()
+
+        axiosMock.get.mockResolvedValueOnce({
+            data: {
+                data: [
+                    { id: 12, label: '1A' },
+                    { id: 13, name: '1B' },
+                ],
+            },
+        })
+
+        await ctx.selectGroupMaster('school')
+        await ctx.selectSchoolGroupCategory('classes')
+
+        expect(ctx.selectedGroupMaster).toBe('school')
+        expect(ctx.selectedSchoolGroupCategory).toBe('classes')
+        expect(axiosMock.get).toHaveBeenCalledWith('/api/admin/materials/shares/lookup-groups', {
+            params: {
+                type: 'school',
+                category: 'classes',
+            },
+        })
+        expect(ctx.schoolGroupOptions).toEqual([
+            { id: 12, label: '1A', typeLabel: 'Gruppe' },
+            { id: 13, label: '1B', typeLabel: 'Gruppe' },
+        ])
+    })
+
+    it('treats a selected group as the active recipient', async () => {
+        const ctx = createDialogCtx({
+            recipientMode: 'group',
+        })
+
+        axiosMock.get.mockResolvedValueOnce({
+            data: {
+                data: [
+                    { id: 12, label: '1A', type_label: 'Schulgruppe' },
+                ],
+            },
+        })
+
+        await ctx.selectGroupMaster('school')
+        await ctx.selectSchoolGroupCategory('classes')
+        ctx.selectGroupOption(ctx.schoolGroupOptions[0])
+
+        expect(ctx.hasRecipientSelection).toBe(true)
+        expect(ctx.selectedRecipient).toMatchObject({
+            type: 'group',
+            typeLabel: 'Schulgruppe',
+            label: '1A',
+            payload: {
+                target_type: 'group',
+                user_group_id: 12,
+            },
+        })
+    })
+
+    it('loads own groups when selecting an own-group category', async () => {
+        const ctx = createDialogCtx()
+
+        axiosMock.get.mockResolvedValueOnce({
+            data: {
+                data: [
+                    { id: 21, label: 'Informatik 1' },
+                    { id: 22, name: 'Mathematik 2' },
+                ],
+            },
+        })
+
+        await ctx.selectGroupMaster('own')
+        await ctx.selectOwnGroupCategory('course_groups')
+
+        expect(ctx.selectedGroupMaster).toBe('own')
+        expect(ctx.selectedOwnGroupCategory).toBe('course_groups')
+        expect(axiosMock.get).toHaveBeenCalledWith('/api/admin/materials/shares/lookup-groups', {
+            params: {
+                type: 'own',
+                category: 'course_groups',
+            },
+        })
+        expect(ctx.ownGroupOptions).toEqual([
+            { id: 21, label: 'Informatik 1', typeLabel: 'Gruppe' },
+            { id: 22, label: 'Mathematik 2', typeLabel: 'Gruppe' },
+        ])
     })
 
     it('searches same-school users by query and maps short/email fields', async () => {
@@ -126,36 +261,49 @@ describe('MaterialShareDraftDialog', () => {
         })
     })
 
-    it('emits selected recipient + permission without saving', () => {
+    it('stores the selected recipient and closes the dialog', async () => {
         const ctx = createDialogCtx({
-            recipientMode: 'group',
-            selectedGroupId: 4,
-            groupOptions: [{ id: 4, label: 'Fachgruppe Mathe', type_label: 'Materialiengruppe' }],
+            recipientMode: 'same_school_person',
+            selectedSameSchoolUserId: 4,
+            sameSchoolSearchResults: [{ id: 4, label: 'Fachgruppe Mathe', short: 'FGM', email: 'mathe@test.local' }],
             shareMode: 'full_access',
         })
 
-        ctx.applySelection()
+        axiosMock.post.mockResolvedValueOnce({ data: { data: { id: 77 } } })
 
-        expect(ctx.$emit).toHaveBeenCalledWith('dummy-selected', {
-            target: {
-                level: 'subject',
-                id: 7,
-                label: 'Mathematik',
-                parentLabel: '',
-            },
-            recipient: {
-                type: 'group',
-                typeLabel: 'Gruppe',
-                label: 'Fachgruppe Mathe',
-                metaLabel: 'Materialiengruppe',
-                payload: {
-                    target_type: 'group',
-                    user_group_id: 4,
-                },
-            },
+        await ctx.applySelection()
+
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/shares/targets', {
+            scope_type: 'subject',
+            scope_id: 7,
             permission: 'full_access',
-            permission_label: 'VOLLZUGRIFF',
+            target_type: 'user',
+            user_id: 4,
         })
+        expect(ctx.$emit).toHaveBeenCalledWith('shares-changed')
         expect(ctx.$emit).toHaveBeenCalledWith('update:modelValue', false)
+    })
+
+    it('stores the selected group recipient with group target type', async () => {
+        const ctx = createDialogCtx({
+            recipientMode: 'group',
+            selectedGroupOption: {
+                id: 18,
+                label: 'Projektgruppe',
+                typeLabel: 'Schulgruppe',
+            },
+        })
+
+        axiosMock.post.mockResolvedValueOnce({ data: { data: { id: 78 } } })
+
+        await ctx.applySelection()
+
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/shares/targets', {
+            scope_type: 'subject',
+            scope_id: 7,
+            permission: 'read_only',
+            target_type: 'group',
+            user_group_id: 18,
+        })
     })
 })

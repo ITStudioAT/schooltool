@@ -3,16 +3,11 @@
         <div class="d-flex justify-space-between align-start flex-wrap ga-3 mb-4">
             <div>
                 <div class="text-overline font-weight-bold text-medium-emphasis">Freigaben</div>
-                <h2 class="text-h5 font-weight-bold mb-1">
-                    {{ activeSubmenu === 'overview' ? 'Freigaben-Übersicht' : 'Freigeben' }}
-                </h2>
-                <div class="text-subtitle-1 subline">
-                    {{ activeSubmenu === 'overview' ? 'Übersicht: Was ist freigegeben und für wen.' : 'Neue Freigaben anlegen (Platzhalter).' }}
-                </div>
+                <h2 class="text-h5 font-weight-bold mb-1">Freigaben-Übersicht</h2>
+                <div class="text-subtitle-1 subline">Übersicht: Was ist freigegeben und für wen.</div>
             </div>
             <div class="d-flex align-center flex-wrap ga-2">
                 <v-btn
-                    v-if="activeSubmenu === 'overview'"
                     flat
                     color="primary"
                     prepend-icon="mdi-refresh"
@@ -22,228 +17,143 @@
                 </v-btn>
             </div>
         </div>
+        <v-alert
+            v-if="needsMigration"
+            type="warning"
+            variant="flat"
+            class="mb-4">
+            Freigaben-Tabellen sind noch nicht vorhanden. Bitte Migration ausführen (`php artisan migrate`).
+        </v-alert>
 
-        <div class="d-flex flex-wrap ga-2 mb-4">
-            <v-btn
-                flat
-                rounded="pill"
-                :color="activeSubmenu === 'overview' ? 'primary' : 'secondary'"
-                prepend-icon="mdi-view-list-outline"
-                @click="activeSubmenu = 'overview'">
-                Übersicht
-            </v-btn>
-            <v-btn
-                flat
-                rounded="pill"
-                :color="activeSubmenu === 'create' ? 'primary' : 'secondary'"
-                prepend-icon="mdi-share-variant-outline"
-                @click="activeSubmenu = 'create'">
-                Freigeben
-            </v-btn>
+        <v-alert
+            v-else-if="errorMessage"
+            type="error"
+            variant="flat"
+            class="mb-4">
+            {{ errorMessage }}
+        </v-alert>
+
+        <div v-if="isLoading && rows.length === 0" class="text-body-2 text-medium-emphasis py-6">
+            Lade Freigaben ...
         </div>
 
-        <template v-if="activeSubmenu === 'overview'">
-            <v-alert
-                v-if="needsMigration"
-                type="warning"
-                variant="flat"
-                class="mb-4">
-                Freigaben-Tabellen sind noch nicht vorhanden. Bitte Migration ausführen (`php artisan migrate`).
-            </v-alert>
+        <div v-else-if="!needsMigration && rows.length === 0" class="text-body-2 text-medium-emphasis py-6">
+            Noch keine Freigaben vorhanden.
+        </div>
 
-            <v-alert
-                v-else-if="errorMessage"
-                type="error"
-                variant="flat"
-                class="mb-4">
-                {{ errorMessage }}
-            </v-alert>
-
-            <div v-if="isLoading && rows.length === 0" class="text-body-2 text-medium-emphasis py-6">
-                Lade Freigaben ...
-            </div>
-
-            <div v-else-if="!needsMigration && rows.length === 0" class="text-body-2 text-medium-emphasis py-6">
-                Noch keine Freigaben vorhanden.
-            </div>
-
-            <div v-else class="shares-table-wrap">
-                <v-table density="comfortable">
-                    <thead>
-                        <tr>
-                            <th>Ebene</th>
-                            <th>Objekt</th>
-                            <th>Freigegeben an</th>
-                            <th>Status</th>
-                            <th>Aktualisiert</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="row in rows" :key="`share-row-${row.id}`">
-                            <td>
-                                <v-chip color="primary" variant="flat" size="x-small">
-                                    {{ row.scope_label }}
-                                </v-chip>
-                            </td>
-                            <td>
-                                <div class="font-weight-medium">{{ row.scope_object_label }}</div>
-                            </td>
-                            <td>
-                                <div class="d-flex flex-wrap ga-2">
-                                    <div
-                                        v-for="target in row.targets"
-                                        :key="`share-target-${row.id}-${target.id}`"
-                                        class="share-target-pill d-flex align-center flex-wrap ga-1">
-                                        <v-chip
-                                            :color="targetChipColor(target)"
-                                            variant="flat"
-                                            size="x-small">
-                                            {{ targetChipLabel(target) }}
-                                        </v-chip>
-                                        <v-menu location="bottom end">
-                                            <template #activator="{ props: permissionMenuActivatorProps }">
-                                                <v-chip
-                                                    v-bind="permissionMenuActivatorProps"
-                                                    :color="permissionColor(target.permission)"
-                                                    variant="tonal"
-                                                    size="x-small"
-                                                    append-icon="mdi-chevron-down"
-                                                    :disabled="isTargetBusy(target.id)">
-                                                    {{ permissionLabel(target.permission) }}
-                                                </v-chip>
-                                            </template>
-                                            <v-list density="comfortable" style="min-width: 220px;">
-                                                <v-list-subheader>Berechtigung ändern</v-list-subheader>
-                                                <v-list-item
-                                                    v-for="option in permissionOptionsForScope(row.scope_type)"
-                                                    :key="`share-target-permission-${target.id}-${option.value}`"
-                                                    :active="normalizePermission(target.permission) === option.value"
-                                                    :disabled="isTargetBusy(target.id)"
-                                                    @click="updateTargetPermission(row, target, option.value)">
-                                                    <v-list-item-title>{{ option.label }}</v-list-item-title>
-                                                </v-list-item>
-                                            </v-list>
-                                        </v-menu>
-                                        <v-btn
-                                            icon="mdi-delete-outline"
-                                            size="x-small"
-                                            color="warning"
-                                            variant="text"
-                                            :disabled="isTargetBusy(target.id)"
-                                            :loading="isTargetBusy(target.id)"
-                                            @click="removeTarget(row, target)" />
-                                    </div>
-                                </div>
-                            </td>
-                            <td>
-                                <div class="d-flex align-center ga-2">
-                                    <v-switch
-                                        :model-value="!!row.is_active"
-                                        color="success"
-                                        density="compact"
-                                        hide-details
-                                        inset
-                                        :disabled="isStatusBusy(row.id)"
-                                        :loading="isStatusBusy(row.id)"
-                                        @update:modelValue="updateRuleActive(row, $event)" />
+        <div v-else class="shares-table-wrap">
+            <v-table density="comfortable">
+                <thead>
+                    <tr>
+                        <th>Ebene</th>
+                        <th>Objekt</th>
+                        <th>Freigegeben an</th>
+                        <th>Status</th>
+                        <th>Aktualisiert</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="row in rows" :key="`share-row-${row.id}`">
+                        <td>
+                            <v-chip color="primary" variant="flat" size="x-small">
+                                {{ row.scope_label }}
+                            </v-chip>
+                        </td>
+                        <td>
+                            <div class="font-weight-medium">{{ row.scope_object_label }}</div>
+                        </td>
+                        <td>
+                            <div class="d-flex flex-wrap ga-2">
+                                <div
+                                    v-for="target in row.targets"
+                                    :key="`share-target-${row.id}-${target.id}`"
+                                    class="share-target-pill d-flex align-center flex-wrap ga-1">
                                     <v-chip
-                                        :color="row.is_active ? 'success' : 'secondary'"
+                                        :color="targetChipColor(target)"
                                         variant="flat"
                                         size="x-small">
-                                        {{ row.is_active ? 'aktiv' : 'inaktiv' }}
+                                        {{ targetChipLabel(target) }}
                                     </v-chip>
+                                    <v-menu location="bottom end">
+                                        <template #activator="{ props: permissionMenuActivatorProps }">
+                                            <v-chip
+                                                v-bind="permissionMenuActivatorProps"
+                                                :color="permissionColor(target.permission)"
+                                                variant="tonal"
+                                                size="x-small"
+                                                append-icon="mdi-chevron-down"
+                                                :disabled="isTargetBusy(target.id)">
+                                                {{ permissionLabel(target.permission) }}
+                                            </v-chip>
+                                        </template>
+                                        <v-list density="comfortable" style="min-width: 220px;">
+                                            <v-list-subheader>Berechtigung ändern</v-list-subheader>
+                                            <v-list-item
+                                                v-for="option in permissionOptionsForScope(row.scope_type)"
+                                                :key="`share-target-permission-${target.id}-${option.value}`"
+                                                :active="normalizePermission(target.permission) === option.value"
+                                                :disabled="isTargetBusy(target.id)"
+                                                @click="updateTargetPermission(row, target, option.value)">
+                                                <v-list-item-title>{{ option.label }}</v-list-item-title>
+                                            </v-list-item>
+                                        </v-list>
+                                    </v-menu>
+                                    <v-btn
+                                        icon="mdi-delete-outline"
+                                        size="x-small"
+                                        color="warning"
+                                        variant="text"
+                                        :disabled="isTargetBusy(target.id)"
+                                        :loading="isTargetBusy(target.id)"
+                                        @click="removeTarget(row, target)" />
                                 </div>
-                            </td>
-                            <td>
-                                <span class="text-body-2">{{ formatDateTime(row.updated_at) }}</span>
-                            </td>
-                        </tr>
-                    </tbody>
-                </v-table>
-            </div>
-        </template>
-
-        <template v-else>
-            <v-card class="mb-4" rounded="xl" elevation="0" border>
-                <v-card-text class="d-flex justify-space-between align-center flex-wrap ga-3">
-                    <div>
-                        <div class="d-flex align-center ga-2 flex-wrap">
-                            <div class="text-subtitle-2">Gesamten Workspace freigeben</div>
-                            <v-icon
-                                v-if="workspaceShareIndicatorColor"
-                                icon="mdi-share-variant"
-                                :color="workspaceShareIndicatorColor"
-                                size="18" />
-                        </div>
-                        <div class="text-caption text-medium-emphasis">
-                            Freigabe für alle Materialien im Workspace (Ebene: Alles) verwalten.
-                        </div>
-                    </div>
-                    <v-btn
-                        color="primary"
-                        variant="flat"
-                        prepend-icon="mdi-share-variant"
-                        :disabled="needsMigration"
-                        @click="openWorkspaceShareDialog">
-                        Workspace freigeben
-                    </v-btn>
-                </v-card-text>
-            </v-card>
-
-            <MaterialsOverviewView
-                forced-overview-mode="subjects_contents"
-                :hide-overview-mode-toggle="true"
-                :hide-subjects-overview-print-button="true"
-                :read-only-material-actions="true"
-                :enable-share-buttons="true" />
-
-            <MaterialShareDialog
-                v-model="workspaceShareDialogOpen"
-                :target="workspaceShareTarget"
-                :assignments="workspaceShareAssignments"
-                :loading="workspaceShareAssignmentsLoading"
-                :error="workspaceShareAssignmentsError"
-                @reload-assignments="loadWorkspaceShareAssignments"
-                @shares-changed="handleWorkspaceSharesChanged" />
-        </template>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="d-flex align-center ga-2">
+                                <v-switch
+                                    :model-value="!!row.is_active"
+                                    color="success"
+                                    density="compact"
+                                    hide-details
+                                    inset
+                                    :disabled="isStatusBusy(row.id)"
+                                    :loading="isStatusBusy(row.id)"
+                                    @update:modelValue="updateRuleActive(row, $event)" />
+                                <v-chip
+                                    :color="row.is_active ? 'success' : 'secondary'"
+                                    variant="flat"
+                                    size="x-small">
+                                    {{ row.is_active ? 'aktiv' : 'inaktiv' }}
+                                </v-chip>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="text-body-2">{{ formatDateTime(row.updated_at) }}</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </v-table>
+        </div>
     </v-card>
 </template>
 
 <script>
 import axios from 'axios'
-import MaterialsOverviewView from './MaterialsOverviewView.vue'
-import MaterialShareDialog from '../overview/dialogs/MaterialShareDialog.vue'
 
 export default {
     name: 'MaterialsSharesView',
-    components: {
-        MaterialsOverviewView,
-        MaterialShareDialog,
-    },
     data() {
         return {
-            activeSubmenu: 'overview',
             isLoading: false,
             rows: [],
             needsMigration: false,
             errorMessage: '',
             statusBusyIds: [],
             targetBusyIds: [],
-            workspaceShareDialogOpen: false,
-            workspaceShareAssignmentsLoading: false,
-            workspaceShareAssignmentsError: '',
-            workspaceShareAssignments: [],
         }
     },
     computed: {
-        workspaceShareTarget() {
-            return {
-                level: 'all',
-                id: null,
-                label: 'Gesamter Workspace',
-                parentLabel: '',
-            }
-        },
         workspaceShareIndicatorColor() {
             const rows = Array.isArray(this.rows) ? this.rows : []
             const workspaceRows = rows.filter((row) => String(row?.scope_type || '').trim() === 'all')
@@ -394,7 +304,6 @@ export default {
             if (ruleId <= 0) return
             const mergeRule = (entry) => (Number(entry?.id || 0) === ruleId ? updatedRule : entry)
             this.rows = this.rows.map(mergeRule)
-            this.workspaceShareAssignments = this.workspaceShareAssignments.map(mergeRule)
         },
         removeTargetFromCollections(ruleId, targetId) {
             const pruneRules = (entries) =>
@@ -420,7 +329,6 @@ export default {
                     })
 
             this.rows = pruneRules(this.rows)
-            this.workspaceShareAssignments = pruneRules(this.workspaceShareAssignments)
         },
         async updateRuleActive(row, nextValue) {
             const ruleId = Number(row?.id || 0)
@@ -509,31 +417,6 @@ export default {
             } finally {
                 this.popTargetBusy(targetId)
             }
-        },
-        openWorkspaceShareDialog() {
-            this.workspaceShareAssignments = []
-            this.workspaceShareAssignmentsError = ''
-            this.workspaceShareDialogOpen = true
-            this.loadWorkspaceShareAssignments()
-        },
-        async loadWorkspaceShareAssignments() {
-            this.workspaceShareAssignmentsLoading = true
-            this.workspaceShareAssignmentsError = ''
-            try {
-                const response = await axios.get('/api/admin/materials/shares', {
-                    params: { scope_type: 'all' },
-                })
-                this.workspaceShareAssignments = Array.isArray(response.data?.data) ? response.data.data : []
-            } catch (error) {
-                this.workspaceShareAssignments = []
-                this.workspaceShareAssignmentsError = error?.response?.data?.message || 'Workspace-Freigaben konnten nicht geladen werden.'
-            } finally {
-                this.workspaceShareAssignmentsLoading = false
-            }
-        },
-        handleWorkspaceSharesChanged() {
-            this.loadWorkspaceShareAssignments()
-            this.loadShares()
         },
     },
 }

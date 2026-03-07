@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Licence;
+use App\Models\Import116;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
 use App\Models\MaterialCardClassification;
@@ -17,7 +18,9 @@ use App\Models\MaterialUnit;
 use App\Models\MaterialUnitInboxImport;
 use App\Models\School;
 use App\Models\SchoolLicence;
+use App\Models\SchoolTool;
 use App\Models\Schoolyear;
+use App\Models\TeachingCourse;
 use App\Models\User;
 use App\Models\UserGroup;
 use Carbon\Carbon;
@@ -3128,14 +3131,71 @@ test('lookup external user checks selectable school and email', function () {
         ->assertJsonValidationErrors(['target_school_id']);
 });
 
-test('lookup groups validates type and scopes own groups to creator', function () {
+test('lookup groups validates type and returns category-filtered group lists', function () {
     $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'active_schoolyear_id' => $this->schoolyear->id,
+    ]);
+
+    Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'class' => '1A',
+        'import_user_id' => $this->materialsAdmin->id,
+    ]);
+
+    $schoolClassGroup = UserGroup::query()->create([
+        'school_id' => $this->school->id,
+        'type' => UserGroup::TYPE_SCHOOL,
+        'name' => '1A',
+    ]);
+    $schoolTeacherGroup = UserGroup::query()->create([
+        'school_id' => $this->school->id,
+        'type' => UserGroup::TYPE_SCHOOL,
+        'name' => 'Lehrer',
+    ]);
+    $schoolParentGroup = UserGroup::query()->create([
+        'school_id' => $this->school->id,
+        'type' => UserGroup::TYPE_SCHOOL,
+        'name' => '1A Eltern',
+    ]);
+    $customSchoolGroup = UserGroup::query()->create([
+        'school_id' => $this->school->id,
+        'type' => UserGroup::TYPE_SCHOOL,
+        'name' => 'Projektgruppe',
+        'created_by_user_id' => $this->materialsAdmin->id,
+    ]);
 
     $ownByActor = UserGroup::query()->create([
         'school_id' => $this->school->id,
         'type' => UserGroup::TYPE_OWN,
         'name' => 'Meine Gruppe',
         'created_by_user_id' => $this->materialsAdmin->id,
+    ]);
+    $course = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->materialsAdmin->id,
+        'title' => 'Informatik',
+        'classes' => ['1A'],
+    ]);
+    $ownCourseGroup = UserGroup::query()->create([
+        'school_id' => $this->school->id,
+        'type' => UserGroup::TYPE_OWN,
+        'name' => 'Informatik 1A',
+        'created_by_user_id' => $this->materialsAdmin->id,
+        'teaching_course_id' => $course->id,
+        'teaching_course_group_type' => UserGroup::TEACHING_COURSE_GROUP_TYPE_STUDENTS,
+    ]);
+    $ownCourseParentGroup = UserGroup::query()->create([
+        'school_id' => $this->school->id,
+        'type' => UserGroup::TYPE_OWN,
+        'name' => 'Informatik 1A Eltern',
+        'created_by_user_id' => $this->materialsAdmin->id,
+        'teaching_course_id' => $course->id,
+        'teaching_course_group_type' => UserGroup::TEACHING_COURSE_GROUP_TYPE_PARENTS,
     ]);
 
     UserGroup::query()->create([
@@ -3155,12 +3215,57 @@ test('lookup groups validates type and scopes own groups to creator', function (
     $this->getJson('/api/admin/materials/shares/lookup-groups?type=invalid')
         ->assertStatus(422);
 
-    $ownResponse = $this->getJson('/api/admin/materials/shares/lookup-groups?type=own')
+    $schoolClassesResponse = $this->getJson('/api/admin/materials/shares/lookup-groups?type=school&category=classes')
         ->assertStatus(200)
         ->assertJsonCount(1, 'data');
 
-    expect((int) $ownResponse->json('data.0.id'))->toBe((int) $ownByActor->id);
-    expect((string) $ownResponse->json('data.0.type'))->toBe(UserGroup::TYPE_OWN);
+    expect((int) $schoolClassesResponse->json('data.0.id'))->toBe((int) $schoolClassGroup->id);
+    expect((string) $schoolClassesResponse->json('data.0.type'))->toBe(UserGroup::TYPE_SCHOOL);
+
+    $schoolTeachersResponse = $this->getJson('/api/admin/materials/shares/lookup-groups?type=school&category=teachers')
+        ->assertStatus(200)
+        ->assertJsonCount(1, 'data');
+
+    expect((int) $schoolTeachersResponse->json('data.0.id'))->toBe((int) $schoolTeacherGroup->id);
+
+    $schoolParentsResponse = $this->getJson('/api/admin/materials/shares/lookup-groups?type=school&category=parents')
+        ->assertStatus(200)
+        ->assertJsonCount(1, 'data');
+
+    expect((int) $schoolParentsResponse->json('data.0.id'))->toBe((int) $schoolParentGroup->id);
+
+    $schoolOwnResponse = $this->getJson('/api/admin/materials/shares/lookup-groups?type=school&category=own')
+        ->assertStatus(200)
+        ->assertJsonCount(1, 'data');
+
+    expect((int) $schoolOwnResponse->json('data.0.id'))->toBe((int) $customSchoolGroup->id);
+
+    $ownResponse = $this->getJson('/api/admin/materials/shares/lookup-groups?type=own')
+        ->assertStatus(200)
+        ->assertJsonCount(3, 'data');
+
+    $ownIds = collect($ownResponse->json('data'))->pluck('id')->map(fn ($id) => (int) $id)->all();
+    expect($ownIds)->toContain((int) $ownByActor->id);
+    expect($ownIds)->toContain((int) $ownCourseGroup->id);
+    expect($ownIds)->toContain((int) $ownCourseParentGroup->id);
+
+    $ownCourseResponse = $this->getJson('/api/admin/materials/shares/lookup-groups?type=own&category=course_groups')
+        ->assertStatus(200)
+        ->assertJsonCount(1, 'data');
+
+    expect((int) $ownCourseResponse->json('data.0.id'))->toBe((int) $ownCourseGroup->id);
+
+    $ownCourseParentsResponse = $this->getJson('/api/admin/materials/shares/lookup-groups?type=own&category=course_parent_groups')
+        ->assertStatus(200)
+        ->assertJsonCount(1, 'data');
+
+    expect((int) $ownCourseParentsResponse->json('data.0.id'))->toBe((int) $ownCourseParentGroup->id);
+
+    $ownManualResponse = $this->getJson('/api/admin/materials/shares/lookup-groups?type=own&category=own')
+        ->assertStatus(200)
+        ->assertJsonCount(1, 'data');
+
+    expect((int) $ownManualResponse->json('data.0.id'))->toBe((int) $ownByActor->id);
 
     $materialsResponse = $this->getJson('/api/admin/materials/shares/lookup-groups?type=materials')
         ->assertStatus(200)

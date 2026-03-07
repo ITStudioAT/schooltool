@@ -1006,7 +1006,8 @@
 
     <MaterialShareDraftDialog
         v-model="shareDummyDialogOpen"
-        :target="shareTarget" />
+        :target="shareTarget"
+        @shares-changed="loadShareIndicators" />
 
     <MaterialShareDialog
         v-model="shareDialogOpen"

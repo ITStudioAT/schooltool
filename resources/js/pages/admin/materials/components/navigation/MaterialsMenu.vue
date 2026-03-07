@@ -21,7 +21,7 @@
             prepend-icon="mdi-share-variant-outline"
             :disabled="disabled"
             @click="$emit('update:modelValue', 'teilen')">
-            Teilen
+            Geteilt
         </v-btn>
 
         <v-btn
