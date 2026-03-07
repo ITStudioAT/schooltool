@@ -502,13 +502,15 @@
                         <div class="overview-shared-item-title">
                             {{ item.scopeObjectLabel || item.scopeLabel || 'Freigabe' }}
                         </div>
-                        <v-chip
-                            v-if="item.permissionLabel"
-                            size="x-small"
-                            variant="flat"
-                            :color="linkedPermissionChipColor(item.permission)">
-                            {{ item.permissionLabel }}
-                        </v-chip>
+                        <div class="overview-shared-item-head-actions">
+                            <v-chip
+                                v-if="item.permissionLabel"
+                                size="x-small"
+                                variant="flat"
+                                :color="linkedPermissionChipColor(item.permission)">
+                                {{ item.permissionLabel }}
+                            </v-chip>
+                        </div>
                     </div>
                     <div v-if="item.scopePathLabel" class="overview-shared-item-path">
                         {{ item.scopePathLabel }}
@@ -534,48 +536,84 @@
                         <div v-if="!sharedItemHierarchy(item).length" class="overview-shared-state">
                             Keine Fachstruktur für diese Freigabe vorhanden.
                         </div>
-                        <ul v-else class="overview-shared-hierarchy-list">
+                        <div
+                            v-if="sharedItemHierarchy(item).length && sharedItemHasFullAccess(item)"
+                            class="overview-shared-structure-toggle-row">
+                            <v-btn
+                                size="small"
+                                variant="tonal"
+                                color="primary"
+                                :disabled="actionBusy"
+                                @click="toggleSharedStructureButtons(item.ruleId)">
+                                {{ isSharedStructureButtonsVisible(item.ruleId) ? 'Fach/Themen schließen' : 'Fach/Themen hinzufügen' }}
+                            </v-btn>
+                        </div>
+                        <ul v-if="sharedItemHierarchy(item).length" class="overview-shared-hierarchy-list">
                             <li
                                 v-for="subject in sharedItemHierarchy(item)"
                                 :key="`overview-shared-subject-${item.ruleId}-${subject.id || subject.name}`"
                                 class="overview-shared-hierarchy-item">
+                                <div v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)" class="overview-shared-structure-create-row">
+                                    <v-btn
+                                        prepend-icon="mdi-plus"
+                                        size="small"
+                                        density="comfortable"
+                                        variant="outlined"
+                                        color="primary"
+                                        class="overview-shared-structure-create-button overview-shared-structure-create-button--subject"
+                                        :disabled="actionBusy"
+                                        title="Fach hinzufügen"
+                                        aria-label="Fach hinzufügen"
+                                        @click.stop="previewStructureCreate">
+                                        Fach
+                                    </v-btn>
+                                </div>
                                 <div class="overview-subjects-node overview-subjects-node--subject overview-shared-hierarchy-node">
                                     <div class="overview-shared-hierarchy-node-main">
                                         <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
                                         <span>{{ sharedNodeTitle(item.ruleId, 'subject', subject) }}</span>
+                                        <div
+                                            v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)"
+                                            class="overview-shared-hierarchy-node-inline-actions">
+                                            <v-btn
+                                                icon="mdi-pencil"
+                                                size="x-small"
+                                                density="comfortable"
+                                                variant="text"
+                                                color="primary"
+                                                :disabled="actionBusy"
+                                                title="Fach bearbeiten"
+                                                @click.stop="openSharedRenameDialog(item, 'subject', subject)" />
+                                            <v-btn
+                                                v-if="sharedSubjectCanDelete(subject)"
+                                                icon="mdi-delete-outline"
+                                                size="x-small"
+                                                density="comfortable"
+                                                variant="text"
+                                                color="warning"
+                                                :disabled="actionBusy"
+                                                title="Fach löschen"
+                                                @click.stop="openSharedDeleteDialog(item, 'subject', subject)" />
+                                        </div>
                                     </div>
-                                    <div v-if="sharedItemHasFullAccess(item)" class="overview-shared-node-actions">
+                                    <div
+                                        v-if="sharedItemHasFullAccess(item) && !isSharedStructureButtonsVisible(item.ruleId)"
+                                        class="overview-shared-node-actions">
                                         <v-btn
                                             icon="mdi-file-plus-outline"
                                             size="x-small"
                                             density="comfortable"
-                                            variant="text"
+                                            variant="tonal"
                                             color="primary"
+                                            class="overview-shared-node-action overview-shared-node-action--material"
                                             :disabled="actionBusy"
                                             title="Neues Material in Fach anlegen"
                                             @click.stop="emitSharedCreate(item, 'subject', subject)" />
-                                        <v-btn
-                                            icon="mdi-pencil"
-                                            size="x-small"
-                                            density="comfortable"
-                                            variant="text"
-                                            color="primary"
-                                            :disabled="actionBusy"
-                                            title="Fach bearbeiten"
-                                            @click.stop="openSharedRenameDialog(item, 'subject', subject)" />
-                                        <v-btn
-                                            v-if="sharedSubjectCanDelete(subject)"
-                                            icon="mdi-delete-outline"
-                                            size="x-small"
-                                            density="comfortable"
-                                            variant="text"
-                                            color="warning"
-                                            :disabled="actionBusy"
-                                            title="Fach löschen"
-                                            @click.stop="openSharedDeleteDialog(item, 'subject', subject)" />
                                     </div>
                                 </div>
-                                <ul v-if="Array.isArray(subject.materials) && subject.materials.length" class="overview-subjects-material-list">
+                                <ul
+                                    v-if="Array.isArray(subject.materials) && subject.materials.length && !isSharedStructureButtonsVisible(item.ruleId)"
+                                    class="overview-subjects-material-list">
                                     <li
                                         v-for="material in subject.materials"
                                         :key="`overview-shared-subject-material-${item.ruleId}-${material.id || material.title}`"
@@ -621,43 +659,67 @@
                                         v-for="topic in subject.topics"
                                         :key="`overview-shared-topic-${item.ruleId}-${topic.id || topic.name}`"
                                         class="overview-subjects-item overview-subjects-topic-group">
+                                        <div v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)" class="overview-shared-structure-create-row overview-shared-structure-create-row--topic">
+                                            <v-btn
+                                                prepend-icon="mdi-plus"
+                                                size="small"
+                                                density="comfortable"
+                                                variant="outlined"
+                                                color="primary"
+                                                class="overview-shared-structure-create-button overview-shared-structure-create-button--subject"
+                                                :disabled="actionBusy"
+                                                title="Thema hinzufügen"
+                                                aria-label="Thema hinzufügen"
+                                                @click.stop="previewStructureCreate">
+                                                Thema
+                                            </v-btn>
+                                        </div>
                                         <div class="overview-subjects-node overview-subjects-node--topic overview-shared-hierarchy-node">
                                             <div class="overview-shared-hierarchy-node-main">
                                                 <v-icon size="14" icon="mdi-book-open-page-variant-outline" class="mr-2" />
                                                 <span>{{ sharedNodeTitle(item.ruleId, 'topic', topic) }}</span>
+                                                <div
+                                                    v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)"
+                                                    class="overview-shared-hierarchy-node-inline-actions">
+                                                    <v-btn
+                                                        icon="mdi-pencil"
+                                                        size="x-small"
+                                                        density="comfortable"
+                                                        variant="text"
+                                                        color="primary"
+                                                        :disabled="actionBusy"
+                                                        title="Thema bearbeiten"
+                                                        @click.stop="openSharedRenameDialog(item, 'topic', topic)" />
+                                                    <v-btn
+                                                        v-if="sharedTopicCanDelete(topic)"
+                                                        icon="mdi-delete-outline"
+                                                        size="x-small"
+                                                        density="comfortable"
+                                                        variant="text"
+                                                        color="warning"
+                                                        :disabled="actionBusy"
+                                                        title="Thema löschen"
+                                                        @click.stop="openSharedDeleteDialog(item, 'topic', topic)" />
+                                                </div>
                                             </div>
-                                            <div v-if="sharedItemHasFullAccess(item)" class="overview-shared-node-actions">
+                                            <div
+                                                v-if="sharedItemHasFullAccess(item) && !isSharedStructureButtonsVisible(item.ruleId)"
+                                                class="overview-shared-node-actions">
                                                 <v-btn
                                                     icon="mdi-file-plus-outline"
                                                     size="x-small"
                                                     density="comfortable"
-                                                    variant="text"
+                                                    variant="tonal"
                                                     color="primary"
+                                                    class="overview-shared-node-action overview-shared-node-action--material"
                                                     :disabled="actionBusy"
                                                     title="Neues Material in Thema anlegen"
                                                     @click.stop="emitSharedCreate(item, 'topic', topic, { subject })" />
-                                                <v-btn
-                                                    icon="mdi-pencil"
-                                                    size="x-small"
-                                                    density="comfortable"
-                                                    variant="text"
-                                                    color="primary"
-                                                    :disabled="actionBusy"
-                                                    title="Thema bearbeiten"
-                                                    @click.stop="openSharedRenameDialog(item, 'topic', topic)" />
-                                                <v-btn
-                                                    v-if="sharedTopicCanDelete(topic)"
-                                                    icon="mdi-delete-outline"
-                                                    size="x-small"
-                                                    density="comfortable"
-                                                    variant="text"
-                                                    color="warning"
-                                                    :disabled="actionBusy"
-                                                    title="Thema löschen"
-                                                    @click.stop="openSharedDeleteDialog(item, 'topic', topic)" />
                                             </div>
                                         </div>
-                                        <ul v-if="Array.isArray(topic.materials) && topic.materials.length" class="overview-subjects-material-list">
+                                        <ul
+                                            v-if="Array.isArray(topic.materials) && topic.materials.length && !isSharedStructureButtonsVisible(item.ruleId)"
+                                            class="overview-subjects-material-list">
                                             <li
                                                 v-for="material in topic.materials"
                                                 :key="`overview-shared-topic-material-${item.ruleId}-${material.id || material.title}`"
@@ -707,40 +769,49 @@
                                                     <div class="overview-shared-hierarchy-node-main">
                                                         <v-icon size="13" icon="mdi-bookmark-outline" class="mr-2" />
                                                         <span>{{ sharedNodeTitle(item.ruleId, 'unit', unit) }}</span>
+                                                        <div
+                                                            v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)"
+                                                            class="overview-shared-hierarchy-node-inline-actions">
+                                                            <v-btn
+                                                                icon="mdi-pencil"
+                                                                size="x-small"
+                                                                density="comfortable"
+                                                                variant="text"
+                                                                color="primary"
+                                                                :disabled="actionBusy"
+                                                                title="Bereich bearbeiten"
+                                                                @click.stop="openSharedRenameDialog(item, 'unit', unit)" />
+                                                            <v-btn
+                                                                v-if="sharedUnitCanDelete(unit)"
+                                                                icon="mdi-delete-outline"
+                                                                size="x-small"
+                                                                density="comfortable"
+                                                                variant="text"
+                                                                color="warning"
+                                                                :disabled="actionBusy"
+                                                                title="Bereich löschen"
+                                                                @click.stop="openSharedDeleteDialog(item, 'unit', unit)" />
+                                                        </div>
                                                     </div>
-                                                    <div v-if="sharedItemHasFullAccess(item)" class="overview-shared-node-actions">
+                                                    <div
+                                                        v-if="sharedItemHasFullAccess(item) && !isSharedStructureButtonsVisible(item.ruleId)"
+                                                        class="overview-shared-node-actions">
                                                         <v-btn
                                                             icon="mdi-file-plus-outline"
                                                             size="x-small"
                                                             density="comfortable"
-                                                            variant="text"
+                                                            variant="tonal"
                                                             color="primary"
+                                                            class="overview-shared-node-action overview-shared-node-action--material"
                                                             :disabled="actionBusy"
                                                             title="Neues Material in Unterpunkt anlegen"
                                                             @click.stop="emitSharedCreate(item, 'unit', unit, { subject, topic })" />
-                                                        <v-btn
-                                                            icon="mdi-pencil"
-                                                            size="x-small"
-                                                            density="comfortable"
-                                                            variant="text"
-                                                            color="primary"
-                                                            :disabled="actionBusy"
-                                                            title="Bereich bearbeiten"
-                                                            @click.stop="openSharedRenameDialog(item, 'unit', unit)" />
-                                                        <v-btn
-                                                            v-if="sharedUnitCanDelete(unit)"
-                                                            icon="mdi-delete-outline"
-                                                            size="x-small"
-                                                            density="comfortable"
-                                                            variant="text"
-                                                            color="warning"
-                                                            :disabled="actionBusy"
-                                                            title="Bereich löschen"
-                                                            @click.stop="openSharedDeleteDialog(item, 'unit', unit)" />
                                                     </div>
                                                 </div>
 
-                                                <ul v-if="unit.materials.length" class="overview-subjects-material-list">
+                                                <ul
+                                                    v-if="unit.materials.length && !isSharedStructureButtonsVisible(item.ruleId)"
+                                                    class="overview-subjects-material-list">
                                                     <li
                                                         v-for="material in unit.materials"
                                                         :key="`overview-shared-material-${item.ruleId}-${material.id || material.title}`"
@@ -784,8 +855,40 @@
                                         </ul>
                                     </li>
                                 </ul>
+                                <div v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)" class="overview-shared-structure-create-row overview-shared-structure-create-row--subject-bottom">
+                                    <v-btn
+                                        prepend-icon="mdi-plus"
+                                        size="small"
+                                        density="comfortable"
+                                        variant="outlined"
+                                        color="primary"
+                                        class="overview-shared-structure-create-button overview-shared-structure-create-button--subject"
+                                        :disabled="actionBusy"
+                                        title="Thema hinzufügen"
+                                        aria-label="Thema hinzufügen"
+                                        @click.stop="previewStructureCreate">
+                                        Thema
+                                    </v-btn>
+                                </div>
                             </li>
                         </ul>
+                        <div
+                            v-if="sharedItemHasFullAccess(item) && sharedItemHierarchy(item).length && isSharedStructureButtonsVisible(item.ruleId)"
+                            class="overview-shared-structure-create-row overview-shared-structure-create-row--bottom">
+                            <v-btn
+                                prepend-icon="mdi-plus"
+                                size="small"
+                                density="comfortable"
+                                variant="outlined"
+                                color="primary"
+                                class="overview-shared-structure-create-button overview-shared-structure-create-button--subject"
+                                :disabled="actionBusy"
+                                title="Fach hinzufügen"
+                                aria-label="Fach hinzufügen"
+                                @click.stop="previewStructureCreate">
+                                Fach
+                            </v-btn>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -953,6 +1056,7 @@ export default {
         return {
             workspaceExpanded: true,
             sharedNodeTitleOverrides: {},
+            sharedStructureButtonsVisible: {},
             sharedRenameDialog: createSharedRenameDialogState(),
             sharedRenameDialogError: '',
             sharedRenameDialogSaving: false,
@@ -994,6 +1098,26 @@ export default {
             if (key === '') return
 
             this.$emit('toggle-shared-item-expanded', ruleId)
+        },
+        sharedStructureButtonsKey(ruleId) {
+            const normalizedRuleId = Number(ruleId)
+            if (!Number.isFinite(normalizedRuleId) || normalizedRuleId <= 0) return ''
+            return `shared-structure-buttons-${normalizedRuleId}`
+        },
+        isSharedStructureButtonsVisible(ruleId) {
+            const key = this.sharedStructureButtonsKey(ruleId)
+            return key !== '' ? this.sharedStructureButtonsVisible[key] === true : false
+        },
+        toggleSharedStructureButtons(ruleId) {
+            if (this.actionBusy) return
+
+            const key = this.sharedStructureButtonsKey(ruleId)
+            if (key === '') return
+
+            this.sharedStructureButtonsVisible = {
+                ...this.sharedStructureButtonsVisible,
+                [key]: !this.isSharedStructureButtonsVisible(ruleId),
+            }
         },
         sharedItemCardStyle(ruleId) {
             if (this.isSharedItemExpanded(ruleId)) {
@@ -1318,6 +1442,9 @@ export default {
                 material,
             })
         },
+        previewStructureCreate() {
+            return null
+        },
         emitSharedCreate(item, level, node, lineage = {}) {
             const ruleId = Number(item?.ruleId)
             const nodeId = Number(node?.id)
@@ -1612,6 +1739,40 @@ export default {
     border-top: 1px dashed rgba(53, 84, 117, 0.24);
 }
 
+.overview-shared-structure-toggle-row {
+    margin-bottom: 10px;
+}
+
+.overview-shared-structure-create-row {
+    margin: 6px 0 8px 8px;
+}
+
+.overview-shared-structure-create-row--bottom {
+    margin-top: 10px;
+}
+
+.overview-shared-structure-create-row--topic {
+    margin-left: 24px;
+}
+
+.overview-shared-structure-create-row--subject-bottom {
+    margin-top: 8px;
+    margin-left: 88px;
+}
+
+.overview-shared-structure-create-button {
+    min-width: 32px;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+}
+
+.overview-shared-structure-create-button--subject {
+    min-width: 76px;
+    width: auto;
+    padding-inline: 10px;
+}
+
 .overview-shared-hierarchy-list {
     list-style: none;
     margin: 0;
@@ -1639,11 +1800,20 @@ export default {
     min-width: 0;
 }
 
-.overview-shared-node-actions {
+.overview-shared-hierarchy-node-inline-actions {
     display: inline-flex;
     align-items: center;
     gap: 2px;
+    margin-left: 4px;
+}
+
+.overview-shared-node-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
     flex-shrink: 0;
+    justify-content: flex-end;
 }
 
 .overview-shared-item-head {
@@ -1652,6 +1822,19 @@ export default {
     justify-content: space-between;
     gap: 8px;
     flex-wrap: wrap;
+}
+
+.overview-shared-item-head-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.overview-shared-node-action {
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 600;
 }
 
 .overview-shared-item-title {

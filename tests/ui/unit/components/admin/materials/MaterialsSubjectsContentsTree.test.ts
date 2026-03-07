@@ -185,11 +185,21 @@ describe('MaterialsSubjectsContentsTree', () => {
                 id: 1,
                 name: 'Mathematik',
                 materials: [],
-                topics: [],
+                topics: [
+                    {
+                        id: 11,
+                        name: 'Algebra',
+                        materials: [],
+                        units: [],
+                    },
+                ],
             },
         ])
 
         expect(screen.getByText('Mathematik')).toBeInTheDocument()
+        expect(screen.queryByTitle('Fach hinzufügen')).not.toBeInTheDocument()
+        expect(screen.queryByTitle('Thema hinzufügen')).not.toBeInTheDocument()
+        expect(screen.queryByTitle('Bereich hinzufügen')).not.toBeInTheDocument()
         expect(container.querySelector('.overview-shared-row--spaced')).not.toBeNull()
 
         await fireEvent.click(screen.getByRole('button', { name: /workspace/i }))
@@ -461,7 +471,7 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(screen.getByText('Einheitsmaterial')).toBeInTheDocument()
     })
 
-    it('shows full-access create and edit actions and delete actions only for empty shared branches', async () => {
+    it('shows full-access structure preview buttons, edit actions and delete actions only for empty shared branches', async () => {
         const { emitted } = renderTree([
             {
                 id: 1,
@@ -535,14 +545,17 @@ describe('MaterialsSubjectsContentsTree', () => {
         await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
 
+        expect(screen.getByRole('button', { name: 'Fach/Themen hinzufügen' })).toBeInTheDocument()
+        expect(screen.queryByTitle('Fach hinzufügen')).not.toBeInTheDocument()
+        expect(screen.queryByTitle('Thema hinzufügen')).not.toBeInTheDocument()
+        expect(screen.getByText('Fachmaterial')).toBeInTheDocument()
+        expect(screen.getByText('Themamaterial')).toBeInTheDocument()
         expect(screen.getAllByTitle(/Neues Material in/i)).toHaveLength(5)
-        expect(screen.getAllByTitle(/bearbeiten$/i)).toHaveLength(5)
-        expect(screen.getByTitle('Fach löschen')).toBeInTheDocument()
-        expect(screen.getByTitle('Thema löschen')).toBeInTheDocument()
-        expect(screen.getByTitle('Bereich löschen')).toBeInTheDocument()
-
-        const deleteButtons = screen.getAllByTitle(/löschen$/i)
-        expect(deleteButtons).toHaveLength(3)
+        expect(screen.getAllByTitle('Neues Material in Fach anlegen')).toHaveLength(2)
+        expect(screen.queryByTitle(/bearbeiten$/i)).not.toBeInTheDocument()
+        expect(screen.queryByTitle('Fach löschen')).not.toBeInTheDocument()
+        expect(screen.queryByTitle('Thema löschen')).not.toBeInTheDocument()
+        expect(screen.queryByTitle('Bereich löschen')).not.toBeInTheDocument()
 
         await fireEvent.click(screen.getAllByTitle('Neues Material in Thema anlegen')[0])
 
@@ -553,6 +566,21 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect((openCreateEvents[0]?.[0] as any)?.sharedNodeId).toBe(20)
         expect((openCreateEvents[0]?.[0] as any)?.subject).toBe('Mathematik')
         expect((openCreateEvents[0]?.[0] as any)?.topic).toBe('Leeres Thema')
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Fach/Themen hinzufügen' }))
+
+        expect(screen.getByRole('button', { name: 'Fach/Themen schließen' })).toBeInTheDocument()
+        expect(screen.getAllByRole('button', { name: 'Fach hinzufügen' })).toHaveLength(3)
+        expect(screen.getAllByRole('button', { name: 'Thema hinzufügen' })).toHaveLength(4)
+        expect(screen.getAllByTitle('Fach hinzufügen')).toHaveLength(3)
+        expect(screen.getAllByTitle('Thema hinzufügen')).toHaveLength(4)
+        expect(screen.queryByText('Fachmaterial')).not.toBeInTheDocument()
+        expect(screen.queryByText('Themamaterial')).not.toBeInTheDocument()
+        expect(screen.queryByTitle(/Neues Material in/i)).not.toBeInTheDocument()
+        expect(screen.getAllByTitle(/bearbeiten$/i)).toHaveLength(5)
+
+        const deleteButtons = screen.getAllByTitle(/löschen$/i)
+        expect(deleteButtons).toHaveLength(3)
     })
 
     it('opens a persistent shared rename dialog, validates the title, and updates the visible name', async () => {
@@ -596,6 +624,7 @@ describe('MaterialsSubjectsContentsTree', () => {
 
         await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Fach/Themen hinzufügen' }))
         await fireEvent.click(screen.getByTitle('Fach bearbeiten'))
 
         expect(screen.getByText('Fach umbenennen')).toBeInTheDocument()
@@ -664,6 +693,7 @@ describe('MaterialsSubjectsContentsTree', () => {
 
         await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Fach/Themen hinzufügen' }))
         await fireEvent.click(screen.getByTitle('Fach löschen'))
 
         const dialog = screen.getByText('Wirklich löschen? Das ist nur möglich, wenn keine Materialien zugeordnet sind.').closest('div')
