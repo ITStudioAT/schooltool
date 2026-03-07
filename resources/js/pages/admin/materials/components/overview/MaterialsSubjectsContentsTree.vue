@@ -785,7 +785,12 @@
                             </v-chip>
                         </div>
                     </div>
-                    <div v-if="item.scopePathLabel" class="overview-shared-item-path">
+                    <div class="overview-shared-item-path">
+                        {{ sharedItemTypeLabel(item) }}
+                    </div>
+                    <div
+                        v-if="item.scopePathLabel && String(item.scopePathLabel || '').trim() !== sharedItemTypeLabel(item)"
+                        class="overview-shared-item-meta">
                         {{ item.scopePathLabel }}
                     </div>
                     <div class="overview-shared-item-meta">
@@ -1782,6 +1787,26 @@ export default {
         },
         sharedItemHasFullAccess(item) {
             return String(item?.permission || '').trim() === 'full_access'
+        },
+        sharedItemTypeLabel(item) {
+            const scopeType = String(item?.scopeType || item?.scope_type || '').trim().toLowerCase()
+            if (scopeType === 'all') return 'Workspace'
+            if (scopeType === 'subject') return 'Fach'
+            if (scopeType === 'topic') return 'Thema'
+            if (scopeType === 'unit') return 'Bereich'
+            if (scopeType === 'material') return 'Material'
+
+            const scopeLabel = String(item?.scopeLabel || item?.scope_label || '').trim()
+            if (scopeLabel !== '') {
+                return scopeLabel
+            }
+
+            const fallbackPath = String(item?.scopePathLabel || item?.scope_path_label || '').trim()
+            if (fallbackPath !== '') {
+                return fallbackPath
+            }
+
+            return 'Freigabe'
         },
         sharedItemScopeType(item) {
             return String(item?.scopeType || item?.scope_type || 'all').trim().toLowerCase()

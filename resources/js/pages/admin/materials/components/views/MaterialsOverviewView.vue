@@ -2239,6 +2239,15 @@ export default {
             if (normalized === 'read_write') return 'warning'
             return 'primary'
         },
+        sharedScopeTypeLabel(scopeType) {
+            const normalizedScopeType = String(scopeType || '').trim().toLocaleLowerCase()
+            if (normalizedScopeType === 'all') return 'Workspace'
+            if (normalizedScopeType === 'subject') return 'Fach'
+            if (normalizedScopeType === 'topic') return 'Thema'
+            if (normalizedScopeType === 'unit') return 'Bereich'
+            if (normalizedScopeType === 'material') return 'Material'
+            return 'Freigabe'
+        },
         activeWorkspaceName() {
             return String(this.materialCardStore?.config?.workspace?.name || '').trim()
         },
@@ -2279,7 +2288,7 @@ export default {
             const normalizedScopeType = String(scopeType || '').trim().toLocaleLowerCase()
             if (normalizedScopeType === 'all') return 1
             if (normalizedScopeType === 'subject') return 2
-            if (normalizedScopeType === 'topic') return 2
+            if (normalizedScopeType === 'topic') return 3
             if (normalizedScopeType === 'unit') return 4
             if (normalizedScopeType === 'material') return 5
             return 9
@@ -2351,7 +2360,7 @@ export default {
                     }
 
                     const scopeType = String(item?.scope_type || '').trim() || 'all'
-                    const scopeLabel = String(item?.scope_label || '').trim() || 'Bereich'
+                    const scopeLabel = this.sharedScopeTypeLabel(scopeType)
                     const rawScopeObjectLabel = String(item?.scope_object_label || '').trim() || 'Freigabe'
                     const rawScopePathLabel = String(item?.scope_path_label || '').trim() || ''
                     const scopePathLabel = this.resolveSharedScopePathLabel(scopeType, rawScopePathLabel)

@@ -325,6 +325,35 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect((sharedItem as HTMLElement).style.maxWidth).toBe('28rem')
     })
 
+    it('shows the shared scope type label on card line two', async () => {
+        renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [],
+            },
+        ], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 701,
+                    scopeType: 'topic',
+                    scopeObjectLabel: 'Algebra',
+                    scopePathLabel: 'Mathematik / Algebra',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Eins',
+                    materialsCount: 1,
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+
+        expect(screen.getByText('Thema')).toBeInTheDocument()
+        expect(screen.getByText('Mathematik / Algebra')).toBeInTheDocument()
+    })
+
     it('renders multiple shared workspaces in a wrapped row instead of full-width cards', async () => {
         const { container } = renderTree([
             {
