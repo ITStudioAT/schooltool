@@ -21,26 +21,104 @@
                 :disabled="actionBusy"
                 @click.stop="handleWorkspaceShareClick" />
         </div>
+        <div
+            v-if="workspaceExpanded && enableCreateButtons && items.length"
+            class="overview-shared-structure-toggle-row">
+            <v-btn
+                size="small"
+                variant="tonal"
+                color="primary"
+                :disabled="actionBusy"
+                @click="toggleWorkspaceStructureButtons">
+                {{ isWorkspaceStructureButtonsVisible() ? 'Fach/Themen schließen' : 'Struktur ändern' }}
+            </v-btn>
+        </div>
 
         <ul v-if="workspaceExpanded" class="overview-subjects-list">
             <li
-                v-for="subject in items"
+                v-for="(subject, subjectIndex) in items"
                 :key="`overview-subjects-subject-${subject.id || subject.name}`"
                 class="overview-subjects-item">
+                <div v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()" class="overview-shared-structure-create-row">
+                    <v-btn
+                        prepend-icon="mdi-plus"
+                        size="small"
+                        density="comfortable"
+                        variant="outlined"
+                        color="primary"
+                        class="overview-shared-structure-create-button overview-shared-structure-create-button--subject"
+                        :disabled="actionBusy"
+                        title="Fach hinzufügen"
+                        aria-label="Fach hinzufügen"
+                        @click.stop="openWorkspaceCreateSubjectDialog({ beforeSubjectId: subject?.id })">
+                        Fach
+                    </v-btn>
+                </div>
                 <div class="overview-subjects-group" :style="subjectGroupStyleFn(subject)">
-                        <div class="overview-subjects-node-row">
-                            <div class="overview-subjects-node overview-subjects-node--subject">
-                                <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
-                                <span>{{ subject.name }}</span>
+                    <div class="overview-subjects-node-row">
+                        <div class="overview-subjects-node overview-subjects-node--subject">
+                            <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
+                            <span>{{ workspaceNodeTitle('subject', subject) }}</span>
                             <v-icon
                                 v-if="hasPersistedNodeId(subject.id) && showShareIndicator('subject', subject.id)"
                                 size="16"
                                 icon="mdi-share-variant"
                                 :color="shareIndicatorColorFn('subject', subject.id)"
                                 class="ml-1" />
+                            <div
+                                v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()"
+                                class="overview-shared-hierarchy-node-inline-actions">
+                                <v-btn
+                                    v-if="hasPersistedNodeId(subject.id)"
+                                    icon="mdi-share-variant-outline"
+                                    size="x-small"
+                                    density="comfortable"
+                                    variant="text"
+                                    color="primary"
+                                    :disabled="actionBusy"
+                                    title="Teilen"
+                                    @click.stop="handleShareClick({ level: 'subject', id: subject.id, label: workspaceNodeTitle('subject', subject) })" />
+                                <v-btn
+                                    icon="mdi-arrow-up"
+                                    size="x-small"
+                                    density="comfortable"
+                                    variant="text"
+                                    color="primary"
+                                    :disabled="actionBusy || subjectIndex === 0"
+                                    title="Fach nach oben"
+                                    @click.stop="moveWorkspaceNode('subject', subject, 'up')" />
+                                <v-btn
+                                    icon="mdi-arrow-down"
+                                    size="x-small"
+                                    density="comfortable"
+                                    variant="text"
+                                    color="primary"
+                                    :disabled="actionBusy || subjectIndex >= (items.length - 1)"
+                                    title="Fach nach unten"
+                                    @click.stop="moveWorkspaceNode('subject', subject, 'down')" />
+                                <v-btn
+                                    icon="mdi-pencil"
+                                    size="x-small"
+                                    density="comfortable"
+                                    variant="text"
+                                    color="primary"
+                                    :disabled="actionBusy"
+                                    title="Fach bearbeiten"
+                                    @click.stop="openWorkspaceRenameDialog('subject', subject)" />
+                                <v-btn
+                                    v-if="sharedSubjectCanDelete(subject)"
+                                    icon="mdi-delete-outline"
+                                    size="x-small"
+                                    density="comfortable"
+                                    variant="text"
+                                    color="warning"
+                                    :disabled="actionBusy"
+                                    title="Fach löschen"
+                                    @click.stop="openWorkspaceDeleteDialog('subject', subject)" />
+                            </div>
                         </div>
                         <v-btn
-                            v-if="hasPersistedNodeId(subject.id)"
+                            v-if="hasPersistedNodeId(subject.id) && !isWorkspaceStructureButtonsVisible()"
                             size="x-small"
                             color="primary"
                             variant="tonal"
@@ -48,9 +126,9 @@
                             class="overview-share-btn"
                             :title="'Teilen'"
                             :disabled="actionBusy"
-                            @click.stop="handleShareClick({ level: 'subject', id: subject.id, label: subject.name })" />
+                            @click.stop="handleShareClick({ level: 'subject', id: subject.id, label: workspaceNodeTitle('subject', subject) })" />
                         <v-btn
-                            v-if="enableCreateButtons && hasPersistedNodeId(subject.id)"
+                            v-if="enableCreateButtons && hasPersistedNodeId(subject.id) && !isWorkspaceStructureButtonsVisible()"
                             size="x-small"
                             color="primary"
                             variant="tonal"
@@ -59,13 +137,13 @@
                             :disabled="actionBusy"
                             @click="$emit('open-create', {
                                 level: 'subject',
-                                subject: String(subject.name || '').trim(),
+                                subject: String(workspaceNodeTitle('subject', subject) || '').trim(),
                                 topic: '',
                                 unit: '',
                             })" />
                     </div>
 
-                    <ul v-if="subject.materials.length" class="overview-subjects-material-list">
+                    <ul v-if="subject.materials.length && !isWorkspaceStructureButtonsVisible()" class="overview-subjects-material-list">
                         <li
                             v-for="material in subject.materials"
                             :key="`overview-subjects-subject-material-${subject.id || subject.name}-${material.id}`"
@@ -91,7 +169,7 @@
                                     level: 'material',
                                     id: material.id,
                                     label: material.title,
-                                    parentLabel: subject.name,
+                                    parentLabel: workspaceNodeTitle('subject', subject),
                                     kindLabel: material.typeLabel || '',
                                     kindColor: material.typeColor || 'primary',
                                     statusLabel: statusLabelFn(material.status),
@@ -154,10 +232,25 @@
 
                     <ul v-if="subject.topics.length" class="overview-subjects-list overview-subjects-list--child">
                         <li
-                            v-for="topic in subject.topics"
+                            v-for="(topic, topicIndex) in subject.topics"
                             :key="`overview-subjects-topic-${topic.id || `${subject.id || subject.name}-${topic.name}`}`"
                             class="overview-subjects-item overview-subjects-topic-group"
                             :style="topicGroupStyleFn(subject)">
+                            <div v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()" class="overview-shared-structure-create-row overview-shared-structure-create-row--topic">
+                                <v-btn
+                                    prepend-icon="mdi-plus"
+                                    size="small"
+                                    density="comfortable"
+                                    variant="outlined"
+                                    color="primary"
+                                    class="overview-shared-structure-create-button overview-shared-structure-create-button--subject"
+                                    :disabled="actionBusy"
+                                    title="Thema hinzufügen"
+                                    aria-label="Thema hinzufügen"
+                                    @click.stop="openWorkspaceCreateTopicDialog(subject, { beforeTopicId: topic?.id })">
+                                    Thema
+                                </v-btn>
+                            </div>
                             <div class="overview-subjects-node-row">
                                 <div class="overview-subjects-node overview-subjects-node--topic">
                                     <v-icon
@@ -165,7 +258,7 @@
                                         :icon="topic.isLinked ? 'mdi-link-variant' : 'mdi-book-open-page-variant-outline'"
                                         :color="topic.isLinked ? linkedPermissionChipColor(topic.linkedPermission) : undefined"
                                         class="mr-2" />
-                                    <span>{{ topic.name }}</span>
+                                    <span>{{ workspaceNodeTitle('topic', topic) }}</span>
                                     <v-chip
                                         v-if="topic.isLinked"
                                         size="x-small"
@@ -180,9 +273,60 @@
                                         icon="mdi-share-variant"
                                         :color="shareIndicatorColorFn('topic', topic.id)"
                                         class="ml-1" />
+                                    <div
+                                        v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()"
+                                        class="overview-shared-hierarchy-node-inline-actions">
+                                        <v-btn
+                                            v-if="hasPersistedNodeId(topic.id)"
+                                            icon="mdi-share-variant-outline"
+                                            size="x-small"
+                                            density="comfortable"
+                                            variant="text"
+                                            color="primary"
+                                            :disabled="actionBusy"
+                                            title="Teilen"
+                                            @click.stop="handleShareClick({ level: 'topic', id: topic.id, label: workspaceNodeTitle('topic', topic), parentLabel: workspaceNodeTitle('subject', subject) })" />
+                                        <v-btn
+                                            icon="mdi-arrow-up"
+                                            size="x-small"
+                                            density="comfortable"
+                                            variant="text"
+                                            color="primary"
+                                            :disabled="actionBusy || topicIndex === 0"
+                                            title="Thema nach oben"
+                                            @click.stop="moveWorkspaceNode('topic', topic, 'up')" />
+                                        <v-btn
+                                            icon="mdi-arrow-down"
+                                            size="x-small"
+                                            density="comfortable"
+                                            variant="text"
+                                            color="primary"
+                                            :disabled="actionBusy || topicIndex >= (subject.topics.length - 1)"
+                                            title="Thema nach unten"
+                                            @click.stop="moveWorkspaceNode('topic', topic, 'down')" />
+                                        <v-btn
+                                            icon="mdi-pencil"
+                                            size="x-small"
+                                            density="comfortable"
+                                            variant="text"
+                                            color="primary"
+                                            :disabled="actionBusy"
+                                            title="Thema bearbeiten"
+                                            @click.stop="openWorkspaceRenameDialog('topic', topic)" />
+                                        <v-btn
+                                            v-if="sharedTopicCanDelete(topic)"
+                                            icon="mdi-delete-outline"
+                                            size="x-small"
+                                            density="comfortable"
+                                            variant="text"
+                                            color="warning"
+                                            :disabled="actionBusy"
+                                            title="Thema löschen"
+                                            @click.stop="openWorkspaceDeleteDialog('topic', topic)" />
+                                    </div>
                                 </div>
                                 <v-btn
-                                    v-if="hasPersistedNodeId(topic.id)"
+                                    v-if="hasPersistedNodeId(topic.id) && !isWorkspaceStructureButtonsVisible()"
                                     size="x-small"
                                     color="primary"
                                     variant="tonal"
@@ -190,9 +334,9 @@
                                     class="overview-share-btn"
                                     :title="'Teilen'"
                                     :disabled="actionBusy"
-                                    @click.stop="handleShareClick({ level: 'topic', id: topic.id, label: topic.name, parentLabel: subject.name })" />
+                                    @click.stop="handleShareClick({ level: 'topic', id: topic.id, label: workspaceNodeTitle('topic', topic), parentLabel: workspaceNodeTitle('subject', subject) })" />
                                 <v-btn
-                                    v-if="enableCreateButtons && hasPersistedNodeId(topic.id) && canCreateMaterialInTopic(topic)"
+                                    v-if="enableCreateButtons && hasPersistedNodeId(topic.id) && canCreateMaterialInTopic(topic) && !isWorkspaceStructureButtonsVisible()"
                                     size="x-small"
                                     color="primary"
                                     variant="tonal"
@@ -201,8 +345,8 @@
                                     :disabled="actionBusy"
                                     @click="$emit('open-create', {
                                         level: 'topic',
-                                        subject: String(subject.name || '').trim(),
-                                        topic: String(topic.name || '').trim(),
+                                        subject: String(workspaceNodeTitle('subject', subject) || '').trim(),
+                                        topic: String(workspaceNodeTitle('topic', topic) || '').trim(),
                                         unit: '',
                                     })" />
                                 <v-btn
@@ -219,7 +363,7 @@
                                 </v-btn>
                             </div>
 
-                            <ul v-if="topic.materials.length" class="overview-subjects-material-list">
+                            <ul v-if="topic.materials.length && !isWorkspaceStructureButtonsVisible()" class="overview-subjects-material-list">
                                 <li
                                     v-for="material in topic.materials"
                                     :key="`overview-subjects-topic-material-${topic.id || topic.name}-${material.id}`"
@@ -245,7 +389,7 @@
                                             level: 'material',
                                             id: material.id,
                                             label: material.title,
-                                            parentLabel: `${subject.name} / ${topic.name}`,
+                                            parentLabel: `${workspaceNodeTitle('subject', subject)} / ${workspaceNodeTitle('topic', topic)}`,
                                             kindLabel: material.typeLabel || '',
                                             kindColor: material.typeColor || 'primary',
                                             statusLabel: statusLabelFn(material.status),
@@ -308,9 +452,26 @@
 
                             <ul v-if="topic.units.length" class="overview-subjects-list overview-subjects-list--child">
                                 <li
-                                    v-for="unit in topic.units"
+                                    v-for="(unit, unitIndex) in topic.units"
                                     :key="`overview-subjects-unit-${unit.id || `${topic.id || topic.name}-${unit.name}`}`"
                                     class="overview-subjects-item">
+                                    <div
+                                        v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()"
+                                        class="overview-shared-structure-create-row overview-shared-structure-create-row--unit">
+                                        <v-btn
+                                            prepend-icon="mdi-plus"
+                                            size="small"
+                                            density="comfortable"
+                                            variant="outlined"
+                                            color="primary"
+                                            class="overview-shared-structure-create-button overview-shared-structure-create-button--subject"
+                                            :disabled="actionBusy"
+                                            title="Bereich hinzufügen"
+                                            aria-label="Bereich hinzufügen"
+                                            @click.stop="openWorkspaceCreateUnitDialog(topic, { beforeUnitId: unit?.id })">
+                                            Bereich
+                                        </v-btn>
+                                    </div>
                                     <div class="overview-subjects-node-row">
                                         <div class="overview-subjects-node overview-subjects-node--unit">
                                             <v-icon
@@ -318,7 +479,7 @@
                                                 :icon="unit.isLinked ? 'mdi-link-variant' : 'mdi-circle-medium'"
                                                 :color="unit.isLinked ? linkedPermissionChipColor(unit.linkedPermission) : undefined"
                                                 class="mr-1" />
-                                            <span>{{ unit.name }}</span>
+                                            <span>{{ workspaceNodeTitle('unit', unit) }}</span>
                                             <v-chip
                                                 v-if="unit.isLinked"
                                                 size="x-small"
@@ -333,9 +494,60 @@
                                                 icon="mdi-share-variant"
                                                 :color="shareIndicatorColorFn('unit', unit.id)"
                                                 class="ml-1" />
+                                            <div
+                                                v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()"
+                                                class="overview-shared-hierarchy-node-inline-actions">
+                                                <v-btn
+                                                    v-if="hasPersistedNodeId(unit.id)"
+                                                    icon="mdi-share-variant-outline"
+                                                    size="x-small"
+                                                    density="comfortable"
+                                                    variant="text"
+                                                    color="primary"
+                                                    :disabled="actionBusy"
+                                                    title="Teilen"
+                                                    @click.stop="handleShareClick({ level: 'unit', id: unit.id, label: workspaceNodeTitle('unit', unit), parentLabel: `${workspaceNodeTitle('subject', subject)} / ${workspaceNodeTitle('topic', topic)}` })" />
+                                                <v-btn
+                                                    icon="mdi-arrow-up"
+                                                    size="x-small"
+                                                    density="comfortable"
+                                                    variant="text"
+                                                    color="primary"
+                                                    :disabled="actionBusy || unitIndex === 0"
+                                                    title="Bereich nach oben"
+                                                    @click.stop="moveWorkspaceNode('unit', unit, 'up')" />
+                                                <v-btn
+                                                    icon="mdi-arrow-down"
+                                                    size="x-small"
+                                                    density="comfortable"
+                                                    variant="text"
+                                                    color="primary"
+                                                    :disabled="actionBusy || unitIndex >= (topic.units.length - 1)"
+                                                    title="Bereich nach unten"
+                                                    @click.stop="moveWorkspaceNode('unit', unit, 'down')" />
+                                                <v-btn
+                                                    icon="mdi-pencil"
+                                                    size="x-small"
+                                                    density="comfortable"
+                                                    variant="text"
+                                                    color="primary"
+                                                    :disabled="actionBusy"
+                                                    title="Bereich bearbeiten"
+                                                    @click.stop="openWorkspaceRenameDialog('unit', unit)" />
+                                                <v-btn
+                                                    v-if="sharedUnitCanDelete(unit)"
+                                                    icon="mdi-delete-outline"
+                                                    size="x-small"
+                                                    density="comfortable"
+                                                    variant="text"
+                                                    color="warning"
+                                                    :disabled="actionBusy"
+                                                    title="Bereich löschen"
+                                                    @click.stop="openWorkspaceDeleteDialog('unit', unit)" />
+                                            </div>
                                         </div>
                                         <v-btn
-                                            v-if="hasPersistedNodeId(unit.id)"
+                                            v-if="hasPersistedNodeId(unit.id) && !isWorkspaceStructureButtonsVisible()"
                                             size="x-small"
                                             color="primary"
                                             variant="tonal"
@@ -343,9 +555,9 @@
                                             class="overview-share-btn"
                                             :title="'Teilen'"
                                             :disabled="actionBusy"
-                                            @click.stop="handleShareClick({ level: 'unit', id: unit.id, label: unit.name, parentLabel: `${subject.name} / ${topic.name}` })" />
+                                            @click.stop="handleShareClick({ level: 'unit', id: unit.id, label: workspaceNodeTitle('unit', unit), parentLabel: `${workspaceNodeTitle('subject', subject)} / ${workspaceNodeTitle('topic', topic)}` })" />
                                         <v-btn
-                                            v-if="enableCreateButtons && hasPersistedNodeId(unit.id) && canCreateMaterialInUnit(unit)"
+                                            v-if="enableCreateButtons && hasPersistedNodeId(unit.id) && canCreateMaterialInUnit(unit) && !isWorkspaceStructureButtonsVisible()"
                                             size="x-small"
                                             color="primary"
                                             variant="tonal"
@@ -354,9 +566,9 @@
                                             :disabled="actionBusy"
                                             @click="$emit('open-create', {
                                                 level: 'unit',
-                                                subject: String(subject.name || '').trim(),
-                                                topic: String(topic.name || '').trim(),
-                                                unit: String(unit.name || '').trim(),
+                                                subject: String(workspaceNodeTitle('subject', subject) || '').trim(),
+                                                topic: String(workspaceNodeTitle('topic', topic) || '').trim(),
+                                                unit: String(workspaceNodeTitle('unit', unit) || '').trim(),
                                             })" />
                                         <v-btn
                                             v-if="enableRemoveButtons && hasPersistedNodeId(unit.id) && unit.isLinked"
@@ -372,7 +584,7 @@
                                         </v-btn>
                                     </div>
 
-                                    <ul v-if="unit.materials.length" class="overview-subjects-material-list">
+                                    <ul v-if="unit.materials.length && !isWorkspaceStructureButtonsVisible()" class="overview-subjects-material-list">
                                         <li
                                             v-for="material in unit.materials"
                                             :key="`overview-subjects-unit-material-${unit.id || unit.name}-${material.id}`"
@@ -398,7 +610,7 @@
                                                     level: 'material',
                                                     id: material.id,
                                                     label: material.title,
-                                                    parentLabel: `${subject.name} / ${topic.name} / ${unit.name}`,
+                                                    parentLabel: `${workspaceNodeTitle('subject', subject)} / ${workspaceNodeTitle('topic', topic)} / ${workspaceNodeTitle('unit', unit)}`,
                                                     kindLabel: material.typeLabel || '',
                                                     kindColor: material.typeColor || 'primary',
                                                     statusLabel: statusLabelFn(material.status),
@@ -458,13 +670,64 @@
                                                 class="overview-subjects-share-icon" />
                                         </li>
                                     </ul>
+                                    <div
+                                        v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()"
+                                        class="overview-shared-structure-create-row overview-shared-structure-create-row--topic-bottom">
+                                        <v-btn
+                                            prepend-icon="mdi-plus"
+                                            size="small"
+                                            density="comfortable"
+                                            variant="outlined"
+                                            color="primary"
+                                            class="overview-shared-structure-create-button overview-shared-structure-create-button--subject"
+                                            :disabled="actionBusy"
+                                            title="Bereich hinzufügen"
+                                            aria-label="Bereich hinzufügen"
+                                            @click.stop="openWorkspaceCreateUnitDialog(topic)">
+                                            Bereich
+                                        </v-btn>
+                                    </div>
                                 </li>
                             </ul>
+                            <div
+                                v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()"
+                                class="overview-shared-structure-create-row overview-shared-structure-create-row--subject-bottom">
+                                <v-btn
+                                    prepend-icon="mdi-plus"
+                                    size="small"
+                                    density="comfortable"
+                                    variant="outlined"
+                                    color="primary"
+                                    class="overview-shared-structure-create-button overview-shared-structure-create-button--subject"
+                                    :disabled="actionBusy"
+                                    title="Thema hinzufügen"
+                                    aria-label="Thema hinzufügen"
+                                    @click.stop="openWorkspaceCreateTopicDialog(subject)">
+                                    Thema
+                                </v-btn>
+                            </div>
                         </li>
                     </ul>
                 </div>
             </li>
         </ul>
+        <div
+            v-if="workspaceExpanded && enableCreateButtons && items.length && isWorkspaceStructureButtonsVisible()"
+            class="overview-shared-structure-create-row overview-shared-structure-create-row--bottom">
+            <v-btn
+                prepend-icon="mdi-plus"
+                size="small"
+                density="comfortable"
+                variant="outlined"
+                color="primary"
+                class="overview-shared-structure-create-button overview-shared-structure-create-button--subject"
+                :disabled="actionBusy"
+                title="Fach hinzufügen"
+                aria-label="Fach hinzufügen"
+                @click.stop="openWorkspaceCreateSubjectDialog()">
+                Fach
+            </v-btn>
+        </div>
 
         <div
             class="overview-subjects-node-row overview-workspace-row overview-shared-row"
@@ -503,6 +766,16 @@
                             {{ item.scopeObjectLabel || item.scopeLabel || 'Freigabe' }}
                         </div>
                         <div class="overview-shared-item-head-actions">
+                            <v-btn
+                                v-if="sharedItemHasFullAccess(item)"
+                                size="x-small"
+                                color="primary"
+                                variant="tonal"
+                                icon="mdi-share-variant-outline"
+                                class="overview-share-btn"
+                                :title="'Teilen'"
+                                :disabled="actionBusy"
+                                @click.stop="handleSharedItemShareClick(item)" />
                             <v-chip
                                 v-if="item.permissionLabel"
                                 size="x-small"
@@ -576,6 +849,20 @@
                                             v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)"
                                             class="overview-shared-hierarchy-node-inline-actions">
                                             <v-btn
+                                                v-if="hasPersistedNodeId(subject.id)"
+                                                icon="mdi-share-variant-outline"
+                                                size="x-small"
+                                                density="comfortable"
+                                                variant="text"
+                                                color="primary"
+                                                :disabled="actionBusy"
+                                                title="Teilen"
+                                                @click.stop="handleShareClick({
+                                                    level: 'subject',
+                                                    id: subject.id,
+                                                    label: sharedNodeTitle(item.ruleId, 'subject', subject),
+                                                })" />
+                                            <v-btn
                                                 icon="mdi-arrow-up"
                                                 size="x-small"
                                                 density="comfortable"
@@ -618,6 +905,21 @@
                                         v-if="sharedItemHasFullAccess(item) && !isSharedStructureButtonsVisible(item.ruleId)"
                                         class="overview-shared-node-actions">
                                         <v-btn
+                                            v-if="hasPersistedNodeId(subject.id)"
+                                            icon="mdi-share-variant-outline"
+                                            size="x-small"
+                                            density="comfortable"
+                                            variant="tonal"
+                                            color="primary"
+                                            class="overview-share-btn"
+                                            :disabled="actionBusy"
+                                            :title="'Teilen'"
+                                            @click.stop="handleShareClick({
+                                                level: 'subject',
+                                                id: subject.id,
+                                                label: sharedNodeTitle(item.ruleId, 'subject', subject),
+                                            })" />
+                                        <v-btn
                                             icon="mdi-file-plus-outline"
                                             size="x-small"
                                             density="comfortable"
@@ -644,6 +946,26 @@
                                             @click="openSharedMaterial(item, material)">
                                             {{ material.title }}
                                         </button>
+                                        <v-btn
+                                            v-if="sharedItemHasFullAccess(item) && hasPersistedNodeId(material.id)"
+                                            size="x-small"
+                                            color="primary"
+                                            variant="tonal"
+                                            icon="mdi-share-variant-outline"
+                                            class="overview-share-btn overview-share-btn--material"
+                                            :title="'Teilen'"
+                                            :disabled="actionBusy"
+                                            @click.stop="handleShareClick({
+                                                level: 'material',
+                                                id: material.id,
+                                                label: material.title,
+                                                parentLabel: sharedNodeTitle(item.ruleId, 'subject', subject),
+                                                kindLabel: material.typeLabel || '',
+                                                kindColor: material.typeColor || 'primary',
+                                                statusLabel: material.statusLabel || statusLabelFn(material.status),
+                                                statusColor: material.statusColor || statusColorFn(material.status),
+                                                attachmentsCount: Number(material.attachmentsCount || 0),
+                                            })" />
                                         <v-chip
                                             v-if="material.typeLabel"
                                             size="x-small"
@@ -700,6 +1022,21 @@
                                                     v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)"
                                                     class="overview-shared-hierarchy-node-inline-actions">
                                                     <v-btn
+                                                        v-if="hasPersistedNodeId(topic.id)"
+                                                        icon="mdi-share-variant-outline"
+                                                        size="x-small"
+                                                        density="comfortable"
+                                                        variant="text"
+                                                        color="primary"
+                                                        :disabled="actionBusy"
+                                                        title="Teilen"
+                                                        @click.stop="handleShareClick({
+                                                            level: 'topic',
+                                                            id: topic.id,
+                                                            label: sharedNodeTitle(item.ruleId, 'topic', topic),
+                                                            parentLabel: sharedNodeTitle(item.ruleId, 'subject', subject),
+                                                        })" />
+                                                    <v-btn
                                                         icon="mdi-arrow-up"
                                                         size="x-small"
                                                         density="comfortable"
@@ -742,6 +1079,22 @@
                                                 v-if="sharedItemHasFullAccess(item) && !isSharedStructureButtonsVisible(item.ruleId)"
                                                 class="overview-shared-node-actions">
                                                 <v-btn
+                                                    v-if="hasPersistedNodeId(topic.id)"
+                                                    icon="mdi-share-variant-outline"
+                                                    size="x-small"
+                                                    density="comfortable"
+                                                    variant="tonal"
+                                                    color="primary"
+                                                    class="overview-share-btn"
+                                                    :disabled="actionBusy"
+                                                    :title="'Teilen'"
+                                                    @click.stop="handleShareClick({
+                                                        level: 'topic',
+                                                        id: topic.id,
+                                                        label: sharedNodeTitle(item.ruleId, 'topic', topic),
+                                                        parentLabel: sharedNodeTitle(item.ruleId, 'subject', subject),
+                                                    })" />
+                                                <v-btn
                                                     icon="mdi-file-plus-outline"
                                                     size="x-small"
                                                     density="comfortable"
@@ -768,6 +1121,26 @@
                                                     @click="openSharedMaterial(item, material)">
                                                     {{ material.title }}
                                                 </button>
+                                                <v-btn
+                                                    v-if="sharedItemHasFullAccess(item) && hasPersistedNodeId(material.id)"
+                                                    size="x-small"
+                                                    color="primary"
+                                                    variant="tonal"
+                                                    icon="mdi-share-variant-outline"
+                                                    class="overview-share-btn overview-share-btn--material"
+                                                    :title="'Teilen'"
+                                                    :disabled="actionBusy"
+                                                    @click.stop="handleShareClick({
+                                                        level: 'material',
+                                                        id: material.id,
+                                                        label: material.title,
+                                                        parentLabel: `${sharedNodeTitle(item.ruleId, 'subject', subject)} / ${sharedNodeTitle(item.ruleId, 'topic', topic)}`,
+                                                        kindLabel: material.typeLabel || '',
+                                                        kindColor: material.typeColor || 'primary',
+                                                        statusLabel: material.statusLabel || statusLabelFn(material.status),
+                                                        statusColor: material.statusColor || statusColorFn(material.status),
+                                                        attachmentsCount: Number(material.attachmentsCount || 0),
+                                                    })" />
                                                 <v-chip
                                                     v-if="material.typeLabel"
                                                     size="x-small"
@@ -826,6 +1199,21 @@
                                                             v-if="sharedItemHasFullAccess(item) && isSharedStructureButtonsVisible(item.ruleId)"
                                                             class="overview-shared-hierarchy-node-inline-actions">
                                                             <v-btn
+                                                                v-if="hasPersistedNodeId(unit.id)"
+                                                                icon="mdi-share-variant-outline"
+                                                                size="x-small"
+                                                                density="comfortable"
+                                                                variant="text"
+                                                                color="primary"
+                                                                :disabled="actionBusy"
+                                                                title="Teilen"
+                                                                @click.stop="handleShareClick({
+                                                                    level: 'unit',
+                                                                    id: unit.id,
+                                                                    label: sharedNodeTitle(item.ruleId, 'unit', unit),
+                                                                    parentLabel: `${sharedNodeTitle(item.ruleId, 'subject', subject)} / ${sharedNodeTitle(item.ruleId, 'topic', topic)}`,
+                                                                })" />
+                                                            <v-btn
                                                                 icon="mdi-arrow-up"
                                                                 size="x-small"
                                                                 density="comfortable"
@@ -868,6 +1256,22 @@
                                                         v-if="sharedItemHasFullAccess(item) && !isSharedStructureButtonsVisible(item.ruleId)"
                                                         class="overview-shared-node-actions">
                                                         <v-btn
+                                                            v-if="hasPersistedNodeId(unit.id)"
+                                                            icon="mdi-share-variant-outline"
+                                                            size="x-small"
+                                                            density="comfortable"
+                                                            variant="tonal"
+                                                            color="primary"
+                                                            class="overview-share-btn"
+                                                            :disabled="actionBusy"
+                                                            :title="'Teilen'"
+                                                            @click.stop="handleShareClick({
+                                                                level: 'unit',
+                                                                id: unit.id,
+                                                                label: sharedNodeTitle(item.ruleId, 'unit', unit),
+                                                                parentLabel: `${sharedNodeTitle(item.ruleId, 'subject', subject)} / ${sharedNodeTitle(item.ruleId, 'topic', topic)}`,
+                                                            })" />
+                                                        <v-btn
                                                             icon="mdi-file-plus-outline"
                                                             size="x-small"
                                                             density="comfortable"
@@ -895,6 +1299,26 @@
                                                             @click="openSharedMaterial(item, material)">
                                                             {{ material.title }}
                                                         </button>
+                                                        <v-btn
+                                                            v-if="sharedItemHasFullAccess(item) && hasPersistedNodeId(material.id)"
+                                                            size="x-small"
+                                                            color="primary"
+                                                            variant="tonal"
+                                                            icon="mdi-share-variant-outline"
+                                                            class="overview-share-btn overview-share-btn--material"
+                                                            :title="'Teilen'"
+                                                            :disabled="actionBusy"
+                                                            @click.stop="handleShareClick({
+                                                                level: 'material',
+                                                                id: material.id,
+                                                                label: material.title,
+                                                                parentLabel: `${sharedNodeTitle(item.ruleId, 'subject', subject)} / ${sharedNodeTitle(item.ruleId, 'topic', topic)} / ${sharedNodeTitle(item.ruleId, 'unit', unit)}`,
+                                                                kindLabel: material.typeLabel || '',
+                                                                kindColor: material.typeColor || 'primary',
+                                                                statusLabel: material.statusLabel || statusLabelFn(material.status),
+                                                                statusColor: material.statusColor || statusColorFn(material.status),
+                                                                attachmentsCount: Number(material.attachmentsCount || 0),
+                                                            })" />
                                                         <v-chip
                                                             v-if="material.typeLabel"
                                                             size="x-small"
@@ -1127,6 +1551,7 @@ import { useValidationRulesSetup } from '@/helpers/rules'
 function createSharedRenameDialogState() {
     return {
         open: false,
+        source: 'shared',
         level: '',
         levelLabel: '',
         key: '',
@@ -1139,6 +1564,7 @@ function createSharedRenameDialogState() {
 function createSharedCreateSubjectDialogState() {
     return {
         open: false,
+        source: 'shared',
         ruleId: null,
         beforeSubjectId: null,
         title: '',
@@ -1148,6 +1574,7 @@ function createSharedCreateSubjectDialogState() {
 function createSharedCreateTopicDialogState() {
     return {
         open: false,
+        source: 'shared',
         ruleId: null,
         subjectId: null,
         beforeTopicId: null,
@@ -1158,6 +1585,7 @@ function createSharedCreateTopicDialogState() {
 function createSharedCreateUnitDialogState() {
     return {
         open: false,
+        source: 'shared',
         ruleId: null,
         topicId: null,
         beforeUnitId: null,
@@ -1168,6 +1596,7 @@ function createSharedCreateUnitDialogState() {
 function createSharedDeleteDialogState() {
     return {
         open: false,
+        source: 'shared',
         level: '',
         levelLabel: '',
         ruleId: null,
@@ -1247,10 +1676,11 @@ export default {
             default: () => ({}),
         },
     },
-    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'open-shared-material', 'open-shared-attachments', 'unlink-linked-material', 'unlink-linked-topic', 'unlink-linked-unit', 'toggle-shared-for-me-expanded', 'toggle-shared-item-expanded', 'shared-node-created', 'shared-node-renamed', 'shared-node-deleted', 'shared-node-moved'],
+    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'open-shared-material', 'open-shared-attachments', 'unlink-linked-material', 'unlink-linked-topic', 'unlink-linked-unit', 'toggle-shared-for-me-expanded', 'toggle-shared-item-expanded', 'shared-node-created', 'shared-node-renamed', 'shared-node-deleted', 'shared-node-moved', 'workspace-node-created', 'workspace-node-renamed', 'workspace-node-deleted', 'workspace-node-moved'],
     data() {
         return {
             workspaceExpanded: true,
+            workspaceStructureButtonsVisible: false,
             sharedNodeTitleOverrides: {},
             sharedStructureButtonsVisible: {},
             sharedCreateSubjectDialog: createSharedCreateSubjectDialogState(),
@@ -1281,6 +1711,13 @@ export default {
             if (this.actionBusy) return
 
             this.workspaceExpanded = !this.workspaceExpanded
+        },
+        isWorkspaceStructureButtonsVisible() {
+            return this.workspaceStructureButtonsVisible === true
+        },
+        toggleWorkspaceStructureButtons() {
+            if (this.actionBusy) return
+            this.workspaceStructureButtonsVisible = !this.isWorkspaceStructureButtonsVisible()
         },
         toggleSharedForMeExpanded() {
             if (this.actionBusy) return
@@ -1376,6 +1813,7 @@ export default {
 
             this.sharedCreateSubjectDialog = {
                 open: true,
+                source: 'shared',
                 ruleId,
                 beforeSubjectId: Number.isFinite(beforeSubjectId) && beforeSubjectId > 0 ? beforeSubjectId : null,
                 title: '',
@@ -1400,6 +1838,7 @@ export default {
 
             this.sharedCreateTopicDialog = {
                 open: true,
+                source: 'shared',
                 ruleId,
                 subjectId,
                 beforeTopicId: Number.isFinite(beforeTopicId) && beforeTopicId > 0 ? beforeTopicId : null,
@@ -1425,6 +1864,7 @@ export default {
 
             this.sharedCreateUnitDialog = {
                 open: true,
+                source: 'shared',
                 ruleId,
                 topicId,
                 beforeUnitId: Number.isFinite(beforeUnitId) && beforeUnitId > 0 ? beforeUnitId : null,
@@ -1437,6 +1877,138 @@ export default {
 
             this.sharedCreateUnitDialog = createSharedCreateUnitDialogState()
             this.sharedCreateUnitDialogError = ''
+        },
+        openWorkspaceCreateSubjectDialog(options = {}) {
+            if (this.actionBusy) return
+            if (!this.enableCreateButtons) return
+
+            const beforeSubjectId = Number(options?.beforeSubjectId || 0)
+            this.sharedCreateSubjectDialog = {
+                open: true,
+                source: 'workspace',
+                ruleId: null,
+                beforeSubjectId: Number.isFinite(beforeSubjectId) && beforeSubjectId > 0 ? beforeSubjectId : null,
+                title: '',
+            }
+            this.sharedCreateSubjectDialogError = ''
+        },
+        openWorkspaceCreateTopicDialog(subject, options = {}) {
+            if (this.actionBusy) return
+            if (!this.enableCreateButtons) return
+
+            const subjectId = Number(subject?.id || 0)
+            const beforeTopicId = Number(options?.beforeTopicId || 0)
+            if (!Number.isFinite(subjectId) || subjectId <= 0) return
+
+            this.sharedCreateTopicDialog = {
+                open: true,
+                source: 'workspace',
+                ruleId: null,
+                subjectId,
+                beforeTopicId: Number.isFinite(beforeTopicId) && beforeTopicId > 0 ? beforeTopicId : null,
+                title: '',
+            }
+            this.sharedCreateTopicDialogError = ''
+        },
+        openWorkspaceCreateUnitDialog(topic, options = {}) {
+            if (this.actionBusy) return
+            if (!this.enableCreateButtons) return
+
+            const topicId = Number(topic?.id || 0)
+            const beforeUnitId = Number(options?.beforeUnitId || 0)
+            if (!Number.isFinite(topicId) || topicId <= 0) return
+
+            this.sharedCreateUnitDialog = {
+                open: true,
+                source: 'workspace',
+                ruleId: null,
+                topicId,
+                beforeUnitId: Number.isFinite(beforeUnitId) && beforeUnitId > 0 ? beforeUnitId : null,
+                title: '',
+            }
+            this.sharedCreateUnitDialogError = ''
+        },
+        openWorkspaceRenameDialog(level, node) {
+            if (this.actionBusy) return
+            if (!this.enableCreateButtons) return
+
+            const overrideKey = this.workspaceNodeOverrideKey(level, node)
+            if (overrideKey === '') return
+
+            this.sharedRenameDialog = {
+                open: true,
+                source: 'workspace',
+                level,
+                levelLabel: this.sharedRenameLevelLabel(level),
+                key: overrideKey,
+                ruleId: null,
+                nodeId: Number(node?.id || 0),
+                title: this.workspaceNodeTitle(level, node),
+            }
+            this.sharedRenameDialogError = ''
+        },
+        openWorkspaceDeleteDialog(level, node) {
+            if (this.actionBusy) return
+            if (!this.enableCreateButtons) return
+
+            const nodeId = Number(node?.id || 0)
+            if (!Number.isFinite(nodeId) || nodeId <= 0) return
+
+            this.sharedDeleteDialog = {
+                open: true,
+                source: 'workspace',
+                level,
+                levelLabel: this.sharedRenameLevelLabel(level),
+                ruleId: null,
+                nodeId,
+                label: this.workspaceNodeTitle(level, node),
+            }
+            this.sharedDeleteDialogError = ''
+        },
+        workspaceMoveEndpoint(level, nodeId) {
+            const id = Number(nodeId || 0)
+            if (!Number.isFinite(id) || id <= 0) return ''
+            if (level === 'subject') return `/api/admin/materials/subjects/${id}/move`
+            if (level === 'topic') return `/api/admin/materials/topics/${id}/move`
+            if (level === 'unit') return `/api/admin/materials/units/${id}/move`
+            return ''
+        },
+        workspaceRenameEndpoint(level, nodeId) {
+            const id = Number(nodeId || 0)
+            if (!Number.isFinite(id) || id <= 0) return ''
+            if (level === 'subject') return `/api/admin/materials/subjects/${id}`
+            if (level === 'topic') return `/api/admin/materials/topics/${id}`
+            if (level === 'unit') return `/api/admin/materials/units/${id}`
+            return ''
+        },
+        workspaceDeleteEndpoint(level, nodeId) {
+            return this.workspaceRenameEndpoint(level, nodeId)
+        },
+        async moveWorkspaceNode(level, node, direction) {
+            if (this.actionBusy) return
+            if (!this.enableCreateButtons) return
+
+            const nodeId = Number(node?.id || 0)
+            const endpoint = this.workspaceMoveEndpoint(level, nodeId)
+            const normalizedDirection = String(direction || '').trim().toLowerCase()
+            if (endpoint === '') return
+            if (normalizedDirection !== 'up' && normalizedDirection !== 'down') return
+
+            try {
+                await axios.post(endpoint, {
+                    data: {
+                        direction: normalizedDirection,
+                    },
+                })
+
+                this.$emit('workspace-node-moved', {
+                    level: String(level || ''),
+                    nodeId,
+                    direction: normalizedDirection,
+                })
+            } catch {
+                // Fehler werden bewusst still behandelt; parent refresh bleibt source of truth.
+            }
         },
         sharedDeleteTitle(level) {
             if (level === 'subject') return 'Fach löschen'
@@ -1458,6 +2030,26 @@ export default {
 
             return `${normalizedRuleId}:${level}:${fallbackName}`
         },
+        workspaceNodeOverrideKey(level, node) {
+            const normalizedId = Number(node?.id)
+            if (Number.isFinite(normalizedId) && normalizedId > 0) {
+                return `workspace:${level}:${normalizedId}`
+            }
+
+            const fallbackName = String(node?.name || '').trim()
+            if (fallbackName === '') return ''
+
+            return `workspace:${level}:${fallbackName}`
+        },
+        workspaceNodeTitle(level, node) {
+            const overrideKey = this.workspaceNodeOverrideKey(level, node)
+            const overriddenTitle = overrideKey !== '' ? String(this.sharedNodeTitleOverrides?.[overrideKey] || '').trim() : ''
+            if (overriddenTitle !== '') {
+                return overriddenTitle
+            }
+
+            return String(node?.name || '').trim()
+        },
         sharedNodeTitle(ruleId, level, node) {
             const overrideKey = this.sharedNodeOverrideKey(ruleId, level, node)
             const overriddenTitle = overrideKey !== '' ? String(this.sharedNodeTitleOverrides?.[overrideKey] || '').trim() : ''
@@ -1476,6 +2068,7 @@ export default {
 
             this.sharedRenameDialog = {
                 open: true,
+                source: 'shared',
                 level,
                 levelLabel: this.sharedRenameLevelLabel(level),
                 key: overrideKey,
@@ -1501,6 +2094,7 @@ export default {
 
             this.sharedDeleteDialog = {
                 open: true,
+                source: 'shared',
                 level,
                 levelLabel: this.sharedRenameLevelLabel(level),
                 ruleId,
@@ -1651,7 +2245,8 @@ export default {
             const normalizedTitle = String(this.sharedCreateSubjectDialog?.title || '').trim()
             const ruleId = Number(this.sharedCreateSubjectDialog?.ruleId || 0)
             const beforeSubjectId = Number(this.sharedCreateSubjectDialog?.beforeSubjectId || 0)
-            if (!Number.isFinite(ruleId) || ruleId <= 0) {
+            const isWorkspaceSource = String(this.sharedCreateSubjectDialog?.source || '') === 'workspace'
+            if (!isWorkspaceSource && (!Number.isFinite(ruleId) || ruleId <= 0)) {
                 this.sharedCreateSubjectDialogError = 'Fach konnte nicht erstellt werden.'
                 return
             }
@@ -1666,19 +2261,31 @@ export default {
                     subjectPayload.before_subject_id = beforeSubjectId
                 }
 
-                const response = await axios.post('/api/admin/materials/shares/inbox/subjects', {
-                    rule_id: ruleId,
-                    data: subjectPayload,
-                })
+                const response = isWorkspaceSource
+                    ? await axios.post('/api/admin/materials/subjects', {
+                        data: subjectPayload,
+                    })
+                    : await axios.post('/api/admin/materials/shares/inbox/subjects', {
+                        rule_id: ruleId,
+                        data: subjectPayload,
+                    })
                 const subjectId = Number(response?.data?.data?.id || 0)
                 const savedTitle = String(response?.data?.data?.name || normalizedTitle).trim() || normalizedTitle
 
-                this.$emit('shared-node-created', {
-                    ruleId,
-                    level: 'subject',
-                    nodeId: subjectId,
-                    name: savedTitle,
-                })
+                if (isWorkspaceSource) {
+                    this.$emit('workspace-node-created', {
+                        level: 'subject',
+                        nodeId: subjectId,
+                        name: savedTitle,
+                    })
+                } else {
+                    this.$emit('shared-node-created', {
+                        ruleId,
+                        level: 'subject',
+                        nodeId: subjectId,
+                        name: savedTitle,
+                    })
+                }
                 this.sharedCreateSubjectDialog = createSharedCreateSubjectDialogState()
                 this.sharedCreateSubjectDialogError = ''
             } catch (error) {
@@ -1695,7 +2302,8 @@ export default {
             const ruleId = Number(this.sharedCreateTopicDialog?.ruleId || 0)
             const subjectId = Number(this.sharedCreateTopicDialog?.subjectId || 0)
             const beforeTopicId = Number(this.sharedCreateTopicDialog?.beforeTopicId || 0)
-            if (!Number.isFinite(ruleId) || ruleId <= 0 || !Number.isFinite(subjectId) || subjectId <= 0) {
+            const isWorkspaceSource = String(this.sharedCreateTopicDialog?.source || '') === 'workspace'
+            if ((!isWorkspaceSource && (!Number.isFinite(ruleId) || ruleId <= 0)) || !Number.isFinite(subjectId) || subjectId <= 0) {
                 this.sharedCreateTopicDialogError = 'Thema konnte nicht erstellt werden.'
                 return
             }
@@ -1711,20 +2319,33 @@ export default {
                     topicPayload.before_topic_id = beforeTopicId
                 }
 
-                const response = await axios.post('/api/admin/materials/shares/inbox/topics', {
-                    rule_id: ruleId,
-                    data: topicPayload,
-                })
+                const response = isWorkspaceSource
+                    ? await axios.post('/api/admin/materials/topics', {
+                        data: topicPayload,
+                    })
+                    : await axios.post('/api/admin/materials/shares/inbox/topics', {
+                        rule_id: ruleId,
+                        data: topicPayload,
+                    })
                 const topicId = Number(response?.data?.data?.id || 0)
                 const savedTitle = String(response?.data?.data?.name || normalizedTitle).trim() || normalizedTitle
 
-                this.$emit('shared-node-created', {
-                    ruleId,
-                    level: 'topic',
-                    nodeId: topicId,
-                    name: savedTitle,
-                    parentSubjectId: subjectId,
-                })
+                if (isWorkspaceSource) {
+                    this.$emit('workspace-node-created', {
+                        level: 'topic',
+                        nodeId: topicId,
+                        name: savedTitle,
+                        parentSubjectId: subjectId,
+                    })
+                } else {
+                    this.$emit('shared-node-created', {
+                        ruleId,
+                        level: 'topic',
+                        nodeId: topicId,
+                        name: savedTitle,
+                        parentSubjectId: subjectId,
+                    })
+                }
                 this.sharedCreateTopicDialog = createSharedCreateTopicDialogState()
                 this.sharedCreateTopicDialogError = ''
             } catch (error) {
@@ -1741,7 +2362,8 @@ export default {
             const ruleId = Number(this.sharedCreateUnitDialog?.ruleId || 0)
             const topicId = Number(this.sharedCreateUnitDialog?.topicId || 0)
             const beforeUnitId = Number(this.sharedCreateUnitDialog?.beforeUnitId || 0)
-            if (!Number.isFinite(ruleId) || ruleId <= 0 || !Number.isFinite(topicId) || topicId <= 0) {
+            const isWorkspaceSource = String(this.sharedCreateUnitDialog?.source || '') === 'workspace'
+            if ((!isWorkspaceSource && (!Number.isFinite(ruleId) || ruleId <= 0)) || !Number.isFinite(topicId) || topicId <= 0) {
                 this.sharedCreateUnitDialogError = 'Bereich konnte nicht erstellt werden.'
                 return
             }
@@ -1757,20 +2379,33 @@ export default {
                     unitPayload.before_unit_id = beforeUnitId
                 }
 
-                const response = await axios.post('/api/admin/materials/shares/inbox/units', {
-                    rule_id: ruleId,
-                    data: unitPayload,
-                })
+                const response = isWorkspaceSource
+                    ? await axios.post('/api/admin/materials/units', {
+                        data: unitPayload,
+                    })
+                    : await axios.post('/api/admin/materials/shares/inbox/units', {
+                        rule_id: ruleId,
+                        data: unitPayload,
+                    })
                 const unitId = Number(response?.data?.data?.id || 0)
                 const savedTitle = String(response?.data?.data?.name || normalizedTitle).trim() || normalizedTitle
 
-                this.$emit('shared-node-created', {
-                    ruleId,
-                    level: 'unit',
-                    nodeId: unitId,
-                    name: savedTitle,
-                    parentTopicId: topicId,
-                })
+                if (isWorkspaceSource) {
+                    this.$emit('workspace-node-created', {
+                        level: 'unit',
+                        nodeId: unitId,
+                        name: savedTitle,
+                        parentTopicId: topicId,
+                    })
+                } else {
+                    this.$emit('shared-node-created', {
+                        ruleId,
+                        level: 'unit',
+                        nodeId: unitId,
+                        name: savedTitle,
+                        parentTopicId: topicId,
+                    })
+                }
                 this.sharedCreateUnitDialog = createSharedCreateUnitDialogState()
                 this.sharedCreateUnitDialogError = ''
             } catch (error) {
@@ -1784,9 +2419,12 @@ export default {
             if (this.sharedRenameDialogSaving) return
 
             const normalizedTitle = String(this.sharedRenameDialog?.title || '').trim()
-            const endpoint = this.sharedRenameEndpoint(this.sharedRenameDialog?.level, this.sharedRenameDialog?.nodeId)
             const ruleId = Number(this.sharedRenameDialog?.ruleId || 0)
-            if (endpoint === '' || !Number.isFinite(ruleId) || ruleId <= 0) {
+            const isWorkspaceSource = String(this.sharedRenameDialog?.source || '') === 'workspace'
+            const endpoint = isWorkspaceSource
+                ? this.workspaceRenameEndpoint(this.sharedRenameDialog?.level, this.sharedRenameDialog?.nodeId)
+                : this.sharedRenameEndpoint(this.sharedRenameDialog?.level, this.sharedRenameDialog?.nodeId)
+            if (endpoint === '' || (!isWorkspaceSource && (!Number.isFinite(ruleId) || ruleId <= 0))) {
                 this.sharedRenameDialogError = 'Element konnte nicht gespeichert werden.'
                 return
             }
@@ -1794,12 +2432,18 @@ export default {
             this.sharedRenameDialogSaving = true
 
             try {
-                const response = await axios.put(endpoint, {
-                    rule_id: ruleId,
-                    data: {
-                        name: normalizedTitle,
-                    },
-                })
+                const response = isWorkspaceSource
+                    ? await axios.put(endpoint, {
+                        data: {
+                            name: normalizedTitle,
+                        },
+                    })
+                    : await axios.put(endpoint, {
+                        rule_id: ruleId,
+                        data: {
+                            name: normalizedTitle,
+                        },
+                    })
                 const savedTitle = String(response?.data?.data?.name || normalizedTitle).trim() || normalizedTitle
 
                 this.sharedNodeTitleOverrides = {
@@ -1807,12 +2451,20 @@ export default {
                     [this.sharedRenameDialog.key]: savedTitle,
                 }
 
-                this.$emit('shared-node-renamed', {
-                    ruleId,
-                    level: String(this.sharedRenameDialog?.level || ''),
-                    nodeId: Number(this.sharedRenameDialog?.nodeId || 0),
-                    name: savedTitle,
-                })
+                if (isWorkspaceSource) {
+                    this.$emit('workspace-node-renamed', {
+                        level: String(this.sharedRenameDialog?.level || ''),
+                        nodeId: Number(this.sharedRenameDialog?.nodeId || 0),
+                        name: savedTitle,
+                    })
+                } else {
+                    this.$emit('shared-node-renamed', {
+                        ruleId,
+                        level: String(this.sharedRenameDialog?.level || ''),
+                        nodeId: Number(this.sharedRenameDialog?.nodeId || 0),
+                        name: savedTitle,
+                    })
+                }
                 this.sharedRenameDialog = createSharedRenameDialogState()
                 this.sharedRenameDialogError = ''
             } catch (error) {
@@ -1824,10 +2476,13 @@ export default {
         async confirmSharedDeleteDialog() {
             if (this.sharedDeleteDialogDeleting) return
 
-            const endpoint = this.sharedDeleteEndpoint(this.sharedDeleteDialog?.level, this.sharedDeleteDialog?.nodeId)
             const ruleId = Number(this.sharedDeleteDialog?.ruleId || 0)
             const nodeId = Number(this.sharedDeleteDialog?.nodeId || 0)
-            if (endpoint === '' || !Number.isFinite(ruleId) || ruleId <= 0 || !Number.isFinite(nodeId) || nodeId <= 0) {
+            const isWorkspaceSource = String(this.sharedDeleteDialog?.source || '') === 'workspace'
+            const endpoint = isWorkspaceSource
+                ? this.workspaceDeleteEndpoint(this.sharedDeleteDialog?.level, nodeId)
+                : this.sharedDeleteEndpoint(this.sharedDeleteDialog?.level, nodeId)
+            if (endpoint === '' || (!isWorkspaceSource && (!Number.isFinite(ruleId) || ruleId <= 0)) || !Number.isFinite(nodeId) || nodeId <= 0) {
                 this.sharedDeleteDialogError = 'Element konnte nicht gelöscht werden.'
                 return
             }
@@ -1835,17 +2490,28 @@ export default {
             this.sharedDeleteDialogDeleting = true
 
             try {
-                await axios.delete(endpoint, {
-                    data: {
-                        rule_id: ruleId,
-                    },
-                })
+                if (isWorkspaceSource) {
+                    await axios.delete(endpoint)
+                } else {
+                    await axios.delete(endpoint, {
+                        data: {
+                            rule_id: ruleId,
+                        },
+                    })
+                }
 
-                this.$emit('shared-node-deleted', {
-                    ruleId,
-                    level: String(this.sharedDeleteDialog?.level || ''),
-                    nodeId,
-                })
+                if (isWorkspaceSource) {
+                    this.$emit('workspace-node-deleted', {
+                        level: String(this.sharedDeleteDialog?.level || ''),
+                        nodeId,
+                    })
+                } else {
+                    this.$emit('shared-node-deleted', {
+                        ruleId,
+                        level: String(this.sharedDeleteDialog?.level || ''),
+                        nodeId,
+                    })
+                }
                 this.sharedDeleteDialog = createSharedDeleteDialogState()
                 this.sharedDeleteDialogError = ''
             } catch (error) {
@@ -1973,6 +2639,40 @@ export default {
                 sharedRuleId: ruleId,
                 sharedNodeLevel: normalizedLevel,
                 sharedNodeId: nodeId,
+            })
+        },
+        sharedScopeLevel(scopeType) {
+            const normalized = String(scopeType || '').trim().toLowerCase()
+            if (normalized === 'all') return 'all'
+            if (normalized === 'subject') return 'subject'
+            if (normalized === 'topic') return 'topic'
+            if (normalized === 'unit') return 'unit'
+            if (normalized === 'material') return 'material'
+            return ''
+        },
+        handleSharedItemShareClick(item) {
+            const level = this.sharedScopeLevel(this.sharedItemScopeType(item))
+            if (level === '') return
+
+            const label = String(item?.scopeObjectLabel || item?.scopeLabel || 'Freigabe').trim()
+            if (level === 'all') {
+                this.handleShareClick({
+                    level: 'all',
+                    id: null,
+                    label: label || 'Workspace',
+                    parentLabel: '',
+                })
+                return
+            }
+
+            const scopeId = Number(item?.scopeId || item?.scope_id || 0)
+            if (!Number.isFinite(scopeId) || scopeId <= 0) return
+
+            this.handleShareClick({
+                level,
+                id: scopeId,
+                label,
+                parentLabel: String(item?.scopePathLabel || '').trim(),
             })
         },
         handleShareClick(target) {

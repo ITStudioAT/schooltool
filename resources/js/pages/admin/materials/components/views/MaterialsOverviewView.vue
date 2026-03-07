@@ -445,6 +445,10 @@
                     @shared-node-renamed="refreshSharedStructureTree"
                     @shared-node-deleted="refreshSharedStructureTree"
                     @shared-node-moved="refreshSharedStructureTree"
+                    @workspace-node-created="refreshWorkspaceStructureTree"
+                    @workspace-node-renamed="refreshWorkspaceStructureTree"
+                    @workspace-node-deleted="refreshWorkspaceStructureTree"
+                    @workspace-node-moved="refreshWorkspaceStructureTree"
                     @open-material="openDetailDialog"
                     @open-shared-material="openSharedMaterialFromTree"
                     @open-share="openShareDialog"
@@ -2786,6 +2790,9 @@ export default {
         },
         async refreshSharedStructureTree() {
             await this.loadSharedObjectsForMe()
+        },
+        async refreshWorkspaceStructureTree() {
+            await this.loadCards(null, { forceFilterCountRefresh: true })
         },
         canExpandSharedHierarchy(item) {
             return Array.isArray(item?.hierarchy) && item.hierarchy.length > 0

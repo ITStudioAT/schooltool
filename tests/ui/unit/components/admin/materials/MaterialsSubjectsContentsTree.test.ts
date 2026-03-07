@@ -92,6 +92,7 @@ const vuetifyStubs = {
 function renderTree(
     items: any[],
     options: {
+        enableCreateButtons?: boolean
         enableRemoveButtons?: boolean
         enableShareButtons?: boolean
         sharedObjectsForMe?: any[]
@@ -124,7 +125,7 @@ function renderTree(
                 :items="items"
                 :action-busy="false"
                 :enable-share-buttons="enableShareButtons"
-                :enable-create-buttons="false"
+                :enable-create-buttons="enableCreateButtons"
                 :enable-remove-buttons="enableRemoveButtons"
                 :show-share-indicators="false"
                 :share-indicator-color-fn="() => ''"
@@ -141,6 +142,10 @@ function renderTree(
                 @toggle-shared-item-expanded="toggleSharedItemExpanded"
                 @shared-node-created="$emit('shared-node-created', $event)"
                 @shared-node-moved="$emit('shared-node-moved', $event)"
+                @workspace-node-created="$emit('workspace-node-created', $event)"
+                @workspace-node-renamed="$emit('workspace-node-renamed', $event)"
+                @workspace-node-deleted="$emit('workspace-node-deleted', $event)"
+                @workspace-node-moved="$emit('workspace-node-moved', $event)"
                 @open-material="$emit('open-material', $event)"
                 @open-share="$emit('open-share', $event)"
                 @open-create="$emit('open-create', $event)"
@@ -153,6 +158,7 @@ function renderTree(
         `,
         props: {
             items: { type: Array, required: true },
+            enableCreateButtons: { type: Boolean, default: false },
             enableShareButtons: { type: Boolean, default: false },
             enableRemoveButtons: { type: Boolean, default: false },
             sharedObjectsForMe: { type: Array, default: () => [] },
@@ -164,6 +170,7 @@ function renderTree(
     return render(Host, {
         props: {
             items,
+            enableCreateButtons: options.enableCreateButtons === true,
             enableShareButtons: options.enableShareButtons === true,
             enableRemoveButtons: options.enableRemoveButtons === true,
             sharedObjectsForMe: Array.isArray(options.sharedObjectsForMe) ? options.sharedObjectsForMe : [],
@@ -215,6 +222,70 @@ describe('MaterialsSubjectsContentsTree', () => {
 
         expect(screen.getByText('Mathematik')).toBeInTheDocument()
         expect(container.querySelector('.overview-shared-row--spaced')).not.toBeNull()
+    })
+
+    it('shows workspace Struktur ändern mode with node actions and emits workspace move refresh event', async () => {
+        axiosMock.post.mockResolvedValue({ data: {} })
+
+        const { emitted } = renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [
+                    {
+                        id: 11,
+                        name: 'Algebra',
+                        materials: [],
+                        units: [],
+                    },
+                    {
+                        id: 12,
+                        name: 'Geometrie',
+                        materials: [],
+                        units: [],
+                    },
+                ],
+            },
+            {
+                id: 2,
+                name: 'Biologie',
+                materials: [],
+                topics: [],
+            },
+        ], {
+            enableCreateButtons: true,
+        })
+
+        expect(screen.getByText('Mathematik')).toBeInTheDocument()
+        expect(screen.queryByTitle('Fach nach oben')).not.toBeInTheDocument()
+        expect(screen.getByText('Struktur ändern')).toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
+
+        expect(screen.getByRole('button', { name: 'Fach/Themen schließen' })).toBeInTheDocument()
+        expect(screen.getAllByTitle('Fach hinzufügen').length).toBeGreaterThan(0)
+        expect(screen.getAllByTitle('Thema hinzufügen').length).toBeGreaterThan(0)
+        expect(screen.queryByTitle(/Neues Material in/i)).not.toBeInTheDocument()
+        const mathematikRow = screen.getByText('Mathematik').closest('.overview-subjects-node-row') as HTMLElement
+        expect(within(mathematikRow).getByTitle('Fach nach oben')).toBeDisabled()
+        expect(within(mathematikRow).getByTitle('Fach nach unten')).not.toBeDisabled()
+
+        const algebraRow = screen.getByText('Algebra').closest('.overview-subjects-node-row') as HTMLElement
+        await fireEvent.click(within(algebraRow).getByTitle('Thema nach unten'))
+
+        expect(axiosMock.post).toHaveBeenCalledTimes(1)
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/topics/11/move', {
+            data: {
+                direction: 'down',
+            },
+        })
+
+        const movedEvents = emitted('workspace-node-moved') || []
+        expect(movedEvents).toHaveLength(1)
+        expect((movedEvents[0]?.[0] as any)?.level).toBe('topic')
+        expect((movedEvents[0]?.[0] as any)?.nodeId).toBe(11)
+        expect((movedEvents[0]?.[0] as any)?.direction).toBe('down')
     })
 
     it('shows shared objects when Für mich geteilt is expanded', async () => {
@@ -476,7 +547,7 @@ describe('MaterialsSubjectsContentsTree', () => {
     })
 
     it('shows full-access structure preview buttons, edit actions and delete actions only for empty shared branches', async () => {
-        const { emitted } = renderTree([
+        const { emitted, container } = renderTree([
             {
                 id: 1,
                 name: 'Mathematik',
@@ -556,10 +627,26 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(screen.getByText('Themamaterial')).toBeInTheDocument()
         expect(screen.getAllByTitle(/Neues Material in/i)).toHaveLength(5)
         expect(screen.getAllByTitle('Neues Material in Fach anlegen')).toHaveLength(2)
+        const sharedItem = container.querySelector('.overview-shared-item') as HTMLElement
+        expect(sharedItem).not.toBeNull()
+        expect(within(sharedItem).getAllByTitle('Teilen')).toHaveLength(8)
         expect(screen.queryByTitle(/bearbeiten$/i)).not.toBeInTheDocument()
         expect(screen.queryByTitle('Fach löschen')).not.toBeInTheDocument()
         expect(screen.queryByTitle('Thema löschen')).not.toBeInTheDocument()
         expect(screen.queryByTitle('Bereich löschen')).not.toBeInTheDocument()
+
+        await fireEvent.click(within(sharedItem).getAllByTitle('Teilen')[0])
+        await fireEvent.click(within(screen.getByText('Leeres Fach').closest('.overview-shared-hierarchy-node') as HTMLElement).getByTitle('Teilen'))
+        await fireEvent.click(within(screen.getByText('Fachmaterial').closest('.overview-subjects-material-item') as HTMLElement).getByTitle('Teilen'))
+
+        const openShareEvents = emitted('open-share') || []
+        expect(openShareEvents).toHaveLength(3)
+        expect((openShareEvents[0]?.[0] as any)?.level).toBe('all')
+        expect((openShareEvents[0]?.[0] as any)?.id).toBeNull()
+        expect((openShareEvents[1]?.[0] as any)?.level).toBe('subject')
+        expect((openShareEvents[1]?.[0] as any)?.id).toBe(11)
+        expect((openShareEvents[2]?.[0] as any)?.level).toBe('material')
+        expect((openShareEvents[2]?.[0] as any)?.id).toBe(101)
 
         await fireEvent.click(screen.getAllByTitle('Neues Material in Thema anlegen')[0])
 
@@ -583,6 +670,7 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(screen.queryByText('Fachmaterial')).not.toBeInTheDocument()
         expect(screen.queryByText('Themamaterial')).not.toBeInTheDocument()
         expect(screen.queryByTitle(/Neues Material in/i)).not.toBeInTheDocument()
+        expect(within(sharedItem).getAllByTitle('Teilen')).toHaveLength(6)
         expect(screen.getAllByTitle(/bearbeiten$/i)).toHaveLength(5)
 
         const deleteButtons = screen.getAllByTitle(/löschen$/i)
