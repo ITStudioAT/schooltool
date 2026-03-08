@@ -328,4 +328,99 @@ describe('show update destroy', function () {
             'source' => 'course_work',
         ]);
     });
+
+    test('syncWork rebuilds non-group work groups to current course students and preserves existing grade data', function () {
+        $studentA = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $studentA->assignRole('student');
+
+        $studentB = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $studentB->assignRole('student');
+
+        $staleStudent = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $staleStudent->assignRole('student');
+
+        $this->course->teachingCourseStudents()->create(['user_id' => $studentA->id]);
+        $this->course->teachingCourseStudents()->create(['user_id' => $studentB->id]);
+
+        $work = TeachingCourseWork::query()->create([
+            'teaching_course_id' => $this->course->id,
+            'type' => 'MA',
+            'title' => 'Legacy non-group list',
+            'is_group_work' => false,
+            'date_for_all_groups' => '2026-03-09',
+            'groups' => [[
+                'student_ids' => [$studentA->id],
+                'date' => '2026-03-09',
+                'grade' => null,
+                'comment' => null,
+                'grades' => [[
+                    'student_id' => $studentA->id,
+                    'grade' => '2',
+                ]],
+                'comments' => [[
+                    'student_id' => $studentA->id,
+                    'comment' => 'already graded',
+                ]],
+            ], [
+                'student_ids' => [$staleStudent->id],
+                'date' => '2026-03-09',
+                'grade' => null,
+                'comment' => null,
+                'grades' => [[
+                    'student_id' => $staleStudent->id,
+                    'grade' => '',
+                ]],
+                'comments' => [[
+                    'student_id' => $staleStudent->id,
+                    'comment' => '',
+                ]],
+            ]],
+        ]);
+
+        app(TeachingCourseWorkEntrySyncService::class)->syncWork($work);
+
+        $work->refresh();
+        $groupStudentIds = collect($work->groups)
+            ->flatMap(fn ($group) => (array) ($group['student_ids'] ?? []))
+            ->unique()
+            ->values()
+            ->all();
+
+        expect($groupStudentIds)->toContain($studentA->id, $studentB->id)
+            ->and($groupStudentIds)->not->toContain($staleStudent->id);
+
+        $groupForStudentA = collect($work->groups)
+            ->first(fn ($group) => in_array($studentA->id, (array) ($group['student_ids'] ?? []), true));
+
+        expect($groupForStudentA)->not->toBeNull()
+            ->and($groupForStudentA['grades'][0]['grade'] ?? null)->toBe('2')
+            ->and($groupForStudentA['comments'][0]['comment'] ?? null)->toBe('already graded');
+
+        $this->assertDatabaseHas('teaching_course_student_entries', [
+            'teaching_course_work_id' => $work->id,
+            'user_id' => $studentA->id,
+            'source' => 'course_work',
+        ]);
+
+        $this->assertDatabaseHas('teaching_course_student_entries', [
+            'teaching_course_work_id' => $work->id,
+            'user_id' => $studentB->id,
+            'source' => 'course_work',
+        ]);
+
+        $this->assertDatabaseMissing('teaching_course_student_entries', [
+            'teaching_course_work_id' => $work->id,
+            'user_id' => $staleStudent->id,
+            'source' => 'course_work',
+        ]);
+    });
 });

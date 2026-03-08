@@ -55,6 +55,7 @@ class SyncCourseWorkEntries extends Command
                 $entryCount = $work->teachingCourseStudentEntries()
                     ->where('source', TeachingCourseWorkEntrySyncService::SOURCE_COURSE_WORK)
                     ->count();
+                $groupStudentCount = $this->countUniqueStudentIdsInGroups($work);
 
                 if ($entryCount !== $studentCount) {
                     $this->line(sprintf(
@@ -63,6 +64,18 @@ class SyncCourseWorkEntries extends Command
                         $course->title,
                         $work->title,
                         $entryCount,
+                        $studentCount,
+                    ));
+                    $needsSync = true;
+                }
+
+                if ($groupStudentCount !== $studentCount) {
+                    $this->line(sprintf(
+                        '  Kurs %d (%s): Arbeit "%s" hat %d Schüler:in(nen) in Gruppen, erwartet %d',
+                        $course->id,
+                        $course->title,
+                        $work->title,
+                        $groupStudentCount,
                         $studentCount,
                     ));
                     $needsSync = true;
@@ -112,5 +125,28 @@ class SyncCourseWorkEntries extends Command
         ));
 
         return self::SUCCESS;
+    }
+
+    private function countUniqueStudentIdsInGroups(TeachingCourseWork $work): int
+    {
+        $groups = is_array($work->groups) ? $work->groups : [];
+        $ids = [];
+
+        foreach ($groups as $group) {
+            if (! is_array($group)) {
+                continue;
+            }
+
+            foreach ((array) ($group['student_ids'] ?? []) as $studentId) {
+                $resolvedId = (int) $studentId;
+                if ($resolvedId <= 0) {
+                    continue;
+                }
+
+                $ids[$resolvedId] = true;
+            }
+        }
+
+        return count($ids);
     }
 }

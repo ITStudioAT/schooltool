@@ -15,9 +15,15 @@ class TeachingCourseWorkEntrySyncService
 
     public function syncWork(TeachingCourseWork $work): void
     {
-        $rows = $this->buildRowsFromWork($work);
+        $normalizedGroups = null;
+        $rows = $this->buildRowsFromWork($work, $normalizedGroups);
 
-        DB::transaction(function () use ($work, $rows) {
+        DB::transaction(function () use ($work, $rows, $normalizedGroups) {
+            if ($normalizedGroups !== null) {
+                $work->groups = $normalizedGroups;
+                $work->save();
+            }
+
             TeachingCourseStudentEntry::where('teaching_course_work_id', $work->id)
                 ->where('source', self::SOURCE_COURSE_WORK)
                 ->delete();
@@ -61,12 +67,12 @@ class TeachingCourseWorkEntrySyncService
      *
      * @return array<int, array<string, mixed>>
      */
-    private function buildRowsFromWork(TeachingCourseWork $work): array
+    private function buildRowsFromWork(TeachingCourseWork $work, ?array &$normalizedGroups = null): array
     {
         $groups = is_array($work->groups) ? $work->groups : [];
 
         if (! $work->is_group_work) {
-            return $this->buildRowsForNonGroupWork($work, $groups);
+            return $this->buildRowsForNonGroupWork($work, $groups, $normalizedGroups);
         }
 
         return $this->buildRowsFromGroups($work, $groups);
@@ -79,7 +85,7 @@ class TeachingCourseWorkEntrySyncService
      * @param  array<int, array<string, mixed>>  $groups
      * @return array<int, array<string, mixed>>
      */
-    private function buildRowsForNonGroupWork(TeachingCourseWork $work, array $groups): array
+    private function buildRowsForNonGroupWork(TeachingCourseWork $work, array $groups, ?array &$normalizedGroups = null): array
     {
         $course = $work->teachingCourse;
         if (! $course) {
@@ -189,7 +195,59 @@ class TeachingCourseWorkEntrySyncService
             ];
         }
 
+        $normalizedGroups = $this->buildNormalizedGroupsForNonGroupWork(
+            $byUserId,
+            $gradesByStudentId,
+            $commentsByStudentId,
+            $dateByStudentId,
+            $defaultDate
+        );
+
         return array_values($byUserId);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rowsByUserId
+     * @param  array<int, ?string>  $gradesByStudentId
+     * @param  array<int, ?string>  $commentsByStudentId
+     * @param  array<int, string>  $dateByStudentId
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildNormalizedGroupsForNonGroupWork(
+        array $rowsByUserId,
+        array $gradesByStudentId,
+        array $commentsByStudentId,
+        array $dateByStudentId,
+        ?string $defaultDate
+    ): array {
+        $groups = [];
+
+        foreach ($rowsByUserId as $studentId => $row) {
+            $resolvedStudentId = (int) ($row['user_id'] ?? $studentId);
+            if ($resolvedStudentId <= 0) {
+                continue;
+            }
+
+            $grade = $this->toNullableString($gradesByStudentId[$resolvedStudentId] ?? null);
+            $comment = $this->toNullableString($commentsByStudentId[$resolvedStudentId] ?? null);
+
+            $groups[] = [
+                'student_ids' => [$resolvedStudentId],
+                'date' => $dateByStudentId[$resolvedStudentId] ?? $defaultDate,
+                'comment' => null,
+                'grade' => null,
+                'grades' => [[
+                    'student_id' => $resolvedStudentId,
+                    'grade' => $grade ?? '',
+                ]],
+                'comments' => [[
+                    'student_id' => $resolvedStudentId,
+                    'comment' => $comment ?? '',
+                ]],
+            ];
+        }
+
+        return $groups;
     }
 
     /**
