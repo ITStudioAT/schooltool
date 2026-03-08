@@ -759,7 +759,10 @@
                     v-for="item in sharedObjectsForMe"
                     :key="`overview-shared-item-${item.ruleId || item.scopeObjectLabel || item.scopePathLabel}`"
                     class="overview-shared-item"
-                    :class="{ 'overview-shared-item--expanded': isSharedItemExpanded(item.ruleId) }"
+                    :class="{
+                        'overview-shared-item--expanded': isSharedItemExpanded(item.ruleId),
+                        'overview-shared-item--disabled': sharedItemIsDisabled(item.ruleId),
+                    }"
                     :style="sharedItemCardStyle(item.ruleId)">
                     <div class="overview-shared-item-head">
                         <div class="overview-shared-item-title">
@@ -805,9 +808,29 @@
                             size="small"
                             variant="tonal"
                             color="primary"
-                            :disabled="actionBusy"
+                            :disabled="actionBusy || sharedItemIsDisabled(item.ruleId)"
                             @click="toggleSharedItemExpanded(item.ruleId)">
                             {{ isSharedItemExpanded(item.ruleId) ? 'Schließen' : 'Anzeigen' }}
+                        </v-btn>
+                        <v-btn
+                            size="small"
+                            variant="tonal"
+                            color="warning"
+                            :loading="Number(archivingSharedRuleId || 0) === Number(item.ruleId || 0)"
+                            :disabled="actionBusy || sharedItemIsDisabled(item.ruleId)"
+                            @click="archiveSharedItem(item.ruleId)">
+                            Archivieren
+                        </v-btn>
+                    </div>
+                    <div v-else class="overview-shared-item-actions">
+                        <v-btn
+                            size="small"
+                            variant="tonal"
+                            color="warning"
+                            :loading="Number(archivingSharedRuleId || 0) === Number(item.ruleId || 0)"
+                            :disabled="actionBusy || sharedItemIsDisabled(item.ruleId)"
+                            @click="archiveSharedItem(item.ruleId)">
+                            Archivieren
                         </v-btn>
                     </div>
                     <div v-if="isSharedItemExpanded(item.ruleId)" class="overview-shared-hierarchy">
@@ -1417,6 +1440,73 @@
             </div>
         </div>
 
+        <div class="overview-subjects-node-row overview-workspace-row overview-shared-row overview-shared-row--archive">
+            <button
+                type="button"
+                class="overview-subjects-node overview-subjects-node--workspace overview-subjects-node--workspace-toggle overview-subjects-node--shared-toggle"
+                :disabled="actionBusy"
+                :aria-expanded="sharedForMeArchiveExpanded ? 'true' : 'false'"
+                @click="toggleSharedForMeArchiveExpanded">
+                <v-icon size="18" :icon="sharedForMeArchiveExpanded ? 'mdi-chevron-down' : 'mdi-chevron-right'" class="mr-1" />
+                <v-icon size="20" icon="mdi-archive-outline" class="mr-2" />
+                <span>Für mich geteilt - Archiv</span>
+            </button>
+        </div>
+
+        <div v-if="sharedForMeArchiveExpanded" class="overview-shared-content overview-shared-content--archive">
+            <div v-if="sharedObjectsForMeLoading" class="overview-shared-state">
+                Freigaben werden geladen...
+            </div>
+            <div v-else-if="sharedObjectsForMeError" class="overview-shared-state overview-shared-state--error">
+                {{ sharedObjectsForMeError }}
+            </div>
+            <div v-else-if="!archivedSharedObjectsForMe.length" class="overview-shared-state">
+                Keine archivierten Freigaben vorhanden.
+            </div>
+            <div v-else class="overview-shared-items">
+                <div
+                    v-for="item in archivedSharedObjectsForMe"
+                    :key="`overview-shared-archived-item-${item.ruleId || item.scopeObjectLabel || item.scopePathLabel}`"
+                    class="overview-shared-item">
+                    <div class="overview-shared-item-head">
+                        <div class="overview-shared-item-title">
+                            {{ item.scopeObjectLabel || item.scopeLabel || 'Freigabe' }}
+                        </div>
+                        <div class="overview-shared-item-head-actions">
+                            <v-chip
+                                v-if="item.permissionLabel"
+                                size="x-small"
+                                variant="flat"
+                                :color="linkedPermissionChipColor(item.permission)">
+                                {{ item.permissionLabel }}
+                            </v-chip>
+                        </div>
+                    </div>
+                    <div class="overview-shared-item-path">
+                        {{ sharedItemTypeLabel(item) }}
+                    </div>
+                    <div class="overview-shared-item-meta">
+                        Von: {{ item.fromUserLabel || 'Benutzer' }}
+                        <span v-if="item.fromSchoolLabel"> · {{ item.fromSchoolLabel }}</span>
+                    </div>
+                    <div v-if="Number(item.materialsCount || 0) > 0" class="overview-shared-item-meta">
+                        {{ Number(item.materialsCount || 0) }} Material{{ Number(item.materialsCount || 0) === 1 ? '' : 'ien' }}
+                    </div>
+                    <div class="overview-shared-item-actions">
+                        <v-btn
+                            size="small"
+                            variant="tonal"
+                            color="success"
+                            :loading="Number(unarchivingSharedRuleId || 0) === Number(item.ruleId || 0)"
+                            :disabled="actionBusy"
+                            @click="activateSharedItem(item.ruleId)">
+                            Aktivieren
+                        </v-btn>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <v-dialog v-model="sharedCreateSubjectDialog.open" max-width="560" persistent>
             <v-card rounded="xl">
                 <v-card-title class="text-h6 font-weight-bold">Fach hinzufügen</v-card-title>
@@ -1674,6 +1764,10 @@ export default {
             type: Array,
             default: () => [],
         },
+        archivedSharedObjectsForMe: {
+            type: Array,
+            default: () => [],
+        },
         sharedObjectsForMeLoading: {
             type: Boolean,
             default: false,
@@ -1686,16 +1780,31 @@ export default {
             type: Boolean,
             default: false,
         },
+        sharedForMeArchiveExpanded: {
+            type: Boolean,
+            default: false,
+        },
+        archivingSharedRuleId: {
+            type: Number,
+            default: null,
+        },
+        unarchivingSharedRuleId: {
+            type: Number,
+            default: null,
+        },
+        workspaceStructureExpanded: {
+            type: Boolean,
+            default: false,
+        },
         expandedSharedItems: {
             type: Object,
             default: () => ({}),
         },
     },
-    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'open-shared-material', 'open-shared-attachments', 'unlink-linked-material', 'unlink-linked-topic', 'unlink-linked-unit', 'toggle-shared-for-me-expanded', 'toggle-shared-item-expanded', 'shared-node-created', 'shared-node-renamed', 'shared-node-deleted', 'shared-node-moved', 'workspace-node-created', 'workspace-node-renamed', 'workspace-node-deleted', 'workspace-node-moved'],
+    emits: ['open-material', 'open-share', 'open-create', 'open-attachments', 'open-shared-material', 'open-shared-attachments', 'unlink-linked-material', 'unlink-linked-topic', 'unlink-linked-unit', 'toggle-shared-for-me-expanded', 'toggle-shared-for-me-archive-expanded', 'toggle-shared-item-expanded', 'toggle-workspace-structure-expanded', 'archive-shared-item', 'activate-shared-item', 'shared-node-created', 'shared-node-renamed', 'shared-node-deleted', 'shared-node-moved', 'workspace-node-created', 'workspace-node-renamed', 'workspace-node-deleted', 'workspace-node-moved'],
     data() {
         return {
             workspaceExpanded: true,
-            workspaceStructureButtonsVisible: false,
             sharedNodeTitleOverrides: {},
             sharedStructureButtonsVisible: {},
             sharedCreateSubjectDialog: createSharedCreateSubjectDialogState(),
@@ -1728,16 +1837,21 @@ export default {
             this.workspaceExpanded = !this.workspaceExpanded
         },
         isWorkspaceStructureButtonsVisible() {
-            return this.workspaceStructureButtonsVisible === true
+            return this.workspaceStructureExpanded === true
         },
         toggleWorkspaceStructureButtons() {
             if (this.actionBusy) return
-            this.workspaceStructureButtonsVisible = !this.isWorkspaceStructureButtonsVisible()
+            this.$emit('toggle-workspace-structure-expanded')
         },
         toggleSharedForMeExpanded() {
             if (this.actionBusy) return
 
             this.$emit('toggle-shared-for-me-expanded')
+        },
+        toggleSharedForMeArchiveExpanded() {
+            if (this.actionBusy) return
+
+            this.$emit('toggle-shared-for-me-archive-expanded')
         },
         sharedItemKey(ruleId) {
             const normalizedRuleId = Number(ruleId)
@@ -1748,6 +1862,25 @@ export default {
             const key = this.sharedItemKey(ruleId)
             return key !== '' ? this.expandedSharedItems[key] === true : false
         },
+        activeSharedItemRuleId() {
+            const items = Array.isArray(this.sharedObjectsForMe) ? this.sharedObjectsForMe : []
+            const active = items.find((item) => this.isSharedItemExpanded(item?.ruleId))
+            const activeRuleId = Number(active?.ruleId || 0)
+            return Number.isFinite(activeRuleId) && activeRuleId > 0 ? activeRuleId : null
+        },
+        sharedItemIsDisabled(ruleId) {
+            const activeRuleId = this.activeSharedItemRuleId()
+            if (!Number.isFinite(activeRuleId) || activeRuleId <= 0) {
+                return false
+            }
+
+            const normalizedRuleId = Number(ruleId || 0)
+            if (!Number.isFinite(normalizedRuleId) || normalizedRuleId <= 0) {
+                return true
+            }
+
+            return normalizedRuleId !== activeRuleId
+        },
         toggleSharedItemExpanded(ruleId) {
             if (this.actionBusy) return
 
@@ -1755,6 +1888,23 @@ export default {
             if (key === '') return
 
             this.$emit('toggle-shared-item-expanded', ruleId)
+        },
+        archiveSharedItem(ruleId) {
+            if (this.actionBusy) return
+            if (this.sharedItemIsDisabled(ruleId)) return
+
+            const normalizedRuleId = Number(ruleId || 0)
+            if (!Number.isFinite(normalizedRuleId) || normalizedRuleId <= 0) return
+
+            this.$emit('archive-shared-item', normalizedRuleId)
+        },
+        activateSharedItem(ruleId) {
+            if (this.actionBusy) return
+
+            const normalizedRuleId = Number(ruleId || 0)
+            if (!Number.isFinite(normalizedRuleId) || normalizedRuleId <= 0) return
+
+            this.$emit('activate-shared-item', normalizedRuleId)
         },
         sharedStructureButtonsKey(ruleId) {
             const normalizedRuleId = Number(ruleId)
@@ -2787,6 +2937,10 @@ export default {
     margin-top: 40px;
 }
 
+.overview-shared-row--archive {
+    margin-top: 16px;
+}
+
 .overview-subjects-list--child {
     margin-top: 6px;
     margin-left: 34px;
@@ -2996,6 +3150,12 @@ export default {
     border-radius: 12px;
     border: 1px solid rgba(53, 84, 117, 0.16);
     background: rgba(255, 255, 255, 0.72);
+}
+
+.overview-shared-item--disabled {
+    opacity: 0.48;
+    filter: saturate(0.3);
+    pointer-events: none;
 }
 
 .overview-shared-item-actions {

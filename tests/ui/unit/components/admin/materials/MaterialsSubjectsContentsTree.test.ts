@@ -96,6 +96,7 @@ function renderTree(
         enableRemoveButtons?: boolean
         enableShareButtons?: boolean
         sharedObjectsForMe?: any[]
+        archivedSharedObjectsForMe?: any[]
         sharedObjectsForMeLoading?: boolean
         sharedObjectsForMeError?: string
     } = {}
@@ -105,12 +106,20 @@ function renderTree(
         data() {
             return {
                 sharedForMeExpanded: false,
+                sharedForMeArchiveExpanded: false,
+                workspaceStructureExpanded: false,
                 expandedSharedItems: {},
             }
         },
         methods: {
             toggleSharedForMeExpanded() {
                 this.sharedForMeExpanded = !this.sharedForMeExpanded
+            },
+            toggleSharedForMeArchiveExpanded() {
+                this.sharedForMeArchiveExpanded = !this.sharedForMeArchiveExpanded
+            },
+            toggleWorkspaceStructureExpanded() {
+                this.workspaceStructureExpanded = !this.workspaceStructureExpanded
             },
             toggleSharedItemExpanded(ruleId: number) {
                 const key = `shared-item-${Number(ruleId || 0)}`
@@ -134,12 +143,19 @@ function renderTree(
                 :subject-group-style-fn="() => ({})"
                 :topic-group-style-fn="() => ({})"
                 :shared-objects-for-me="sharedObjectsForMe"
+                :archived-shared-objects-for-me="archivedSharedObjectsForMe"
                 :shared-objects-for-me-loading="sharedObjectsForMeLoading"
                 :shared-objects-for-me-error="sharedObjectsForMeError"
                 :shared-for-me-expanded="sharedForMeExpanded"
+                :shared-for-me-archive-expanded="sharedForMeArchiveExpanded"
+                :workspace-structure-expanded="workspaceStructureExpanded"
                 :expanded-shared-items="expandedSharedItems"
                 @toggle-shared-for-me-expanded="toggleSharedForMeExpanded"
+                @toggle-shared-for-me-archive-expanded="toggleSharedForMeArchiveExpanded"
+                @toggle-workspace-structure-expanded="toggleWorkspaceStructureExpanded"
                 @toggle-shared-item-expanded="toggleSharedItemExpanded"
+                @archive-shared-item="$emit('archive-shared-item', $event)"
+                @activate-shared-item="$emit('activate-shared-item', $event)"
                 @shared-node-created="$emit('shared-node-created', $event)"
                 @shared-node-moved="$emit('shared-node-moved', $event)"
                 @workspace-node-created="$emit('workspace-node-created', $event)"
@@ -162,6 +178,7 @@ function renderTree(
             enableShareButtons: { type: Boolean, default: false },
             enableRemoveButtons: { type: Boolean, default: false },
             sharedObjectsForMe: { type: Array, default: () => [] },
+            archivedSharedObjectsForMe: { type: Array, default: () => [] },
             sharedObjectsForMeLoading: { type: Boolean, default: false },
             sharedObjectsForMeError: { type: String, default: '' },
         },
@@ -174,6 +191,7 @@ function renderTree(
             enableShareButtons: options.enableShareButtons === true,
             enableRemoveButtons: options.enableRemoveButtons === true,
             sharedObjectsForMe: Array.isArray(options.sharedObjectsForMe) ? options.sharedObjectsForMe : [],
+            archivedSharedObjectsForMe: Array.isArray(options.archivedSharedObjectsForMe) ? options.archivedSharedObjectsForMe : [],
             sharedObjectsForMeLoading: options.sharedObjectsForMeLoading === true,
             sharedObjectsForMeError: String(options.sharedObjectsForMeError || ''),
         },
@@ -313,7 +331,7 @@ describe('MaterialsSubjectsContentsTree', () => {
 
         expect(screen.queryByText('Geteilte Mathematik')).not.toBeInTheDocument()
 
-        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
 
         expect(screen.getByText('Geteilte Mathematik')).toBeInTheDocument()
         expect(screen.getByText('Mathematik / Algebra')).toBeInTheDocument()
@@ -323,6 +341,140 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(sharedItem).not.toBeNull()
         expect((sharedItem as HTMLElement).style.flex).toContain('24rem')
         expect((sharedItem as HTMLElement).style.maxWidth).toBe('28rem')
+    })
+
+    it('shows archived shared objects when Für mich geteilt - Archiv is expanded', async () => {
+        renderTree([], {
+            archivedSharedObjectsForMe: [
+                {
+                    ruleId: 881,
+                    scopeType: 'topic',
+                    scopeObjectLabel: 'Archiviertes Thema',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Archiv',
+                    fromSchoolLabel: 'CDGym',
+                    materialsCount: 2,
+                },
+            ],
+        })
+
+        expect(screen.queryByText('Archiviertes Thema')).not.toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt - archiv/i }))
+
+        expect(screen.getByText('Archiviertes Thema')).toBeInTheDocument()
+        expect(screen.getByText('Thema')).toBeInTheDocument()
+        expect(screen.getByText(/Von: Lehrer Archiv/i)).toBeInTheDocument()
+    })
+
+    it('emits archive-shared-item when Archivieren is clicked in Für mich geteilt', async () => {
+        const { emitted } = renderTree([], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 911,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Aktive Freigabe',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Eins',
+                    materialsCount: 0,
+                    hierarchy: [],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Archivieren' }))
+
+        const archiveEvents = emitted('archive-shared-item') || []
+        expect(archiveEvents).toHaveLength(1)
+        expect(archiveEvents[0]?.[0]).toBe(911)
+    })
+
+    it('emits activate-shared-item when Aktivieren is clicked in Für mich geteilt - Archiv', async () => {
+        const { emitted } = renderTree([], {
+            archivedSharedObjectsForMe: [
+                {
+                    ruleId: 912,
+                    scopeType: 'topic',
+                    scopeObjectLabel: 'Archivierte Freigabe',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Zwei',
+                    materialsCount: 0,
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt - archiv/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Aktivieren' }))
+
+        const activateEvents = emitted('activate-shared-item') || []
+        expect(activateEvents).toHaveLength(1)
+        expect(activateEvents[0]?.[0]).toBe(912)
+    })
+
+    it('disables all other shared cards while one shared card is expanded', async () => {
+        renderTree([], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 801,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Erste Freigabe',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Eins',
+                    materialsCount: 1,
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Mathematik',
+                            materials: [],
+                            topics: [],
+                        },
+                    ],
+                },
+                {
+                    ruleId: 802,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Zweite Freigabe',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Zwei',
+                    materialsCount: 1,
+                    hierarchy: [
+                        {
+                            id: 20,
+                            name: 'Biologie',
+                            materials: [],
+                            topics: [],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
+
+        const firstCard = screen.getByText('Erste Freigabe').closest('.overview-shared-item') as HTMLElement
+        const secondCard = screen.getByText('Zweite Freigabe').closest('.overview-shared-item') as HTMLElement
+
+        expect(firstCard).not.toBeNull()
+        expect(secondCard).not.toBeNull()
+        expect(within(secondCard).getByRole('button', { name: 'Anzeigen' })).not.toBeDisabled()
+
+        await fireEvent.click(within(firstCard).getByRole('button', { name: 'Anzeigen' }))
+
+        expect(firstCard.className).toContain('overview-shared-item--expanded')
+        expect(secondCard.className).toContain('overview-shared-item--disabled')
+        expect(within(secondCard).getByRole('button', { name: 'Anzeigen' })).toBeDisabled()
+
+        await fireEvent.click(within(firstCard).getByRole('button', { name: 'Schließen' }))
+
+        expect(firstCard.className).not.toContain('overview-shared-item--expanded')
+        expect(secondCard.className).not.toContain('overview-shared-item--disabled')
+        expect(within(secondCard).getByRole('button', { name: 'Anzeigen' })).not.toBeDisabled()
     })
 
     it('shows the shared scope type label on card line two', async () => {
@@ -348,7 +500,7 @@ describe('MaterialsSubjectsContentsTree', () => {
             ],
         })
 
-        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
 
         expect(screen.getByText('Thema')).toBeInTheDocument()
         expect(screen.queryByText('Mathematik / Algebra')).not.toBeInTheDocument()
@@ -393,7 +545,7 @@ describe('MaterialsSubjectsContentsTree', () => {
             ],
         })
 
-        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
 
         const subjectRow = screen.getByText('Informatik').closest('.overview-shared-hierarchy-node') as HTMLElement
@@ -463,7 +615,7 @@ describe('MaterialsSubjectsContentsTree', () => {
             ],
         })
 
-        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
 
         const sharedItem = container.querySelector('.overview-shared-item') as HTMLElement
@@ -535,7 +687,7 @@ describe('MaterialsSubjectsContentsTree', () => {
             ],
         })
 
-        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
 
         const sharedItem = container.querySelector('.overview-shared-item') as HTMLElement
@@ -580,7 +732,7 @@ describe('MaterialsSubjectsContentsTree', () => {
             ],
         })
 
-        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
 
         const sharedItems = Array.from(container.querySelectorAll('.overview-shared-item'))
         expect(sharedItems).toHaveLength(2)
@@ -640,7 +792,7 @@ describe('MaterialsSubjectsContentsTree', () => {
             ],
         })
 
-        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
 
         expect(screen.queryByText('Lineare Gleichungen')).not.toBeInTheDocument()
 
@@ -759,7 +911,7 @@ describe('MaterialsSubjectsContentsTree', () => {
             ],
         })
 
-        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
 
         expect(screen.getByText('Biologie')).toBeInTheDocument()
@@ -841,7 +993,7 @@ describe('MaterialsSubjectsContentsTree', () => {
             ],
         })
 
-        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
 
         expect(screen.getByRole('button', { name: 'Struktur ändern' })).toBeInTheDocument()
@@ -932,7 +1084,7 @@ describe('MaterialsSubjectsContentsTree', () => {
             ],
         })
 
-        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
         await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
 
@@ -1012,7 +1164,7 @@ describe('MaterialsSubjectsContentsTree', () => {
             ],
         })
 
-        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
         await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
 
@@ -1073,7 +1225,7 @@ describe('MaterialsSubjectsContentsTree', () => {
             ],
         })
 
-        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
         await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
         await fireEvent.click(screen.getAllByTitle('Fach hinzufügen')[0])
@@ -1147,7 +1299,7 @@ describe('MaterialsSubjectsContentsTree', () => {
             ],
         })
 
-        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
         await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
         await fireEvent.click(screen.getAllByTitle('Fach hinzufügen')[1])
@@ -1206,7 +1358,7 @@ describe('MaterialsSubjectsContentsTree', () => {
             ],
         })
 
-        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
         await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
         await fireEvent.click(screen.getAllByTitle('Thema hinzufügen')[0])
@@ -1282,7 +1434,7 @@ describe('MaterialsSubjectsContentsTree', () => {
             ],
         })
 
-        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
         await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
         await fireEvent.click(screen.getAllByTitle('Thema hinzufügen')[1])
@@ -1348,7 +1500,7 @@ describe('MaterialsSubjectsContentsTree', () => {
             ],
         })
 
-        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
         await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
         await fireEvent.click(screen.getAllByTitle('Bereich hinzufügen')[0])
@@ -1430,7 +1582,7 @@ describe('MaterialsSubjectsContentsTree', () => {
             ],
         })
 
-        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
         await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
         await fireEvent.click(screen.getAllByTitle('Bereich hinzufügen')[1])
@@ -1488,7 +1640,7 @@ describe('MaterialsSubjectsContentsTree', () => {
             ],
         })
 
-        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
         await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
         await fireEvent.click(screen.getByTitle('Fach bearbeiten'))
@@ -1557,7 +1709,7 @@ describe('MaterialsSubjectsContentsTree', () => {
             ],
         })
 
-        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
         await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
         await fireEvent.click(screen.getByTitle('Fach löschen'))

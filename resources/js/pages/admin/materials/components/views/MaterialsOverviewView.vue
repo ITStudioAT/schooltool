@@ -426,7 +426,7 @@
                 <MaterialsSubjectsContentsTree
                     v-else
                     :items="subjectsContentsOverviewItems"
-                    :action-busy="isLoading || isDeletingId !== null || isSavingEdit || isSavingCreate || isRemovingTreeClassification || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null"
+                    :action-busy="isLoading || isDeletingId !== null || isSavingEdit || isSavingCreate || isRemovingTreeClassification || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null || isArchivingSharedRuleId !== null || isUnarchivingSharedRuleId !== null"
                     :enable-share-buttons="enableShareButtons"
                     :enable-create-buttons="!readOnlyMaterialActions"
                     :enable-remove-buttons="!readOnlyMaterialActions"
@@ -437,9 +437,14 @@
                     :subject-group-style-fn="subjectGroupStyle"
                     :topic-group-style-fn="topicGroupStyle"
                     :shared-objects-for-me="sharedObjectsForMeCards"
+                    :archived-shared-objects-for-me="archivedSharedObjectsForMeCards"
                     :shared-objects-for-me-loading="isLoadingSharedObjectsForMe"
                     :shared-objects-for-me-error="sharedObjectsForMeError"
                     :shared-for-me-expanded="subjectsTreeSharedForMeExpanded"
+                    :shared-for-me-archive-expanded="subjectsTreeSharedForMeArchiveExpanded"
+                    :archiving-shared-rule-id="isArchivingSharedRuleId"
+                    :unarchiving-shared-rule-id="isUnarchivingSharedRuleId"
+                    :workspace-structure-expanded="subjectsTreeWorkspaceStructureExpanded"
                     :expanded-shared-items="subjectsTreeExpandedSharedItems"
                     @shared-node-created="refreshSharedStructureTree"
                     @shared-node-renamed="refreshSharedStructureTree"
@@ -456,7 +461,11 @@
                     @open-attachments="openAttachmentManager"
                     @open-shared-attachments="openSharedMaterialAttachmentsFromTree"
                     @toggle-shared-for-me-expanded="toggleSubjectsTreeSharedForMeExpanded"
+                    @toggle-shared-for-me-archive-expanded="toggleSubjectsTreeSharedForMeArchiveExpanded"
+                    @toggle-workspace-structure-expanded="toggleSubjectsTreeWorkspaceStructureExpanded"
                     @toggle-shared-item-expanded="toggleSubjectsTreeSharedItemExpanded"
+                    @archive-shared-item="archiveSharedRule"
+                    @activate-shared-item="unarchiveSharedRule"
                     @unlink-linked-material="unlinkLinkedCard"
                     @unlink-linked-topic="unlinkLinkedTopic"
                     @unlink-linked-unit="unlinkLinkedUnit" />
@@ -1255,8 +1264,13 @@ export default {
             isLoadingSharedObjectsForMe: false,
             sharedObjectsForMeError: '',
             sharedObjectsForMeCards: [],
+            archivedSharedObjectsForMeCards: [],
             activeSharedRuleId: null,
+            isArchivingSharedRuleId: null,
+            isUnarchivingSharedRuleId: null,
             subjectsTreeSharedForMeExpanded: false,
+            subjectsTreeSharedForMeArchiveExpanded: false,
+            subjectsTreeWorkspaceStructureExpanded: false,
             subjectsTreeExpandedSharedItems: {},
             openSharedHierarchyCards: {},
             isLoadingSubjectsContentsOverview: false,
@@ -2340,8 +2354,9 @@ export default {
             this.activeSharedRuleId = hasActiveRule ? resolvedRuleId : null
             this.sharedObjectsForMeCards = this.sharedCardsWithActiveFirst(this.sharedObjectsForMeCards, this.activeSharedRuleId)
         },
-        normalizeSharedObjectsForMeResponse(rows) {
+        normalizeSharedObjectsForMeResponse(rows, archived = false) {
             if (!Array.isArray(rows)) return []
+            const includeArchived = archived === true
 
             const cards = []
             for (const userRow of rows) {
@@ -2355,7 +2370,8 @@ export default {
 
                 for (const item of sharedItems) {
                     const ruleId = Number(item?.rule_id || 0)
-                    if (!Number.isFinite(ruleId) || ruleId <= 0 || item?.is_archived) {
+                    const isArchived = item?.is_archived === true
+                    if (!Number.isFinite(ruleId) || ruleId <= 0 || isArchived !== includeArchived) {
                         continue
                     }
 
@@ -2781,6 +2797,12 @@ export default {
         toggleSubjectsTreeSharedForMeExpanded() {
             this.subjectsTreeSharedForMeExpanded = !this.subjectsTreeSharedForMeExpanded
         },
+        toggleSubjectsTreeSharedForMeArchiveExpanded() {
+            this.subjectsTreeSharedForMeArchiveExpanded = !this.subjectsTreeSharedForMeArchiveExpanded
+        },
+        toggleSubjectsTreeWorkspaceStructureExpanded() {
+            this.subjectsTreeWorkspaceStructureExpanded = !this.subjectsTreeWorkspaceStructureExpanded
+        },
         toggleSubjectsTreeSharedItemExpanded(ruleId) {
             const key = this.subjectsTreeSharedItemKey(ruleId)
             if (!key) return
@@ -2799,6 +2821,54 @@ export default {
         },
         async refreshSharedStructureTree() {
             await this.loadSharedObjectsForMe()
+        },
+        async archiveSharedRule(ruleId) {
+            const normalizedRuleId = Number(ruleId || 0)
+            if (!Number.isFinite(normalizedRuleId) || normalizedRuleId <= 0) return
+            if (this.isArchivingSharedRuleId !== null || this.isUnarchivingSharedRuleId !== null) return
+
+            this.isArchivingSharedRuleId = normalizedRuleId
+            try {
+                const result = await this.performSharedInboxMutation({
+                    method: 'post',
+                    url: '/api/admin/materials/shares/inbox/archive',
+                    data: {
+                        rule_id: normalizedRuleId,
+                    },
+                    successMessage: 'Freigabe archiviert.',
+                    errorMessage: 'Freigabe konnte nicht archiviert werden.',
+                })
+
+                if (result !== null) {
+                    await this.loadSharedObjectsForMe()
+                }
+            } finally {
+                this.isArchivingSharedRuleId = null
+            }
+        },
+        async unarchiveSharedRule(ruleId) {
+            const normalizedRuleId = Number(ruleId || 0)
+            if (!Number.isFinite(normalizedRuleId) || normalizedRuleId <= 0) return
+            if (this.isArchivingSharedRuleId !== null || this.isUnarchivingSharedRuleId !== null) return
+
+            this.isUnarchivingSharedRuleId = normalizedRuleId
+            try {
+                const result = await this.performSharedInboxMutation({
+                    method: 'post',
+                    url: '/api/admin/materials/shares/inbox/unarchive',
+                    data: {
+                        rule_id: normalizedRuleId,
+                    },
+                    successMessage: 'Freigabe aktiviert.',
+                    errorMessage: 'Freigabe konnte nicht aktiviert werden.',
+                })
+
+                if (result !== null) {
+                    await this.loadSharedObjectsForMe()
+                }
+            } finally {
+                this.isUnarchivingSharedRuleId = null
+            }
         },
         async refreshWorkspaceStructureTree() {
             await this.loadCards(null, { forceFilterCountRefresh: true })
@@ -2832,6 +2902,7 @@ export default {
                 const response = await axios.get('/api/admin/materials/shares/inbox-users')
                 const rows = Array.isArray(response?.data?.data) ? response.data.data : []
                 const nextCards = this.normalizeSharedObjectsForMeResponse(rows)
+                const nextArchivedCards = this.normalizeSharedObjectsForMeResponse(rows, true)
                 const nextOpenHierarchyCards = {}
                 const nextExpandedSharedItems = {}
                 for (const card of nextCards) {
@@ -2846,6 +2917,7 @@ export default {
                     }
                 }
                 this.sharedObjectsForMeCards = nextCards
+                this.archivedSharedObjectsForMeCards = nextArchivedCards
                 const activeStillExists = this.sharedObjectsForMeCards.some(
                     (card) => Number(card?.ruleId || 0) === Number(this.activeSharedRuleId || 0)
                 )
@@ -2857,6 +2929,7 @@ export default {
                 this.subjectsTreeExpandedSharedItems = nextExpandedSharedItems
             } catch (error) {
                 this.sharedObjectsForMeCards = []
+                this.archivedSharedObjectsForMeCards = []
                 this.activeSharedRuleId = null
                 this.openSharedHierarchyCards = {}
                 this.subjectsTreeExpandedSharedItems = {}

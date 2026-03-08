@@ -11,11 +11,6 @@
                     :initial-selected-action="initialSettingsAction"
                     :initial-selected-subject-action="initialSubjectAction"
                     @menu-lock-change="setMenuLocked" />
-                <MaterialsSettingsView
-                    v-if="main_action === 'subjects'"
-                    standalone
-                    initial-selected-action="subjects"
-                    @menu-lock-change="setMenuLocked" />
             </v-col>
         </v-row>
     </v-container>
@@ -80,7 +75,7 @@ export default {
         applyRouteSelection() {
             if (this.$route?.path !== '/admin/materials') return
             const queryValue = String(this.$route?.query?.main_action || '').trim()
-            const allowed = ['overview', 'teilen', 'subjects', 'new_material', 'settings']
+            const allowed = ['overview', 'teilen', 'new_material', 'settings']
             if (allowed.includes(queryValue)) {
                 this.main_action = queryValue
             }

@@ -235,6 +235,75 @@ describe('MaterialsOverviewView', () => {
         expect(loadSharedObjectsForMe).toHaveBeenCalledTimes(1)
     })
 
+    it('archives a shared rule and reloads shared objects', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const performSharedInboxMutation = vi.fn().mockResolvedValue({ rule_id: 55, is_archived: true })
+        const loadSharedObjectsForMe = vi.fn().mockResolvedValue(undefined)
+        const vm = {
+            ...methods,
+            isArchivingSharedRuleId: null,
+            isUnarchivingSharedRuleId: null,
+            performSharedInboxMutation,
+            loadSharedObjectsForMe,
+        }
+
+        await methods.archiveSharedRule.call(vm, 55)
+
+        expect(performSharedInboxMutation).toHaveBeenCalledWith({
+            method: 'post',
+            url: '/api/admin/materials/shares/inbox/archive',
+            data: {
+                rule_id: 55,
+            },
+            successMessage: 'Freigabe archiviert.',
+            errorMessage: 'Freigabe konnte nicht archiviert werden.',
+        })
+        expect(loadSharedObjectsForMe).toHaveBeenCalledTimes(1)
+        expect(vm.isArchivingSharedRuleId).toBeNull()
+    })
+
+    it('unarchives a shared rule and reloads shared objects', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const performSharedInboxMutation = vi.fn().mockResolvedValue({ rule_id: 56, is_archived: false })
+        const loadSharedObjectsForMe = vi.fn().mockResolvedValue(undefined)
+        const vm = {
+            ...methods,
+            isArchivingSharedRuleId: null,
+            isUnarchivingSharedRuleId: null,
+            performSharedInboxMutation,
+            loadSharedObjectsForMe,
+        }
+
+        await methods.unarchiveSharedRule.call(vm, 56)
+
+        expect(performSharedInboxMutation).toHaveBeenCalledWith({
+            method: 'post',
+            url: '/api/admin/materials/shares/inbox/unarchive',
+            data: {
+                rule_id: 56,
+            },
+            successMessage: 'Freigabe aktiviert.',
+            errorMessage: 'Freigabe konnte nicht aktiviert werden.',
+        })
+        expect(loadSharedObjectsForMe).toHaveBeenCalledTimes(1)
+        expect(vm.isUnarchivingSharedRuleId).toBeNull()
+    })
+
+    it('keeps workspace structure mode active while refreshing workspace tree', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const loadCards = vi.fn().mockResolvedValue(undefined)
+        const vm = {
+            ...methods,
+            subjectsTreeWorkspaceStructureExpanded: true,
+            loadCards,
+        }
+
+        await methods.refreshWorkspaceStructureTree.call(vm)
+
+        expect(loadCards).toHaveBeenCalledWith(null, { forceFilterCountRefresh: true })
+        expect(vm.subjectsTreeWorkspaceStructureExpanded).toBe(true)
+    })
+
     it('openShareDialog opens persistent dummy dialog when share actions are disabled', () => {
         const methods = MaterialsOverviewView?.methods || {}
         const loadShareAssignments = vi.fn()
@@ -441,6 +510,51 @@ describe('MaterialsOverviewView', () => {
         expect(cards[5].ruleId).toBe(16)
         expect(cards[6].ruleId).toBe(15)
         expect(cards[1].scopeLabel).toBe('Fach')
+    })
+
+    it('normalizes archived shared objects from inbox users response when requested', () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const vm = {
+            ...methods,
+            materialCardStore: {
+                config: {
+                    workspace: {
+                        name: 'Teamraum Mathematik',
+                    },
+                },
+            },
+        }
+
+        const cards = methods.normalizeSharedObjectsForMeResponse.call(vm, [
+            {
+                label: 'Lehrer Eins',
+                school_label: 'CDGym',
+                shared_items: [
+                    {
+                        rule_id: 10,
+                        scope_type: 'subject',
+                        scope_label: 'Fach',
+                        scope_object_label: 'Mathematik',
+                        permission: 'read_write',
+                        permission_label: 'LESEN/SCHREIBEN',
+                        is_archived: false,
+                    },
+                    {
+                        rule_id: 11,
+                        scope_type: 'topic',
+                        scope_label: 'Thema',
+                        scope_object_label: 'Archiviertes Thema',
+                        permission: 'read_only',
+                        permission_label: 'NUR LESEN',
+                        is_archived: true,
+                    },
+                ],
+            },
+        ], true)
+
+        expect(cards).toHaveLength(1)
+        expect(cards[0].ruleId).toBe(11)
+        expect(cards[0].scopeObjectLabel).toBe('Archiviertes Thema')
     })
 
     it('keeps the active shared object as first card', () => {

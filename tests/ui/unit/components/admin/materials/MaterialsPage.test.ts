@@ -27,6 +27,13 @@ describe('Materials page navigation', () => {
         }
         method.call(ctxBlocked)
         expect(ctxBlocked.main_action).toBe('overview')
+
+        const ctxSubjectsBlocked: any = {
+            $route: { path: '/admin/materials', query: { main_action: 'subjects' } },
+            main_action: 'overview',
+        }
+        method.call(ctxSubjectsBlocked)
+        expect(ctxSubjectsBlocked.main_action).toBe('overview')
     })
 
     it('initializes admin store and applies route selection in beforeMount', () => {
