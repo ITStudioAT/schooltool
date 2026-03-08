@@ -368,6 +368,70 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(screen.getByText(/Von: Lehrer Archiv/i)).toBeInTheDocument()
     })
 
+    it('shows read-only archived hierarchy preview without structure actions', async () => {
+        const { container } = renderTree([], {
+            archivedSharedObjectsForMe: [
+                {
+                    ruleId: 913,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Archivierter Workspace',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Drei',
+                    materialsCount: 1,
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Informatik',
+                            materials: [],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Algebra',
+                                    materials: [],
+                                    units: [
+                                        {
+                                            id: 30,
+                                            name: 'Lineare Gleichungen',
+                                            materials: [
+                                                {
+                                                    id: 501,
+                                                    title: 'Archiv Material',
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt - archiv/i }))
+        const archivedCard = container.querySelector('.overview-shared-item') as HTMLElement
+        expect(archivedCard).not.toBeNull()
+        expect(archivedCard.style.flex).toContain('24rem')
+        expect(archivedCard.style.maxWidth).toBe('28rem')
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+
+        expect(screen.getByText('Informatik')).toBeInTheDocument()
+        expect(screen.getByText('Algebra')).toBeInTheDocument()
+        expect(screen.getByText('Lineare Gleichungen')).toBeInTheDocument()
+        expect(screen.getByText('Archiv Material')).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Aktivieren' })).toBeNull()
+        expect(archivedCard.style.flex).toContain('100%')
+        expect(archivedCard.style.maxWidth).toBe('100%')
+        expect(screen.queryByRole('button', { name: 'Struktur ändern' })).toBeNull()
+        expect(screen.queryByTitle(/bearbeiten$/i)).toBeNull()
+        expect(screen.queryByTitle(/löschen$/i)).toBeNull()
+        expect(screen.queryByTitle(/Neues Material in/i)).toBeNull()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Schließen' }))
+        expect(screen.getByRole('button', { name: 'Aktivieren' })).toBeInTheDocument()
+    })
+
     it('emits archive-shared-item when Archivieren is clicked in Für mich geteilt', async () => {
         const { emitted } = renderTree([], {
             sharedObjectsForMe: [
@@ -468,12 +532,16 @@ describe('MaterialsSubjectsContentsTree', () => {
 
         expect(firstCard.className).toContain('overview-shared-item--expanded')
         expect(secondCard.className).toContain('overview-shared-item--disabled')
+        expect(within(firstCard).queryByRole('button', { name: 'Archivieren' })).toBeNull()
+        expect(within(secondCard).getByRole('button', { name: 'Archivieren' })).toBeDisabled()
         expect(within(secondCard).getByRole('button', { name: 'Anzeigen' })).toBeDisabled()
 
         await fireEvent.click(within(firstCard).getByRole('button', { name: 'Schließen' }))
 
         expect(firstCard.className).not.toContain('overview-shared-item--expanded')
         expect(secondCard.className).not.toContain('overview-shared-item--disabled')
+        expect(within(firstCard).getByRole('button', { name: 'Archivieren' })).toBeInTheDocument()
+        expect(within(secondCard).getByRole('button', { name: 'Archivieren' })).not.toBeDisabled()
         expect(within(secondCard).getByRole('button', { name: 'Anzeigen' })).not.toBeDisabled()
     })
 
