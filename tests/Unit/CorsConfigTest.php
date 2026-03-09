@@ -1,0 +1,37 @@
+<?php
+
+use Tests\TestCase;
+
+uses(TestCase::class);
+
+it('never combines wildcard origins with credentialed CORS', function () {
+    expect(config('cors.supports_credentials'))->toBeTrue()
+        ->and(config('cors.allowed_origins'))->not->toContain('*');
+});
+
+it('accepts explicit origins from CORS_ALLOWED_ORIGINS', function () {
+    $previousCorsAllowedOrigins = getenv('CORS_ALLOWED_ORIGINS');
+    $configuredOrigins = 'https://frontend.example.com, http://localhost:4173';
+
+    putenv("CORS_ALLOWED_ORIGINS={$configuredOrigins}");
+    $_ENV['CORS_ALLOWED_ORIGINS'] = $configuredOrigins;
+    $_SERVER['CORS_ALLOWED_ORIGINS'] = $configuredOrigins;
+
+    try {
+        $corsConfig = require base_path('config/cors.php');
+
+        expect($corsConfig['allowed_origins'])->toBe([
+            'https://frontend.example.com',
+            'http://localhost:4173',
+        ]);
+    } finally {
+        if ($previousCorsAllowedOrigins === false) {
+            putenv('CORS_ALLOWED_ORIGINS');
+            unset($_ENV['CORS_ALLOWED_ORIGINS'], $_SERVER['CORS_ALLOWED_ORIGINS']);
+        } else {
+            putenv("CORS_ALLOWED_ORIGINS={$previousCorsAllowedOrigins}");
+            $_ENV['CORS_ALLOWED_ORIGINS'] = $previousCorsAllowedOrigins;
+            $_SERVER['CORS_ALLOWED_ORIGINS'] = $previousCorsAllowedOrigins;
+        }
+    }
+});

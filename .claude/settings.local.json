@@ -1,5 +1,4 @@
 {
-  "model": "claude-opus-4-6",
   "permissions": {
     "allow": [
       "Bash(php artisan test:*)",
@@ -28,9 +27,14 @@
       "Bash(Select-Object -Skip 217 -First 200)",
       "Bash(npm run dev:*)",
       "Bash(git reset:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(python3 -c \":*)",
+      "Bash(node -e \":*)",
+      "Bash(node parse-report.js)",
+      "Bash(node /c/laravel/schooltool/parse-report.js)"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "model": "claude-opus-4-6"
 }
