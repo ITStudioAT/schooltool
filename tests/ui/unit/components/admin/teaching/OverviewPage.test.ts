@@ -36,7 +36,7 @@ describe('Teaching overview controls', () => {
         expect(ctx.show_infos).toBe(false)
     })
 
-    it('hides Meine Fächer and enables Infos when a course is selected', () => {
+    it('keeps Meine Fächer visible and enables Infos when a course is selected', () => {
         const ctx = {
             show_my_courses: true,
             show_infos: false,
@@ -44,7 +44,7 @@ describe('Teaching overview controls', () => {
 
         ;(Overview as any).watch.selected_course.call(ctx, { id: 7, title: 'Biologie' })
 
-        expect(ctx.show_my_courses).toBe(false)
+        expect(ctx.show_my_courses).toBe(true)
         expect(ctx.show_infos).toBe(true)
     })
 

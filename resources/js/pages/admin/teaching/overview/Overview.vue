@@ -218,7 +218,6 @@ export default {
     watch: {
         selected_course(newCourse) {
             if (newCourse) {
-                this.show_my_courses = false
                 this.show_infos = true
             } else {
                 this.show_more = false
