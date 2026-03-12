@@ -68,9 +68,6 @@
                                     </v-chip>
                                 </v-list-item-subtitle>
                                 <div class="mt-2 d-flex align-center ga-2 flex-wrap">
-                                    <v-btn size="small" variant="outlined" color="primary" @click="openUploadDialog(aba)">
-                                        Upload
-                                    </v-btn>
                                     <v-btn size="small" variant="tonal" color="primary" @click="openFilesDialog(aba)">
                                         Dateien
                                     </v-btn>
@@ -206,6 +203,16 @@
                 <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                     <v-icon size="18">mdi-file-multiple-outline</v-icon>
                     Dateien
+                    <v-spacer />
+                    <v-btn
+                        size="small"
+                        variant="flat"
+                        color="primary"
+                        prepend-icon="mdi-upload-outline"
+                        :disabled="!selectedFilesAba || isDeletingAttachment || isUploadDialogLocked"
+                        @click="openUploadDialog(selectedFilesAba)">
+                        Upload
+                    </v-btn>
                 </v-card-title>
                 <v-divider />
                 <v-card-text>
@@ -727,6 +734,7 @@ export default {
 
                 await this.loadAbas()
                 await this.refreshSelectedUploadAba()
+                await this.refreshSelectedFilesAba()
 
                 useNotificationStore().notify({
                     message: this.uploadDocumentKind === this.documentKindMain

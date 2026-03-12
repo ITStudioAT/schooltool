@@ -260,3 +260,13 @@ it('keeps overview content as the existing aba main view', function () {
         ->toContain('/attachments/${attachment.id}')
         ->toContain('file-pond');
 });
+
+it('opens upload from files dialog instead of aba list row', function () {
+    $overviewContent = file_get_contents(resource_path('js/pages/admin/aba/components/Overview.vue'));
+
+    expect($overviewContent)
+        ->toContain('<v-dialog v-model="filesDialogOpen"')
+        ->toContain('@click="openUploadDialog(selectedFilesAba)"')
+        ->toContain('@click="openFilesDialog(aba)"')
+        ->not->toContain('@click="openUploadDialog(aba)"');
+});
