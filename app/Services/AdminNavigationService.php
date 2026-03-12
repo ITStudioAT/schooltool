@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\User;
-use App\Services\UserService;
 use App\Traits\HasRoleTrait;
 use Illuminate\Support\Facades\Auth;
 
@@ -20,7 +19,7 @@ class AdminNavigationService
         }
 
         $user = User::findOrFail(Auth::user()->id);
-        $user_name = substr($user->last_name . ' ' . $user->first_name, 0, 17);
+        $user_name = substr($user->last_name.' '.$user->first_name, 0, 17);
         $isSuperAdmin = $this->userHasRole(['super_admin']);
 
         $menu[] = ['title' => 'Home', 'icon' => 'mdi-home', 'to' => '/admin', 'is_active' => true];
@@ -39,6 +38,7 @@ class AdminNavigationService
         $tutoringLicenceStatus = $this->toolAccessStatus($user, 'Nachhilfetool', ['admin', 'tutoring_admin', 'teacher']);
         $teachingLicenceStatus = $this->toolAccessStatus($user, 'Lehrertool', ['admin', 'teaching_admin', 'teacher']);
         $materialsLicenceStatus = $this->toolAccessStatus($user, 'Materialientool', ['admin', 'materials_admin', 'materials_moderator']);
+        $abaLicenceStatus = $this->toolAccessStatus($user, 'ABA', ['aba_teacher']);
         $groupsFeatureLicensed = in_array($teachingLicenceStatus, ['active'], true) || in_array($materialsLicenceStatus, ['active'], true);
 
         // ANMELDESYSTEM
@@ -79,7 +79,7 @@ class AdminNavigationService
         }
 
         // ABA
-        if ($isSuperAdmin || $this->userHasRole(['admin', 'aba_teacher'])) {
+        if ($this->userHasRole(['aba_teacher']) && $abaLicenceStatus === 'active') {
             $menu[] = [
                 'title' => 'ABA',
                 'icon' => 'mdi-certificate-outline',
@@ -157,7 +157,7 @@ class AdminNavigationService
     /* BENUTZER/ROLLEN: Informationsblöcke */
     public function userSelection(): array
     {
-        $userService = new UserService();
+        $userService = new UserService;
         $selection = [];
         $all_users = ['title' => 'Alle Benutzer', 'icon' => 'mdi-account-group', 'url' => '/admin/users/all_users', 'infos' => $userService->allUsersInfos()];
 
@@ -183,7 +183,7 @@ class AdminNavigationService
             return [
                 'status_icon' => 'mdi-clock-alert-outline',
                 'status_color' => 'warning',
-                'status_title' => $moduleLabel . ': Lizenz abgelaufen',
+                'status_title' => $moduleLabel.': Lizenz abgelaufen',
             ];
         }
 
@@ -191,7 +191,7 @@ class AdminNavigationService
             return [
                 'status_icon' => 'mdi-alert-circle-outline',
                 'status_color' => 'error',
-                'status_title' => $moduleLabel . ': Lizenz nicht vorhanden',
+                'status_title' => $moduleLabel.': Lizenz nicht vorhanden',
             ];
         }
 

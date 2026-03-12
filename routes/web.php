@@ -1,12 +1,7 @@
 <?php
 
-use App\Http\Controllers\Homepage\HomepageController;
 use App\Http\Controllers\Tutoring\TutoringController;
-use Illuminate\Support\Facades\Broadcast;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
-
-
 
 // Broadcasting wird vom BroadcastServiceProvider gehandhabt
 
@@ -24,14 +19,12 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
     });
     Route::get('/admin/register', function () {
         abort_unless(config('spa.register_admin_allowed'), 403);
+
         return view('spa::admin');
     });
     Route::get('/admin/email_verification', function () {
         return view('spa::admin');
     });
-
-
-
 
     /* restliche admin-Routen */
     Route::get('/admin/register_system/{any?}', function () {
@@ -50,10 +43,13 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         return view('spa::admin');
     })->where('any', '.*')->middleware(['auth:sanctum', 'web-allowed:admin,materials_admin,materials_moderator', 'tool-licensed:Materialientool,auth']);
 
+    Route::get('/admin/aba/{any?}', function () {
+        return view('spa::admin');
+    })->where('any', '.*')->middleware(['auth:sanctum', 'aba-access']);
+
     Route::get('/admin/{any?}', function () {
         return view('spa::admin');
-    })->where('any', '.*')->middleware(['auth:sanctum', 'web-allowed:admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher,lunch_admin']);
-
+    })->where('any', '.*')->middleware(['auth:sanctum', 'web-allowed:admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher,lunch_admin,aba_teacher']);
 
     /* APPLICATION ROUTES */
     Route::get('/application/{any?}', function () {
@@ -70,13 +66,12 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
 
     if (config('schooltool.tutoring_active') === true) {
 
-
         // Your existing tutoring routes
         Route::prefix('homepage')->group(function () {
 
-            Route::get('tutoring_response', fn() => view('homepage'));
-            Route::get('tutoring_overview', fn() => view('homepage'))->middleware('tool-licensed:Nachhilfetool');
-            Route::get('tutoring', fn() => view('homepage'))->middleware(['auth:sanctum', 'tool-licensed:Nachhilfetool']);
+            Route::get('tutoring_response', fn () => view('homepage'));
+            Route::get('tutoring_overview', fn () => view('homepage'))->middleware('tool-licensed:Nachhilfetool');
+            Route::get('tutoring', fn () => view('homepage'))->middleware(['auth:sanctum', 'tool-licensed:Nachhilfetool']);
         });
 
         // The three controller routes
@@ -88,8 +83,6 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         });
     }
 
-
-
     Route::get('/', function () {
         return view('homepage');
     });
@@ -98,5 +91,5 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         return view('homepage');
     })->where('any', '.*');
 
-    Route::get('/homepage/{any?}',  [\App\Http\Controllers\Homepage\HomepageController::class, 'routing']);
+    Route::get('/homepage/{any?}', [\App\Http\Controllers\Homepage\HomepageController::class, 'routing']);
 });

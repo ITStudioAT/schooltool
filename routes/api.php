@@ -104,6 +104,26 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/test-cron/check', [App\Http\Controllers\Admin\HealthController::class, 'testCron']);
     });
 
+    /* SANCTUM - aba_teacher */
+    Route::middleware(['auth:sanctum', 'api-allowed:aba_teacher', 'tool-licensed:ABA,auth'])->group(function () {
+        Route::get('/admin/aba/schoolyears', [\App\Http\Controllers\Admin\SchoolyearController::class, 'index']);
+        Route::post('/admin/aba/schoolyears/set_active', [\App\Http\Controllers\Admin\SchoolyearController::class, 'setActiveSchoolyear']);
+
+        // ABA CRUD
+        Route::get('/admin/abas', [\App\Http\Controllers\Admin\ABA\AbaController::class, 'index']);
+        Route::post('/admin/abas', [\App\Http\Controllers\Admin\ABA\AbaController::class, 'store']);
+        Route::get('/admin/abas/{aba}', [\App\Http\Controllers\Admin\ABA\AbaController::class, 'show']);
+        Route::put('/admin/abas/{aba}', [\App\Http\Controllers\Admin\ABA\AbaController::class, 'update']);
+        Route::delete('/admin/abas/{aba}', [\App\Http\Controllers\Admin\ABA\AbaController::class, 'destroy']);
+        Route::post('/admin/abas/{aba}/attachments/from-temp', [\App\Http\Controllers\Admin\ABA\AbaAttachmentController::class, 'storeFromTemp']);
+        Route::delete('/admin/abas/{aba}/attachments/{attachment}', [\App\Http\Controllers\Admin\ABA\AbaAttachmentController::class, 'destroy']);
+
+        // ABA chunk upload for FilePond
+        Route::post('/admin/aba/uploads/chunk', [\App\Http\Controllers\Admin\ABA\AbaChunkUploadController::class, 'upload']);
+        Route::patch('/admin/aba/uploads/chunk', [\App\Http\Controllers\Admin\ABA\AbaChunkUploadController::class, 'uploadNext']);
+        Route::delete('/admin/aba/uploads/chunk/{upload_id}', [\App\Http\Controllers\Admin\ABA\AbaChunkUploadController::class, 'destroy']);
+    });
+
     /* SANCTUM - user */
     Route::middleware(['auth:sanctum', 'api-allowed:user,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,teacher'])->group(function () {
         Route::put('/admin/users/update_profile/{user}', [UserController::class, 'updateProfile']);
