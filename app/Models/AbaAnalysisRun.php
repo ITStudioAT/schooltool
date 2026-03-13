@@ -38,6 +38,8 @@ class AbaAnalysisRun extends Model
         'failed_at',
         'extracted_sections_count',
         'extracted_figures_count',
+        'text_length',
+        'text_length_without_spaces',
         'summary',
     ];
 
@@ -51,6 +53,8 @@ class AbaAnalysisRun extends Model
             'failed_at' => 'datetime',
             'extracted_sections_count' => 'integer',
             'extracted_figures_count' => 'integer',
+            'text_length' => 'integer',
+            'text_length_without_spaces' => 'integer',
             'summary' => 'array',
         ];
     }

@@ -409,12 +409,15 @@ test('processing run stores extracted sections and marks run completed', functio
     $run->refresh();
     expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED)
         ->and($run->completed_at)->not->toBeNull()
-        ->and((int) $run->extracted_sections_count)->toBeGreaterThan(0);
+        ->and((int) $run->extracted_sections_count)->toBeGreaterThan(0)
+        ->and((int) ($run->text_length ?? 0))->toBeGreaterThan(0)
+        ->and((int) ($run->text_length_without_spaces ?? 0))->toBeGreaterThan(0);
 
     $summary = is_array($run->summary) ? $run->summary : [];
     expect($summary)
         ->toHaveKey('analysis_stats')
         ->toHaveKey('record_counts')
+        ->toHaveKey('display_values')
         ->toHaveKey('canonical_json')
         ->toHaveKey('normalized_json')
         ->toHaveKey('validation')
@@ -448,6 +451,7 @@ test('processing run stores extracted sections and marks run completed', functio
 
     $analysisStats = is_array($summary['analysis_stats'] ?? null) ? $summary['analysis_stats'] : [];
     $recordCounts = is_array($summary['record_counts'] ?? null) ? $summary['record_counts'] : [];
+    $displayValues = is_array($summary['display_values'] ?? null) ? $summary['display_values'] : [];
     $persistedCount = AbaAnalysisResult::query()->where('aba_analysis_run_id', $run->id)->count();
 
     expect($analysisStats)
@@ -468,6 +472,8 @@ test('processing run stores extracted sections and marks run completed', functio
         ->toHaveKey('consent_declaration_detected')
         ->toHaveKey('chapter_count')
         ->toHaveKey('subchapter_count')
+        ->toHaveKey('text_length')
+        ->toHaveKey('text_length_without_spaces')
         ->toHaveKey('analysis_quality_score')
         ->toHaveKey('structure_quality_score')
         ->toHaveKey('extraction_consistency_score')
@@ -475,6 +481,9 @@ test('processing run stores extracted sections and marks run completed', functio
 
     expect((int) ($analysisStats['persisted_record_count'] ?? 0))->toBe($persistedCount)
         ->and((int) ($recordCounts['persisted_record_count'] ?? 0))->toBe($persistedCount)
+        ->and((int) ($displayValues['total_record_count'] ?? 0))->toBe($persistedCount)
+        ->and((int) ($displayValues['text_length'] ?? 0))->toBeGreaterThan(0)
+        ->and((int) ($displayValues['text_length_without_spaces'] ?? 0))->toBeGreaterThan(0)
         ->and((bool) ($analysisStats['count_mismatch_detected'] ?? true))->toBeFalse()
         ->and((bool) ($analysisStats['title_page_detected'] ?? false))->toBeTrue()
         ->and((bool) ($analysisStats['abstract_detected'] ?? false))->toBeTrue()
@@ -485,6 +494,9 @@ test('processing run stores extracted sections and marks run completed', functio
         ->and((bool) ($analysisStats['consent_declaration_detected'] ?? false))->toBeTrue()
         ->and((int) ($analysisStats['chapter_count'] ?? 0))->toBeGreaterThanOrEqual(1)
         ->and((int) ($analysisStats['subchapter_count'] ?? 0))->toBeGreaterThanOrEqual(1)
+        ->and((int) ($analysisStats['text_length'] ?? 0))->toBeGreaterThan(0)
+        ->and((int) ($analysisStats['text_length_without_spaces'] ?? 0))->toBeGreaterThan(0)
+        ->and((int) ($analysisStats['text_length_without_spaces'] ?? 0))->toBeLessThan((int) ($analysisStats['text_length'] ?? 0))
         ->and((float) ($analysisStats['analysis_quality_score'] ?? -1))->toBeGreaterThanOrEqual(0.0)
         ->and((float) ($analysisStats['analysis_quality_score'] ?? 2))->toBeLessThanOrEqual(1.0)
         ->and((float) ($analysisStats['structure_quality_score'] ?? -1))->toBeGreaterThanOrEqual(0.0)
@@ -1711,6 +1723,16 @@ test('analysis results endpoint includes record counts and abstract language sta
                 'validated_record_count' => 4,
                 'persisted_record_count' => 4,
             ],
+            'display_values' => [
+                'total_record_count' => 4,
+                'text_length' => 1234,
+                'text_length_without_spaces' => 1001,
+                'document_type' => 'aba',
+                'selected_candidate' => 'docx_xml',
+                'review_state' => 'auto_approved',
+                'auto_approved' => true,
+                'auto_approve_confidence_threshold' => 0.82,
+            ],
         ],
     ]);
 
@@ -1722,7 +1744,11 @@ test('analysis results endpoint includes record counts and abstract language sta
         ->assertJsonPath('data.analysis_run.analysis_stats.abstract_detected', true)
         ->assertJsonPath('data.analysis_run.analysis_stats.abstract_de_detected', true)
         ->assertJsonPath('data.analysis_run.analysis_stats.abstract_en_detected', false)
-        ->assertJsonPath('data.analysis_run.analysis_stats.review_state', 'auto_approved');
+        ->assertJsonPath('data.analysis_run.analysis_stats.review_state', 'auto_approved')
+        ->assertJsonPath('data.analysis_run.display_values.total_record_count', 4)
+        ->assertJsonPath('data.analysis_run.display_values.text_length', 1234)
+        ->assertJsonPath('data.analysis_run.display_values.text_length_without_spaces', 1001)
+        ->assertJsonPath('data.analysis_run.display_values.auto_approve_confidence_threshold', 0.82);
 });
 
 test('analysis results endpoint handles missing run and missing section text cleanly', function () {
@@ -1801,14 +1827,20 @@ test('results page contains vuetify accordion and section text rendering', funct
         ->toContain('chapterRootRecords')
         ->toContain('AbaRecordTree')
         ->toContain('Erkannte Kapitel / Abschnitte')
-        ->toContain('Anzahl Datensätze')
+        ->toContain('Erneute Analyse')
+        ->toContain('restartAnalysis')
+        ->toContain('/api/admin/abas/${this.abaId}/analysis')
+        ->toContain('Anzahl Seiten (echt gerendert)')
+        ->toContain('Zeichen gesamt')
+        ->toContain('Zeichen ohne Leerzeichen')
+        ->toContain('automatisch freigegeben (ab')
         ->toContain('Keine Analyseergebnisse vorhanden.')
         ->toContain('/api/admin/abas/${this.abaId}/analysis/results');
 
     expect($treeComponentContent)
         ->toContain('Kein Text für diesen Datensatz gespeichert.')
-        ->toContain('Extrahierte Angaben')
-        ->toContain('Einreicher (Verfasst von)')
+        ->toContain('Angaben vom Titelblatt')
+        ->toContain('Einreicher:in (Verfasst von)')
         ->toContain('source_block_ids')
         ->toContain('pageRangeLabel');
 });
@@ -1855,6 +1887,7 @@ test('title page details are extracted and persisted when available', function (
     ]);
 
     app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
 
     $titlePage = AbaAnalysisResult::query()
         ->where('aba_analysis_run_id', $run->id)
@@ -1872,6 +1905,148 @@ test('title page details are extracted and persisted when available', function (
         ->and((string) ($details['advisor'] ?? ''))->toContain('Günther Kron')
         ->and((string) ($details['class'] ?? ''))->toBe('8M')
         ->and((string) ($details['year'] ?? ''))->toBe('2025/2026');
+
+    $summary = is_array($run->summary) ? $run->summary : [];
+    $analysisStats = is_array($summary['analysis_stats'] ?? null) ? $summary['analysis_stats'] : [];
+    $displayValues = is_array($summary['display_values'] ?? null) ? $summary['display_values'] : [];
+
+    expect((string) ($analysisStats['title_page_title'] ?? ''))->toBe('Die Rolle der Medien in der politischen Meinungsbildung')
+        ->and((string) ($analysisStats['title_page_submitter'] ?? ''))->toBe('Yvonne Pucher')
+        ->and((string) ($analysisStats['title_page_advisor'] ?? ''))->toContain('Günther Kron')
+        ->and((string) ($analysisStats['title_page_class'] ?? ''))->toBe('8M')
+        ->and((string) ($analysisStats['title_page_year'] ?? ''))->toBe('2025/2026')
+        ->and((string) ($displayValues['title_page_title'] ?? ''))->toBe('Die Rolle der Medien in der politischen Meinungsbildung')
+        ->and((string) ($displayValues['title_page_submitter'] ?? ''))->toBe('Yvonne Pucher')
+        ->and((string) ($displayValues['title_page_advisor'] ?? ''))->toContain('Günther Kron')
+        ->and((string) ($displayValues['title_page_class'] ?? ''))->toBe('8M')
+        ->and((string) ($displayValues['title_page_year'] ?? ''))->toBe('2025/2026');
+});
+
+test('title page year stays empty when no explicit year label is present', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    config()->set('aba_analysis.openai_normalization_enabled', false);
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'titelblatt-ohne-jahr.docx', [
+        ['text' => 'Christian Doppler-Gymnasium', 'style' => 'Normal'],
+        ['text' => 'Franz-Josef-Kai 41', 'style' => 'Normal'],
+        ['text' => '5020 Salzburg', 'style' => 'Normal'],
+        ['text' => 'Die Rolle der Medien in der politischen Meinungsbildung', 'style' => 'Normal'],
+        ['text' => 'Verfasst von', 'style' => 'Normal'],
+        ['text' => 'Yvonne Pucher', 'style' => 'Normal'],
+        ['text' => 'Betreuer: Dipl.-Ing. Günther Kron', 'style' => 'Normal'],
+        ['text' => 'Klasse 8M', 'style' => 'Normal'],
+        ['page_break' => true],
+        ['text' => 'Abstract', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Kurzfassung der Arbeit', 'style' => 'Normal'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'titelblatt-ohne-jahr.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $titlePage = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->where('section_type', 'title_page')
+        ->first();
+
+    expect($titlePage)->not->toBeNull();
+
+    $details = is_array($titlePage?->metadata['title_page_details'] ?? null)
+        ? $titlePage->metadata['title_page_details']
+        : [];
+
+    $summary = is_array($run->summary) ? $run->summary : [];
+    $analysisStats = is_array($summary['analysis_stats'] ?? null) ? $summary['analysis_stats'] : [];
+    $displayValues = is_array($summary['display_values'] ?? null) ? $summary['display_values'] : [];
+
+    expect($details['year'] ?? null)->toBeNull()
+        ->and($analysisStats['title_page_year'] ?? null)->toBeNull()
+        ->and($displayValues['title_page_year'] ?? null)->toBeNull();
+});
+
+test('title page year is not inferred from running text mentioning jahr', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    config()->set('aba_analysis.openai_normalization_enabled', false);
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'titelblatt-jahr-im-fliestext.docx', [
+        ['text' => 'Christian Doppler-Gymnasium', 'style' => 'Normal'],
+        ['text' => 'Franz-Josef-Kai 41', 'style' => 'Normal'],
+        ['text' => '5020 Salzburg', 'style' => 'Normal'],
+        ['text' => 'Die Rolle der Medien in der politischen Meinungsbildung', 'style' => 'Normal'],
+        ['text' => 'Verfasst von', 'style' => 'Normal'],
+        ['text' => 'Yvonne Pucher', 'style' => 'Normal'],
+        ['text' => 'Betreuer: Dipl.-Ing. Günther Kron', 'style' => 'Normal'],
+        ['text' => 'Klasse 8M', 'style' => 'Normal'],
+        ['text' => 'Im Jahr 2019 wurde das Thema erstmals betrachtet.', 'style' => 'Normal'],
+        ['page_break' => true],
+        ['text' => 'Abstract', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Kurzfassung der Arbeit', 'style' => 'Normal'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'titelblatt-jahr-im-fliestext.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $titlePage = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->where('section_type', 'title_page')
+        ->first();
+
+    expect($titlePage)->not->toBeNull();
+
+    $details = is_array($titlePage?->metadata['title_page_details'] ?? null)
+        ? $titlePage->metadata['title_page_details']
+        : [];
+
+    $summary = is_array($run->summary) ? $run->summary : [];
+    $analysisStats = is_array($summary['analysis_stats'] ?? null) ? $summary['analysis_stats'] : [];
+    $displayValues = is_array($summary['display_values'] ?? null) ? $summary['display_values'] : [];
+
+    expect($details['year'] ?? null)->toBeNull()
+        ->and($analysisStats['title_page_year'] ?? null)->toBeNull()
+        ->and($displayValues['title_page_year'] ?? null)->toBeNull();
 });
 
 test('docx page mapper assigns real page numbers when page breaks are present', function () {

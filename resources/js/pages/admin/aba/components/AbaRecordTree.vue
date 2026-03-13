@@ -62,7 +62,7 @@
             </div>
 
             <div v-if="titlePageDetails.length > 0" class="record-tree-node__details">
-                <div class="record-tree-node__label">Extrahierte Angaben</div>
+                <div class="record-tree-node__label">Angaben vom Titelblatt</div>
                 <div class="record-tree-node__details-grid">
                     <div v-for="item in titlePageDetails" :key="`${record.id}-detail-${item.key}`" class="record-tree-node__details-row">
                         <span>{{ item.label }}</span>
@@ -203,11 +203,6 @@ export default {
                 }
             }
 
-            const anchor = this.record?.anchor && typeof this.record.anchor === 'object' ? this.record.anchor : {}
-            if (anchor.line_start || anchor.line_end) {
-                labels.push(`anchor: ${anchor.line_start || '-'}–${anchor.line_end || '-'}`)
-            }
-
             return labels
         },
         titlePageDetails() {
@@ -233,13 +228,13 @@ export default {
 
             const items = [
                 { key: 'title', label: 'Titel', value: resolveValue(details.title, metadata.title_page_title) },
-                { key: 'submitter', label: 'Einreicher (Verfasst von)', value: resolveValue(details.submitter, metadata.title_page_submitter) },
+                { key: 'submitter', label: 'Einreicher:in (Verfasst von)', value: resolveValue(details.submitter, metadata.title_page_submitter) },
                 { key: 'advisor', label: 'Betreuer', value: resolveValue(details.advisor, metadata.title_page_advisor) },
                 { key: 'class', label: 'Klasse', value: resolveValue(details.class, metadata.title_page_class) },
-                { key: 'year', label: 'Jahr', value: resolveValue(details.year, metadata.title_page_year) },
+                { key: 'year', label: 'Jahr', value: resolveValue(details.year, metadata.title_page_year) || '--' },
             ]
 
-            return items.filter((item) => item.value !== null)
+            return items.filter((item) => item.key === 'year' || item.value !== null)
         },
         childRecords() {
             const id = Number(this.record?.id || 0)

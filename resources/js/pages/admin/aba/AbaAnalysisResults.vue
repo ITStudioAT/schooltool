@@ -10,29 +10,50 @@
             secondary-color="#1d4ed8"
             right-orb-color="#93c5fd" />
 
-        <v-sheet rounded="xl" class="aba-results-nav mb-2" :class="{ 'is-locked': loading || refreshing }">
+        <v-sheet rounded="xl" class="aba-results-nav mb-2" :class="{ 'is-locked': controlsLocked }">
             <div class="aba-results-nav__buttons">
-                <v-btn variant="tonal" color="primary" prepend-icon="mdi-arrow-left" :disabled="loading || refreshing" @click="goBack">
+                <v-btn variant="tonal" color="primary" prepend-icon="mdi-arrow-left" :disabled="controlsLocked" @click="goBack">
                     Zurück
                 </v-btn>
-                <v-btn variant="flat" color="primary" prepend-icon="mdi-refresh" :loading="refreshing" :disabled="loading" @click="refreshNow">
+                <v-btn variant="flat" color="primary" prepend-icon="mdi-refresh" :loading="refreshing" :disabled="controlsLocked" @click="refreshNow">
                     Aktualisieren
+                </v-btn>
+                <v-btn
+                    variant="flat"
+                    color="warning"
+                    prepend-icon="mdi-reload"
+                    :loading="reanalysisStarting"
+                    :disabled="controlsLocked || abaId <= 0"
+                    @click="restartAnalysis">
+                    Erneute Analyse
                 </v-btn>
                 <v-chip size="small" color="primary" variant="tonal">ABA #{{ abaId }}</v-chip>
                 <v-chip v-if="analysisRun" size="small" :color="pendingRun ? 'warning' : 'success'" variant="tonal">
                     {{ analysisStatusLabel }}
                 </v-chip>
             </div>
-            <v-progress-linear v-if="loading || refreshing" color="primary" indeterminate class="aba-results-nav__progress" />
+            <v-progress-linear v-if="loading || refreshing || reanalysisStarting" color="primary" indeterminate class="aba-results-nav__progress" />
         </v-sheet>
 
         <v-alert v-if="error" type="error" variant="tonal" rounded="lg" class="mb-3">{{ error }}</v-alert>
 
+        <v-overlay
+            :model-value="analysisLockActive"
+            persistent
+            class="aba-results-overlay">
+            <div class="aba-results-overlay__content">
+                <v-progress-circular indeterminate size="36" width="4" color="primary" />
+                <div class="aba-results-overlay__text">{{ analysisLockLabel }}</div>
+            </div>
+        </v-overlay>
+
         <v-row class="w-100 ma-0" dense>
             <v-col cols="12" lg="4">
-                <ItsGridBox variant="overview" color="primary" title="Übersicht" subtitle="Persistierte Datensätze" icon="mdi-chart-box-outline">
+                <ItsGridBox variant="overview" color="primary" title="Übersicht" subtitle="Gespeicherte Datensätze" icon="mdi-chart-box-outline">
                     <div class="summary-meta">
-                        <div class="summary-meta__row"><span>Anzahl Datensätze</span><strong>{{ totalRecordCount }}</strong></div>
+                        <div class="summary-meta__row"><span>Anzahl Seiten (echt gerendert)</span><strong>{{ renderedPageCountLabel }}</strong></div>
+                        <div class="summary-meta__row"><span>Zeichen gesamt</span><strong>{{ textLengthLabel }}</strong></div>
+                        <div class="summary-meta__row"><span>Zeichen ohne Leerzeichen</span><strong>{{ textLengthWithoutSpacesLabel }}</strong></div>
                         <div class="summary-meta__row"><span>Dokumenttyp</span><strong>{{ documentTypeLabel }}</strong></div>
                         <div class="summary-meta__row"><span>Extraktionskandidat</span><strong>{{ selectedCandidateLabel }}</strong></div>
                         <div v-if="showFinalConfidence" class="summary-meta__row"><span>Finale Konfidenz</span><strong>{{ formatPercent(finalConfidence) }}</strong></div>
@@ -56,9 +77,6 @@
                         </div>
                     </div>
 
-                    <v-alert type="info" variant="tonal" density="compact" class="mt-3">
-                        {{ abstractLanguageSummary }}
-                    </v-alert>
                 </ItsGridBox>
 
                 <ItsGridBox variant="overview" color="primary" title="Datensatzstatistik" subtitle="Struktur und Typen" icon="mdi-file-tree-outline">
@@ -82,6 +100,7 @@
 
             <v-col cols="12" lg="8">
                 <ItsGridBox
+                    class="results-structure-card"
                     variant="overview"
                     color="primary"
                     title="Erkannte Kapitel / Abschnitte"
@@ -107,49 +126,57 @@
                             </div>
                         </v-sheet>
 
-                        <div v-if="frontmatterRecords.length > 0" class="mb-4">
-                            <div class="structure-heading mb-2">Datensätze am Dokumentanfang</div>
+                        <div v-if="frontmatterPanelItems.length > 0" class="mb-4">
                             <v-expansion-panels multiple variant="accordion">
-                                <v-expansion-panel v-for="record in frontmatterRecords" :key="`frontmatter-${record.id}`" :value="record.id">
+                                <v-expansion-panel v-for="panel in frontmatterPanelItems" :key="panel.id" :value="panel.id">
                                     <v-expansion-panel-title>
                                         <div class="chapter-panel-title">
-                                            <span>{{ frontmatterPanelLabel(record) }}</span>
+                                            <div class="chapter-panel-title__main">
+                                                <span>{{ panel.kind === 'content' ? 'Inhalt' : frontmatterPanelLabel(panel.record) }}</span>
+                                                <v-chip v-if="panelPageLabel(panel)" size="x-small" color="success" variant="tonal">
+                                                    {{ panelPageLabel(panel) }}
+                                                </v-chip>
+                                            </div>
                                         </div>
                                     </v-expansion-panel-title>
                                     <v-expansion-panel-text>
+                                        <template v-if="panel.kind === 'content'">
+                                            <v-expansion-panels v-if="chapterRootRecords.length > 0" v-model="openChapterPanels" multiple variant="accordion">
+                                                <v-expansion-panel v-for="record in chapterRootRecords" :key="record.id" :value="record.id">
+                                                    <v-expansion-panel-title>
+                                                        <div class="chapter-panel-title">
+                                                            <div class="chapter-panel-title__main">
+                                                                <span>{{ record.section_title || 'Ohne Titel' }}</span>
+                                                                <v-chip v-if="recordPageLabel(record)" size="x-small" color="success" variant="tonal">
+                                                                    {{ recordPageLabel(record) }}
+                                                                </v-chip>
+                                                            </div>
+                                                            <v-chip size="x-small" color="primary" variant="tonal" class="chapter-panel-title__meta">
+                                                                {{ chapterDescendantCount(record.id) }} Unter-Datensätze
+                                                            </v-chip>
+                                                        </div>
+                                                    </v-expansion-panel-title>
+                                                    <v-expansion-panel-text>
+                                                        <AbaRecordTree
+                                                            :record="record"
+                                                            :children-by-parent="childrenByParent"
+                                                            :records-by-id="recordsById" />
+                                                    </v-expansion-panel-text>
+                                                </v-expansion-panel>
+                                            </v-expansion-panels>
+
+                                            <v-alert v-else type="info" variant="tonal" rounded="lg">
+                                                Keine Hauptkapitel erkannt.
+                                            </v-alert>
+                                        </template>
                                         <AbaRecordTree
-                                            :record="record"
+                                            v-else
+                                            :record="panel.record"
                                             :children-by-parent="childrenByParent"
                                             :records-by-id="recordsById" />
                                     </v-expansion-panel-text>
                                 </v-expansion-panel>
                             </v-expansion-panels>
-                        </div>
-
-                        <div>
-                            <div class="structure-heading mb-2">Hauptkapitel-Datensätze</div>
-                            <v-expansion-panels v-if="chapterRootRecords.length > 0" v-model="openChapterPanels" multiple variant="accordion">
-                                <v-expansion-panel v-for="record in chapterRootRecords" :key="record.id" :value="record.id">
-                                    <v-expansion-panel-title>
-                                        <div class="chapter-panel-title">
-                                            <span>{{ record.section_title || 'Ohne Titel' }}</span>
-                                            <v-chip size="x-small" color="primary" variant="tonal">
-                                                {{ chapterDescendantCount(record.id) }} Unter-Datensätze
-                                            </v-chip>
-                                        </div>
-                                    </v-expansion-panel-title>
-                                    <v-expansion-panel-text>
-                                        <AbaRecordTree
-                                            :record="record"
-                                            :children-by-parent="childrenByParent"
-                                            :records-by-id="recordsById" />
-                                    </v-expansion-panel-text>
-                                </v-expansion-panel>
-                            </v-expansion-panels>
-
-                            <v-alert v-else type="info" variant="tonal" rounded="lg">
-                                Keine Hauptkapitel-Datensätze erkannt.
-                            </v-alert>
                         </div>
 
                         <div v-if="topLevelOtherRecords.length > 0" class="mt-4">
@@ -182,6 +209,7 @@ export default {
         return {
             loading: true,
             refreshing: false,
+            reanalysisStarting: false,
             error: '',
             payload: null,
             pollTimer: null,
@@ -237,6 +265,17 @@ export default {
 
             return {}
         },
+        displayValues() {
+            if (this.analysisRun?.display_values && typeof this.analysisRun.display_values === 'object') {
+                return this.analysisRun.display_values
+            }
+
+            if (this.safeSummary.display_values && typeof this.safeSummary.display_values === 'object') {
+                return this.safeSummary.display_values
+            }
+
+            return {}
+        },
         recordsById() {
             return this.sections.reduce((carry, record) => {
                 const id = Number(record?.id || 0)
@@ -274,6 +313,29 @@ export default {
                 return !this.hasChapterAncestor(record)
             })
         },
+        frontmatterPanelItems() {
+            const items = this.frontmatterRecords.map((record) => ({
+                id: `frontmatter-${record.id}`,
+                kind: 'record',
+                record,
+            }))
+
+            if (this.chapterRootRecords.length > 0) {
+                const firstChapter = this.chapterRootRecords[0]
+                items.push({
+                    id: 'frontmatter-content',
+                    kind: 'content',
+                    anchor: {
+                        start_page: firstChapter?.start_page ?? null,
+                        start_line: firstChapter?.start_line ?? null,
+                        sort_order: firstChapter?.sort_order ?? null,
+                        id: Number(firstChapter?.id ?? 0) + 1000000,
+                    },
+                })
+            }
+
+            return items.sort((left, right) => this.compareRecordsByPage(this.panelSortReference(left), this.panelSortReference(right)))
+        },
         topLevelOtherRecords() {
             return this.sections.filter((record) => {
                 const parentId = Number(record?.parent_result_id || 0)
@@ -296,6 +358,19 @@ export default {
             const status = String(this.analysisRun?.status || '')
             return status === 'started' || status === 'running'
         },
+        analysisLockActive() {
+            return this.reanalysisStarting || this.pendingRun
+        },
+        controlsLocked() {
+            return this.loading || this.refreshing || this.analysisLockActive
+        },
+        analysisLockLabel() {
+            if (this.reanalysisStarting) {
+                return 'Erneute Analyse wird gestartet...'
+            }
+
+            return 'Analyse läuft. Bitte warten...'
+        },
         analysisStatusLabel() {
             const status = String(this.analysisRun?.status || '')
             if (status === 'started') return 'gestartet'
@@ -306,7 +381,8 @@ export default {
             return 'nicht gestartet'
         },
         analysisStartLabel() {
-            const timestamp = this.analysisRun?.started_at
+            const timestamp = this.displayValues.analysis_start_at
+                || this.analysisRun?.started_at
                 || this.analysisRun?.running_at
                 || this.analysisRun?.created_at
                 || null
@@ -314,7 +390,8 @@ export default {
             return timestamp ? this.formatDateTime(timestamp) : '-'
         },
         analysisEndLabel() {
-            const timestamp = this.analysisRun?.completed_at
+            const timestamp = this.displayValues.analysis_end_at
+                || this.analysisRun?.completed_at
                 || this.analysisRun?.failed_at
                 || this.analysisRun?.aborted_at
                 || null
@@ -322,6 +399,11 @@ export default {
             return timestamp ? this.formatDateTime(timestamp) : '-'
         },
         analysisDurationLabel() {
+            const durationFromBackend = Number(this.displayValues.analysis_duration_seconds ?? null)
+            if (Number.isFinite(durationFromBackend) && durationFromBackend >= 0) {
+                return this.formatDuration(durationFromBackend)
+            }
+
             const start = this.parseTimestamp(this.analysisRun?.started_at || this.analysisRun?.running_at || this.analysisRun?.created_at || null)
             if (start === null) {
                 return '-'
@@ -333,7 +415,7 @@ export default {
             return this.formatDuration(durationSeconds)
         },
         totalRecordCount() {
-            return this.persistedRecordCount || this.sections.length
+            return Number(this.displayValues.total_record_count ?? this.persistedRecordCount ?? this.sections.length ?? 0)
         },
         detectedRecordCount() {
             return Number(this.recordCounts.detected_record_count ?? this.analysisStats.detected_record_count ?? this.sections.length ?? 0)
@@ -355,16 +437,69 @@ export default {
             return value || null
         },
         documentTypeLabel() {
-            return String(this.analysisStats.document_type || this.safeSummary?.normalized_json?.document_type || 'unbekannt')
+            return String(this.displayValues.document_type || this.analysisStats.document_type || this.safeSummary?.normalized_json?.document_type || 'unbekannt')
         },
         selectedCandidateLabel() {
-            return String(this.analysisStats.selected_candidate || this.safeSummary?.extraction?.selected_candidate || '-').trim() || '-'
+            return String(this.displayValues.selected_candidate || this.analysisStats.selected_candidate || this.safeSummary?.extraction?.selected_candidate || '-').trim() || '-'
         },
         finalConfidence() {
-            return this.analysisStats.final_confidence
+            return this.displayValues.final_confidence ?? this.analysisStats.final_confidence
         },
         analysisQualityScore() {
-            return this.analysisStats.analysis_quality_score
+            return this.displayValues.analysis_quality_score ?? this.analysisStats.analysis_quality_score
+        },
+        textLengthValue() {
+            return Number(
+                this.displayValues.text_length
+                ?? this.analysisStats.text_length
+                ?? this.analysisRun?.text_length
+                ?? this.safeSummary?.extraction?.text_length
+                ?? 0
+            )
+        },
+        textLengthWithoutSpacesValue() {
+            const storedValue = Number(
+                this.displayValues.text_length_without_spaces
+                ?? this.analysisStats.text_length_without_spaces
+                ?? this.analysisRun?.text_length_without_spaces
+                ?? this.safeSummary?.extraction?.text_length_without_spaces
+                ?? 0
+            )
+
+            if (Number.isFinite(storedValue) && storedValue > 0) {
+                return storedValue
+            }
+
+            const fallbackFromSections = this.sections.reduce((total, record) => {
+                const text = String(record?.extracted_text || '')
+                return total + text.replace(/\s+/g, '').length
+            }, 0)
+
+            return Number.isFinite(fallbackFromSections) ? fallbackFromSections : 0
+        },
+        textLengthLabel() {
+            if (!Number.isFinite(this.textLengthValue) || this.textLengthValue <= 0) {
+                return '-'
+            }
+
+            return this.formatInteger(this.textLengthValue)
+        },
+        textLengthWithoutSpacesLabel() {
+            if (!Number.isFinite(this.textLengthWithoutSpacesValue) || this.textLengthWithoutSpacesValue <= 0) {
+                return '-'
+            }
+
+            return this.formatInteger(this.textLengthWithoutSpacesValue)
+        },
+        renderedPageCountLabel() {
+            const hasReal = Boolean(this.analysisStats.has_real_pagination ?? this.analysisRun?.has_real_pagination ?? false)
+            const totalPages = Number(this.analysisStats.page_count_total ?? this.analysisRun?.page_count_total ?? 0)
+
+            if (!hasReal || !Number.isFinite(totalPages) || totalPages <= 0) {
+                return '--'
+            }
+
+            return this.formatInteger(totalPages)
         },
         showFinalConfidence() {
             const analysisQuality = Number(this.analysisQualityScore)
@@ -378,11 +513,19 @@ export default {
                 return true
             }
 
-            return Math.abs(finalConfidence - analysisQuality) > 0.0001
+            const finalDisplayPercent = (finalConfidence * 100).toFixed(1)
+            const analysisDisplayPercent = (analysisQuality * 100).toFixed(1)
+
+            return finalDisplayPercent !== analysisDisplayPercent
         },
         reviewStateLabel() {
-            const state = String(this.analysisStats.review_state || this.safeSummary?.review?.state || 'unbekannt')
+            const state = String(this.displayValues.review_state || this.analysisStats.review_state || this.safeSummary?.review?.state || 'unbekannt')
             if (state === 'auto_approved') {
+                const thresholdPercent = this.autoApproveThresholdPercentLabel
+                if (thresholdPercent) {
+                    return `automatisch freigegeben (ab ${thresholdPercent})`
+                }
+
                 return 'automatisch freigegeben'
             }
             if (state === 'review_required') {
@@ -391,8 +534,28 @@ export default {
 
             return state
         },
+        autoApproveThreshold() {
+            const threshold = Number(
+                this.displayValues.auto_approve_confidence_threshold
+                ?? this.analysisStats.auto_approve_confidence_threshold
+                ?? this.safeSummary?.review?.threshold
+                ?? NaN,
+            )
+            if (!Number.isFinite(threshold)) {
+                return null
+            }
+
+            return Math.max(0, Math.min(1, threshold))
+        },
+        autoApproveThresholdPercentLabel() {
+            if (this.autoApproveThreshold === null) {
+                return ''
+            }
+
+            return `${Math.round(this.autoApproveThreshold * 100)}%`
+        },
         autoApproved() {
-            return Boolean(this.analysisStats.auto_approved ?? this.safeSummary?.review?.auto_approved ?? false)
+            return Boolean(this.displayValues.auto_approved ?? this.analysisStats.auto_approved ?? this.safeSummary?.review?.auto_approved ?? false)
         },
         hasRealPagination() {
             return Boolean(this.analysisRun?.has_real_pagination ?? this.analysisStats.has_real_pagination ?? false)
@@ -433,29 +596,11 @@ export default {
                 this.makeStatusItem('abstract_en_detected', 'Englische Zusammenfassung erkannt', stats.abstract_en_detected, stats.abstract_en_start_line, stats.abstract_en_end_line),
                 this.makeStatusItem('foreword_detected', 'Vorwort erkannt', stats.foreword_detected, stats.foreword_start_line, stats.foreword_end_line),
                 this.makeStatusItem('table_of_contents_detected', 'Inhaltsverzeichnis erkannt', stats.table_of_contents_detected, stats.toc_start_line, stats.toc_end_line),
+                this.makeStatusItem('body_detected', 'Hauptteil erkannt', stats.body_detected, stats.body_start_line, null),
                 this.makeStatusItem('bibliography_detected', 'Bibliographie erkannt', stats.bibliography_detected, stats.bibliography_start_line, stats.bibliography_end_line),
                 this.makeStatusItem('figure_index_detected', 'Abbildungsverzeichnis erkannt', stats.figure_index_detected, stats.figure_index_start_line, stats.figure_index_end_line),
                 this.makeStatusItem('consent_declaration_detected', 'Eigenständigkeitserklärung erkannt', stats.consent_declaration_detected, stats.consent_declaration_start_line, stats.consent_declaration_end_line),
-                this.makeStatusItem('body_detected', 'Body erkannt', stats.body_detected, stats.body_start_line, null),
             ]
-        },
-        abstractLanguageSummary() {
-            const deDetected = Boolean(this.analysisStats.abstract_de_detected)
-            const enDetected = Boolean(this.analysisStats.abstract_en_detected)
-
-            if (deDetected && enDetected) {
-                return 'Deutsche und englische Zusammenfassung wurden erkannt.'
-            }
-
-            if (deDetected && !enDetected) {
-                return 'Deutsche Zusammenfassung erkannt, englische Zusammenfassung fehlt.'
-            }
-
-            if (!deDetected && enDetected) {
-                return 'Englische Zusammenfassung erkannt, deutsche Zusammenfassung fehlt.'
-            }
-
-            return 'Keine verlässliche Zusammenfassung erkannt.'
         },
         typeStatisticItems() {
             const stats = this.analysisStats
@@ -560,6 +705,23 @@ export default {
             this.refreshing = true
             await this.loadResults(true)
         },
+        async restartAnalysis() {
+            if (this.abaId <= 0 || this.controlsLocked) {
+                return
+            }
+
+            this.reanalysisStarting = true
+            this.error = ''
+
+            try {
+                await axios.post(`/api/admin/abas/${this.abaId}/analysis`)
+                await this.loadResults(true)
+            } catch (error) {
+                this.error = error?.response?.data?.message || 'Erneute Analyse konnte nicht gestartet werden.'
+            } finally {
+                this.reanalysisStarting = false
+            }
+        },
         startPolling() {
             this.stopPolling()
             this.pollTimer = window.setInterval(() => {
@@ -648,6 +810,14 @@ export default {
             parts.push(`${secs}s`)
 
             return parts.join(' ')
+        },
+        formatInteger(value) {
+            const number = Number(value)
+            if (!Number.isFinite(number)) {
+                return '-'
+            }
+
+            return new Intl.NumberFormat('de-AT').format(Math.trunc(number))
         },
         formatPercent(value) {
             const numeric = Number(value)
@@ -748,6 +918,58 @@ export default {
 
             return Number(left?.id ?? 0) - Number(right?.id ?? 0)
         },
+        recordPageLabel(record) {
+            const startPage = Number(record?.start_page ?? 0)
+            const endPage = Number(record?.end_page ?? 0)
+
+            if (startPage > 0 && endPage > startPage) {
+                return `Seiten ${startPage}–${endPage}`
+            }
+            if (startPage > 0) {
+                return `Seite ${startPage}`
+            }
+
+            return null
+        },
+        contentPanelPageLabel() {
+            const pages = []
+            this.chapterRootRecords.forEach((record) => {
+                const startPage = Number(record?.start_page ?? 0)
+                const endPage = Number(record?.end_page ?? 0)
+                if (startPage > 0) {
+                    pages.push(startPage)
+                }
+                if (endPage > 0) {
+                    pages.push(endPage)
+                }
+            })
+
+            if (pages.length === 0) {
+                return null
+            }
+
+            const start = Math.min(...pages)
+            const end = Math.max(...pages)
+            if (end > start) {
+                return `Seiten ${start}–${end}`
+            }
+
+            return `Seite ${start}`
+        },
+        panelPageLabel(panel) {
+            if (panel?.kind === 'content') {
+                return this.contentPanelPageLabel()
+            }
+
+            return this.recordPageLabel(panel?.record || null)
+        },
+        panelSortReference(panel) {
+            if (panel?.kind === 'content') {
+                return panel.anchor || {}
+            }
+
+            return panel?.record || {}
+        },
         frontmatterPanelLabel(record) {
             const title = String(record?.section_title || '').trim()
             if (title !== '') {
@@ -792,6 +1014,23 @@ export default {
 .aba-results-nav__progress {
     margin: 8px -10px -10px;
     width: calc(100% + 20px);
+}
+
+.aba-results-overlay__content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid rgba(30, 41, 59, 0.16);
+    border-radius: 14px;
+    padding: 18px 22px;
+}
+
+.aba-results-overlay__text {
+    color: #0f172a;
+    font-size: 0.9rem;
+    font-weight: 600;
 }
 
 .summary-grid {
@@ -914,10 +1153,26 @@ export default {
     width: 100%;
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 8px;
     font-weight: 600;
     color: #0f172a;
+}
+
+.chapter-panel-title__main {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.chapter-panel-title__meta {
+    margin-left: auto;
+}
+
+@media (min-width: 1280px) {
+    .results-structure-card {
+        max-width: 980px;
+    }
 }
 
 @media (max-width: 680px) {

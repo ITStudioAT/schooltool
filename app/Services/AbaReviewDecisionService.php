@@ -6,7 +6,7 @@ class AbaReviewDecisionService
 {
     /**
      * @param  array<string,mixed>  $validation
-     * @return array{state:string,auto_approved:bool,reason:string}
+     * @return array{state:string,auto_approved:bool,reason:string,threshold:float}
      */
     public function decide(array $validation): array
     {
@@ -23,6 +23,7 @@ class AbaReviewDecisionService
                 'state' => 'review_required',
                 'auto_approved' => false,
                 'reason' => 'validation_errors',
+                'threshold' => $threshold,
             ];
         }
 
@@ -31,6 +32,7 @@ class AbaReviewDecisionService
                 'state' => 'review_required',
                 'auto_approved' => false,
                 'reason' => 'missing_fields',
+                'threshold' => $threshold,
             ];
         }
 
@@ -39,6 +41,7 @@ class AbaReviewDecisionService
                 'state' => 'review_required',
                 'auto_approved' => false,
                 'reason' => 'confidence_below_threshold',
+                'threshold' => $threshold,
             ];
         }
 
@@ -47,6 +50,7 @@ class AbaReviewDecisionService
                 'state' => 'review_required',
                 'auto_approved' => false,
                 'reason' => 'warnings_present',
+                'threshold' => $threshold,
             ];
         }
 
@@ -54,6 +58,7 @@ class AbaReviewDecisionService
             'state' => 'auto_approved',
             'auto_approved' => true,
             'reason' => 'all_checks_passed',
+            'threshold' => $threshold,
         ];
     }
 }

@@ -227,6 +227,7 @@ class AbaAnalysisService
                 'outline_count' => count($extraction['outline'] ?? []),
                 'toc_line_count' => count($extraction['toc_lines'] ?? []),
                 'text_length' => mb_strlen($text),
+                'text_length_without_spaces' => $this->countCharsWithoutWhitespace($text),
             ];
             $summary['diagnostics'] = $structureDiagnostics;
             $summary['canonical_json'] = $canonical;
@@ -250,6 +251,9 @@ class AbaAnalysisService
             $summary['count_mismatch_detected'] = (bool) ($analysisStats['count_mismatch_detected'] ?? false);
             $summary['count_mismatch_reason'] = $analysisStats['count_mismatch_reason'] ?? null;
 
+            $completedAt = now();
+            $summary['display_values'] = $this->buildDisplayValues($run, $analysisStats, $completedAt);
+
             if (($analysisStats['count_mismatch_detected'] ?? false) === true) {
                 $this->logDebug('aba.analysis.count_mismatch_detected', [
                     'run_id' => $run->id,
@@ -269,12 +273,14 @@ class AbaAnalysisService
             $run->forceFill([
                 'status' => AbaAnalysisRun::STATUS_COMPLETED,
                 'status_message' => $statusMessage,
-                'completed_at' => now(),
+                'completed_at' => $completedAt,
                 'aborted_at' => null,
                 'failed_at' => null,
                 'error_message' => null,
                 'extracted_sections_count' => (int) ($summary['persisted_record_count'] ?? 0),
                 'extracted_figures_count' => (int) ($summary['persisted_figure_count'] ?? 0),
+                'text_length' => (int) ($analysisStats['text_length'] ?? mb_strlen($text)),
+                'text_length_without_spaces' => (int) ($analysisStats['text_length_without_spaces'] ?? $this->countCharsWithoutWhitespace($text)),
                 'summary' => $summary,
             ])->save();
 
@@ -320,6 +326,8 @@ class AbaAnalysisService
             'aborted_at' => now(),
             'completed_at' => null,
             'failed_at' => null,
+            'text_length' => null,
+            'text_length_without_spaces' => null,
         ])->save();
     }
 
@@ -332,6 +340,8 @@ class AbaAnalysisService
             'failed_at' => now(),
             'completed_at' => null,
             'aborted_at' => null,
+            'text_length' => null,
+            'text_length_without_spaces' => null,
         ])->save();
     }
 
@@ -572,6 +582,8 @@ class AbaAnalysisService
         $missingFieldsCount = (int) ($validation['missing_fields_count'] ?? count(is_array($validation['missing_fields'] ?? null) ? $validation['missing_fields'] : []));
         $finalConfidence = is_numeric($validation['final_confidence'] ?? null) ? (float) $validation['final_confidence'] : 0.0;
         $localExtractionConfidence = is_numeric($validation['local_confidence'] ?? null) ? (float) $validation['local_confidence'] : 0.0;
+        $textLength = (int) ($structureDiagnostics['text_length'] ?? mb_strlen($text));
+        $textLengthWithoutSpaces = (int) ($structureDiagnostics['text_length_without_spaces'] ?? $this->countCharsWithoutWhitespace($text));
 
         $tocRange = $this->tocLineRange($canonical, $sectionStats);
         $bodyStartLine = $this->normalizeIntOrNull($canonical['body_start_line'] ?? ($structureDiagnostics['body_start_line'] ?? null));
@@ -676,11 +688,15 @@ class AbaAnalysisService
             validationErrorCount: $validationErrorCount,
             validationWarningCount: $validationWarningCount,
         );
+        $autoApproveThreshold = is_numeric($reviewDecision['threshold'] ?? null)
+            ? (float) $reviewDecision['threshold']
+            : (float) config('aba_analysis.auto_approve_confidence', 0.82);
 
         $titleRange = $this->firstTypeRange($sectionStats, 'title_page');
         $bibliographyRange = $this->firstTypeRange($sectionStats, 'bibliography');
         $figureIndexRange = $this->firstTypeRange($sectionStats, 'figure_index');
         $consentRange = $this->firstTypeRange($sectionStats, 'consent_declaration');
+        $titlePageDetails = $this->resolveTitlePageDetails($sections);
 
         return [
             'document_type' => (string) ($normalized['document_type'] ?? ($canonical['document_type'] ?? 'aba')),
@@ -688,7 +704,8 @@ class AbaAnalysisService
             'candidate_count' => count($extraction['candidates'] ?? []),
             'block_count' => (int) ($canonical['metrics']['block_count'] ?? (is_array($canonical['blocks'] ?? null) ? count($canonical['blocks']) : 0)),
             'line_count' => (int) ($structureDiagnostics['line_count'] ?? (substr_count($text, "\n") + 1)),
-            'text_length' => (int) ($structureDiagnostics['text_length'] ?? mb_strlen($text)),
+            'text_length' => $textLength,
+            'text_length_without_spaces' => $textLengthWithoutSpaces,
             'body_start_line' => $bodyStartLine,
             'toc_count' => (int) ($structureDiagnostics['toc_count'] ?? count((array) ($canonical['toc_ranges'] ?? []))),
             'toc_line_count' => (int) ($structureDiagnostics['toc_line_count'] ?? count($extraction['toc_lines'] ?? [])),
@@ -717,6 +734,12 @@ class AbaAnalysisService
 
             'title_page_start_line' => $titleRange['start_line'],
             'title_page_end_line' => $titleRange['end_line'],
+            'title_page_details' => $titlePageDetails,
+            'title_page_title' => $titlePageDetails['title'],
+            'title_page_submitter' => $titlePageDetails['submitter'],
+            'title_page_advisor' => $titlePageDetails['advisor'],
+            'title_page_class' => $titlePageDetails['class'],
+            'title_page_year' => $titlePageDetails['year'],
             'abstract_de_start_line' => $abstractLanguageStats['abstract_de_start_line'] ?? null,
             'abstract_de_end_line' => $abstractLanguageStats['abstract_de_end_line'] ?? null,
             'abstract_en_start_line' => $abstractLanguageStats['abstract_en_start_line'] ?? null,
@@ -766,6 +789,7 @@ class AbaAnalysisService
             'missing_fields_count' => $missingFieldsCount,
             'review_state' => (string) ($reviewDecision['state'] ?? 'review_required'),
             'auto_approved' => (bool) ($reviewDecision['auto_approved'] ?? false),
+            'auto_approve_confidence_threshold' => round($autoApproveThreshold, 4),
 
             'analysis_quality_score' => $analysisQualityScore,
             'structure_quality_score' => $structureQualityScore,
@@ -1116,6 +1140,50 @@ class AbaAnalysisService
         ];
     }
 
+    /**
+     * @param  array<int, array{section_type:string,metadata:array<string,mixed>}>  $sections
+     * @return array{title:?string,submitter:?string,advisor:?string,class:?string,year:?string}
+     */
+    private function resolveTitlePageDetails(array $sections): array
+    {
+        foreach ($sections as $section) {
+            if ((string) ($section['section_type'] ?? '') !== 'title_page') {
+                continue;
+            }
+
+            $metadata = is_array($section['metadata'] ?? null) ? $section['metadata'] : [];
+            $nestedDetails = is_array($metadata['title_page_details'] ?? null)
+                ? $metadata['title_page_details']
+                : [];
+
+            return [
+                'title' => $this->normalizeOptionalString(
+                    $nestedDetails['title'] ?? $metadata['title_page_title'] ?? null,
+                ),
+                'submitter' => $this->normalizeOptionalString(
+                    $nestedDetails['submitter'] ?? $metadata['title_page_submitter'] ?? null,
+                ),
+                'advisor' => $this->normalizeOptionalString(
+                    $nestedDetails['advisor'] ?? $metadata['title_page_advisor'] ?? null,
+                ),
+                'class' => $this->normalizeOptionalString(
+                    $nestedDetails['class'] ?? $metadata['title_page_class'] ?? null,
+                ),
+                'year' => $this->normalizeOptionalString(
+                    $nestedDetails['year'] ?? $metadata['title_page_year'] ?? null,
+                ),
+            ];
+        }
+
+        return [
+            'title' => null,
+            'submitter' => null,
+            'advisor' => null,
+            'class' => null,
+            'year' => null,
+        ];
+    }
+
     private function inferAbstractLanguage(string $title, string $text): string
     {
         $normalizedTitle = mb_strtolower(trim($title));
@@ -1212,6 +1280,106 @@ class AbaAnalysisService
     private function clampScore(float $score): float
     {
         return round(max(0.0, min(1.0, $score)), 4);
+    }
+
+    private function countCharsWithoutWhitespace(string $text): int
+    {
+        $withoutWhitespace = preg_replace('/\s+/u', '', $text);
+        if (! is_string($withoutWhitespace)) {
+            $withoutWhitespace = preg_replace('/\s+/', '', $text);
+        }
+        if (! is_string($withoutWhitespace)) {
+            return 0;
+        }
+
+        return mb_strlen($withoutWhitespace);
+    }
+
+    /**
+     * @param  array<string,mixed>  $analysisStats
+     * @return array<string,mixed>
+     */
+    private function buildDisplayValues(AbaAnalysisRun $run, array $analysisStats, mixed $endAt = null): array
+    {
+        $startAt = $run->started_at ?? $run->running_at ?? $run->created_at;
+        $resolvedEnd = $endAt ?? $run->completed_at ?? $run->failed_at ?? $run->aborted_at;
+
+        $durationSeconds = null;
+        if ($startAt instanceof \DateTimeInterface && $resolvedEnd instanceof \DateTimeInterface) {
+            $durationSeconds = max(0, $resolvedEnd->getTimestamp() - $startAt->getTimestamp());
+        }
+
+        return [
+            'total_record_count' => (int) ($analysisStats['persisted_record_count'] ?? 0),
+            'text_length' => isset($analysisStats['text_length']) ? (int) $analysisStats['text_length'] : null,
+            'text_length_without_spaces' => isset($analysisStats['text_length_without_spaces']) ? (int) $analysisStats['text_length_without_spaces'] : null,
+            'document_type' => $analysisStats['document_type'] ?? null,
+            'selected_candidate' => $analysisStats['selected_candidate'] ?? null,
+            'final_confidence' => isset($analysisStats['final_confidence']) ? (float) $analysisStats['final_confidence'] : null,
+            'analysis_quality_score' => isset($analysisStats['analysis_quality_score']) ? (float) $analysisStats['analysis_quality_score'] : null,
+            'review_state' => $analysisStats['review_state'] ?? null,
+            'auto_approved' => (bool) ($analysisStats['auto_approved'] ?? false),
+            'auto_approve_confidence_threshold' => isset($analysisStats['auto_approve_confidence_threshold'])
+                ? (float) $analysisStats['auto_approve_confidence_threshold']
+                : (float) config('aba_analysis.auto_approve_confidence', 0.82),
+            'analysis_start_at' => $startAt instanceof \DateTimeInterface ? $startAt->format(\DateTimeInterface::ATOM) : null,
+            'analysis_end_at' => $resolvedEnd instanceof \DateTimeInterface ? $resolvedEnd->format(\DateTimeInterface::ATOM) : null,
+            'analysis_duration_seconds' => $durationSeconds,
+
+            'title_page_detected' => (bool) ($analysisStats['title_page_detected'] ?? false),
+            'abstract_detected' => (bool) ($analysisStats['abstract_detected'] ?? false),
+            'abstract_de_detected' => (bool) ($analysisStats['abstract_de_detected'] ?? false),
+            'abstract_en_detected' => (bool) ($analysisStats['abstract_en_detected'] ?? false),
+            'foreword_detected' => (bool) ($analysisStats['foreword_detected'] ?? false),
+            'table_of_contents_detected' => (bool) ($analysisStats['table_of_contents_detected'] ?? false),
+            'bibliography_detected' => (bool) ($analysisStats['bibliography_detected'] ?? false),
+            'figure_index_detected' => (bool) ($analysisStats['figure_index_detected'] ?? false),
+            'consent_declaration_detected' => (bool) ($analysisStats['consent_declaration_detected'] ?? false),
+            'body_detected' => (bool) ($analysisStats['body_detected'] ?? false),
+
+            'chapter_count' => (int) ($analysisStats['chapter_count'] ?? 0),
+            'subchapter_count' => (int) ($analysisStats['subchapter_count'] ?? 0),
+            'figure_count' => (int) ($analysisStats['figure_count'] ?? 0),
+            'bibliography_count' => (int) ($analysisStats['bibliography_count'] ?? 0),
+            'figure_index_count' => (int) ($analysisStats['figure_index_count'] ?? 0),
+            'other_section_count' => (int) ($analysisStats['other_section_count'] ?? 0),
+            'max_hierarchy_level' => (int) ($analysisStats['max_hierarchy_level'] ?? 1),
+
+            'local_extraction_confidence' => isset($analysisStats['local_extraction_confidence']) ? (float) $analysisStats['local_extraction_confidence'] : null,
+            'structure_confidence' => isset($analysisStats['structure_confidence']) ? (float) $analysisStats['structure_confidence'] : null,
+            'toc_detection_confidence' => isset($analysisStats['toc_detection_confidence']) ? (float) $analysisStats['toc_detection_confidence'] : null,
+            'hierarchy_confidence' => isset($analysisStats['hierarchy_confidence']) ? (float) $analysisStats['hierarchy_confidence'] : null,
+            'extraction_consistency_score' => isset($analysisStats['extraction_consistency_score']) ? (float) $analysisStats['extraction_consistency_score'] : null,
+            'persistence_consistency_score' => isset($analysisStats['persistence_consistency_score']) ? (float) $analysisStats['persistence_consistency_score'] : null,
+            'validation_error_count' => (int) ($analysisStats['validation_error_count'] ?? 0),
+            'validation_warning_count' => (int) ($analysisStats['validation_warning_count'] ?? 0),
+            'missing_fields_count' => (int) ($analysisStats['missing_fields_count'] ?? 0),
+            'count_mismatch_detected' => (bool) ($analysisStats['count_mismatch_detected'] ?? false),
+            'count_mismatch_reason' => $analysisStats['count_mismatch_reason'] ?? null,
+            'title_page_details' => [
+                'title' => $this->normalizeOptionalString($analysisStats['title_page_title'] ?? null),
+                'submitter' => $this->normalizeOptionalString($analysisStats['title_page_submitter'] ?? null),
+                'advisor' => $this->normalizeOptionalString($analysisStats['title_page_advisor'] ?? null),
+                'class' => $this->normalizeOptionalString($analysisStats['title_page_class'] ?? null),
+                'year' => $this->normalizeOptionalString($analysisStats['title_page_year'] ?? null),
+            ],
+            'title_page_title' => $this->normalizeOptionalString($analysisStats['title_page_title'] ?? null),
+            'title_page_submitter' => $this->normalizeOptionalString($analysisStats['title_page_submitter'] ?? null),
+            'title_page_advisor' => $this->normalizeOptionalString($analysisStats['title_page_advisor'] ?? null),
+            'title_page_class' => $this->normalizeOptionalString($analysisStats['title_page_class'] ?? null),
+            'title_page_year' => $this->normalizeOptionalString($analysisStats['title_page_year'] ?? null),
+        ];
+    }
+
+    private function normalizeOptionalString(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $normalized = trim((string) $value);
+
+        return $normalized === '' ? null : $normalized;
     }
 
     /**

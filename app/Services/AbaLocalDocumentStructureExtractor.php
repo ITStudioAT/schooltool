@@ -1358,12 +1358,16 @@ class AbaLocalDocumentStructureExtractor
         if (is_array($frontmatter['title_page_range'] ?? null)) {
             $titlePageStart = (int) ($frontmatter['title_page_range']['start_line'] ?? 0);
             $titlePageEnd = (int) ($frontmatter['title_page_range']['end_line'] ?? 0);
-            $titlePageLines = array_values(array_filter(
+            $titlePageLines = $this->lineSliceByRange($lines, $titlePageStart, $titlePageEnd);
+            $pageOneLines = array_values(array_filter(
                 $lines,
                 fn (array $line): bool => (int) ($line['page_number'] ?? 0) === 1 && trim((string) ($line['text'] ?? '')) !== ''
             ));
             if ($titlePageLines === []) {
-                $titlePageLines = $this->lineSliceByRange($lines, $titlePageStart, $titlePageEnd);
+                $titlePageLines = $pageOneLines;
+            }
+            if (count($titlePageLines) < 4 && $pageOneLines !== []) {
+                $titlePageLines = array_slice($pageOneLines, 0, 12);
             }
             $titlePageDetails = $this->extractTitlePageDetails($titlePageLines);
             $section = $this->createSectionFromRange(
@@ -2853,6 +2857,11 @@ class AbaLocalDocumentStructureExtractor
                 'heading_detected' => false,
                 'source' => 'first_page',
                 'title_page_details' => $titlePageDetails,
+                'title_page_title' => $titlePageDetails['title'],
+                'title_page_submitter' => $titlePageDetails['submitter'],
+                'title_page_advisor' => $titlePageDetails['advisor'],
+                'title_page_class' => $titlePageDetails['class'],
+                'title_page_year' => $titlePageDetails['year'],
             ],
         ];
 
@@ -2921,12 +2930,11 @@ class AbaLocalDocumentStructureExtractor
                 }
             }
 
-            if ($year === null) {
-                if (preg_match('/\b(?:schuljahr|jahr|year)\b[^\d]*(\d{4}(?:\s*\/\s*(?:\d{4}|\d{2}))?)/iu', $text, $matches) === 1) {
-                    $year = trim((string) ($matches[1] ?? ''));
-                } elseif (preg_match('/\b((?:19|20)\d{2}(?:\s*\/\s*(?:\d{4}|\d{2}))?)\b/u', $text, $matches) === 1) {
-                    $year = trim((string) ($matches[1] ?? ''));
-                }
+            if (
+                $year === null
+                && preg_match('/^\s*(?:schuljahr|jahr|year)\b[^\d]{0,16}((?:19|20)\d{2}(?:\s*\/\s*(?:(?:19|20)\d{2}|\d{2}))?)(?!\d)\s*(?:[).,:-]\s*)?$/iu', $text, $matches) === 1
+            ) {
+                $year = trim((string) ($matches[1] ?? ''));
             }
         }
 
