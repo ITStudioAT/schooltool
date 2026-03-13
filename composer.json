@@ -13,6 +13,7 @@
         "barryvdh/laravel-dompdf": "^3.1",
         "devrabiul/laravel-cookie-consent": "^1.1",
         "doctrine/dbal": "^4.4",
+        "google/cloud-document-ai": "^2.6",
         "intervention/image": "^3.11",
         "itstudioat/spa": "^0.3.3",
         "lab404/laravel-impersonate": "^1.7",

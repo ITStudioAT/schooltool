@@ -27,7 +27,7 @@ class AbaController extends Controller
             ->where('school_id', $auth_user->school_id)
             ->where('user_id', $auth_user->id)
             ->when($schoolyear_id, fn ($q) => $q->where('schoolyear_id', $schoolyear_id))
-            ->with(['attachments', 'schoolyear'])
+            ->with(['attachments', 'schoolyear', 'latestAnalysisRun'])
             ->orderByDesc('created_at')
             ->paginate(config('schooltool.pagination'));
 
@@ -56,7 +56,7 @@ class AbaController extends Controller
         $validated['created_on'] = now()->toDateString();
 
         $aba = Aba::create($validated);
-        $aba->load(['attachments', 'schoolyear']);
+        $aba->load(['attachments', 'schoolyear', 'latestAnalysisRun']);
 
         return response()->json(new AbaResource($aba), 201);
     }
@@ -71,7 +71,7 @@ class AbaController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $aba->load(['attachments', 'schoolyear']);
+        $aba->load(['attachments', 'schoolyear', 'latestAnalysisRun']);
 
         return response()->json(new AbaResource($aba));
     }
@@ -96,7 +96,7 @@ class AbaController extends Controller
         }
 
         $aba->update($validated);
-        $aba->load(['attachments', 'schoolyear']);
+        $aba->load(['attachments', 'schoolyear', 'latestAnalysisRun']);
 
         return response()->json(new AbaResource($aba));
     }

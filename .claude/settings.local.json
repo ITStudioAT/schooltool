@@ -31,7 +31,9 @@
       "Bash(python3 -c \":*)",
       "Bash(node -e \":*)",
       "Bash(node parse-report.js)",
-      "Bash(node /c/laravel/schooltool/parse-report.js)"
+      "Bash(node /c/laravel/schooltool/parse-report.js)",
+      "Bash(git -C /c/laravel/schooltool diff tests/Feature/AdminAbaAccessTest.php)",
+      "Bash(vendor/bin/pint --dirty --format agent)"
     ],
     "deny": [],
     "ask": []

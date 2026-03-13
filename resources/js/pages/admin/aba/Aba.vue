@@ -27,11 +27,26 @@
                         <span class="aba-nav__button-meta">{{ item.meta }}</span>
                     </span>
                 </v-btn>
+                <v-spacer />
+                <v-btn
+                    size="small"
+                    variant="outlined"
+                    color="white"
+                    prepend-icon="mdi-refresh"
+                    :disabled="isNavigationLocked"
+                    @click="refreshPage">
+                    Aktualisieren
+                </v-btn>
             </div>
+            <v-progress-linear
+                v-if="isRefreshing"
+                indeterminate
+                color="primary"
+                class="aba-nav__progress" />
         </v-sheet>
 
         <v-row class="w-100 ma-0" dense>
-            <Overview />
+            <Overview ref="overview" :is-refreshing="isRefreshing" />
         </v-row>
 
         <v-dialog v-model="schoolyearDialogOpen" persistent max-width="620">
@@ -100,6 +115,7 @@ export default {
     data() {
         return {
             adminStore: null,
+            isRefreshing: false,
             schoolyearDialogOpen: false,
             schoolyearDialogLoading: false,
             schoolyearSaveLoading: false,
@@ -111,7 +127,7 @@ export default {
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'action', 'action_2']),
         isNavigationLocked() {
-            return this.action != '' || this.action_2 != ''
+            return this.action != '' || this.action_2 != '' || this.isRefreshing
         },
         selectedSchoolLabel() {
             return this.config?.selected_school?.long_name || this.config?.selected_school?.name || 'Keine Schule gewählt'
@@ -169,6 +185,14 @@ export default {
     },
 
     methods: {
+        async refreshPage() {
+            this.isRefreshing = true
+            try {
+                await this.$refs.overview?.loadAbas()
+            } finally {
+                this.isRefreshing = false
+            }
+        },
         async navigateTo(target) {
             if (this.isNavigationLocked) {
                 return
@@ -251,11 +275,18 @@ export default {
     border: 1px solid rgba(148, 163, 184, 0.16);
     background: rgba(30, 41, 59, 0.8);
     padding: 10px;
+    overflow: hidden;
+}
+
+.aba-nav__progress {
+    margin: 8px -10px -10px;
+    width: calc(100% + 20px);
 }
 
 .aba-nav__buttons {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 8px;
 }
 

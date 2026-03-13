@@ -24,6 +24,7 @@ const MaterialsSubjectsOverview = () => import('@/pages/admin/materials/Material
 const Groups = () => import('@/pages/admin/groups/Groups.vue')
 const Restaurant = () => import('@/pages/admin/restaurant/Restaurant.vue')
 const Aba = () => import('@/pages/admin/aba/Aba.vue')
+const AbaResults = () => import('@/pages/admin/aba/AbaAnalysisResults.vue')
 
 const routes = [
     { path: '/admin', component: Index },
@@ -46,6 +47,7 @@ const routes = [
     { path: '/admin/materials/subjects-overview', component: MaterialsSubjectsOverview },
     { path: '/admin/restaurant', component: Restaurant },
     { path: '/admin/aba', component: Aba },
+    { path: '/admin/aba/results/:abaId', component: AbaResults },
 ]
 
 const router = createRouter({

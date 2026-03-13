@@ -115,6 +115,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/abas/{aba}', [\App\Http\Controllers\Admin\ABA\AbaController::class, 'show']);
         Route::put('/admin/abas/{aba}', [\App\Http\Controllers\Admin\ABA\AbaController::class, 'update']);
         Route::delete('/admin/abas/{aba}', [\App\Http\Controllers\Admin\ABA\AbaController::class, 'destroy']);
+        Route::post('/admin/abas/{aba}/analysis', [\App\Http\Controllers\Admin\ABA\AbaAnalysisRunController::class, 'store']);
+        Route::get('/admin/abas/{aba}/analysis/results', [\App\Http\Controllers\Admin\ABA\AbaAnalysisRunController::class, 'showLatest']);
         Route::post('/admin/abas/{aba}/attachments/from-temp', [\App\Http\Controllers\Admin\ABA\AbaAttachmentController::class, 'storeFromTemp']);
         Route::delete('/admin/abas/{aba}/attachments/{attachment}', [\App\Http\Controllers\Admin\ABA\AbaAttachmentController::class, 'destroy']);
 

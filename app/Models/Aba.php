@@ -56,7 +56,7 @@ class Aba extends Model
     {
         return $this->hasOne(AbaAttachment::class)
             ->where('document_kind', AbaAttachment::DOCUMENT_KIND_MAIN)
-            ->latestOfMany();
+            ->orderByDesc('id');
     }
 
     public function additionalDocuments(): HasMany
@@ -64,5 +64,15 @@ class Aba extends Model
         return $this->hasMany(AbaAttachment::class)
             ->where('document_kind', AbaAttachment::DOCUMENT_KIND_ADDITIONAL)
             ->orderByDesc('id');
+    }
+
+    public function analysisRuns(): HasMany
+    {
+        return $this->hasMany(AbaAnalysisRun::class)->orderByDesc('id');
+    }
+
+    public function latestAnalysisRun(): HasOne
+    {
+        return $this->hasOne(AbaAnalysisRun::class)->latestOfMany();
     }
 }

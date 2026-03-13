@@ -252,6 +252,7 @@ it('keeps overview content as the existing aba main view', function () {
         ->toContain('mdi-pencil')
         ->toContain('Upload')
         ->toContain('Dateien')
+        ->toContain('Ergebnisse')
         ->toContain("await axios.get('/api/admin/abas')")
         ->toContain("await axios.post('/api/admin/abas'")
         ->toContain('await axios.put(`/api/admin/abas/${this.editingAbaId}`')
@@ -259,6 +260,14 @@ it('keeps overview content as the existing aba main view', function () {
         ->toContain('/attachments/from-temp')
         ->toContain('/attachments/${attachment.id}')
         ->toContain('file-pond');
+});
+
+it('registers aba results route in admin router', function () {
+    $routerContent = file_get_contents(resource_path('routes/admin.js'));
+
+    expect($routerContent)
+        ->toContain('/admin/aba/results/:abaId')
+        ->toContain('AbaAnalysisResults.vue');
 });
 
 it('opens upload from files dialog instead of aba list row', function () {
