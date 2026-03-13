@@ -143,12 +143,30 @@ XML
 }
 
 /**
- * @param  array<int, array{text?:string,style?:string,outline?:int|null,page_break?:bool}>  $paragraphs
+ * @param  array<int, array{
+ *   text?:string,
+ *   style?:string,
+ *   outline?:int|null,
+ *   page_break?:bool,
+ *   align?:string,
+ *   indent_left?:int|null,
+ *   spacing_before?:int|null,
+ *   spacing_after?:int|null,
+ *   bold?:bool,
+ *   font_size_half_points?:int|null,
+ *   raw_xml?:string
+ * }>  $paragraphs
  */
 function buildDocxDocumentXml(array $paragraphs): string
 {
     $parts = [];
     foreach ($paragraphs as $paragraph) {
+        if (is_string($paragraph['raw_xml'] ?? null) && trim((string) $paragraph['raw_xml']) !== '') {
+            $parts[] = trim((string) $paragraph['raw_xml']);
+
+            continue;
+        }
+
         // A page-break-only paragraph: empty text, just a <w:br w:type="page"/>
         if (($paragraph['page_break'] ?? false) === true) {
             $parts[] = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
@@ -159,9 +177,15 @@ function buildDocxDocumentXml(array $paragraphs): string
         $text = docxXmlEscape((string) ($paragraph['text'] ?? ''));
         $style = trim((string) ($paragraph['style'] ?? ''));
         $outline = $paragraph['outline'] ?? null;
+        $alignment = trim((string) ($paragraph['align'] ?? ''));
+        $indentLeft = is_numeric($paragraph['indent_left'] ?? null) ? (int) $paragraph['indent_left'] : null;
+        $spacingBefore = is_numeric($paragraph['spacing_before'] ?? null) ? (int) $paragraph['spacing_before'] : null;
+        $spacingAfter = is_numeric($paragraph['spacing_after'] ?? null) ? (int) $paragraph['spacing_after'] : null;
+        $bold = (bool) ($paragraph['bold'] ?? false);
+        $fontSizeHalfPoints = is_numeric($paragraph['font_size_half_points'] ?? null) ? (int) $paragraph['font_size_half_points'] : null;
 
         $pPr = '';
-        if ($style !== '' || is_numeric($outline)) {
+        if ($style !== '' || is_numeric($outline) || $alignment !== '' || $indentLeft !== null || $spacingBefore !== null || $spacingAfter !== null) {
             $pPr .= '<w:pPr>';
             if ($style !== '') {
                 $pPr .= '<w:pStyle w:val="'.docxXmlEscape($style).'"/>';
@@ -169,10 +193,33 @@ function buildDocxDocumentXml(array $paragraphs): string
             if (is_numeric($outline)) {
                 $pPr .= '<w:outlineLvl w:val="'.(int) $outline.'"/>';
             }
+            if ($alignment !== '') {
+                $pPr .= '<w:jc w:val="'.docxXmlEscape($alignment).'"/>';
+            }
+            if ($indentLeft !== null) {
+                $pPr .= '<w:ind w:left="'.$indentLeft.'"/>';
+            }
+            if ($spacingBefore !== null || $spacingAfter !== null) {
+                $beforeValue = $spacingBefore !== null ? ' w:before="'.$spacingBefore.'"' : '';
+                $afterValue = $spacingAfter !== null ? ' w:after="'.$spacingAfter.'"' : '';
+                $pPr .= '<w:spacing'.$beforeValue.$afterValue.'/>';
+            }
             $pPr .= '</w:pPr>';
         }
 
-        $parts[] = '<w:p>'.$pPr.'<w:r><w:t xml:space="preserve">'.$text.'</w:t></w:r></w:p>';
+        $rPr = '';
+        if ($bold || $fontSizeHalfPoints !== null) {
+            $rPr .= '<w:rPr>';
+            if ($bold) {
+                $rPr .= '<w:b/>';
+            }
+            if ($fontSizeHalfPoints !== null) {
+                $rPr .= '<w:sz w:val="'.$fontSizeHalfPoints.'"/>';
+            }
+            $rPr .= '</w:rPr>';
+        }
+
+        $parts[] = '<w:p>'.$pPr.'<w:r>'.$rPr.'<w:t xml:space="preserve">'.$text.'</w:t></w:r></w:p>';
     }
 
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -1686,6 +1733,1224 @@ test('deep numbered hierarchy keeps parent child chain complete', function () {
         ->and((int) ($subsub->parent_result_id ?? 0))->toBe((int) ($sub->id ?? 0));
 });
 
+test('numbering-compatible parent is preferred over nearest mismatched chapter', function () {
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocumentAttachment($aba, 'hauptdokument.txt', implode("\n", [
+        'Titelblatt',
+        'Abstract',
+        'Kurzfassung',
+        'Inhaltsverzeichnis',
+        '2 Analyse .... 4',
+        '2.1 Kontext .... 5',
+        '3 Methode .... 7',
+        '2.2 Vertiefung .... 8',
+        '2 Analyse',
+        'Analyseabschnitt mit ausreichend Fließtext.',
+        '2.1 Kontext',
+        'Kontextabschnitt mit Detailinformationen.',
+        '3 Methode',
+        'Methodenabschnitt mit strukturiertem Text.',
+        '2.2 Vertiefung',
+        'Vertiefungsabschnitt, der zur Analyse gehört.',
+    ]));
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'hauptdokument.txt',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => 'text/plain',
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED);
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $chapterTwo = $results->firstWhere('section_title', '2 Analyse');
+    $chapterThree = $results->firstWhere('section_title', '3 Methode');
+    $subTwoTwo = $results->firstWhere('section_title', '2.2 Vertiefung');
+
+    expect($chapterTwo)->not->toBeNull()
+        ->and($chapterThree)->not->toBeNull()
+        ->and($subTwoTwo)->not->toBeNull()
+        ->and((int) ($subTwoTwo->parent_result_id ?? 0))->toBe((int) ($chapterTwo->id ?? 0))
+        ->and((int) ($subTwoTwo->parent_result_id ?? 0))->not->toBe((int) ($chapterThree->id ?? 0));
+});
+
+test('missing intermediate heading level is flattened conservatively instead of forcing a brittle jump', function () {
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocumentAttachment($aba, 'hauptdokument.txt', implode("\n", [
+        'Titelblatt',
+        'Abstract',
+        'Kurzfassung',
+        'Inhaltsverzeichnis',
+        '1 Analyse .... 3',
+        '1.1.1 Erhebung .... 5',
+        '1 Analyse',
+        'Analyseabschnitt mit Einordnung.',
+        '1.1.1 Erhebung',
+        'Detailbeschreibung zur Erhebung mit inhaltlicher Tiefe.',
+        '2 Ergebnisse',
+        'Ergebnisabschnitt mit Zusammenfassung.',
+    ]));
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'hauptdokument.txt',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => 'text/plain',
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED);
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $chapter = $results->firstWhere('section_title', '1 Analyse');
+    $deepSub = $results->firstWhere('section_title', '1.1.1 Erhebung');
+
+    expect($chapter)->not->toBeNull()
+        ->and($deepSub)->not->toBeNull()
+        ->and((int) ($deepSub->parent_result_id ?? 0))->toBe((int) ($chapter->id ?? 0))
+        ->and((int) ($deepSub->hierarchy_level ?? 0))->toBe(2);
+});
+
+test('subchapter after bibliography boundary does not inherit a parent across structural boundary', function () {
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocumentAttachment($aba, 'hauptdokument.txt', implode("\n", [
+        'Titelblatt',
+        'Abstract',
+        'Kurzfassung',
+        'Inhaltsverzeichnis',
+        '2 Methode .... 6',
+        '2.1 Datengrundlage .... 7',
+        '2 Methode',
+        'Methodenabschnitt mit Fließtext.',
+        'Literaturverzeichnis',
+        '1. Mustermann, M. (2020). Quelle.',
+        '2.1 Datengrundlage',
+        'Datengrundlage mit inhaltlicher Beschreibung.',
+        '3 Fazit',
+        'Fazitabschnitt mit Schlussfolgerung.',
+    ]));
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'hauptdokument.txt',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => 'text/plain',
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED);
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $subchapter = $results->firstWhere('section_title', '2.1 Datengrundlage');
+
+    expect($subchapter)->not->toBeNull()
+        ->and($subchapter->parent_result_id)->toBeNull();
+});
+
+test('subchapter does not attach to an unnumbered other section when a chapter ancestor exists', function () {
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocumentAttachment($aba, 'hauptdokument.txt', implode("\n", [
+        'Titelblatt',
+        'Abstract',
+        'Kurzfassung',
+        'Inhaltsverzeichnis',
+        '1 Analyse .... 3',
+        'Theoretischer Rahmen .... 4',
+        '1.1 Detail .... 5',
+        '1 Analyse',
+        'Analyseabschnitt mit Kontext.',
+        'Theoretischer Rahmen',
+        'Unnummerierter Abschnitt mit genügend Fließtext für eine robuste Erkennung.',
+        '1.1 Detail',
+        'Detailabschnitt mit Unterkapitelinhalt.',
+    ]));
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'hauptdokument.txt',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => 'text/plain',
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED);
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $chapter = $results->firstWhere('section_title', '1 Analyse');
+    $otherSection = $results->firstWhere('section_title', 'Theoretischer Rahmen');
+    $subchapter = $results->firstWhere('section_title', '1.1 Detail');
+
+    expect($chapter)->not->toBeNull()
+        ->and($otherSection)->not->toBeNull()
+        ->and($subchapter)->not->toBeNull()
+        ->and((string) ($otherSection->section_type ?? ''))->toBe('other_section')
+        ->and((int) ($subchapter->parent_result_id ?? 0))->toBe((int) ($chapter->id ?? 0))
+        ->and((int) ($subchapter->parent_result_id ?? 0))->not->toBe((int) ($otherSection->id ?? 0));
+});
+
+test('hierarchy confidence is higher for numbering-compatible parents than numbering-mismatched parents', function () {
+    config()->set('aba_analysis.openai_normalization_enabled', false);
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $analyze = function (string $fileName, array $lines) use ($user): array {
+        $aba = Aba::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $user->id,
+        ]);
+
+        $attachment = createMainDocumentAttachment($aba, $fileName, implode("\n", $lines));
+        $run = AbaAnalysisRun::query()->create([
+            'aba_id' => $aba->id,
+            'aba_attachment_id' => $attachment->id,
+            'created_by_user_id' => $user->id,
+            'status' => AbaAnalysisRun::STATUS_STARTED,
+            'status_message' => 'Analyselauf wurde gestartet.',
+            'source_original_name' => $attachment->original_name,
+            'source_path' => $attachment->path,
+            'source_mime_type' => $attachment->mime_type,
+            'started_at' => now(),
+        ]);
+
+        app(AbaAnalysisService::class)->processRun($run->id);
+        $run->refresh();
+        $summary = is_array($run->summary) ? $run->summary : [];
+        $stats = is_array($summary['analysis_stats'] ?? null) ? $summary['analysis_stats'] : [];
+
+        return ['run' => $run, 'stats' => $stats];
+    };
+
+    $compatible = $analyze('hierarchy-compatible.txt', [
+        'Titelblatt',
+        'Abstract',
+        'Kurzfassung',
+        'Inhaltsverzeichnis',
+        '4 Thema .... 3',
+        '4.1 Grundlagen .... 4',
+        '4.1.2 Merkmale .... 5',
+        '4 Thema',
+        'Kontext zum Thema.',
+        '4.1 Grundlagen',
+        'Grundlagentext.',
+        '4.1.2 Merkmale',
+        'Vertiefender Detailtext.',
+    ]);
+
+    $mismatched = $analyze('hierarchy-mismatched.txt', [
+        'Titelblatt',
+        'Abstract',
+        'Kurzfassung',
+        'Inhaltsverzeichnis',
+        '4 Thema .... 3',
+        '4.1.1 Definition .... 4',
+        '4.1.2 Merkmale .... 5',
+        '4 Thema',
+        'Kontext zum Thema.',
+        '4.1.1 Definition',
+        'Definitionstext.',
+        '4.1.2 Merkmale',
+        'Vertiefender Detailtext.',
+    ]);
+
+    $compatibleScore = (float) ($compatible['stats']['hierarchy_confidence'] ?? 0.0);
+    $mismatchedScore = (float) ($mismatched['stats']['hierarchy_confidence'] ?? 0.0);
+    $compatibleMismatchCount = (int) ($compatible['stats']['hierarchy_numbering_mismatch_count'] ?? 0);
+    $mismatchedMismatchCount = (int) ($mismatched['stats']['hierarchy_numbering_mismatch_count'] ?? 0);
+
+    expect($compatibleScore)->toBeGreaterThan($mismatchedScore)
+        ->and($mismatchedMismatchCount)->toBeGreaterThan($compatibleMismatchCount);
+});
+
+test('hierarchy confidence decreases when links become uncertain via boundary detachment', function () {
+    config()->set('aba_analysis.openai_normalization_enabled', false);
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $analyze = function (string $fileName, array $lines) use ($user): array {
+        $aba = Aba::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $user->id,
+        ]);
+
+        $attachment = createMainDocumentAttachment($aba, $fileName, implode("\n", $lines));
+        $run = AbaAnalysisRun::query()->create([
+            'aba_id' => $aba->id,
+            'aba_attachment_id' => $attachment->id,
+            'created_by_user_id' => $user->id,
+            'status' => AbaAnalysisRun::STATUS_STARTED,
+            'status_message' => 'Analyselauf wurde gestartet.',
+            'source_original_name' => $attachment->original_name,
+            'source_path' => $attachment->path,
+            'source_mime_type' => $attachment->mime_type,
+            'started_at' => now(),
+        ]);
+
+        app(AbaAnalysisService::class)->processRun($run->id);
+        $run->refresh();
+        $summary = is_array($run->summary) ? $run->summary : [];
+        $stats = is_array($summary['analysis_stats'] ?? null) ? $summary['analysis_stats'] : [];
+
+        return ['run' => $run, 'stats' => $stats];
+    };
+
+    $confident = $analyze('hierarchy-boundary-clean.txt', [
+        'Titelblatt',
+        'Abstract',
+        'Kurzfassung',
+        'Inhaltsverzeichnis',
+        '2 Methode .... 3',
+        '2.1 Datengrundlage .... 4',
+        '2 Methode',
+        'Methodiktext.',
+        '2.1 Datengrundlage',
+        'Datengrundlagentext.',
+    ]);
+
+    $detached = $analyze('hierarchy-boundary-detached.txt', [
+        'Titelblatt',
+        'Abstract',
+        'Kurzfassung',
+        'Inhaltsverzeichnis',
+        '2 Methode .... 3',
+        '2.1 Datengrundlage .... 4',
+        '2 Methode',
+        'Methodiktext.',
+        'Literaturverzeichnis',
+        '1. Mustermann, M. (2020). Quelle.',
+        '2.1 Datengrundlage',
+        'Datengrundlagentext.',
+    ]);
+
+    $confidentScore = (float) ($confident['stats']['hierarchy_confidence'] ?? 0.0);
+    $detachedScore = (float) ($detached['stats']['hierarchy_confidence'] ?? 0.0);
+    $detachedMissingParentCount = (int) ($detached['stats']['hierarchy_missing_parent_count'] ?? 0);
+
+    expect($confidentScore)->toBeGreaterThan($detachedScore)
+        ->and($detachedMissingParentCount)->toBeGreaterThanOrEqual(1);
+});
+
+test('hierarchy confidence drops when missing intermediate numbering triggers flattening', function () {
+    config()->set('aba_analysis.openai_normalization_enabled', false);
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $analyze = function (string $fileName, array $lines) use ($user): array {
+        $aba = Aba::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $user->id,
+        ]);
+
+        $attachment = createMainDocumentAttachment($aba, $fileName, implode("\n", $lines));
+        $run = AbaAnalysisRun::query()->create([
+            'aba_id' => $aba->id,
+            'aba_attachment_id' => $attachment->id,
+            'created_by_user_id' => $user->id,
+            'status' => AbaAnalysisRun::STATUS_STARTED,
+            'status_message' => 'Analyselauf wurde gestartet.',
+            'source_original_name' => $attachment->original_name,
+            'source_path' => $attachment->path,
+            'source_mime_type' => $attachment->mime_type,
+            'started_at' => now(),
+        ]);
+
+        app(AbaAnalysisService::class)->processRun($run->id);
+        $run->refresh();
+        $summary = is_array($run->summary) ? $run->summary : [];
+        $stats = is_array($summary['analysis_stats'] ?? null) ? $summary['analysis_stats'] : [];
+
+        return ['run' => $run, 'stats' => $stats];
+    };
+
+    $clean = $analyze('hierarchy-chain-clean.txt', [
+        'Titelblatt',
+        'Abstract',
+        'Kurzfassung',
+        'Inhaltsverzeichnis',
+        '4 Fake News .... 3',
+        '4.1 Grundlagen .... 4',
+        '4.1.1 Definition .... 5',
+        '4.1.2 Merkmale .... 6',
+        '4 Fake News',
+        'Kapiteltext.',
+        '4.1 Grundlagen',
+        'Grundlagentext.',
+        '4.1.1 Definition',
+        'Definitionstext.',
+        '4.1.2 Merkmale',
+        'Merkmaltext.',
+    ]);
+
+    $flattened = $analyze('hierarchy-chain-flattened.txt', [
+        'Titelblatt',
+        'Abstract',
+        'Kurzfassung',
+        'Inhaltsverzeichnis',
+        '4 Fake News .... 3',
+        '4.1.1 Definition .... 5',
+        '4.1.2 Merkmale .... 6',
+        '4 Fake News',
+        'Kapiteltext.',
+        '4.1.1 Definition',
+        'Definitionstext.',
+        '4.1.2 Merkmale',
+        'Merkmaltext.',
+    ]);
+
+    $cleanScore = (float) ($clean['stats']['hierarchy_confidence'] ?? 0.0);
+    $flattenedScore = (float) ($flattened['stats']['hierarchy_confidence'] ?? 0.0);
+    $flattenedCount = (int) ($flattened['stats']['hierarchy_flattened_count'] ?? 0);
+
+    expect($cleanScore)->toBeGreaterThan($flattenedScore)
+        ->and($flattenedCount)->toBeGreaterThanOrEqual(1);
+});
+
+test('mixed numbered and unnumbered headings preserve chapter subchapter hierarchy', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'hauptdokument.docx', [
+        ['text' => 'ABA-Arbeit', 'style' => 'Normal'],
+        ['text' => 'Inhaltsverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '1 Grundlagen .... 4', 'style' => 'TOC1'],
+        ['text' => 'Begriffe und Rahmen .... 5', 'style' => 'TOC1'],
+        ['text' => '1.1 Begriffe .... 6', 'style' => 'TOC1'],
+        ['text' => '2 Methode .... 8', 'style' => 'TOC1'],
+        ['text' => '1 Grundlagen', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einordnung und Zielsetzung des Kapitels.', 'style' => 'Normal'],
+        ['text' => 'Begriffe und Rahmen', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Kontext für zentrale Begriffe und deren Abgrenzung.', 'style' => 'Normal'],
+        ['text' => '1.1 Begriffe', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Vertiefende Definitionen und Beispiele.', 'style' => 'Normal'],
+        ['text' => '2 Methode', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Beschreibung der methodischen Vorgehensweise.', 'style' => 'Normal'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'hauptdokument.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED);
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $chapter = $results->firstWhere('section_title', '1 Grundlagen');
+    $unnumberedSub = $results->firstWhere('section_title', 'Begriffe und Rahmen');
+    $numberedSub = $results->firstWhere('section_title', '1.1 Begriffe');
+
+    expect($chapter)->not->toBeNull()
+        ->and($unnumberedSub)->not->toBeNull()
+        ->and($numberedSub)->not->toBeNull()
+        ->and((string) ($unnumberedSub->section_type ?? ''))->toBe('subchapter')
+        ->and((int) ($unnumberedSub->parent_result_id ?? 0))->toBe((int) ($chapter->id ?? 0))
+        ->and((int) ($numberedSub->parent_result_id ?? 0))->toBe((int) ($chapter->id ?? 0));
+});
+
+test('inconsistent heading typography remains classifiable when multiple hierarchy cues align', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'hauptdokument.docx', [
+        ['text' => 'ABA-Arbeit', 'style' => 'Normal'],
+        ['text' => 'Inhaltsverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '1 Analyse .... 4', 'style' => 'TOC1'],
+        ['text' => '1.1 Kontext und Grenzen .... 5', 'style' => 'TOC1'],
+        ['text' => '1.2 Methodische Grenzen .... 6', 'style' => 'TOC1'],
+        ['text' => '1 Analyse', 'style' => 'Heading1', 'outline' => 0, 'align' => 'center', 'bold' => true, 'font_size_half_points' => 30],
+        ['text' => 'Einführung in Analyse und Untersuchungsrahmen.', 'style' => 'Normal'],
+        ['text' => '1.1 Kontext und Grenzen', 'style' => 'Heading2', 'outline' => 1, 'align' => 'left', 'indent_left' => 360, 'spacing_before' => 240, 'spacing_after' => 80, 'bold' => false, 'font_size_half_points' => 20],
+        ['text' => 'Beschreibung des Kontexts sowie der inhaltlichen Grenzen.', 'style' => 'Normal'],
+        ['text' => '1.2 Methodische Grenzen', 'style' => 'Heading2', 'outline' => 1, 'align' => 'left', 'indent_left' => 360, 'spacing_before' => 240, 'spacing_after' => 80, 'bold' => false, 'font_size_half_points' => 20],
+        ['text' => 'Methodische Limitationen und potentielle Verzerrungen.', 'style' => 'Normal'],
+        ['text' => '2 Ergebnisse', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Darstellung der wichtigsten Ergebnisse.', 'style' => 'Normal'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'hauptdokument.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED);
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $chapter = $results->firstWhere('section_title', '1 Analyse');
+    $subA = $results->firstWhere('section_title', '1.1 Kontext und Grenzen');
+    $subB = $results->firstWhere('section_title', '1.2 Methodische Grenzen');
+
+    expect($chapter)->not->toBeNull()
+        ->and($subA)->not->toBeNull()
+        ->and($subB)->not->toBeNull()
+        ->and((string) ($subA->section_type ?? ''))->toBe('subchapter')
+        ->and((string) ($subB->section_type ?? ''))->toBe('subchapter')
+        ->and((int) ($subA->parent_result_id ?? 0))->toBe((int) ($chapter->id ?? 0))
+        ->and((int) ($subB->parent_result_id ?? 0))->toBe((int) ($chapter->id ?? 0));
+});
+
+test('bold figure captions that look like headings are not accepted as structural headings', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $captionTitle = 'Abb. 1: Nutzung sozialer Medien im Vergleich';
+    $mainAttachment = createMainDocxAttachment($aba, 'hauptdokument.docx', [
+        ['text' => 'ABA-Arbeit', 'style' => 'Normal'],
+        ['text' => 'Inhaltsverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '1 Analyse .... 4', 'style' => 'TOC1'],
+        ['text' => '2 Ergebnisse .... 6', 'style' => 'TOC1'],
+        ['text' => '1 Analyse', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Kurzer Kontext zur folgenden Darstellung.', 'style' => 'Normal'],
+        ['text' => $captionTitle, 'style' => 'Heading2', 'outline' => 1, 'bold' => true, 'font_size_half_points' => 24],
+        ['text' => 'Quelle: Eigene Darstellung', 'style' => 'Normal'],
+        ['text' => '2 Ergebnisse', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einordnung der Ergebnisse in den Gesamtkontext.', 'style' => 'Normal'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'hauptdokument.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED);
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $captionSections = $results->where('section_title', $captionTitle);
+
+    expect($captionSections->where('section_type', 'figure')->count())->toBe(1)
+        ->and($captionSections->where('section_type', '!=', 'figure')->count())->toBe(0)
+        ->and($results->firstWhere('section_title', '2 Ergebnisse'))->not->toBeNull();
+});
+
+test('bibliography entries with heading like numbering are not promoted to structural headings', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $entryOne = '1. Mustermann, M. (2020). Medienethik. Verlagshaus.';
+    $entryTwo = '[2] Beispiel, A. (2021). Plattformvergleich. https://example.org';
+    $mainAttachment = createMainDocxAttachment($aba, 'hauptdokument.docx', [
+        ['text' => 'ABA-Arbeit', 'style' => 'Normal'],
+        ['text' => 'Inhaltsverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '1 Einleitung .... 4', 'style' => 'TOC1'],
+        ['text' => 'Literaturverzeichnis .... 28', 'style' => 'TOC1'],
+        ['text' => '1 Einleitung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einleitender Abschnitt.', 'style' => 'Normal'],
+        ['text' => 'Literaturverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => $entryOne, 'style' => 'Normal'],
+        ['text' => $entryTwo, 'style' => 'Normal'],
+        ['text' => 'Anhang', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Zusätzliche Materialien.', 'style' => 'Normal'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'hauptdokument.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED);
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $bibliography = $results->firstWhere('section_type', 'bibliography');
+    $titles = $results->pluck('section_title')->filter()->values()->all();
+
+    expect($bibliography)->not->toBeNull()
+        ->and($titles)->not->toContain($entryOne)
+        ->and($titles)->not->toContain($entryTwo);
+});
+
+test('toc pages that visually resemble body heading pages remain isolated until body reentry', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'hauptdokument.docx', [
+        ['text' => 'ABA-Arbeit', 'style' => 'Normal'],
+        ['text' => 'Inhaltsverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '1 Einleitung 4', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '1.1 Zielsetzung 5', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => '2 Methode 8', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '1 Einleitung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einleitender Fließtext nach dem Inhaltsverzeichnis.', 'style' => 'Normal'],
+        ['text' => '1.1 Zielsetzung', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Ziele und erwartete Ergebnisse der Arbeit.', 'style' => 'Normal'],
+        ['text' => '2 Methode', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Methodischer Teil mit Vorgehensbeschreibung.', 'style' => 'Normal'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'hauptdokument.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED);
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $toc = $results->firstWhere('section_type', 'table_of_contents');
+    $chapter = $results->firstWhere('section_title', '1 Einleitung');
+    $titles = $results->pluck('section_title')->filter()->values()->all();
+
+    expect($toc)->not->toBeNull()
+        ->and((string) ($toc->extracted_text ?? ''))->toContain('1 Einleitung 4')
+        ->and($chapter)->not->toBeNull()
+        ->and((int) ($chapter->start_line ?? 0))->toBeGreaterThan((int) ($toc->end_line ?? 0))
+        ->and($titles)->not->toContain('1 Einleitung 4')
+        ->and($titles)->not->toContain('1.1 Zielsetzung 5');
+});
+
+test('chapter followed by 1.1 and 1.2 keeps both numbered subchapters', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'subchapter-sequence.docx', [
+        ['text' => 'Titelblatt', 'style' => 'Normal'],
+        ['text' => '1. EINLEITUNG', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '1.1 Wer ist Bong Joon-ho?', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einleitender Absatz zur Person und zur Themenwahl.', 'style' => 'Normal'],
+        ['text' => '1.2 Warum als Videobeitrag?', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Begründung zur gewählten Beitragsform.', 'style' => 'Normal'],
+        ['text' => '2. AUSBLICK', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Kurzer Ausblick.', 'style' => 'Normal'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'subchapter-sequence.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $firstSub = $results->firstWhere('section_title', '1.1 Wer ist Bong Joon-ho?');
+    $secondSub = $results->firstWhere('section_title', '1.2 Warum als Videobeitrag?');
+
+    expect($firstSub)->not->toBeNull()
+        ->and($secondSub)->not->toBeNull()
+        ->and((string) ($firstSub->section_type ?? ''))->toBe('subchapter')
+        ->and((string) ($secondSub->section_type ?? ''))->toBe('subchapter')
+        ->and((int) ($firstSub->sort_order ?? 0))->toBeLessThan((int) ($secondSub->sort_order ?? 0));
+});
+
+test('first subchapter is not dropped when body starts with a question sentence', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'subchapter-question-body.docx', [
+        ['text' => 'INHALTSVERZEICHNIS', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '1. EINLEITUNG', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '1.1 Wer ist Bong Joon-ho?', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Wieso ich mich für Bong Joon-ho entschieden habe?', 'style' => 'Normal'],
+        ['text' => 'Er gehört zu einem meiner Lieblingsregisseure und hat meinen Blick auf Film verändert.', 'style' => 'Normal'],
+        ['text' => 'Zusätzlicher Absatz zur Begründung der Themenwahl.', 'style' => 'Normal'],
+        ['text' => '1.2 Warum als Videobeitrag?', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Weshalb ich mich gegen eine VWA entschieden habe?', 'style' => 'Normal'],
+        ['text' => 'Der Videobeitrag eignet sich für mein Thema besser als eine rein schriftliche Darstellung.', 'style' => 'Normal'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'subchapter-question-body.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $titles = $results->pluck('section_title')->filter()->values()->all();
+    $firstSub = $results->firstWhere('section_title', '1.1 Wer ist Bong Joon-ho?');
+    $secondSub = $results->firstWhere('section_title', '1.2 Warum als Videobeitrag?');
+
+    expect($titles)->toContain('1.1 Wer ist Bong Joon-ho?')
+        ->and($titles)->toContain('1.2 Warum als Videobeitrag?')
+        ->and($firstSub)->not->toBeNull()
+        ->and($secondSub)->not->toBeNull();
+});
+
+test('adjacent numbered subchapters with similar typography are both preserved', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'adjacent-subchapters.docx', [
+        ['text' => '1. EINLEITUNG', 'style' => 'Heading1', 'outline' => 0, 'bold' => true, 'font_size_half_points' => 26],
+        ['text' => '1.1 Wer ist Bong Joon-ho?', 'style' => 'Heading1', 'outline' => 0, 'bold' => true, 'font_size_half_points' => 24],
+        ['text' => 'Kurze Einordnung der Person.', 'style' => 'Normal'],
+        ['text' => '1.2 Warum als Videobeitrag?', 'style' => 'Heading1', 'outline' => 0, 'bold' => true, 'font_size_half_points' => 24],
+        ['text' => 'Kurze Einordnung zur Form der Arbeit.', 'style' => 'Normal'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'adjacent-subchapters.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    expect($results->firstWhere('section_title', '1.1 Wer ist Bong Joon-ho?'))->not->toBeNull()
+        ->and($results->firstWhere('section_title', '1.2 Warum als Videobeitrag?'))->not->toBeNull();
+});
+
+test('toc duplicate subchapter entries stay isolated and body hierarchy keeps real 1.1 and 1.2', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'toc-body-duplicate-subchapters.docx', [
+        ['text' => 'INHALTSVERZEICHNIS', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '1. EINLEITUNG .... 3', 'style' => 'TOC1'],
+        ['text' => '1.1 Wer ist Bong Joon-ho? .... 4', 'style' => 'TOC1'],
+        ['text' => '1.2 Warum als Videobeitrag? .... 5', 'style' => 'TOC1'],
+        ['page_break' => true],
+        ['text' => '1. EINLEITUNG', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '1.1 Wer ist Bong Joon-ho?', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Wieso ich mich für Bong Joon-ho entschieden habe?', 'style' => 'Normal'],
+        ['text' => 'Einleitender Absatz zur Person und zur Themenwahl.', 'style' => 'Normal'],
+        ['text' => '1.2 Warum als Videobeitrag?', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Begründung zur gewählten Beitragsform.', 'style' => 'Normal'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'toc-body-duplicate-subchapters.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $toc = $results->firstWhere('section_type', 'table_of_contents');
+    $firstSub = $results->firstWhere('section_title', '1.1 Wer ist Bong Joon-ho?');
+    $secondSub = $results->firstWhere('section_title', '1.2 Warum als Videobeitrag?');
+    $titles = $results->pluck('section_title')->filter()->values()->all();
+
+    expect($toc)->not->toBeNull()
+        ->and((string) ($toc->extracted_text ?? ''))->toContain('1.1 Wer ist Bong Joon-ho? .... 4')
+        ->and((string) ($toc->extracted_text ?? ''))->toContain('1.2 Warum als Videobeitrag? .... 5')
+        ->and((string) ($toc->extracted_text ?? ''))->not->toContain('Wieso ich mich für Bong Joon-ho entschieden habe?')
+        ->and($firstSub)->not->toBeNull()
+        ->and($secondSub)->not->toBeNull()
+        ->and((string) ($firstSub->section_type ?? ''))->toBe('subchapter')
+        ->and((string) ($secondSub->section_type ?? ''))->toBe('subchapter')
+        ->and((int) ($firstSub->start_line ?? 0))->toBeGreaterThan((int) ($toc->end_line ?? 0))
+        ->and((int) ($secondSub->start_line ?? 0))->toBeGreaterThan((int) ($toc->end_line ?? 0))
+        ->and($titles)->not->toContain('1.1 Wer ist Bong Joon-ho? .... 4')
+        ->and($titles)->not->toContain('1.2 Warum als Videobeitrag? .... 5');
+});
+
+test('minimal toc heading does not absorb following body question line', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'minimal-toc-heading-body-reentry.docx', [
+        ['text' => 'INHALTSVERZEICHNIS', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '1. EINLEITUNG', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '1.1 Wer ist Bong Joon-ho?', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Wieso ich mich für Bong Joon-ho entschieden habe?', 'style' => 'Normal'],
+        ['text' => 'Einleitender Absatz zur Person und zur Themenwahl.', 'style' => 'Normal'],
+        ['text' => '1.2 Warum als Videobeitrag?', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Begründung zur gewählten Beitragsform.', 'style' => 'Normal'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'minimal-toc-heading-body-reentry.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $toc = $results->firstWhere('section_type', 'table_of_contents');
+    $firstSub = $results->firstWhere('section_title', '1.1 Wer ist Bong Joon-ho?');
+    $secondSub = $results->firstWhere('section_title', '1.2 Warum als Videobeitrag?');
+
+    expect($toc)->not->toBeNull()
+        ->and((string) ($toc->extracted_text ?? ''))->toContain('INHALTSVERZEICHNIS')
+        ->and((string) ($toc->extracted_text ?? ''))->not->toContain('Wieso ich mich für Bong Joon-ho entschieden habe?')
+        ->and($firstSub)->not->toBeNull()
+        ->and($secondSub)->not->toBeNull()
+        ->and((string) ($firstSub->section_type ?? ''))->toBe('subchapter')
+        ->and((string) ($secondSub->section_type ?? ''))->toBe('subchapter')
+        ->and((int) ($firstSub->start_line ?? 0))->toBeGreaterThan((int) ($toc->end_line ?? 0))
+        ->and((int) ($secondSub->start_line ?? 0))->toBeGreaterThan((int) ($toc->end_line ?? 0));
+});
+
+test('docx toc entries inside content controls are extracted completely and stay isolated', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $tocSdtXml = '<w:sdt><w:sdtContent>'
+        .'<w:p><w:pPr><w:pStyle w:val="Verzeichnis1"/></w:pPr><w:r><w:t>1. EINLEITUNG .... 1</w:t></w:r></w:p>'
+        .'<w:p><w:pPr><w:pStyle w:val="Verzeichnis1"/></w:pPr><w:r><w:t>2. METHODE .... 2</w:t></w:r></w:p>'
+        .'</w:sdtContent></w:sdt>';
+
+    $mainAttachment = createMainDocxAttachment($aba, 'toc-in-sdt.docx', [
+        ['text' => 'INHALTSVERZEICHNIS', 'style' => 'Heading1', 'outline' => 0],
+        ['raw_xml' => $tocSdtXml],
+        ['page_break' => true],
+        ['text' => '1. EINLEITUNG', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einleitender Abschnitt mit Kontext und Zielsetzung.', 'style' => 'Normal'],
+        ['text' => '2. METHODE', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Methodischer Abschnitt mit Vorgehensbeschreibung.', 'style' => 'Normal'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'toc-in-sdt.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $toc = $results->firstWhere('section_type', 'table_of_contents');
+    $titles = $results->pluck('section_title')->filter()->values()->all();
+
+    expect($toc)->not->toBeNull()
+        ->and((string) ($toc->extracted_text ?? ''))->toContain('1. EINLEITUNG .... 1')
+        ->and((string) ($toc->extracted_text ?? ''))->toContain('2. METHODE .... 2')
+        ->and((string) ($toc->extracted_text ?? ''))->not->toContain('Einleitender Abschnitt mit Kontext und Zielsetzung.')
+        ->and($titles)->toContain('1. EINLEITUNG')
+        ->and($titles)->toContain('2. METHODE')
+        ->and($titles)->not->toContain('1. EINLEITUNG .... 1')
+        ->and($titles)->not->toContain('2. METHODE .... 2');
+});
+
+test('docx toc field entries with verzeichnis style remain in toc and body starts at real reentry heading', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $tocSdtXml = '<w:sdt><w:sdtContent>'
+        .'<w:p><w:pPr><w:pStyle w:val="Verzeichnis1"/></w:pPr><w:r><w:t>1. EINLEITUNG1</w:t></w:r></w:p>'
+        .'<w:p><w:pPr><w:pStyle w:val="Verzeichnis1"/></w:pPr><w:r><w:t>1.1 Wer ist Bong Joon-ho?1</w:t></w:r></w:p>'
+        .'<w:p><w:pPr><w:pStyle w:val="Verzeichnis1"/></w:pPr><w:r><w:t>1.2 Warum als Videobeitrag?1</w:t></w:r></w:p>'
+        .'<w:p><w:pPr><w:pStyle w:val="Verzeichnis1"/></w:pPr><w:r><w:t>2. ÜBERLEGUNGEN ZUR DOKU2</w:t></w:r></w:p>'
+        .'<w:p><w:pPr><w:pStyle w:val="Verzeichnis1"/></w:pPr><w:r><w:t>2.1 Struktureller Aufbau2</w:t></w:r></w:p>'
+        .'</w:sdtContent></w:sdt>';
+
+    $mainAttachment = createMainDocxAttachment($aba, 'toc-verzeichnis-field.docx', [
+        ['text' => 'INHALTSVERZEICHNIS', 'style' => 'Heading1', 'outline' => 0],
+        ['raw_xml' => $tocSdtXml],
+        ['text' => '1. EINLEITUNG', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '1.1 Wer ist Bong Joon-ho?', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Wieso ich mich für Bong Joon-ho entschieden habe?', 'style' => 'Normal'],
+        ['text' => '1.2 Warum als Videobeitrag?', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Weshalb ich mich gegen eine VWA entschieden habe?', 'style' => 'Normal'],
+        ['text' => '2. ÜBERLEGUNGEN ZUR DOKU', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '2.1 Struktureller Aufbau', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Die Dokumentation ist in drei Kapitel eingeteilt.', 'style' => 'Normal'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'toc-verzeichnis-field.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $toc = $results->firstWhere('section_type', 'table_of_contents');
+    $chapter = $results->firstWhere('section_title', '1. EINLEITUNG');
+    $titles = $results->pluck('section_title')->filter()->values()->all();
+
+    expect($toc)->not->toBeNull()
+        ->and((string) ($toc->extracted_text ?? ''))->toContain('1. EINLEITUNG1')
+        ->and((string) ($toc->extracted_text ?? ''))->toContain('1.1 Wer ist Bong Joon-ho?1')
+        ->and((string) ($toc->extracted_text ?? ''))->toContain('2. ÜBERLEGUNGEN ZUR DOKU2')
+        ->and((string) ($toc->extracted_text ?? ''))->not->toContain('Wieso ich mich für Bong Joon-ho entschieden habe?')
+        ->and($chapter)->not->toBeNull()
+        ->and((int) ($chapter->start_line ?? 0))->toBeGreaterThan((int) ($toc->end_line ?? 0))
+        ->and($titles)->not->toContain('1.1 Wer ist Bong Joon-ho?1')
+        ->and($titles)->not->toContain('2.1 Struktureller Aufbau2');
+});
+
+test('prose lines and year-start lines are not promoted to headings and do not truncate subsection spans', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'section-span-regression.docx', [
+        ['text' => '2. ÜBERLEGUNGEN ZUR DOKU', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '2.1 Struktureller Aufbau', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Die Dokumentation ist in drei Kapitel eingeteilt und baut inhaltlich aufeinander auf.', 'style' => 'Normal'],
+        ['text' => 'Kapitel 2 handelt von seiner Filmografie und soll veranschaulichen, wie sich diese im Laufe der Jahre entwickelt hat.', 'style' => 'Normal'],
+        ['text' => 'Die behandelten Filme werden zusammengefasst und mit zusätzlichem Kontext eingeordnet.', 'style' => 'Normal'],
+        ['text' => '2.2 Recherche', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Rechercheabschnitt mit methodischer Reflexion.', 'style' => 'Normal'],
+        ['text' => '3. UMSETZUNG', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '3.1 Kapitel I: Biografie', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => '1988 begann er sein Studium an der Yonsei-Universität in Seoul.', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Biografische Einordnung und Entwicklungsschritte folgen in diesem Abschnitt.', 'style' => 'Normal'],
+        ['text' => '3.2 Kapitel II: Filmografie', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'The Host', 'style' => 'Normal'],
+        ['text' => 'Der Film wird inhaltlich eingeordnet und mit gesellschaftlichen Motiven verknüpft.', 'style' => 'Normal'],
+        ['text' => '2013 erschien Bong Joon-hos Sci-Fi-Thriller Snowpiercer.', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Auch dieser Film wird im Kontext seiner filmischen Entwicklung analysiert.', 'style' => 'Normal'],
+        ['text' => '3.3 Kapitel III: Filmanalyse', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Filmische Gestaltungsmittel', 'style' => 'Normal'],
+        ['text' => 'Die filmische Analyse vertieft Kameraarbeit, Rauminszenierung und sozialen Kontrast.', 'style' => 'Normal'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'section-span-regression.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $titles = $results->pluck('section_title')->filter()->values()->all();
+    $sub21 = $results->firstWhere('section_title', '2.1 Struktureller Aufbau');
+    $sub31 = $results->firstWhere('section_title', '3.1 Kapitel I: Biografie');
+    $sub32 = $results->firstWhere('section_title', '3.2 Kapitel II: Filmografie');
+    $sub33 = $results->firstWhere('section_title', '3.3 Kapitel III: Filmanalyse');
+
+    expect($titles)->not->toContain('Kapitel 2 handelt von seiner Filmografie und soll veranschaulichen, wie sich diese im Laufe der Jahre entwickelt hat.')
+        ->and($titles)->not->toContain('1988 begann er sein Studium an der Yonsei-Universität in Seoul.')
+        ->and($titles)->not->toContain('2013 erschien Bong Joon-hos Sci-Fi-Thriller Snowpiercer.')
+        ->and($titles)->not->toContain('The Host')
+        ->and($titles)->not->toContain('Filmische Gestaltungsmittel')
+        ->and($sub21)->not->toBeNull()
+        ->and((string) ($sub21->extracted_text ?? ''))->toContain('Kapitel 2 handelt von seiner Filmografie')
+        ->and((string) ($sub21->extracted_text ?? ''))->toContain('Die behandelten Filme werden zusammengefasst')
+        ->and($sub31)->not->toBeNull()
+        ->and((string) ($sub31->extracted_text ?? ''))->toContain('1988 begann er sein Studium')
+        ->and($sub32)->not->toBeNull()
+        ->and((string) ($sub32->extracted_text ?? ''))->toContain('The Host')
+        ->and((string) ($sub32->extracted_text ?? ''))->toContain('2013 erschien Bong Joon-hos Sci-Fi-Thriller Snowpiercer.')
+        ->and($sub33)->not->toBeNull()
+        ->and((string) ($sub33->extracted_text ?? ''))->toContain('Filmische Gestaltungsmittel');
+});
+
 test('processing run marks failure when document file is missing', function () {
     $user = createAbaTeacher($this->school, $this->schoolyear);
     $aba = Aba::factory()->create([
@@ -2144,6 +3409,210 @@ test('title page year is not inferred from running text mentioning jahr', functi
         ->and($displayValues['title_page_year'] ?? null)->toBeNull();
 });
 
+test('title page year is extracted from german month year expressions', function (string $monthLine) {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    config()->set('aba_analysis.openai_normalization_enabled', false);
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'titelblatt-monat-jahr-de.docx', [
+        ['text' => 'Christian Doppler-Gymnasium', 'style' => 'Normal'],
+        ['text' => 'Franz-Josef-Kai 41', 'style' => 'Normal'],
+        ['text' => '5020 Salzburg', 'style' => 'Normal'],
+        ['text' => 'Die Rolle der Medien in der politischen Meinungsbildung', 'style' => 'Normal'],
+        ['text' => 'Verfasst von', 'style' => 'Normal'],
+        ['text' => 'Yvonne Pucher', 'style' => 'Normal'],
+        ['text' => 'Betreuer: Dipl.-Ing. Günther Kron', 'style' => 'Normal'],
+        ['text' => 'Klasse 8M', 'style' => 'Normal'],
+        ['text' => $monthLine, 'style' => 'Normal'],
+        ['page_break' => true],
+        ['text' => 'Abstract', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Kurzfassung ohne Jahreszahl im Fließtext.', 'style' => 'Normal'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'titelblatt-monat-jahr-de.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $titlePage = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->where('section_type', 'title_page')
+        ->first();
+
+    expect($titlePage)->not->toBeNull();
+
+    $details = is_array($titlePage?->metadata['title_page_details'] ?? null)
+        ? $titlePage->metadata['title_page_details']
+        : [];
+    $summary = is_array($run->summary) ? $run->summary : [];
+    $analysisStats = is_array($summary['analysis_stats'] ?? null) ? $summary['analysis_stats'] : [];
+    $displayValues = is_array($summary['display_values'] ?? null) ? $summary['display_values'] : [];
+
+    expect((string) ($details['year'] ?? ''))->toBe('2026')
+        ->and((string) ($details['date_context'] ?? ''))->toBe($monthLine)
+        ->and((string) ($analysisStats['title_page_year'] ?? ''))->toBe('2026')
+        ->and((string) ($analysisStats['title_page_date_context'] ?? ''))->toBe($monthLine)
+        ->and((string) ($displayValues['title_page_year'] ?? ''))->toBe('2026')
+        ->and((string) ($displayValues['title_page_date_context'] ?? ''))->toBe($monthLine);
+})->with([
+    'januar' => 'Januar 2026',
+    'februar' => 'Februar 2026',
+    'märz' => 'März 2026',
+    'april' => 'April 2026',
+    'mai' => 'Mai 2026',
+    'juni' => 'Juni 2026',
+    'juli' => 'Juli 2026',
+    'august' => 'August 2026',
+    'september' => 'September 2026',
+    'oktober' => 'Oktober 2026',
+    'november' => 'November 2026',
+    'dezember' => 'Dezember 2026',
+]);
+
+test('title page year is extracted from english abbreviated and numeric month year forms', function (string $dateLine, string $expectedDateContext) {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    config()->set('aba_analysis.openai_normalization_enabled', false);
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'titelblatt-monat-jahr-varianten.docx', [
+        ['text' => 'Christian Doppler-Gymnasium', 'style' => 'Normal'],
+        ['text' => 'Franz-Josef-Kai 41', 'style' => 'Normal'],
+        ['text' => '5020 Salzburg', 'style' => 'Normal'],
+        ['text' => 'Die Rolle der Medien in der politischen Meinungsbildung', 'style' => 'Normal'],
+        ['text' => 'Verfasst von', 'style' => 'Normal'],
+        ['text' => 'Yvonne Pucher', 'style' => 'Normal'],
+        ['text' => 'Betreuer: Dipl.-Ing. Günther Kron', 'style' => 'Normal'],
+        ['text' => 'Klasse 8M', 'style' => 'Normal'],
+        ['text' => $dateLine, 'style' => 'Normal'],
+        ['page_break' => true],
+        ['text' => 'Abstract', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Kurzfassung ohne Jahreszahl im Fließtext.', 'style' => 'Normal'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'titelblatt-monat-jahr-varianten.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $titlePage = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->where('section_type', 'title_page')
+        ->first();
+
+    expect($titlePage)->not->toBeNull();
+
+    $details = is_array($titlePage?->metadata['title_page_details'] ?? null)
+        ? $titlePage->metadata['title_page_details']
+        : [];
+    $summary = is_array($run->summary) ? $run->summary : [];
+    $analysisStats = is_array($summary['analysis_stats'] ?? null) ? $summary['analysis_stats'] : [];
+    $displayValues = is_array($summary['display_values'] ?? null) ? $summary['display_values'] : [];
+
+    expect((string) ($details['year'] ?? ''))->toBe('2026')
+        ->and((string) ($details['date_context'] ?? ''))->toBe($expectedDateContext)
+        ->and((string) ($analysisStats['title_page_year'] ?? ''))->toBe('2026')
+        ->and((string) ($analysisStats['title_page_date_context'] ?? ''))->toBe($expectedDateContext)
+        ->and((string) ($displayValues['title_page_year'] ?? ''))->toBe('2026')
+        ->and((string) ($displayValues['title_page_date_context'] ?? ''))->toBe($expectedDateContext);
+})->with([
+    'english month' => ['February 2026', 'February 2026'],
+    'abbreviated month' => ['Feb. 2026', 'Feb. 2026'],
+    'numeric month slash year' => ['02/2026', '02/2026'],
+    'year month hyphen' => ['2026-02', '2026-02'],
+]);
+
+test('title page year is populated when the month year appears only on the title page', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    config()->set('aba_analysis.openai_normalization_enabled', false);
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'titelblatt-jahr-nur-auf-titelseite.docx', [
+        ['text' => 'Christian Doppler-Gymnasium', 'style' => 'Normal'],
+        ['text' => 'Franz-Josef-Kai 41', 'style' => 'Normal'],
+        ['text' => '5020 Salzburg', 'style' => 'Normal'],
+        ['text' => 'Die Rolle der Medien in der politischen Meinungsbildung', 'style' => 'Normal'],
+        ['text' => 'Verfasst von', 'style' => 'Normal'],
+        ['text' => 'Yvonne Pucher', 'style' => 'Normal'],
+        ['text' => 'Betreuer: Dipl.-Ing. Günther Kron', 'style' => 'Normal'],
+        ['text' => 'Klasse 8M', 'style' => 'Normal'],
+        ['text' => 'Februar 2026', 'style' => 'Normal'],
+        ['page_break' => true],
+        ['text' => 'Abstract', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Kurzfassung ohne weitere Datums- oder Jahresangaben.', 'style' => 'Normal'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'titelblatt-jahr-nur-auf-titelseite.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $summary = is_array($run->summary) ? $run->summary : [];
+    $analysisStats = is_array($summary['analysis_stats'] ?? null) ? $summary['analysis_stats'] : [];
+    $displayValues = is_array($summary['display_values'] ?? null) ? $summary['display_values'] : [];
+
+    expect((string) ($analysisStats['title_page_year'] ?? ''))->toBe('2026')
+        ->and((string) ($analysisStats['title_page_date_context'] ?? ''))->toBe('Februar 2026')
+        ->and((string) ($displayValues['title_page_year'] ?? ''))->toBe('2026')
+        ->and((string) ($displayValues['title_page_date_context'] ?? ''))->toBe('Februar 2026');
+});
+
 test('docx page mapper assigns real page numbers when page breaks are present', function () {
     if (! class_exists(ZipArchive::class)) {
         $this->markTestSkipped('ZipArchive required.');
@@ -2327,4 +3796,141 @@ test('plain text document sections never get a non-null page_label', function ()
     foreach ($sections as $section) {
         expect($section['page_label'])->toBeNull();
     }
+});
+
+test('title-page advisor gender-star label is parsed without splitting', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive required.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $attachment = createMainDocxAttachment($aba, 'title-page-gender-star.docx', [
+        ['text' => 'Die Rolle der Fotografie in sozialen Medien'],
+        ['text' => 'Verfasser*in: Sandra Banu'],
+        ['text' => 'Klasse: 8M'],
+        ['text' => 'Betreuer*in: Dipl.-Ing. Günther Kron'],
+        ['text' => 'Schuljahr: 2025/26'],
+        ['text' => 'Inhaltsverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '1. Einleitung 3', 'style' => 'TOC1'],
+        ['text' => 'Einleitung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einleitender Fließtext mit ausreichender Länge.'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $attachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => $attachment->original_name,
+        'source_path' => $attachment->path,
+        'source_mime_type' => $attachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED);
+
+    $stats = is_array($run->summary['analysis_stats'] ?? null) ? $run->summary['analysis_stats'] : [];
+    $titlePage = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->where('section_type', 'title_page')
+        ->first();
+
+    expect((string) ($stats['title_page_advisor'] ?? ''))
+        ->toContain('Günther Kron')
+        ->not->toStartWith('*in:')
+        ->and((string) ($titlePage?->extracted_text ?? ''))->toContain('Betreuer*in: Dipl.-Ing. Günther Kron');
+});
+
+test('docx toc with abstract entry stays complete while real abstract and chapter boundary are preserved', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive required.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $attachment = createMainDocxAttachment($aba, 'toc-abstract-chapter-boundary.docx', [
+        ['text' => 'Die Rolle der Fotografie in sozialen Medien'],
+        ['text' => 'Verfasser*in: Sandra Banu'],
+        ['text' => 'Klasse: 8M'],
+        ['text' => 'Betreuer*in: Dipl.-Ing. Günther Kron'],
+        ['text' => 'Schuljahr: 2025/26'],
+        ['text' => 'Inhaltsverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Abstract'],
+        ['text' => 'Einleitung'],
+        ['text' => 'Entwicklung der Fotografie im Kontext sozialer Medien'],
+        ['text' => 'Literaturverzeichnis'],
+        ['text' => 'Abbildungsverzeichnis'],
+        ['text' => 'Inhaltsverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Abstract 6', 'style' => 'TOC1'],
+        ['text' => '1. Einleitung 7', 'style' => 'TOC1'],
+        ['text' => '2. Entwicklung der Fotografie im Kontext sozialer Medien 9', 'style' => 'TOC1'],
+        ['text' => 'Literaturverzeichnis 34', 'style' => 'TOC1'],
+        ['text' => 'Abbildungsverzeichnis 37', 'style' => 'TOC1'],
+        ['text' => 'Abstract', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Dies ist die echte Abstract-Zusammenfassung und sie gehört in die Abstract-Sektion.'],
+        ['text' => 'Einleitung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einleitender Abschnitt mit Kontext und Zielsetzung.'],
+        ['text' => 'Entwicklung der Fotografie im Kontext sozialer Medien'],
+        ['text' => 'Hier beginnt das zweite Kapitel mit weiterführenden Inhalten.'],
+        ['text' => '2.1 Fotografie vor dem Zeitalter sozialer Medien', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Unterkapiteltext mit Details.'],
+        ['text' => 'Literaturverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Quelle A (2025).'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $attachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => $attachment->original_name,
+        'source_path' => $attachment->path,
+        'source_mime_type' => $attachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED);
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $stats = is_array($run->summary['analysis_stats'] ?? null) ? $run->summary['analysis_stats'] : [];
+    $toc = $results->firstWhere('section_type', 'table_of_contents');
+    $abstract = $results->first(fn ($section) => (string) ($section->section_type ?? '') === 'abstract' && (string) ($section->section_title ?? '') === 'Abstract');
+    $chapterOne = $results->firstWhere('section_title', 'Einleitung');
+    $chapterTwo = $results->firstWhere('section_title', 'Entwicklung der Fotografie im Kontext sozialer Medien');
+
+    expect((int) ($stats['table_of_contents_count'] ?? 0))->toBe(1)
+        ->and((bool) ($stats['abstract_detected'] ?? false))->toBeTrue()
+        ->and($toc)->not->toBeNull()
+        ->and((string) ($toc?->extracted_text ?? ''))->toContain('Abstract 6')
+        ->and((string) ($toc?->extracted_text ?? ''))->toContain('2. Entwicklung der Fotografie im Kontext sozialer Medien 9')
+        ->and((string) ($toc?->extracted_text ?? ''))->not->toContain('Dies ist die echte Abstract-Zusammenfassung')
+        ->and($abstract)->not->toBeNull()
+        ->and((string) ($abstract?->extracted_text ?? ''))->toContain('Dies ist die echte Abstract-Zusammenfassung')
+        ->and($chapterOne)->not->toBeNull()
+        ->and($chapterTwo)->not->toBeNull()
+        ->and((int) ($chapterOne?->end_line ?? 0))->toBeLessThan((int) ($chapterTwo?->start_line ?? 0))
+        ->and((string) ($chapterOne?->extracted_text ?? ''))->not->toContain('Entwicklung der Fotografie im Kontext sozialer Medien');
 });

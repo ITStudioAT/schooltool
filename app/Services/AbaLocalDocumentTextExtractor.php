@@ -284,7 +284,7 @@ class AbaLocalDocumentTextExtractor
 
             $xpath = new \DOMXPath($document);
             $xpath->registerNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main');
-            $paragraphs = $xpath->query('//w:body/w:p');
+            $paragraphs = $xpath->query('//w:body/w:p | //w:body/w:sdt//w:p');
             if (! $paragraphs) {
                 $candidate['status'] = 'empty';
                 $candidate['metrics'] = ['reason' => 'paragraphs_not_found'];
@@ -307,6 +307,12 @@ class AbaLocalDocumentTextExtractor
                 $lineNumber++;
                 $styleValue = trim((string) $xpath->evaluate('string(w:pPr/w:pStyle/@w:val)', $paragraph));
                 $outlineLevelValue = trim((string) $xpath->evaluate('string(w:pPr/w:outlineLvl/@w:val)', $paragraph));
+                $alignment = $this->resolveParagraphAlignment($xpath, $paragraph);
+                $indentLeftTwips = $this->resolveParagraphIndentLeftTwips($xpath, $paragraph);
+                $spacingBeforeTwips = $this->resolveParagraphSpacingTwips($xpath, $paragraph, 'before');
+                $spacingAfterTwips = $this->resolveParagraphSpacingTwips($xpath, $paragraph, 'after');
+                $fontSizePt = $this->resolveParagraphFontSizePt($xpath, $paragraph);
+                $isBold = $this->paragraphHasBoldRun($xpath, $paragraph);
                 $headingLevel = $this->resolveWordHeadingLevel($styleValue, $outlineLevelValue, $text);
                 $knownType = $this->knownSectionType($text);
                 $isTocStyle = $this->isWordTocStyle($styleValue);
@@ -329,7 +335,7 @@ class AbaLocalDocumentTextExtractor
                 }
 
                 if ($outlineSource !== null) {
-                    $outline[] = [
+                    $entry = [
                         'line_number' => $lineNumber,
                         'title' => $text,
                         'level' => $headingLevel,
@@ -337,6 +343,27 @@ class AbaLocalDocumentTextExtractor
                         'is_toc' => $isTocLine,
                         'section_type' => $knownType,
                     ];
+                    if ($styleValue !== '') {
+                        $entry['style'] = $styleValue;
+                    }
+                    if ($alignment !== null) {
+                        $entry['alignment'] = $alignment;
+                    }
+                    if ($indentLeftTwips !== null) {
+                        $entry['indent_left_twips'] = $indentLeftTwips;
+                    }
+                    if ($spacingBeforeTwips !== null) {
+                        $entry['spacing_before_twips'] = $spacingBeforeTwips;
+                    }
+                    if ($spacingAfterTwips !== null) {
+                        $entry['spacing_after_twips'] = $spacingAfterTwips;
+                    }
+                    if ($fontSizePt !== null) {
+                        $entry['font_size_pt'] = $fontSizePt;
+                    }
+                    $entry['is_bold'] = $isBold;
+
+                    $outline[] = $entry;
                 }
 
                 $lines[] = $text;
@@ -904,6 +931,82 @@ class AbaLocalDocumentTextExtractor
         return trim($text);
     }
 
+    private function resolveParagraphAlignment(\DOMXPath $xpath, \DOMNode $paragraph): ?string
+    {
+        $alignment = mb_strtolower(trim((string) $xpath->evaluate('string(w:pPr/w:jc/@w:val)', $paragraph)));
+        if ($alignment === '') {
+            return null;
+        }
+
+        return match ($alignment) {
+            'start', 'left' => 'left',
+            'end', 'right' => 'right',
+            'center', 'centre' => 'center',
+            'both', 'justify', 'distribute' => 'justify',
+            default => $alignment,
+        };
+    }
+
+    private function resolveParagraphIndentLeftTwips(\DOMXPath $xpath, \DOMNode $paragraph): ?int
+    {
+        $value = trim((string) $xpath->evaluate('string(w:pPr/w:ind/@w:start)', $paragraph));
+        if ($value === '') {
+            $value = trim((string) $xpath->evaluate('string(w:pPr/w:ind/@w:left)', $paragraph));
+        }
+
+        if ($value === '' || ! is_numeric($value)) {
+            return null;
+        }
+
+        return (int) $value;
+    }
+
+    private function resolveParagraphSpacingTwips(\DOMXPath $xpath, \DOMNode $paragraph, string $attribute): ?int
+    {
+        $value = trim((string) $xpath->evaluate('string(w:pPr/w:spacing/@w:'.$attribute.')', $paragraph));
+        if ($value === '' || ! is_numeric($value)) {
+            return null;
+        }
+
+        return (int) $value;
+    }
+
+    private function resolveParagraphFontSizePt(\DOMXPath $xpath, \DOMNode $paragraph): ?float
+    {
+        $sizes = [];
+        foreach ($xpath->query('.//w:rPr/w:sz/@w:val|.//w:rPr/w:szCs/@w:val', $paragraph) ?: [] as $sizeNode) {
+            $value = trim((string) $sizeNode->nodeValue);
+            if ($value === '' || ! is_numeric($value)) {
+                continue;
+            }
+
+            $sizes[] = (int) $value;
+        }
+
+        if ($sizes === []) {
+            return null;
+        }
+
+        sort($sizes);
+        $medianIndex = (int) floor((count($sizes) - 1) / 2);
+        $medianHalfPoints = (int) ($sizes[$medianIndex] ?? 0);
+        if ($medianHalfPoints <= 0) {
+            return null;
+        }
+
+        return round($medianHalfPoints / 2, 1);
+    }
+
+    private function paragraphHasBoldRun(\DOMXPath $xpath, \DOMNode $paragraph): bool
+    {
+        $boldCount = (int) $xpath->evaluate(
+            'count(.//w:rPr/w:b[not(@w:val) or @w:val="1" or @w:val="true" or @w:val="on"])',
+            $paragraph
+        );
+
+        return $boldCount > 0;
+    }
+
     private function resolveWordHeadingLevel(string $styleValue, string $outlineLevelValue, string $text): ?int
     {
         if ($outlineLevelValue !== '' && is_numeric($outlineLevelValue)) {
@@ -938,15 +1041,70 @@ class AbaLocalDocumentTextExtractor
             return false;
         }
 
-        return preg_match('/^(toc|inhaltsverzeichnis)/iu', $normalized) === 1
-            || str_contains($normalized, 'toc');
+        return preg_match('/^(toc|inhaltsverzeichnis|verzeichnis)/iu', $normalized) === 1
+            || str_contains($normalized, 'toc')
+            || str_contains($normalized, 'verzeichnis');
     }
 
     private function looksLikeNumberedHeading(string $text): bool
     {
-        return preg_match('/^\s*\d+(?:\.\d+){0,5}\.?\s+[\p{L}]/u', $text) === 1
+        return $this->matchesNumericHeadingPrefix($text)
             || preg_match('/^\s*[IVXLCDM]+\.\s+[\p{L}]/iu', $text) === 1
-            || preg_match('/^\s*(kapitel|chapter)\s+\d+\b/iu', $text) === 1;
+            || $this->looksLikeNamedChapterHeading($text);
+    }
+
+    private function matchesNumericHeadingPrefix(string $text): bool
+    {
+        if (preg_match('/^\s*(\d+(?:\.\d+){0,5})\.?\s+[\p{L}]/u', $text, $matches) !== 1) {
+            return false;
+        }
+
+        $segments = explode('.', (string) ($matches[1] ?? ''));
+        $segments = array_values(array_filter($segments, fn (string $segment): bool => trim($segment) !== ''));
+        if ($segments === []) {
+            return false;
+        }
+
+        $first = (int) ($segments[0] ?? 0);
+
+        return ! (count($segments) === 1 && $first >= 100);
+    }
+
+    private function looksLikeNamedChapterHeading(string $text): bool
+    {
+        return $this->matchesNamedChapterHeadingStructure($text);
+    }
+
+    private function matchesNamedChapterHeadingStructure(string $text): bool
+    {
+        if (preg_match('/^\s*(kapitel|chapter)\s+(\d+)\s*(.*)$/iu', $text, $matches) !== 1) {
+            return false;
+        }
+
+        $remainder = trim((string) ($matches[3] ?? ''));
+        if ($remainder === '') {
+            return true;
+        }
+
+        if (preg_match('/^[:\-–]\s*[^.!?]{1,120}$/u', $remainder) === 1) {
+            return true;
+        }
+
+        if (preg_match('/^[.!?]/u', $remainder) === 1) {
+            return false;
+        }
+
+        if (preg_match('/^[a-zäöü]/u', $remainder) === 1) {
+            return false;
+        }
+
+        if (preg_match('/[.!?]\s*$/u', $remainder) === 1) {
+            return false;
+        }
+
+        $wordCount = count(array_values(array_filter(preg_split('/\s+/u', $remainder) ?: [])));
+
+        return $wordCount > 0 && $wordCount <= 12;
     }
 
     private function numberedHeadingLevel(string $text): int
@@ -980,6 +1138,13 @@ class AbaLocalDocumentTextExtractor
             return true;
         }
 
+        if (
+            preg_match('/^\s*\d+(?:\.\d+){0,5}\s+[^\n]{2,140}\D\d{1,3}(?:[-–]\d{1,3})?\s*$/u', $value) === 1
+            && preg_match('/[.!?]\s*$/u', $value) !== 1
+        ) {
+            return true;
+        }
+
         return false;
     }
 
@@ -989,11 +1154,17 @@ class AbaLocalDocumentTextExtractor
             'abstract' => '/^\s*(abstract|zusammenfassung)\b/iu',
             'foreword' => '/^\s*(vorwort|preface)\b/iu',
             'table_of_contents' => '/^\s*(inhaltsverzeichnis|table of contents)\b/iu',
-            'chapter' => '/^\s*((einleitung|introduction|fazit|schluss(?:folgerung)?|res[üu]mee|conclusion)\s*(?:$|[:\-–]\s*[^.!?]{0,120}$)|(kapitel|chapter)\s+\d+\b)/iu',
             'bibliography' => '/^\s*(literaturverzeichnis|quellenverzeichnis|references|bibliography)\b/iu',
             'figure_index' => '/^\s*(abbildungsverzeichnis|list of figures)\b/iu',
             'consent_declaration' => '/^\s*(einverst[aä]ndniserkl[aä]rung|einverstaendniserklaerung|eigenst[aä]ndigkeitserkl[aä]rung|ehrenw[oö]rtliche erkl[aä]rung)\b/iu',
         ];
+
+        if (
+            preg_match('/^\s*(einleitung|introduction|fazit|schluss(?:folgerung)?|res[üu]mee|conclusion)\s*(?:$|[:\-–]\s*[^.!?]{0,120}$)/iu', $title) === 1
+            || $this->matchesNamedChapterHeadingStructure($title)
+        ) {
+            return 'chapter';
+        }
 
         foreach ($patterns as $type => $pattern) {
             if (preg_match($pattern, $title) === 1) {

@@ -624,13 +624,8 @@ class AbaAnalysisService
             + (($bodyStartLine !== null && $tocRange['end_line'] !== null && $bodyStartLine > $tocRange['end_line']) ? 0.15 : 0.0)
             - min(0.25, ((int) ($filterStats['toc_candidates_rejected_count'] ?? 0)) * 0.01)
         );
-        $hierarchyConfidence = $this->clampScore(
-            0.24
-            + min(0.24, ((int) ($sectionStats['max_hierarchy_level'] ?? 1)) / 6)
-            + min(0.2, ((int) ($sectionStats['chapters_with_children_count'] ?? 0)) * 0.08)
-            + min(0.15, ((int) ($sectionStats['subchapters_with_children_count'] ?? 0)) * 0.08)
-            - min(0.2, ((int) ($sectionStats['empty_parent_sections_count'] ?? 0)) * 0.08)
-        );
+        $hierarchyConfidenceData = $this->computeHierarchyConfidence($sectionStats, $structureDiagnostics);
+        $hierarchyConfidence = (float) ($hierarchyConfidenceData['score'] ?? 0.0);
 
         $extractionConsistencyScore = $this->clampScore(
             1.0
@@ -740,6 +735,7 @@ class AbaAnalysisService
             'title_page_advisor' => $titlePageDetails['advisor'],
             'title_page_class' => $titlePageDetails['class'],
             'title_page_year' => $titlePageDetails['year'],
+            'title_page_date_context' => $titlePageDetails['date_context'],
             'abstract_de_start_line' => $abstractLanguageStats['abstract_de_start_line'] ?? null,
             'abstract_de_end_line' => $abstractLanguageStats['abstract_de_end_line'] ?? null,
             'abstract_en_start_line' => $abstractLanguageStats['abstract_en_start_line'] ?? null,
@@ -780,6 +776,18 @@ class AbaAnalysisService
             'subchapters_with_children_count' => (int) ($sectionStats['subchapters_with_children_count'] ?? 0),
             'leaf_sections_count' => (int) ($sectionStats['leaf_sections_count'] ?? 0),
             'empty_parent_sections_count' => (int) ($sectionStats['empty_parent_sections_count'] ?? 0),
+            'structural_section_count' => (int) ($sectionStats['structural_section_count'] ?? 0),
+            'structural_parent_expected_count' => (int) ($sectionStats['structural_parent_expected_count'] ?? 0),
+            'structural_with_parent_count' => (int) ($sectionStats['structural_with_parent_count'] ?? 0),
+            'hierarchy_wrong_parent_attachment_count' => (int) ($sectionStats['wrong_parent_attachment_count'] ?? 0),
+            'hierarchy_numbering_mismatch_count' => (int) ($sectionStats['numbering_mismatch_count'] ?? 0),
+            'hierarchy_uncertain_parent_count' => (int) ($sectionStats['uncertain_parent_count'] ?? 0),
+            'hierarchy_flattened_count' => (int) ($sectionStats['flattened_count'] ?? 0),
+            'hierarchy_missing_parent_count' => (int) ($sectionStats['missing_parent_count'] ?? 0),
+            'hierarchy_boundary_detachment_count' => (int) ($sectionStats['boundary_detachment_count'] ?? 0),
+            'hierarchy_impossible_level_jump_count' => (int) ($sectionStats['impossible_level_jump_count'] ?? 0),
+            'hierarchy_parent_coherence_ratio' => (float) ($sectionStats['hierarchy_parent_coherence_ratio'] ?? 0.0),
+            'numbering_chain_consistency_ratio' => (float) ($sectionStats['numbering_chain_consistency_ratio'] ?? 0.0),
             'sections_with_body_text_count' => (int) ($sectionStats['sections_with_body_text_count'] ?? 0),
             'sections_without_body_text_count' => (int) ($sectionStats['sections_without_body_text_count'] ?? 0),
             'average_body_chars_per_section' => (float) ($sectionStats['average_body_chars_per_section'] ?? 0.0),
@@ -791,6 +799,9 @@ class AbaAnalysisService
             'structure_confidence' => $structureConfidence,
             'toc_detection_confidence' => $tocDetectionConfidence,
             'hierarchy_confidence' => $hierarchyConfidence,
+            'hierarchy_confidence_components' => is_array($hierarchyConfidenceData['components'] ?? null)
+                ? $hierarchyConfidenceData['components']
+                : [],
             'final_confidence' => $finalConfidence,
             'validation_error_count' => $validationErrorCount,
             'validation_warning_count' => $validationWarningCount,
@@ -927,6 +938,20 @@ class AbaAnalysisService
         $maxHierarchyLevel = 1;
         $sectionsWithBodyTextCount = 0;
         $sectionsWithoutBodyTextCount = 0;
+        $structuralSectionCount = 0;
+        $structuralParentExpectedCount = 0;
+        $structuralWithParentCount = 0;
+        $wrongParentAttachmentCount = 0;
+        $numberingMismatchCount = 0;
+        $uncertainParentCount = 0;
+        $flattenedCount = 0;
+        $missingParentCount = 0;
+        $boundaryDetachmentCount = 0;
+        $impossibleLevelJumpCount = 0;
+        $numberedParentPairCount = 0;
+        $numberingCompatibleParentPairCount = 0;
+        $parentLinksCoherentCount = 0;
+        $parentLinksEvaluatedCount = 0;
 
         foreach ($sections as $section) {
             $key = (string) ($section['section_key'] ?? '');
@@ -976,6 +1001,10 @@ class AbaAnalysisService
             } else {
                 $sectionsWithoutBodyTextCount++;
             }
+
+            if (in_array($type, ['chapter', 'subchapter'], true)) {
+                $structuralSectionCount++;
+            }
         }
 
         $chaptersWithChildrenCount = 0;
@@ -1000,7 +1029,93 @@ class AbaAnalysisService
                     $emptyParentSectionsCount++;
                 }
             }
+
+            $type = (string) ($section['section_type'] ?? 'other_section');
+            if (! in_array($type, ['chapter', 'subchapter'], true)) {
+                continue;
+            }
+
+            $metadata = is_array($section['metadata'] ?? null) ? $section['metadata'] : [];
+            $level = max(1, (int) ($section['hierarchy_level'] ?? 1));
+            $parentKey = trim((string) ($section['parent_key'] ?? ''));
+            $resolution = trim((string) ($metadata['hierarchy_parent_resolution'] ?? ''));
+            $parentUncertain = (bool) ($metadata['hierarchy_parent_uncertain'] ?? false);
+            $levelAdjusted = (bool) ($metadata['hierarchy_level_adjusted'] ?? false);
+
+            if ($parentUncertain) {
+                $uncertainParentCount++;
+            }
+
+            if ($levelAdjusted) {
+                $flattenedCount++;
+            }
+
+            if ($level > 1) {
+                $structuralParentExpectedCount++;
+            }
+
+            if ($parentKey === '') {
+                if ($level > 1) {
+                    $missingParentCount++;
+                }
+                if (in_array($resolution, ['blocked_by_boundary', 'parent_unavailable'], true)) {
+                    $boundaryDetachmentCount++;
+                }
+
+                continue;
+            }
+
+            $parent = $sectionByKey[$parentKey] ?? null;
+            if (! is_array($parent)) {
+                if ($level > 1) {
+                    $missingParentCount++;
+                }
+
+                continue;
+            }
+
+            $structuralWithParentCount++;
+            $parentLinksEvaluatedCount++;
+
+            $parentLevel = max(1, (int) ($parent['hierarchy_level'] ?? 1));
+            if ($level <= $parentLevel || $level > ($parentLevel + 1)) {
+                $impossibleLevelJumpCount++;
+            }
+
+            $title = (string) ($section['section_title'] ?? '');
+            $parentTitle = (string) ($parent['section_title'] ?? '');
+            $numbering = $this->extractHeadingNumberingSegments($title);
+            $parentNumbering = $this->extractHeadingNumberingSegments($parentTitle);
+            if ($numbering !== null && count($numbering) > 1) {
+                if ($parentNumbering !== null) {
+                    $numberedParentPairCount++;
+                    if ($this->isExactNumberingParent($numbering, $parentNumbering)) {
+                        $numberingCompatibleParentPairCount++;
+                    } else {
+                        $numberingMismatchCount++;
+                        $wrongParentAttachmentCount++;
+                    }
+                } else {
+                    $wrongParentAttachmentCount++;
+                }
+            }
+
+            if (
+                $parentUncertain !== true
+                && ($level > $parentLevel)
+                && ($level - $parentLevel) <= 1
+                && ! ($numbering !== null && $parentNumbering !== null && ! $this->isExactNumberingParent($numbering, $parentNumbering))
+            ) {
+                $parentLinksCoherentCount++;
+            }
         }
+
+        $numberingChainConsistencyRatio = $numberedParentPairCount > 0
+            ? $numberingCompatibleParentPairCount / $numberedParentPairCount
+            : 1.0;
+        $parentCoherenceRatio = $structuralParentExpectedCount > 0
+            ? ($parentLinksCoherentCount / $structuralParentExpectedCount)
+            : 1.0;
 
         return [
             'type_counts' => $typeCounts,
@@ -1010,6 +1125,22 @@ class AbaAnalysisService
             'subchapters_with_children_count' => $subchaptersWithChildrenCount,
             'leaf_sections_count' => $leafSectionsCount,
             'empty_parent_sections_count' => $emptyParentSectionsCount,
+            'structural_section_count' => $structuralSectionCount,
+            'structural_parent_expected_count' => $structuralParentExpectedCount,
+            'structural_with_parent_count' => $structuralWithParentCount,
+            'wrong_parent_attachment_count' => $wrongParentAttachmentCount,
+            'numbering_mismatch_count' => $numberingMismatchCount,
+            'uncertain_parent_count' => $uncertainParentCount,
+            'flattened_count' => $flattenedCount,
+            'missing_parent_count' => $missingParentCount,
+            'boundary_detachment_count' => $boundaryDetachmentCount,
+            'impossible_level_jump_count' => $impossibleLevelJumpCount,
+            'numbered_parent_pair_count' => $numberedParentPairCount,
+            'numbering_compatible_parent_pair_count' => $numberingCompatibleParentPairCount,
+            'parent_links_evaluated_count' => $parentLinksEvaluatedCount,
+            'parent_links_coherent_count' => $parentLinksCoherentCount,
+            'numbering_chain_consistency_ratio' => round(max(0.0, min(1.0, $numberingChainConsistencyRatio)), 4),
+            'hierarchy_parent_coherence_ratio' => round(max(0.0, min(1.0, $parentCoherenceRatio)), 4),
             'sections_with_body_text_count' => $sectionsWithBodyTextCount,
             'sections_without_body_text_count' => $sectionsWithoutBodyTextCount,
             'average_body_chars_per_section' => $bodyCharLengths === []
@@ -1019,6 +1150,112 @@ class AbaAnalysisService
             'longest_section_chars' => $bodyCharLengths === [] ? 0 : max($bodyCharLengths),
             'shortest_non_empty_section_chars' => $nonEmptyBodyCharLengths === [] ? 0 : min($nonEmptyBodyCharLengths),
         ];
+    }
+
+    /**
+     * @param  array<string,mixed>  $sectionStats
+     * @param  array<string,mixed>  $structureDiagnostics
+     * @return array{score:float,components:array<string,float|int>}
+     */
+    private function computeHierarchyConfidence(array $sectionStats, array $structureDiagnostics): array
+    {
+        $maxHierarchyLevel = max(1, (int) ($sectionStats['max_hierarchy_level'] ?? 1));
+        $structuralParentExpectedCount = max(0, (int) ($sectionStats['structural_parent_expected_count'] ?? 0));
+        $structuralWithParentCount = max(0, (int) ($sectionStats['structural_with_parent_count'] ?? 0));
+        $wrongParentAttachmentCount = max(0, (int) ($sectionStats['wrong_parent_attachment_count'] ?? 0));
+        $numberingMismatchCount = max(0, (int) ($sectionStats['numbering_mismatch_count'] ?? 0));
+        $uncertainParentCount = max(0, (int) ($sectionStats['uncertain_parent_count'] ?? 0));
+        $flattenedCount = max(0, (int) ($sectionStats['flattened_count'] ?? 0));
+        $missingParentCount = max(0, (int) ($sectionStats['missing_parent_count'] ?? 0));
+        $boundaryDetachmentCount = max(0, (int) ($sectionStats['boundary_detachment_count'] ?? 0));
+        $impossibleLevelJumpCount = max(0, (int) ($sectionStats['impossible_level_jump_count'] ?? 0));
+        $hierarchyAnomalyCount = max(0, (int) ($structureDiagnostics['hierarchy_anomaly_count'] ?? 0));
+
+        $depthRatio = max(0.0, min(1.0, ($maxHierarchyLevel - 1) / 3));
+        $parentCoverageRatio = $structuralParentExpectedCount > 0
+            ? max(0.0, min(1.0, $structuralWithParentCount / $structuralParentExpectedCount))
+            : 1.0;
+        $parentCoherenceRatio = max(0.0, min(1.0, (float) ($sectionStats['hierarchy_parent_coherence_ratio'] ?? 1.0)));
+        $numberingConsistencyRatio = max(0.0, min(1.0, (float) ($sectionStats['numbering_chain_consistency_ratio'] ?? 1.0)));
+
+        $baseScore = 0.28
+            + ($depthRatio * 0.16)
+            + ($parentCoverageRatio * 0.2)
+            + ($parentCoherenceRatio * 0.18)
+            + ($numberingConsistencyRatio * 0.18);
+
+        $parentMismatchSignal = max($wrongParentAttachmentCount, $numberingMismatchCount);
+        $penaltyParentMismatch = min(0.24, $parentMismatchSignal * 0.02);
+        $penaltyUncertainParent = min(0.16, $uncertainParentCount * 0.012);
+        $penaltyFlattened = min(0.1, $flattenedCount * 0.01);
+        $penaltyMissingParent = min(0.2, $missingParentCount * 0.03);
+        $penaltyImpossibleJump = min(0.2, $impossibleLevelJumpCount * 0.04);
+        $penaltyBoundaryDetachment = min(0.1, $boundaryDetachmentCount * 0.012);
+        $penaltyHierarchyAnomaly = min(0.2, $hierarchyAnomalyCount * 0.05);
+
+        $penaltyTotal = $penaltyParentMismatch
+            + $penaltyUncertainParent
+            + $penaltyFlattened
+            + $penaltyMissingParent
+            + $penaltyImpossibleJump
+            + $penaltyBoundaryDetachment
+            + $penaltyHierarchyAnomaly;
+
+        $score = $this->clampScore($baseScore - $penaltyTotal);
+
+        return [
+            'score' => $score,
+            'components' => [
+                'depth_ratio' => round($depthRatio, 4),
+                'parent_coverage_ratio' => round($parentCoverageRatio, 4),
+                'parent_coherence_ratio' => round($parentCoherenceRatio, 4),
+                'numbering_consistency_ratio' => round($numberingConsistencyRatio, 4),
+                'base_score' => round($baseScore, 4),
+                'penalty_parent_mismatch' => round($penaltyParentMismatch, 4),
+                'penalty_uncertain_parent' => round($penaltyUncertainParent, 4),
+                'penalty_flattened' => round($penaltyFlattened, 4),
+                'penalty_missing_parent' => round($penaltyMissingParent, 4),
+                'penalty_impossible_jump' => round($penaltyImpossibleJump, 4),
+                'penalty_boundary_detachment' => round($penaltyBoundaryDetachment, 4),
+                'penalty_hierarchy_anomaly' => round($penaltyHierarchyAnomaly, 4),
+                'penalty_total' => round($penaltyTotal, 4),
+            ],
+        ];
+    }
+
+    /**
+     * @return array<int,int>|null
+     */
+    private function extractHeadingNumberingSegments(string $title): ?array
+    {
+        if (preg_match('/^\s*(\d+(?:\.\d+){0,6})(?:\.)?\s+[\p{L}]/u', $title, $matches) !== 1) {
+            return null;
+        }
+
+        $segments = explode('.', (string) ($matches[1] ?? ''));
+        $segments = array_values(array_filter($segments, fn (string $value): bool => $value !== '' && ctype_digit($value)));
+        if ($segments === []) {
+            return null;
+        }
+
+        return array_values(array_map(fn (string $value): int => (int) $value, $segments));
+    }
+
+    /**
+     * @param  array<int,int>|null  $current
+     * @param  array<int,int>|null  $candidateParent
+     */
+    private function isExactNumberingParent(?array $current, ?array $candidateParent): bool
+    {
+        if ($current === null || $candidateParent === null) {
+            return false;
+        }
+
+        if (count($current) !== count($candidateParent) + 1) {
+            return false;
+        }
+
+        return array_slice($current, 0, -1) === $candidateParent;
     }
 
     /**
@@ -1173,7 +1410,7 @@ class AbaAnalysisService
 
     /**
      * @param  array<int, array{section_type:string,metadata:array<string,mixed>}>  $sections
-     * @return array{title:?string,submitter:?string,advisor:?string,class:?string,year:?string}
+     * @return array{title:?string,submitter:?string,advisor:?string,class:?string,year:?string,date_context:?string}
      */
     private function resolveTitlePageDetails(array $sections): array
     {
@@ -1203,6 +1440,9 @@ class AbaAnalysisService
                 'year' => $this->normalizeOptionalString(
                     $nestedDetails['year'] ?? $metadata['title_page_year'] ?? null,
                 ),
+                'date_context' => $this->normalizeOptionalString(
+                    $nestedDetails['date_context'] ?? $metadata['title_page_date_context'] ?? null,
+                ),
             ];
         }
 
@@ -1212,6 +1452,7 @@ class AbaAnalysisService
             'advisor' => null,
             'class' => null,
             'year' => null,
+            'date_context' => null,
         ];
     }
 
@@ -1393,12 +1634,14 @@ class AbaAnalysisService
                 'advisor' => $this->normalizeOptionalString($analysisStats['title_page_advisor'] ?? null),
                 'class' => $this->normalizeOptionalString($analysisStats['title_page_class'] ?? null),
                 'year' => $this->normalizeOptionalString($analysisStats['title_page_year'] ?? null),
+                'date_context' => $this->normalizeOptionalString($analysisStats['title_page_date_context'] ?? null),
             ],
             'title_page_title' => $this->normalizeOptionalString($analysisStats['title_page_title'] ?? null),
             'title_page_submitter' => $this->normalizeOptionalString($analysisStats['title_page_submitter'] ?? null),
             'title_page_advisor' => $this->normalizeOptionalString($analysisStats['title_page_advisor'] ?? null),
             'title_page_class' => $this->normalizeOptionalString($analysisStats['title_page_class'] ?? null),
             'title_page_year' => $this->normalizeOptionalString($analysisStats['title_page_year'] ?? null),
+            'title_page_date_context' => $this->normalizeOptionalString($analysisStats['title_page_date_context'] ?? null),
         ];
     }
 

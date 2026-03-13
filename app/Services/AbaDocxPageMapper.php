@@ -10,6 +10,7 @@ class AbaDocxPageMapper
      * Iterates paragraphs exactly as AbaLocalDocumentTextExtractor::buildDocxXmlCandidate does:
      * - Text detection uses .//w:t elements only (not string(.) which catches textbox content)
      * - Skips empty paragraphs, increments lineNumber for non-empty ones
+     * - Includes direct body paragraphs and TOC paragraphs nested in content controls (w:sdt)
      *
      * Page break sources handled:
      *   - <w:pageBreakBefore/> paragraph property → paragraph starts on a new page (pre-increment)
@@ -60,7 +61,7 @@ class AbaDocxPageMapper
         $xpath = new \DOMXPath($document);
         $xpath->registerNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main');
 
-        $paragraphs = $xpath->query('//w:body/w:p');
+        $paragraphs = $xpath->query('//w:body/w:p | //w:body/w:sdt//w:p');
         if (! $paragraphs || $paragraphs->length === 0) {
             return $this->emptyMap('no_paragraphs');
         }
