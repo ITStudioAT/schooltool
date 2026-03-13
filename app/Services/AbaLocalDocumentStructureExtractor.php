@@ -320,9 +320,19 @@ class AbaLocalDocumentStructureExtractor
 
         $typeCounts = $this->sectionTypeCounts($resolvedSections);
         $abstractDiagnostics = $this->resolveAbstractDiagnostics($resolvedSections);
+        $diagnosticMetrics = $this->buildDiagnosticMetrics(
+            lines: $lines,
+            headings: $headings,
+            frontmatter: $frontmatter,
+            allCandidates: $chapterCandidates,
+            acceptedCandidates: $preparedCandidates,
+            rejectedCandidates: $rejectedCandidates,
+            sections: $resolvedSections,
+        );
         $this->lastDiagnostics = [
             'line_count' => count($lines),
             'text_length' => mb_strlen($normalizedText),
+            'text_length_without_spaces' => mb_strlen((string) (preg_replace('/\s+/u', '', $normalizedText) ?? '')),
             'heading_count' => count($headings),
             'toc_line_count' => count($tocLineSet),
             'toc_count' => is_array($frontmatter['toc_ranges'] ?? null)
@@ -352,6 +362,7 @@ class AbaLocalDocumentStructureExtractor
             'consent_declaration_detected' => (($typeCounts['consent_declaration'] ?? 0) > 0),
             'body_detected' => ($frontmatter['body_start_line'] ?? null) !== null,
             'filter_stats' => $this->buildFilterStats($rejectedCandidates, $rejectedHeadings),
+            ...$diagnosticMetrics,
         ];
 
         return $resolvedSections;
@@ -475,7 +486,7 @@ class AbaLocalDocumentStructureExtractor
     {
         $knownTypes = array_values(array_unique(array_map(fn (array $heading): string => $heading['type'], $headings)));
         $patterns = [
-            'abstract' => '/^\s*(abstract|zusammenfassung|kurzfassung|summary|executive summary)\b/iu',
+            'abstract' => '/^\s*(abstract|zusammenfassung|kurzfassung|summary|executive summary|management summary|kurz[üu]berblick)(?:\s*(?:\(|\[)?\s*(deutsch|german|englisch|english)\s*(?:\)|\])?)?\b/iu',
             'foreword' => '/^\s*(vorwort|preface)\b/iu',
             'table_of_contents' => '/^\s*(inhaltsverzeichnis|table of contents)\b/iu',
             'bibliography' => '/^\s*(literaturverzeichnis|quellenverzeichnis|references|bibliography)\b/iu',
@@ -879,6 +890,25 @@ class AbaLocalDocumentStructureExtractor
 
         usort($tocRanges, fn (array $left, array $right): int => ((int) ($left['start_line'] ?? 0) <=> (int) ($right['start_line'] ?? 0)));
         $tocRanges = $this->uniqueTocRanges($tocRanges);
+
+        $frontmatterEndLine = 0;
+        foreach ($abstractRanges as $range) {
+            if (is_array($range)) {
+                $frontmatterEndLine = max($frontmatterEndLine, (int) ($range['end_line'] ?? 0));
+            }
+        }
+        if (is_array($forewordRange)) {
+            $frontmatterEndLine = max($frontmatterEndLine, (int) ($forewordRange['end_line'] ?? 0));
+        }
+        foreach ($tocRanges as $range) {
+            if (is_array($range)) {
+                $frontmatterEndLine = max($frontmatterEndLine, (int) ($range['end_line'] ?? 0));
+            }
+        }
+        if ($bodyStartLine <= $frontmatterEndLine) {
+            $bodyStartLine = $frontmatterEndLine + 1;
+            $bodyStartReason = 'after_frontmatter_end_guard';
+        }
 
         $tocResolvedLines = is_array($tocResolution['toc_lines'] ?? null)
             ? array_values(array_unique(array_map('intval', $tocResolution['toc_lines'])))
@@ -1581,7 +1611,21 @@ class AbaLocalDocumentStructureExtractor
             } elseif (($isBibliographyEntryTitle && $type === 'other_section') || ($inBibliographyContext && $isBibliographyEntryTitle)) {
                 $reason = 'bibliography_entry_not_heading';
                 $contextSuppressed = true;
+            } elseif (
+                $inBibliographyContext
+                && in_array($type, ['other_section', 'subchapter'], true)
+                && (((int) ($analysis['bibliography_like_lines'] ?? 0)) > 0 || $isBibliographyEntryTitle)
+            ) {
+                $reason = 'bibliography_entry_not_heading';
+                $contextSuppressed = true;
             } elseif ($inFigureIndexContext && $isFigureIndexEntryTitle && in_array($type, ['other_section', 'chapter', 'subchapter'], true)) {
+                $reason = 'figure_index_entry_not_heading';
+                $contextSuppressed = true;
+            } elseif (
+                $inFigureIndexContext
+                && in_array($type, ['other_section', 'subchapter'], true)
+                && (((int) ($analysis['figure_index_like_lines'] ?? 0)) > 0 || $isFigureIndexEntryTitle)
+            ) {
                 $reason = 'figure_index_entry_not_heading';
                 $contextSuppressed = true;
             } elseif (in_array($type, ['other_section', 'chapter', 'subchapter'], true) && $headingEvidenceScore <= -4 && ! $hierarchySupported) {
@@ -1619,6 +1663,9 @@ class AbaLocalDocumentStructureExtractor
                         $accepted = true;
                         $reason = 'accepted_via_hierarchy';
                         $acceptedViaHierarchy = true;
+                    } elseif (($inBibliographyContext && ((int) ($analysis['bibliography_like_lines'] ?? 0)) > 0) || ($inFigureIndexContext && ((int) ($analysis['figure_index_like_lines'] ?? 0)) > 0)) {
+                        $reason = $inBibliographyContext ? 'bibliography_entry_not_heading' : 'figure_index_entry_not_heading';
+                        $contextSuppressed = true;
                     } else {
                         $reason = 'too_short';
                     }
@@ -1669,6 +1716,8 @@ class AbaLocalDocumentStructureExtractor
                 + ($acceptedViaHierarchy ? 90 : 0)
                 + ($inferredParentLine !== null ? 20 : 0)
                 + ($headingEvidenceScore * 12)
+                - (((int) ($analysis['bibliography_like_lines'] ?? 0)) * 40)
+                - (((int) ($analysis['figure_index_like_lines'] ?? 0)) * 36)
                 - ($contextSuppressed ? 180 : 0)
                 - ($rejectedAsTocDuplicate ? 220 : 0));
 
@@ -1992,6 +2041,8 @@ class AbaLocalDocumentStructureExtractor
         $titleNormalized = $this->normalizeForMatch($title);
         $nonEmptyTotal = 0;
         $tocLikeCount = 0;
+        $bibliographyLikeCount = 0;
+        $figureIndexLikeCount = 0;
         $bodyLines = 0;
         $bodyChars = 0;
         $totalChars = 0;
@@ -2025,6 +2076,18 @@ class AbaLocalDocumentStructureExtractor
                 continue;
             }
 
+            if ($this->looksLikeBibliographyEntryLine($text)) {
+                $bibliographyLikeCount++;
+
+                continue;
+            }
+
+            if ($this->looksLikeFigureIndexEntryLine($text)) {
+                $figureIndexLikeCount++;
+
+                continue;
+            }
+
             if ($this->looksLikeNumberedHeading($text) || $this->looksLikeNamedChapterHeading($text) || $this->resolveSectionType($text) !== null) {
                 continue;
             }
@@ -2041,6 +2104,8 @@ class AbaLocalDocumentStructureExtractor
         return [
             'non_empty_total' => $nonEmptyTotal,
             'toc_like_lines' => $tocLikeCount,
+            'bibliography_like_lines' => $bibliographyLikeCount,
+            'figure_index_like_lines' => $figureIndexLikeCount,
             'body_lines' => $bodyLines,
             'body_chars' => $bodyChars,
             'total_chars' => $totalChars,
@@ -2069,6 +2134,10 @@ class AbaLocalDocumentStructureExtractor
             }
 
             if (isset($tocLineSet[$lineNumber]) || $this->isLikelyTocLine($text)) {
+                continue;
+            }
+
+            if ($this->looksLikeBibliographyEntryLine($text) || $this->looksLikeFigureIndexEntryLine($text)) {
                 continue;
             }
 
@@ -2146,8 +2215,8 @@ class AbaLocalDocumentStructureExtractor
         $normalizedText = mb_strtolower(trim($text));
         $sample = mb_substr($normalizedText, 0, 1800);
 
-        $germanKeywords = ['zusammenfassung', 'kurzfassung', 'kurzueberblick', 'deutsche'];
-        $englishKeywords = ['english', 'summary', 'abstract'];
+        $germanKeywords = ['zusammenfassung', 'kurzfassung', 'kurzueberblick', 'deutsch', 'german'];
+        $englishKeywords = ['english', 'summary', 'abstract', 'executive summary', 'management summary'];
 
         $deScore = 0;
         $enScore = 0;
@@ -2172,8 +2241,16 @@ class AbaLocalDocumentStructureExtractor
             ' the ', ' and ', ' of ', ' is ', ' with ', ' this ', ' that ', ' for ', ' are ', ' in ',
         ]);
 
-        if (preg_match('/\b(ß|ä|ö|ü)\b/u', $sample) === 1) {
+        if (preg_match('/[ßäöü]/u', $sample) === 1) {
             $deScore += 2;
+        }
+
+        if (preg_match('/\b(?:der|die|das|nicht|wird|wurde|sowie|durch|zwischen)\b/u', $sample) === 1) {
+            $deScore += 2;
+        }
+
+        if (preg_match('/\b(?:this|paper|study|results|method|methods|conclusion|findings)\b/u', $sample) === 1) {
+            $enScore += 2;
         }
 
         $language = 'unknown';
@@ -2181,9 +2258,9 @@ class AbaLocalDocumentStructureExtractor
             $language = 'de';
         } elseif ($enScore >= $deScore + 2) {
             $language = 'en';
-        } elseif (str_contains($normalizedTitle, 'zusammenfassung') || str_contains($normalizedTitle, 'kurzfassung')) {
+        } elseif (str_contains($normalizedTitle, 'zusammenfassung') || str_contains($normalizedTitle, 'kurzfassung') || str_contains($normalizedTitle, 'deutsch')) {
             $language = 'de';
-        } elseif (str_contains($normalizedTitle, 'abstract') || str_contains($normalizedTitle, 'english')) {
+        } elseif (str_contains($normalizedTitle, 'abstract') || str_contains($normalizedTitle, 'english') || str_contains($normalizedTitle, 'englisch')) {
             $language = 'en';
         }
 
@@ -2442,12 +2519,15 @@ class AbaLocalDocumentStructureExtractor
                 continue;
             }
 
-            $text = $this->extractTextBetweenLines($lines, $startLine, $endLine);
+            $resolvedEndLine = $this->resolveSectionContentEndLine($lines, $startLine, $endLine);
+            $boundaryAdjusted = $resolvedEndLine !== $endLine;
+
+            $text = $this->extractTextBetweenLines($lines, $startLine, $resolvedEndLine);
             if ($text === '') {
                 continue;
             }
 
-            $pageRange = $this->pageRange($lines, $startLine, $endLine);
+            $pageRange = $this->pageRange($lines, $startLine, $resolvedEndLine);
             $sectionKey = 'chapter-'.$counter;
             $inferredParentLine = (int) ($candidate['inferred_parent_line'] ?? 0);
             $parentKey = $inferredParentLine > 0 ? ($sectionKeyByStartLine[$inferredParentLine] ?? null) : null;
@@ -2459,12 +2539,12 @@ class AbaLocalDocumentStructureExtractor
                 'extracted_text' => $text,
                 'hierarchy_level' => (int) ($candidate['level'] ?? 1),
                 'start_line' => $startLine,
-                'end_line' => $endLine,
+                'end_line' => $resolvedEndLine,
                 'start_page' => $pageRange['start_page'],
                 'end_page' => $pageRange['end_page'],
                 'anchor' => [
                     'line_start' => $startLine,
-                    'line_end' => $endLine,
+                    'line_end' => $resolvedEndLine,
                     'page_start' => $pageRange['start_page'],
                     'page_end' => $pageRange['end_page'],
                 ],
@@ -2492,6 +2572,8 @@ class AbaLocalDocumentStructureExtractor
                     'is_figure_index_entry_title' => $candidate['is_figure_index_entry_title'] ?? false,
                     'heading_evidence_score' => $candidate['heading_evidence_score'] ?? 0,
                     'rejected_due_to_context' => $candidate['rejected_due_to_context'] ?? false,
+                    'boundary_adjusted' => $boundaryAdjusted,
+                    'original_end_line' => $endLine,
                 ],
             ];
             $sectionKeyByStartLine[$startLine] = $sectionKey;
@@ -2499,6 +2581,46 @@ class AbaLocalDocumentStructureExtractor
         }
 
         return $sections;
+    }
+
+    /**
+     * @param  array<int, array{line_number:int,page_number:int,text:string,normalized:string}>  $lines
+     */
+    private function resolveSectionContentEndLine(array $lines, int $startLine, int $endLine): int
+    {
+        $resolved = $endLine;
+        for ($line = $endLine; $line >= $startLine; $line--) {
+            $entry = $this->findLineByNumber($lines, $line);
+            if ($entry === null) {
+                continue;
+            }
+
+            $text = trim((string) ($entry['text'] ?? ''));
+            if ($text === '') {
+                $resolved = $line - 1;
+
+                continue;
+            }
+
+            break;
+        }
+
+        return max($startLine, $resolved);
+    }
+
+    /**
+     * @param  array<int, array{line_number:int,page_number:int,text:string,normalized:string}>  $lines
+     * @return array{line_number:int,page_number:int,text:string,normalized:string}|null
+     */
+    private function findLineByNumber(array $lines, int $lineNumber): ?array
+    {
+        foreach ($lines as $line) {
+            if ((int) ($line['line_number'] ?? 0) === $lineNumber) {
+                return $line;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -3130,12 +3252,34 @@ class AbaLocalDocumentStructureExtractor
             $bodyLines = [$title];
             foreach ($lines as $candidate) {
                 $candidateLine = (int) $candidate['line_number'];
-                if ($candidateLine <= $lineNumber || $candidateLine > $lineNumber + 2) {
+                if ($candidateLine <= $lineNumber || $candidateLine > $lineNumber + 5) {
                     continue;
                 }
 
                 $candidateText = trim((string) $candidate['text']);
-                if ($candidateText === '' || $this->isPossibleHeading($candidateText)) {
+                if ($candidateText === '') {
+                    break;
+                }
+
+                if ($this->isLikelyTocLine($candidateText)) {
+                    break;
+                }
+
+                $looksLikeHeadingBoundary =
+                    preg_match('/^(abb\.?|abbildung|figure)\s*\d+[a-z]?(?:[\.\:\-]?\s*.+)?$/iu', $candidateText) === 1
+                    || $this->looksLikeNumberedHeading($candidateText)
+                    || $this->looksLikeNamedChapterHeading($candidateText)
+                    || $this->resolveSectionType($candidateText) !== null
+                    || $this->looksLikeStandaloneHeading($candidateText);
+
+                if ($looksLikeHeadingBoundary && preg_match('/^\s*(quelle|source)\s*[:\-]/iu', $candidateText) !== 1) {
+                    break;
+                }
+
+                if (
+                    $this->looksLikeBibliographyEntryLine($candidateText)
+                    || $this->looksLikeFigureIndexEntryLine($candidateText)
+                ) {
                     break;
                 }
 
@@ -3183,6 +3327,8 @@ class AbaLocalDocumentStructureExtractor
                 'metadata' => [
                     'source' => 'figure_label',
                     'within_figure_index' => $this->lineWithinSections($lineNumber, $figureIndexAnchors),
+                    'caption_line_count' => count($bodyLines),
+                    'is_multi_line_caption' => count($bodyLines) > 1,
                 ],
             ];
         }
@@ -3376,7 +3522,7 @@ class AbaLocalDocumentStructureExtractor
     private function resolveSectionType(string $title): ?array
     {
         $patterns = [
-            'abstract' => '/^\s*(abstract|zusammenfassung|kurzfassung|summary|executive summary)\b/iu',
+            'abstract' => '/^\s*(abstract|zusammenfassung|kurzfassung|summary|executive summary|management summary|kurz[üu]berblick)(?:\s*(?:\(|\[)?\s*(deutsch|german|englisch|english)\s*(?:\)|\])?)?\b/iu',
             'foreword' => '/^\s*(vorwort|preface)\b/iu',
             'table_of_contents' => '/^\s*(inhaltsverzeichnis|table of contents)\b/iu',
             'chapter' => '/^\s*((einleitung|introduction|fazit|schluss(?:folgerung)?|res[üu]mee|conclusion)\s*(?:$|[:\-–]\s*[^.!?]{0,120}$)|(kapitel|chapter)\s+\d+\b)/iu',
@@ -3555,6 +3701,419 @@ class AbaLocalDocumentStructureExtractor
             'abstract_en_start_line' => $enStart,
             'abstract_en_end_line' => $enEnd,
         ];
+    }
+
+    /**
+     * @param  array<int, array{line_number:int,page_number:int,text:string,normalized:string}>  $lines
+     * @param  array<int, array{start_line:int,start_page:int,title:string,type:string,level:int|null,source:string}>  $headings
+     * @param  array<string,mixed>  $frontmatter
+     * @param  array<int, array<string,mixed>>  $allCandidates
+     * @param  array<int, array<string,mixed>>  $acceptedCandidates
+     * @param  array<int, array<string,mixed>>  $rejectedCandidates
+     * @param  array<int, array<string,mixed>>  $sections
+     * @return array<string, int|float>
+     */
+    private function buildDiagnosticMetrics(
+        array $lines,
+        array $headings,
+        array $frontmatter,
+        array $allCandidates,
+        array $acceptedCandidates,
+        array $rejectedCandidates,
+        array $sections,
+    ): array {
+        $hierarchyAnomalyCount = $this->computeHierarchyAnomalyCount($sections);
+        $orphanCandidateCount = $this->computeOrphanCandidateCount($acceptedCandidates, $allCandidates);
+        $unresolvedHeadingCandidatesCount = count($rejectedCandidates);
+        $multiLineCaptionCount = (int) count(array_filter(
+            $sections,
+            fn (array $section): bool => (string) ($section['section_type'] ?? '') === 'figure'
+                && ((bool) (($section['metadata']['is_multi_line_caption'] ?? false))
+                    || ((int) ($section['metadata']['caption_line_count'] ?? 0) > 1))
+        ));
+        $bibliographyEntryCount = $this->computeBibliographyEntryCount($sections);
+        $tocSpecialEntriesCount = $this->computeTocSpecialEntriesCount($lines, $frontmatter);
+        $datasetBoundaryAdjustmentsCount = $this->computeDatasetBoundaryAdjustmentsCount($sections);
+
+        return [
+            'frontmatter_boundary_confidence' => $this->computeFrontmatterBoundaryConfidence($frontmatter),
+            'body_reentry_confidence' => $this->computeBodyReentryConfidence($frontmatter, $sections),
+            'heading_assignment_confidence' => $this->computeHeadingAssignmentConfidence(
+                $allCandidates,
+                $acceptedCandidates,
+                $rejectedCandidates,
+                $hierarchyAnomalyCount,
+                $orphanCandidateCount,
+            ),
+            'bibliography_context_confidence' => $this->computeBibliographyContextConfidence(
+                $sections,
+                $bibliographyEntryCount,
+                $rejectedCandidates,
+            ),
+            'figure_mapping_confidence' => $this->computeFigureMappingConfidence($sections, $multiLineCaptionCount),
+            'hierarchy_anomaly_count' => $hierarchyAnomalyCount,
+            'orphan_candidate_count' => $orphanCandidateCount,
+            'unresolved_heading_candidates_count' => $unresolvedHeadingCandidatesCount,
+            'multi_line_caption_count' => $multiLineCaptionCount,
+            'bibliography_entry_count' => $bibliographyEntryCount,
+            'toc_special_entries_count' => $tocSpecialEntriesCount,
+            'dataset_boundary_adjustments_count' => $datasetBoundaryAdjustmentsCount,
+        ];
+    }
+
+    /**
+     * @param  array<string,mixed>  $frontmatter
+     */
+    private function computeFrontmatterBoundaryConfidence(array $frontmatter): float
+    {
+        $score = 0.45;
+        $ranges = [];
+        foreach (['title_page_range', 'abstract_range', 'foreword_range', 'toc_range'] as $key) {
+            if (is_array($frontmatter[$key] ?? null)) {
+                $ranges[] = $frontmatter[$key];
+            }
+        }
+        $tocRanges = is_array($frontmatter['toc_ranges'] ?? null) ? $frontmatter['toc_ranges'] : [];
+        foreach ($tocRanges as $range) {
+            if (is_array($range)) {
+                $ranges[] = $range;
+            }
+        }
+
+        if (is_array($frontmatter['title_page_range'] ?? null)) {
+            $score += 0.1;
+        }
+        if (is_array($frontmatter['foreword_range'] ?? null)) {
+            $score += 0.08;
+        }
+        if (is_array($frontmatter['abstract_range'] ?? null) || (is_array($frontmatter['abstract_ranges'] ?? null) && $frontmatter['abstract_ranges'] !== [])) {
+            $score += 0.1;
+        }
+        if ($tocRanges !== [] || is_array($frontmatter['toc_range'] ?? null)) {
+            $score += 0.12;
+        }
+
+        $bodyStartLine = (int) ($frontmatter['body_start_line'] ?? 0);
+        $frontmatterEnd = 0;
+        foreach ($ranges as $range) {
+            $frontmatterEnd = max($frontmatterEnd, (int) ($range['end_line'] ?? 0));
+        }
+        if ($bodyStartLine > 0 && $frontmatterEnd > 0 && $bodyStartLine > $frontmatterEnd) {
+            $score += 0.2;
+        } elseif ($bodyStartLine > 0 && $frontmatterEnd > 0) {
+            $score -= 0.15;
+        }
+
+        return $this->clampDiagnosticScore($score);
+    }
+
+    /**
+     * @param  array<string,mixed>  $frontmatter
+     * @param  array<int, array<string,mixed>>  $sections
+     */
+    private function computeBodyReentryConfidence(array $frontmatter, array $sections): float
+    {
+        $reason = trim((string) ($frontmatter['body_start_reason'] ?? ''));
+        $score = match ($reason) {
+            'toc_heading_reentry_in_body' => 0.92,
+            'first_body_heading_after_toc' => 0.9,
+            'after_frontmatter_end_guard', 'after_toc_end' => 0.86,
+            'fallback_heading_after_toc', 'first_body_heading' => 0.8,
+            'first_body_paragraph_after_toc', 'non_toc_structure_break_after_toc' => 0.76,
+            default => 0.62,
+        };
+
+        $bodyStartLine = (int) ($frontmatter['body_start_line'] ?? 0);
+        $firstChapterLine = null;
+        foreach ($sections as $section) {
+            if (! in_array((string) ($section['section_type'] ?? ''), ['chapter', 'subchapter'], true)) {
+                continue;
+            }
+
+            $line = (int) ($section['start_line'] ?? 0);
+            if ($line <= 0) {
+                continue;
+            }
+
+            $firstChapterLine = $firstChapterLine === null ? $line : min($firstChapterLine, $line);
+        }
+
+        if ($bodyStartLine > 0 && $firstChapterLine !== null && $firstChapterLine >= $bodyStartLine) {
+            $score += 0.08;
+        } elseif ($firstChapterLine === null) {
+            $score -= 0.06;
+        }
+
+        return $this->clampDiagnosticScore($score);
+    }
+
+    /**
+     * @param  array<int, array<string,mixed>>  $allCandidates
+     * @param  array<int, array<string,mixed>>  $acceptedCandidates
+     * @param  array<int, array<string,mixed>>  $rejectedCandidates
+     */
+    private function computeHeadingAssignmentConfidence(
+        array $allCandidates,
+        array $acceptedCandidates,
+        array $rejectedCandidates,
+        int $hierarchyAnomalyCount,
+        int $orphanCandidateCount,
+    ): float {
+        $total = max(1, count($allCandidates));
+        $acceptedRatio = count($acceptedCandidates) / $total;
+        $score = 0.38 + ($acceptedRatio * 0.42);
+
+        $evidenceScores = [];
+        foreach ($acceptedCandidates as $candidate) {
+            $evidence = (int) ($candidate['heading_evidence_score'] ?? 0);
+            $evidenceScores[] = $evidence;
+        }
+        if ($evidenceScores !== []) {
+            $avgEvidence = array_sum($evidenceScores) / max(1, count($evidenceScores));
+            $score += max(-0.08, min(0.18, $avgEvidence * 0.02));
+        }
+
+        $score -= min(0.18, $hierarchyAnomalyCount * 0.04);
+        $score -= min(0.16, $orphanCandidateCount * 0.05);
+        $score -= min(0.12, count($rejectedCandidates) * 0.005);
+
+        return $this->clampDiagnosticScore($score);
+    }
+
+    /**
+     * @param  array<int, array<string,mixed>>  $sections
+     * @param  array<int, array<string,mixed>>  $rejectedCandidates
+     */
+    private function computeBibliographyContextConfidence(array $sections, int $bibliographyEntryCount, array $rejectedCandidates): float
+    {
+        $score = 0.52;
+        $hasBibliography = false;
+        $leakedBibliographyLikeSections = 0;
+        foreach ($sections as $section) {
+            $type = (string) ($section['section_type'] ?? '');
+            $title = trim((string) ($section['section_title'] ?? ''));
+            if ($type === 'bibliography') {
+                $hasBibliography = true;
+
+                continue;
+            }
+
+            if ($title !== '' && $this->looksLikeBibliographyEntryLine($title)) {
+                $leakedBibliographyLikeSections++;
+            }
+        }
+
+        if ($hasBibliography) {
+            $score += 0.2;
+        }
+        $score += min(0.18, $bibliographyEntryCount * 0.015);
+
+        $filteredBibliographyEntries = 0;
+        foreach ($rejectedCandidates as $candidate) {
+            if ((string) ($candidate['reason'] ?? '') === 'bibliography_entry_not_heading') {
+                $filteredBibliographyEntries++;
+            }
+        }
+        $score += min(0.08, $filteredBibliographyEntries * 0.01);
+        $score -= min(0.25, $leakedBibliographyLikeSections * 0.08);
+
+        return $this->clampDiagnosticScore($score);
+    }
+
+    /**
+     * @param  array<int, array<string,mixed>>  $sections
+     */
+    private function computeFigureMappingConfidence(array $sections, int $multiLineCaptionCount): float
+    {
+        $score = 0.5;
+        $figureCount = 0;
+        $mappedCount = 0;
+        $indexMappedCount = 0;
+        $byKey = [];
+        foreach ($sections as $section) {
+            $key = trim((string) ($section['section_key'] ?? ''));
+            if ($key !== '') {
+                $byKey[$key] = $section;
+            }
+        }
+
+        foreach ($sections as $section) {
+            if ((string) ($section['section_type'] ?? '') !== 'figure') {
+                continue;
+            }
+
+            $figureCount++;
+            $parentKey = trim((string) ($section['parent_key'] ?? ''));
+            if ($parentKey !== '') {
+                $mappedCount++;
+                $parent = $byKey[$parentKey] ?? null;
+                if (is_array($parent) && (string) ($parent['section_type'] ?? '') === 'figure_index') {
+                    $indexMappedCount++;
+                }
+            }
+        }
+
+        if ($figureCount === 0) {
+            return $this->clampDiagnosticScore($score + 0.2);
+        }
+
+        $score += min(0.28, ($mappedCount / $figureCount) * 0.28);
+        $score += min(0.14, ($indexMappedCount / $figureCount) * 0.14);
+        $score += min(0.08, $multiLineCaptionCount * 0.02);
+
+        return $this->clampDiagnosticScore($score);
+    }
+
+    /**
+     * @param  array<int, array<string,mixed>>  $sections
+     */
+    private function computeHierarchyAnomalyCount(array $sections): int
+    {
+        $byKey = [];
+        foreach ($sections as $section) {
+            $key = trim((string) ($section['section_key'] ?? ''));
+            if ($key !== '') {
+                $byKey[$key] = $section;
+            }
+        }
+
+        $anomalies = 0;
+        foreach ($sections as $section) {
+            $parentKey = trim((string) ($section['parent_key'] ?? ''));
+            if ($parentKey === '') {
+                continue;
+            }
+
+            $parent = $byKey[$parentKey] ?? null;
+            if (! is_array($parent)) {
+                $anomalies++;
+
+                continue;
+            }
+
+            $level = max(1, (int) ($section['hierarchy_level'] ?? 1));
+            $parentLevel = max(1, (int) ($parent['hierarchy_level'] ?? 1));
+            if ($level <= $parentLevel || ($level - $parentLevel) > 2) {
+                $anomalies++;
+            }
+        }
+
+        return $anomalies;
+    }
+
+    /**
+     * @param  array<int, array<string,mixed>>  $acceptedCandidates
+     * @param  array<int, array<string,mixed>>  $allCandidates
+     */
+    private function computeOrphanCandidateCount(array $acceptedCandidates, array $allCandidates): int
+    {
+        $acceptedByLine = [];
+        foreach ($acceptedCandidates as $candidate) {
+            $line = (int) ($candidate['start_line'] ?? 0);
+            if ($line > 0) {
+                $acceptedByLine[$line] = true;
+            }
+        }
+
+        $orphans = 0;
+        foreach ($allCandidates as $candidate) {
+            if (($candidate['accepted'] ?? false) !== true) {
+                continue;
+            }
+
+            $parentLine = (int) ($candidate['inferred_parent_line'] ?? 0);
+            if ($parentLine <= 0) {
+                continue;
+            }
+
+            if (! isset($acceptedByLine[$parentLine])) {
+                $orphans++;
+            }
+        }
+
+        return $orphans;
+    }
+
+    /**
+     * @param  array<int, array<string,mixed>>  $sections
+     */
+    private function computeBibliographyEntryCount(array $sections): int
+    {
+        $count = 0;
+        foreach ($sections as $section) {
+            if ((string) ($section['section_type'] ?? '') !== 'bibliography') {
+                continue;
+            }
+
+            $text = (string) ($section['extracted_text'] ?? '');
+            $lines = preg_split('/\R/u', $text) ?: [];
+            foreach ($lines as $line) {
+                if ($this->looksLikeBibliographyEntryLine((string) $line)) {
+                    $count++;
+                }
+            }
+        }
+
+        return $count;
+    }
+
+    /**
+     * @param  array<int, array{line_number:int,page_number:int,text:string,normalized:string}>  $lines
+     * @param  array<string,mixed>  $frontmatter
+     */
+    private function computeTocSpecialEntriesCount(array $lines, array $frontmatter): int
+    {
+        $ranges = is_array($frontmatter['toc_ranges'] ?? null) ? $frontmatter['toc_ranges'] : [];
+        if ($ranges === [] && is_array($frontmatter['toc_range'] ?? null)) {
+            $ranges = [$frontmatter['toc_range']];
+        }
+
+        $count = 0;
+        foreach ($ranges as $range) {
+            if (! is_array($range)) {
+                continue;
+            }
+
+            $startLine = (int) ($range['start_line'] ?? 0);
+            $endLine = (int) ($range['end_line'] ?? 0);
+            if ($startLine <= 0 || $endLine < $startLine) {
+                continue;
+            }
+
+            foreach ($lines as $line) {
+                $lineNumber = (int) ($line['line_number'] ?? 0);
+                if ($lineNumber < $startLine || $lineNumber > $endLine) {
+                    continue;
+                }
+
+                $text = trim((string) ($line['text'] ?? ''));
+                if ($text === '') {
+                    continue;
+                }
+
+                if (preg_match('/\b(literaturverzeichnis|quellenverzeichnis|abbildungsverzeichnis|eigenst[aä]ndigkeitserkl[aä]rung|einverst[aä]ndniserkl[aä]rung)\b/iu', $text) === 1) {
+                    $count++;
+                }
+            }
+        }
+
+        return $count;
+    }
+
+    /**
+     * @param  array<int, array<string,mixed>>  $sections
+     */
+    private function computeDatasetBoundaryAdjustmentsCount(array $sections): int
+    {
+        return (int) count(array_filter(
+            $sections,
+            fn (array $section): bool => (bool) ($section['metadata']['boundary_adjusted'] ?? false)
+        ));
+    }
+
+    private function clampDiagnosticScore(float $value): float
+    {
+        return round(max(0.0, min(1.0, $value)), 4);
     }
 
     /**

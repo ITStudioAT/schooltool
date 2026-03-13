@@ -612,6 +612,13 @@ export default {
                 { key: 'bibliography_count', label: 'Bibliographie-Datensätze', value: Number(stats.bibliography_count || 0) },
                 { key: 'figure_index_count', label: 'Datensätze im Abbildungsverzeichnis', value: Number(stats.figure_index_count || 0) },
                 { key: 'other_section_count', label: 'Sonstige Datensätze', value: Number(stats.other_section_count || 0) },
+                { key: 'bibliography_entry_count', label: 'Literatureinträge erkannt', value: Number(stats.bibliography_entry_count || 0) },
+                { key: 'multi_line_caption_count', label: 'Mehrzeilige Abbildungsbeschriftungen', value: Number(stats.multi_line_caption_count || 0) },
+                { key: 'toc_special_entries_count', label: 'Sondereinträge im Inhaltsverzeichnis', value: Number(stats.toc_special_entries_count || 0) },
+                { key: 'dataset_boundary_adjustments_count', label: 'Korrigierte Datensatzgrenzen', value: Number(stats.dataset_boundary_adjustments_count || 0) },
+                { key: 'hierarchy_anomaly_count', label: 'Hierarchie-Auffälligkeiten', value: Number(stats.hierarchy_anomaly_count || 0) },
+                { key: 'orphan_candidate_count', label: 'Unzugeordnete Überschriftenkandidaten', value: Number(stats.orphan_candidate_count || 0) },
+                { key: 'unresolved_heading_candidates_count', label: 'Nicht übernommene Überschriftenkandidaten', value: Number(stats.unresolved_heading_candidates_count || 0) },
             ]
         },
         qualityItems() {
@@ -623,6 +630,11 @@ export default {
                 { key: 'structure_confidence', label: 'Sicherheit der Strukturerkennung', value: this.formatPercent(stats.structure_confidence) },
                 { key: 'toc_detection_confidence', label: 'Sicherheit beim Inhaltsverzeichnis', value: this.formatPercent(stats.toc_detection_confidence) },
                 { key: 'hierarchy_confidence', label: 'Sicherheit der Kapitelhierarchie', value: this.formatPercent(stats.hierarchy_confidence) },
+                { key: 'frontmatter_boundary_confidence', label: 'Sicherheit der Frontmatter-Abgrenzung', value: this.formatPercent(stats.frontmatter_boundary_confidence) },
+                { key: 'body_reentry_confidence', label: 'Sicherheit beim Übergang in den Hauptteil', value: this.formatPercent(stats.body_reentry_confidence) },
+                { key: 'heading_assignment_confidence', label: 'Sicherheit der Überschriftenzuordnung', value: this.formatPercent(stats.heading_assignment_confidence) },
+                { key: 'bibliography_context_confidence', label: 'Sicherheit im Bibliographie-Kontext', value: this.formatPercent(stats.bibliography_context_confidence) },
+                { key: 'figure_mapping_confidence', label: 'Sicherheit der Abbildungszuordnung', value: this.formatPercent(stats.figure_mapping_confidence) },
             ]
 
             if (this.showFinalConfidence) {

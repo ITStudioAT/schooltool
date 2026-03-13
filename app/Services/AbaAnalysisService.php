@@ -744,6 +744,14 @@ class AbaAnalysisService
             'abstract_de_end_line' => $abstractLanguageStats['abstract_de_end_line'] ?? null,
             'abstract_en_start_line' => $abstractLanguageStats['abstract_en_start_line'] ?? null,
             'abstract_en_end_line' => $abstractLanguageStats['abstract_en_end_line'] ?? null,
+            'abstract_de_range' => [
+                'start_line' => $abstractLanguageStats['abstract_de_start_line'] ?? null,
+                'end_line' => $abstractLanguageStats['abstract_de_end_line'] ?? null,
+            ],
+            'abstract_en_range' => [
+                'start_line' => $abstractLanguageStats['abstract_en_start_line'] ?? null,
+                'end_line' => $abstractLanguageStats['abstract_en_end_line'] ?? null,
+            ],
             'toc_start_line' => $tocRange['start_line'],
             'toc_end_line' => $tocRange['end_line'],
             'bibliography_start_line' => $bibliographyRange['start_line'],
@@ -796,6 +804,29 @@ class AbaAnalysisService
             'extraction_consistency_score' => $extractionConsistencyScore,
             'persistence_consistency_score' => $persistenceConsistencyScore,
             'quality_score_reasons' => array_values(array_unique($qualityScoreReasons)),
+
+            'frontmatter_boundary_confidence' => is_numeric($structureDiagnostics['frontmatter_boundary_confidence'] ?? null)
+                ? (float) $structureDiagnostics['frontmatter_boundary_confidence']
+                : null,
+            'body_reentry_confidence' => is_numeric($structureDiagnostics['body_reentry_confidence'] ?? null)
+                ? (float) $structureDiagnostics['body_reentry_confidence']
+                : null,
+            'heading_assignment_confidence' => is_numeric($structureDiagnostics['heading_assignment_confidence'] ?? null)
+                ? (float) $structureDiagnostics['heading_assignment_confidence']
+                : null,
+            'bibliography_context_confidence' => is_numeric($structureDiagnostics['bibliography_context_confidence'] ?? null)
+                ? (float) $structureDiagnostics['bibliography_context_confidence']
+                : null,
+            'figure_mapping_confidence' => is_numeric($structureDiagnostics['figure_mapping_confidence'] ?? null)
+                ? (float) $structureDiagnostics['figure_mapping_confidence']
+                : null,
+            'hierarchy_anomaly_count' => (int) ($structureDiagnostics['hierarchy_anomaly_count'] ?? 0),
+            'orphan_candidate_count' => (int) ($structureDiagnostics['orphan_candidate_count'] ?? 0),
+            'unresolved_heading_candidates_count' => (int) ($structureDiagnostics['unresolved_heading_candidates_count'] ?? 0),
+            'multi_line_caption_count' => (int) ($structureDiagnostics['multi_line_caption_count'] ?? 0),
+            'bibliography_entry_count' => (int) ($structureDiagnostics['bibliography_entry_count'] ?? 0),
+            'toc_special_entries_count' => (int) ($structureDiagnostics['toc_special_entries_count'] ?? 0),
+            'dataset_boundary_adjustments_count' => (int) ($structureDiagnostics['dataset_boundary_adjustments_count'] ?? 0),
 
             'toc_candidates_rejected_count' => (int) ($filterStats['toc_candidates_rejected_count'] ?? 0),
             'toc_duplicates_removed_count' => (int) ($filterStats['toc_duplicates_removed_count'] ?? 0),

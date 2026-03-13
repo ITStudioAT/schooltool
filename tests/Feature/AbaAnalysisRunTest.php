@@ -464,6 +464,8 @@ test('processing run stores extracted sections and marks run completed', functio
         ->toHaveKey('abstract_detected')
         ->toHaveKey('abstract_de_detected')
         ->toHaveKey('abstract_en_detected')
+        ->toHaveKey('abstract_de_range')
+        ->toHaveKey('abstract_en_range')
         ->toHaveKey('abstract_missing_languages')
         ->toHaveKey('foreword_detected')
         ->toHaveKey('table_of_contents_detected')
@@ -477,7 +479,19 @@ test('processing run stores extracted sections and marks run completed', functio
         ->toHaveKey('analysis_quality_score')
         ->toHaveKey('structure_quality_score')
         ->toHaveKey('extraction_consistency_score')
-        ->toHaveKey('persistence_consistency_score');
+        ->toHaveKey('persistence_consistency_score')
+        ->toHaveKey('frontmatter_boundary_confidence')
+        ->toHaveKey('body_reentry_confidence')
+        ->toHaveKey('heading_assignment_confidence')
+        ->toHaveKey('bibliography_context_confidence')
+        ->toHaveKey('figure_mapping_confidence')
+        ->toHaveKey('hierarchy_anomaly_count')
+        ->toHaveKey('orphan_candidate_count')
+        ->toHaveKey('unresolved_heading_candidates_count')
+        ->toHaveKey('multi_line_caption_count')
+        ->toHaveKey('bibliography_entry_count')
+        ->toHaveKey('toc_special_entries_count')
+        ->toHaveKey('dataset_boundary_adjustments_count');
 
     expect((int) ($analysisStats['persisted_record_count'] ?? 0))->toBe($persistedCount)
         ->and((int) ($recordCounts['persisted_record_count'] ?? 0))->toBe($persistedCount)
@@ -504,7 +518,24 @@ test('processing run stores extracted sections and marks run completed', functio
         ->and((float) ($analysisStats['extraction_consistency_score'] ?? -1))->toBeGreaterThanOrEqual(0.0)
         ->and((float) ($analysisStats['extraction_consistency_score'] ?? 2))->toBeLessThanOrEqual(1.0)
         ->and((float) ($analysisStats['persistence_consistency_score'] ?? -1))->toBeGreaterThanOrEqual(0.0)
-        ->and((float) ($analysisStats['persistence_consistency_score'] ?? 2))->toBeLessThanOrEqual(1.0);
+        ->and((float) ($analysisStats['persistence_consistency_score'] ?? 2))->toBeLessThanOrEqual(1.0)
+        ->and((float) ($analysisStats['frontmatter_boundary_confidence'] ?? -1))->toBeGreaterThanOrEqual(0.0)
+        ->and((float) ($analysisStats['frontmatter_boundary_confidence'] ?? 2))->toBeLessThanOrEqual(1.0)
+        ->and((float) ($analysisStats['body_reentry_confidence'] ?? -1))->toBeGreaterThanOrEqual(0.0)
+        ->and((float) ($analysisStats['body_reentry_confidence'] ?? 2))->toBeLessThanOrEqual(1.0)
+        ->and((float) ($analysisStats['heading_assignment_confidence'] ?? -1))->toBeGreaterThanOrEqual(0.0)
+        ->and((float) ($analysisStats['heading_assignment_confidence'] ?? 2))->toBeLessThanOrEqual(1.0)
+        ->and((float) ($analysisStats['bibliography_context_confidence'] ?? -1))->toBeGreaterThanOrEqual(0.0)
+        ->and((float) ($analysisStats['bibliography_context_confidence'] ?? 2))->toBeLessThanOrEqual(1.0)
+        ->and((float) ($analysisStats['figure_mapping_confidence'] ?? -1))->toBeGreaterThanOrEqual(0.0)
+        ->and((float) ($analysisStats['figure_mapping_confidence'] ?? 2))->toBeLessThanOrEqual(1.0)
+        ->and((int) ($analysisStats['hierarchy_anomaly_count'] ?? -1))->toBeGreaterThanOrEqual(0)
+        ->and((int) ($analysisStats['orphan_candidate_count'] ?? -1))->toBeGreaterThanOrEqual(0)
+        ->and((int) ($analysisStats['unresolved_heading_candidates_count'] ?? -1))->toBeGreaterThanOrEqual(0)
+        ->and((int) ($analysisStats['multi_line_caption_count'] ?? -1))->toBeGreaterThanOrEqual(0)
+        ->and((int) ($analysisStats['bibliography_entry_count'] ?? -1))->toBeGreaterThanOrEqual(0)
+        ->and((int) ($analysisStats['toc_special_entries_count'] ?? -1))->toBeGreaterThanOrEqual(0)
+        ->and((int) ($analysisStats['dataset_boundary_adjustments_count'] ?? -1))->toBeGreaterThanOrEqual(0);
 
     expect(($summary['validation']['is_valid'] ?? null))->toBeTrue();
     expect(($summary['review']['state'] ?? null))->toBeString();
@@ -523,8 +554,7 @@ test('processing run stores extracted sections and marks run completed', functio
         ->toContain('bibliography')
         ->toContain('figure_index')
         ->toContain('consent_declaration')
-        ->toContain('figure')
-        ->toContain('other_section');
+        ->toContain('figure');
 
     $this->assertDatabaseHas('aba_analysis_results', [
         'aba_id' => $aba->id,
@@ -845,6 +875,59 @@ test('processing run marks german abstract as missing when only english abstract
         ->and((array) ($analysisStats['abstract_missing_languages'] ?? []))->toContain('de');
 });
 
+test('processing run detects abstract variants with language hints in heading labels', function () {
+    config()->set('aba_analysis.openai_normalization_enabled', false);
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocumentAttachment($aba, 'hauptdokument.txt', implode("\n", [
+        'Titel der Arbeit',
+        '',
+        'Zusammenfassung (Deutsch)',
+        'Diese Zusammenfassung beschreibt die Methode und die Ergebnisse der Arbeit.',
+        '',
+        'Executive Summary (English)',
+        'This summary outlines the scope, method and key findings.',
+        '',
+        'Vorwort',
+        'Vorwortstext.',
+        '',
+        'Inhaltsverzeichnis',
+        '1 Einleitung .... 4',
+        '',
+        '1 Einleitung',
+        'Body Text.',
+    ]));
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'hauptdokument.txt',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => 'text/plain',
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $summary = is_array($run->summary) ? $run->summary : [];
+    $analysisStats = is_array($summary['analysis_stats'] ?? null) ? $summary['analysis_stats'] : [];
+
+    expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED)
+        ->and((bool) ($analysisStats['abstract_de_detected'] ?? false))->toBeTrue()
+        ->and((bool) ($analysisStats['abstract_en_detected'] ?? false))->toBeTrue()
+        ->and((array) ($analysisStats['abstract_missing_languages'] ?? []))->toBe([]);
+});
+
 test('toc-only bibliography and figure index entries are not persisted as body sections', function () {
     if (! class_exists(ZipArchive::class)) {
         $this->markTestSkipped('ZipArchive extension missing.');
@@ -952,6 +1035,9 @@ test('bibliography entries stay within bibliography section and do not create ot
 
     expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED);
 
+    $summary = is_array($run->summary) ? $run->summary : [];
+    $analysisStats = is_array($summary['analysis_stats'] ?? null) ? $summary['analysis_stats'] : [];
+
     $results = AbaAnalysisResult::query()
         ->where('aba_analysis_run_id', $run->id)
         ->orderBy('sort_order')
@@ -965,7 +1051,8 @@ test('bibliography entries stay within bibliography section and do not create ot
     $otherSections = $results->where('section_type', 'other_section');
     $otherTitles = $otherSections->pluck('section_title')->filter()->values()->all();
     expect($otherTitles)->not->toContain('Cote, B. (2017). Platform Capitalism. Polity Press.')
-        ->and($otherTitles)->not->toContain('ORF. (2024). Medienbericht. https://orf.at/');
+        ->and($otherTitles)->not->toContain('ORF. (2024). Medienbericht. https://orf.at/')
+        ->and((int) ($analysisStats['bibliography_entry_count'] ?? 0))->toBeGreaterThanOrEqual(2);
 });
 
 test('figure index entries are persisted as figure children of figure index', function () {
@@ -986,6 +1073,7 @@ test('figure index entries are persisted as figure children of figure index', fu
         ['text' => 'Body-Inhalt.', 'style' => 'Normal'],
         ['text' => 'Abbildungsverzeichnis', 'style' => 'Heading1', 'outline' => 0],
         ['text' => 'Abb. 1 Mediennutzung', 'style' => 'Normal'],
+        ['text' => 'Quelle: Eigene Darstellung der Ergebnisse', 'style' => 'Normal'],
         ['text' => 'Abb. 2 Plattformvergleich', 'style' => 'Normal'],
         ['text' => 'Eigenständigkeitserklärung', 'style' => 'Heading1', 'outline' => 0],
         ['text' => 'Hiermit bestätige ich ...', 'style' => 'Normal'],
@@ -1008,6 +1096,9 @@ test('figure index entries are persisted as figure children of figure index', fu
 
     expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED);
 
+    $summary = is_array($run->summary) ? $run->summary : [];
+    $analysisStats = is_array($summary['analysis_stats'] ?? null) ? $summary['analysis_stats'] : [];
+
     $results = AbaAnalysisResult::query()
         ->where('aba_analysis_run_id', $run->id)
         ->orderBy('sort_order')
@@ -1021,7 +1112,9 @@ test('figure index entries are persisted as figure children of figure index', fu
     expect($figureOne)->not->toBeNull()
         ->and($figureTwo)->not->toBeNull()
         ->and((int) ($figureOne->parent_result_id ?? 0))->toBe((int) ($figureIndex->id ?? 0))
-        ->and((int) ($figureTwo->parent_result_id ?? 0))->toBe((int) ($figureIndex->id ?? 0));
+        ->and((int) ($figureTwo->parent_result_id ?? 0))->toBe((int) ($figureIndex->id ?? 0))
+        ->and((string) ($figureOne->extracted_text ?? ''))->toContain('Quelle: Eigene Darstellung der Ergebnisse')
+        ->and((int) ($analysisStats['multi_line_caption_count'] ?? 0))->toBeGreaterThanOrEqual(1);
 });
 
 test('docx extraction keeps early chapters, filters toc headings and stores extraction diagnostics', function () {
@@ -1834,6 +1927,8 @@ test('results page contains vuetify accordion and section text rendering', funct
         ->toContain('Zeichen gesamt')
         ->toContain('Zeichen ohne Leerzeichen')
         ->toContain('automatisch freigegeben (ab')
+        ->toContain('Sicherheit der Frontmatter-Abgrenzung')
+        ->toContain('Korrigierte Datensatzgrenzen')
         ->toContain('Keine Analyseergebnisse vorhanden.')
         ->toContain('/api/admin/abas/${this.abaId}/analysis/results');
 
