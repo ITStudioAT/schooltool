@@ -24,6 +24,7 @@ class AbaResource extends JsonResource
             'user_id' => $this->user_id,
             'title' => $this->title,
             'student_name' => $this->student_name,
+            'student_class' => $this->student_class,
             'schoolyear_name' => $this->schoolyear?->name,
             'created_on' => $this->created_on?->toDateString(),
             'evaluated_on' => $this->evaluated_on?->toDateString(),

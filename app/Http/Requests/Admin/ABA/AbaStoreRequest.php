@@ -20,6 +20,7 @@ class AbaStoreRequest extends FormRequest
         return [
             'data.title' => ['required', 'string', 'max:255'],
             'data.student_name' => ['required', 'string', 'max:255'],
+            'data.student_class' => ['nullable', 'string', 'max:100'],
             'data.schoolyear_id' => [
                 'nullable',
                 'integer',

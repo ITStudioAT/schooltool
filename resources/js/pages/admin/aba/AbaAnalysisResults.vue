@@ -12,8 +12,8 @@
 
         <v-sheet rounded="xl" class="aba-results-nav mb-2" :class="{ 'is-locked': controlsLocked }">
             <div class="aba-results-nav__buttons">
-                <v-btn variant="tonal" color="primary" prepend-icon="mdi-arrow-left" :disabled="controlsLocked" @click="goBack">
-                    Zurück
+                <v-btn variant="tonal" color="white" prepend-icon="mdi-arrow-left" :disabled="controlsLocked" @click="goBack">
+                    Alle ABAs
                 </v-btn>
                 <v-btn variant="flat" color="primary" prepend-icon="mdi-refresh" :loading="refreshing" :disabled="controlsLocked" @click="refreshNow">
                     Aktualisieren
@@ -24,13 +24,27 @@
                     prepend-icon="mdi-reload"
                     :loading="reanalysisStarting"
                     :disabled="controlsLocked || abaId <= 0"
-                    @click="restartAnalysis">
+                    @click="requestReanalysis">
                     Erneute Analyse
                 </v-btn>
                 <v-chip size="small" color="primary" variant="tonal">ABA #{{ abaId }}</v-chip>
                 <v-chip v-if="analysisRun" size="small" :color="pendingRun ? 'warning' : 'success'" variant="tonal">
                     {{ analysisStatusLabel }}
                 </v-chip>
+            </div>
+            <div class="aba-results-nav__toggles">
+                <v-btn
+                    v-for="card in cardToggleItems"
+                    :key="card.key"
+                    size="x-small"
+                    :variant="visibleCards[card.key] ? 'flat' : 'tonal'"
+                    :color="visibleCards[card.key] ? 'primary' : 'white'"
+                    :prepend-icon="visibleCards[card.key] ? 'mdi-eye-outline' : 'mdi-eye-off-outline'"
+                    :style="visibleCards[card.key] ? '' : 'opacity: 0.5'"
+                    @click="toggleCard(card.key)"
+                    @dblclick.prevent="soloCard(card.key)">
+                    {{ card.label }}
+                </v-btn>
             </div>
             <v-progress-linear v-if="loading || refreshing || reanalysisStarting" color="primary" indeterminate class="aba-results-nav__progress" />
         </v-sheet>
@@ -48,8 +62,8 @@
         </v-overlay>
 
         <v-row class="w-100 ma-0" dense>
-            <v-col cols="12" lg="4">
-                <ItsGridBox variant="overview" color="primary" title="Übersicht" subtitle="Gespeicherte Datensätze" icon="mdi-chart-box-outline">
+            <v-col v-if="leftColumnVisible" cols="12" lg="4">
+                <ItsGridBox v-if="visibleCards.uebersicht" variant="overview" color="primary" title="Übersicht" subtitle="Gespeicherte Datensätze" icon="mdi-chart-box-outline">
                     <div class="summary-meta">
                         <div class="summary-meta__row"><span>Anzahl Seiten (echt gerendert)</span><strong>{{ renderedPageCountLabel }}</strong></div>
                         <div class="summary-meta__row"><span>Zeichen gesamt</span><strong>{{ textLengthLabel }}</strong></div>
@@ -59,13 +73,13 @@
                         <div v-if="showFinalConfidence" class="summary-meta__row"><span>Finale Konfidenz</span><strong>{{ formatPercent(finalConfidence) }}</strong></div>
                         <div class="summary-meta__row"><span>Qualitätswert</span><strong>{{ formatPercent(analysisQualityScore) }}</strong></div>
                         <div class="summary-meta__row"><span>Prüfstatus</span><strong>{{ reviewStateLabel }}</strong></div>
-                        <div class="summary-meta__row"><span>Start</span><strong>{{ analysisStartLabel }}</strong></div>
-                        <div class="summary-meta__row"><span>Ende</span><strong>{{ analysisEndLabel }}</strong></div>
-                        <div class="summary-meta__row"><span>Dauer</span><strong>{{ analysisDurationLabel }}</strong></div>
+                        <div class="summary-meta__row"><span>Extraktion-Start</span><strong>{{ analysisStartLabel }}</strong></div>
+                        <div class="summary-meta__row"><span>Extraktion-Ende</span><strong>{{ analysisEndLabel }}</strong></div>
+                        <div class="summary-meta__row"><span>Extraktion-Dauer</span><strong>{{ analysisDurationLabel }}</strong></div>
                     </div>
                 </ItsGridBox>
 
-                <ItsGridBox variant="overview" color="primary" title="Erkennungsstatus" subtitle="Zentrale Dokumentteile" icon="mdi-text-box-check-outline">
+                <ItsGridBox v-if="visibleCards.erkennungsstatus" variant="overview" color="primary" title="Erkennungsstatus" subtitle="Zentrale Dokumentteile" icon="mdi-text-box-check-outline">
                     <div class="status-list">
                         <div v-for="item in structureStatusItems" :key="item.key" class="status-list__row">
                             <span>{{ item.label }}</span>
@@ -79,7 +93,7 @@
 
                 </ItsGridBox>
 
-                <ItsGridBox variant="overview" color="primary" title="Datensatzstatistik" subtitle="Struktur und Typen" icon="mdi-file-tree-outline">
+                <ItsGridBox v-if="visibleCards.datensatzstatistik" variant="overview" color="primary" title="Datensatzstatistik" subtitle="Struktur und Typen" icon="mdi-file-tree-outline">
                     <div class="stats-grid">
                         <div v-for="item in typeStatisticItems" :key="item.key" class="stats-item">
                             <span>{{ item.label }}</span>
@@ -88,7 +102,7 @@
                     </div>
                 </ItsGridBox>
 
-                <ItsGridBox variant="overview" color="primary" title="Qualitätsmetriken" subtitle="Lokale Analysequalität" icon="mdi-speedometer">
+                <ItsGridBox v-if="visibleCards.qualitaetsmetriken" variant="overview" color="primary" title="Qualitätsmetriken" subtitle="Lokale Analysequalität" icon="mdi-speedometer">
                     <div class="stats-grid">
                         <div v-for="item in qualityItems" :key="item.key" class="stats-item">
                             <span>{{ item.label }}</span>
@@ -98,8 +112,9 @@
                 </ItsGridBox>
             </v-col>
 
-            <v-col cols="12" lg="8">
+            <v-col cols="12" :lg="leftColumnVisible ? 8 : 12">
                 <ItsGridBox
+                    v-if="visibleCards.kapitel"
                     class="results-structure-card"
                     variant="overview"
                     color="primary"
@@ -120,10 +135,7 @@
                                 <span>Hauptdokument</span>
                                 <strong>{{ mainDocumentLabel }}</strong>
                             </div>
-                            <div class="run-meta__row">
-                                <span>Datensätze</span>
-                                <strong>{{ persistedRecordCount }}</strong>
-                            </div>
+
                         </v-sheet>
 
                         <div v-if="frontmatterPanelItems.length > 0" class="mb-4">
@@ -195,6 +207,34 @@
             </v-col>
         </v-row>
     </v-container>
+
+    <v-dialog v-model="reanalysisConfirmDialogOpen" persistent max-width="480">
+        <v-card>
+            <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                <v-icon size="18" color="warning">mdi-reload</v-icon>
+                Analyse wirklich starten?
+            </v-card-title>
+            <v-divider />
+            <v-card-text>
+                <div class="text-body-2 mb-2">
+                    Für diese ABA wird eine erneute Analyse gestartet:
+                </div>
+                <div class="text-body-2 font-weight-bold">
+                    {{ aba?.title || `ABA #${abaId}` }}
+                </div>
+            </v-card-text>
+            <v-divider />
+            <v-card-actions>
+                <v-btn variant="tonal" color="warning" @click="reanalysisConfirmDialogOpen = false">
+                    Abbrechen
+                </v-btn>
+                <v-spacer />
+                <v-btn variant="flat" color="warning" @click="confirmReanalysis">
+                    Analyse starten
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
 </template>
 
 <script>
@@ -210,6 +250,14 @@ export default {
             loading: true,
             refreshing: false,
             reanalysisStarting: false,
+            reanalysisConfirmDialogOpen: false,
+            visibleCards: {
+                uebersicht: true,
+                erkennungsstatus: true,
+                datensatzstatistik: true,
+                qualitaetsmetriken: true,
+                kapitel: true,
+            },
             error: '',
             payload: null,
             pollTimer: null,
@@ -590,16 +638,16 @@ export default {
         structureStatusItems() {
             const stats = this.analysisStats
             return [
-                this.makeStatusItem('title_page_detected', 'Titelseite erkannt', stats.title_page_detected, stats.title_page_start_line, stats.title_page_end_line),
-                this.makeStatusItem('abstract_detected', 'Zusammenfassung erkannt', stats.abstract_detected, null, null),
-                this.makeStatusItem('abstract_de_detected', 'Deutsche Zusammenfassung erkannt', stats.abstract_de_detected, stats.abstract_de_start_line, stats.abstract_de_end_line),
-                this.makeStatusItem('abstract_en_detected', 'Englische Zusammenfassung erkannt', stats.abstract_en_detected, stats.abstract_en_start_line, stats.abstract_en_end_line),
-                this.makeStatusItem('foreword_detected', 'Vorwort erkannt', stats.foreword_detected, stats.foreword_start_line, stats.foreword_end_line),
-                this.makeStatusItem('table_of_contents_detected', 'Inhaltsverzeichnis erkannt', stats.table_of_contents_detected, stats.toc_start_line, stats.toc_end_line),
-                this.makeStatusItem('body_detected', 'Hauptteil erkannt', stats.body_detected, stats.body_start_line, null),
-                this.makeStatusItem('bibliography_detected', 'Bibliographie erkannt', stats.bibliography_detected, stats.bibliography_start_line, stats.bibliography_end_line),
-                this.makeStatusItem('figure_index_detected', 'Abbildungsverzeichnis erkannt', stats.figure_index_detected, stats.figure_index_start_line, stats.figure_index_end_line),
-                this.makeStatusItem('consent_declaration_detected', 'Eigenständigkeitserklärung erkannt', stats.consent_declaration_detected, stats.consent_declaration_start_line, stats.consent_declaration_end_line),
+                this.makeStatusItem('title_page_detected', 'Titelseite', stats.title_page_detected, stats.title_page_start_line, stats.title_page_end_line),
+                this.makeStatusItem('abstract_detected', 'Zusammenfassung', stats.abstract_detected, null, null),
+                this.makeStatusItem('abstract_de_detected', 'Deutsche Zusammenfassung', stats.abstract_de_detected, stats.abstract_de_start_line, stats.abstract_de_end_line),
+                this.makeStatusItem('abstract_en_detected', 'Englische Zusammenfassung', stats.abstract_en_detected, stats.abstract_en_start_line, stats.abstract_en_end_line),
+                this.makeStatusItem('foreword_detected', 'Vorwort', stats.foreword_detected, stats.foreword_start_line, stats.foreword_end_line),
+                this.makeStatusItem('table_of_contents_detected', 'Inhaltsverzeichnis', stats.table_of_contents_detected, stats.toc_start_line, stats.toc_end_line),
+                this.makeStatusItem('body_detected', 'Hauptteil', stats.body_detected, stats.body_start_line, null),
+                this.makeStatusItem('bibliography_detected', 'Bibliographie', stats.bibliography_detected, stats.bibliography_start_line, stats.bibliography_end_line),
+                this.makeStatusItem('figure_index_detected', 'Abbildungsverzeichnis', stats.figure_index_detected, stats.figure_index_start_line, stats.figure_index_end_line),
+                this.makeStatusItem('consent_declaration_detected', 'Eigenständigkeitserklärung', stats.consent_declaration_detected, stats.consent_declaration_start_line, stats.consent_declaration_end_line),
             ]
         },
         typeStatisticItems() {
@@ -653,6 +701,21 @@ export default {
 
             return items
         },
+        leftColumnVisible() {
+            return this.visibleCards.uebersicht
+                || this.visibleCards.erkennungsstatus
+                || this.visibleCards.datensatzstatistik
+                || this.visibleCards.qualitaetsmetriken
+        },
+        cardToggleItems() {
+            return [
+                { key: 'uebersicht', label: 'Übersicht' },
+                { key: 'erkennungsstatus', label: 'Erkennungsstatus' },
+                { key: 'datensatzstatistik', label: 'Datensatzstatistik' },
+                { key: 'qualitaetsmetriken', label: 'Qualitätsmetriken' },
+                { key: 'kapitel', label: 'Erkannte Kapitel / Abschnitte' },
+            ]
+        },
         activeSection() {
             return {
                 label: 'Analyse-Ergebnisse',
@@ -661,18 +724,17 @@ export default {
             }
         },
         headerChips() {
-            return [
-                {
-                    key: 'datensaetze',
-                    text: `${this.persistedRecordCount} Datensätze`,
-                    icon: 'mdi-database-outline',
-                },
-                {
-                    key: 'review',
-                    text: `Prüfstatus: ${this.reviewStateLabel}`,
-                    icon: 'mdi-shield-check-outline',
-                },
-            ]
+            const chips = []
+            if (this.aba?.title) {
+                chips.push({ key: 'title', text: this.aba.title, icon: 'mdi-text-box-outline' })
+            }
+            if (this.aba?.student_name) {
+                chips.push({ key: 'student', text: this.aba.student_name, icon: 'mdi-account-outline' })
+            }
+            if (this.aba?.student_class) {
+                chips.push({ key: 'class', text: this.aba.student_class, icon: 'mdi-google-classroom' })
+            }
+            return chips
         },
     },
 
@@ -716,6 +778,24 @@ export default {
         async refreshNow() {
             this.refreshing = true
             await this.loadResults(true)
+        },
+        toggleCard(key) {
+            this.visibleCards[key] = !this.visibleCards[key]
+        },
+        soloCard(key) {
+            for (const k of Object.keys(this.visibleCards)) {
+                this.visibleCards[k] = k === key
+            }
+        },
+        requestReanalysis() {
+            if (this.abaId <= 0 || this.controlsLocked) {
+                return
+            }
+            this.reanalysisConfirmDialogOpen = true
+        },
+        async confirmReanalysis() {
+            this.reanalysisConfirmDialogOpen = false
+            await this.restartAnalysis()
         },
         async restartAnalysis() {
             if (this.abaId <= 0 || this.controlsLocked) {
@@ -1021,6 +1101,16 @@ export default {
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
+}
+
+.aba-results-nav__toggles {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(148, 163, 184, 0.12);
+    margin-top: 8px;
 }
 
 .aba-results-nav__progress {

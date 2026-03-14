@@ -1741,6 +1741,10 @@ class AbaAnalysisService
      */
     private function logDebug(string $message, array $context = []): void
     {
+        if (! config('aba_analysis.debug_log_enabled')) {
+            return;
+        }
+
         try {
             Log::channel('aba-run-debug')->debug($message, $context);
         } catch (\Throwable) {

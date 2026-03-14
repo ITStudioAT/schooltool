@@ -33,7 +33,11 @@
       "Bash(node parse-report.js)",
       "Bash(node /c/laravel/schooltool/parse-report.js)",
       "Bash(git -C /c/laravel/schooltool diff tests/Feature/AdminAbaAccessTest.php)",
-      "Bash(vendor/bin/pint --dirty --format agent)"
+      "Bash(vendor/bin/pint --dirty --format agent)",
+      "Bash(for f:*)",
+      "Bash(do echo:*)",
+      "Read(//c/laravel/schooltool/app/ABA/Services/**)",
+      "Bash(done)"
     ],
     "deny": [],
     "ask": []

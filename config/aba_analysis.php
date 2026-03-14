@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'debug_log_enabled' => (bool) env('ABA_ANALYSIS_DEBUG_LOG', true),
     'openai_normalization_enabled' => (bool) env('ABA_ANALYSIS_OPENAI_NORMALIZATION_ENABLED', false),
     'openai_model' => env('ABA_ANALYSIS_OPENAI_MODEL'),
     'auto_approve_confidence' => (float) env('ABA_ANALYSIS_AUTO_APPROVE_CONFIDENCE', 0.82),

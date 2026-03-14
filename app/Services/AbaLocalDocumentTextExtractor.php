@@ -910,6 +910,10 @@ class AbaLocalDocumentTextExtractor
     {
         $parts = [];
         foreach ($xpath->query('.//w:t|.//w:tab|.//w:br', $paragraph) ?: [] as $node) {
+            if ($this->nodeIsInsideMarkupCompatibilityFallback($node)) {
+                continue;
+            }
+
             if ($node->localName === 'tab') {
                 $parts[] = "\t";
 
@@ -929,6 +933,24 @@ class AbaLocalDocumentTextExtractor
         $text = preg_replace('/\s+/u', ' ', $text) ?? $text;
 
         return trim($text);
+    }
+
+    private function nodeIsInsideMarkupCompatibilityFallback(\DOMNode $node): bool
+    {
+        $current = $node->parentNode;
+        while ($current instanceof \DOMNode) {
+            if (
+                $current->nodeType === XML_ELEMENT_NODE
+                && $current->localName === 'Fallback'
+                && $current->namespaceURI === 'http://schemas.openxmlformats.org/markup-compatibility/2006'
+            ) {
+                return true;
+            }
+
+            $current = $current->parentNode;
+        }
+
+        return false;
     }
 
     private function resolveParagraphAlignment(\DOMXPath $xpath, \DOMNode $paragraph): ?string
@@ -1154,13 +1176,14 @@ class AbaLocalDocumentTextExtractor
             'abstract' => '/^\s*(abstract|zusammenfassung)\b/iu',
             'foreword' => '/^\s*(vorwort|preface)\b/iu',
             'table_of_contents' => '/^\s*(inhaltsverzeichnis|table of contents)\b/iu',
-            'bibliography' => '/^\s*(literaturverzeichnis|quellenverzeichnis|references|bibliography)\b/iu',
+            'bibliography' => '/^\s*(?:(?:literaturverzeichnis|literaturangaben|quellenverzeichnis|quellenangaben|verwendete\s+quellen|literatur(?:\s*[-–]\s*|\s+und\s+)quellenverzeichnis|internetquellenverzeichnis|internetverzeichnis|internetquellenangaben|internetquellenliste|internetquellen|internet|onlinequellenverzeichnis|online(?:\s*-\s*|\s*)quellen|onlinequellen|webquellenverzeichnis|web(?:\s*-\s*|\s*)quellen|webquellen|webseiten|weblinks|references|bibliography|bibliograph(?:ie|y)|bibliografie)\b|(?:quellen?|quelle)\s*(?:$|[:\-–]\s*$))/iu',
             'figure_index' => '/^\s*(abbildungsverzeichnis|list of figures)\b/iu',
-            'consent_declaration' => '/^\s*(einverst[aä]ndniserkl[aä]rung|einverstaendniserklaerung|eigenst[aä]ndigkeitserkl[aä]rung|ehrenw[oö]rtliche erkl[aä]rung)\b/iu',
+            'consent_declaration' => '/^\s*(?:einverst[aä]ndniserkl[aä]rung|einverstaendniserklaerung|eigenst[aä]ndigkeitserkl[aä]rung|selbstst[aä]ndigkeitserkl[aä]rung|selbststaendigkeitserklaerung|eidesstattliche\s+erkl[aä]rung|ehrenw[oö]rtliche\s+erkl[aä]rung|erkl[aä]rung)\s*(?:$|[:\-–]\s*[^.!?]{0,120}$)/iu',
         ];
 
         if (
-            preg_match('/^\s*(einleitung|introduction|fazit|schluss(?:folgerung)?|res[üu]mee|conclusion)\s*(?:$|[:\-–]\s*[^.!?]{0,120}$)/iu', $title) === 1
+            preg_match('/^\s*(?:einleitung|introduction|fazit|schluss(?:folgerung)?|res[üu]mee|conclusion)(?:\s*\/\s*(?:fazit|schluss(?:folgerung)?|res[üu]mee|conclusion))?\s*(?:$|[:\-–]\s*[^.!?]{0,120}$)/iu', $title) === 1
+            || preg_match('/^\s*(?:fazit|schluss(?:folgerung)?|res[üu]mee|conclusion)\s*\/\s*(?:fazit|schluss(?:folgerung)?|res[üu]mee|conclusion)\s*$/iu', $title) === 1
             || $this->matchesNamedChapterHeadingStructure($title)
         ) {
             return 'chapter';
@@ -1401,6 +1424,10 @@ class AbaLocalDocumentTextExtractor
      */
     private function logDebug(string $message, array $context = []): void
     {
+        if (! config('aba_analysis.debug_log_enabled')) {
+            return;
+        }
+
         try {
             Log::channel('aba-run-debug')->debug($message, $context);
         } catch (\Throwable) {

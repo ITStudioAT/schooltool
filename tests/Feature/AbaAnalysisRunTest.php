@@ -1092,6 +1092,7 @@ test('bibliography entries stay within bibliography section and do not create ot
 
     $bibliography = $results->firstWhere('section_type', 'bibliography');
     expect($bibliography)->not->toBeNull()
+        ->and((string) ($bibliography->section_title ?? ''))->toBe('Literaturverzeichnis')
         ->and((string) ($bibliography->extracted_text ?? ''))->toContain('Cote, B. (2017)')
         ->and((string) ($bibliography->extracted_text ?? ''))->toContain('https://orf.at/');
 
@@ -1102,7 +1103,310 @@ test('bibliography entries stay within bibliography section and do not create ot
         ->and((int) ($analysisStats['bibliography_entry_count'] ?? 0))->toBeGreaterThanOrEqual(2);
 });
 
-test('figure index entries are persisted as figure children of figure index', function () {
+test('quellenverzeichnis umbrella normalizes to one Literaturverzeichnis block with preserved subheadings', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'backmatter-umbrella-bibliography.docx', [
+        ['text' => 'ABA-Arbeit', 'style' => 'Normal'],
+        ['text' => '1. Einleitung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einleitender Inhalt.'],
+        ['text' => 'Quellenverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Literaturverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Cote, B. (2017). Platform Capitalism. Polity Press.'],
+        ['text' => 'Rosendahl, W. (2017). Forensische Anthropologie. Springer.'],
+        ['text' => 'Internetquellenverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Burkhard (2007). Zugriff am 10.01.2026. Verfügbar unter https://example.org/zahnstatus'],
+        ['text' => 'ORF (2024). Medienbericht. https://orf.at/'],
+        ['text' => 'Abbildungsverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Abb. 1 Mediennutzung'],
+        ['text' => 'Abb. 2 Plattformvergleich'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'backmatter-umbrella-bibliography.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED);
+
+    $summary = is_array($run->summary) ? $run->summary : [];
+    $analysisStats = is_array($summary['analysis_stats'] ?? null) ? $summary['analysis_stats'] : [];
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $bibliographies = $results->where('section_type', 'bibliography')->values();
+    $bibliography = $bibliographies->first();
+    $figureIndex = $results->firstWhere('section_title', 'Abbildungsverzeichnis');
+
+    expect($bibliographies)->toHaveCount(1)
+        ->and($bibliography)->not->toBeNull()
+        ->and((string) ($bibliography?->section_title ?? ''))->toBe('Literaturverzeichnis')
+        ->and((string) ($bibliography?->section_type ?? ''))->toBe('bibliography')
+        ->and((string) ($bibliography?->extracted_text ?? ''))->toContain('Literaturverzeichnis')
+        ->and((string) ($bibliography?->extracted_text ?? ''))->toContain('Internetquellenverzeichnis')
+        ->and((string) ($bibliography?->extracted_text ?? ''))->toContain('Cote, B. (2017).')
+        ->and((string) ($bibliography?->extracted_text ?? ''))->toContain('https://example.org/zahnstatus')
+        ->and((string) ($bibliography?->extracted_text ?? ''))->not->toContain('Abbildungsverzeichnis')
+        ->and($figureIndex)->not->toBeNull()
+        ->and((string) ($figureIndex?->section_type ?? ''))->toBe('figure_index')
+        ->and((int) ($bibliography?->end_line ?? 0))->toBeLessThan((int) ($figureIndex?->start_line ?? 0))
+        ->and((int) ($analysisStats['bibliography_count'] ?? 0))->toBe(1);
+});
+
+test('quellenverzeichnis without subheadings normalizes to Literaturverzeichnis', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'quellenverzeichnis-standalone.docx', [
+        ['text' => 'ABA-Arbeit', 'style' => 'Normal'],
+        ['text' => '1. Einleitung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einleitender Inhalt.'],
+        ['text' => 'Quellenverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Cote, B. (2017). Platform Capitalism. Polity Press.'],
+        ['text' => 'ORF. (2024). Medienbericht. https://orf.at/'],
+        ['text' => 'Abbildungsverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Abb. 1 Mediennutzung'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'quellenverzeichnis-standalone.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $quellen = $results->firstWhere('section_type', 'bibliography');
+    $figureIndex = $results->firstWhere('section_title', 'Abbildungsverzeichnis');
+
+    expect($quellen)->not->toBeNull()
+        ->and((string) ($quellen?->section_type ?? ''))->toBe('bibliography')
+        ->and((string) ($quellen?->section_title ?? ''))->toBe('Literaturverzeichnis')
+        ->and((string) ($quellen?->extracted_text ?? ''))->toContain('Cote, B. (2017).')
+        ->and((string) ($quellen?->extracted_text ?? ''))->toContain('https://orf.at/')
+        ->and((string) ($quellen?->extracted_text ?? ''))->not->toContain('Abbildungsverzeichnis')
+        ->and($figureIndex)->not->toBeNull()
+        ->and((string) ($figureIndex?->section_type ?? ''))->toBe('figure_index');
+});
+
+test('generic heading Quellen is normalized to Literaturverzeichnis when source entries follow directly', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'quellen-generic-heading.docx', [
+        ['text' => 'ABA-Arbeit', 'style' => 'Normal'],
+        ['text' => '1. Einleitung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einleitender Inhalt.'],
+        ['text' => 'Quellen', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Rosendahl, W. (2017). Forensische Anthropologie. Springer.'],
+        ['text' => 'A. u. (2015). Zugriff am 18.01.2021. Verfügbar unter https://example.org/dna-analyse'],
+        ['text' => 'Abbildungsverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Abb. 1 Mediennutzung'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'quellen-generic-heading.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $quellen = $results->firstWhere('section_type', 'bibliography');
+    $figureIndex = $results->firstWhere('section_title', 'Abbildungsverzeichnis');
+
+    expect($quellen)->not->toBeNull()
+        ->and((string) ($quellen?->section_type ?? ''))->toBe('bibliography')
+        ->and((string) ($quellen?->section_title ?? ''))->toBe('Literaturverzeichnis')
+        ->and((string) ($quellen?->extracted_text ?? ''))->toContain('Quellen')
+        ->and((string) ($quellen?->extracted_text ?? ''))->toContain('Rosendahl, W. (2017).')
+        ->and((string) ($quellen?->extracted_text ?? ''))->toContain('https://example.org/dna-analyse')
+        ->and((string) ($quellen?->extracted_text ?? ''))->not->toContain('Abbildungsverzeichnis')
+        ->and($figureIndex)->not->toBeNull()
+        ->and((string) ($figureIndex?->section_type ?? ''))->toBe('figure_index');
+});
+
+test('literaturverzeichnis remains a standalone bibliography heading when no child bibliography headings follow', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'literaturverzeichnis-standalone.docx', [
+        ['text' => 'ABA-Arbeit', 'style' => 'Normal'],
+        ['text' => '1. Einleitung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einleitender Inhalt.'],
+        ['text' => 'Literaturverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Cote, B. (2017). Platform Capitalism. Polity Press.'],
+        ['text' => 'Rosendahl, W. (2017). Forensische Anthropologie. Springer.'],
+        ['text' => 'Abbildungsverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Abb. 1 Mediennutzung'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'literaturverzeichnis-standalone.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $literatur = $results->firstWhere('section_title', 'Literaturverzeichnis');
+    $figureIndex = $results->firstWhere('section_title', 'Abbildungsverzeichnis');
+
+    expect($literatur)->not->toBeNull()
+        ->and((string) ($literatur?->section_type ?? ''))->toBe('bibliography')
+        ->and((string) ($literatur?->section_title ?? ''))->toBe('Literaturverzeichnis')
+        ->and((string) ($literatur?->extracted_text ?? ''))->toContain('Cote, B. (2017).')
+        ->and((string) ($literatur?->extracted_text ?? ''))->not->toContain('Abbildungsverzeichnis')
+        ->and($figureIndex)->not->toBeNull()
+        ->and((string) ($figureIndex?->section_type ?? ''))->toBe('figure_index');
+});
+
+test('quellenangaben and webquellen merge into one normalized Literaturverzeichnis block', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'quellenangaben-webquellen.docx', [
+        ['text' => 'ABA-Arbeit', 'style' => 'Normal'],
+        ['text' => '1. Einleitung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einleitender Inhalt.'],
+        ['text' => 'Quellenangaben', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Bucher, A. (2014). Grundlagen der Anthropologie.'],
+        ['text' => 'Webquellen', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Kenhub (2021). https://www.kenhub.com/'],
+        ['text' => 'Abbildungsverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Abb. 1 Mediennutzung'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'quellenangaben-webquellen.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $summary = is_array($run->summary) ? $run->summary : [];
+    $analysisStats = is_array($summary['analysis_stats'] ?? null) ? $summary['analysis_stats'] : [];
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $bibliographies = $results->where('section_type', 'bibliography')->values();
+    $bibliography = $bibliographies->first();
+    $figureIndex = $results->firstWhere('section_title', 'Abbildungsverzeichnis');
+
+    expect($bibliographies)->toHaveCount(1)
+        ->and($bibliography)->not->toBeNull()
+        ->and((string) ($bibliography?->section_title ?? ''))->toBe('Literaturverzeichnis')
+        ->and((string) ($bibliography?->extracted_text ?? ''))->toContain('Quellenangaben')
+        ->and((string) ($bibliography?->extracted_text ?? ''))->toContain('Webquellen')
+        ->and((string) ($bibliography?->extracted_text ?? ''))->toContain('Bucher, A. (2014).')
+        ->and((string) ($bibliography?->extracted_text ?? ''))->toContain('https://www.kenhub.com/')
+        ->and($figureIndex)->not->toBeNull()
+        ->and((string) ($figureIndex?->section_type ?? ''))->toBe('figure_index')
+        ->and((int) ($bibliography?->end_line ?? 0))->toBeLessThan((int) ($figureIndex?->start_line ?? 0))
+        ->and((int) ($analysisStats['bibliography_count'] ?? 0))->toBe(1);
+});
+
+test('figure index entries are not emitted as normal figure nodes while body figure captions remain', function () {
     if (! class_exists(ZipArchive::class)) {
         $this->markTestSkipped('ZipArchive extension missing.');
     }
@@ -1118,9 +1422,10 @@ test('figure index entries are persisted as figure children of figure index', fu
         ['text' => 'ABA-Arbeit', 'style' => 'Normal'],
         ['text' => 'Einleitung', 'style' => 'Heading1', 'outline' => 0],
         ['text' => 'Body-Inhalt.', 'style' => 'Normal'],
+        ['text' => 'Abb. 7: Knochenstruktur', 'style' => 'Normal'],
+        ['text' => 'Quelle: Eigene Darstellung der Ergebnisse', 'style' => 'Normal'],
         ['text' => 'Abbildungsverzeichnis', 'style' => 'Heading1', 'outline' => 0],
         ['text' => 'Abb. 1 Mediennutzung', 'style' => 'Normal'],
-        ['text' => 'Quelle: Eigene Darstellung der Ergebnisse', 'style' => 'Normal'],
         ['text' => 'Abb. 2 Plattformvergleich', 'style' => 'Normal'],
         ['text' => 'Eigenständigkeitserklärung', 'style' => 'Heading1', 'outline' => 0],
         ['text' => 'Hiermit bestätige ich ...', 'style' => 'Normal'],
@@ -1154,14 +1459,92 @@ test('figure index entries are persisted as figure children of figure index', fu
     $figureIndex = $results->firstWhere('section_type', 'figure_index');
     expect($figureIndex)->not->toBeNull();
 
-    $figureOne = $results->firstWhere('section_title', 'Abb. 1 Mediennutzung');
-    $figureTwo = $results->firstWhere('section_title', 'Abb. 2 Plattformvergleich');
-    expect($figureOne)->not->toBeNull()
-        ->and($figureTwo)->not->toBeNull()
-        ->and((int) ($figureOne->parent_result_id ?? 0))->toBe((int) ($figureIndex->id ?? 0))
-        ->and((int) ($figureTwo->parent_result_id ?? 0))->toBe((int) ($figureIndex->id ?? 0))
-        ->and((string) ($figureOne->extracted_text ?? ''))->toContain('Quelle: Eigene Darstellung der Ergebnisse')
+    $figureSections = $results->where('section_type', 'figure')->values();
+    $bodyFigure = $figureSections->first(fn ($section) => str_starts_with((string) ($section->section_title ?? ''), 'Abb. 7:'));
+    $indexFigureOne = $figureSections->firstWhere('section_title', 'Abb. 1 Mediennutzung');
+    $indexFigureTwo = $figureSections->firstWhere('section_title', 'Abb. 2 Plattformvergleich');
+    $figuresInIndexRange = $figureSections->filter(function ($section) use ($figureIndex) {
+        $line = (int) ($section->start_line ?? 0);
+        $start = (int) ($figureIndex->start_line ?? 0);
+        $end = (int) ($figureIndex->end_line ?? 0);
+
+        return $line >= $start && $line <= $end;
+    });
+
+    expect($bodyFigure)->not->toBeNull()
+        ->and((string) ($bodyFigure?->extracted_text ?? ''))->toContain('Quelle: Eigene Darstellung der Ergebnisse')
+        ->and($indexFigureOne)->toBeNull()
+        ->and($indexFigureTwo)->toBeNull()
+        ->and($figuresInIndexRange)->toHaveCount(0)
+        ->and($figureSections)->toHaveCount(1)
+        ->and((string) ($figureIndex?->extracted_text ?? ''))->toContain('Abb. 1 Mediennutzung')
+        ->and((string) ($figureIndex?->extracted_text ?? ''))->toContain('Abb. 2 Plattformvergleich')
         ->and((int) ($analysisStats['multi_line_caption_count'] ?? 0))->toBeGreaterThanOrEqual(1);
+});
+
+test('figure index stops before eidesstattliche erklaerung and signature lines stay in declaration', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'figure-index-declaration-boundary.docx', [
+        ['text' => 'ABA-Arbeit', 'style' => 'Normal'],
+        ['text' => 'Einleitung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Body-Inhalt.', 'style' => 'Normal'],
+        ['text' => 'Abbildungsverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Abb. 1 Mediennutzung', 'style' => 'Normal'],
+        ['text' => 'Abb. 2 Plattformvergleich', 'style' => 'Normal'],
+        ['text' => 'Eidesstattliche Erklärung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Ich erkläre eidesstattlich die eigenständige Erstellung der Arbeit.', 'style' => 'Normal'],
+        ['text' => '________________ ___________________', 'style' => 'Normal'],
+        ['text' => 'Datum Unterschrift', 'style' => 'Normal'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'figure-index-declaration-boundary.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $summary = is_array($run->summary) ? $run->summary : [];
+    $analysisStats = is_array($summary['analysis_stats'] ?? null) ? $summary['analysis_stats'] : [];
+
+    $figureIndex = $results->firstWhere('section_title', 'Abbildungsverzeichnis');
+    $declaration = $results->firstWhere('section_title', 'Eidesstattliche Erklärung');
+
+    expect($figureIndex)->not->toBeNull()
+        ->and((string) ($figureIndex?->section_type ?? ''))->toBe('figure_index')
+        ->and((string) ($figureIndex?->extracted_text ?? ''))->toContain('Abb. 1 Mediennutzung')
+        ->and((string) ($figureIndex?->extracted_text ?? ''))->toContain('Abb. 2 Plattformvergleich')
+        ->and((string) ($figureIndex?->extracted_text ?? ''))->not->toContain('Eidesstattliche Erklärung')
+        ->and((string) ($figureIndex?->extracted_text ?? ''))->not->toContain('Datum Unterschrift')
+        ->and($declaration)->not->toBeNull()
+        ->and((string) ($declaration?->section_type ?? ''))->toBe('consent_declaration')
+        ->and((string) ($declaration?->extracted_text ?? ''))->toContain('Ich erkläre eidesstattlich')
+        ->and((string) ($declaration?->extracted_text ?? ''))->toContain('Datum Unterschrift')
+        ->and((int) ($figureIndex?->end_line ?? 0))->toBeLessThan((int) ($declaration?->start_line ?? 0))
+        ->and((bool) ($analysisStats['consent_declaration_detected'] ?? false))->toBeTrue();
 });
 
 test('docx extraction keeps early chapters, filters toc headings and stores extraction diagnostics', function () {
@@ -3919,7 +4302,11 @@ test('docx toc with abstract entry stays complete while real abstract and chapte
     $toc = $results->firstWhere('section_type', 'table_of_contents');
     $abstract = $results->first(fn ($section) => (string) ($section->section_type ?? '') === 'abstract' && (string) ($section->section_title ?? '') === 'Abstract');
     $chapterOne = $results->firstWhere('section_title', 'Einleitung');
-    $chapterTwo = $results->firstWhere('section_title', 'Entwicklung der Fotografie im Kontext sozialer Medien');
+    $chapterTwo = $results->first(fn ($section) => in_array(
+        (string) ($section->section_title ?? ''),
+        ['Entwicklung der Fotografie im Kontext sozialer Medien', '2. Entwicklung der Fotografie im Kontext sozialer Medien'],
+        true
+    ));
 
     expect((int) ($stats['table_of_contents_count'] ?? 0))->toBe(1)
         ->and((bool) ($stats['abstract_detected'] ?? false))->toBeTrue()
@@ -3933,4 +4320,815 @@ test('docx toc with abstract entry stays complete while real abstract and chapte
         ->and($chapterTwo)->not->toBeNull()
         ->and((int) ($chapterOne?->end_line ?? 0))->toBeLessThan((int) ($chapterTwo?->start_line ?? 0))
         ->and((string) ($chapterOne?->extracted_text ?? ''))->not->toContain('Entwicklung der Fotografie im Kontext sozialer Medien');
+});
+
+test('title page year is extracted from full numeric german submission dates', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    config()->set('aba_analysis.openai_normalization_enabled', false);
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'titelblatt-volldatum-de.docx', [
+        ['text' => 'Christian Doppler-Gymnasium', 'style' => 'Normal'],
+        ['text' => 'Die Rolle der Medien in der politischen Meinungsbildung', 'style' => 'Normal'],
+        ['text' => 'Verfasst von', 'style' => 'Normal'],
+        ['text' => 'Yvonne Pucher', 'style' => 'Normal'],
+        ['text' => 'Betreuer: Dipl.-Ing. Günther Kron', 'style' => 'Normal'],
+        ['text' => 'Klasse 8M', 'style' => 'Normal'],
+        ['text' => 'abgegeben am: 04.03.2021', 'style' => 'Normal'],
+        ['page_break' => true],
+        ['text' => 'Abstract', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Kurzfassung der Arbeit.', 'style' => 'Normal'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'titelblatt-volldatum-de.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $titlePage = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->where('section_type', 'title_page')
+        ->first();
+
+    expect($titlePage)->not->toBeNull();
+
+    $details = is_array($titlePage?->metadata['title_page_details'] ?? null)
+        ? $titlePage->metadata['title_page_details']
+        : [];
+    $summary = is_array($run->summary) ? $run->summary : [];
+    $analysisStats = is_array($summary['analysis_stats'] ?? null) ? $summary['analysis_stats'] : [];
+
+    expect((string) ($details['year'] ?? ''))->toBe('2021')
+        ->and((string) ($details['date_context'] ?? ''))->toBe('04.03.2021')
+        ->and((string) ($analysisStats['title_page_year'] ?? ''))->toBe('2021')
+        ->and((string) ($analysisStats['title_page_date_context'] ?? ''))->toBe('04.03.2021');
+});
+
+test('title page year is extracted from date lines without explicit jahr label', function (string $dateLine, string $expectedYear, string $expectedContext) {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    config()->set('aba_analysis.openai_normalization_enabled', false);
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'titelblatt-datumsvarianten-ohne-jahr-label.docx', [
+        ['text' => 'Christian Doppler-Gymnasium', 'style' => 'Normal'],
+        ['text' => 'Die Rolle der Medien in der politischen Meinungsbildung', 'style' => 'Normal'],
+        ['text' => 'Verfasst von', 'style' => 'Normal'],
+        ['text' => 'Yvonne Pucher', 'style' => 'Normal'],
+        ['text' => 'Betreuer: Dipl.-Ing. Günther Kron', 'style' => 'Normal'],
+        ['text' => 'Klasse 8M', 'style' => 'Normal'],
+        ['text' => $dateLine, 'style' => 'Normal'],
+        ['page_break' => true],
+        ['text' => 'Abstract', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Kurzfassung der Arbeit.', 'style' => 'Normal'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'titelblatt-datumsvarianten-ohne-jahr-label.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $titlePage = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->where('section_type', 'title_page')
+        ->first();
+
+    expect($titlePage)->not->toBeNull();
+
+    $details = is_array($titlePage?->metadata['title_page_details'] ?? null)
+        ? $titlePage->metadata['title_page_details']
+        : [];
+    $summary = is_array($run->summary) ? $run->summary : [];
+    $analysisStats = is_array($summary['analysis_stats'] ?? null) ? $summary['analysis_stats'] : [];
+
+    expect((string) ($details['year'] ?? ''))->toBe($expectedYear)
+        ->and((string) ($details['date_context'] ?? ''))->toBe($expectedContext)
+        ->and((string) ($analysisStats['title_page_year'] ?? ''))->toBe($expectedYear)
+        ->and((string) ($analysisStats['title_page_date_context'] ?? ''))->toBe($expectedContext);
+})->with([
+    'plain numeric dd.mm.yyyy' => ['24.02.2023', '2023', '24.02.2023'],
+    'location numeric salzburg' => ['Salzburg, 24.02.2023', '2023', '24.02.2023'],
+    'location numeric wien' => ['Wien, 03.05.2022', '2022', '03.05.2022'],
+    'labeled numeric date' => ['abgegeben am: 04.03.2021', '2021', '04.03.2021'],
+    'slash numeric date' => ['04/03/2021', '2021', '04.03.2021'],
+    'month year text form' => ['Februar 2026', '2026', 'Februar 2026'],
+]);
+
+test('toc with abstract entry and Inhaltsverzeichnis page line stays one isolated toc block', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $attachment = createMainDocxAttachment($aba, 'toc-inhaltsverzeichnis-page-line.docx', [
+        ['text' => 'Die Rolle der Fotografie in sozialen Medien'],
+        ['text' => 'Inhaltsverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Abstract 2', 'style' => 'TOC1'],
+        ['text' => 'Inhaltsverzeichnis 3', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '1. Einleitung 4', 'style' => 'TOC1'],
+        ['text' => '2. Methodik 6', 'style' => 'TOC1'],
+        ['text' => 'Abstract', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Dies ist die echte Abstract-Zusammenfassung.'],
+        ['text' => '1. Einleitung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einleitender Fließtext mit Kontext und Zielsetzung.'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $attachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => $attachment->original_name,
+        'source_path' => $attachment->path,
+        'source_mime_type' => $attachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+    $summary = is_array($run->summary) ? $run->summary : [];
+    $analysisStats = is_array($summary['analysis_stats'] ?? null) ? $summary['analysis_stats'] : [];
+    $toc = $results->firstWhere('section_type', 'table_of_contents');
+    $titles = $results->pluck('section_title')->filter()->values()->all();
+
+    expect((int) ($analysisStats['table_of_contents_count'] ?? 0))->toBe(1)
+        ->and($toc)->not->toBeNull()
+        ->and((string) ($toc?->extracted_text ?? ''))->toContain('Abstract 2')
+        ->and((string) ($toc?->extracted_text ?? ''))->toContain('Inhaltsverzeichnis 3')
+        ->and((string) ($toc?->extracted_text ?? ''))->toContain('1. Einleitung 4')
+        ->and($titles)->not->toContain('Inhaltsverzeichnis 3');
+});
+
+test('unnumbered einleitung does not absorb the first numbered hierarchy recovered from toc', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $attachment = createMainDocxAttachment($aba, 'early-main-body-hierarchy-recovery.docx', [
+        ['text' => 'Inhaltsverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '1. Was ist Radioaktivität und Strahlung? 6', 'style' => 'TOC1'],
+        ['text' => '1.1 Einheiten 6', 'style' => 'TOC1'],
+        ['text' => '1.1.1 Becquerel 6', 'style' => 'TOC1'],
+        ['text' => '1.1.2 Gray 6', 'style' => 'TOC1'],
+        ['text' => '1.1.3 Sievert 7', 'style' => 'TOC1'],
+        ['text' => '2. Die Entdeckung der Strahlung 8', 'style' => 'TOC1'],
+        ['text' => '3.1 Arten der ionisierenden Strahlung 12', 'style' => 'TOC1'],
+        ['text' => 'Einleitung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einleitender Absatz mit Kontext und Zielsetzung.'],
+        ['text' => 'Was ist Radioaktivität und Strahlung?'],
+        ['text' => 'Erster Absatz im ersten Kapitel.'],
+        ['text' => 'Einheiten'],
+        ['text' => 'Becquerel'],
+        ['text' => 'Die Einheit Becquerel beschreibt die Aktivität.'],
+        ['text' => '1.1.2 Gray', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Gray beschreibt die absorbierte Dosis.'],
+        ['text' => '1.1.3 Sievert', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Sievert gewichtet biologische Wirkung.'],
+        ['text' => 'Die Entdeckung der Strahlung'],
+        ['text' => 'Historischer Überblick zur Entdeckung.'],
+        ['text' => '3.1 Arten der ionisierenden Strahlung', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Weitere Unterkapitel folgen.'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $attachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => $attachment->original_name,
+        'source_path' => $attachment->path,
+        'source_mime_type' => $attachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $einleitung = $results->firstWhere('section_title', 'Einleitung');
+    $chapterOne = $results->firstWhere('section_title', '1. Was ist Radioaktivität und Strahlung?');
+    $subchapterOneOne = $results->firstWhere('section_title', '1.1 Einheiten');
+    $subchapterOneOneOne = $results->firstWhere('section_title', '1.1.1 Becquerel');
+    $subchapterOneOneTwo = $results->firstWhere('section_title', '1.1.2 Gray');
+    $subchapterOneOneThree = $results->firstWhere('section_title', '1.1.3 Sievert');
+    $chapterTwo = $results->firstWhere('section_title', '2. Die Entdeckung der Strahlung');
+    $chapterThreeOne = $results->firstWhere('section_title', '3.1 Arten der ionisierenden Strahlung');
+
+    expect($einleitung)->not->toBeNull()
+        ->and($chapterOne)->not->toBeNull()
+        ->and($subchapterOneOne)->not->toBeNull()
+        ->and($subchapterOneOneOne)->not->toBeNull()
+        ->and($subchapterOneOneTwo)->not->toBeNull()
+        ->and($subchapterOneOneThree)->not->toBeNull()
+        ->and($chapterTwo)->not->toBeNull()
+        ->and($chapterThreeOne)->not->toBeNull()
+        ->and((int) ($einleitung?->end_line ?? 0))->toBeLessThan((int) ($chapterOne?->start_line ?? 0))
+        ->and((string) ($einleitung?->extracted_text ?? ''))->not->toContain('Was ist Radioaktivität und Strahlung?')
+        ->and((int) ($chapterTwo?->start_line ?? 0))->toBeGreaterThan((int) ($subchapterOneOneThree?->start_line ?? 0))
+        ->and((int) ($chapterTwo?->start_line ?? 0))->toBeLessThan((int) ($chapterThreeOne?->start_line ?? 0));
+});
+
+test('image-heavy subsection between 3.2.1 and 3.2.3 is preserved and figure captions stay narrow', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $attachment = createMainDocxAttachment($aba, 'figure-heavy-subsection-recovery.docx', [
+        ['text' => '3. Informationen die man von Skeletelementen erhalten kann', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einführender Absatz für Kapitel 3.'],
+        ['text' => '3.2. Das Geschlecht', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Zur Bestimmung des Geschlechts gibt es mehrere Methoden.'],
+        ['text' => '3.2.1. DNA-Analyse', 'style' => 'Heading2', 'outline' => 2],
+        ['text' => 'DNA-Analyse eignet sich zur Geschlechtsbestimmung.'],
+        ['text' => '3.2.2. Bestimmung anhand des Schädels', 'style' => 'Heading2', 'outline' => 2],
+        ['text' => 'Abbildung 9: Schädel mit Beschriftung der wichtigsten KnochenAbbildung 9: Schädel mit Beschriftung der wichtigsten KnochenIn der Abbildung 9 kann man einen Schädel erkennen, bei welchem die wichtigsten Knochen beschriftet sind. Bei Abbildung 10: Unterschiede an männlichen und weiblichen SchädelAbbildung 10: Unterschiede an männlichen und weiblichen SchädelMännern ist der Kieferwinkel deutlich ausgeprägter.'],
+        ['text' => '3.2.3. Becken', 'style' => 'Heading2', 'outline' => 2],
+        ['text' => 'Am Becken ist klar zu erkennen, um welches Geschlecht es sich handelt.'],
+        ['text' => 'Abbildung 11: Geschlechtsmerkmale am BeckenAbbildung 11: Geschlechtsmerkmale am BeckenEs ist auch eindeutig zu erkennen, dass die Incisura ischiadica major bei Männern enger ist.'],
+        ['text' => '4. Ausblick', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Abschließender Ausblick.'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $attachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => $attachment->original_name,
+        'source_path' => $attachment->path,
+        'source_mime_type' => $attachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $subOne = $results->firstWhere('section_title', '3.2.1. DNA-Analyse');
+    $subTwo = $results->firstWhere('section_title', '3.2.2. Bestimmung anhand des Schädels');
+    $subThree = $results->firstWhere('section_title', '3.2.3. Becken');
+    $figureNine = $results->first(fn ($section) => (string) ($section->section_type ?? '') === 'figure' && str_starts_with((string) ($section->section_title ?? ''), 'Abbildung 9:'));
+    $figureEleven = $results->first(fn ($section) => (string) ($section->section_type ?? '') === 'figure' && str_starts_with((string) ($section->section_title ?? ''), 'Abbildung 11:'));
+
+    expect($subOne)->not->toBeNull()
+        ->and($subTwo)->not->toBeNull()
+        ->and($subThree)->not->toBeNull()
+        ->and((string) ($subTwo?->extracted_text ?? ''))->toContain('In der Abbildung 9 kann man einen Schädel erkennen')
+        ->and($figureNine)->not->toBeNull()
+        ->and((string) ($figureNine?->section_title ?? ''))->not->toContain('In der Abbildung 9 kann man einen Schädel erkennen')
+        ->and((string) ($figureNine?->section_title ?? ''))->not->toContain('Abbildung 10:')
+        ->and($figureEleven)->not->toBeNull()
+        ->and((string) ($figureEleven?->section_title ?? ''))->not->toContain('Es ist auch eindeutig zu erkennen');
+});
+
+test('inline anchored caption with alternate-content fallback is deduplicated and kept out of subsection prose', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $inlineAnchorParagraph = <<<'XML'
+<w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:v="urn:schemas-microsoft-com:vml">
+  <w:r>
+    <w:drawing>
+      <wp:anchor>
+        <mc:AlternateContent>
+          <mc:Choice Requires="wps">
+            <w:txbxContent>
+              <w:p><w:r><w:t>Abbildung 14: Bruchfläche eine postmortalen Bruchs am Oberarm</w:t></w:r></w:p>
+            </w:txbxContent>
+          </mc:Choice>
+          <mc:Fallback>
+            <w:pict>
+              <v:shape>
+                <v:textbox>
+                  <w:txbxContent>
+                    <w:p><w:r><w:t>Abbildung 14: Bruchfläche eine postmortalen Bruchs am Oberarm</w:t></w:r></w:p>
+                  </w:txbxContent>
+                </v:textbox>
+              </v:shape>
+            </w:pict>
+          </mc:Fallback>
+        </mc:AlternateContent>
+      </wp:anchor>
+    </w:drawing>
+  </w:r>
+  <w:r><w:t>Brüche die postmortal, also nach dem Tot aufgetreten sind, haben meistens unregelmäßige Bruchkannten.</w:t></w:r>
+</w:p>
+XML;
+
+    $attachment = createMainDocxAttachment($aba, 'inline-anchor-caption-dedup.docx', [
+        ['text' => '3. Informationen die man von Skeletelementen erhalten kann', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '3.6.2. Postmortale Brüche', 'style' => 'Heading2', 'outline' => 2],
+        ['raw_xml' => $inlineAnchorParagraph],
+        ['text' => 'Der Bruchverlauf kann zusätzlich makroskopisch beurteilt werden.'],
+        ['text' => '3.6.3. Verbrennungen', 'style' => 'Heading2', 'outline' => 2],
+        ['text' => 'Verbrennungsmerkmale ergänzen die Befundlage.'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $attachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => $attachment->original_name,
+        'source_path' => $attachment->path,
+        'source_mime_type' => $attachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $subsection = $results->firstWhere('section_title', '3.6.2. Postmortale Brüche');
+    $figure = $results->first(fn ($section) => (string) ($section->section_type ?? '') === 'figure'
+        && str_starts_with((string) ($section->section_title ?? ''), 'Abbildung 14:'));
+
+    $subsectionText = (string) ($subsection?->extracted_text ?? '');
+    $figureTitle = (string) ($figure?->section_title ?? '');
+    $figureText = (string) ($figure?->extracted_text ?? '');
+
+    expect($subsection)->not->toBeNull()
+        ->and($figure)->not->toBeNull()
+        ->and($subsectionText)->toContain('Brüche die postmortal, also nach dem Tot aufgetreten sind')
+        ->and($subsectionText)->toContain('Der Bruchverlauf kann zusätzlich makroskopisch beurteilt werden.')
+        ->and($subsectionText)->not->toContain('Abbildung 14:')
+        ->and(substr_count($figureTitle, 'Abbildung 14:'))->toBe(1)
+        ->and($figureTitle)->toBe('Abbildung 14: Bruchfläche eine postmortalen Bruchs am Oberarm')
+        ->and($figureText)->not->toContain('Brüche die postmortal')
+        ->and($figureText)->toBe($figureTitle);
+});
+
+test('numeric caption line does not absorb the first following prose sentence into figure text', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $inlineAnchorParagraph = <<<'XML'
+<w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:v="urn:schemas-microsoft-com:vml">
+  <w:r>
+    <w:drawing>
+      <wp:anchor>
+        <mc:AlternateContent>
+          <mc:Choice Requires="wps">
+            <w:txbxContent>
+              <w:p><w:r><w:t>Abbildung 2: Zahndurchbruch bei Kindern 2</w:t></w:r></w:p>
+            </w:txbxContent>
+          </mc:Choice>
+          <mc:Fallback>
+            <w:pict>
+              <v:shape>
+                <v:textbox>
+                  <w:txbxContent>
+                    <w:p><w:r><w:t>Abbildung 2: Zahndurchbruch bei Kindern 2</w:t></w:r></w:p>
+                  </w:txbxContent>
+                </v:textbox>
+              </v:shape>
+            </w:pict>
+          </mc:Fallback>
+        </mc:AlternateContent>
+      </wp:anchor>
+    </w:drawing>
+  </w:r>
+  <w:r><w:t>Genauere Standartdaten als Vergleich findet man in der Literatur wieder.</w:t></w:r>
+  <w:r><w:t> Die Durchbruchszeiten der Zähne werden grundsätzlich genetisch gesteuert.</w:t></w:r>
+</w:p>
+XML;
+
+    $attachment = createMainDocxAttachment($aba, 'numeric-caption-boundary.docx', [
+        ['text' => '3.1. Das Alter', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '3.1.1. Das Sterbealter bei Kindern', 'style' => 'Heading2', 'outline' => 2],
+        ['raw_xml' => $inlineAnchorParagraph],
+        ['text' => '3.1.2. Die Ossifikation des Schädels', 'style' => 'Heading2', 'outline' => 2],
+        ['text' => 'Folgeabschnitt.'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $attachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => $attachment->original_name,
+        'source_path' => $attachment->path,
+        'source_mime_type' => $attachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $subsection = $results->firstWhere('section_title', '3.1.1. Das Sterbealter bei Kindern');
+    $figure = $results->first(fn ($section) => (string) ($section->section_type ?? '') === 'figure'
+        && str_starts_with((string) ($section->section_title ?? ''), 'Abbildung 2:'));
+
+    $subsectionText = (string) ($subsection?->extracted_text ?? '');
+    $figureTitle = (string) ($figure?->section_title ?? '');
+    $figureText = (string) ($figure?->extracted_text ?? '');
+
+    expect($subsection)->not->toBeNull()
+        ->and($figure)->not->toBeNull()
+        ->and($figureTitle)->toBe('Abbildung 2: Zahndurchbruch bei Kindern 2')
+        ->and($figureText)->toBe('Abbildung 2: Zahndurchbruch bei Kindern 2')
+        ->and($figureText)->not->toContain('Genauere Standartdaten als Vergleich findet man')
+        ->and($subsectionText)->toContain('Genauere Standartdaten als Vergleich findet man in der Literatur wieder.')
+        ->and($subsectionText)->toContain('Die Durchbruchszeiten der Zähne werden grundsätzlich genetisch gesteuert.')
+        ->and($subsectionText)->not->toContain('Abbildung 2: Zahndurchbruch bei Kindern 2Genauere');
+});
+
+test('adjacent figure caption clusters recover all captions in stable numeric order and keep surrounding prose in subsection body', function (string $clusterLine, array $expectedOrderedCaptions, array $forbiddenBodyFragments) {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $attachment = createMainDocxAttachment($aba, 'adjacent-multi-figure-cluster.docx', [
+        ['text' => '2. Die Entdeckung der Strahlung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '2.1 Historischer Überblick', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Einführender Absatz zur historischen Einordnung der Forschenden.'],
+        ['text' => $clusterLine],
+        ['text' => 'Die Experimente wurden in mehreren Laboren unabhängig voneinander wiederholt.'],
+        ['text' => '2.2 Quellenlage', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Folgeabschnitt zur Einordnung der Quellenlage.'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $attachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => $attachment->original_name,
+        'source_path' => $attachment->path,
+        'source_mime_type' => $attachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $subsection = $results->firstWhere('section_title', '2.1 Historischer Überblick');
+    $figures = $results->where('section_type', 'figure')->values();
+    $figureTitles = $figures->pluck('section_title')->map(fn ($value) => (string) $value)->values()->all();
+    $subsectionText = (string) ($subsection?->extracted_text ?? '');
+    $allFigureText = implode("\n", $figures->pluck('extracted_text')->map(fn ($value) => (string) $value)->all());
+
+    expect($subsection)->not->toBeNull()
+        ->and($subsectionText)->toContain('Einführender Absatz zur historischen Einordnung der Forschenden.')
+        ->and($subsectionText)->toContain('Die Experimente wurden in mehreren Laboren unabhängig voneinander wiederholt.')
+        ->and($figureTitles)->toBe($expectedOrderedCaptions);
+
+    foreach ($expectedOrderedCaptions as $expectedCaption) {
+        $figure = $figures->firstWhere('section_title', $expectedCaption);
+        $figureText = (string) ($figure?->extracted_text ?? '');
+
+        expect($figure)->not->toBeNull()
+            ->and($figureText)->toContain($expectedCaption)
+            ->and($figureText)->not->toContain('Die Experimente wurden in mehreren Laboren unabhängig voneinander wiederholt.');
+
+        expect($subsectionText)->not->toContain($expectedCaption);
+    }
+
+    foreach ($forbiddenBodyFragments as $fragment) {
+        expect($subsectionText)->not->toContain($fragment);
+    }
+
+    expect($allFigureText)->not->toContain('Die Experimente wurden in mehreren Laboren unabhängig voneinander wiederholt.');
+})->with([
+    'two adjacent captions' => [
+        'Abb. 2: Marie CurieAbb. 1: Henri Becquerel',
+        ['Abb. 1: Henri Becquerel', 'Abb. 2: Marie Curie'],
+        [],
+    ],
+    'three adjacent captions' => [
+        'Abb. 2: Marie CurieAbb. 3: Ernest RutherfordAbb. 1: Henri Becquerel',
+        ['Abb. 1: Henri Becquerel', 'Abb. 2: Marie Curie', 'Abb. 3: Ernest Rutherford'],
+        [],
+    ],
+    'four adjacent captions with source prefix' => [
+        'Kuiper Pieter: Henri Becquerel 1903Abb. 1: Henri BecquerelAbb. 2: Marie CurieAbb. 4: Pierre CurieAbb. 3: Ernest Rutherford',
+        ['Abb. 1: Henri Becquerel', 'Abb. 2: Marie Curie', 'Abb. 3: Ernest Rutherford', 'Abb. 4: Pierre Curie'],
+        ['Kuiper Pieter: Henri Becquerel 1903'],
+    ],
+]);
+
+test('local cluster sorting keeps fallback order when not all segments have sortable numeric keys', function () {
+    $extractor = app(\App\Services\AbaLocalDocumentStructureExtractor::class);
+    $method = new ReflectionMethod(\App\Services\AbaLocalDocumentStructureExtractor::class, 'sortCaptionSegmentsInLocalCluster');
+    $method->setAccessible(true);
+
+    $segments = [
+        ['raw' => 'Abb. 2: Marie Curie', 'caption' => 'Abb. 2: Marie Curie', 'remainder' => '', 'reason' => 'caption_only', 'is_caption' => true],
+        ['raw' => 'Bildquelle Universität Salzburg', 'caption' => 'Bildquelle Universität Salzburg', 'remainder' => '', 'reason' => 'not_caption', 'is_caption' => true],
+        ['raw' => 'Abb. 1: Henri Becquerel', 'caption' => 'Abb. 1: Henri Becquerel', 'remainder' => '', 'reason' => 'caption_only', 'is_caption' => true],
+    ];
+
+    /** @var array<int, array{caption:string}> $sorted */
+    $sorted = $method->invoke($extractor, $segments);
+    $sortedCaptions = array_values(array_map(
+        fn (array $segment): string => (string) ($segment['caption'] ?? ''),
+        $sorted
+    ));
+
+    expect($sortedCaptions)->toBe([
+        'Abb. 2: Marie Curie',
+        'Bildquelle Universität Salzburg',
+        'Abb. 1: Henri Becquerel',
+    ]);
+});
+
+test('numbering continuity recovers 3.5.1 from a 2.5.1 typo and keeps Schluss/Fazit section', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $attachment = createMainDocxAttachment($aba, 'numbering-continuity-schluss-fazit.docx', [
+        ['text' => '2. Methoden', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Methodischer Kontext für die spätere Analyse.'],
+        ['text' => '3. Informationen die man von Skeletelementen erhalten kann', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '3.5. Krankheiten und Stressphasen', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Einleitung zu Krankheiten und Stressphasen.'],
+        ['text' => '2.5.1. Krankheiten', 'style' => 'Heading2', 'outline' => 2],
+        ['text' => 'Krankheiten verändern die Oberfläche der Knochen in spezifischer Weise.'],
+        ['text' => '3.5.2. Stressphasen', 'style' => 'Heading2', 'outline' => 2],
+        ['text' => 'Stressphasen lassen sich an Zähnen und langen Röhrenknochen erkennen.'],
+        ['text' => 'Schluss/Fazit', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Die wichtigsten Aussagen der Arbeit werden im Schluss/Fazit zusammengeführt.'],
+        ['text' => 'Literaturverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Quelle A (2025).'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $attachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => $attachment->original_name,
+        'source_path' => $attachment->path,
+        'source_mime_type' => $attachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $titles = $results->pluck('section_title')->filter()->values()->all();
+    $sectionThreeFive = $results->firstWhere('section_title', '3.5. Krankheiten und Stressphasen');
+    $sectionThreeFiveOne = $results->firstWhere('section_title', '3.5.1. Krankheiten');
+    $sectionThreeFiveTwo = $results->firstWhere('section_title', '3.5.2. Stressphasen');
+    $schlussFazit = $results->firstWhere('section_title', 'Schluss/Fazit');
+    $bibliography = $results->firstWhere('section_type', 'bibliography');
+
+    expect($sectionThreeFive)->not->toBeNull()
+        ->and((string) ($sectionThreeFive?->extracted_text ?? ''))->toContain('Einleitung zu Krankheiten und Stressphasen.')
+        ->and($sectionThreeFiveOne)->not->toBeNull()
+        ->and($sectionThreeFiveTwo)->not->toBeNull()
+        ->and($titles)->not->toContain('2.5.1. Krankheiten')
+        ->and((int) ($sectionThreeFiveOne?->parent_result_id ?? 0))->toBe((int) ($sectionThreeFive?->id ?? 0))
+        ->and((int) ($sectionThreeFiveTwo?->parent_result_id ?? 0))->toBe((int) ($sectionThreeFive?->id ?? 0))
+        ->and($schlussFazit)->not->toBeNull()
+        ->and((string) ($schlussFazit?->extracted_text ?? ''))->toContain('Die wichtigsten Aussagen der Arbeit werden im Schluss/Fazit zusammengeführt.')
+        ->and($bibliography)->not->toBeNull()
+        ->and((int) ($schlussFazit?->start_line ?? 0))->toBeLessThan((int) ($bibliography?->start_line ?? 0));
+});
+
+test('slash captions, table captions, and mixed backmatter boundaries stay structurally correct', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $attachment = createMainDocxAttachment($aba, 'aba6-docx-structure-regression.docx', [
+        ['text' => '2. Hautbild', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '2.3 Faktoren', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Einleitender Fließtext zu den auslösenden Faktoren.'],
+        ['text' => 'Abbildung 2/ Faktoren der Neurodermitis'],
+        ['text' => 'Die Faktoren wirken je nach Alter und Alltagsumfeld unterschiedlich stark.'],
+        ['text' => '2.4 Symptome und Wunden', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Akute Symptome werden im Verlauf der Schübe sichtbar.'],
+        ['text' => 'Tab. 1: akute Hauterscheinungen'],
+        ['text' => 'Zwischen Tabelle und nächster Abbildung steht normaler Fließtext.'],
+        ['text' => 'Abbildung 3/ Bläschen als akutes Symptom'],
+        ['text' => 'Die Befundlage muss jeweils mit dem klinischen Verlauf abgeglichen werden.'],
+        ['text' => '3. Therapie', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '3.1 Cremenbehandlung/Salbenbehandlung', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Cremen und Salben werden stufenweise eingesetzt.'],
+        ['text' => 'Abbildung 5/ Stufenschema Cremen & Salben'],
+        ['text' => 'Die Intensität wird an Entzündungsgrad und Hautzustand angepasst.'],
+        ['text' => '3.2.2 TCM', 'style' => 'Heading2', 'outline' => 2],
+        ['text' => 'Tab. 2: Geschmäcker und ihre Wirkung bei TCM'],
+        ['text' => 'Textilien, Materialien, Stoffe und Nahrungsmittel'],
+        ['text' => 'Vgl. Katherina Ziegelbauer, 2017, Jucken Ade, S.13'],
+        ['text' => '3.3 Dupixent/Dupilumab', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Abbildung 6/ Dupixent Spritze'],
+        ['text' => 'Biologika werden erst nach umfassender klinischer Abklärung eingesetzt.'],
+        ['text' => '6 Abbildung- und Tabellenverzeichnis:', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Abb. 1: Historische Abbildung'],
+        ['text' => 'Abb. 2: Faktoren der Neurodermitis'],
+        ['text' => 'Tab. 1: akute Hauterscheinungen'],
+        ['text' => 'Tab. 2: Geschmäcker und ihre Wirkung bei TCM'],
+        ['text' => 'Literaturverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Musterautor, A. (2024): Beispielquelle.'],
+        ['text' => 'Eidstaatliche Erklärung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Hiermit erkläre ich die selbstständige Erstellung der Arbeit.'],
+        ['text' => 'Salzburg, 01.01.2025'],
+        ['text' => 'Unterschrift'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $attachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => $attachment->original_name,
+        'source_path' => $attachment->path,
+        'source_mime_type' => $attachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $figureTwo = $results->firstWhere('section_title', 'Abbildung 2/ Faktoren der Neurodermitis');
+    $figureThree = $results->firstWhere('section_title', 'Abbildung 3/ Bläschen als akutes Symptom');
+    $figureFive = $results->firstWhere('section_title', 'Abbildung 5/ Stufenschema Cremen & Salben');
+    $figureSix = $results->firstWhere('section_title', 'Abbildung 6/ Dupixent Spritze');
+    $tableOne = $results->firstWhere('section_title', 'Tab. 1: akute Hauterscheinungen');
+    $tableTwo = $results->firstWhere('section_title', 'Tab. 2: Geschmäcker und ihre Wirkung bei TCM');
+    $figureIndex = $results->firstWhere('section_type', 'figure_index');
+    $declaration = $results->firstWhere('section_type', 'consent_declaration');
+
+    $falseStandaloneTextiles = $results->first(fn ($section) => (string) ($section->section_type ?? '') === 'other_section'
+        && (string) ($section->section_title ?? '') === 'Textilien, Materialien, Stoffe und Nahrungsmittel');
+    $falseStandaloneCitation = $results->first(fn ($section) => (string) ($section->section_type ?? '') === 'other_section'
+        && str_starts_with((string) ($section->section_title ?? ''), 'Vgl. Katherina Ziegelbauer'));
+    $wrongChapterIndex = $results->first(fn ($section) => (string) ($section->section_type ?? '') === 'chapter'
+        && str_starts_with((string) ($section->section_title ?? ''), '6 Abbildung- und Tabellenverzeichnis'));
+    $duplicateIndexFigure = $results->first(fn ($section) => in_array((string) ($section->section_type ?? ''), ['figure', 'table'], true)
+        && (string) ($section->section_title ?? '') === 'Abb. 2: Faktoren der Neurodermitis');
+    $indexEntryNodeCount = $results
+        ->filter(fn ($section) => in_array((string) ($section->section_type ?? ''), ['figure', 'table'], true))
+        ->filter(fn ($section) => in_array((string) ($section->section_title ?? ''), [
+            'Abb. 1: Historische Abbildung',
+            'Abb. 2: Faktoren der Neurodermitis',
+        ], true))
+        ->count();
+
+    expect($figureTwo)->not->toBeNull()
+        ->and((string) ($figureTwo?->section_type ?? ''))->toBe('figure')
+        ->and($figureThree)->not->toBeNull()
+        ->and((string) ($figureThree?->section_type ?? ''))->toBe('figure')
+        ->and($figureFive)->not->toBeNull()
+        ->and((string) ($figureFive?->section_type ?? ''))->toBe('figure')
+        ->and($figureSix)->not->toBeNull()
+        ->and((string) ($figureSix?->section_type ?? ''))->toBe('figure')
+        ->and($tableOne)->not->toBeNull()
+        ->and((string) ($tableOne?->section_type ?? ''))->toBe('table')
+        ->and($tableTwo)->not->toBeNull()
+        ->and((string) ($tableTwo?->section_type ?? ''))->toBe('table')
+        ->and($figureIndex)->not->toBeNull()
+        ->and((string) ($figureIndex?->section_title ?? ''))->toContain('Abbildung- und Tabellenverzeichnis')
+        ->and($wrongChapterIndex)->toBeNull()
+        ->and($duplicateIndexFigure)->toBeNull()
+        ->and($indexEntryNodeCount)->toBe(0)
+        ->and($declaration)->not->toBeNull()
+        ->and((string) ($declaration?->section_title ?? ''))->toBe('Eidstaatliche Erklärung')
+        ->and((string) ($declaration?->extracted_text ?? ''))->toContain('Hiermit erkläre ich die selbstständige Erstellung der Arbeit.')
+        ->and((string) ($declaration?->extracted_text ?? ''))->toContain('Salzburg, 01.01.2025')
+        ->and((string) ($figureIndex?->extracted_text ?? ''))->not->toContain('Eidstaatliche Erklärung')
+        ->and($falseStandaloneTextiles)->toBeNull()
+        ->and($falseStandaloneCitation)->toBeNull();
 });

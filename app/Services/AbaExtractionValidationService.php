@@ -402,6 +402,7 @@ class AbaExtractionValidationService
             'consent_declaration',
             'other_section',
             'figure',
+            'table',
         ];
     }
 
@@ -461,7 +462,7 @@ class AbaExtractionValidationService
             return false;
         }
 
-        if (preg_match('/^(abb\.?|abbildung|figure)\s*\d+[a-z]?\b/iu', $text) !== 1) {
+        if (preg_match('/^(abb\.?|abbildung|figure|tab\.?|tabelle|table)\s*\d+(?:\s*[-–]\s*\d+)?[a-z]?\b/iu', $text) !== 1) {
             return false;
         }
 

@@ -20,6 +20,7 @@ class Aba extends Model
         'user_id',
         'title',
         'student_name',
+        'student_class',
         'created_on',
         'evaluated_on',
     ];

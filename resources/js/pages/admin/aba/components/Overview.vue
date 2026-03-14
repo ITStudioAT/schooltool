@@ -82,13 +82,14 @@
                                         Dateien
                                     </v-btn>
                                     <v-btn
+                                        v-if="mainAttachmentFor(aba)"
                                         size="small"
                                         :variant="isAnalysisRunning(aba) ? 'flat' : 'outlined'"
                                         color="primary"
                                         prepend-icon="mdi-brain"
                                         :loading="startingAnalysisAbaId === aba.id || isAnalysisRunning(aba)"
                                         :disabled="startingAnalysisAbaId === aba.id || isAnalysisRunning(aba) || isRefreshing"
-                                        @click="startAnalysis(aba)">
+                                        @click="requestAnalysis(aba)">
                                         {{ isAnalysisRunning(aba) ? 'Läuft...' : 'Analyse' }}
                                     </v-btn>
                                     <v-btn
@@ -137,6 +138,14 @@
                             variant="outlined"
                             density="comfortable"
                             :rules="[required(), maxLength(255)]"
+                            :disabled="isSaving" />
+
+                        <v-text-field
+                            v-model="form.student_class"
+                            label="Klasse"
+                            variant="outlined"
+                            density="comfortable"
+                            :rules="[maxLength(100)]"
                             :disabled="isSaving" />
 
                         <v-select
@@ -330,6 +339,34 @@
                 </v-card-actions>
             </v-card>
         </v-dialog>
+
+        <v-dialog v-model="analysisConfirmDialogOpen" persistent max-width="480">
+            <v-card>
+                <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                    <v-icon size="18" color="primary">mdi-brain</v-icon>
+                    Analyse wirklich starten?
+                </v-card-title>
+                <v-divider />
+                <v-card-text>
+                    <div class="text-body-2 mb-2">
+                        Für diese ABA wird eine neue Analyse gestartet:
+                    </div>
+                    <div class="text-body-2 font-weight-bold">
+                        {{ pendingAnalysisAba?.title || '-' }}
+                    </div>
+                </v-card-text>
+                <v-divider />
+                <v-card-actions>
+                    <v-btn variant="tonal" color="warning" @click="cancelAnalysis">
+                        Abbrechen
+                    </v-btn>
+                    <v-spacer />
+                    <v-btn variant="flat" color="primary" @click="confirmAnalysis">
+                        Analyse starten
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </v-col>
 </template>
 
@@ -398,12 +435,15 @@ export default {
             selectedFilesAba: null,
             deleteAttachmentDialogOpen: false,
             pendingDeleteAttachmentId: null,
+            analysisConfirmDialogOpen: false,
+            pendingAnalysisAba: null,
             schoolyearOptions: [],
             required: rules.required,
             maxLength: rules.maxLength,
             form: {
                 title: '',
                 student_name: '',
+                student_class: '',
                 schoolyear_id: null,
             },
         }
@@ -519,13 +559,36 @@ export default {
         },
         formatTime(dateValue) {
             if (!dateValue) {
-                return '--:--'
+                return '--:--:--'
             }
             const date = new Date(dateValue)
             if (Number.isNaN(date.getTime())) {
-                return '--:--'
+                return '--:--:--'
             }
-            return date.toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' })
+            return date.toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        },
+        formatDuration(totalSeconds) {
+            const seconds = Number(totalSeconds)
+            if (!Number.isFinite(seconds) || seconds < 0) {
+                return null
+            }
+
+            const days = Math.floor(seconds / 86400)
+            const hours = Math.floor((seconds % 86400) / 3600)
+            const minutes = Math.floor((seconds % 3600) / 60)
+            const secs = seconds % 60
+
+            const parts = []
+            if (days > 0) {
+                parts.push(`${days}d`)
+            }
+            if (hours > 0 || days > 0) {
+                parts.push(`${hours}h`)
+            }
+            parts.push(`${minutes}m`)
+            parts.push(`${secs}s`)
+
+            return parts.join(' ')
         },
         formatFileSize(sizeBytes) {
             const bytes = Number(sizeBytes || 0)
@@ -588,6 +651,31 @@ export default {
 
             return run.completed_at || run.failed_at || run.aborted_at || run.running_at || run.started_at || run.updated_at || null
         },
+        analysisDuration(aba) {
+            const run = this.latestAnalysisRunFor(aba)
+            if (!run) {
+                return null
+            }
+
+            const startRaw = run.started_at || run.running_at || run.created_at || null
+            if (!startRaw) {
+                return null
+            }
+
+            const start = new Date(startRaw)
+            if (Number.isNaN(start.getTime())) {
+                return null
+            }
+
+            const endRaw = run.completed_at || run.failed_at || run.aborted_at || null
+            const end = endRaw ? new Date(endRaw) : null
+            if (end && Number.isNaN(end.getTime())) {
+                return null
+            }
+
+            const durationSeconds = Math.max(0, Math.floor(((end ?? new Date()).getTime() - start.getTime()) / 1000))
+            return this.formatDuration(durationSeconds)
+        },
         analysisStatusLine(aba) {
             const timestamp = this.analysisStatusTimestamp(aba)
             const statusLabel = this.analysisStatusLabel(aba)
@@ -595,7 +683,9 @@ export default {
                 return statusLabel === 'nicht gestartet' ? 'nicht gestartet' : `Analyse ${statusLabel}`
             }
 
-            return `${this.formatDate(timestamp)} · ${this.formatTime(timestamp)} · Analyse ${statusLabel}`
+            const duration = this.analysisDuration(aba)
+            const durationPart = duration ? ` (${duration})` : ''
+            return `${this.formatDate(timestamp)} · ${this.formatTime(timestamp)} · Analyse ${statusLabel}${durationPart}`
         },
         analysisStatusMessage(aba) {
             const run = this.latestAnalysisRunFor(aba)
@@ -681,6 +771,7 @@ export default {
             this.form = {
                 title: '',
                 student_name: '',
+                student_class: '',
                 schoolyear_id: this.currentSchoolyearId,
             }
             this.editingAbaId = null
@@ -698,6 +789,7 @@ export default {
             this.form = {
                 title: aba.title || '',
                 student_name: aba.student_name || '',
+                student_class: aba.student_class || '',
                 schoolyear_id: aba.schoolyear_id || this.currentSchoolyearId,
             }
             this.formDialogOpen = true
@@ -753,6 +845,20 @@ export default {
             } finally {
                 this.isSaving = false
             }
+        },
+        requestAnalysis(aba) {
+            this.pendingAnalysisAba = aba
+            this.analysisConfirmDialogOpen = true
+        },
+        cancelAnalysis() {
+            this.analysisConfirmDialogOpen = false
+            this.pendingAnalysisAba = null
+        },
+        async confirmAnalysis() {
+            const aba = this.pendingAnalysisAba
+            this.analysisConfirmDialogOpen = false
+            this.pendingAnalysisAba = null
+            await this.startAnalysis(aba)
         },
         async startAnalysis(aba) {
             const abaId = Number(aba?.id || 0)

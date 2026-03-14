@@ -20,6 +20,7 @@ class AbaUpdateRequest extends FormRequest
         return [
             'data.title' => ['sometimes', 'required', 'string', 'max:255'],
             'data.student_name' => ['sometimes', 'required', 'string', 'max:255'],
+            'data.student_class' => ['nullable', 'string', 'max:100'],
             'data.schoolyear_id' => [
                 'sometimes',
                 'required',

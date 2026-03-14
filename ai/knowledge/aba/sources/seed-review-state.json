@@ -1,0 +1,413 @@
+{
+    "version": "1.0",
+    "last_rebuilt_at": "2026-03-14",
+    "claims": [
+        {
+            "claim_key": "aba_voluntary_until_2028",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "SCHULRECHT-2024",
+                "BMBWF-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "aba_mandatory_from_2028_29",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "SCHULRECHT-2024"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "aba_opt_out_deadline",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "BMBWF-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "format_a_schriftlich_muendlich",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "BMBWF-2025",
+                "AHS-HB-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "format_b_rein_muendlich",
+            "review_status": "needs_review",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "medium",
+            "source_refs": [
+                "BMBWF-2025"
+            ],
+            "notes": "Standortabhängig und noch nicht abschließend geregelt. Priorität: mittel."
+        },
+        {
+            "claim_key": "structure_titelblatt",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "BMBWF-2025",
+                "AHS-HB-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "structure_inhaltsverzeichnis",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "AHS-HB-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "structure_abstract_de",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "BMBWF-2025",
+                "AHS-HB-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "structure_abstract_en",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "BMBWF-2025",
+                "AHS-HB-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "structure_einleitung",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "AHS-HB-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "structure_hauptteil",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "AHS-HB-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "structure_schluss",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "AHS-HB-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "structure_literaturverzeichnis",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "BMBWF-2025",
+                "AHS-HB-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "structure_eigenstaendigkeitserklaerung",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "BMBWF-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "no_fixed_page_count",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "BMBWF-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "page_count_orientation_values",
+            "review_status": "needs_review",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "PRAXIS-2025"
+            ],
+            "notes": "Informelle Praxiswerte. Können sich mit Schuljahreserfahrung ändern."
+        },
+        {
+            "claim_key": "submission_digital_mandatory",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "BMBWF-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "submission_printed_copies",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "PRAXIS-2025"
+            ],
+            "notes": "Standortabhängig. Praxis variiert je Schule."
+        },
+        {
+            "claim_key": "submission_begleitprotokoll",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "BMBWF-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "submission_deadline_location_dependent",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "medium",
+            "source_refs": [
+                "PRAXIS-2025"
+            ],
+            "notes": "Schulspezifisch. Kann von Jahr zu Jahr variieren."
+        },
+        {
+            "claim_key": "begleitprotokoll_content",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "BMBWF-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "begleitprotokoll_signature",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "BMBWF-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "ai_usage_allowed",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "medium",
+            "source_refs": [
+                "BMBWF-2025"
+            ],
+            "notes": "KI-Regelungen entwickeln sich schnell. Priorität beim nächsten Review."
+        },
+        {
+            "claim_key": "ai_documentation_required",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "medium",
+            "source_refs": [
+                "BMBWF-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "ai_content_must_be_verified",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "medium",
+            "source_refs": [
+                "BMBWF-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "ai_generated_text_must_be_marked",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "medium",
+            "source_refs": [
+                "BMBWF-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "ai_full_generation_is_plagiarism",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "medium",
+            "source_refs": [
+                "BMBWF-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "ai_rules_may_change",
+            "review_status": "needs_review",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "high",
+            "source_refs": [
+                "PRAXIS-2025"
+            ],
+            "notes": "Explizit als unsicher markiert. Beim nächsten Review aktuelle KI-Policy des BMBWF prüfen."
+        },
+        {
+            "claim_key": "plagiarism_check_mandatory",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "BMBWF-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "plagiarism_consequence",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "SCHULRECHT-2024"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "evaluation_raster_2025_26",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "BMBWF-2025"
+            ],
+            "notes": "Gilt nur für Schuljahr 2025\/26 (valid_to: 2026-06-30). Danach ablaufen lassen."
+        },
+        {
+            "claim_key": "evaluation_raster_from_2026_27",
+            "review_status": "needs_review",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "high",
+            "source_refs": [
+                "BMBWF-2025"
+            ],
+            "notes": "Noch nicht in finaler Form vorliegend. Vor Schuljahr 2026\/27 dringend prüfen."
+        },
+        {
+            "claim_key": "evaluation_grading_scale",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "SCHULRECHT-2024"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "citation_system_required",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "BMBWF-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "citation_apa_recommended",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "AHS-HB-2025",
+                "PRAXIS-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "citation_web_with_access_date",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "AHS-HB-2025"
+            ],
+            "notes": null
+        },
+        {
+            "claim_key": "citation_min_sources_location_dependent",
+            "review_status": "verified",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "low",
+            "source_refs": [
+                "PRAXIS-2025"
+            ],
+            "notes": "Schulspezifische Praxis. Nicht normiert."
+        },
+        {
+            "claim_key": "uncertainty_format_b_availability",
+            "review_status": "needs_review",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "high",
+            "source_refs": [
+                "PRAXIS-2025"
+            ],
+            "notes": "Offene Frage. Sobald offizielle Klärung vorhanden, Status auf verified oder superseded setzen."
+        },
+        {
+            "claim_key": "uncertainty_evaluation_raster_final",
+            "review_status": "needs_review",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "high",
+            "source_refs": [
+                "PRAXIS-2025"
+            ],
+            "notes": "Vor Schuljahr 2026\/27 dringend klären. Status dann auf superseded setzen, sobald finales Raster vorliegt."
+        },
+        {
+            "claim_key": "uncertainty_schools_in_implementation",
+            "review_status": "needs_review",
+            "last_verified_at": "2026-03-14",
+            "change_risk": "medium",
+            "source_refs": [
+                "PRAXIS-2025"
+            ],
+            "notes": "Gilt nur für 2025\/26 (valid_to: 2026-06-30). Nach Schuljahresende Status prüfen."
+        }
+    ]
+}

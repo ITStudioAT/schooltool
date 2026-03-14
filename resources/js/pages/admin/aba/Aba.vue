@@ -16,8 +16,8 @@
                     v-for="item in navigationItems"
                     :key="item.key"
                     rounded="xl"
-                    :color="item.key === 'overview' ? 'primary' : 'secondary'"
-                    :variant="item.key === 'overview' ? 'flat' : 'tonal'"
+                    :color="activeNavKey === item.key ? 'primary' : 'secondary'"
+                    :variant="activeNavKey === item.key ? 'flat' : 'tonal'"
                     class="aba-nav__button"
                     :disabled="isNavigationLocked"
                     @click="navigateTo(item.key)">
@@ -159,6 +159,13 @@ export default {
                 },
             ]
         },
+        isAdminOrSuperAdmin() {
+            const roles = Array.isArray(this.config?.roles) ? this.config.roles : []
+            return roles.some((r) => r === 'admin' || r === 'super_admin')
+        },
+        activeNavKey() {
+            return 'overview'
+        },
         activeSection() {
             return {
                 label: 'Überblick',
@@ -180,6 +187,16 @@ export default {
                     meta: 'Aktives Schuljahr',
                     icon: 'mdi-calendar-month-outline',
                 },
+                ...(this.isAdminOrSuperAdmin
+                    ? [
+                          {
+                              key: 'ai-settings',
+                              label: 'KI-Einstellungen',
+                              meta: 'Beta',
+                              icon: 'mdi-brain',
+                          },
+                      ]
+                    : []),
             ]
         },
     },
@@ -200,6 +217,8 @@ export default {
 
             if (target === 'schoolyear') {
                 await this.openSchoolyearDialog()
+            } else if (target === 'ai-settings') {
+                this.$router.push('/admin/aba/ai-settings')
             }
         },
         async openSchoolyearDialog() {

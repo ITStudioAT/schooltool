@@ -320,6 +320,7 @@ class AbaOpenAiNormalizationService
             'consent_declaration',
             'other_section',
             'figure',
+            'table',
         ];
     }
 

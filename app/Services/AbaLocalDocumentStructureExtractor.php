@@ -162,6 +162,8 @@ class AbaLocalDocumentStructureExtractor
                     'in_figure_index_context' => $candidate['in_figure_index_context'] ?? false,
                     'is_bibliography_entry_title' => $candidate['is_bibliography_entry_title'] ?? false,
                     'is_figure_index_entry_title' => $candidate['is_figure_index_entry_title'] ?? false,
+                    'bibliography_heading_role' => $candidate['bibliography_heading_role'] ?? 'standalone',
+                    'is_bibliography_container_heading' => $candidate['is_bibliography_container_heading'] ?? false,
                     'is_figure_caption_title' => $candidate['is_figure_caption_title'] ?? false,
                     'is_running_header_footer_candidate' => $candidate['is_running_header_footer_candidate'] ?? false,
                     'heading_evidence_score' => $candidate['heading_evidence_score'] ?? 0,
@@ -209,6 +211,8 @@ class AbaLocalDocumentStructureExtractor
                     'in_figure_index_context' => $candidate['in_figure_index_context'] ?? false,
                     'is_bibliography_entry_title' => $candidate['is_bibliography_entry_title'] ?? false,
                     'is_figure_index_entry_title' => $candidate['is_figure_index_entry_title'] ?? false,
+                    'bibliography_heading_role' => $candidate['bibliography_heading_role'] ?? 'standalone',
+                    'is_bibliography_container_heading' => $candidate['is_bibliography_container_heading'] ?? false,
                     'is_figure_caption_title' => $candidate['is_figure_caption_title'] ?? false,
                     'is_running_header_footer_candidate' => $candidate['is_running_header_footer_candidate'] ?? false,
                     'heading_evidence_score' => $candidate['heading_evidence_score'] ?? 0,
@@ -306,7 +310,48 @@ class AbaLocalDocumentStructureExtractor
             $frontmatterSections,
             $this->buildSectionsFromChapterCandidates($preparedCandidates, $lines)
         );
+        $sectionsBeforeBibliographyNormalization = $sections;
+        $sections = $this->normalizeBibliographySections($sections);
+        $this->logDebug('ABA bibliography sections normalized', [
+            'selected_candidate' => $context['selected_candidate'] ?? null,
+            'before_type_counts' => $this->sectionTypeCounts($sectionsBeforeBibliographyNormalization),
+            'after_type_counts' => $this->sectionTypeCounts($sections),
+            'before_bibliography_titles' => array_values(array_map(
+                fn (array $section): string => (string) ($section['section_title'] ?? ''),
+                array_values(array_filter(
+                    $sectionsBeforeBibliographyNormalization,
+                    fn (array $section): bool => (string) ($section['section_type'] ?? '') === 'bibliography'
+                ))
+            )),
+            'after_bibliography_titles' => array_values(array_map(
+                fn (array $section): string => (string) ($section['section_title'] ?? ''),
+                array_values(array_filter(
+                    $sections,
+                    fn (array $section): bool => (string) ($section['section_type'] ?? '') === 'bibliography'
+                ))
+            )),
+        ]);
         $sections = $this->appendFigureSections($sections, $lines);
+        $this->logDebug('ABA figure candidates resolved', [
+            'selected_candidate' => $context['selected_candidate'] ?? null,
+            'figure_count' => count(array_filter($sections, fn (array $section): bool => (string) ($section['section_type'] ?? '') === 'figure')),
+            'figure_samples' => array_slice(array_values(array_map(
+                fn (array $section): array => [
+                    'line' => $section['start_line'] ?? null,
+                    'page' => $section['start_page'] ?? null,
+                    'title' => mb_substr((string) ($section['section_title'] ?? ''), 0, 160),
+                    'parent_key' => $section['parent_key'] ?? null,
+                    'caption_line_count' => $section['metadata']['caption_line_count'] ?? null,
+                    'caption_stop_reason' => $section['metadata']['caption_stop_reason'] ?? null,
+                    'caption_split_reason' => $section['metadata']['caption_split_reason'] ?? null,
+                    'caption_remainder_chars' => $section['metadata']['caption_remainder_chars'] ?? null,
+                ],
+                array_values(array_filter(
+                    $sections,
+                    fn (array $section): bool => (string) ($section['section_type'] ?? '') === 'figure'
+                ))
+            )), 0, 80),
+        ]);
 
         if ($sections === []) {
             $firstLine = $lines[0]['line_number'] ?? 1;
@@ -539,9 +584,9 @@ class AbaLocalDocumentStructureExtractor
             'abstract' => '/^\s*(abstract|zusammenfassung|kurzfassung|summary|executive summary|management summary|kurz[üu]berblick)(?:\s*(?:\(|\[)?\s*(deutsch|german|englisch|english)\s*(?:\)|\])?)?\b/iu',
             'foreword' => '/^\s*(vorwort|preface)\b/iu',
             'table_of_contents' => '/^\s*(inhaltsverzeichnis|table of contents)\b/iu',
-            'bibliography' => '/^\s*(literaturverzeichnis|quellenverzeichnis|references|bibliography)\b/iu',
-            'figure_index' => '/^\s*(abbildungsverzeichnis|list of figures)\b/iu',
-            'consent_declaration' => '/^\s*(einverst[aä]ndniserkl[aä]rung|einverstaendniserklaerung|eigenst[aä]ndigkeitserkl[aä]rung|ehrenw[oö]rtliche erkl[aä]rung)\b/iu',
+            'bibliography' => $this->bibliographyHeadingPattern(),
+            'figure_index' => $this->figureIndexHeadingPattern(),
+            'consent_declaration' => $this->consentDeclarationHeadingPattern(),
         ];
 
         foreach ($patterns as $type => $pattern) {
@@ -1422,6 +1467,22 @@ class AbaLocalDocumentStructureExtractor
                 && $resolvedSectionType === 'table_of_contents'
                 && $strongTocEvidenceCount >= 1
             ) {
+                $tocHeadingWithPageNumber = preg_match('/^\s*(inhaltsverzeichnis|table of contents)\b.*\d+\s*$/iu', $text) === 1;
+                if (
+                    $tocHeadingWithPageNumber
+                    || $strongTocEvidenceCount <= 1
+                ) {
+                    $tocLines[] = $lineNumber;
+                    $lastTocLine = $lineNumber;
+                    $nonTocRun = 0;
+                    $strongTocEvidenceCount++;
+                    if ($normalizedTocTitle !== '') {
+                        $tocTitleSet[$normalizedTocTitle] = true;
+                    }
+
+                    continue;
+                }
+
                 $bodyStartLine = $lineNumber;
                 $bodyStartReason = 'secondary_toc_heading';
                 break;
@@ -1895,18 +1956,29 @@ class AbaLocalDocumentStructureExtractor
 
             $startLine = (int) $heading['start_line'];
             $endLine = $lastLineNumber;
+            $nextBoundaryHeading = null;
             for ($nextIndex = $index + 1; isset($sorted[$nextIndex]); $nextIndex++) {
                 $nextHeading = $sorted[$nextIndex];
                 if ($this->isSoftStandaloneBoundaryHeading($nextHeading)) {
                     continue;
                 }
 
+                $nextBoundaryHeading = $nextHeading;
                 $endLine = max($startLine, (int) $nextHeading['start_line'] - 1);
                 break;
             }
 
             $title = (string) ($heading['title'] ?? '');
             $analysis = $this->analyzeSectionCandidate($lines, $startLine, $endLine, $title, $tocLineSet);
+            $baseType = $type;
+            $bibliographyHeadingRole = $this->resolveBibliographyHeadingRole(
+                type: $baseType,
+                title: $title,
+                startLine: $startLine,
+                nextHeading: $nextBoundaryHeading,
+                analysis: $analysis,
+            );
+            $isBibliographyContainerHeading = $bibliographyHeadingRole === 'container';
             $laterDuplicateLine = $this->findLaterHeadingDuplicateLine($sorted, $index, $title, $type);
             $laterSemanticDuplicateLine = $this->findLaterSemanticHeadingDuplicateLine($sorted, $index, $title, $type);
             $hasLaterDuplicate = $laterDuplicateLine !== null || $laterSemanticDuplicateLine !== null;
@@ -1927,6 +1999,16 @@ class AbaLocalDocumentStructureExtractor
             $inBibliographyContext = $contextType === 'bibliography';
             $inFigureIndexContext = $contextType === 'figure_index';
             $inTocContext = $contextType === 'table_of_contents' || $inResolvedTocRange;
+            if (
+                $isBibliographyContainerHeading
+                && ($lineInToc || $inTocContext || $isPreBody || $titleIsLikelyToc || $inResolvedTocRange)
+            ) {
+                $isBibliographyContainerHeading = false;
+                $bibliographyHeadingRole = 'standalone';
+            }
+            if ($isBibliographyContainerHeading) {
+                $type = 'other_section';
+            }
             $isSpecialType = in_array($type, ['bibliography', 'figure_index', 'consent_declaration'], true);
             $isFigureCaptionTitle = $this->looksLikeFigureCaptionLine($title) || $this->looksLikeTableCaptionLine($title);
             $normalizedTitle = $this->normalizeForMatch($title);
@@ -1974,7 +2056,10 @@ class AbaLocalDocumentStructureExtractor
             $evidenceAmbiguous = (bool) ($evidence['ambiguous'] ?? false);
             $contextSuppressed = false;
 
-            if (
+            if ($isBibliographyContainerHeading) {
+                $accepted = true;
+                $reason = 'bibliography_container_heading';
+            } elseif (
                 ($lineInToc || $inTocContext)
                 && $isSpecialType
                 && (
@@ -2206,6 +2291,8 @@ class AbaLocalDocumentStructureExtractor
                 'in_figure_index_context' => $inFigureIndexContext,
                 'is_bibliography_entry_title' => $isBibliographyEntryTitle,
                 'is_figure_index_entry_title' => $isFigureIndexEntryTitle,
+                'bibliography_heading_role' => $bibliographyHeadingRole,
+                'is_bibliography_container_heading' => $isBibliographyContainerHeading,
                 'is_figure_caption_title' => $isFigureCaptionTitle,
                 'is_running_header_footer_candidate' => $isRunningHeaderFooterCandidate,
                 'heading_evidence_score' => $headingEvidenceScore,
@@ -2222,7 +2309,9 @@ class AbaLocalDocumentStructureExtractor
                 'body_lines' => (int) ($analysis['body_lines'] ?? 0),
                 'body_chars' => (int) ($analysis['body_chars'] ?? 0),
                 'accepted' => $accepted,
-                'reason' => $accepted ? 'accepted' : $reason,
+                'reason' => $accepted
+                    ? ($reason === 'accepted' ? 'accepted' : $reason)
+                    : $reason,
                 'has_later_duplicate' => $hasLaterDuplicate,
                 'later_duplicate_line' => $duplicateAnchorLine,
                 'later_semantic_duplicate_line' => $laterSemanticDuplicateLine,
@@ -2257,16 +2346,16 @@ class AbaLocalDocumentStructureExtractor
             return $headings;
         }
 
-        $tocChapterTitleMap = $this->buildTocChapterTitleMap($lines, $tocRanges);
-        if ($tocChapterTitleMap === []) {
+        $tocNumberedHeadingTitleMap = $this->buildTocNumberedHeadingTitleMap($lines, $tocRanges);
+        if ($tocNumberedHeadingTitleMap === []) {
             return $headings;
         }
 
-        $headingLines = [];
+        $headingsByLine = [];
         foreach ($headings as $heading) {
             $lineNumber = (int) ($heading['start_line'] ?? 0);
             if ($lineNumber > 0) {
-                $headingLines[$lineNumber] = true;
+                $headingsByLine[$lineNumber][] = $heading;
             }
         }
 
@@ -2277,7 +2366,7 @@ class AbaLocalDocumentStructureExtractor
                 continue;
             }
 
-            if (isset($headingLines[$lineNumber])) {
+            if ($this->lineHasHardStructuralHeading($headingsByLine[$lineNumber] ?? [])) {
                 continue;
             }
 
@@ -2287,10 +2376,6 @@ class AbaLocalDocumentStructureExtractor
 
             $text = trim((string) ($line['text'] ?? ''));
             if ($text === '' || mb_strlen($text) > 160) {
-                continue;
-            }
-
-            if (preg_match('/[.!?;:]\s*$/u', $text) === 1) {
                 continue;
             }
 
@@ -2307,30 +2392,27 @@ class AbaLocalDocumentStructureExtractor
                 continue;
             }
 
-            $normalized = $this->normalizeForMatch($text);
-            if ($normalized === '' || ! isset($tocChapterTitleMap[$normalized])) {
+            $tocHeading = $this->resolveUniqueTocNumberedHeadingMatch(
+                $this->normalizedHeadingMatchCandidates($text),
+                $tocNumberedHeadingTitleMap,
+            );
+            if (! is_array($tocHeading)) {
                 continue;
             }
 
-            $chapterNumbers = array_values(array_unique(array_map('intval', $tocChapterTitleMap[$normalized])));
-            if (count($chapterNumbers) !== 1) {
-                continue;
-            }
-
-            $nextSubchapterChapter = $this->nextSubchapterChapterNumber($lines, $lineNumber, 10);
-            if ($nextSubchapterChapter === null || $nextSubchapterChapter !== $chapterNumbers[0]) {
+            if (! $this->headingHasBodyFollower($lines, $lineNumber, $tocLineSet)) {
                 continue;
             }
 
             $augmented[] = [
                 'start_line' => $lineNumber,
                 'start_page' => (int) ($line['page_number'] ?? 1),
-                'title' => $text,
-                'type' => 'chapter',
-                'level' => 1,
-                'source' => 'toc_reentry_title_match',
+                'title' => (string) ($tocHeading['numbered_title'] ?? $text),
+                'type' => (string) ($tocHeading['type'] ?? 'chapter'),
+                'level' => (int) ($tocHeading['level'] ?? 1),
+                'source' => 'toc_reentry_numbered_match',
             ];
-            $headingLines[$lineNumber] = true;
+            $headingsByLine[$lineNumber][] = $augmented[array_key_last($augmented)];
         }
 
         if ($augmented === []) {
@@ -2346,9 +2428,15 @@ class AbaLocalDocumentStructureExtractor
     /**
      * @param  array<int, array{line_number:int,page_number:int,text:string,normalized:string}>  $lines
      * @param  array<int, array{start_line:int,end_line:int,title:string}>  $tocRanges
-     * @return array<string, array<int, int>>
+     * @return array<string, array<int, array{
+     *   number:string,
+     *   title:string,
+     *   type:string,
+     *   level:int,
+     *   numbered_title:string
+     * }>>
      */
-    private function buildTocChapterTitleMap(array $lines, array $tocRanges): array
+    private function buildTocNumberedHeadingTitleMap(array $lines, array $tocRanges): array
     {
         $map = [];
         foreach ($lines as $line) {
@@ -2363,15 +2451,15 @@ class AbaLocalDocumentStructureExtractor
             }
 
             $matches = [];
-            $matched = preg_match('/^\s*(?<chapter>\d+)\.\s+(?<title>.+?)\s+\d+(?:\s*[-–]\s*\d+)?\s*$/u', $text, $matches) === 1
-                || preg_match('/^\s*(?<chapter>\d+)\.\s+(?<title>.+)$/u', $text, $matches) === 1;
+            $matched = preg_match('/^\s*(?<number>\d+(?:\.\d+){0,5})(?:\.)?\s+(?<title>.+?)\s+\d+(?:\s*[-–]\s*\d+)?\s*$/u', $text, $matches) === 1
+                || preg_match('/^\s*(?<number>\d+(?:\.\d+){0,5})(?:\.)?\s+(?<title>.+)$/u', $text, $matches) === 1;
             if (! $matched) {
                 continue;
             }
 
-            $chapterNumber = (int) ($matches['chapter'] ?? 0);
+            $number = trim((string) ($matches['number'] ?? ''), ". \t\n\r\0\x0B");
             $title = trim((string) ($matches['title'] ?? ''));
-            if ($chapterNumber <= 0 || $title === '') {
+            if ($number === '' || $title === '') {
                 continue;
             }
 
@@ -2381,46 +2469,158 @@ class AbaLocalDocumentStructureExtractor
                 continue;
             }
 
-            $map[$normalizedTitle][] = $chapterNumber;
+            $segments = array_values(array_filter(explode('.', $number), fn (string $value): bool => $value !== '' && ctype_digit($value)));
+            if ($segments === []) {
+                continue;
+            }
+
+            $level = count($segments);
+            $type = $level > 1 ? 'subchapter' : 'chapter';
+            $numberedTitle = $this->normalizeTocNumberedHeadingTitle($number, $title, $level);
+            if ($numberedTitle === '') {
+                continue;
+            }
+
+            $entry = [
+                'number' => implode('.', $segments),
+                'title' => $title,
+                'type' => $type,
+                'level' => $level,
+                'numbered_title' => $numberedTitle,
+            ];
+
+            $map[$normalizedTitle][] = $entry;
+
+            $trimmedTitle = $this->trimTrailingHeadingPunctuation($title);
+            $trimmedNormalized = $this->normalizeForMatch($trimmedTitle);
+            if ($trimmedNormalized !== '' && $trimmedNormalized !== $normalizedTitle) {
+                $map[$trimmedNormalized][] = $entry;
+            }
         }
 
         return $map;
     }
 
     /**
-     * @param  array<int, array{line_number:int,page_number:int,text:string,normalized:string}>  $lines
+     * @param  array<int, array{
+     *   start_line:int,
+     *   start_page:int,
+     *   title:string,
+     *   type:string,
+     *   level:int|null,
+     *   source:string
+     * }>  $lineHeadings
      */
-    private function nextSubchapterChapterNumber(array $lines, int $startLine, int $maxLookahead = 10): ?int
+    private function lineHasHardStructuralHeading(array $lineHeadings): bool
     {
-        $endLine = $startLine + max(1, $maxLookahead);
-        foreach ($lines as $line) {
-            $lineNumber = (int) ($line['line_number'] ?? 0);
-            if ($lineNumber <= $startLine) {
-                continue;
-            }
-            if ($lineNumber > $endLine) {
-                break;
-            }
-
-            $text = trim((string) ($line['text'] ?? ''));
-            if ($text === '') {
+        foreach ($lineHeadings as $heading) {
+            if (! is_array($heading)) {
                 continue;
             }
 
-            if (preg_match('/^\s*(\d+)\.(\d+)\b/u', $text, $matches) === 1) {
-                $chapter = (int) ($matches[1] ?? 0);
-                $subchapter = (int) ($matches[2] ?? 0);
-                if ($chapter > 0 && $subchapter > 0) {
-                    return $chapter;
-                }
+            $type = (string) ($heading['type'] ?? '');
+            $source = (string) ($heading['source'] ?? '');
+            if (in_array($type, ['chapter', 'subchapter', 'abstract', 'foreword', 'table_of_contents', 'bibliography', 'figure_index', 'consent_declaration'], true)) {
+                return true;
             }
 
-            if (preg_match('/^\s*\d+\.\s+[\p{L}]/u', $text) === 1) {
-                return null;
+            if ($type === 'other_section' && ! str_contains($source, 'standalone')) {
+                return true;
             }
         }
 
-        return null;
+        return false;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function normalizedHeadingMatchCandidates(string $text): array
+    {
+        $candidates = [];
+
+        $normalized = $this->normalizeForMatch($text);
+        if ($normalized !== '') {
+            $candidates[] = $normalized;
+        }
+
+        $trimmed = $this->trimTrailingHeadingPunctuation($text);
+        if ($trimmed !== $text) {
+            $trimmedNormalized = $this->normalizeForMatch($trimmed);
+            if ($trimmedNormalized !== '' && ! in_array($trimmedNormalized, $candidates, true)) {
+                $candidates[] = $trimmedNormalized;
+            }
+        }
+
+        return $candidates;
+    }
+
+    private function trimTrailingHeadingPunctuation(string $text): string
+    {
+        $value = trim($text);
+
+        return rtrim($value, ".!?;: \t\n\r\0\x0B");
+    }
+
+    private function normalizeTocNumberedHeadingTitle(string $number, string $title, int $level): string
+    {
+        $normalizedNumber = trim($number, ". \t\n\r\0\x0B");
+        $normalizedTitle = trim($title);
+        if ($normalizedNumber === '' || $normalizedTitle === '') {
+            return '';
+        }
+
+        $numberPrefix = $level === 1 ? $normalizedNumber.'.' : $normalizedNumber;
+
+        return trim($numberPrefix.' '.$normalizedTitle);
+    }
+
+    /**
+     * @param  array<int, string>  $normalizedCandidates
+     * @param  array<string, array<int, array{
+     *   number:string,
+     *   title:string,
+     *   type:string,
+     *   level:int,
+     *   numbered_title:string
+     * }>>  $tocNumberedHeadingTitleMap
+     * @return array{
+     *   number:string,
+     *   title:string,
+     *   type:string,
+     *   level:int,
+     *   numbered_title:string
+     * }|null
+     */
+    private function resolveUniqueTocNumberedHeadingMatch(array $normalizedCandidates, array $tocNumberedHeadingTitleMap): ?array
+    {
+        if ($normalizedCandidates === [] || $tocNumberedHeadingTitleMap === []) {
+            return null;
+        }
+
+        $matches = [];
+        foreach ($normalizedCandidates as $normalizedCandidate) {
+            if (! isset($tocNumberedHeadingTitleMap[$normalizedCandidate])) {
+                continue;
+            }
+
+            $entries = $tocNumberedHeadingTitleMap[$normalizedCandidate];
+            foreach ($entries as $entry) {
+                $entryKey = sprintf(
+                    '%s|%s|%d',
+                    (string) ($entry['numbered_title'] ?? ''),
+                    (string) ($entry['type'] ?? ''),
+                    (int) ($entry['level'] ?? 0),
+                );
+                $matches[$entryKey] = $entry;
+            }
+        }
+
+        if (count($matches) !== 1) {
+            return null;
+        }
+
+        return array_values($matches)[0] ?? null;
     }
 
     /**
@@ -2557,6 +2757,7 @@ class AbaLocalDocumentStructureExtractor
                 if (
                     $candidateNumbering !== null
                     && ! $this->numberingRootsMatch($currentNumbering, $candidateNumbering)
+                    && ! $this->isNearNumberingParentWithRootMismatch($currentNumbering, $candidateNumbering)
                     && $candidateLevel === ($currentLevel - 1)
                 ) {
                     continue;
@@ -2789,6 +2990,21 @@ class AbaLocalDocumentStructureExtractor
                 $parentLevel = 1;
                 if (is_int($parentIndex) && isset($candidates[$parentIndex])) {
                     $parentLevel = max(1, (int) ($candidates[$parentIndex]['level'] ?? 1));
+
+                    $normalizedTitle = $this->normalizeHeadingNumberingAgainstParent(
+                        (string) ($candidates[$index]['title'] ?? ''),
+                        (string) ($candidates[$parentIndex]['title'] ?? ''),
+                    );
+                    if (
+                        is_string($normalizedTitle)
+                        && $normalizedTitle !== ''
+                        && $normalizedTitle !== (string) ($candidates[$index]['title'] ?? '')
+                    ) {
+                        $candidates[$index]['title_original'] = (string) ($candidates[$index]['title'] ?? '');
+                        $candidates[$index]['title'] = $normalizedTitle;
+                        $candidates[$index]['numbering_normalized'] = true;
+                        $candidates[$index]['numbering_normalization_reason'] = 'parent_root_typo_correction';
+                    }
                 }
 
                 if ($resolvedLevel > ($parentLevel + 1) && ! $exactNumberingParent) {
@@ -2928,6 +3144,8 @@ class AbaLocalDocumentStructureExtractor
                     $exactNumberingParent = true;
                 } elseif ($this->numberingRootsMatch($currentNumbering, $parentNumbering)) {
                     $score += 24;
+                } elseif ($this->isNearNumberingParentWithRootMismatch($currentNumbering, $parentNumbering)) {
+                    $score += 58;
                 } else {
                     $score -= 110;
                 }
@@ -3163,16 +3381,21 @@ class AbaLocalDocumentStructureExtractor
                 continue;
             }
 
+            $effectiveText = $text;
             if ($this->looksLikeFigureCaptionLine($text) || $this->looksLikeTableCaptionLine($text)) {
-                continue;
+                $captionSplit = $this->splitCaptionFromBodyText($text);
+                $effectiveText = trim((string) ($captionSplit['remainder'] ?? ''));
+                if ($effectiveText === '') {
+                    continue;
+                }
             }
 
-            if ($this->looksLikeNumberedHeading($text) || $this->looksLikeNamedChapterHeading($text) || $this->resolveSectionType($text) !== null) {
+            if ($this->looksLikeNumberedHeading($effectiveText) || $this->looksLikeNamedChapterHeading($effectiveText) || $this->resolveSectionType($effectiveText) !== null) {
                 continue;
             }
 
             $bodyLines++;
-            $bodyChars += mb_strlen($text);
+            $bodyChars += mb_strlen($effectiveText);
         }
 
         $tocFragment = $nonEmptyTotal > 0
@@ -3220,15 +3443,20 @@ class AbaLocalDocumentStructureExtractor
                 continue;
             }
 
+            $effectiveText = $text;
             if ($this->looksLikeFigureCaptionLine($text) || $this->looksLikeTableCaptionLine($text)) {
+                $captionSplit = $this->splitCaptionFromBodyText($text);
+                $effectiveText = trim((string) ($captionSplit['remainder'] ?? ''));
+                if ($effectiveText === '') {
+                    continue;
+                }
+            }
+
+            if ($this->looksLikeNumberedHeading($effectiveText) || $this->looksLikeNamedChapterHeading($effectiveText) || $this->resolveSectionType($effectiveText) !== null) {
                 continue;
             }
 
-            if ($this->looksLikeNumberedHeading($text) || $this->looksLikeNamedChapterHeading($text) || $this->resolveSectionType($text) !== null) {
-                continue;
-            }
-
-            if (mb_strlen($text) >= 12) {
+            if (mb_strlen($effectiveText) >= 12) {
                 return true;
             }
         }
@@ -3286,7 +3514,7 @@ class AbaLocalDocumentStructureExtractor
 
         if (
             preg_match(
-                '/^\s*(einleitung|fazit|literaturverzeichnis|quellenverzeichnis|abbildungsverzeichnis|eigenst[aä]ndigkeitserkl[aä]rung|einverst[aä]ndniserkl[aä]rung|appendix|anhang)\b.+\d+(?:\s*[-–]\s*\d+)?\s*$/iu',
+                '/^\s*(einleitung|fazit|literaturverzeichnis|literaturangaben|quellenverzeichnis|quellenangaben|verwendete\s+quellen|literatur(?:\s*[-–]\s*|\s+und\s+)quellenverzeichnis|quellen?|quelle|internetquellenverzeichnis|internetverzeichnis|internetquellenangaben|internetquellenliste|internetquellen|internet|onlinequellenverzeichnis|online(?:\s*-\s*|\s*)quellen|onlinequellen|webquellenverzeichnis|web(?:\s*-\s*|\s*)quellen|webquellen|webseiten|weblinks|references|bibliography|bibliograph(?:ie|y)|bibliografie|abbildungsverzeichnis|eidesstattliche\s+erkl[aä]rung|selbstst[aä]ndigkeitserkl[aä]rung|eigenst[aä]ndigkeitserkl[aä]rung|einverst[aä]ndniserkl[aä]rung|erkl[aä]rung|appendix|anhang)\b.+\d+(?:\s*[-–]\s*\d+)?\s*$/iu',
                 $value
             ) === 1
         ) {
@@ -3390,6 +3618,94 @@ class AbaLocalDocumentStructureExtractor
     /**
      * @param  array<int, array{start_line:int,start_page:int,title:string,type:string,level:int|null,source:string}>  $headings
      */
+    private function resolveBibliographyHeadingRole(string $type, string $title, int $startLine, ?array $nextHeading, array $analysis): string
+    {
+        if ($type !== 'bibliography' || ! $this->isGenericBibliographyHeading($title)) {
+            return 'standalone';
+        }
+
+        if (! is_array($nextHeading)) {
+            return 'standalone';
+        }
+
+        $nextLine = (int) ($nextHeading['start_line'] ?? 0);
+        $nextTitle = trim((string) ($nextHeading['title'] ?? ''));
+        if ($nextLine <= $startLine || $nextTitle === '') {
+            return 'standalone';
+        }
+
+        if ($nextLine > ($startLine + 6) || ! $this->isSpecificBibliographyHeading($nextTitle)) {
+            return 'standalone';
+        }
+
+        $hasOwnBibliographyContent =
+            ((int) ($analysis['bibliography_like_lines'] ?? 0)) > 0
+            || ((int) ($analysis['body_lines'] ?? 0)) > 0
+            || ((int) ($analysis['body_chars'] ?? 0)) >= 30;
+
+        return $hasOwnBibliographyContent ? 'standalone' : 'container';
+    }
+
+    private function isGenericBibliographyHeading(string $title): bool
+    {
+        $value = trim($title);
+        if ($value === '') {
+            return false;
+        }
+
+        if (preg_match('/^\s*(quellenverzeichnis|quellenangaben|verwendete\s+quellen|literatur(?:\s*[-–]\s*|\s+und\s+)quellenverzeichnis)\b/iu', $value) === 1) {
+            return true;
+        }
+
+        return preg_match('/^\s*(quellen?|quelle)\s*(?:$|[:\-–]\s*$)/iu', $value) === 1;
+    }
+
+    private function isSpecificBibliographyHeading(string $title): bool
+    {
+        $value = trim($title);
+        if ($value === '') {
+            return false;
+        }
+
+        if (preg_match('/^\s*(literaturverzeichnis|literaturangaben|references|bibliography|bibliograph(?:ie|y)|bibliografie)\b/iu', $value) === 1) {
+            return true;
+        }
+
+        return $this->isInternetBibliographyHeading($value);
+    }
+
+    private function isInternetBibliographyHeading(string $title): bool
+    {
+        $value = trim($title);
+        if ($value === '') {
+            return false;
+        }
+
+        if (preg_match('/^\s*(internetquellenverzeichnis|internetverzeichnis|internetquellenangaben|internetquellenliste|internetquellen|webquellenverzeichnis|web(?:\s*-\s*|\s*)quellen|webquellen|onlinequellenverzeichnis|online(?:\s*-\s*|\s*)quellen|onlinequellen|webseiten|weblinks)\b/iu', $value) === 1) {
+            return true;
+        }
+
+        return preg_match('/^\s*internet\s*(?:$|[:\-–]\s*[^.!?]{0,120}$)/iu', $value) === 1;
+    }
+
+    private function bibliographyHeadingPattern(): string
+    {
+        return '/^\s*(?:(?:literaturverzeichnis|literaturangaben|quellenverzeichnis|quellenangaben|verwendete\s+quellen|literatur(?:\s*[-–]\s*|\s+und\s+)quellenverzeichnis|internetquellenverzeichnis|internetverzeichnis|internetquellenangaben|internetquellenliste|internetquellen|internet|webquellenverzeichnis|web(?:\s*-\s*|\s*)quellen|webquellen|onlinequellenverzeichnis|online(?:\s*-\s*|\s*)quellen|onlinequellen|webseiten|weblinks|references|bibliography|bibliograph(?:ie|y)|bibliografie)\b|(?:quellen?|quelle)\s*(?:$|[:\-–]\s*$))/iu';
+    }
+
+    private function figureIndexHeadingPattern(): string
+    {
+        return '/^\s*(?:\d+(?:\.\d+){0,5}\s+)?(?:abbildungsverzeichnis|tabellenverzeichnis|abbildung(?:s)?\s*[-–]?\s*(?:und|&)\s*tabellenverzeichnis|list of figures(?: and tables)?|list of tables)\b/iu';
+    }
+
+    private function consentDeclarationHeadingPattern(): string
+    {
+        return '/^\s*(?:einverst[aä]ndniserkl[aä]rung|einverstaendniserklaerung|eigenst[aä]ndigkeitserkl[aä]rung|selbstst[aä]ndigkeitserkl[aä]rung|selbststaendigkeitserklaerung|eidesstattliche\s+erkl[aä]rung|eidesstaatliche\s+erkl[aä]rung|eidstaatliche\s+erkl[aä]rung|ehrenw[oö]rtliche\s+erkl[aä]rung|erkl[aä]rung)\s*(?:$|[:\-–]\s*[^.!?]{0,120}$)/iu';
+    }
+
+    /**
+     * @param  array<int, array{start_line:int,start_page:int,title:string,type:string,level:int|null,source:string}>  $headings
+     */
     private function inferHeadingContext(array $headings, int $index): ?string
     {
         $currentLine = (int) ($headings[$index]['start_line'] ?? 0);
@@ -3432,6 +3748,17 @@ class AbaLocalDocumentStructureExtractor
             return true;
         }
 
+        if (
+            preg_match('/^\s*vgl\.?\s+/iu', $value) === 1
+            && (
+                preg_match('/\b(?:19|20)\d{2}\b/u', $value) === 1
+                || preg_match('/\bS\.\s*\d+/u', $value) === 1
+                || preg_match('/https?:\/\/\S+|www\.\S+/iu', $value) === 1
+            )
+        ) {
+            return true;
+        }
+
         if (preg_match('/\b(doi:\s*10\.\d{4,9}\/\S+|https?:\/\/\S+|www\.\S+)/iu', $value) === 1) {
             return true;
         }
@@ -3456,7 +3783,7 @@ class AbaLocalDocumentStructureExtractor
             return false;
         }
 
-        if (preg_match('/^(abb\.?|abbildung|figure)\s*\d+[a-z]?\b/iu', $value) !== 1) {
+        if (preg_match('/^(abb\.?|abbildung|figure|tab\.?|tabelle|table)\s*\d+(?:\s*[-–]\s*\d+)?[a-z]?\b/iu', $value) !== 1) {
             return false;
         }
 
@@ -3474,7 +3801,7 @@ class AbaLocalDocumentStructureExtractor
             return false;
         }
 
-        return preg_match('/^(abb\.?|abbildung|figure|fig\.)\s*\d+[a-z]?\b(?:[\.\:\-]\s*.+)?$/iu', $value) === 1;
+        return preg_match('/^(abb\.?|abbildung|figure|fig\.)\s*\d+(?:\s*[-–]\s*\d+)?[a-z]?\b(?:[\.\:\-\/]\s*.+)?$/iu', $value) === 1;
     }
 
     private function looksLikeTableCaptionLine(string $text): bool
@@ -3484,7 +3811,537 @@ class AbaLocalDocumentStructureExtractor
             return false;
         }
 
-        return preg_match('/^(tab\.?|tabelle|table)\s*\d+[a-z]?\b(?:[\.\:\-]\s*.+)?$/iu', $value) === 1;
+        return preg_match('/^(tab\.?|tabelle|table)\s*\d+(?:\s*[-–]\s*\d+)?[a-z]?\b(?:[\.\:\-\/]\s*.+)?$/iu', $value) === 1;
+    }
+
+    /**
+     * @return array{caption:string,remainder:string,reason:string}
+     */
+    private function splitCaptionFromBodyText(string $text): array
+    {
+        $value = trim($text);
+        if ($value === '') {
+            return [
+                'caption' => '',
+                'remainder' => '',
+                'reason' => 'empty',
+            ];
+        }
+
+        if (! $this->looksLikeFigureCaptionLine($value) && ! $this->looksLikeTableCaptionLine($value)) {
+            return [
+                'caption' => $value,
+                'remainder' => '',
+                'reason' => 'not_caption',
+            ];
+        }
+
+        $captionLabelPattern = '/(?:abb\.?|abbildung|figure|fig\.|tab\.?|tabelle|table)\s*\d+(?:\s*[-–]\s*\d+)?[a-z]?\b/iu';
+        $splitOffset = null;
+        $reason = 'caption_only';
+
+        $labelMatches = [];
+        $labelMatchCount = preg_match_all($captionLabelPattern, $value, $labelMatches, PREG_OFFSET_CAPTURE);
+        if (is_int($labelMatchCount) && $labelMatchCount >= 2) {
+            $secondOffset = (int) ($labelMatches[0][1][1] ?? -1);
+            if ($secondOffset >= 18) {
+                $splitOffset = $secondOffset;
+                $reason = 'repeated_caption_label';
+            }
+        }
+
+        $narrativePattern = '/\b(?:In der|In den|In dem|In dieser|Bei|Es|Der|Die|Das|Falls|Wenn|Hier|Zur|Zum|Am|An|Im|Man)\b/u';
+        $narrativeMatch = [];
+        if (preg_match($narrativePattern, $value, $narrativeMatch, PREG_OFFSET_CAPTURE) === 1) {
+            $narrativeOffset = (int) ($narrativeMatch[0][1] ?? -1);
+            if ($narrativeOffset >= 45 && ($splitOffset === null || $narrativeOffset < $splitOffset)) {
+                $splitOffset = $narrativeOffset;
+                $reason = 'narrative_after_caption';
+            }
+        }
+
+        $mergedBoundaryMatch = [];
+        if (preg_match('/\p{Ll}\p{Lu}\p{Ll}/u', $value, $mergedBoundaryMatch, PREG_OFFSET_CAPTURE) === 1) {
+            $boundaryOffset = (int) ($mergedBoundaryMatch[0][1] ?? -1);
+            if ($boundaryOffset >= 24) {
+                $candidateOffset = $boundaryOffset + 1;
+                $candidateRemainder = trim((string) substr($value, $candidateOffset));
+                if (
+                    $candidateRemainder !== ''
+                    && ($this->looksLikeFlowingParagraph($candidateRemainder) || $this->looksLikeNarrativeProseLine($candidateRemainder))
+                    && ($splitOffset === null || $candidateOffset < $splitOffset)
+                ) {
+                    $splitOffset = $candidateOffset;
+                    $reason = 'merged_caption_prose_boundary';
+                }
+            }
+        }
+
+        $digitBoundaryMatch = [];
+        if (preg_match('/\d\p{Lu}\p{Ll}/u', $value, $digitBoundaryMatch, PREG_OFFSET_CAPTURE) === 1) {
+            $digitOffset = (int) ($digitBoundaryMatch[0][1] ?? -1);
+            if ($digitOffset >= 16) {
+                $candidateOffset = $digitOffset + 1;
+                $candidateRemainder = trim((string) substr($value, $candidateOffset));
+                if (
+                    $candidateRemainder !== ''
+                    && ($this->looksLikeFlowingParagraph($candidateRemainder) || $this->looksLikeNarrativeProseLine($candidateRemainder))
+                    && ($splitOffset === null || $candidateOffset < $splitOffset)
+                ) {
+                    $splitOffset = $candidateOffset;
+                    $reason = 'merged_numeric_caption_prose_boundary';
+                }
+            }
+        }
+
+        if ($splitOffset === null && mb_strlen($value) > 260) {
+            return [
+                'caption' => trim((string) mb_substr($value, 0, 220)),
+                'remainder' => trim((string) mb_substr($value, 220)),
+                'reason' => 'caption_length_guard',
+            ];
+        }
+
+        if ($splitOffset === null) {
+            return [
+                'caption' => $value,
+                'remainder' => '',
+                'reason' => $reason,
+            ];
+        }
+
+        $caption = trim((string) substr($value, 0, $splitOffset));
+        $remainder = trim((string) substr($value, $splitOffset));
+        if ($remainder !== '') {
+            $remainderWithoutRepeatedLabel = trim((string) preg_replace('/^(?:abb\.?|abbildung|figure|fig\.|tab\.?|tabelle|table)\s*\d+(?:\s*[-–]\s*\d+)?[a-z]?\s*[:\-\.\/]?\s*/iu', '', $remainder, 1));
+            if ($remainderWithoutRepeatedLabel !== '') {
+                $remainder = $remainderWithoutRepeatedLabel;
+            }
+        }
+
+        if ($caption === '') {
+            return [
+                'caption' => $value,
+                'remainder' => '',
+                'reason' => 'caption_only',
+            ];
+        }
+
+        return [
+            'caption' => $caption,
+            'remainder' => $remainder,
+            'reason' => $reason,
+        ];
+    }
+
+    /**
+     * @return array{
+     *   prefix:string,
+     *   first_marker_offset:int|null,
+     *   segments:array<int, array{
+     *     raw:string,
+     *     caption:string,
+     *     remainder:string,
+     *     reason:string,
+     *     is_caption:bool
+     *   }>
+     * }
+     */
+    private function splitCaptionSegmentsFromLine(string $text): array
+    {
+        $value = trim($text);
+        if ($value === '') {
+            return [
+                'prefix' => '',
+                'first_marker_offset' => null,
+                'segments' => [],
+            ];
+        }
+
+        $captionLabelPattern = '/(?:abb\.?|abbildung|figure|fig\.|tab\.?|tabelle|table)\s*\d+(?:\s*[-–]\s*\d+)?[a-z]?\b/iu';
+        $labelMatches = [];
+        $labelMatchCount = preg_match_all($captionLabelPattern, $value, $labelMatches, PREG_OFFSET_CAPTURE);
+        if (! is_int($labelMatchCount) || $labelMatchCount < 1) {
+            return [
+                'prefix' => $value,
+                'first_marker_offset' => null,
+                'segments' => [],
+            ];
+        }
+
+        $firstOffset = (int) ($labelMatches[0][0][1] ?? 0);
+        $prefix = trim((string) substr($value, 0, $firstOffset));
+
+        $segments = [];
+        $valueLength = strlen($value);
+        for ($index = 0; $index < $labelMatchCount; $index++) {
+            $startOffset = (int) ($labelMatches[0][$index][1] ?? 0);
+            $nextOffset = $index + 1 < $labelMatchCount
+                ? (int) ($labelMatches[0][$index + 1][1] ?? $valueLength)
+                : $valueLength;
+            if ($nextOffset <= $startOffset) {
+                continue;
+            }
+
+            $segmentRaw = trim((string) substr($value, $startOffset, $nextOffset - $startOffset));
+            if ($segmentRaw === '') {
+                continue;
+            }
+
+            $captionSplit = $this->splitCaptionFromBodyText($segmentRaw);
+            $caption = trim((string) ($captionSplit['caption'] ?? ''));
+            if ($caption === '') {
+                $caption = $segmentRaw;
+            }
+
+            $segments[] = [
+                'raw' => $segmentRaw,
+                'caption' => $caption,
+                'remainder' => trim((string) ($captionSplit['remainder'] ?? '')),
+                'reason' => trim((string) ($captionSplit['reason'] ?? '')) ?: 'caption_only',
+                'is_caption' => $this->isCaptionLabelText($caption),
+            ];
+        }
+
+        return [
+            'prefix' => $prefix,
+            'first_marker_offset' => $firstOffset,
+            'segments' => $segments,
+        ];
+    }
+
+    private function isCaptionLabelText(string $text): bool
+    {
+        $value = trim($text);
+        if ($value === '') {
+            return false;
+        }
+
+        if (
+            preg_match('/^(?<label>(?:abb\.?|abbildung|figure|fig\.|tab\.?|tabelle|table)\s*\d+(?:\s*[-–]\s*\d+)?[a-z]?)(?<rest>.*)$/iu', $value, $matches) !== 1
+        ) {
+            return false;
+        }
+
+        $rest = trim((string) ($matches['rest'] ?? ''));
+        if ($rest === '') {
+            return true;
+        }
+
+        if (preg_match('/^[\.\:\-\/]/u', $rest) === 1) {
+            return true;
+        }
+
+        if (preg_match('/^[\(\[\{„"\'`]*\p{Lu}/u', $rest) === 1) {
+            return true;
+        }
+
+        return preg_match('/^\d/u', $rest) === 1;
+    }
+
+    private function looksLikeFigureSourceCreditPrefix(string $text): bool
+    {
+        $value = trim($text);
+        if ($value === '') {
+            return false;
+        }
+
+        if (mb_strlen($value) > 140) {
+            return false;
+        }
+
+        if (preg_match('/[.!?]\s*$/u', $value) === 1) {
+            return false;
+        }
+
+        if (preg_match('/\b(quelle|source|bildquelle)\b/iu', $value) === 1) {
+            return true;
+        }
+
+        if (preg_match('/https?:\/\/\S+|www\.\S+/iu', $value) === 1) {
+            return true;
+        }
+
+        return preg_match('/:\s*[^\n]{2,120}\b\d{4}\b/u', $value) === 1;
+    }
+
+    private function captionLabelKey(string $caption): ?string
+    {
+        $value = trim($caption);
+        if ($value === '') {
+            return null;
+        }
+
+        $matches = [];
+        if (
+            preg_match('/^(abb\.?|abbildung|figure|fig\.|tab\.?|tabelle|table)\s*(\d+(?:\s*[-–]\s*\d+)?[a-z]?)/iu', $value, $matches) !== 1
+        ) {
+            return null;
+        }
+
+        $label = strtolower(trim((string) ($matches[1] ?? '')));
+        $number = strtolower(trim((string) ($matches[2] ?? '')));
+        if ($label === '' || $number === '') {
+            return null;
+        }
+
+        return $label.':'.$number;
+    }
+
+    /**
+     * @return array{family:string,number:int,suffix:string}|null
+     */
+    private function captionNumericSortKey(string $caption): ?array
+    {
+        $value = trim($caption);
+        if ($value === '') {
+            return null;
+        }
+
+        $matches = [];
+        if (
+            preg_match('/^(abb\.?|abbildung|figure|fig\.|tab\.?|tabelle|table)\s*(\d+)([a-z]?)/iu', $value, $matches) !== 1
+        ) {
+            return null;
+        }
+
+        $rawLabel = strtolower(trim((string) ($matches[1] ?? '')));
+        $number = (int) ($matches[2] ?? 0);
+        $suffix = strtolower(trim((string) ($matches[3] ?? '')));
+        if ($number <= 0) {
+            return null;
+        }
+
+        $family = in_array($rawLabel, ['tab.', 'tabelle', 'table'], true) ? 'table' : 'figure';
+
+        return [
+            'family' => $family,
+            'number' => $number,
+            'suffix' => $suffix,
+        ];
+    }
+
+    private function captionSectionType(string $caption): string
+    {
+        $value = trim($caption);
+        if ($value === '') {
+            return 'figure';
+        }
+
+        return preg_match('/^(tab\.?|tabelle|table)\s*\d+/iu', $value) === 1 ? 'table' : 'figure';
+    }
+
+    /**
+     * @param  array<int, array{
+     *   raw:string,
+     *   caption:string,
+     *   remainder:string,
+     *   reason:string,
+     *   is_caption:bool
+     * }>  $segments
+     * @return array<int, array{
+     *   raw:string,
+     *   caption:string,
+     *   remainder:string,
+     *   reason:string,
+     *   is_caption:bool
+     * }>
+     */
+    private function sortCaptionSegmentsInLocalCluster(array $segments): array
+    {
+        if (count($segments) < 2) {
+            return $segments;
+        }
+
+        $sortableCount = 0;
+        $decorated = [];
+        foreach ($segments as $index => $segment) {
+            $sortKey = $this->captionNumericSortKey((string) ($segment['caption'] ?? ''));
+            if ($sortKey !== null) {
+                $sortableCount++;
+            }
+
+            $decorated[] = [
+                'segment' => $segment,
+                'index' => $index,
+                'sort_key' => $sortKey,
+            ];
+        }
+
+        if ($sortableCount !== count($segments)) {
+            return $segments;
+        }
+
+        usort($decorated, function (array $left, array $right): int {
+            /** @var array{family:string,number:int,suffix:string} $leftKey */
+            $leftKey = $left['sort_key'];
+            /** @var array{family:string,number:int,suffix:string} $rightKey */
+            $rightKey = $right['sort_key'];
+
+            if ($leftKey['family'] !== $rightKey['family']) {
+                return $leftKey['family'] <=> $rightKey['family'];
+            }
+
+            if ($leftKey['number'] !== $rightKey['number']) {
+                return $leftKey['number'] <=> $rightKey['number'];
+            }
+
+            if ($leftKey['suffix'] !== $rightKey['suffix']) {
+                return $leftKey['suffix'] <=> $rightKey['suffix'];
+            }
+
+            return (int) $left['index'] <=> (int) $right['index'];
+        });
+
+        return array_values(array_map(
+            fn (array $item): array => $item['segment'],
+            $decorated
+        ));
+    }
+
+    /**
+     * @param  array<int, array{
+     *   raw:string,
+     *   caption:string,
+     *   remainder:string,
+     *   reason:string,
+     *   is_caption:bool
+     * }>  $segments
+     * @return array<int, array{
+     *   raw:string,
+     *   caption:string,
+     *   remainder:string,
+     *   reason:string,
+     *   is_caption:bool
+     * }>
+     */
+    private function deduplicateCaptionSegments(array $segments): array
+    {
+        $unique = [];
+        $seen = [];
+        foreach ($segments as $segment) {
+            $caption = trim((string) ($segment['caption'] ?? ''));
+            if ($caption === '') {
+                continue;
+            }
+
+            $normalizedCaption = $this->normalizeForMatch($caption);
+            if ($normalizedCaption === '' || isset($seen[$normalizedCaption])) {
+                continue;
+            }
+
+            $seen[$normalizedCaption] = true;
+            $unique[] = $segment;
+        }
+
+        return $unique;
+    }
+
+    private function stripCaptionArtifactsFromLine(string $text): string
+    {
+        $value = trim($text);
+        if ($value === '') {
+            return '';
+        }
+
+        $split = $this->splitCaptionSegmentsFromLine($value);
+        $segments = is_array($split['segments'] ?? null) ? $split['segments'] : [];
+        if ($segments === []) {
+            return $value;
+        }
+
+        $prefix = trim((string) ($split['prefix'] ?? ''));
+        $firstMarkerOffset = $split['first_marker_offset'];
+        $prefixIsSourceCredit = is_int($firstMarkerOffset)
+            && $firstMarkerOffset > 0
+            && $this->looksLikeFigureSourceCreditPrefix($prefix);
+
+        $preservedParts = [];
+        if ($prefix !== '' && ! $prefixIsSourceCredit) {
+            $preservedParts[] = $prefix;
+        }
+
+        $segmentCount = count($segments);
+        foreach ($segments as $index => $segment) {
+            if ((bool) ($segment['is_caption'] ?? false) !== true) {
+                $raw = trim((string) ($segment['raw'] ?? ''));
+                if ($raw !== '') {
+                    $preservedParts[] = $raw;
+                }
+
+                continue;
+            }
+
+            $remainder = trim((string) ($segment['remainder'] ?? ''));
+            if ($remainder !== '') {
+                $preservedParts[] = $remainder;
+            } elseif ($index + 1 < $segmentCount && (bool) ($segments[$index + 1]['is_caption'] ?? false) !== true) {
+                $raw = trim((string) ($segment['raw'] ?? ''));
+                $connectorMatch = [];
+                if (
+                    preg_match('/(?:In der|In den|In dem|In dieser|Bei|Im|Am|An|Zum|Zur)\s*$/u', $raw, $connectorMatch) === 1
+                ) {
+                    $connector = trim((string) ($connectorMatch[0] ?? ''));
+                    if ($connector !== '') {
+                        $preservedParts[] = $connector;
+                    }
+                }
+            }
+        }
+
+        $cleaned = trim(implode(' ', $preservedParts));
+        $cleaned = preg_replace('/\s{2,}/u', ' ', $cleaned) ?? $cleaned;
+
+        return trim($cleaned);
+    }
+
+    private function isLikelyCaptionContinuationLine(string $text): bool
+    {
+        $value = trim($text);
+        if ($value === '') {
+            return false;
+        }
+
+        if (preg_match('/^\s*(quelle|source)\b/iu', $value) === 1) {
+            return true;
+        }
+
+        if ($this->looksLikeFigureCaptionLine($value) || $this->looksLikeTableCaptionLine($value)) {
+            return true;
+        }
+
+        if ($this->looksLikeFlowingParagraph($value)) {
+            return false;
+        }
+
+        if ($this->looksLikeNarrativeProseLine($value)) {
+            return false;
+        }
+
+        return mb_strlen($value) <= 140;
+    }
+
+    private function looksLikeNarrativeProseLine(string $text): bool
+    {
+        $value = trim($text);
+        if ($value === '') {
+            return false;
+        }
+
+        $words = array_values(array_filter(preg_split('/\s+/u', $value) ?: []));
+        if (count($words) < 6) {
+            return false;
+        }
+
+        $hasSentenceSignals = preg_match('/[.!?]\s*$/u', $value) === 1 || preg_match('/,\s/u', $value) === 1;
+        if (! $hasSentenceSignals) {
+            return false;
+        }
+
+        $startsLikeNarrative = preg_match('/^\s*(der|die|das|ein|eine|in|im|am|an|bei|es|man|wir|sie|hier)\b/iu', $value) === 1;
+        $containsNarrativeVerb = preg_match('/\b(kann|können|hat|haben|ist|sind|wird|werden|lässt|lassen|zeigt|zeigen|findet|aufgetreten)\b/iu', $value) === 1;
+
+        return $startsLikeNarrative || $containsNarrativeVerb;
     }
 
     /**
@@ -3913,7 +4770,9 @@ class AbaLocalDocumentStructureExtractor
             $resolvedEndLine = $this->resolveSectionContentEndLine($lines, $startLine, $endLine);
             $boundaryAdjusted = $resolvedEndLine !== $endLine;
 
-            $text = $this->extractTextBetweenLines($lines, $startLine, $resolvedEndLine);
+            $sectionType = (string) ($candidate['type'] ?? 'other_section');
+            $stripCaptionArtifacts = in_array($sectionType, ['chapter', 'subchapter', 'other_section'], true);
+            $text = $this->extractTextBetweenLines($lines, $startLine, $resolvedEndLine, $stripCaptionArtifacts);
             if ($text === '') {
                 continue;
             }
@@ -3925,7 +4784,7 @@ class AbaLocalDocumentStructureExtractor
             $sections[] = [
                 'section_key' => $sectionKey,
                 'parent_key' => $parentKey,
-                'section_type' => (string) ($candidate['type'] ?? 'other_section'),
+                'section_type' => $sectionType,
                 'section_title' => (string) ($candidate['title'] ?? ''),
                 'extracted_text' => $text,
                 'hierarchy_level' => (int) ($candidate['level'] ?? 1),
@@ -3976,6 +4835,9 @@ class AbaLocalDocumentStructureExtractor
                     'hierarchy_parent_resolution' => $candidate['hierarchy_parent_resolution'] ?? null,
                     'hierarchy_parent_uncertain' => $candidate['hierarchy_parent_uncertain'] ?? false,
                     'hierarchy_level_adjusted' => $candidate['hierarchy_level_adjusted'] ?? false,
+                    'numbering_normalized' => $candidate['numbering_normalized'] ?? false,
+                    'numbering_normalization_reason' => $candidate['numbering_normalization_reason'] ?? null,
+                    'title_original' => $candidate['title_original'] ?? null,
                     'rejected_due_to_context' => $candidate['rejected_due_to_context'] ?? false,
                     'boundary_adjusted' => $boundaryAdjusted,
                     'original_end_line' => $endLine,
@@ -3989,6 +4851,202 @@ class AbaLocalDocumentStructureExtractor
         }
 
         return $sections;
+    }
+
+    /**
+     * @param  array<int, array{
+     *   section_key:string,parent_key:string|null,section_type:string,section_title:string|null,extracted_text:string,
+     *   hierarchy_level:int|null,start_line:int|null,end_line:int|null,start_page:int|null,end_page:int|null,
+     *   anchor:array<string,mixed>,metadata:array<string,mixed>
+     * }>  $sections
+     * @return array<int, array{
+     *   section_key:string,parent_key:string|null,section_type:string,section_title:string|null,extracted_text:string,
+     *   hierarchy_level:int|null,start_line:int|null,end_line:int|null,start_page:int|null,end_page:int|null,
+     *   anchor:array<string,mixed>,metadata:array<string,mixed>
+     * }>
+     */
+    private function normalizeBibliographySections(array $sections): array
+    {
+        if ($sections === []) {
+            return [];
+        }
+
+        $normalized = [];
+        $sectionCount = count($sections);
+        $index = 0;
+
+        while ($index < $sectionCount) {
+            $current = $sections[$index];
+
+            if ($this->isBibliographyUmbrellaSection($current)) {
+                $next = $sections[$index + 1] ?? null;
+                if (is_array($next) && $this->isBibliographySection($next)) {
+                    [$mergedSection, $nextIndex] = $this->mergeBibliographySectionRun($sections, $index, true);
+                    $normalized[] = $mergedSection;
+                    $index = $nextIndex;
+
+                    continue;
+                }
+            }
+
+            if ($this->isBibliographySection($current)) {
+                [$mergedSection, $nextIndex] = $this->mergeBibliographySectionRun($sections, $index, false);
+                $normalized[] = $mergedSection;
+                $index = $nextIndex;
+
+                continue;
+            }
+
+            $normalized[] = $current;
+            $index++;
+        }
+
+        return $normalized;
+    }
+
+    private function isBibliographySection(array $section): bool
+    {
+        return (string) ($section['section_type'] ?? '') === 'bibliography';
+    }
+
+    private function isBibliographyUmbrellaSection(array $section): bool
+    {
+        if ((string) ($section['section_type'] ?? '') !== 'other_section') {
+            return false;
+        }
+
+        $title = trim((string) ($section['section_title'] ?? ''));
+        if (! $this->isGenericBibliographyHeading($title)) {
+            return false;
+        }
+
+        $metadata = is_array($section['metadata'] ?? null) ? $section['metadata'] : [];
+        if ((bool) ($metadata['is_bibliography_container_heading'] ?? false)) {
+            return true;
+        }
+
+        if ((string) ($metadata['selection_reason'] ?? '') === 'bibliography_container_heading') {
+            return true;
+        }
+
+        $text = trim((string) ($section['extracted_text'] ?? ''));
+
+        return $text !== '' && $this->normalizeForMatch($text) === $this->normalizeForMatch($title);
+    }
+
+    /**
+     * @param  array<int, array{
+     *   section_key:string,parent_key:string|null,section_type:string,section_title:string|null,extracted_text:string,
+     *   hierarchy_level:int|null,start_line:int|null,end_line:int|null,start_page:int|null,end_page:int|null,
+     *   anchor:array<string,mixed>,metadata:array<string,mixed>
+     * }>  $sections
+     * @return array{
+     *   0:array{
+     *     section_key:string,parent_key:string|null,section_type:string,section_title:string|null,extracted_text:string,
+     *     hierarchy_level:int|null,start_line:int|null,end_line:int|null,start_page:int|null,end_page:int|null,
+     *     anchor:array<string,mixed>,metadata:array<string,mixed>
+     *   },
+     *   1:int
+     * }
+     */
+    private function mergeBibliographySectionRun(array $sections, int $startIndex, bool $includeUmbrella): array
+    {
+        $sectionCount = count($sections);
+        $index = $startIndex;
+        $consumed = [];
+
+        if ($includeUmbrella && isset($sections[$index]) && $this->isBibliographyUmbrellaSection($sections[$index])) {
+            $consumed[] = $sections[$index];
+            $index++;
+        }
+
+        while ($index < $sectionCount && $this->isBibliographySection($sections[$index])) {
+            $consumed[] = $sections[$index];
+            $index++;
+        }
+
+        if ($consumed === []) {
+            return [$sections[$startIndex], $startIndex + 1];
+        }
+
+        $bibliographySections = array_values(array_filter(
+            $consumed,
+            fn (array $section): bool => $this->isBibliographySection($section)
+        ));
+        $base = $bibliographySections[0] ?? $consumed[0];
+        $baseMetadata = is_array($base['metadata'] ?? null) ? $base['metadata'] : [];
+
+        $titles = [];
+        $subheadingTitles = [];
+        $textParts = [];
+
+        $startLine = null;
+        $endLine = null;
+        $startPage = null;
+        $endPage = null;
+
+        foreach ($consumed as $position => $section) {
+            $title = trim((string) ($section['section_title'] ?? ''));
+            if ($title !== '') {
+                $titles[] = $title;
+                if (! ($includeUmbrella && $position === 0 && $this->isBibliographyUmbrellaSection($section))) {
+                    $subheadingTitles[] = $title;
+                }
+            }
+
+            $text = trim((string) ($section['extracted_text'] ?? ''));
+            if ($text !== '') {
+                $textParts[] = $text;
+            }
+
+            $sectionStartLine = isset($section['start_line']) ? (int) $section['start_line'] : null;
+            $sectionEndLine = isset($section['end_line']) ? (int) $section['end_line'] : null;
+            $sectionStartPage = isset($section['start_page']) ? (int) $section['start_page'] : null;
+            $sectionEndPage = isset($section['end_page']) ? (int) $section['end_page'] : null;
+
+            if ($sectionStartLine !== null && ($startLine === null || $sectionStartLine < $startLine)) {
+                $startLine = $sectionStartLine;
+            }
+            if ($sectionEndLine !== null && ($endLine === null || $sectionEndLine > $endLine)) {
+                $endLine = $sectionEndLine;
+            }
+            if ($sectionStartPage !== null && ($startPage === null || $sectionStartPage < $startPage)) {
+                $startPage = $sectionStartPage;
+            }
+            if ($sectionEndPage !== null && ($endPage === null || $sectionEndPage > $endPage)) {
+                $endPage = $sectionEndPage;
+            }
+        }
+
+        $normalizedText = trim(implode("\n", array_values(array_filter($textParts, fn (string $part): bool => $part !== ''))));
+        if ($normalizedText === '') {
+            $normalizedText = (string) ($base['extracted_text'] ?? '');
+        }
+
+        $base['section_type'] = 'bibliography';
+        $base['section_title'] = 'Literaturverzeichnis';
+        $base['extracted_text'] = $normalizedText;
+        $base['start_line'] = $startLine;
+        $base['end_line'] = $endLine;
+        $base['start_page'] = $startPage;
+        $base['end_page'] = $endPage;
+        $base['anchor'] = [
+            'line_start' => $startLine,
+            'line_end' => $endLine,
+            'page_start' => $startPage,
+            'page_end' => $endPage,
+        ];
+        $base['metadata'] = array_merge($baseMetadata, [
+            'bibliography_normalized_title' => 'Literaturverzeichnis',
+            'bibliography_normalized' => true,
+            'bibliography_source_section_count' => count($bibliographySections),
+            'bibliography_merged_section_count' => count($consumed),
+            'bibliography_original_titles' => array_values(array_unique(array_filter($titles, fn (string $title): bool => $title !== ''))),
+            'bibliography_subheading_titles' => array_values(array_unique(array_filter($subheadingTitles, fn (string $title): bool => $title !== ''))),
+            'bibliography_had_umbrella_heading' => $includeUmbrella,
+        ]);
+
+        return [$base, $index];
     }
 
     /**
@@ -4514,9 +5572,23 @@ class AbaLocalDocumentStructureExtractor
             return null;
         }
 
-        $value = trim((string) preg_replace('/^\s*(?:datum|date|stand|erstellt(?:\s+am)?|created(?:\s+on)?|abgabe(?:datum)?|eingereicht(?:\s+am)?)\s*[:\-]?\s*/iu', '', $value));
+        $value = trim((string) preg_replace('/^\s*(?:datum|date|stand|erstellt(?:\s+am)?|created(?:\s+on)?|abgabe(?:datum)?|abgegeben(?:\s+am)?|eingereicht(?:\s+am)?)\s*[:\-]?\s*/iu', '', $value));
+        $value = trim((string) preg_replace('/^\s*(?:am|on)\s+/iu', '', $value));
         if ($value === '') {
             return null;
+        }
+
+        $locationPrefixedDateMatches = [];
+        if (preg_match('/^\s*(?<location>[\p{L}\p{M}][\p{L}\p{M}\s\.\'\-]{1,80})\s*,\s*(?<date>.+)$/u', $value, $locationPrefixedDateMatches) === 1) {
+            $location = trim((string) ($locationPrefixedDateMatches['location'] ?? ''));
+            $dateCandidate = trim((string) ($locationPrefixedDateMatches['date'] ?? ''));
+            if (
+                $dateCandidate !== ''
+                && preg_match('/\d/u', $dateCandidate) === 1
+                && preg_match('/\d/u', $location) !== 1
+            ) {
+                $value = $dateCandidate;
+            }
         }
 
         $monthPattern = '(?:januar|jan\.?|februar|feb\.?|märz|maerz|mrz\.?|april|apr\.?|mai|juni|jun\.?|juli|jul\.?|august|aug\.?|september|sept?\.?|oktober|okt\.?|november|nov\.?|dezember|dez\.?|january|jan\.?|february|feb\.?|march|mar\.?|april|apr\.?|may|june|jun\.?|july|jul\.?|august|aug\.?|september|sept?\.?|october|oct\.?|november|nov\.?|december|dec\.?)';
@@ -4538,6 +5610,30 @@ class AbaLocalDocumentStructureExtractor
                 return [
                     'year' => $year,
                     'date_context' => trim($month.'/'.$year),
+                ];
+            }
+        }
+
+        if (preg_match('/^(?<day>0?[1-9]|[12]\d|3[01])\s*[\/\.-]\s*(?<month>0?[1-9]|1[0-2])\s*[\/\.-]\s*(?<year>(?:19|20)\d{2})\s*$/u', $value, $matches) === 1) {
+            $day = trim((string) ($matches['day'] ?? ''));
+            $month = trim((string) ($matches['month'] ?? ''));
+            $year = trim((string) ($matches['year'] ?? ''));
+            if ($year !== '') {
+                return [
+                    'year' => $year,
+                    'date_context' => trim($day.'.'.$month.'.'.$year),
+                ];
+            }
+        }
+
+        if (preg_match('/^(?<year>(?:19|20)\d{2})\s*[\/\.-]\s*(?<month>0?[1-9]|1[0-2])\s*[\/\.-]\s*(?<day>0?[1-9]|[12]\d|3[01])\s*$/u', $value, $matches) === 1) {
+            $day = trim((string) ($matches['day'] ?? ''));
+            $month = trim((string) ($matches['month'] ?? ''));
+            $year = trim((string) ($matches['year'] ?? ''));
+            if ($year !== '') {
+                return [
+                    'year' => $year,
+                    'date_context' => trim($year.'-'.$month.'-'.$day),
                 ];
             }
         }
@@ -4617,7 +5713,7 @@ class AbaLocalDocumentStructureExtractor
             }
         }
 
-        if (preg_match('/\b(verfasst\s+von|eingereicht\s+von|vorgelegt\s+von|einreicher(?:in)?|autor(?:in)?|betreuer(?:in)?|betreuung|klasse|class|schuljahr|jahr|inhaltsverzeichnis|abstract|zusammenfassung|kurzfassung|vorwort|literaturverzeichnis|abbildungsverzeichnis|eigenständigkeitserklärung)\b/iu', $value) === 1) {
+        if (preg_match('/\b(verfasst\s+von|eingereicht\s+von|vorgelegt\s+von|einreicher(?:in)?|autor(?:in)?|betreuer(?:in)?|betreuung|klasse|class|schuljahr|jahr|inhaltsverzeichnis|abstract|zusammenfassung|kurzfassung|vorwort|literaturverzeichnis|literaturangaben|quellenverzeichnis|quellenangaben|verwendete\s+quellen|literatur(?:\s*[-–]\s*|\s+und\s+)quellenverzeichnis|quellen?|quelle|internetquellenverzeichnis|internetverzeichnis|internetquellenangaben|internetquellenliste|internetquellen|internet|onlinequellenverzeichnis|online(?:\s*-\s*|\s*)quellen|onlinequellen|webquellenverzeichnis|web(?:\s*-\s*|\s*)quellen|webquellen|webseiten|weblinks|references|bibliography|bibliograph(?:ie|y)|bibliografie|abbildungsverzeichnis|eidesstattliche\s+erkl[aä]rung|selbstst[aä]ndigkeitserkl[aä]rung|eigenst[aä]ndigkeitserkl[aä]rung|einverst[aä]ndniserkl[aä]rung|erkl[aä]rung)\b/iu', $value) === 1) {
             return false;
         }
 
@@ -4677,7 +5773,20 @@ class AbaLocalDocumentStructureExtractor
 
     private function looksLikeSectionKeyword(string $line): bool
     {
-        return preg_match('/\b(abstract|zusammenfassung|kurzfassung|vorwort|inhaltsverzeichnis|literaturverzeichnis|abbildungsverzeichnis|eigenständigkeitserklärung|einleitung|fazit|anhang)\b/iu', trim($line)) === 1;
+        $value = trim($line);
+        if ($value === '') {
+            return false;
+        }
+
+        if (preg_match('/\b(abstract|zusammenfassung|kurzfassung|vorwort|inhaltsverzeichnis|literaturverzeichnis|literaturangaben|quellenverzeichnis|quellenangaben|verwendete\s+quellen|literatur(?:\s*[-–]\s*|\s+und\s+)quellenverzeichnis|quellen?|quelle|internetquellenverzeichnis|internetverzeichnis|internetquellenangaben|internetquellenliste|internetquellen|internet|onlinequellenverzeichnis|online(?:\s*-\s*|\s*)quellen|onlinequellen|webquellenverzeichnis|web(?:\s*-\s*|\s*)quellen|webquellen|webseiten|weblinks|references|bibliography|bibliograph(?:ie|y)|bibliografie|abbildungsverzeichnis|tabellenverzeichnis|eidesstattliche\s+erkl[aä]rung|eidesstaatliche\s+erkl[aä]rung|eidstaatliche\s+erkl[aä]rung|selbstst[aä]ndigkeitserkl[aä]rung|eigenst[aä]ndigkeitserkl[aä]rung|einverst[aä]ndniserkl[aä]rung|erkl[aä]rung|einleitung|fazit|anhang)\b/iu', $value) === 1) {
+            return true;
+        }
+
+        if (preg_match($this->figureIndexHeadingPattern(), $value) === 1) {
+            return true;
+        }
+
+        return preg_match($this->consentDeclarationHeadingPattern(), $value) === 1;
     }
 
     /**
@@ -4709,13 +5818,10 @@ class AbaLocalDocumentStructureExtractor
         ));
 
         $figures = [];
+        $seenCaptionLabelKeys = [];
         foreach ($lines as $line) {
             $title = trim((string) $line['text']);
             if ($title === '') {
-                continue;
-            }
-
-            if (preg_match('/^(abb\.?|abbildung|figure)\s*\d+[a-z]?(?:[\.\:\-]?\s*.+)?$/iu', $title) !== 1) {
                 continue;
             }
 
@@ -4724,89 +5830,173 @@ class AbaLocalDocumentStructureExtractor
             if ($this->lineWithinSections($lineNumber, $tocAnchors)) {
                 continue;
             }
+            if ($this->lineWithinSections($lineNumber, $figureIndexAnchors)) {
+                continue;
+            }
 
-            $bodyLines = [$title];
-            foreach ($lines as $candidate) {
-                $candidateLine = (int) $candidate['line_number'];
-                if ($candidateLine <= $lineNumber || $candidateLine > $lineNumber + 5) {
+            $captionCluster = $this->splitCaptionSegmentsFromLine($title);
+            $rawSegments = is_array($captionCluster['segments'] ?? null) ? $captionCluster['segments'] : [];
+            if ($rawSegments === []) {
+                continue;
+            }
+
+            $firstMarkerOffset = $captionCluster['first_marker_offset'];
+            $prefix = trim((string) ($captionCluster['prefix'] ?? ''));
+            $prefixIsSourceCredit = is_int($firstMarkerOffset)
+                && $firstMarkerOffset > 0
+                && $this->looksLikeFigureSourceCreditPrefix($prefix);
+            if (is_int($firstMarkerOffset) && $firstMarkerOffset > 0 && ! $prefixIsSourceCredit) {
+                continue;
+            }
+
+            $captionSegments = array_values(array_filter(
+                $rawSegments,
+                fn (array $segment): bool => (bool) ($segment['is_caption'] ?? false)
+            ));
+            $captionSegments = $this->deduplicateCaptionSegments($captionSegments);
+            $captionSegments = $this->sortCaptionSegmentsInLocalCluster($captionSegments);
+            if ($captionSegments === []) {
+                continue;
+            }
+
+            $clusterSize = count($captionSegments);
+
+            foreach ($captionSegments as $captionIndex => $captionSegment) {
+                $captionTitle = trim((string) ($captionSegment['caption'] ?? ''));
+                if ($captionTitle === '') {
                     continue;
                 }
 
-                $candidateText = trim((string) $candidate['text']);
-                if ($candidateText === '') {
-                    break;
+                $captionLabelKey = $this->captionLabelKey($captionTitle);
+                if ($captionLabelKey !== null) {
+                    $firstSeenLine = $seenCaptionLabelKeys[$captionLabelKey] ?? null;
+                    if (is_int($firstSeenLine) && $lineNumber > $firstSeenLine + 2) {
+                        continue;
+                    }
+
+                    if (! is_int($firstSeenLine)) {
+                        $seenCaptionLabelKeys[$captionLabelKey] = $lineNumber;
+                    }
                 }
 
-                if ($this->isLikelyTocLine($candidateText)) {
-                    break;
+                $captionRemainder = trim((string) ($captionSegment['remainder'] ?? ''));
+                $captionSplitReason = trim((string) ($captionSegment['reason'] ?? '')) ?: 'caption_only';
+                $captionSectionType = $this->captionSectionType($captionTitle);
+                $sectionKeyPrefix = $captionSectionType === 'table' ? 'table' : 'figure';
+
+                $bodyLines = [$captionTitle];
+                if ($captionIndex === 0 && $prefixIsSourceCredit && $prefix !== '') {
+                    $bodyLines[] = $prefix;
                 }
 
-                $looksLikeHeadingBoundary =
-                    preg_match('/^(abb\.?|abbildung|figure)\s*\d+[a-z]?(?:[\.\:\-]?\s*.+)?$/iu', $candidateText) === 1
-                    || $this->looksLikeNumberedHeading($candidateText)
-                    || $this->looksLikeNamedChapterHeading($candidateText)
-                    || $this->resolveSectionType($candidateText) !== null
-                    || $this->looksLikeStandaloneHeading($candidateText);
+                $captionStopReason = $clusterSize > 1 ? 'multi_caption_cluster_local' : 'window_end';
+                $lineSpan = 1;
+                if ($clusterSize === 1) {
+                    $maxCaptionContinuationLines = 2;
+                    foreach ($lines as $candidate) {
+                        $candidateLine = (int) $candidate['line_number'];
+                        if ($candidateLine <= $lineNumber || $candidateLine > $lineNumber + 5) {
+                            continue;
+                        }
 
-                if ($looksLikeHeadingBoundary && preg_match('/^\s*(quelle|source)\s*[:\-]/iu', $candidateText) !== 1) {
-                    break;
+                        $candidateText = trim((string) $candidate['text']);
+                        if ($candidateText === '') {
+                            $captionStopReason = 'blank_line';
+                            break;
+                        }
+
+                        if ($this->isLikelyTocLine($candidateText)) {
+                            $captionStopReason = 'toc_line';
+                            break;
+                        }
+
+                        $looksLikeHeadingBoundary =
+                            $this->looksLikeFigureCaptionLine($candidateText)
+                            || $this->looksLikeTableCaptionLine($candidateText)
+                            || $this->looksLikeNumberedHeading($candidateText)
+                            || $this->looksLikeNamedChapterHeading($candidateText)
+                            || $this->resolveSectionType($candidateText) !== null
+                            || $this->looksLikeStandaloneHeading($candidateText);
+
+                        if ($looksLikeHeadingBoundary && preg_match('/^\s*(quelle|source)\s*[:\-]/iu', $candidateText) !== 1) {
+                            $captionStopReason = 'heading_boundary';
+                            break;
+                        }
+
+                        if (
+                            $this->looksLikeBibliographyEntryLine($candidateText)
+                            || $this->looksLikeFigureIndexEntryLine($candidateText)
+                        ) {
+                            $captionStopReason = 'bibliography_or_figure_index_boundary';
+                            break;
+                        }
+
+                        if (! $this->isLikelyCaptionContinuationLine($candidateText)) {
+                            $captionStopReason = 'prose_boundary';
+                            break;
+                        }
+
+                        $bodyLines[] = $candidateText;
+                        $lineSpan++;
+                        if ($lineSpan >= ($maxCaptionContinuationLines + 1)) {
+                            $captionStopReason = 'caption_line_limit';
+                            break;
+                        }
+                    }
                 }
 
-                if (
-                    $this->looksLikeBibliographyEntryLine($candidateText)
-                    || $this->looksLikeFigureIndexEntryLine($candidateText)
-                ) {
-                    break;
+                $parentKey = null;
+                $parentLevel = 1;
+                foreach ($figureIndexAnchors as $anchor) {
+                    if (($anchor['start_line'] ?? 0) <= $lineNumber && ($anchor['end_line'] ?? 0) >= $lineNumber) {
+                        $parentKey = (string) $anchor['section_key'];
+                        $parentLevel = max(1, (int) ($anchor['hierarchy_level'] ?? 1));
+                        break;
+                    }
                 }
 
-                $bodyLines[] = $candidateText;
+                foreach ($chapterAnchors as $anchor) {
+                    if ($parentKey !== null) {
+                        break;
+                    }
+
+                    if (($anchor['start_line'] ?? 0) <= $lineNumber && ($anchor['end_line'] ?? 0) >= $lineNumber) {
+                        $parentKey = (string) $anchor['section_key'];
+                        $parentLevel = max(1, (int) ($anchor['hierarchy_level'] ?? 1));
+                    }
+                }
+
+                $figures[] = [
+                    'section_key' => $sectionKeyPrefix.'-'.$lineNumber.'-'.($captionIndex + 1),
+                    'parent_key' => $parentKey,
+                    'section_type' => $captionSectionType,
+                    'section_title' => $captionTitle,
+                    'extracted_text' => implode("\n", $bodyLines),
+                    'hierarchy_level' => $parentKey ? min(9, $parentLevel + 1) : 2,
+                    'start_line' => $lineNumber,
+                    'end_line' => $lineNumber + $lineSpan - 1,
+                    'start_page' => $pageNumber,
+                    'end_page' => $pageNumber,
+                    'anchor' => [
+                        'line_start' => $lineNumber,
+                        'line_end' => $lineNumber + $lineSpan - 1,
+                        'page_start' => $pageNumber,
+                        'page_end' => $pageNumber,
+                    ],
+                    'metadata' => [
+                        'source' => $captionSectionType === 'table' ? 'table_label' : 'figure_label',
+                        'within_figure_index' => false,
+                        'caption_kind' => $captionSectionType,
+                        'caption_line_count' => count($bodyLines),
+                        'is_multi_line_caption' => count($bodyLines) > 1,
+                        'caption_stop_reason' => $captionStopReason,
+                        'caption_split_reason' => $captionSplitReason,
+                        'caption_remainder_chars' => mb_strlen($captionRemainder),
+                        'caption_cluster_size' => $clusterSize,
+                        'caption_cluster_index' => $captionIndex + 1,
+                    ],
+                ];
             }
-
-            $parentKey = null;
-            $parentLevel = 1;
-            foreach ($figureIndexAnchors as $anchor) {
-                if (($anchor['start_line'] ?? 0) <= $lineNumber && ($anchor['end_line'] ?? 0) >= $lineNumber) {
-                    $parentKey = (string) $anchor['section_key'];
-                    $parentLevel = max(1, (int) ($anchor['hierarchy_level'] ?? 1));
-                    break;
-                }
-            }
-
-            foreach ($chapterAnchors as $anchor) {
-                if ($parentKey !== null) {
-                    break;
-                }
-
-                if (($anchor['start_line'] ?? 0) <= $lineNumber && ($anchor['end_line'] ?? 0) >= $lineNumber) {
-                    $parentKey = (string) $anchor['section_key'];
-                    $parentLevel = max(1, (int) ($anchor['hierarchy_level'] ?? 1));
-                }
-            }
-
-            $figures[] = [
-                'section_key' => 'figure-'.$lineNumber,
-                'parent_key' => $parentKey,
-                'section_type' => 'figure',
-                'section_title' => $title,
-                'extracted_text' => implode("\n", $bodyLines),
-                'hierarchy_level' => $parentKey ? min(9, $parentLevel + 1) : 2,
-                'start_line' => $lineNumber,
-                'end_line' => $lineNumber + count($bodyLines) - 1,
-                'start_page' => $pageNumber,
-                'end_page' => $pageNumber,
-                'anchor' => [
-                    'line_start' => $lineNumber,
-                    'line_end' => $lineNumber + count($bodyLines) - 1,
-                    'page_start' => $pageNumber,
-                    'page_end' => $pageNumber,
-                ],
-                'metadata' => [
-                    'source' => 'figure_label',
-                    'within_figure_index' => $this->lineWithinSections($lineNumber, $figureIndexAnchors),
-                    'caption_line_count' => count($bodyLines),
-                    'is_multi_line_caption' => count($bodyLines) > 1,
-                ],
-            ];
         }
 
         if ($figures === []) {
@@ -4999,6 +6189,11 @@ class AbaLocalDocumentStructureExtractor
 
     private function looksLikeStandaloneHeading(string $line): bool
     {
+        $value = trim($line);
+        if ($value === '') {
+            return false;
+        }
+
         if ($this->isLikelyTocLine($line)) {
             return false;
         }
@@ -5007,11 +6202,19 @@ class AbaLocalDocumentStructureExtractor
             return false;
         }
 
+        if (preg_match('/^\s*vgl\.?\b/iu', $value) === 1) {
+            return false;
+        }
+
         if ($this->looksLikeFigureIndexEntryLine($line)) {
             return false;
         }
 
         if ($this->looksLikeFigureCaptionLine($line) || $this->looksLikeTableCaptionLine($line)) {
+            return false;
+        }
+
+        if (substr_count($value, ',') >= 2) {
             return false;
         }
 
@@ -5065,13 +6268,14 @@ class AbaLocalDocumentStructureExtractor
             'abstract' => '/^\s*(abstract|zusammenfassung|kurzfassung|summary|executive summary|management summary|kurz[üu]berblick)(?:\s*(?:\(|\[)?\s*(deutsch|german|englisch|english)\s*(?:\)|\])?)?\b/iu',
             'foreword' => '/^\s*(vorwort|preface)\b/iu',
             'table_of_contents' => '/^\s*(inhaltsverzeichnis|table of contents)\b/iu',
-            'bibliography' => '/^\s*(literaturverzeichnis|quellenverzeichnis|references|bibliography)\b/iu',
-            'figure_index' => '/^\s*(abbildungsverzeichnis|list of figures)\b/iu',
-            'consent_declaration' => '/^\s*(einverst[aä]ndniserkl[aä]rung|einverstaendniserklaerung|eigenst[aä]ndigkeitserkl[aä]rung|ehrenw[oö]rtliche erkl[aä]rung)\b/iu',
+            'bibliography' => $this->bibliographyHeadingPattern(),
+            'figure_index' => $this->figureIndexHeadingPattern(),
+            'consent_declaration' => $this->consentDeclarationHeadingPattern(),
         ];
 
         if (
-            preg_match('/^\s*(einleitung|introduction|fazit|schluss(?:folgerung)?|res[üu]mee|conclusion)\s*(?:$|[:\-–]\s*[^.!?]{0,120}$)/iu', $title) === 1
+            preg_match('/^\s*(?:einleitung|introduction|fazit|schluss(?:folgerung)?|res[üu]mee|conclusion)(?:\s*\/\s*(?:fazit|schluss(?:folgerung)?|res[üu]mee|conclusion))?\s*(?:$|[:\-–]\s*[^.!?]{0,120}$)/iu', $title) === 1
+            || preg_match('/^\s*(?:fazit|schluss(?:folgerung)?|res[üu]mee|conclusion)\s*\/\s*(?:fazit|schluss(?:folgerung)?|res[üu]mee|conclusion)\s*$/iu', $title) === 1
             || $this->matchesNamedChapterHeadingStructure($title)
         ) {
             return [
@@ -5162,9 +6366,70 @@ class AbaLocalDocumentStructureExtractor
     }
 
     /**
+     * @param  array<int,int>|null  $current
+     * @param  array<int,int>|null  $candidateParent
+     */
+    private function isNearNumberingParentWithRootMismatch(?array $current, ?array $candidateParent): bool
+    {
+        if ($current === null || $candidateParent === null) {
+            return false;
+        }
+
+        if (count($current) !== count($candidateParent) + 1 || count($candidateParent) < 2) {
+            return false;
+        }
+
+        $currentPrefix = array_slice($current, 0, -1);
+        if (count($currentPrefix) !== count($candidateParent)) {
+            return false;
+        }
+
+        $currentRoot = (int) ($currentPrefix[0] ?? 0);
+        $parentRoot = (int) ($candidateParent[0] ?? 0);
+        if ($currentRoot <= 0 || $parentRoot <= 0 || $currentRoot === $parentRoot) {
+            return false;
+        }
+
+        if (abs($currentRoot - $parentRoot) > 1) {
+            return false;
+        }
+
+        return array_slice($currentPrefix, 1) === array_slice($candidateParent, 1);
+    }
+
+    private function normalizeHeadingNumberingAgainstParent(string $title, string $parentTitle): ?string
+    {
+        $currentNumbering = $this->extractHeadingNumberingSegments($title);
+        $parentNumbering = $this->extractHeadingNumberingSegments($parentTitle);
+        if (! $this->isNearNumberingParentWithRootMismatch($currentNumbering, $parentNumbering)) {
+            return null;
+        }
+
+        if (! is_array($currentNumbering) || ! is_array($parentNumbering) || $currentNumbering === []) {
+            return null;
+        }
+
+        $normalizedSegments = array_merge($parentNumbering, [(int) ($currentNumbering[array_key_last($currentNumbering)] ?? 0)]);
+        $normalizedSegments = array_values(array_filter($normalizedSegments, fn (int $segment): bool => $segment > 0));
+        if ($normalizedSegments === []) {
+            return null;
+        }
+
+        $replacement = implode('.', $normalizedSegments);
+        $normalized = preg_replace('/^\s*\d+(?:\.\d+){0,6}/u', $replacement, $title);
+        if (! is_string($normalized)) {
+            return null;
+        }
+
+        $normalized = trim($normalized);
+
+        return $normalized !== '' ? $normalized : null;
+    }
+
+    /**
      * @param  array<int, array{line_number:int,page_number:int,text:string,normalized:string}>  $lines
      */
-    private function extractTextBetweenLines(array $lines, int $startLine, int $endLine): string
+    private function extractTextBetweenLines(array $lines, int $startLine, int $endLine, bool $stripCaptionArtifacts = false): string
     {
         $parts = [];
         foreach ($lines as $line) {
@@ -5173,7 +6438,15 @@ class AbaLocalDocumentStructureExtractor
                 continue;
             }
 
-            $parts[] = rtrim((string) $line['text']);
+            $text = rtrim((string) $line['text']);
+            if ($stripCaptionArtifacts) {
+                $text = $this->stripCaptionArtifactsFromLine($text);
+                if (trim($text) === '') {
+                    continue;
+                }
+            }
+
+            $parts[] = $text;
         }
 
         $text = implode("\n", $parts);
@@ -5697,7 +6970,7 @@ class AbaLocalDocumentStructureExtractor
                     continue;
                 }
 
-                if (preg_match('/\b(literaturverzeichnis|quellenverzeichnis|abbildungsverzeichnis|eigenst[aä]ndigkeitserkl[aä]rung|einverst[aä]ndniserkl[aä]rung)\b/iu', $text) === 1) {
+                if (preg_match('/\b(literaturverzeichnis|literaturangaben|quellenverzeichnis|quellenangaben|verwendete\s+quellen|literatur(?:\s*[-–]\s*|\s+und\s+)quellenverzeichnis|quellen?|quelle|internetquellenverzeichnis|internetverzeichnis|internetquellenangaben|internetquellenliste|internetquellen|internet|onlinequellenverzeichnis|online(?:\s*-\s*|\s*)quellen|onlinequellen|webquellenverzeichnis|web(?:\s*-\s*|\s*)quellen|webquellen|webseiten|weblinks|references|bibliography|bibliograph(?:ie|y)|bibliografie|abbildungsverzeichnis|eidesstattliche\s+erkl[aä]rung|selbstst[aä]ndigkeitserkl[aä]rung|eigenst[aä]ndigkeitserkl[aä]rung|einverst[aä]ndniserkl[aä]rung|erkl[aä]rung)\b/iu', $text) === 1) {
                     $count++;
                 }
             }
@@ -5909,6 +7182,10 @@ class AbaLocalDocumentStructureExtractor
      */
     private function logDebug(string $message, array $context = []): void
     {
+        if (! config('aba_analysis.debug_log_enabled')) {
+            return;
+        }
+
         try {
             Log::channel('aba-run-debug')->debug($message, $context);
         } catch (\Throwable) {

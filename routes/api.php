@@ -104,6 +104,16 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/test-cron/check', [App\Http\Controllers\Admin\HealthController::class, 'testCron']);
     });
 
+    /* SANCTUM - aba ai-settings + seed-report (admin/super_admin only) */
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,super_admin'])->group(function () {
+        Route::get('/admin/aba/ai-settings', [\App\Http\Controllers\Admin\ABA\AbaAiSettingsController::class, 'index']);
+        Route::post('/admin/aba/ai-settings/check-freshness', [\App\Http\Controllers\Admin\ABA\AbaAiSettingsController::class, 'checkFreshness']);
+        Route::post('/admin/aba/ai-settings/check-freshness-online', [\App\Http\Controllers\Admin\ABA\AbaAiSettingsController::class, 'checkFreshnessOnline']);
+        Route::post('/admin/aba/ai-settings/propose-update', [\App\Http\Controllers\Admin\ABA\AbaAiSettingsController::class, 'proposeSeedUpdate']);
+        Route::post('/admin/aba/ai-settings/rebuild', [\App\Http\Controllers\Admin\ABA\AbaAiSettingsController::class, 'rebuildFromSeed']);
+        Route::get('/admin/aba/seed-report', [\App\Http\Controllers\Admin\ABA\AbaSeedReportController::class, 'index']);
+    });
+
     /* SANCTUM - aba_teacher */
     Route::middleware(['auth:sanctum', 'api-allowed:aba_teacher', 'tool-licensed:ABA,auth'])->group(function () {
         Route::get('/admin/aba/schoolyears', [\App\Http\Controllers\Admin\SchoolyearController::class, 'index']);
