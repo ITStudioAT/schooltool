@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers\Admin\ABA;
 
+use App\ABA\Services\BuildSeedDiffView;
 use App\ABA\Services\CheckSeedFreshness;
 use App\ABA\Services\ProposeSeedUpdate;
 use App\ABA\Services\ReadFreshnessResults;
 use App\ABA\Services\ReadOpenClaims;
+use App\ABA\Services\ReadSeedHardeningStatus;
 use App\ABA\Services\ReadSeedReportMeta;
 use App\ABA\Services\ReadSeedReviewState;
 use App\ABA\Services\ReadSeedSourceRegistry;
@@ -27,6 +29,8 @@ class AbaAiSettingsController extends Controller
         ReadSeedSourceRegistry $sourceRegistry,
         ReadOpenClaims $openClaims,
         ReadFreshnessResults $freshnessResults,
+        ReadSeedHardeningStatus $hardeningStatus,
+        BuildSeedDiffView $seedDiffView,
     ): JsonResponse {
         return response()->json([
             'seed_report' => $seedMeta->read(),
@@ -34,6 +38,8 @@ class AbaAiSettingsController extends Controller
             'source_registry' => $sourceRegistry->read(),
             'open_claims' => $openClaims->read(),
             'freshness_results' => $freshnessResults->read(),
+            'hardening_status' => $hardeningStatus->read(),
+            'proposals' => $seedDiffView->listDiffableProposals(),
         ]);
     }
 
@@ -49,7 +55,7 @@ class AbaAiSettingsController extends Controller
         } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
-                'error' => 'Freshness-Check fehlgeschlagen: '.$e->getMessage(),
+                'error' => 'Prüfung fehlgeschlagen: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -66,7 +72,7 @@ class AbaAiSettingsController extends Controller
         } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
-                'error' => 'Online-Freshness-Check fehlgeschlagen: '.$e->getMessage(),
+                'error' => 'Online-Prüfung fehlgeschlagen: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -86,7 +92,7 @@ class AbaAiSettingsController extends Controller
         } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
-                'error' => 'Proposal-Erstellung fehlgeschlagen: '.$e->getMessage(),
+                'error' => 'Vorschlagserstellung fehlgeschlagen: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -107,7 +113,7 @@ class AbaAiSettingsController extends Controller
         } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
-                'error' => 'Rebuild fehlgeschlagen: '.$e->getMessage(),
+                'error' => 'Aufbau fehlgeschlagen: '.$e->getMessage(),
             ], 500);
         }
     }

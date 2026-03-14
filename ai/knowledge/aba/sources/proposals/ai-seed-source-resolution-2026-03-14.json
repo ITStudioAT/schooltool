@@ -1,0 +1,61 @@
+{
+    "version": "1.0",
+    "generated_at": "2026-03-14T16:20:27+01:00",
+    "stage": "source_resolution",
+    "governance": {
+        "scope": "AHS only",
+        "strategy": "registry_only_no_web_fetch",
+        "auto_apply": false,
+        "requires_review": true
+    },
+    "summary": {
+        "total": 2,
+        "resolved": 0,
+        "partially_resolved": 2,
+        "unresolved": 0
+    },
+    "items": [
+        {
+            "issue_id": "issue-013",
+            "issue_type": "source_placeholder",
+            "original_text": "- **BMBWF-Erlass 2025 (AHS)**: Amtliche Quelle, bindend – URL noch zu recherchieren",
+            "resolution_status": "partially_resolved",
+            "confidence": "medium",
+            "source_id": "BMBWF-2025",
+            "source_title": "AHS-ABA-Richtlinien (offizielle AHS-ABA-Seite)",
+            "url": "https://www.ahs-aba.at/schueler/planen/richtlinien",
+            "note": "Offizielle AHS-Richtlinienseite identifiziert; konkrete Erlass-Fundstelle 2025 ist dort nicht eindeutig verlinkt.",
+            "reason": "Belastbare AHS-Referenzseite vorhanden, aber kein eindeutig zitierfähiger Direktlink zum genannten BMBWF-Erlass 2025.",
+            "evidence_level": "portal_reference",
+            "is_direct_document": false,
+            "is_citable": false,
+            "missing_requirements": [
+                "Eindeutiger offizieller Dokumenttitel",
+                "Konkrete zitierfähige Einzelfundstelle (Direktlink/PDF)"
+            ],
+            "match_strategy": "focused_text_match",
+            "resolved_at": "2026-03-14T16:20:27+01:00"
+        },
+        {
+            "issue_id": "issue-014",
+            "issue_type": "source_placeholder",
+            "original_text": "- **AHS-Handbuch / BMBWF-Richtlinien für AHS**: Offizielle Orientierung – Quelle noch zu identifizieren und zu verlinken",
+            "resolution_status": "partially_resolved",
+            "confidence": "medium",
+            "source_id": "AHS-HB-2025",
+            "source_title": "AHS-ABA-Portal: Anleitungen und Handbücher",
+            "url": "https://www.ahs-aba.at/schueler/einreichen/aba-portal",
+            "note": "Offizielle Seite mit Handbuch-/Portalbezug identifiziert; konkrete Einzeldokument-Fundstelle bleibt zu prüfen.",
+            "reason": "Die Handbuch- und Richtlinienebene ist offiziell referenzierbar, eine eindeutige Einzeldokument-URL für den genannten Titel bleibt offen.",
+            "evidence_level": "portal_reference",
+            "is_direct_document": false,
+            "is_citable": false,
+            "missing_requirements": [
+                "Eindeutiger offizieller Dokumenttitel",
+                "Konkrete zitierfähige Einzelfundstelle (Direktlink/PDF)"
+            ],
+            "match_strategy": "focused_text_match",
+            "resolved_at": "2026-03-14T16:20:27+01:00"
+        }
+    ]
+}

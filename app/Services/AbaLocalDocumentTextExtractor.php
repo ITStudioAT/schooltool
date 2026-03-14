@@ -284,10 +284,10 @@ class AbaLocalDocumentTextExtractor
 
             $xpath = new \DOMXPath($document);
             $xpath->registerNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main');
-            $paragraphs = $xpath->query('//w:body/w:p | //w:body/w:sdt//w:p');
-            if (! $paragraphs) {
+            $blocks = $xpath->query('//w:body//*[self::w:tbl or (self::w:p and not(ancestor::w:tbl))]');
+            if (! $blocks) {
                 $candidate['status'] = 'empty';
-                $candidate['metrics'] = ['reason' => 'paragraphs_not_found'];
+                $candidate['metrics'] = ['reason' => 'content_blocks_not_found'];
 
                 return $candidate;
             }
@@ -297,76 +297,26 @@ class AbaLocalDocumentTextExtractor
             $tocLines = [];
             $lineNumber = 0;
 
-            foreach ($paragraphs as $paragraph) {
-                $text = $this->extractTextFromWordParagraph($xpath, $paragraph);
-                $text = trim($text);
-                if ($text === '') {
+            foreach ($blocks as $block) {
+                $localName = mb_strtolower((string) ($block->localName ?? $block->nodeName));
+                if ($localName === 'tbl') {
+                    $this->appendWordTableLines($xpath, $block, $lines, $lineNumber);
+
                     continue;
                 }
 
-                $lineNumber++;
-                $styleValue = trim((string) $xpath->evaluate('string(w:pPr/w:pStyle/@w:val)', $paragraph));
-                $outlineLevelValue = trim((string) $xpath->evaluate('string(w:pPr/w:outlineLvl/@w:val)', $paragraph));
-                $alignment = $this->resolveParagraphAlignment($xpath, $paragraph);
-                $indentLeftTwips = $this->resolveParagraphIndentLeftTwips($xpath, $paragraph);
-                $spacingBeforeTwips = $this->resolveParagraphSpacingTwips($xpath, $paragraph, 'before');
-                $spacingAfterTwips = $this->resolveParagraphSpacingTwips($xpath, $paragraph, 'after');
-                $fontSizePt = $this->resolveParagraphFontSizePt($xpath, $paragraph);
-                $isBold = $this->paragraphHasBoldRun($xpath, $paragraph);
-                $headingLevel = $this->resolveWordHeadingLevel($styleValue, $outlineLevelValue, $text);
-                $knownType = $this->knownSectionType($text);
-                $isTocStyle = $this->isWordTocStyle($styleValue);
-                $isTocEntry = $this->looksLikeTocEntry($text);
-                $isTocLine = $isTocStyle || $isTocEntry;
-
-                if ($isTocLine) {
-                    $tocLines[] = $lineNumber;
+                if ($localName !== 'p') {
+                    continue;
                 }
 
-                $outlineSource = null;
-                if ($knownType !== null) {
-                    $outlineSource = 'keyword';
-                    $headingLevel = $headingLevel ?? 1;
-                } elseif ($headingLevel !== null) {
-                    $outlineSource = 'docx_style';
-                } elseif ($this->looksLikeNumberedHeading($text)) {
-                    $outlineSource = 'numbered';
-                    $headingLevel = $this->numberedHeadingLevel($text);
-                }
-
-                if ($outlineSource !== null) {
-                    $entry = [
-                        'line_number' => $lineNumber,
-                        'title' => $text,
-                        'level' => $headingLevel,
-                        'source' => $outlineSource,
-                        'is_toc' => $isTocLine,
-                        'section_type' => $knownType,
-                    ];
-                    if ($styleValue !== '') {
-                        $entry['style'] = $styleValue;
-                    }
-                    if ($alignment !== null) {
-                        $entry['alignment'] = $alignment;
-                    }
-                    if ($indentLeftTwips !== null) {
-                        $entry['indent_left_twips'] = $indentLeftTwips;
-                    }
-                    if ($spacingBeforeTwips !== null) {
-                        $entry['spacing_before_twips'] = $spacingBeforeTwips;
-                    }
-                    if ($spacingAfterTwips !== null) {
-                        $entry['spacing_after_twips'] = $spacingAfterTwips;
-                    }
-                    if ($fontSizePt !== null) {
-                        $entry['font_size_pt'] = $fontSizePt;
-                    }
-                    $entry['is_bold'] = $isBold;
-
-                    $outline[] = $entry;
-                }
-
-                $lines[] = $text;
+                $this->appendWordParagraphLine(
+                    xpath: $xpath,
+                    paragraph: $block,
+                    lines: $lines,
+                    outline: $outline,
+                    tocLines: $tocLines,
+                    lineNumber: $lineNumber,
+                );
             }
 
             $candidate['text'] = $this->normalizeText(implode("\n", $lines));
@@ -383,6 +333,158 @@ class AbaLocalDocumentTextExtractor
         }
 
         return $candidate;
+    }
+
+    /**
+     * @param  array<int, string>  $lines
+     * @param  array<int, array<string,mixed>>  $outline
+     * @param  array<int, int>  $tocLines
+     */
+    private function appendWordParagraphLine(
+        \DOMXPath $xpath,
+        \DOMNode $paragraph,
+        array &$lines,
+        array &$outline,
+        array &$tocLines,
+        int &$lineNumber,
+    ): void {
+        $text = trim($this->extractTextFromWordParagraph($xpath, $paragraph));
+        if ($text === '') {
+            return;
+        }
+
+        $lineNumber++;
+        $styleValue = trim((string) $xpath->evaluate('string(w:pPr/w:pStyle/@w:val)', $paragraph));
+        $outlineLevelValue = trim((string) $xpath->evaluate('string(w:pPr/w:outlineLvl/@w:val)', $paragraph));
+        $alignment = $this->resolveParagraphAlignment($xpath, $paragraph);
+        $indentLeftTwips = $this->resolveParagraphIndentLeftTwips($xpath, $paragraph);
+        $spacingBeforeTwips = $this->resolveParagraphSpacingTwips($xpath, $paragraph, 'before');
+        $spacingAfterTwips = $this->resolveParagraphSpacingTwips($xpath, $paragraph, 'after');
+        $fontSizePt = $this->resolveParagraphFontSizePt($xpath, $paragraph);
+        $isBold = $this->paragraphHasBoldRun($xpath, $paragraph);
+        $headingLevel = $this->resolveWordHeadingLevel($styleValue, $outlineLevelValue, $text);
+        $knownType = $this->knownSectionType($text);
+        $isTocStyle = $this->isWordTocStyle($styleValue);
+        $isTocEntry = $this->looksLikeTocEntry($text);
+        $isTocLine = $isTocStyle || $isTocEntry;
+
+        if ($isTocLine) {
+            $tocLines[] = $lineNumber;
+        }
+
+        $outlineSource = null;
+        if ($knownType !== null) {
+            $outlineSource = 'keyword';
+            $headingLevel = $headingLevel ?? 1;
+        } elseif ($headingLevel !== null) {
+            $outlineSource = 'docx_style';
+        } elseif ($this->looksLikeNumberedHeading($text)) {
+            $outlineSource = 'numbered';
+            $headingLevel = $this->numberedHeadingLevel($text);
+        }
+
+        if ($outlineSource !== null) {
+            $entry = [
+                'line_number' => $lineNumber,
+                'title' => $text,
+                'level' => $headingLevel,
+                'source' => $outlineSource,
+                'is_toc' => $isTocLine,
+                'section_type' => $knownType,
+            ];
+            if ($styleValue !== '') {
+                $entry['style'] = $styleValue;
+            }
+            if ($alignment !== null) {
+                $entry['alignment'] = $alignment;
+            }
+            if ($indentLeftTwips !== null) {
+                $entry['indent_left_twips'] = $indentLeftTwips;
+            }
+            if ($spacingBeforeTwips !== null) {
+                $entry['spacing_before_twips'] = $spacingBeforeTwips;
+            }
+            if ($spacingAfterTwips !== null) {
+                $entry['spacing_after_twips'] = $spacingAfterTwips;
+            }
+            if ($fontSizePt !== null) {
+                $entry['font_size_pt'] = $fontSizePt;
+            }
+            $entry['is_bold'] = $isBold;
+
+            $outline[] = $entry;
+        }
+
+        $lines[] = $text;
+    }
+
+    /**
+     * @param  array<int, string>  $lines
+     */
+    private function appendWordTableLines(\DOMXPath $xpath, \DOMNode $table, array &$lines, int &$lineNumber): void
+    {
+        $rows = [];
+        foreach ($xpath->query('./w:tr', $table) ?: [] as $rowNode) {
+            $cells = [];
+            foreach ($xpath->query('./w:tc', $rowNode) ?: [] as $cellNode) {
+                $cellParts = [];
+                foreach ($xpath->query('.//w:p', $cellNode) ?: [] as $cellParagraph) {
+                    $cellText = trim($this->extractTextFromWordParagraph($xpath, $cellParagraph));
+                    if ($cellText !== '') {
+                        $cellParts[] = $cellText;
+                    }
+                }
+
+                $cellValue = trim(implode(' ', $cellParts));
+                $cellValue = preg_replace('/\s+/u', ' ', $cellValue) ?? $cellValue;
+                $cells[] = trim($cellValue);
+            }
+
+            $nonEmptyCells = array_values(array_filter($cells, fn (string $cell): bool => $cell !== ''));
+            if ($nonEmptyCells === []) {
+                continue;
+            }
+
+            $rows[] = $cells;
+        }
+
+        if ($rows === []) {
+            return;
+        }
+
+        foreach ($rows as $index => $row) {
+            $lineNumber++;
+            $lines[] = $this->buildMarkdownTableLine($row);
+
+            if ($index === 0) {
+                $lineNumber++;
+                $lines[] = $this->buildMarkdownTableSeparatorLine(count($row));
+            }
+        }
+    }
+
+    /**
+     * @param  array<int, string>  $cells
+     */
+    private function buildMarkdownTableLine(array $cells): string
+    {
+        $normalizedCells = array_map(function (string $cell): string {
+            $value = trim($cell);
+            if ($value === '') {
+                return ' ';
+            }
+
+            return str_replace('|', '\|', $value);
+        }, $cells);
+
+        return '| '.implode(' | ', $normalizedCells).' |';
+    }
+
+    private function buildMarkdownTableSeparatorLine(int $columnCount): string
+    {
+        $columns = max(1, $columnCount);
+
+        return '|'.implode('|', array_fill(0, $columns, '---')).'|';
     }
 
     /**
@@ -1173,8 +1275,8 @@ class AbaLocalDocumentTextExtractor
     private function knownSectionType(string $title): ?string
     {
         $patterns = [
-            'abstract' => '/^\s*(abstract|zusammenfassung)\b/iu',
-            'foreword' => '/^\s*(vorwort|preface)\b/iu',
+            'abstract' => '/^\s*(abstract|zusammenfassung|kurzfassung|summary|executive summary|management summary|kurz[üu]berblick)(?:\s*(?:\(|\[)?\s*(deutsch|german|englisch|english)\s*(?:\)|\])?)?\s*(?:$|[:\-–]\s*[^.!?]{0,120}$|(?:(?:\.{2,}|…+)\s*)?\d+(?:\s*[-–]\s*\d+)?\s*$)/iu',
+            'foreword' => '/^\s*(vorwort|vorbemerkung|preface|foreword|prefazione)\b/iu',
             'table_of_contents' => '/^\s*(inhaltsverzeichnis|table of contents)\b/iu',
             'bibliography' => '/^\s*(?:(?:literaturverzeichnis|literaturangaben|quellenverzeichnis|quellenangaben|verwendete\s+quellen|literatur(?:\s*[-–]\s*|\s+und\s+)quellenverzeichnis|internetquellenverzeichnis|internetverzeichnis|internetquellenangaben|internetquellenliste|internetquellen|internet|onlinequellenverzeichnis|online(?:\s*-\s*|\s*)quellen|onlinequellen|webquellenverzeichnis|web(?:\s*-\s*|\s*)quellen|webquellen|webseiten|weblinks|references|bibliography|bibliograph(?:ie|y)|bibliografie)\b|(?:quellen?|quelle)\s*(?:$|[:\-–]\s*$))/iu',
             'figure_index' => '/^\s*(abbildungsverzeichnis|list of figures)\b/iu',

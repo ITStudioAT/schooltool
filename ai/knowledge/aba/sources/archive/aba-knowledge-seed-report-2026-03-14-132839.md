@@ -11,9 +11,12 @@ review_state: "ai/knowledge/aba/sources/seed-review-state.json"
 scope_note: "AHS (Allgemeinbildende Höhere Schulen) – Abschlussarbeit auf vorwissenschaftlichem Niveau"
 ---
 
+> **⚠ Scope-Korrektur 2026-03-14:** Diese Datei wurde initial irrtümlich mit BMHS-Inhalt (Abschließende Berufsbildende Arbeit) befüllt. Der korrekte Scope ist AHS-ABA (Abschlussarbeit an AHS / ahs-aba.at). Alle Claims mit BMHS-spezifischen Quellen oder Schultypen (HASCH, HAK, HTL etc.) sind als `needs_review` markiert und bedürfen einer Verifikation durch AHS-Fachexpert:innen.
+
 # ABA – Abschlussarbeit an AHS: Knowledge Seed Report
 
 **Erstellt:** 2026-03-14
+**Korrigiert:** 2026-03-14 (Scope: BMHS → AHS)
 **Zweck:** Zentrale Seed-/Ausgangsdatei der ABA-Knowledge-Pipeline
 **Schultyp:** Allgemeinbildende Höhere Schulen (AHS) in Österreich
 
@@ -22,6 +25,8 @@ scope_note: "AHS (Allgemeinbildende Höhere Schulen) – Abschlussarbeit auf vor
 ## 1. Was ist die ABA?
 
 Die **Abschlussarbeit an AHS (ABA)** ist eine schriftliche Abschlussarbeit an Allgemeinen Höheren Schulen (AHS) in Österreich, verfasst auf vorwissenschaftlichem Niveau. Sie ist Bestandteil der schulischen Abschlussprüfung und dokumentiert eigenständige Auseinandersetzung der Schülerinnen und Schüler mit einem selbst gewählten Thema.
+
+> **⚠ Verifikationsbedarf:** Einführungszeitplan und Opt-in/Opt-out-Regelungen wurden initial aus BMHS-Quellen übernommen und sind für den AHS-Kontext noch nicht verifiziert. Bitte durch AHS-Fachexpert:innen prüfen.
 
 Die ABA wurde mit dem **Schuljahr 2025/26 als Pilotprojekt** eingeführt. Die **verpflichtende Teilnahme** gilt ab dem Schuljahr **2028/29**. Bis dahin können Schulen und Schüler/innen freiwillig teilnehmen (Opt-in). Ein **Opt-out** (Abmeldung von der freiwilligen Teilnahme) ist bis **15. Jänner** des jeweiligen Schuljahres möglich.
 
@@ -89,6 +94,8 @@ Die schriftliche ABA muss folgende Elemente in der angegebenen Reihenfolge entha
 Es gibt **keine gesetzlich vorgeschriebene Mindestseitenzahl**. Der Umfang ergibt sich aus dem Thema und den schulspezifischen Vorgaben.
 
 **Übliche Orientierungswerte (schulspezifisch, AHS):**
+
+> **⚠ Verifikationsbedarf:** Die ursprünglichen Orientierungswerte (HASCH/FACH, HAK/HAS, HTL) bezogen sich auf BMHS-Schultypen und sind für AHS nicht anwendbar. Bitte AHS-spezifische Seitenanzahl durch Fachexpert:innen und BMBWF-Vorgaben für AHS ergänzen.
 
 ---
 
@@ -185,22 +192,13 @@ Folgende Aspekte sind **schulspezifisch** und variieren je nach Schule:
 - **Beobachtungen aus der Praxis (2025/26, AHS)**: Berichtet, möglicherweise nicht universell
 - **Brancheninformationen / Fachzeitschriften**: Informativ, nicht normativ
 
+> **⚠ Quellenkorrektur:** Ursprüngliche Quelle „BMHS-Handbuch ABA (2025)" bezieht sich auf BMHS und ist für AHS nicht anwendbar. Durch AHS-spezifische amtliche Quellen (BMBWF für AHS, ahs-aba.at) ersetzen.
+
 ---
 
-## Offene Punkte (unresolved)
+## 15. Offene Fragen und Unsicherheiten
 
-> **Draft-Hinweis:** Die folgenden Punkte konnten durch die automatische Verifikation nicht abschließend geklärt werden. Sie erfordern manuelle Überprüfung vor der Übernahme dieses Drafts.
-
-| Issue | Typ | Abschnitt | Originaltext (Auszug) |
-|---|---|---|---|
-| issue-005 | weak_statement | 3. Zeitplan und Fristen |   Themenabgabe / Betreuungsvereinbarung   Schulspezifisch (m… |
-| issue-006 | weak_statement | 3. Zeitplan und Fristen |   Abgabe der ABA (schriftlich)   Schulspezifisch (meist Febr… |
-| issue-007 | weak_statement | 3. Zeitplan und Fristen |   Mündliche Präsentation   Schulspezifisch (meist April–… |
-| issue-008 | weak_statement | Format B: Rein Mündlich | - Schulspezifisch: Nicht alle Schulen bieten dieses Format a… |
-| issue-011 | weak_statement | 6. Seitenzahl und Umfang | **Übliche Orientierungswerte (schulspezifisch, AHS):**… |
-| issue-013 | weak_statement | 7. Abgabe | - Abgabedatum ist **schulspezifisch**… |
-| issue-014 | weak_statement | 9. Plagiatsprüfung | - Verwendete Systeme: schulspezifisch (oft PlagScan, Turniti… |
-| issue-017 | source_placeholder | 14. Quellen und Verlässlichkeit | - **BMBWF-Erlass 2025 (AHS)**: Amtliche Quelle, bindend – … |
-| issue-018 | source_placeholder | 14. Quellen und Verlässlichkeit | - **AHS-Handbuch / BMBWF-Richtlinien für AHS**: Offizielle … |
-| issue-021 | weak_statement | 15. Offene Fragen und Unsicherheiten | - Ob Format B (rein mündlich) an allen Schulen verfügbar s… |
-| issue-022 | weak_statement | 15. Offene Fragen und Unsicherheiten | - Das vollständige Bewertungsraster ab 2026/27 lag zum Zeit… |
+- Ob Format B (rein mündlich) an allen Schulen verfügbar sein wird, ist noch nicht abschließend geregelt
+- Das vollständige Bewertungsraster ab 2026/27 lag zum Zeitpunkt der Erstellung noch nicht final vor
+- Regelungen zur KI-Nutzung können sich noch ändern (Technologieentwicklung)
+- Einige Schulen sind noch in der Implementierungsphase (Schuljahr 2025/26)

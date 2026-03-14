@@ -1,12 +1,12 @@
 {
     "version": "1.0",
     "schema_note": "Online-Freshness-Check-Ergebnisse für AHS-ABA-Quellen. Wird bei jedem Online-Check überschrieben.",
-    "last_run_at": "2026-03-14T07:43:25+01:00",
+    "last_run_at": "2026-03-14T14:01:47+01:00",
     "sources": {
         "SCHULRECHT-2024": {
             "source_id": "SCHULRECHT-2024",
             "url": null,
-            "checked_at": "2026-03-14T07:43:25+01:00",
+            "checked_at": "2026-03-14T14:01:47+01:00",
             "http_status": null,
             "reachable": null,
             "fetch_duration_ms": 0,
@@ -23,7 +23,7 @@
         "BMBWF-2025": {
             "source_id": "BMBWF-2025",
             "url": null,
-            "checked_at": "2026-03-14T07:43:25+01:00",
+            "checked_at": "2026-03-14T14:01:47+01:00",
             "http_status": null,
             "reachable": null,
             "fetch_duration_ms": 0,
@@ -40,7 +40,7 @@
         "AHS-HB-2025": {
             "source_id": "AHS-HB-2025",
             "url": null,
-            "checked_at": "2026-03-14T07:43:25+01:00",
+            "checked_at": "2026-03-14T14:01:47+01:00",
             "http_status": null,
             "reachable": null,
             "fetch_duration_ms": 0,
@@ -57,10 +57,10 @@
         "AHS-ABA-WEB": {
             "source_id": "AHS-ABA-WEB",
             "url": "https://www.ahs-aba.at/",
-            "checked_at": "2026-03-14T07:43:25+01:00",
+            "checked_at": "2026-03-14T14:01:47+01:00",
             "http_status": 200,
             "reachable": true,
-            "fetch_duration_ms": 248,
+            "fetch_duration_ms": 285,
             "content_hash": "db506c94d3a9f5c34d110e85aba5eb7470017fec82d297fc37f1f9db7298f9b5",
             "previous_hash": "db506c94d3a9f5c34d110e85aba5eb7470017fec82d297fc37f1f9db7298f9b5",
             "technical_change_detected": false,
@@ -74,7 +74,7 @@
         "PRAXIS-2025": {
             "source_id": "PRAXIS-2025",
             "url": null,
-            "checked_at": "2026-03-14T07:43:25+01:00",
+            "checked_at": "2026-03-14T14:01:47+01:00",
             "http_status": null,
             "reachable": null,
             "fetch_duration_ms": 0,

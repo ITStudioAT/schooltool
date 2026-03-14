@@ -1,0 +1,261 @@
+{
+    "version": "1.0",
+    "generated_at": "2026-03-14T16:06:22+01:00",
+    "seed_file": "ai/knowledge/aba/sources/aba-knowledge-seed-report.md",
+    "summary": {
+        "total_issues": 22,
+        "by_type": {
+            "editorial_meta": 0,
+            "source_placeholder": 2,
+            "verification_needed": 0,
+            "scope_remnant": 0,
+            "weak_statement": 20
+        },
+        "auto_resolvable": 0,
+        "unresolved": 22
+    },
+    "issues": [
+        {
+            "id": "issue-001",
+            "type": "weak_statement",
+            "severity": "low",
+            "line_number": 34,
+            "line_text": "- **Schulspezifische Zusatzregelungen:** Schulen können innerhalb des gesetzlichen Rahmens eigene Regelungen treffen.",
+            "section": "2. Rechtliche Grundlagen",
+            "matched_pattern": "schulspezifisch",
+            "auto_resolvable": false,
+            "resolution": null
+        },
+        {
+            "id": "issue-002",
+            "type": "weak_statement",
+            "severity": "low",
+            "line_number": 43,
+            "line_text": "| Themenabgabe / Betreuungsvereinbarung | Schulspezifisch (meist Oktober–Dezember) |",
+            "section": "3. Zeitplan und Fristen",
+            "matched_pattern": "meist",
+            "auto_resolvable": false,
+            "resolution": null
+        },
+        {
+            "id": "issue-003",
+            "type": "weak_statement",
+            "severity": "low",
+            "line_number": 44,
+            "line_text": "| Abgabe der ABA (schriftlich) | Schulspezifisch (meist Februar–März) |",
+            "section": "3. Zeitplan und Fristen",
+            "matched_pattern": "meist",
+            "auto_resolvable": false,
+            "resolution": null
+        },
+        {
+            "id": "issue-004",
+            "type": "weak_statement",
+            "severity": "low",
+            "line_number": 46,
+            "line_text": "| Mündliche Präsentation | Schulspezifisch (meist April–Juni) |",
+            "section": "3. Zeitplan und Fristen",
+            "matched_pattern": "meist",
+            "auto_resolvable": false,
+            "resolution": null
+        },
+        {
+            "id": "issue-005",
+            "type": "weak_statement",
+            "severity": "low",
+            "line_number": 62,
+            "line_text": "- Schulspezifisch: Nicht alle Schulen bieten dieses Format an",
+            "section": "Format B: Rein Mündlich",
+            "matched_pattern": "schulspezifisch",
+            "auto_resolvable": false,
+            "resolution": null
+        },
+        {
+            "id": "issue-006",
+            "type": "weak_statement",
+            "severity": "low",
+            "line_number": 75,
+            "line_text": "6. **Hauptteil** – Theoretischer Rahmen, Ergebnisse, Diskussion (schulspezifische Gliederung)",
+            "section": "5. Pflichtbestandteile der schriftlichen ABA",
+            "matched_pattern": "schulspezifisch",
+            "auto_resolvable": false,
+            "resolution": null
+        },
+        {
+            "id": "issue-007",
+            "type": "weak_statement",
+            "severity": "low",
+            "line_number": 89,
+            "line_text": "Es gibt **keine gesetzlich vorgeschriebene Mindestseitenzahl**. Der Umfang ergibt sich aus dem Thema und den schulspezifischen Vorgaben.",
+            "section": "6. Seitenzahl und Umfang",
+            "matched_pattern": "schulspezifisch",
+            "auto_resolvable": false,
+            "resolution": null
+        },
+        {
+            "id": "issue-008",
+            "type": "weak_statement",
+            "severity": "low",
+            "line_number": 91,
+            "line_text": "**Übliche Orientierungswerte (schulspezifisch, AHS):**",
+            "section": "6. Seitenzahl und Umfang",
+            "matched_pattern": "schulspezifisch",
+            "auto_resolvable": false,
+            "resolution": null
+        },
+        {
+            "id": "issue-009",
+            "type": "weak_statement",
+            "severity": "low",
+            "line_number": 100,
+            "line_text": "- Abgabedatum ist **schulspezifisch**",
+            "section": "7. Abgabe",
+            "matched_pattern": "schulspezifisch",
+            "auto_resolvable": false,
+            "resolution": null
+        },
+        {
+            "id": "issue-010",
+            "type": "weak_statement",
+            "severity": "low",
+            "line_number": 119,
+            "line_text": "- Verwendete Systeme: schulspezifisch (oft PlagScan, Turnitin, Compilatio oder Moodle-integrierte Tools)",
+            "section": "9. Plagiatsprüfung",
+            "matched_pattern": "schulspezifisch",
+            "auto_resolvable": false,
+            "resolution": null
+        },
+        {
+            "id": "issue-011",
+            "type": "weak_statement",
+            "severity": "low",
+            "line_number": 161,
+            "line_text": "- Mindestanzahl an Quellen: schulspezifisch (oft 8–15)",
+            "section": "12. Zitierpflicht und Literaturverzeichnis",
+            "matched_pattern": "schulspezifisch",
+            "auto_resolvable": false,
+            "resolution": null
+        },
+        {
+            "id": "issue-012",
+            "type": "weak_statement",
+            "severity": "low",
+            "line_number": 167,
+            "line_text": "Folgende Aspekte sind **schulspezifisch** und variieren je nach Schule:",
+            "section": "13. Standortabhängige Regelungen",
+            "matched_pattern": "schulspezifisch",
+            "auto_resolvable": false,
+            "resolution": null
+        },
+        {
+            "id": "issue-013",
+            "type": "source_placeholder",
+            "severity": "high",
+            "line_number": 182,
+            "line_text": "- **BMBWF-Erlass 2025 (AHS)**: Amtliche Quelle, bindend – URL noch zu recherchieren",
+            "section": "14. Quellen und Verlässlichkeit",
+            "matched_pattern": "URL noch zu recherchieren",
+            "auto_resolvable": false,
+            "resolution": null
+        },
+        {
+            "id": "issue-014",
+            "type": "source_placeholder",
+            "severity": "high",
+            "line_number": 184,
+            "line_text": "- **AHS-Handbuch / BMBWF-Richtlinien für AHS**: Offizielle Orientierung – Quelle noch zu identifizieren und zu verlinken",
+            "section": "14. Quellen und Verlässlichkeit",
+            "matched_pattern": "noch zu identifizieren",
+            "auto_resolvable": false,
+            "resolution": null
+        },
+        {
+            "id": "issue-015",
+            "type": "weak_statement",
+            "severity": "low",
+            "line_number": 185,
+            "line_text": "- **Beobachtungen aus der Praxis (2025/26, AHS)**: Berichtet, möglicherweise nicht universell",
+            "section": "14. Quellen und Verlässlichkeit",
+            "matched_pattern": "möglicherweise",
+            "auto_resolvable": false,
+            "resolution": null
+        },
+        {
+            "id": "issue-016",
+            "type": "weak_statement",
+            "severity": "low",
+            "line_number": 196,
+            "line_text": "| issue-005 | weak_statement | 3. Zeitplan und Fristen |   Themenabgabe / Betreuungsvereinbarung   Schulspezifisch (m… |",
+            "section": "Offene Punkte (unresolved)",
+            "matched_pattern": "schulspezifisch",
+            "auto_resolvable": false,
+            "resolution": null
+        },
+        {
+            "id": "issue-017",
+            "type": "weak_statement",
+            "severity": "low",
+            "line_number": 197,
+            "line_text": "| issue-006 | weak_statement | 3. Zeitplan und Fristen |   Abgabe der ABA (schriftlich)   Schulspezifisch (meist Febr… |",
+            "section": "Offene Punkte (unresolved)",
+            "matched_pattern": "meist",
+            "auto_resolvable": false,
+            "resolution": null
+        },
+        {
+            "id": "issue-018",
+            "type": "weak_statement",
+            "severity": "low",
+            "line_number": 198,
+            "line_text": "| issue-007 | weak_statement | 3. Zeitplan und Fristen |   Mündliche Präsentation   Schulspezifisch (meist April–… |",
+            "section": "Offene Punkte (unresolved)",
+            "matched_pattern": "meist",
+            "auto_resolvable": false,
+            "resolution": null
+        },
+        {
+            "id": "issue-019",
+            "type": "weak_statement",
+            "severity": "low",
+            "line_number": 199,
+            "line_text": "| issue-008 | weak_statement | Format B: Rein Mündlich | - Schulspezifisch: Nicht alle Schulen bieten dieses Format a… |",
+            "section": "Offene Punkte (unresolved)",
+            "matched_pattern": "schulspezifisch",
+            "auto_resolvable": false,
+            "resolution": null
+        },
+        {
+            "id": "issue-020",
+            "type": "weak_statement",
+            "severity": "low",
+            "line_number": 200,
+            "line_text": "| issue-011 | weak_statement | 6. Seitenzahl und Umfang | **Übliche Orientierungswerte (schulspezifisch, AHS):**… |",
+            "section": "Offene Punkte (unresolved)",
+            "matched_pattern": "schulspezifisch",
+            "auto_resolvable": false,
+            "resolution": null
+        },
+        {
+            "id": "issue-021",
+            "type": "weak_statement",
+            "severity": "low",
+            "line_number": 201,
+            "line_text": "| issue-013 | weak_statement | 7. Abgabe | - Abgabedatum ist **schulspezifisch**… |",
+            "section": "Offene Punkte (unresolved)",
+            "matched_pattern": "schulspezifisch",
+            "auto_resolvable": false,
+            "resolution": null
+        },
+        {
+            "id": "issue-022",
+            "type": "weak_statement",
+            "severity": "low",
+            "line_number": 202,
+            "line_text": "| issue-014 | weak_statement | 9. Plagiatsprüfung | - Verwendete Systeme: schulspezifisch (oft PlagScan, Turniti… |",
+            "section": "Offene Punkte (unresolved)",
+            "matched_pattern": "schulspezifisch",
+            "auto_resolvable": false,
+            "resolution": null
+        }
+    ]
+}

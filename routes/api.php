@@ -112,6 +112,22 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/aba/ai-settings/propose-update', [\App\Http\Controllers\Admin\ABA\AbaAiSettingsController::class, 'proposeSeedUpdate']);
         Route::post('/admin/aba/ai-settings/rebuild', [\App\Http\Controllers\Admin\ABA\AbaAiSettingsController::class, 'rebuildFromSeed']);
         Route::get('/admin/aba/seed-report', [\App\Http\Controllers\Admin\ABA\AbaSeedReportController::class, 'index']);
+
+        // Seed Hardening Pipeline
+        Route::get('/admin/aba/seed-hardening/status', [\App\Http\Controllers\Admin\ABA\AbaSeedHardeningController::class, 'status']);
+        Route::post('/admin/aba/seed-hardening/scan', [\App\Http\Controllers\Admin\ABA\AbaSeedHardeningController::class, 'scan']);
+        Route::post('/admin/aba/seed-hardening/run', [\App\Http\Controllers\Admin\ABA\AbaSeedHardeningController::class, 'run']);
+        Route::post('/admin/aba/seed-hardening/run-ai', [\App\Http\Controllers\Admin\ABA\AbaSeedHardeningController::class, 'runAi']);
+        Route::post('/admin/aba/seed-hardening/analyze-and-propose', [\App\Http\Controllers\Admin\ABA\AbaSeedHardeningController::class, 'analyzeAndPropose']);
+        Route::post('/admin/aba/seed-hardening/cleanup', [\App\Http\Controllers\Admin\ABA\AbaSeedHardeningController::class, 'cleanup']);
+
+        // Seed Review / Diff
+        Route::get('/admin/aba/seed-review/proposals', [\App\Http\Controllers\Admin\ABA\AbaSeedReviewController::class, 'proposals']);
+        Route::get('/admin/aba/seed-review/diff/{filename}', [\App\Http\Controllers\Admin\ABA\AbaSeedReviewController::class, 'diff'])->where('filename', '[a-zA-Z0-9_\-\.]+');
+        Route::get('/admin/aba/seed-review/content/{filename}', [\App\Http\Controllers\Admin\ABA\AbaSeedReviewController::class, 'content'])->where('filename', '[a-zA-Z0-9_\-\.]+');
+        Route::put('/admin/aba/seed-review/content/{filename}', [\App\Http\Controllers\Admin\ABA\AbaSeedReviewController::class, 'updateContent'])->where('filename', '[a-zA-Z0-9_\-\.]+');
+        Route::post('/admin/aba/seed-review/generate-replacement', [\App\Http\Controllers\Admin\ABA\AbaSeedReviewController::class, 'generateReplacement']);
+        Route::post('/admin/aba/seed-review/apply', [\App\Http\Controllers\Admin\ABA\AbaSeedReviewController::class, 'applyReplacement']);
     });
 
     /* SANCTUM - aba_teacher */

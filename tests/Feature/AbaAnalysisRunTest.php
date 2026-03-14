@@ -228,6 +228,33 @@ function buildDocxDocumentXml(array $paragraphs): string
         .'</w:document>';
 }
 
+/**
+ * @param  array<int, array<int, string>>  $rows
+ */
+function buildDocxTableRawXml(array $rows): string
+{
+    $rowXml = '';
+    foreach ($rows as $row) {
+        $cellXml = '';
+        foreach ($row as $cell) {
+            $cellText = docxXmlEscape((string) $cell);
+            $cellXml .= '<w:tc><w:tcPr/><w:p><w:r><w:t xml:space="preserve">'.$cellText.'</w:t></w:r></w:p></w:tc>';
+        }
+
+        if ($cellXml === '') {
+            continue;
+        }
+
+        $rowXml .= '<w:tr>'.$cellXml.'</w:tr>';
+    }
+
+    if ($rowXml === '') {
+        return '';
+    }
+
+    return '<w:tbl><w:tblPr/><w:tblGrid/>'.$rowXml.'</w:tbl>';
+}
+
 function docxXmlEscape(string $value): string
 {
     return htmlspecialchars($value, ENT_QUOTES | ENT_XML1, 'UTF-8');
@@ -1730,6 +1757,244 @@ test('docx extraction isolates frontmatter and keeps soziale medien chapter text
         ->and(mb_strlen((string) ($chapterSozialeMedien->extracted_text ?? '')))->toBeGreaterThan(80);
 });
 
+test('vorwort is preserved as foreword when provisional body start is triggered by a style-driven paragraph', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'frontmatter-vorwort-after-abstract.docx', [
+        ['text' => 'Die Rolle biologischer Wirkstoffe'],
+        ['text' => 'Abstract', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Kurzfassung der Arbeit in komprimierter Form.'],
+        ['text' => 'Die wichtigsten Aspekte der VWA umfassen eine Analyse der Anwendungsgebiete mAK inkl. Trendauswertung, eine Erhebung der eingesetzten Typen mAK und die Diskussion über die Bedeutung von Biosimilars, regional liegt der Fokus auf Österreich.', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Vorwort'],
+        ['text' => 'Persönlicher Kontext zur Entstehung der Arbeit und Motivation.'],
+        ['text' => '1 Einleitung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einleitender Fließtext des Hauptteils.'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'frontmatter-vorwort-after-abstract.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $abstract = $results->firstWhere('section_type', 'abstract');
+    $foreword = $results->firstWhere('section_type', 'foreword');
+    $chapter = $results->firstWhere('section_title', '1 Einleitung');
+    $stats = is_array($run->summary['analysis_stats'] ?? null) ? $run->summary['analysis_stats'] : [];
+    $abstractText = (string) ($abstract?->extracted_text ?? '');
+    $forewordText = (string) ($foreword?->extracted_text ?? '');
+
+    expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED)
+        ->and($abstract)->not->toBeNull()
+        ->and($foreword)->not->toBeNull()
+        ->and($chapter)->not->toBeNull()
+        ->and((bool) ($stats['foreword_detected'] ?? false))->toBeTrue()
+        ->and((bool) ($stats['abstract_detected'] ?? false))->toBeTrue()
+        ->and((int) ($foreword?->start_line ?? 0))->toBeGreaterThan((int) ($abstract?->end_line ?? 0))
+        ->and((int) ($chapter?->start_line ?? 0))->toBeGreaterThan((int) ($foreword?->end_line ?? 0))
+        ->and($abstractText)->toContain('Kurzfassung der Arbeit in komprimierter Form.')
+        ->and($abstractText)->toContain('Die wichtigsten Aspekte der VWA umfassen eine Analyse der Anwendungsgebiete mAK')
+        ->and($abstractText)->not->toContain('Persönlicher Kontext zur Entstehung der Arbeit')
+        ->and($forewordText)->toContain('Persönlicher Kontext zur Entstehung der Arbeit')
+        ->and($forewordText)->not->toContain('Einleitender Fließtext des Hauptteils.');
+});
+
+test('vorwort without abstract is detected as a separate foreword section', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'frontmatter-vorwort-only.docx', [
+        ['text' => 'Die Rolle biologischer Wirkstoffe'],
+        ['text' => 'Vorwort'],
+        ['text' => 'Persönlicher Kontext zur Entstehung der Arbeit und Motivation.'],
+        ['text' => '1 Einleitung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einleitender Fließtext des Hauptteils.'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'frontmatter-vorwort-only.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $foreword = $results->firstWhere('section_type', 'foreword');
+    $chapter = $results->firstWhere('section_title', '1 Einleitung');
+
+    expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED)
+        ->and($foreword)->not->toBeNull()
+        ->and($chapter)->not->toBeNull()
+        ->and((int) ($chapter?->start_line ?? 0))->toBeGreaterThan((int) ($foreword?->end_line ?? 0))
+        ->and((string) ($foreword?->extracted_text ?? ''))->toContain('Persönlicher Kontext zur Entstehung der Arbeit');
+});
+
+test('foreword heading variants are recognized as frontmatter sections', function (string $forewordHeading) {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'frontmatter-foreword-variant.docx', [
+        ['text' => 'Die Rolle biologischer Wirkstoffe'],
+        ['text' => $forewordHeading],
+        ['text' => 'Persönlicher Kontext zur Entstehung der Arbeit und Motivation.'],
+        ['text' => '1 Einleitung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einleitender Fließtext des Hauptteils.'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'frontmatter-foreword-variant.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $foreword = $results->firstWhere('section_type', 'foreword');
+
+    expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED)
+        ->and($foreword)->not->toBeNull()
+        ->and((string) ($foreword?->section_title ?? ''))->toBe($forewordHeading);
+})->with([
+    'vorwort' => 'Vorwort',
+    'vorbemerkung' => 'Vorbemerkung',
+    'preface' => 'Preface',
+    'foreword' => 'Foreword',
+    'prefazione' => 'Prefazione',
+]);
+
+test('blank separators inside abstract and vorwort do not truncate frontmatter sections', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'frontmatter-blank-separators.docx', [
+        ['text' => 'Die Rolle biologischer Wirkstoffe'],
+        ['text' => 'Abstract', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Absatz 1 im Abstract mit zentraler Zusammenfassung.'],
+        ['raw_xml' => '<w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:r><w:t xml:space="preserve"> </w:t></w:r></w:p>'],
+        ['text' => 'Absatz 2 im Abstract mit ergänzender Einordnung.'],
+        ['text' => 'Vorwort', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Absatz 1 im Vorwort mit persönlicher Motivation.'],
+        ['raw_xml' => '<w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:r><w:t xml:space="preserve"> </w:t></w:r></w:p>'],
+        ['text' => 'Absatz 2 im Vorwort mit Danksagung.'],
+        ['text' => '1 Einleitung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Erster Absatz des Hauptteils.'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'frontmatter-blank-separators.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $abstract = $results->firstWhere('section_type', 'abstract');
+    $foreword = $results->firstWhere('section_type', 'foreword');
+    $chapter = $results->firstWhere('section_title', '1 Einleitung');
+    $stats = is_array($run->summary['analysis_stats'] ?? null) ? $run->summary['analysis_stats'] : [];
+    $abstractText = (string) ($abstract?->extracted_text ?? '');
+    $forewordText = (string) ($foreword?->extracted_text ?? '');
+
+    expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED)
+        ->and($abstract)->not->toBeNull()
+        ->and($foreword)->not->toBeNull()
+        ->and($chapter)->not->toBeNull()
+        ->and((bool) ($stats['abstract_detected'] ?? false))->toBeTrue()
+        ->and((bool) ($stats['foreword_detected'] ?? false))->toBeTrue()
+        ->and((int) ($stats['body_start_line'] ?? 0))->toBe((int) ($chapter?->start_line ?? 0))
+        ->and((int) ($foreword?->start_line ?? 0))->toBeGreaterThan((int) ($abstract?->end_line ?? 0))
+        ->and((int) ($chapter?->start_line ?? 0))->toBeGreaterThan((int) ($foreword?->end_line ?? 0))
+        ->and($abstractText)->toContain('Absatz 1 im Abstract mit zentraler Zusammenfassung.')
+        ->and($abstractText)->toContain('Absatz 2 im Abstract mit ergänzender Einordnung.')
+        ->and($abstractText)->not->toContain('Absatz 1 im Vorwort')
+        ->and($forewordText)->toContain('Absatz 1 im Vorwort mit persönlicher Motivation.')
+        ->and($forewordText)->toContain('Absatz 2 im Vorwort mit Danksagung.')
+        ->and($forewordText)->not->toContain('Erster Absatz des Hauptteils.');
+});
+
 test('docx toc block is resolved with structured toc lines and body reentry starts after toc end', function () {
     if (! class_exists(ZipArchive::class)) {
         $this->markTestSkipped('ZipArchive extension missing.');
@@ -1882,11 +2147,14 @@ test('docx reference-like structure with dual toc and numbered chapters is recog
         ->get();
 
     $tocSections = $results->where('section_type', 'table_of_contents')->values();
-    expect($tocSections->count())->toBe(2)
-        ->and((string) ($tocSections->get(0)?->extracted_text ?? ''))->toContain('1. Arten von Medien .... 7')
-        ->and((string) ($tocSections->get(1)?->extracted_text ?? ''))->toContain('5. Zukünftige Entwicklungen und Herausforderungen .... 27');
+    $toc = $tocSections->first();
 
-    $maxTocEndLine = (int) $tocSections->max('end_line');
+    expect($tocSections->count())->toBe(1)
+        ->and($toc)->not->toBeNull()
+        ->and((string) ($toc?->extracted_text ?? ''))->toContain('1. Arten von Medien .... 7')
+        ->and((string) ($toc?->extracted_text ?? ''))->toContain('5. Zukünftige Entwicklungen und Herausforderungen .... 27');
+
+    $maxTocEndLine = (int) ($toc?->end_line ?? 0);
 
     $expectedSectionTitles = [
         'Einleitung',
@@ -2114,6 +2382,139 @@ test('deep numbered hierarchy keeps parent child chain complete', function () {
         ->and($subsub)->not->toBeNull()
         ->and((int) ($sub->parent_result_id ?? 0))->toBe((int) ($main->id ?? 0))
         ->and((int) ($subsub->parent_result_id ?? 0))->toBe((int) ($sub->id ?? 0));
+});
+
+test('chapter transition resets numbering root and keeps 4 1 chain under chapter 4 in docx', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocxAttachment($aba, 'chapter-transition-root-reset.docx', [
+        ['text' => 'ABA-Arbeit', 'style' => 'Normal'],
+        ['text' => '3. Politische Berichterstattung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '3.1. Methoden der Einflussnahme', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => '3.1.1. Agenda-Setting, Framing und Priming', 'style' => 'Heading3', 'outline' => 2],
+        ['text' => 'Inhalt zu Agenda-Setting.'],
+        ['text' => '3.2. Personalisierung und Emotionalisierung von Politik', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Inhalt zu Personalisierung.'],
+        ['text' => '3.3. Darstellung von Parteien und Spitzenkandidaten', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Inhalt zu Darstellung.'],
+        ['text' => '4. Fake News und Desinformation', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '4.1.Begriffsbestimmung', 'style' => 'Normal'],
+        ['text' => '4.1.1. Definition von Fake News', 'style' => 'Heading3', 'outline' => 2],
+        ['text' => 'Definitionstext.'],
+        ['text' => '4.1.2. Erkennungsmerkmale', 'style' => 'Heading3', 'outline' => 2],
+        ['text' => 'Merkmaltext.'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'chapter-transition-root-reset.docx',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => $mainAttachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED);
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $chapterThreeOne = $results->firstWhere('section_title', '3.1. Methoden der Einflussnahme');
+    $chapterFour = $results->firstWhere('section_title', '4. Fake News und Desinformation');
+    $subFourOne = $results->first(fn ($section) => str_contains((string) ($section->section_title ?? ''), 'Begriffsbestimmung')
+        && str_starts_with((string) ($section->section_title ?? ''), '4.1'));
+    $subFourOneOne = $results->firstWhere('section_title', '4.1.1. Definition von Fake News');
+    $subFourOneTwo = $results->firstWhere('section_title', '4.1.2. Erkennungsmerkmale');
+    $wrongLegacyDefinition = $results->firstWhere('section_title', '3.1.1. Definition von Fake News');
+    $wrongLegacyMerkmale = $results->firstWhere('section_title', '3.1.2. Erkennungsmerkmale');
+
+    expect($chapterThreeOne)->not->toBeNull()
+        ->and($chapterFour)->not->toBeNull()
+        ->and($subFourOne)->not->toBeNull()
+        ->and($subFourOneOne)->not->toBeNull()
+        ->and($subFourOneTwo)->not->toBeNull()
+        ->and((int) ($chapterFour->end_line ?? 0))->toBeLessThan((int) ($subFourOne->start_line ?? 0))
+        ->and((int) ($subFourOne->parent_result_id ?? 0))->toBe((int) ($chapterFour->id ?? 0))
+        ->and((int) ($subFourOneOne->parent_result_id ?? 0))->toBe((int) ($subFourOne->id ?? 0))
+        ->and((int) ($subFourOneTwo->parent_result_id ?? 0))->toBe((int) ($subFourOne->id ?? 0))
+        ->and($wrongLegacyDefinition)->toBeNull()
+        ->and($wrongLegacyMerkmale)->toBeNull();
+});
+
+test('numbering root mismatch does not attach 4 1 1 under earlier 3 1 when chapter 4 exists', function () {
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $mainAttachment = createMainDocumentAttachment($aba, 'root-mismatch-detach.txt', implode("\n", [
+        'Titelblatt',
+        'Abstract',
+        'Kurzfassung',
+        'Inhaltsverzeichnis',
+        '3.1 Methoden .... 5',
+        '4 Fake News .... 7',
+        '4.1.1 Definition von Fake News .... 8',
+        '3.1 Methoden',
+        'Methodikabschnitt.',
+        '4 Fake News',
+        'Kapiteltext für Fake News.',
+        '4.1.1 Definition von Fake News',
+        'Definitionstext.',
+    ]));
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $mainAttachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => 'root-mismatch-detach.txt',
+        'source_path' => $mainAttachment->path,
+        'source_mime_type' => 'text/plain',
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED);
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $parentThreeOne = $results->firstWhere('section_title', '3.1 Methoden');
+    $chapterFour = $results->firstWhere('section_title', '4 Fake News');
+    $subFourOneOne = $results->firstWhere('section_title', '4.1.1 Definition von Fake News');
+    $wrongLegacyTitle = $results->firstWhere('section_title', '3.1.1 Definition von Fake News');
+
+    expect($parentThreeOne)->not->toBeNull()
+        ->and($chapterFour)->not->toBeNull()
+        ->and($subFourOneOne)->not->toBeNull()
+        ->and((int) ($subFourOneOne->parent_result_id ?? 0))->toBe((int) ($chapterFour->id ?? 0))
+        ->and((int) ($subFourOneOne->parent_result_id ?? 0))->not->toBe((int) ($parentThreeOne->id ?? 0))
+        ->and($wrongLegacyTitle)->toBeNull();
 });
 
 test('numbering-compatible parent is preferred over nearest mismatched chapter', function () {
@@ -4508,6 +4909,123 @@ test('toc with abstract entry and Inhaltsverzeichnis page line stays one isolate
         ->and($titles)->not->toContain('Inhaltsverzeichnis 3');
 });
 
+test('hierarchical toc remains primary when compact toc repeats later', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $attachment = createMainDocxAttachment($aba, 'toc-hierarchical-plus-compact.docx', [
+        ['text' => 'Titelblatt'],
+        ['text' => 'Inhaltsverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einleitung'],
+        ['text' => '1 Klassische Medien'],
+        ['text' => '1.1 Printmedien'],
+        ['text' => '1.1.1 Zeitungen'],
+        ['text' => '1.1.2 Zeitschriften'],
+        ['text' => '2 Digitale Medien'],
+        ['text' => '2.1 Soziale Netzwerke'],
+        ['text' => 'Inhaltsverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einleitung 4-5', 'style' => 'TOC1'],
+        ['text' => '1 Klassische Medien 6-12', 'style' => 'TOC1'],
+        ['text' => '2 Digitale Medien 13-19', 'style' => 'TOC1'],
+        ['text' => 'Literaturverzeichnis 32-33', 'style' => 'TOC1'],
+        ['text' => 'Einleitung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Fließtext beginnt erst nach dem TOC-Block.'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $attachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => $attachment->original_name,
+        'source_path' => $attachment->path,
+        'source_mime_type' => $attachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+    $summary = is_array($run->summary) ? $run->summary : [];
+    $analysisStats = is_array($summary['analysis_stats'] ?? null) ? $summary['analysis_stats'] : [];
+    $tocSections = $results->where('section_type', 'table_of_contents')->values();
+    $toc = $tocSections->first();
+
+    expect((int) ($analysisStats['table_of_contents_count'] ?? 0))->toBe(1)
+        ->and($tocSections->count())->toBe(1)
+        ->and($toc)->not->toBeNull()
+        ->and((string) ($toc?->extracted_text ?? ''))->toContain('1.1.1 Zeitungen')
+        ->and((string) ($toc?->extracted_text ?? ''))->toContain('Einleitung 4-5')
+        ->and(trim((string) ($toc?->extracted_text ?? '')))->not->toBe('Inhaltsverzeichnis');
+});
+
+test('empty toc heading without entries is suppressed when a later toc block exists', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $attachment = createMainDocxAttachment($aba, 'toc-empty-then-real.docx', [
+        ['text' => 'Titelblatt'],
+        ['text' => 'Inhaltsverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['page_break' => true],
+        ['text' => 'Inhaltsverzeichnis', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einleitung .... 4', 'style' => 'TOC1'],
+        ['text' => '1. Methodik .... 6', 'style' => 'TOC1'],
+        ['text' => 'Fazit .... 12', 'style' => 'TOC1'],
+        ['text' => 'Einleitung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Haupttext nach dem TOC.'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $attachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => $attachment->original_name,
+        'source_path' => $attachment->path,
+        'source_mime_type' => $attachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $tocSections = $results->where('section_type', 'table_of_contents')->values();
+    $toc = $tocSections->first();
+
+    expect($tocSections->count())->toBe(1)
+        ->and($toc)->not->toBeNull()
+        ->and((string) ($toc?->extracted_text ?? ''))->toContain('Einleitung .... 4')
+        ->and((string) ($toc?->extracted_text ?? ''))->toContain('1. Methodik .... 6')
+        ->and(trim((string) ($toc?->extracted_text ?? '')))->not->toBe('Inhaltsverzeichnis');
+});
+
 test('unnumbered einleitung does not absorb the first numbered hierarchy recovered from toc', function () {
     if (! class_exists(ZipArchive::class)) {
         $this->markTestSkipped('ZipArchive extension missing.');
@@ -5034,6 +5552,15 @@ test('slash captions, table captions, and mixed backmatter boundaries stay struc
         ['text' => '2.4 Symptome und Wunden', 'style' => 'Heading2', 'outline' => 1],
         ['text' => 'Akute Symptome werden im Verlauf der Schübe sichtbar.'],
         ['text' => 'Tab. 1: akute Hauterscheinungen'],
+        ['raw_xml' => buildDocxTableRawXml([
+            ['Hauterscheinung', 'Bedeutung'],
+            ['Bläschen', 'Mögliche Infektion'],
+            ['Nässende Hautstellen', 'Resultat einer Infektion'],
+            ['Rötung', 'Die Nachfolge einer Entzündung'],
+            ['Papeln', 'Ringförmige Knöten; Nachfolge einer Entzündung'],
+            ['Pusteln', 'Eiterbläschen; mögliche Infektion'],
+            ['Krusten', 'Die Nachfolge einer nassen Entzündung'],
+        ])],
         ['text' => 'Zwischen Tabelle und nächster Abbildung steht normaler Fließtext.'],
         ['text' => 'Abbildung 3/ Bläschen als akutes Symptom'],
         ['text' => 'Die Befundlage muss jeweils mit dem klinischen Verlauf abgeglichen werden.'],
@@ -5043,7 +5570,14 @@ test('slash captions, table captions, and mixed backmatter boundaries stay struc
         ['text' => 'Abbildung 5/ Stufenschema Cremen & Salben'],
         ['text' => 'Die Intensität wird an Entzündungsgrad und Hautzustand angepasst.'],
         ['text' => '3.2.2 TCM', 'style' => 'Heading2', 'outline' => 2],
+        ['text' => 'Die TCM ordnet Nahrungsmittel nach Thermik und Geschmack ein.'],
         ['text' => 'Tab. 2: Geschmäcker und ihre Wirkung bei TCM'],
+        ['raw_xml' => buildDocxTableRawXml([
+            ['Geschmack', 'Wirkung'],
+            ['Sauer', 'Leitet nach innen und hält Säfte'],
+            ['Bitter', 'Leitet Hitze nach unten und trocknet Feuchte'],
+            ['Süß', 'Stärkt Qi und harmonisiert'],
+        ])],
         ['text' => 'Textilien, Materialien, Stoffe und Nahrungsmittel'],
         ['text' => 'Vgl. Katherina Ziegelbauer, 2017, Jucken Ade, S.13'],
         ['text' => '3.3 Dupixent/Dupilumab', 'style' => 'Heading2', 'outline' => 1],
@@ -5090,6 +5624,8 @@ test('slash captions, table captions, and mixed backmatter boundaries stay struc
     $tableTwo = $results->firstWhere('section_title', 'Tab. 2: Geschmäcker und ihre Wirkung bei TCM');
     $figureIndex = $results->firstWhere('section_type', 'figure_index');
     $declaration = $results->firstWhere('section_type', 'consent_declaration');
+    $sectionTwoFour = $results->firstWhere('section_title', '2.4 Symptome und Wunden');
+    $sectionThreeTwoTwo = $results->firstWhere('section_title', '3.2.2 TCM');
 
     $falseStandaloneTextiles = $results->first(fn ($section) => (string) ($section->section_type ?? '') === 'other_section'
         && (string) ($section->section_title ?? '') === 'Textilien, Materialien, Stoffe und Nahrungsmittel');
@@ -5106,6 +5642,31 @@ test('slash captions, table captions, and mixed backmatter boundaries stay struc
             'Abb. 2: Faktoren der Neurodermitis',
         ], true))
         ->count();
+    $twoFourFlowBlocks = collect((array) data_get((array) ($sectionTwoFour?->metadata ?? []), 'inline_content_flow.blocks', []));
+    $threeTwoTwoFlowBlocks = collect((array) data_get((array) ($sectionThreeTwoTwo?->metadata ?? []), 'inline_content_flow.blocks', []));
+    $twoFourFlowTypes = $twoFourFlowBlocks->pluck('block_type')->values()->all();
+    $threeTwoTwoFlowTypes = $threeTwoTwoFlowBlocks->pluck('block_type')->values()->all();
+    $twoFourTableBlock = $twoFourFlowBlocks->firstWhere('child_result_id', (int) ($tableOne?->id ?? 0));
+    $twoFourFigureBlock = $twoFourFlowBlocks->firstWhere('child_result_id', (int) ($figureThree?->id ?? 0));
+    $threeTwoTwoTableBlock = $threeTwoTwoFlowBlocks->firstWhere('child_result_id', (int) ($tableTwo?->id ?? 0));
+    $tableOneInlineFlow = (array) data_get((array) ($tableOne?->metadata ?? []), 'inline_content_flow', []);
+    $tableTwoInlineFlow = (array) data_get((array) ($tableTwo?->metadata ?? []), 'inline_content_flow', []);
+    $twoFourText = (string) ($sectionTwoFour?->extracted_text ?? '');
+    $threeTwoTwoText = (string) ($sectionThreeTwoTwo?->extracted_text ?? '');
+    $twoFourTableHeaderRow = '| Hauterscheinung | Bedeutung |';
+    $twoFourTableDataRow = '| Bläschen | Mögliche Infektion |';
+    $threeTwoTwoTableHeaderRow = '| Geschmack | Wirkung |';
+    $threeTwoTwoTableDataRow = '| Bitter | Leitet Hitze nach unten und trocknet Feuchte |';
+    $twoFourFirstParagraphPosition = mb_strpos($twoFourText, 'Akute Symptome werden im Verlauf der Schübe sichtbar.');
+    $twoFourTablePosition = mb_strpos($twoFourText, $twoFourTableHeaderRow);
+    $twoFourTableDataPosition = mb_strpos($twoFourText, $twoFourTableDataRow);
+    $twoFourCaptionPosition = mb_strpos($twoFourText, 'Tab. 1: akute Hauterscheinungen');
+    $twoFourSecondParagraphPosition = mb_strpos($twoFourText, 'Zwischen Tabelle und nächster Abbildung steht normaler Fließtext.');
+    $threeTwoTwoFirstParagraphPosition = mb_strpos($threeTwoTwoText, 'Die TCM ordnet Nahrungsmittel nach Thermik und Geschmack ein.');
+    $threeTwoTwoTablePosition = mb_strpos($threeTwoTwoText, $threeTwoTwoTableHeaderRow);
+    $threeTwoTwoTableDataPosition = mb_strpos($threeTwoTwoText, $threeTwoTwoTableDataRow);
+    $threeTwoTwoCaptionPosition = mb_strpos($threeTwoTwoText, 'Tab. 2: Geschmäcker und ihre Wirkung bei TCM');
+    $threeTwoTwoSecondParagraphPosition = mb_strpos($threeTwoTwoText, 'Textilien, Materialien, Stoffe und Nahrungsmittel');
 
     expect($figureTwo)->not->toBeNull()
         ->and((string) ($figureTwo?->section_type ?? ''))->toBe('figure')
@@ -5119,6 +5680,49 @@ test('slash captions, table captions, and mixed backmatter boundaries stay struc
         ->and((string) ($tableOne?->section_type ?? ''))->toBe('table')
         ->and($tableTwo)->not->toBeNull()
         ->and((string) ($tableTwo?->section_type ?? ''))->toBe('table')
+        ->and($sectionTwoFour)->not->toBeNull()
+        ->and($twoFourFlowTypes)->toBe(['paragraph', 'table', 'paragraph', 'figure', 'paragraph'])
+        ->and((int) ($twoFourTableBlock['start_line'] ?? 0))->toBe((int) ($tableOne?->start_line ?? 0))
+        ->and((int) ($twoFourFigureBlock['start_line'] ?? 0))->toBe((int) ($figureThree?->start_line ?? 0))
+        ->and((int) ($twoFourTableBlock['sequence'] ?? 0))->toBeLessThan((int) ($twoFourFigureBlock['sequence'] ?? 0))
+        ->and((int) ($tableOneInlineFlow['parent_result_id'] ?? 0))->toBe((int) ($sectionTwoFour?->id ?? 0))
+        ->and(is_int($tableOneInlineFlow['block_index'] ?? null))->toBeTrue()
+        ->and($sectionThreeTwoTwo)->not->toBeNull()
+        ->and($threeTwoTwoFlowTypes)->toBe(['paragraph', 'table', 'paragraph'])
+        ->and((int) ($threeTwoTwoTableBlock['start_line'] ?? 0))->toBe((int) ($tableTwo?->start_line ?? 0))
+        ->and((int) ($tableTwoInlineFlow['parent_result_id'] ?? 0))->toBe((int) ($sectionThreeTwoTwo?->id ?? 0))
+        ->and(is_int($tableTwoInlineFlow['block_index'] ?? null))->toBeTrue()
+        ->and($twoFourText)->toContain('Akute Symptome werden im Verlauf der Schübe sichtbar.')
+        ->and($twoFourText)->toContain('Zwischen Tabelle und nächster Abbildung steht normaler Fließtext.')
+        ->and($twoFourText)->toContain('Die Befundlage muss jeweils mit dem klinischen Verlauf abgeglichen werden.')
+        ->and($twoFourText)->toContain($twoFourTableHeaderRow)
+        ->and($twoFourText)->toContain($twoFourTableDataRow)
+        ->and($twoFourText)->not->toContain('[TABLE]')
+        ->and($twoFourText)->not->toContain('[FIGURE]')
+        ->and($twoFourTablePosition)->not->toBeFalse()
+        ->and($twoFourTableDataPosition)->not->toBeFalse()
+        ->and($twoFourCaptionPosition)->not->toBeFalse()
+        ->and($twoFourFirstParagraphPosition)->not->toBeFalse()
+        ->and($twoFourSecondParagraphPosition)->not->toBeFalse()
+        ->and($twoFourFirstParagraphPosition)->toBeLessThan($twoFourTablePosition)
+        ->and($twoFourTablePosition)->toBeLessThan($twoFourTableDataPosition)
+        ->and($twoFourTableDataPosition)->toBeLessThan($twoFourCaptionPosition)
+        ->and($twoFourCaptionPosition)->toBeLessThan($twoFourSecondParagraphPosition)
+        ->and($threeTwoTwoText)->toContain('Die TCM ordnet Nahrungsmittel nach Thermik und Geschmack ein.')
+        ->and($threeTwoTwoText)->toContain($threeTwoTwoTableHeaderRow)
+        ->and($threeTwoTwoText)->toContain($threeTwoTwoTableDataRow)
+        ->and($threeTwoTwoText)->not->toContain('[TABLE]')
+        ->and($threeTwoTwoText)->not->toContain('[FIGURE]')
+        ->and($threeTwoTwoTablePosition)->not->toBeFalse()
+        ->and($threeTwoTwoTableDataPosition)->not->toBeFalse()
+        ->and($threeTwoTwoCaptionPosition)->not->toBeFalse()
+        ->and($threeTwoTwoFirstParagraphPosition)->not->toBeFalse()
+        ->and($threeTwoTwoSecondParagraphPosition)->not->toBeFalse()
+        ->and($threeTwoTwoFirstParagraphPosition)->toBeLessThan($threeTwoTwoTablePosition)
+        ->and($threeTwoTwoTablePosition)->toBeLessThan($threeTwoTwoTableDataPosition)
+        ->and($threeTwoTwoTableDataPosition)->toBeLessThan($threeTwoTwoCaptionPosition)
+        ->and($threeTwoTwoCaptionPosition)->toBeLessThan($threeTwoTwoSecondParagraphPosition)
+        ->and($threeTwoTwoText)->toContain('Textilien, Materialien, Stoffe und Nahrungsmittel')
         ->and($figureIndex)->not->toBeNull()
         ->and((string) ($figureIndex?->section_title ?? ''))->toContain('Abbildung- und Tabellenverzeichnis')
         ->and($wrongChapterIndex)->toBeNull()
@@ -5131,4 +5735,167 @@ test('slash captions, table captions, and mixed backmatter boundaries stay struc
         ->and((string) ($figureIndex?->extracted_text ?? ''))->not->toContain('Eidstaatliche Erklärung')
         ->and($falseStandaloneTextiles)->toBeNull()
         ->and($falseStandaloneCitation)->toBeNull();
+});
+
+test('inline content flow preserves multiple tables in one subsection', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $attachment = createMainDocxAttachment($aba, 'inline-flow-multiple-tables.docx', [
+        ['text' => '4. Ernährung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '4.1 Tabellenfluss', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Einleitungstext vor der ersten Tabelle.'],
+        ['text' => 'Tab. 3: Erste Tabelle'],
+        ['text' => 'Fließtext zwischen den beiden Tabellen.'],
+        ['text' => 'Tab. 4: Zweite Tabelle'],
+        ['text' => 'Abschlusstext nach der zweiten Tabelle.'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $attachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => $attachment->original_name,
+        'source_path' => $attachment->path,
+        'source_mime_type' => $attachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $subsection = $results->firstWhere('section_title', '4.1 Tabellenfluss');
+    $tableThree = $results->firstWhere('section_title', 'Tab. 3: Erste Tabelle');
+    $tableFour = $results->firstWhere('section_title', 'Tab. 4: Zweite Tabelle');
+    $flowBlocks = collect((array) data_get((array) ($subsection?->metadata ?? []), 'inline_content_flow.blocks', []));
+    $flowTypes = $flowBlocks->pluck('block_type')->values()->all();
+    $firstTableBlock = $flowBlocks->firstWhere('child_result_id', (int) ($tableThree?->id ?? 0));
+    $secondTableBlock = $flowBlocks->firstWhere('child_result_id', (int) ($tableFour?->id ?? 0));
+    $tableBlockCount = $flowBlocks->where('block_type', 'table')->count();
+    $subsectionText = (string) ($subsection?->extracted_text ?? '');
+    $introPosition = mb_strpos($subsectionText, 'Einleitungstext vor der ersten Tabelle.');
+    $firstTablePosition = mb_strpos($subsectionText, '| Tabelle |');
+    $middleParagraphPosition = mb_strpos($subsectionText, 'Fließtext zwischen den beiden Tabellen.');
+    $secondTablePosition = $firstTablePosition === false
+        ? false
+        : mb_strpos($subsectionText, '| Tabelle |', $firstTablePosition + 1);
+    $closingParagraphPosition = mb_strpos($subsectionText, 'Abschlusstext nach der zweiten Tabelle.');
+
+    expect($subsection)->not->toBeNull()
+        ->and($tableThree)->not->toBeNull()
+        ->and((string) ($tableThree?->section_type ?? ''))->toBe('table')
+        ->and($tableFour)->not->toBeNull()
+        ->and((string) ($tableFour?->section_type ?? ''))->toBe('table')
+        ->and((string) ($flowTypes[0] ?? ''))->toBe('paragraph')
+        ->and($tableBlockCount)->toBe(2)
+        ->and((int) ($firstTableBlock['start_line'] ?? 0))->toBe((int) ($tableThree?->start_line ?? 0))
+        ->and((int) ($secondTableBlock['start_line'] ?? 0))->toBe((int) ($tableFour?->start_line ?? 0))
+        ->and((int) ($firstTableBlock['sequence'] ?? 0))->toBeLessThan((int) ($secondTableBlock['sequence'] ?? 0))
+        ->and($subsectionText)->not->toContain('[TABLE]')
+        ->and($subsectionText)->not->toContain('[FIGURE]')
+        ->and($introPosition)->not->toBeFalse()
+        ->and($firstTablePosition)->not->toBeFalse()
+        ->and($middleParagraphPosition)->not->toBeFalse()
+        ->and($secondTablePosition)->not->toBeFalse()
+        ->and($closingParagraphPosition)->not->toBeFalse()
+        ->and($introPosition)->toBeLessThan($firstTablePosition)
+        ->and($firstTablePosition)->toBeLessThan($middleParagraphPosition)
+        ->and($middleParagraphPosition)->toBeLessThan($secondTablePosition)
+        ->and($secondTablePosition)->toBeLessThan($closingParagraphPosition);
+});
+
+test('rendered subsection text preserves mixed paragraph-table-figure-paragraph flow', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $attachment = createMainDocxAttachment($aba, 'inline-flow-rendered-mixed-table-figure.docx', [
+        ['text' => '5. Therapie', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => '5.1 Mischfluss', 'style' => 'Heading2', 'outline' => 1],
+        ['text' => 'Einleitung vor der Tabelle.'],
+        ['text' => 'Tab. 7: Stufenplan der Behandlung'],
+        ['raw_xml' => buildDocxTableRawXml([
+            ['Stufe', 'Maßnahme'],
+            ['1', 'Basispflege täglich'],
+            ['2', 'Entzündungshemmende Salbe'],
+            ['3', 'Systemische Therapie bei schweren Schüben'],
+        ])],
+        ['text' => 'Übergangstext zwischen Tabelle und Abbildung.'],
+        ['text' => 'Abbildung 9/ Übersicht der Therapieoptionen'],
+        ['text' => 'Schlussabsatz nach Abbildung.'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $attachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => $attachment->original_name,
+        'source_path' => $attachment->path,
+        'source_mime_type' => $attachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $subsection = $results->firstWhere('section_title', '5.1 Mischfluss');
+    $table = $results->firstWhere('section_title', 'Tab. 7: Stufenplan der Behandlung');
+    $figure = $results->firstWhere('section_title', 'Abbildung 9/ Übersicht der Therapieoptionen');
+    $subsectionText = (string) ($subsection?->extracted_text ?? '');
+    $tablePosition = mb_strpos($subsectionText, '| Stufe | Maßnahme |');
+    $tableDataPosition = mb_strpos($subsectionText, '| 2 | Entzündungshemmende Salbe |');
+    $tableCaptionPosition = mb_strpos($subsectionText, 'Tab. 7: Stufenplan der Behandlung');
+    $transitionPosition = mb_strpos($subsectionText, 'Übergangstext zwischen Tabelle und Abbildung.');
+    $closingPosition = mb_strpos($subsectionText, 'Schlussabsatz nach Abbildung.');
+
+    expect($subsection)->not->toBeNull()
+        ->and($table)->not->toBeNull()
+        ->and((string) ($table?->section_type ?? ''))->toBe('table')
+        ->and($figure)->not->toBeNull()
+        ->and((string) ($figure?->section_type ?? ''))->toBe('figure')
+        ->and($subsectionText)->toContain('Einleitung vor der Tabelle.')
+        ->and($subsectionText)->toContain('Übergangstext zwischen Tabelle und Abbildung.')
+        ->and($subsectionText)->toContain('Schlussabsatz nach Abbildung.')
+        ->and($subsectionText)->toContain('| Stufe | Maßnahme |')
+        ->and($subsectionText)->toContain('| 2 | Entzündungshemmende Salbe |')
+        ->and($subsectionText)->not->toContain('[TABLE]')
+        ->and($subsectionText)->not->toContain('[FIGURE]')
+        ->and($tablePosition)->not->toBeFalse()
+        ->and($tableDataPosition)->not->toBeFalse()
+        ->and($tableCaptionPosition)->not->toBeFalse()
+        ->and($transitionPosition)->not->toBeFalse()
+        ->and($closingPosition)->not->toBeFalse()
+        ->and($tablePosition)->toBeLessThan($tableDataPosition)
+        ->and($tableDataPosition)->toBeLessThan($tableCaptionPosition)
+        ->and($tableCaptionPosition)->toBeLessThan($transitionPosition)
+        ->and($transitionPosition)->toBeLessThan($closingPosition);
 });

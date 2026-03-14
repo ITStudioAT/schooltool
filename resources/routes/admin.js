@@ -27,6 +27,7 @@ const Aba = () => import('@/pages/admin/aba/Aba.vue')
 const AbaResults = () => import('@/pages/admin/aba/AbaAnalysisResults.vue')
 const AbaAiSettings = () => import('@/pages/admin/aba/AbaAiSettings.vue')
 const AbaSeedReport = () => import('@/pages/admin/aba/AbaSeedReport.vue')
+const AbaSeedReview = () => import('@/pages/admin/aba/AbaSeedReview.vue')
 
 const routes = [
     { path: '/admin', component: Index },
@@ -52,6 +53,7 @@ const routes = [
     { path: '/admin/aba/results/:abaId', component: AbaResults },
     { path: '/admin/aba/ai-settings', component: AbaAiSettings },
     { path: '/admin/aba/ai-settings/seed-report', component: AbaSeedReport },
+    { path: '/admin/aba/ai-settings/seed-report/review', component: AbaSeedReview },
 ]
 
 const router = createRouter({

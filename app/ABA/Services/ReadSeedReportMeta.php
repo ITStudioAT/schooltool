@@ -100,7 +100,7 @@ class ReadSeedReportMeta
             'modified_at' => null,
             'meta' => [],
             'preview' => '',
-            'error' => 'Seed-Datei nicht gefunden.',
+            'error' => 'Hauptdatei nicht gefunden.',
         ];
     }
 }

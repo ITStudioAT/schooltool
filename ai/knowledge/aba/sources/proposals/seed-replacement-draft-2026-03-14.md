@@ -1,7 +1,7 @@
 ---
 title: "ABA – Abschlussarbeit an AHS: Knowledge Seed Report"
 domain: ahs-aba
-status: active
+status: draft
 version: "1.1"
 last_reviewed_at: "2026-03-14"
 next_review_due_at: "2026-06-14"
@@ -9,6 +9,9 @@ source_registry: "ai/knowledge/aba/sources/source-registry.json"
 change_log: "ai/knowledge/aba/sources/seed-report-changelog.md"
 review_state: "ai/knowledge/aba/sources/seed-review-state.json"
 scope_note: "AHS (Allgemeinbildende Höhere Schulen) – Abschlussarbeit auf vorwissenschaftlichem Niveau"
+draft_type: seed-replacement
+draft_generated_at: "2026-03-14"
+requires_review: true
 ---
 
 # ABA – Abschlussarbeit an AHS: Knowledge Seed Report
@@ -89,6 +92,8 @@ Die schriftliche ABA muss folgende Elemente in der angegebenen Reihenfolge entha
 Es gibt **keine gesetzlich vorgeschriebene Mindestseitenzahl**. Der Umfang ergibt sich aus dem Thema und den schulspezifischen Vorgaben.
 
 **Übliche Orientierungswerte (schulspezifisch, AHS):**
+
+_Schulspezifisch – konkrete Werte werden von der jeweiligen Schule festgelegt. Allgemein verbindliche Richtwerte liegen derzeit nicht vor._
 
 ---
 
@@ -179,28 +184,19 @@ Folgende Aspekte sind **schulspezifisch** und variieren je nach Schule:
 
 ## 14. Quellen und Verlässlichkeit
 
-- **BMBWF-Erlass 2025 (AHS)**: Amtliche Quelle, bindend – URL noch zu recherchieren
+- **BMBWF-Erlass 2025 (AHS)**: Offizielle Referenz, konkrete zitierfähige Einzelfundstelle noch offen _([AHS-ABA-Richtlinien (offizielle AHS-ABA-Seite)](https://www.ahs-aba.at/schueler/planen/richtlinien) · nicht vollständig geklärt)_
 - **Schulinterne Regelwerke**: Amtlich für jeweilige Schule, bindend vor Ort
-- **AHS-Handbuch / BMBWF-Richtlinien für AHS**: Offizielle Orientierung – Quelle noch zu identifizieren und zu verlinken
+- **AHS-Handbuch / BMBWF-Richtlinien für AHS**: Offizielle Orientierung, konkrete zitierfähige Einzelfundstelle noch offen _([AHS-ABA-Portal: Anleitungen und Handbücher](https://www.ahs-aba.at/schueler/einreichen/aba-portal) · nicht vollständig geklärt)_
 - **Beobachtungen aus der Praxis (2025/26, AHS)**: Berichtet, möglicherweise nicht universell
 - **Brancheninformationen / Fachzeitschriften**: Informativ, nicht normativ
 
 ---
 
-## Offene Punkte (unresolved)
+## 15. Noch nicht abschließend geklärte Punkte
 
-> **Draft-Hinweis:** Die folgenden Punkte konnten durch die automatische Verifikation nicht abschließend geklärt werden. Sie erfordern manuelle Überprüfung vor der Übernahme dieses Drafts.
+Die folgenden Aspekte konnten automatisch nicht abschließend verifiziert werden und sollten vor der Übernahme dieses Vorschlags manuell geprüft werden.
 
-| Issue | Typ | Abschnitt | Originaltext (Auszug) |
-|---|---|---|---|
-| issue-005 | weak_statement | 3. Zeitplan und Fristen |   Themenabgabe / Betreuungsvereinbarung   Schulspezifisch (m… |
-| issue-006 | weak_statement | 3. Zeitplan und Fristen |   Abgabe der ABA (schriftlich)   Schulspezifisch (meist Febr… |
-| issue-007 | weak_statement | 3. Zeitplan und Fristen |   Mündliche Präsentation   Schulspezifisch (meist April–… |
-| issue-008 | weak_statement | Format B: Rein Mündlich | - Schulspezifisch: Nicht alle Schulen bieten dieses Format a… |
-| issue-011 | weak_statement | 6. Seitenzahl und Umfang | **Übliche Orientierungswerte (schulspezifisch, AHS):**… |
-| issue-013 | weak_statement | 7. Abgabe | - Abgabedatum ist **schulspezifisch**… |
-| issue-014 | weak_statement | 9. Plagiatsprüfung | - Verwendete Systeme: schulspezifisch (oft PlagScan, Turniti… |
-| issue-017 | source_placeholder | 14. Quellen und Verlässlichkeit | - **BMBWF-Erlass 2025 (AHS)**: Amtliche Quelle, bindend – … |
-| issue-018 | source_placeholder | 14. Quellen und Verlässlichkeit | - **AHS-Handbuch / BMBWF-Richtlinien für AHS**: Offizielle … |
-| issue-021 | weak_statement | 15. Offene Fragen und Unsicherheiten | - Ob Format B (rein mündlich) an allen Schulen verfügbar s… |
-| issue-022 | weak_statement | 15. Offene Fragen und Unsicherheiten | - Das vollständige Bewertungsraster ab 2026/27 lag zum Zeit… |
+**14. Quellen und Verlässlichkeit**
+
+- **BMBWF-Erlass 2025 (AHS)**: Offizielle Referenz, konkrete zitierfähige Einzelfundstelle noch offen _Quelle nur teilweise geklärt · Referenz: AHS-ABA-Richtlinien (offizielle AHS-ABA-Seite) · URL: https://www.ahs-aba.at/schueler/planen/richtlinien · Belastbare AHS-Referenzseite vorhanden, aber kein eindeutig zitierfähiger Direktlink zum genannten BMBWF-Erlass 2025._
+- **AHS-Handbuch / BMBWF-Richtlinien für AHS**: Offizielle Orientierung, konkrete zitierfähige Einzelfundstelle noch offen _Quelle nur teilweise geklärt · Referenz: AHS-ABA-Portal: Anleitungen und Handbücher · URL: https://www.ahs-aba.at/schueler/einreichen/aba-portal · Die Handbuch- und Richtlinienebene ist offiziell referenzierbar, eine eindeutige Einzeldokument-URL für den genannten Titel bleibt offen._

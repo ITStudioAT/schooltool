@@ -474,6 +474,7 @@ class AbaAnalysisService
             $run->results()->delete();
 
             $map = [];
+            $createdResults = [];
             foreach ($orderedSections as $index => $section) {
                 $sectionType = trim((string) ($section['section_type'] ?? 'other_section'));
                 if ($sectionType === '') {
@@ -504,6 +505,7 @@ class AbaAnalysisService
                 if ($sectionKey !== '') {
                     $map[$sectionKey] = $result->id;
                 }
+                $createdResults[] = $result;
 
                 $summary['sections_total']++;
                 if ($sectionType === 'figure') {
@@ -511,6 +513,8 @@ class AbaAnalysisService
                 }
                 $summary['section_type_counts'][$sectionType] = (int) ($summary['section_type_counts'][$sectionType] ?? 0) + 1;
             }
+
+            $this->applyInlineContentFlowMetadata($createdResults);
         });
 
         $summary['persisted_record_count'] = (int) $run->results()->count();
@@ -520,6 +524,522 @@ class AbaAnalysisService
         $summary['figures_total'] = $summary['persisted_figure_count'];
 
         return $summary;
+    }
+
+    /**
+     * @param  array<int, AbaAnalysisResult>  $results
+     */
+    private function applyInlineContentFlowMetadata(array $results): void
+    {
+        if ($results === []) {
+            return;
+        }
+
+        $resultsById = [];
+        $inlineChildrenByParent = [];
+        foreach ($results as $result) {
+            if (! $result instanceof AbaAnalysisResult) {
+                continue;
+            }
+
+            $resultId = (int) ($result->id ?? 0);
+            if ($resultId > 0) {
+                $resultsById[$resultId] = $result;
+            }
+
+            $parentId = (int) ($result->parent_result_id ?? 0);
+            if ($parentId <= 0) {
+                continue;
+            }
+
+            $sectionType = trim((string) ($result->section_type ?? ''));
+            if (! in_array($sectionType, ['table', 'figure'], true)) {
+                continue;
+            }
+
+            $inlineChildrenByParent[$parentId][] = $result;
+        }
+
+        foreach ($inlineChildrenByParent as $parentId => $inlineChildren) {
+            $parent = $resultsById[$parentId] ?? null;
+            if (! $parent instanceof AbaAnalysisResult) {
+                $parent = AbaAnalysisResult::query()->find($parentId);
+            }
+
+            if (! $parent instanceof AbaAnalysisResult) {
+                continue;
+            }
+
+            if (! in_array((string) ($parent->section_type ?? ''), ['chapter', 'subchapter', 'other_section'], true)) {
+                continue;
+            }
+
+            $blocks = $this->buildInlineContentFlowBlocks($parent, $inlineChildren);
+            if ($blocks === []) {
+                continue;
+            }
+
+            $renderedParentText = $this->renderParentContentFromInlineFlow(
+                parent: $parent,
+                blocks: $blocks,
+                resultsById: $resultsById,
+            );
+
+            $parentMetadata = is_array($parent->metadata ?? null) ? $parent->metadata : [];
+            $parentMetadata['inline_content_flow'] = [
+                'version' => 1,
+                'model' => 'mixed_blocks_line_order',
+                'blocks' => $blocks,
+                'rendered_into_extracted_text' => true,
+            ];
+            if ($renderedParentText !== '') {
+                $parent->extracted_text = $renderedParentText;
+            }
+            $parent->metadata = $parentMetadata;
+            $parent->save();
+
+            $childBlockIndexByResultId = [];
+            foreach ($blocks as $index => $block) {
+                $childResultId = (int) ($block['child_result_id'] ?? 0);
+                if ($childResultId <= 0) {
+                    continue;
+                }
+
+                $childBlockIndexByResultId[$childResultId] = $index;
+            }
+
+            foreach ($inlineChildren as $inlineChild) {
+                $inlineChildId = (int) ($inlineChild->id ?? 0);
+                if ($inlineChildId <= 0) {
+                    continue;
+                }
+
+                $inlineChildMetadata = is_array($inlineChild->metadata ?? null) ? $inlineChild->metadata : [];
+                $inlineChildMetadata['inline_content_flow'] = [
+                    'parent_result_id' => $parent->id,
+                    'block_index' => $childBlockIndexByResultId[$inlineChildId] ?? null,
+                ];
+                $inlineChild->metadata = $inlineChildMetadata;
+                $inlineChild->save();
+            }
+        }
+    }
+
+    /**
+     * @param  array<int, AbaAnalysisResult>  $inlineChildren
+     * @return array<int, array<string,mixed>>
+     */
+    private function buildInlineContentFlowBlocks(AbaAnalysisResult $parent, array $inlineChildren): array
+    {
+        $parentStartLine = (int) ($parent->start_line ?? 0);
+        $parentEndLine = (int) ($parent->end_line ?? 0);
+        if ($parentStartLine <= 0 || $parentEndLine < $parentStartLine) {
+            return [];
+        }
+
+        usort($inlineChildren, function (AbaAnalysisResult $left, AbaAnalysisResult $right): int {
+            $leftStart = (int) ($left->start_line ?? 0);
+            $rightStart = (int) ($right->start_line ?? 0);
+            if ($leftStart !== $rightStart) {
+                return $leftStart <=> $rightStart;
+            }
+
+            $leftOrder = (int) ($left->sort_order ?? 0);
+            $rightOrder = (int) ($right->sort_order ?? 0);
+
+            return $leftOrder <=> $rightOrder;
+        });
+
+        $contentStartLine = $parentStartLine;
+        if (trim((string) ($parent->section_title ?? '')) !== '') {
+            $contentStartLine = min($parentEndLine, $parentStartLine + 1);
+        }
+
+        $children = [];
+        foreach ($inlineChildren as $inlineChild) {
+            $childStartLine = (int) ($inlineChild->start_line ?? 0);
+            if ($childStartLine <= 0) {
+                continue;
+            }
+
+            $childEndLine = max($childStartLine, (int) ($inlineChild->end_line ?? $childStartLine));
+            if ($childEndLine < $contentStartLine || $childStartLine > $parentEndLine) {
+                continue;
+            }
+
+            $children[] = [
+                'result' => $inlineChild,
+                'start_line' => max($contentStartLine, $childStartLine),
+                'end_line' => min($parentEndLine, $childEndLine),
+            ];
+        }
+
+        if ($children === []) {
+            return [];
+        }
+
+        $blocks = [];
+        $appendParagraph = function (int $startLine, int $endLine) use (&$blocks): void {
+            if ($startLine <= 0 || $endLine < $startLine) {
+                return;
+            }
+            $blocks[] = [
+                'block_type' => 'paragraph',
+                'start_line' => $startLine,
+                'end_line' => $endLine,
+            ];
+        };
+
+        $cursorLine = $contentStartLine;
+        $childCount = count($children);
+        $childIndex = 0;
+        while ($childIndex < $childCount) {
+            $current = $children[$childIndex];
+            $groupStartLine = (int) ($current['start_line'] ?? 0);
+            if ($groupStartLine <= 0) {
+                $childIndex++;
+
+                continue;
+            }
+
+            if ($groupStartLine > $cursorLine) {
+                $appendParagraph($cursorLine, $groupStartLine - 1);
+            }
+
+            $groupMaxEndLine = max($groupStartLine, (int) ($current['end_line'] ?? $groupStartLine));
+            while ($childIndex < $childCount) {
+                $candidate = $children[$childIndex];
+                $candidateStartLine = (int) ($candidate['start_line'] ?? 0);
+                if ($candidateStartLine !== $groupStartLine) {
+                    break;
+                }
+
+                /** @var AbaAnalysisResult $inlineChild */
+                $inlineChild = $candidate['result'];
+                $childStartLine = (int) ($candidate['start_line'] ?? $groupStartLine);
+                $childEndLine = max($childStartLine, (int) ($candidate['end_line'] ?? $childStartLine));
+                $groupMaxEndLine = max($groupMaxEndLine, $childEndLine);
+
+                $blocks[] = [
+                    'block_type' => (string) ($inlineChild->section_type ?? 'other'),
+                    'child_result_id' => (int) ($inlineChild->id ?? 0),
+                    'start_line' => $childStartLine,
+                    'end_line' => $childEndLine,
+                    'section_title' => trim((string) ($inlineChild->section_title ?? '')),
+                ];
+                $childIndex++;
+            }
+
+            $cursorLine = max($cursorLine, $groupMaxEndLine + 1);
+        }
+
+        if ($cursorLine <= $parentEndLine) {
+            $appendParagraph($cursorLine, $parentEndLine);
+        }
+
+        if ($blocks === []) {
+            return [];
+        }
+
+        foreach ($blocks as $index => $block) {
+            $blocks[$index]['sequence'] = $index + 1;
+            $blocks[$index]['line_offset_start'] = max(0, ((int) ($blocks[$index]['start_line'] ?? $contentStartLine)) - $contentStartLine);
+            $blocks[$index]['line_offset_end'] = max(0, ((int) ($blocks[$index]['end_line'] ?? $contentStartLine)) - $contentStartLine);
+            $blocks[$index]['line_count'] = max(1, ((int) ($blocks[$index]['end_line'] ?? $contentStartLine)) - ((int) ($blocks[$index]['start_line'] ?? $contentStartLine)) + 1);
+        }
+
+        return $blocks;
+    }
+
+    /**
+     * @param  array<int, array<string,mixed>>  $blocks
+     * @param  array<int, AbaAnalysisResult>  $resultsById
+     */
+    private function renderParentContentFromInlineFlow(AbaAnalysisResult $parent, array $blocks, array $resultsById): string
+    {
+        $parentText = trim((string) ($parent->extracted_text ?? ''));
+        if ($parentText === '' || $blocks === []) {
+            return $parentText;
+        }
+
+        $parentLines = array_values(array_filter(
+            preg_split('/\R/u', $parentText) ?: [],
+            fn (string $line): bool => trim($line) !== ''
+        ));
+        if ($parentLines === []) {
+            return $parentText;
+        }
+
+        $renderedParts = [];
+        $sectionTitle = trim((string) ($parent->section_title ?? ''));
+        if ($sectionTitle !== '' && trim((string) ($parentLines[0] ?? '')) === $sectionTitle) {
+            $renderedParts[] = array_shift($parentLines);
+        }
+
+        if ($parentLines === []) {
+            return trim(implode("\n", $renderedParts));
+        }
+
+        $lineCursor = 0;
+        foreach ($blocks as $block) {
+            $blockType = trim((string) ($block['block_type'] ?? ''));
+            if ($blockType === 'paragraph') {
+                $lineCount = max(1, (int) ($block['line_count'] ?? 1));
+                $paragraph = $this->consumeParentParagraphLines($parentLines, $lineCursor, $lineCount);
+                if ($paragraph !== '') {
+                    $renderedParts[] = $paragraph;
+                }
+
+                continue;
+            }
+
+            $childResultId = (int) ($block['child_result_id'] ?? 0);
+            $child = $childResultId > 0 ? ($resultsById[$childResultId] ?? null) : null;
+            $inlineObject = $this->renderInlineObjectBlock($blockType, $child);
+            if ($inlineObject !== '') {
+                $renderedParts[] = $inlineObject;
+            }
+
+            if ($blockType === 'table') {
+                $tableSourceLines = $this->collectInlineTableRows($child);
+                $this->consumeMatchingLeadingLines($parentLines, $lineCursor, $tableSourceLines);
+            }
+        }
+
+        if ($lineCursor < count($parentLines)) {
+            $tailParagraph = trim(implode("\n", array_slice($parentLines, $lineCursor)));
+            if ($tailParagraph !== '') {
+                $renderedParts[] = $tailParagraph;
+            }
+        }
+
+        $renderedText = trim(implode("\n", array_values(array_filter($renderedParts, fn (string $part): bool => trim($part) !== ''))));
+        $renderedText = preg_replace("/\n{3,}/", "\n\n", $renderedText) ?? $renderedText;
+
+        return trim($renderedText);
+    }
+
+    /**
+     * @param  array<int, string>  $parentLines
+     */
+    private function consumeParentParagraphLines(array $parentLines, int &$lineCursor, int $lineCount): string
+    {
+        if ($lineCount <= 0 || $lineCursor >= count($parentLines)) {
+            return '';
+        }
+
+        $slice = array_slice($parentLines, $lineCursor, $lineCount);
+        $lineCursor += count($slice);
+
+        return trim(implode("\n", $slice));
+    }
+
+    /**
+     * @param  array<int, string>  $parentLines
+     * @param  array<int, string>  $expectedLines
+     */
+    private function consumeMatchingLeadingLines(array $parentLines, int &$lineCursor, array $expectedLines): void
+    {
+        foreach ($expectedLines as $expectedLine) {
+            if ($lineCursor >= count($parentLines)) {
+                break;
+            }
+
+            $parentLine = trim((string) ($parentLines[$lineCursor] ?? ''));
+            if ($this->normalizeInlineMatchLine($parentLine) !== $this->normalizeInlineMatchLine($expectedLine)) {
+                break;
+            }
+
+            $lineCursor++;
+        }
+    }
+
+    private function normalizeInlineMatchLine(string $line): string
+    {
+        $normalized = preg_replace('/\s+/u', ' ', trim($line)) ?? trim($line);
+
+        return mb_strtolower($normalized);
+    }
+
+    private function renderInlineObjectBlock(string $blockType, ?AbaAnalysisResult $child): string
+    {
+        $type = mb_strtolower(trim($blockType));
+        if ($type === 'table') {
+            return $this->renderInlineTableBlock($child);
+        }
+
+        if ($type === 'figure') {
+            return '';
+        }
+
+        return '';
+    }
+
+    private function renderInlineTableBlock(?AbaAnalysisResult $child): string
+    {
+        $rows = $this->collectInlineTableRows($child);
+        if ($rows === []) {
+            return '';
+        }
+
+        $tableLines = [];
+        $captionLines = [];
+        $fallbackRows = [];
+        foreach ($rows as $row) {
+            if ($this->isMarkdownTableLine($row)) {
+                $tableLines[] = $row;
+
+                continue;
+            }
+
+            if ($this->isLikelyTableCaptionLine($row)) {
+                $captionLines[] = $row;
+
+                continue;
+            }
+
+            $fallbackRows[] = $row;
+        }
+
+        if ($tableLines !== []) {
+            $normalizedTableLines = $this->normalizeMarkdownTable($tableLines);
+            $renderedParts = array_values(array_filter($normalizedTableLines, fn (string $line): bool => trim($line) !== ''));
+
+            $uniqueCaptionLines = array_values(array_unique($captionLines));
+            if ($uniqueCaptionLines !== []) {
+                $renderedParts[] = '';
+                foreach ($uniqueCaptionLines as $captionLine) {
+                    $renderedParts[] = $captionLine;
+                }
+            }
+
+            return trim(implode("\n", $renderedParts));
+        }
+
+        $renderedRows = [
+            '| Tabelle |',
+            '|---|',
+        ];
+        $rowsForFallback = $fallbackRows !== [] ? $fallbackRows : $captionLines;
+        foreach ($rowsForFallback as $row) {
+            $normalizedRow = preg_replace('/\s+/u', ' ', trim($row)) ?? trim($row);
+            if ($normalizedRow === '') {
+                continue;
+            }
+
+            $renderedRows[] = '| '.str_replace('|', '\|', $normalizedRow).' |';
+        }
+
+        return trim(implode("\n", $renderedRows));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function collectInlineTableRows(?AbaAnalysisResult $child): array
+    {
+        $sourceText = trim((string) ($child?->extracted_text ?? ''));
+        if ($sourceText === '') {
+            $sourceText = trim((string) ($child?->section_title ?? ''));
+        }
+
+        if ($sourceText === '') {
+            return [];
+        }
+
+        $rows = [];
+        foreach (preg_split('/\R/u', $sourceText) ?: [] as $line) {
+            $normalized = trim((string) $line);
+            if ($normalized === '') {
+                continue;
+            }
+
+            $rows[] = $normalized;
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param  array<int, string>  $rows
+     */
+    private function looksLikeMarkdownTable(array $rows): bool
+    {
+        if (count($rows) < 2) {
+            return false;
+        }
+
+        $header = trim((string) $rows[0]);
+        $separator = trim((string) $rows[1]);
+
+        if (! str_contains($header, '|')) {
+            return false;
+        }
+
+        return preg_match('/^\s*\|?\s*:?-{3,}/u', $separator) === 1;
+    }
+
+    private function isMarkdownTableLine(string $line): bool
+    {
+        $value = trim($line);
+        if ($value === '') {
+            return false;
+        }
+
+        if (preg_match('/^\|\s*:?-{3,}(?:\s*\|\s*:?-{3,})+\s*\|?$/u', $value) === 1) {
+            return true;
+        }
+
+        return preg_match('/^\|(?:[^|]*\|){1,}\s*$/u', $value) === 1;
+    }
+
+    private function isLikelyTableCaptionLine(string $line): bool
+    {
+        $value = trim($line);
+        if ($value === '') {
+            return false;
+        }
+
+        return preg_match('/^(tab\.?|tabelle|table)\s*\d+/iu', $value) === 1;
+    }
+
+    /**
+     * @param  array<int, string>  $tableLines
+     * @return array<int, string>
+     */
+    private function normalizeMarkdownTable(array $tableLines): array
+    {
+        $normalized = [];
+        foreach ($tableLines as $line) {
+            $value = trim($line);
+            if ($value === '') {
+                continue;
+            }
+            $normalized[] = $value;
+        }
+
+        if ($normalized === []) {
+            return [];
+        }
+
+        if ($this->looksLikeMarkdownTable($normalized)) {
+            return $normalized;
+        }
+
+        if (count($normalized) < 2) {
+            return $normalized;
+        }
+
+        $header = $normalized[0];
+        $columnCount = max(1, substr_count($header, '|') - 1);
+        $separator = '|'.implode('|', array_fill(0, $columnCount, '---')).'|';
+
+        $withSeparator = [$header, $separator];
+        foreach (array_slice($normalized, 1) as $rowLine) {
+            $withSeparator[] = $rowLine;
+        }
+
+        return $withSeparator;
     }
 
     /**

@@ -37,7 +37,20 @@
       "Bash(for f:*)",
       "Bash(do echo:*)",
       "Read(//c/laravel/schooltool/app/ABA/Services/**)",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(ls -la \"c:\\\\laravel\\\\schooltool\\\\ai\\\\knowledge\\\\aba\\\\sources\\\\proposals\"\" 2>/dev/null || echo \"Directory does not exist \")",
+      "mcp__laravel-boost__search-docs",
+      "Bash(./vendor/bin/pint app/Ai/Agents/ app/ABA/Services/RunAiSeedResearch.php app/ABA/Services/RunAiSeedVerification.php app/ABA/Services/RunAiSeedHardeningDraft.php app/ABA/Services/BuildAiSeedProposal.php app/ABA/Services/ReadSeedOpenIssues.php app/ABA/Services/RunSeedHardening.php app/ABA/Services/GenerateSeedHardeningDraft.php app/Console/Commands/AbaHardenSeed.php --format agent)",
+      "Bash(./vendor/bin/pint app/ABA/Services/ReadSeedHardeningStatus.php app/Http/Controllers/Admin/ABA/AbaSeedHardeningController.php --format agent)",
+      "Bash(./vendor/bin/pint app/Ai/Agents/ app/ABA/Services/ReadSeedHardeningStatus.php app/Http/Controllers/Admin/ABA/AbaSeedHardeningController.php --format agent)",
+      "Bash(./vendor/bin/pint app/Ai/Agents/AhsSeedVerificationAgent.php --format agent)",
+      "Bash(find /c/laravel/schooltool -type f \\\\\\(-name *.json -o -name *.php \\\\\\) -path */storage/* -o -path */tests/Feature/*Aba*.php)",
+      "Bash(./vendor/bin/pint app/ABA/Services/BuildSeedDiffView.php app/Http/Controllers/Admin/ABA/AbaSeedReviewController.php --format agent)",
+      "Bash(./vendor/bin/pint app/ABA/Services/BuildSeedReplacementDraft.php app/Http/Controllers/Admin/ABA/AbaSeedReviewController.php app/ABA/Services/BuildSeedDiffView.php --format agent)",
+      "Bash(./vendor/bin/pint app/ABA/Services/ApplySeedReplacementDraft.php app/Http/Controllers/Admin/ABA/AbaSeedReviewController.php --format agent)",
+      "Bash(./vendor/bin/pint app/ABA/Services/BuildSeedReplacementDraft.php app/ABA/Services/BuildSeedDiffView.php app/ABA/Services/ApplySeedReplacementDraft.php app/Http/Controllers/Admin/ABA/AbaSeedReviewController.php --format agent)",
+      "Bash(./vendor/bin/pint app/Http/Controllers/Admin/ABA/AbaSeedHardeningController.php app/ABA/Services/BuildSeedReplacementDraft.php --format agent)",
+      "Bash(./vendor/bin/pint app/ABA/Services/BuildSeedReplacementDraft.php app/Http/Controllers/Admin/ABA/AbaSeedReviewController.php routes/api.php --format agent)"
     ],
     "deny": [],
     "ask": []
