@@ -14,6 +14,7 @@ use App\ABA\Services\ReadSeedSourceRegistry;
 use App\ABA\Services\RebuildKnowledgeBaseFromSeed;
 use App\ABA\Services\RunOnlineFreshnessCheck;
 use App\Http\Controllers\Controller;
+use App\Services\AbaDocumentRuleService;
 use Illuminate\Http\JsonResponse;
 
 /**
@@ -31,6 +32,7 @@ class AbaAiSettingsController extends Controller
         ReadFreshnessResults $freshnessResults,
         ReadSeedHardeningStatus $hardeningStatus,
         BuildSeedDiffView $seedDiffView,
+        AbaDocumentRuleService $documentRuleService,
     ): JsonResponse {
         return response()->json([
             'seed_report' => $seedMeta->read(),
@@ -40,6 +42,7 @@ class AbaAiSettingsController extends Controller
             'freshness_results' => $freshnessResults->read(),
             'hardening_status' => $hardeningStatus->read(),
             'proposals' => $seedDiffView->listDiffableProposals(),
+            'document_rule_base' => $documentRuleService->summary(),
         ]);
     }
 

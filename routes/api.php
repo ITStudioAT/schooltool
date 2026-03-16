@@ -121,6 +121,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/aba/seed-hardening/analyze-and-propose', [\App\Http\Controllers\Admin\ABA\AbaSeedHardeningController::class, 'analyzeAndPropose']);
         Route::post('/admin/aba/seed-hardening/cleanup', [\App\Http\Controllers\Admin\ABA\AbaSeedHardeningController::class, 'cleanup']);
 
+        // Knowledge Query (lokale Wissensbasis abfragen)
+        Route::get('/admin/aba/knowledge', [\App\Http\Controllers\Admin\ABA\AbaKnowledgeQueryController::class, 'index']);
+        Route::post('/admin/aba/knowledge/query', [\App\Http\Controllers\Admin\ABA\AbaKnowledgeQueryController::class, 'query']);
+
         // Seed Review / Diff
         Route::get('/admin/aba/seed-review/proposals', [\App\Http\Controllers\Admin\ABA\AbaSeedReviewController::class, 'proposals']);
         Route::get('/admin/aba/seed-review/diff/{filename}', [\App\Http\Controllers\Admin\ABA\AbaSeedReviewController::class, 'diff'])->where('filename', '[a-zA-Z0-9_\-\.]+');

@@ -50,7 +50,11 @@
       "Bash(./vendor/bin/pint app/ABA/Services/ApplySeedReplacementDraft.php app/Http/Controllers/Admin/ABA/AbaSeedReviewController.php --format agent)",
       "Bash(./vendor/bin/pint app/ABA/Services/BuildSeedReplacementDraft.php app/ABA/Services/BuildSeedDiffView.php app/ABA/Services/ApplySeedReplacementDraft.php app/Http/Controllers/Admin/ABA/AbaSeedReviewController.php --format agent)",
       "Bash(./vendor/bin/pint app/Http/Controllers/Admin/ABA/AbaSeedHardeningController.php app/ABA/Services/BuildSeedReplacementDraft.php --format agent)",
-      "Bash(./vendor/bin/pint app/ABA/Services/BuildSeedReplacementDraft.php app/Http/Controllers/Admin/ABA/AbaSeedReviewController.php routes/api.php --format agent)"
+      "Bash(./vendor/bin/pint app/ABA/Services/BuildSeedReplacementDraft.php app/Http/Controllers/Admin/ABA/AbaSeedReviewController.php routes/api.php --format agent)",
+      "Bash(wc -l /c/laravel/schooltool/app/ABA/Services/*.php)",
+      "Bash(./vendor/bin/pint app/ABA/Knowledge/KnowledgeQueryService.php app/ABA/Knowledge/KnowledgeContextBuilder.php app/Ai/Agents/AbaKnowledgeAssistantAgent.php app/ABA/Services/QueryKnowledgeBase.php app/Http/Controllers/Admin/ABA/AbaKnowledgeQueryController.php --format agent)",
+      "Bash(./vendor/bin/pint tests/Unit/ABA/KnowledgeQueryServiceTest.php tests/Feature/ABA/QueryKnowledgeBaseTest.php --format agent)",
+      "Bash(./vendor/bin/pint tests/Feature/Controllers/Admin/ABA/AbaKnowledgeQueryControllerTest.php --format agent)"
     ],
     "deny": [],
     "ask": []

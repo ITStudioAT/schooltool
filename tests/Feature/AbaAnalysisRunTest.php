@@ -5899,3 +5899,119 @@ test('rendered subsection text preserves mixed paragraph-table-figure-paragraph 
         ->and($tableCaptionPosition)->toBeLessThan($transitionPosition)
         ->and($transitionPosition)->toBeLessThan($closingPosition);
 });
+
+test('docx list paragraphs keep bullet structure inside chapter text', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $attachment = createMainDocxAttachment($aba, 'list-structure.docx', [
+        ['text' => '1. Einleitung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Vor der Liste.'],
+        ['raw_xml' => '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t xml:space="preserve">Erster Punkt</w:t></w:r></w:p>'],
+        ['raw_xml' => '<w:p><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t xml:space="preserve">Unterpunkt A</w:t></w:r></w:p>'],
+        ['raw_xml' => '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t xml:space="preserve">Zweiter Punkt</w:t></w:r></w:p>'],
+        ['text' => 'Nach der Liste.'],
+        ['text' => '2. Schluss', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Abschlussabsatz.'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $attachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => $attachment->original_name,
+        'source_path' => $attachment->path,
+        'source_mime_type' => $attachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $introChapter = $results->first(fn ($section) => (string) ($section->section_type ?? '') === 'chapter'
+        && str_contains((string) ($section->section_title ?? ''), 'Einleitung'));
+    $introText = (string) ($introChapter?->extracted_text ?? '');
+
+    $beforePosition = mb_strpos($introText, 'Vor der Liste.');
+    $firstListPosition = mb_strpos($introText, '- Erster Punkt');
+    $nestedListPosition = mb_strpos($introText, '- Unterpunkt A');
+    $secondListPosition = mb_strpos($introText, '- Zweiter Punkt');
+    $afterPosition = mb_strpos($introText, 'Nach der Liste.');
+
+    expect($introChapter)->not->toBeNull()
+        ->and($introText)->toContain('Vor der Liste.')
+        ->and($introText)->toContain('- Erster Punkt')
+        ->and($introText)->toContain('- Unterpunkt A')
+        ->and($introText)->toContain('- Zweiter Punkt')
+        ->and($introText)->toContain('Nach der Liste.')
+        ->and($beforePosition)->not->toBeFalse()
+        ->and($firstListPosition)->not->toBeFalse()
+        ->and($nestedListPosition)->not->toBeFalse()
+        ->and($secondListPosition)->not->toBeFalse()
+        ->and($afterPosition)->not->toBeFalse()
+        ->and($beforePosition)->toBeLessThan($firstListPosition)
+        ->and($firstListPosition)->toBeLessThan($nestedListPosition)
+        ->and($nestedListPosition)->toBeLessThan($secondListPosition)
+        ->and($secondListPosition)->toBeLessThan($afterPosition);
+});
+
+test('docx conclusio heading is classified as chapter via configured rule base', function () {
+    if (! class_exists(ZipArchive::class)) {
+        $this->markTestSkipped('ZipArchive extension missing.');
+    }
+
+    $user = createAbaTeacher($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $attachment = createMainDocxAttachment($aba, 'conclusio.docx', [
+        ['text' => 'Einleitung', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Einführender Abschnitt.'],
+        ['text' => 'Conclusio', 'style' => 'Heading1', 'outline' => 0],
+        ['text' => 'Zusammenfassender Schlussabsatz.'],
+    ]);
+
+    $run = AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'aba_attachment_id' => $attachment->id,
+        'created_by_user_id' => $user->id,
+        'status' => AbaAnalysisRun::STATUS_STARTED,
+        'status_message' => 'Analyselauf wurde gestartet.',
+        'source_original_name' => $attachment->original_name,
+        'source_path' => $attachment->path,
+        'source_mime_type' => $attachment->mime_type,
+        'started_at' => now(),
+    ]);
+
+    app(AbaAnalysisService::class)->processRun($run->id);
+    $run->refresh();
+
+    $results = AbaAnalysisResult::query()
+        ->where('aba_analysis_run_id', $run->id)
+        ->orderBy('sort_order')
+        ->get();
+
+    $conclusio = $results->firstWhere('section_title', 'Conclusio');
+
+    expect($conclusio)->not->toBeNull()
+        ->and((string) ($conclusio?->section_type ?? ''))->toBe('chapter')
+        ->and((string) ($conclusio?->extracted_text ?? ''))->toContain('Zusammenfassender Schlussabsatz.');
+});

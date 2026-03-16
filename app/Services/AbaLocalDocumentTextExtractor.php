@@ -13,6 +13,7 @@ class AbaLocalDocumentTextExtractor
 {
     public function __construct(
         private readonly AbaDocxPageMapper $pageMapper,
+        private readonly AbaDocumentRuleService $documentRuleService,
     ) {}
 
     /**
@@ -348,24 +349,35 @@ class AbaLocalDocumentTextExtractor
         array &$tocLines,
         int &$lineNumber,
     ): void {
-        $text = trim($this->extractTextFromWordParagraph($xpath, $paragraph));
-        if ($text === '') {
+        $rawText = trim($this->extractTextFromWordParagraph($xpath, $paragraph));
+        if ($rawText === '') {
             return;
         }
 
         $lineNumber++;
         $styleValue = trim((string) $xpath->evaluate('string(w:pPr/w:pStyle/@w:val)', $paragraph));
         $outlineLevelValue = trim((string) $xpath->evaluate('string(w:pPr/w:outlineLvl/@w:val)', $paragraph));
+        $listLevel = $this->resolveParagraphListLevel($xpath, $paragraph);
+        $hasHeadingStyle = $this->paragraphUsesHeadingStyle($styleValue, $outlineLevelValue);
+        $preserveAsListLine = $listLevel !== null && ! $hasHeadingStyle;
+        $text = $preserveAsListLine
+            ? $this->applyListPrefixToText($rawText, $listLevel)
+            : $rawText;
         $alignment = $this->resolveParagraphAlignment($xpath, $paragraph);
         $indentLeftTwips = $this->resolveParagraphIndentLeftTwips($xpath, $paragraph);
         $spacingBeforeTwips = $this->resolveParagraphSpacingTwips($xpath, $paragraph, 'before');
         $spacingAfterTwips = $this->resolveParagraphSpacingTwips($xpath, $paragraph, 'after');
         $fontSizePt = $this->resolveParagraphFontSizePt($xpath, $paragraph);
         $isBold = $this->paragraphHasBoldRun($xpath, $paragraph);
-        $headingLevel = $this->resolveWordHeadingLevel($styleValue, $outlineLevelValue, $text);
-        $knownType = $this->knownSectionType($text);
+        $headingLevel = $this->resolveWordHeadingLevel(
+            styleValue: $styleValue,
+            outlineLevelValue: $outlineLevelValue,
+            text: $rawText,
+            allowNumericFallback: ! $preserveAsListLine,
+        );
+        $knownType = $preserveAsListLine ? null : $this->knownSectionType($rawText);
         $isTocStyle = $this->isWordTocStyle($styleValue);
-        $isTocEntry = $this->looksLikeTocEntry($text);
+        $isTocEntry = $this->looksLikeTocEntry($rawText);
         $isTocLine = $isTocStyle || $isTocEntry;
 
         if ($isTocLine) {
@@ -386,7 +398,7 @@ class AbaLocalDocumentTextExtractor
         if ($outlineSource !== null) {
             $entry = [
                 'line_number' => $lineNumber,
-                'title' => $text,
+                'title' => $rawText,
                 'level' => $headingLevel,
                 'source' => $outlineSource,
                 'is_toc' => $isTocLine,
@@ -1037,6 +1049,50 @@ class AbaLocalDocumentTextExtractor
         return trim($text);
     }
 
+    private function resolveParagraphListLevel(\DOMXPath $xpath, \DOMNode $paragraph): ?int
+    {
+        $numId = trim((string) $xpath->evaluate('string(w:pPr/w:numPr/w:numId/@w:val)', $paragraph));
+        if ($numId === '') {
+            return null;
+        }
+
+        $levelValue = trim((string) $xpath->evaluate('string(w:pPr/w:numPr/w:ilvl/@w:val)', $paragraph));
+        if (! is_numeric($levelValue)) {
+            return 0;
+        }
+
+        return max(0, min(8, (int) $levelValue));
+    }
+
+    private function paragraphUsesHeadingStyle(string $styleValue, string $outlineLevelValue): bool
+    {
+        if ($outlineLevelValue !== '' && is_numeric($outlineLevelValue)) {
+            return true;
+        }
+
+        $styleNormalized = mb_strtolower(trim($styleValue));
+        if ($styleNormalized === '') {
+            return false;
+        }
+
+        return preg_match('/(?:heading|überschrift|ueberschrift)\s*[1-9]/iu', $styleNormalized) === 1
+            || preg_match('/^h[1-9]$/iu', $styleNormalized) === 1;
+    }
+
+    private function applyListPrefixToText(string $text, int $listLevel): string
+    {
+        $value = trim($text);
+        if ($value === '') {
+            return '';
+        }
+
+        if (preg_match('/^\s*(?:[-*•·◦▪▫]|(?:\d+|[a-z]|[ivxlcdm]+)[\.\)])\s+/iu', $value) === 1) {
+            return $value;
+        }
+
+        return str_repeat('  ', max(0, min(8, $listLevel))).'- '.$value;
+    }
+
     private function nodeIsInsideMarkupCompatibilityFallback(\DOMNode $node): bool
     {
         $current = $node->parentNode;
@@ -1131,8 +1187,12 @@ class AbaLocalDocumentTextExtractor
         return $boldCount > 0;
     }
 
-    private function resolveWordHeadingLevel(string $styleValue, string $outlineLevelValue, string $text): ?int
-    {
+    private function resolveWordHeadingLevel(
+        string $styleValue,
+        string $outlineLevelValue,
+        string $text,
+        bool $allowNumericFallback = true
+    ): ?int {
         if ($outlineLevelValue !== '' && is_numeric($outlineLevelValue)) {
             $value = (int) $outlineLevelValue + 1;
             if ($value > 0) {
@@ -1151,7 +1211,7 @@ class AbaLocalDocumentTextExtractor
             }
         }
 
-        if ($this->looksLikeNumberedHeading($text)) {
+        if ($allowNumericFallback && $this->looksLikeNumberedHeading($text)) {
             return $this->numberedHeadingLevel($text);
         }
 
@@ -1274,27 +1334,21 @@ class AbaLocalDocumentTextExtractor
 
     private function knownSectionType(string $title): ?string
     {
-        $patterns = [
-            'abstract' => '/^\s*(abstract|zusammenfassung|kurzfassung|summary|executive summary|management summary|kurz[üu]berblick)(?:\s*(?:\(|\[)?\s*(deutsch|german|englisch|english)\s*(?:\)|\])?)?\s*(?:$|[:\-–]\s*[^.!?]{0,120}$|(?:(?:\.{2,}|…+)\s*)?\d+(?:\s*[-–]\s*\d+)?\s*$)/iu',
-            'foreword' => '/^\s*(vorwort|vorbemerkung|preface|foreword|prefazione)\b/iu',
-            'table_of_contents' => '/^\s*(inhaltsverzeichnis|table of contents)\b/iu',
-            'bibliography' => '/^\s*(?:(?:literaturverzeichnis|literaturangaben|quellenverzeichnis|quellenangaben|verwendete\s+quellen|literatur(?:\s*[-–]\s*|\s+und\s+)quellenverzeichnis|internetquellenverzeichnis|internetverzeichnis|internetquellenangaben|internetquellenliste|internetquellen|internet|onlinequellenverzeichnis|online(?:\s*-\s*|\s*)quellen|onlinequellen|webquellenverzeichnis|web(?:\s*-\s*|\s*)quellen|webquellen|webseiten|weblinks|references|bibliography|bibliograph(?:ie|y)|bibliografie)\b|(?:quellen?|quelle)\s*(?:$|[:\-–]\s*$))/iu',
-            'figure_index' => '/^\s*(abbildungsverzeichnis|list of figures)\b/iu',
-            'consent_declaration' => '/^\s*(?:einverst[aä]ndniserkl[aä]rung|einverstaendniserklaerung|eigenst[aä]ndigkeitserkl[aä]rung|selbstst[aä]ndigkeitserkl[aä]rung|selbststaendigkeitserklaerung|eidesstattliche\s+erkl[aä]rung|ehrenw[oö]rtliche\s+erkl[aä]rung|erkl[aä]rung)\s*(?:$|[:\-–]\s*[^.!?]{0,120}$)/iu',
-        ];
+        $configuredType = $this->documentRuleService->resolveSectionTypeFromTitle(
+            $title,
+            ['abstract', 'foreword', 'table_of_contents', 'bibliography', 'figure_index', 'consent_declaration']
+        );
+        if ($configuredType !== null) {
+            return $configuredType;
+        }
 
         if (
-            preg_match('/^\s*(?:einleitung|introduction|fazit|schluss(?:folgerung)?|res[üu]mee|conclusion)(?:\s*\/\s*(?:fazit|schluss(?:folgerung)?|res[üu]mee|conclusion))?\s*(?:$|[:\-–]\s*[^.!?]{0,120}$)/iu', $title) === 1
+            $this->documentRuleService->isConfiguredChapterHeading($title)
+            || preg_match('/^\s*(?:einleitung|introduction|fazit|schluss(?:folgerung)?|res[üu]mee|conclusion)(?:\s*\/\s*(?:fazit|schluss(?:folgerung)?|res[üu]mee|conclusion))?\s*(?:$|[:\-–]\s*[^.!?]{0,120}$)/iu', $title) === 1
             || preg_match('/^\s*(?:fazit|schluss(?:folgerung)?|res[üu]mee|conclusion)\s*\/\s*(?:fazit|schluss(?:folgerung)?|res[üu]mee|conclusion)\s*$/iu', $title) === 1
             || $this->matchesNamedChapterHeadingStructure($title)
         ) {
             return 'chapter';
-        }
-
-        foreach ($patterns as $type => $pattern) {
-            if (preg_match($pattern, $title) === 1) {
-                return $type;
-            }
         }
 
         return null;

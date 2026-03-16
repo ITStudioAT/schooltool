@@ -39,6 +39,7 @@ test('admin can load ai settings dashboard data', function () {
             'freshness_results',
             'hardening_status',
             'proposals',
+            'document_rule_base',
         ]);
 });
 
@@ -73,4 +74,16 @@ test('ai settings page uses hauptdatei pruefen as visible primary entry label', 
         ->toContain('Hauptdatei prüfen')
         ->not->toContain('Inhalt der Hauptdatei (Vorschau)')
         ->not->toContain('Hauptdatei öffnen');
+});
+
+test('ai settings endpoint exposes aba document rule base summary', function () {
+    $user = createAiSettingsUserWithRole('admin');
+
+    $this->actingAs($user, 'sanctum')
+        ->getJson('/api/admin/aba/ai-settings')
+        ->assertSuccessful()
+        ->assertJsonPath('document_rule_base.domain', 'ahs-aba')
+        ->assertJsonPath('document_rule_base.scope.school_type', 'AHS')
+        ->assertJsonPath('document_rule_base.assessment_classes.verbindlich_pruefbar.label', 'verbindlich prüfbar')
+        ->assertJsonPath('document_rule_base.structure_rules.sections.conclusion.maps_to_section_type', 'chapter');
 });

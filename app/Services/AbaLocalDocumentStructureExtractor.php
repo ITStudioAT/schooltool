@@ -11,6 +11,10 @@ class AbaLocalDocumentStructureExtractor
      */
     private array $lastDiagnostics = [];
 
+    public function __construct(
+        private readonly AbaDocumentRuleService $documentRuleService,
+    ) {}
+
     /**
      * @return array<int, array{
      *   section_key:string,
@@ -580,14 +584,17 @@ class AbaLocalDocumentStructureExtractor
     private function augmentKnownKeywordHeadings(array $headings, array $lines): array
     {
         $knownTypes = array_values(array_unique(array_map(fn (array $heading): string => $heading['type'], $headings)));
-        $patterns = [
-            'abstract' => '/^\s*(abstract|zusammenfassung|kurzfassung|summary|executive summary|management summary|kurz[üu]berblick)(?:\s*(?:\(|\[)?\s*(deutsch|german|englisch|english)\s*(?:\)|\])?)?\s*(?:$|[:\-–]\s*[^.!?]{0,120}$|(?:(?:\.{2,}|…+)\s*)?\d+(?:\s*[-–]\s*\d+)?\s*$)/iu',
-            'foreword' => '/^\s*(vorwort|vorbemerkung|preface|foreword|prefazione)\b/iu',
-            'table_of_contents' => '/^\s*(inhaltsverzeichnis|table of contents)\b/iu',
-            'bibliography' => $this->bibliographyHeadingPattern(),
-            'figure_index' => $this->figureIndexHeadingPattern(),
-            'consent_declaration' => $this->consentDeclarationHeadingPattern(),
-        ];
+        $patterns = $this->documentRuleService->extractionHeadingPatterns();
+        if ($patterns === []) {
+            $patterns = [
+                'abstract' => '/^\s*(abstract|zusammenfassung|kurzfassung|summary|executive summary|management summary|kurz[üu]berblick)(?:\s*(?:\(|\[)?\s*(deutsch|german|englisch|english)\s*(?:\)|\])?)?\s*(?:$|[:\-–]\s*[^.!?]{0,120}$|(?:(?:\.{2,}|…+)\s*)?\d+(?:\s*[-–]\s*\d+)?\s*$)/iu',
+                'foreword' => '/^\s*(vorwort|vorbemerkung|preface|foreword|prefazione)\b/iu',
+                'table_of_contents' => '/^\s*(inhaltsverzeichnis|table of contents)\b/iu',
+                'bibliography' => $this->bibliographyHeadingPattern(),
+                'figure_index' => $this->figureIndexHeadingPattern(),
+                'consent_declaration' => $this->consentDeclarationHeadingPattern(),
+            ];
+        }
 
         foreach ($patterns as $type => $pattern) {
             if (in_array($type, $knownTypes, true)) {
@@ -4115,16 +4122,31 @@ class AbaLocalDocumentStructureExtractor
 
     private function bibliographyHeadingPattern(): string
     {
+        $configuredPattern = $this->documentRuleService->patternForSectionType('bibliography');
+        if ($configuredPattern !== null) {
+            return $configuredPattern;
+        }
+
         return '/^\s*(?:(?:literaturverzeichnis|literaturangaben|quellenverzeichnis|quellenangaben|verwendete\s+quellen|literatur(?:\s*[-–]\s*|\s+und\s+)quellenverzeichnis|internetquellenverzeichnis|internetverzeichnis|internetquellenangaben|internetquellenliste|internetquellen|internet|webquellenverzeichnis|web(?:\s*-\s*|\s*)quellen|webquellen|onlinequellenverzeichnis|online(?:\s*-\s*|\s*)quellen|onlinequellen|webseiten|weblinks|references|bibliography|bibliograph(?:ie|y)|bibliografie)\b|(?:quellen?|quelle)\s*(?:$|[:\-–]\s*$))/iu';
     }
 
     private function figureIndexHeadingPattern(): string
     {
+        $configuredPattern = $this->documentRuleService->patternForSectionType('figure_index');
+        if ($configuredPattern !== null) {
+            return $configuredPattern;
+        }
+
         return '/^\s*(?:\d+(?:\.\d+){0,5}\s+)?(?:abbildungsverzeichnis|tabellenverzeichnis|abbildung(?:s)?\s*[-–]?\s*(?:und|&)\s*tabellenverzeichnis|list of figures(?: and tables)?|list of tables)\b/iu';
     }
 
     private function consentDeclarationHeadingPattern(): string
     {
+        $configuredPattern = $this->documentRuleService->patternForSectionType('consent_declaration');
+        if ($configuredPattern !== null) {
+            return $configuredPattern;
+        }
+
         return '/^\s*(?:einverst[aä]ndniserkl[aä]rung|einverstaendniserklaerung|eigenst[aä]ndigkeitserkl[aä]rung|selbstst[aä]ndigkeitserkl[aä]rung|selbststaendigkeitserklaerung|eidesstattliche\s+erkl[aä]rung|eidesstaatliche\s+erkl[aä]rung|eidstaatliche\s+erkl[aä]rung|ehrenw[oö]rtliche\s+erkl[aä]rung|erkl[aä]rung)\s*(?:$|[:\-–]\s*[^.!?]{0,120}$)/iu';
     }
 
@@ -6270,6 +6292,10 @@ class AbaLocalDocumentStructureExtractor
             return false;
         }
 
+        if ($this->documentRuleService->looksLikeSectionKeyword($value)) {
+            return true;
+        }
+
         if (preg_match('/\b(abstract|zusammenfassung|kurzfassung|vorwort|vorbemerkung|preface|foreword|prefazione|inhaltsverzeichnis|literaturverzeichnis|literaturangaben|quellenverzeichnis|quellenangaben|verwendete\s+quellen|literatur(?:\s*[-–]\s*|\s+und\s+)quellenverzeichnis|quellen?|quelle|internetquellenverzeichnis|internetverzeichnis|internetquellenangaben|internetquellenliste|internetquellen|internet|onlinequellenverzeichnis|online(?:\s*-\s*|\s*)quellen|onlinequellen|webquellenverzeichnis|web(?:\s*-\s*|\s*)quellen|webquellen|webseiten|weblinks|references|bibliography|bibliograph(?:ie|y)|bibliografie|abbildungsverzeichnis|tabellenverzeichnis|eidesstattliche\s+erkl[aä]rung|eidesstaatliche\s+erkl[aä]rung|eidstaatliche\s+erkl[aä]rung|selbstst[aä]ndigkeitserkl[aä]rung|eigenst[aä]ndigkeitserkl[aä]rung|einverst[aä]ndniserkl[aä]rung|erkl[aä]rung|einleitung|fazit|anhang)\b/iu', $value) === 1) {
             return true;
         }
@@ -6784,17 +6810,21 @@ class AbaLocalDocumentStructureExtractor
      */
     private function resolveSectionType(string $title): ?array
     {
-        $patterns = [
-            'abstract' => '/^\s*(abstract|zusammenfassung|kurzfassung|summary|executive summary|management summary|kurz[üu]berblick)(?:\s*(?:\(|\[)?\s*(deutsch|german|englisch|english)\s*(?:\)|\])?)?\s*(?:$|[:\-–]\s*[^.!?]{0,120}$|(?:(?:\.{2,}|…+)\s*)?\d+(?:\s*[-–]\s*\d+)?\s*$)/iu',
-            'foreword' => '/^\s*(vorwort|vorbemerkung|preface|foreword|prefazione)\b/iu',
-            'table_of_contents' => '/^\s*(inhaltsverzeichnis|table of contents)\b/iu',
-            'bibliography' => $this->bibliographyHeadingPattern(),
-            'figure_index' => $this->figureIndexHeadingPattern(),
-            'consent_declaration' => $this->consentDeclarationHeadingPattern(),
-        ];
+        $configuredType = $this->documentRuleService->resolveSectionTypeFromTitle(
+            $title,
+            ['abstract', 'foreword', 'table_of_contents', 'bibliography', 'figure_index', 'consent_declaration']
+        );
+        if ($configuredType !== null) {
+            return [
+                'type' => $configuredType,
+                'level' => 1,
+                'source' => 'keyword',
+            ];
+        }
 
         if (
-            preg_match('/^\s*(?:einleitung|introduction|fazit|schluss(?:folgerung)?|res[üu]mee|conclusion)(?:\s*\/\s*(?:fazit|schluss(?:folgerung)?|res[üu]mee|conclusion))?\s*(?:$|[:\-–]\s*[^.!?]{0,120}$)/iu', $title) === 1
+            $this->documentRuleService->isConfiguredChapterHeading($title)
+            || preg_match('/^\s*(?:einleitung|introduction|fazit|schluss(?:folgerung)?|res[üu]mee|conclusion)(?:\s*\/\s*(?:fazit|schluss(?:folgerung)?|res[üu]mee|conclusion))?\s*(?:$|[:\-–]\s*[^.!?]{0,120}$)/iu', $title) === 1
             || preg_match('/^\s*(?:fazit|schluss(?:folgerung)?|res[üu]mee|conclusion)\s*\/\s*(?:fazit|schluss(?:folgerung)?|res[üu]mee|conclusion)\s*$/iu', $title) === 1
             || $this->matchesNamedChapterHeadingStructure($title)
         ) {
@@ -6803,16 +6833,6 @@ class AbaLocalDocumentStructureExtractor
                 'level' => 1,
                 'source' => 'keyword',
             ];
-        }
-
-        foreach ($patterns as $type => $pattern) {
-            if (preg_match($pattern, $title) === 1) {
-                return [
-                    'type' => $type,
-                    'level' => 1,
-                    'source' => 'keyword',
-                ];
-            }
         }
 
         return null;
