@@ -148,7 +148,59 @@
                         <div class="metric-value">{{ summary.suspicious_heading_count }}</div>
                     </v-sheet>
                 </v-col>
+                <v-col cols="12" md="6" lg="4">
+                    <v-sheet rounded="lg" class="metric-card pa-3">
+                        <div class="metric-label">Erkannte Dokumentzonen</div>
+                        <div class="metric-value">{{ summary.zone_count }}</div>
+                    </v-sheet>
+                </v-col>
+                <v-col cols="12" md="6" lg="4">
+                    <v-sheet rounded="lg" class="metric-card pa-3">
+                        <div class="metric-label">Hauptteil-Blöcke</div>
+                        <div class="metric-value">{{ summary.zone_main_content_count }}</div>
+                    </v-sheet>
+                </v-col>
+                <v-col cols="12" md="6" lg="4">
+                    <v-sheet rounded="lg" class="metric-card pa-3">
+                        <div class="metric-label">TOC-Blöcke</div>
+                        <div class="metric-value">{{ summary.zone_table_of_contents_count }}</div>
+                    </v-sheet>
+                </v-col>
+                <v-col cols="12" md="6" lg="4">
+                    <v-sheet rounded="lg" class="metric-card pa-3">
+                        <div class="metric-label">Verzeichnis-/Bibliographie-Blöcke</div>
+                        <div class="metric-value">{{ summary.zone_bibliography_area_count }}</div>
+                    </v-sheet>
+                </v-col>
+                <v-col cols="12" md="6" lg="4">
+                    <v-sheet rounded="lg" class="metric-card pa-3">
+                        <div class="metric-label">Erklärungsbereich-Blöcke</div>
+                        <div class="metric-value">{{ summary.zone_declaration_area_count }}</div>
+                    </v-sheet>
+                </v-col>
             </v-row>
+
+            <ItsGridBox class="mb-2">
+                <template #title>
+                    <v-icon size="16" class="mr-1">mdi-map-outline</v-icon>
+                    Dokumentphasen / Zonen
+                </template>
+                <div class="pa-3">
+                    <v-alert v-if="zoneOverview.length === 0" type="info" variant="tonal" density="compact" class="text-caption">
+                        Keine Zonen erkannt.
+                    </v-alert>
+                    <div v-else class="review-list">
+                        <v-sheet v-for="zone in zoneOverview" :key="zone.zone_key" class="review-item pa-2" rounded="lg">
+                            <div class="review-item__chips">
+                                <v-chip size="x-small" color="indigo" variant="tonal">{{ zone.zone_label || zone.zone_key }}</v-chip>
+                                <v-chip size="x-small" color="blue" variant="tonal">{{ zone.count || 0 }} Blöcke</v-chip>
+                                <v-chip size="x-small" color="teal" variant="tonal">{{ zone.heading_count || 0 }} Überschriften</v-chip>
+                                <v-chip size="x-small" color="grey" variant="outlined">#{{ zone.first_order || '?' }} - #{{ zone.last_order || '?' }}</v-chip>
+                            </div>
+                        </v-sheet>
+                    </div>
+                </div>
+            </ItsGridBox>
 
             <v-row class="w-100 ma-0 mb-2" dense>
                 <v-col cols="12" lg="6">
@@ -381,6 +433,13 @@
                                     {{ block.classification?.strategy || 'heuristic' }}
                                 </v-chip>
                                 <v-chip
+                                    v-if="block.document_zone?.zone"
+                                    size="x-small"
+                                    color="indigo"
+                                    variant="tonal">
+                                    {{ block.document_zone?.label || documentZoneLabel(block.document_zone?.zone) }}
+                                </v-chip>
+                                <v-chip
                                     v-if="block.section_hint"
                                     size="x-small"
                                     color="teal"
@@ -497,6 +556,8 @@ export default {
                 { key: 'toc_artifact', label: 'Nur TOC-Artefakte' },
                 { key: 'empty_heading', label: 'Nur leere Überschriften' },
                 { key: 'suspicious_heading', label: 'Nur auffällige Titel' },
+                { key: 'zone_main_content', label: 'Nur Hauptteil-Zone' },
+                { key: 'zone_toc', label: 'Nur TOC-Zone' },
             ]
         },
 
@@ -511,6 +572,15 @@ export default {
                 empty_heading_count: 0,
                 probable_toc_artifact_count: 0,
                 suspicious_heading_count: 0,
+                zone_count: 0,
+                zone_title_page_count: 0,
+                zone_front_matter_count: 0,
+                zone_table_of_contents_count: 0,
+                zone_main_content_count: 0,
+                zone_bibliography_area_count: 0,
+                zone_appendix_area_count: 0,
+                zone_declaration_area_count: 0,
+                zone_end_matter_count: 0,
             }
         },
 
@@ -523,6 +593,7 @@ export default {
                 probable_toc_artifacts: [],
                 suspicious_heading_texts: [],
                 bibliography_groups: [],
+                zone_overview: [],
                 counts: {},
             }
         },
@@ -537,6 +608,10 @@ export default {
 
         bibliographyGroups() {
             return Array.isArray(this.review?.bibliography_groups) ? this.review.bibliography_groups : []
+        },
+
+        zoneOverview() {
+            return Array.isArray(this.review?.zone_overview) ? this.review.zone_overview : []
         },
 
         uncertainHeadings() {
@@ -602,6 +677,14 @@ export default {
 
             if (this.activeFilter === 'suspicious_heading') {
                 return this.allBlocks.filter((block) => this.blockHasProblemTag(block, 'suspicious_heading_text'))
+            }
+
+            if (this.activeFilter === 'zone_main_content') {
+                return this.allBlocks.filter((block) => this.blockZoneKey(block) === 'main_content')
+            }
+
+            if (this.activeFilter === 'zone_toc') {
+                return this.allBlocks.filter((block) => this.blockZoneKey(block) === 'table_of_contents')
             }
 
             return this.allBlocks
@@ -741,6 +824,13 @@ export default {
             lines.push(`- Leere Überschriften: ${this.summary.empty_heading_count}`)
             lines.push(`- TOC-Artefakte: ${this.summary.probable_toc_artifact_count}`)
             lines.push(`- Auffällige Titeltexte: ${this.summary.suspicious_heading_count}`)
+            lines.push(`- Erkannte Dokumentzonen: ${this.summary.zone_count}`)
+            lines.push(`- Hauptteil-Blöcke: ${this.summary.zone_main_content_count}`)
+            lines.push(`- TOC-Blöcke: ${this.summary.zone_table_of_contents_count}`)
+            lines.push(`- Verzeichnis-/Bibliographie-Blöcke: ${this.summary.zone_bibliography_area_count}`)
+            lines.push(`- Erklärungsbereich-Blöcke: ${this.summary.zone_declaration_area_count}`)
+
+            this.appendZoneOverviewSection(lines)
 
             this.appendHeadingSection(
                 lines,
@@ -829,6 +919,25 @@ export default {
             })
         },
 
+        appendZoneOverviewSection(lines) {
+            lines.push('')
+            lines.push('Dokumentphasen / Zonen')
+
+            if (!Array.isArray(this.zoneOverview) || this.zoneOverview.length === 0) {
+                lines.push('- Keine Zonen erkannt.')
+                return
+            }
+
+            this.zoneOverview.slice(0, 20).forEach((zone) => {
+                const label = zone.zone_label || zone.zone_key || 'Unklare Zone'
+                const count = Number(zone.count || 0)
+                const headingCount = Number(zone.heading_count || 0)
+                const firstOrder = zone.first_order || '?'
+                const lastOrder = zone.last_order || '?'
+                lines.push(`- ${label}: ${count} Blöcke, ${headingCount} Überschriften (#${firstOrder} - #${lastOrder})`)
+            })
+        },
+
         showCopySnackbar(message, color) {
             this.copySnackbar.message = message
             this.copySnackbar.color = color
@@ -893,6 +1002,39 @@ export default {
         blockHasProblemTag(block, tag) {
             const tags = Array.isArray(block?.problem_tags) ? block.problem_tags : []
             return tags.includes(tag)
+        },
+
+        blockZoneKey(block) {
+            return block?.document_zone?.zone || ''
+        },
+
+        documentZoneLabel(zone) {
+            if (zone === 'title_page') {
+                return 'Titelblatt'
+            }
+            if (zone === 'front_matter') {
+                return 'Frontmatter'
+            }
+            if (zone === 'table_of_contents') {
+                return 'Inhaltsverzeichnis'
+            }
+            if (zone === 'main_content') {
+                return 'Hauptteil'
+            }
+            if (zone === 'bibliography_area') {
+                return 'Verzeichnisse / Bibliographie'
+            }
+            if (zone === 'appendix_area') {
+                return 'Anhang'
+            }
+            if (zone === 'declaration_area') {
+                return 'Erklärungsbereich'
+            }
+            if (zone === 'end_matter') {
+                return 'Endmatter'
+            }
+
+            return zone || 'Unklare Zone'
         },
 
         problemTagLabel(tag) {

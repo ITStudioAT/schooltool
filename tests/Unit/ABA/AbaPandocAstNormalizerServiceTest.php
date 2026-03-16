@@ -232,11 +232,14 @@ test('marks early document title candidates and makes them unusable as chapter h
 
     $result = app(AbaPandocAstNormalizerService::class)->normalizeAst($ast);
     $first = $result['blocks'][0] ?? [];
+    $second = $result['blocks'][1] ?? [];
 
     expect($result['ok'] ?? false)->toBeTrue()
         ->and(in_array('document_title_candidate', $first['problem_tags'] ?? [], true))->toBeTrue()
         ->and($first['structure_role'] ?? null)->toBe('title_page_heading')
-        ->and($first['is_usable_heading'] ?? true)->toBeFalse();
+        ->and($first['is_usable_heading'] ?? true)->toBeFalse()
+        ->and($first['document_zone']['zone'] ?? null)->toBe('title_page')
+        ->and($second['document_zone']['zone'] ?? null)->toBe('table_of_contents');
 });
 
 test('distinguishes toc entry from later real heading with same title', function () {
@@ -265,7 +268,9 @@ test('distinguishes toc entry from later real heading with same title', function
         ->and(in_array('probable_toc_artifact', $tocHeading['problem_tags'] ?? [], true))->toBeTrue()
         ->and(in_array('toc_duplicate_of_content_heading', $tocHeading['problem_tags'] ?? [], true))->toBeTrue()
         ->and(in_array('content_heading_repeated_after_toc', $contentHeading['classification']['signals'] ?? [], true))->toBeTrue()
-        ->and($contentHeading['is_usable_heading'] ?? false)->toBeTrue();
+        ->and($contentHeading['is_usable_heading'] ?? false)->toBeTrue()
+        ->and($tocHeading['document_zone']['zone'] ?? null)->toBe('table_of_contents')
+        ->and($contentHeading['document_zone']['zone'] ?? null)->toBe('main_content');
 });
 
 test('adds bibliography grouping and subtype for internet sources', function () {
@@ -285,7 +290,68 @@ test('adds bibliography grouping and subtype for internet sources', function () 
     expect($result['ok'] ?? false)->toBeTrue()
         ->and($sectionHint['section_type'] ?? null)->toBe('bibliography')
         ->and($sectionHint['group'] ?? null)->toBe('bibliography_area')
-        ->and($sectionHint['subtype'] ?? null)->toBe('internet_sources');
+        ->and($sectionHint['subtype'] ?? null)->toBe('internet_sources')
+        ->and($block['document_zone']['zone'] ?? null)->toBe('bibliography_area');
+});
+
+test('classifies declaration heading and trailing content into declaration and end matter zones', function () {
+    $ast = [
+        'blocks' => [
+            [
+                't' => 'Header',
+                'c' => [1, ['', [], []], [['t' => 'Str', 'c' => '1. Einleitung']]],
+            ],
+            [
+                't' => 'Para',
+                'c' => [['t' => 'Str', 'c' => 'Fließtext im Hauptteil.']],
+            ],
+            [
+                't' => 'Header',
+                'c' => [1, ['', [], []], [['t' => 'Str', 'c' => 'Eigenständigkeitserklärung']]],
+            ],
+            [
+                't' => 'Para',
+                'c' => [['t' => 'Str', 'c' => 'Ich erkläre hiermit die eigenständige Erstellung.']],
+            ],
+            [
+                't' => 'Para',
+                'c' => [['t' => 'Str', 'c' => 'Anhang: zusätzliche Daten']],
+            ],
+        ],
+    ];
+
+    $result = app(AbaPandocAstNormalizerService::class)->normalizeAst($ast);
+    $declarationHeading = $result['blocks'][2] ?? [];
+    $declarationParagraph = $result['blocks'][3] ?? [];
+    $tailParagraph = $result['blocks'][4] ?? [];
+
+    expect($result['ok'] ?? false)->toBeTrue()
+        ->and($declarationHeading['document_zone']['zone'] ?? null)->toBe('declaration_area')
+        ->and($declarationParagraph['document_zone']['zone'] ?? null)->toBe('declaration_area')
+        ->and(in_array($tailParagraph['document_zone']['zone'] ?? '', ['declaration_area', 'end_matter'], true))->toBeTrue();
+});
+
+test('falls back to front matter zone when no stable anchors exist', function () {
+    $ast = [
+        'blocks' => [
+            [
+                't' => 'Para',
+                'c' => [['t' => 'Str', 'c' => 'AHS Abschlussarbeit']],
+            ],
+            [
+                't' => 'Para',
+                'c' => [['t' => 'Str', 'c' => 'Ein weiterer kurzer Absatz ohne klare Kapitelanker.']],
+            ],
+        ],
+    ];
+
+    $result = app(AbaPandocAstNormalizerService::class)->normalizeAst($ast);
+    $first = $result['blocks'][0] ?? [];
+    $second = $result['blocks'][1] ?? [];
+
+    expect($result['ok'] ?? false)->toBeTrue()
+        ->and(in_array($first['document_zone']['zone'] ?? '', ['title_page', 'front_matter'], true))->toBeTrue()
+        ->and(in_array($second['document_zone']['zone'] ?? '', ['title_page', 'front_matter', 'main_content'], true))->toBeTrue();
 });
 
 test('returns invalid_ast error when pandoc blocks are missing', function () {

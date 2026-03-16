@@ -849,7 +849,7 @@ test('processing run detects german and english abstract variants separately', f
         ->and((int) ($analysisStats['abstract_count'] ?? 0))->toBeGreaterThanOrEqual(2);
 });
 
-test('processing run marks english abstract as missing when only german abstract exists', function () {
+test('processing run keeps english abstract optional when only german abstract exists', function () {
     config()->set('aba_analysis.openai_normalization_enabled', false);
 
     $user = createAbaTeacher($this->school, $this->schoolyear);
@@ -896,7 +896,7 @@ test('processing run marks english abstract as missing when only german abstract
     expect($run->status)->toBe(AbaAnalysisRun::STATUS_COMPLETED)
         ->and((bool) ($analysisStats['abstract_de_detected'] ?? false))->toBeTrue()
         ->and((bool) ($analysisStats['abstract_en_detected'] ?? true))->toBeFalse()
-        ->and((array) ($analysisStats['abstract_missing_languages'] ?? []))->toContain('en');
+        ->and((array) ($analysisStats['abstract_missing_languages'] ?? []))->toBe([]);
 });
 
 test('processing run marks german abstract as missing when only english abstract exists', function () {
@@ -3851,7 +3851,7 @@ test('analysis results endpoint includes record counts and abstract language sta
                 'abstract_detected' => true,
                 'abstract_de_detected' => true,
                 'abstract_en_detected' => false,
-                'abstract_missing_languages' => ['en'],
+                'abstract_missing_languages' => [],
                 'chapter_count' => 1,
                 'subchapter_count' => 0,
                 'final_confidence' => 0.91,
@@ -3891,6 +3891,14 @@ test('analysis results endpoint includes record counts and abstract language sta
         ->assertJsonPath('data.analysis_run.display_values.text_length', 1234)
         ->assertJsonPath('data.analysis_run.display_values.text_length_without_spaces', 1001)
         ->assertJsonPath('data.analysis_run.display_values.auto_approve_confidence_threshold', 0.82);
+});
+
+test('analysis results ui marks english abstract as optional signal', function () {
+    $content = file_get_contents(resource_path('js/pages/admin/aba/AbaAnalysisResults.vue'));
+
+    expect($content)
+        ->toContain('Englische Zusammenfassung (optional)')
+        ->toContain('Optional nicht erkannt');
 });
 
 test('analysis results endpoint handles missing run and missing section text cleanly', function () {

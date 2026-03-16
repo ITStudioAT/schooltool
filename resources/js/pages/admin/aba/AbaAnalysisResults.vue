@@ -84,8 +84,8 @@
                         <div v-for="item in structureStatusItems" :key="item.key" class="status-list__row">
                             <span>{{ item.label }}</span>
                             <div class="status-list__right">
-                                <v-chip size="x-small" :color="item.detected ? 'success' : 'error'" variant="tonal">
-                                    {{ item.detected ? 'Erkannt' : 'Nicht erkannt' }}
+                                <v-chip size="x-small" :color="statusColor(item)" variant="tonal">
+                                    {{ statusLabel(item) }}
                                 </v-chip>
                             </div>
                         </div>
@@ -641,7 +641,7 @@ export default {
                 this.makeStatusItem('title_page_detected', 'Titelseite', stats.title_page_detected, stats.title_page_start_line, stats.title_page_end_line),
                 this.makeStatusItem('abstract_detected', 'Zusammenfassung', stats.abstract_detected, null, null),
                 this.makeStatusItem('abstract_de_detected', 'Deutsche Zusammenfassung', stats.abstract_de_detected, stats.abstract_de_start_line, stats.abstract_de_end_line),
-                this.makeStatusItem('abstract_en_detected', 'Englische Zusammenfassung', stats.abstract_en_detected, stats.abstract_en_start_line, stats.abstract_en_end_line),
+                this.makeStatusItem('abstract_en_detected', 'Englische Zusammenfassung (optional)', stats.abstract_en_detected, stats.abstract_en_start_line, stats.abstract_en_end_line, true),
                 this.makeStatusItem('foreword_detected', 'Vorwort', stats.foreword_detected, stats.foreword_start_line, stats.foreword_end_line),
                 this.makeStatusItem('table_of_contents_detected', 'Inhaltsverzeichnis', stats.table_of_contents_detected, stats.toc_start_line, stats.toc_end_line),
                 this.makeStatusItem('body_detected', 'Hauptteil', stats.body_detected, stats.body_start_line, null),
@@ -919,12 +919,37 @@ export default {
 
             return `${(numeric * 100).toFixed(1)} %`
         },
-        makeStatusItem(key, label, detected) {
+        makeStatusItem(key, label, detected, startLine = null, endLine = null, optional = false) {
             return {
                 key,
                 label,
                 detected: Boolean(detected),
+                startLine,
+                endLine,
+                optional: Boolean(optional),
             }
+        },
+        statusColor(item) {
+            if (item?.detected) {
+                return 'success'
+            }
+
+            if (item?.optional) {
+                return 'info'
+            }
+
+            return 'error'
+        },
+        statusLabel(item) {
+            if (item?.detected) {
+                return 'Erkannt'
+            }
+
+            if (item?.optional) {
+                return 'Optional nicht erkannt'
+            }
+
+            return 'Nicht erkannt'
         },
         isFrontmatterType(type) {
             return [

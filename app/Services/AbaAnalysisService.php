@@ -1240,6 +1240,7 @@ class AbaAnalysisService
             'abstract_de_detected' => (bool) ($abstractLanguageStats['abstract_de_detected'] ?? false),
             'abstract_en_detected' => (bool) ($abstractLanguageStats['abstract_en_detected'] ?? false),
             'abstract_missing_languages' => array_values((array) ($abstractLanguageStats['abstract_missing_languages'] ?? [])),
+            'abstract_en_missing_optional' => (bool) ($abstractLanguageStats['abstract_en_missing_optional'] ?? false),
             'foreword_detected' => $forewordDetected,
             'table_of_contents_detected' => $tableOfContentsDetected,
             'bibliography_detected' => $bibliographyDetected,
@@ -1906,14 +1907,16 @@ class AbaAnalysisService
         $missing = is_array($structureDiagnostics['abstract_missing_languages'] ?? null)
             ? array_values($structureDiagnostics['abstract_missing_languages'])
             : [];
+        $missing = array_values(array_filter(
+            array_map('strval', $missing),
+            fn (string $language): bool => $language === 'de'
+        ));
         if ($missing === []) {
             if (! $deDetected) {
                 $missing[] = 'de';
             }
-            if (! $enDetected) {
-                $missing[] = 'en';
-            }
         }
+        $enMissingOptional = ! $enDetected;
 
         return [
             'abstract_de_detected' => $deDetected,
@@ -1921,6 +1924,7 @@ class AbaAnalysisService
             'abstract_de_count' => $deCount,
             'abstract_en_count' => $enCount,
             'abstract_missing_languages' => array_values(array_unique($missing)),
+            'abstract_en_missing_optional' => $enMissingOptional,
             'abstract_de_start_line' => $deStart,
             'abstract_de_end_line' => $deEnd,
             'abstract_en_start_line' => $enStart,
@@ -2122,6 +2126,7 @@ class AbaAnalysisService
             'abstract_detected' => (bool) ($analysisStats['abstract_detected'] ?? false),
             'abstract_de_detected' => (bool) ($analysisStats['abstract_de_detected'] ?? false),
             'abstract_en_detected' => (bool) ($analysisStats['abstract_en_detected'] ?? false),
+            'abstract_en_missing_optional' => (bool) ($analysisStats['abstract_en_missing_optional'] ?? false),
             'foreword_detected' => (bool) ($analysisStats['foreword_detected'] ?? false),
             'table_of_contents_detected' => (bool) ($analysisStats['table_of_contents_detected'] ?? false),
             'bibliography_detected' => (bool) ($analysisStats['bibliography_detected'] ?? false),

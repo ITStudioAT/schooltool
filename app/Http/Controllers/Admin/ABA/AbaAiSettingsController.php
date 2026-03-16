@@ -249,6 +249,7 @@ class AbaAiSettingsController extends Controller
         $imageCount = 0;
         $sectionHintCount = 0;
         $uncertainCount = 0;
+        $zoneCounts = [];
 
         foreach ($blocks as $block) {
             if (! is_array($block)) {
@@ -264,6 +265,10 @@ class AbaAiSettingsController extends Controller
             }
             if (is_array($block['section_hint'] ?? null)) {
                 $sectionHintCount++;
+            }
+            $zoneKey = trim((string) ($block['document_zone']['zone'] ?? ''));
+            if ($zoneKey !== '') {
+                $zoneCounts[$zoneKey] = (int) ($zoneCounts[$zoneKey] ?? 0) + 1;
             }
 
             $classification = is_array($block['classification'] ?? null)
@@ -283,6 +288,15 @@ class AbaAiSettingsController extends Controller
             'image_count' => $imageCount,
             'section_hint_count' => $sectionHintCount,
             'uncertain_or_heuristic_count' => $uncertainCount,
+            'zone_count' => count($zoneCounts),
+            'zone_title_page_count' => (int) ($zoneCounts['title_page'] ?? 0),
+            'zone_front_matter_count' => (int) ($zoneCounts['front_matter'] ?? 0),
+            'zone_table_of_contents_count' => (int) ($zoneCounts['table_of_contents'] ?? 0),
+            'zone_main_content_count' => (int) ($zoneCounts['main_content'] ?? 0),
+            'zone_bibliography_area_count' => (int) ($zoneCounts['bibliography_area'] ?? 0),
+            'zone_appendix_area_count' => (int) ($zoneCounts['appendix_area'] ?? 0),
+            'zone_declaration_area_count' => (int) ($zoneCounts['declaration_area'] ?? 0),
+            'zone_end_matter_count' => (int) ($zoneCounts['end_matter'] ?? 0),
         ];
     }
 
@@ -296,6 +310,7 @@ class AbaAiSettingsController extends Controller
      *   probable_toc_artifacts:array<int, array<string,mixed>>,
      *   suspicious_heading_texts:array<int, array<string,mixed>>,
      *   bibliography_groups:array<int, array<string,mixed>>,
+     *   zone_overview:array<int, array<string,mixed>>,
      *   counts:array<string,int>
      * }
      */
@@ -309,6 +324,7 @@ class AbaAiSettingsController extends Controller
         $probableTocArtifacts = [];
         $suspiciousHeadings = [];
         $bibliographyGroupAccumulator = [];
+        $zoneOverviewAccumulator = [];
         $mainSectionTypes = [
             'title_page',
             'abstract',
@@ -319,6 +335,57 @@ class AbaAiSettingsController extends Controller
             'figure_index',
             'consent_declaration',
         ];
+
+        foreach ($blocks as $block) {
+            if (! is_array($block)) {
+                continue;
+            }
+
+            $zoneKey = trim((string) ($block['document_zone']['zone'] ?? ''));
+            if ($zoneKey === '') {
+                continue;
+            }
+
+            $zoneLabel = trim((string) ($block['document_zone']['label'] ?? '')) ?: $this->documentZoneLabel($zoneKey);
+            $order = (int) ($block['order'] ?? 0);
+            $zoneConfidence = trim((string) ($block['document_zone']['confidence'] ?? ''));
+
+            if (! isset($zoneOverviewAccumulator[$zoneKey])) {
+                $zoneOverviewAccumulator[$zoneKey] = [
+                    'zone_key' => $zoneKey,
+                    'zone_label' => $zoneLabel,
+                    'count' => 0,
+                    'heading_count' => 0,
+                    'image_count' => 0,
+                    'first_order' => $order > 0 ? $order : null,
+                    'last_order' => $order > 0 ? $order : null,
+                    'high_confidence_count' => 0,
+                    'medium_confidence_count' => 0,
+                    'low_confidence_count' => 0,
+                ];
+            }
+
+            $zoneOverviewAccumulator[$zoneKey]['count']++;
+            if ((string) ($block['type'] ?? '') === 'heading') {
+                $zoneOverviewAccumulator[$zoneKey]['heading_count']++;
+            }
+            if ((string) ($block['type'] ?? '') === 'image') {
+                $zoneOverviewAccumulator[$zoneKey]['image_count']++;
+            }
+            if ($order > 0) {
+                $currentFirstOrder = $zoneOverviewAccumulator[$zoneKey]['first_order'];
+                $currentLastOrder = $zoneOverviewAccumulator[$zoneKey]['last_order'];
+                $zoneOverviewAccumulator[$zoneKey]['first_order'] = $currentFirstOrder === null ? $order : min((int) $currentFirstOrder, $order);
+                $zoneOverviewAccumulator[$zoneKey]['last_order'] = $currentLastOrder === null ? $order : max((int) $currentLastOrder, $order);
+            }
+            if ($zoneConfidence === 'high') {
+                $zoneOverviewAccumulator[$zoneKey]['high_confidence_count']++;
+            } elseif ($zoneConfidence === 'medium') {
+                $zoneOverviewAccumulator[$zoneKey]['medium_confidence_count']++;
+            } else {
+                $zoneOverviewAccumulator[$zoneKey]['low_confidence_count']++;
+            }
+        }
 
         foreach ($blocks as $block) {
             if (! is_array($block) || (string) ($block['type'] ?? '') !== 'heading') {
@@ -419,6 +486,10 @@ class AbaAiSettingsController extends Controller
             $group['subtypes'] = $subtypes;
             $bibliographyGroups[] = $group;
         }
+        usort($bibliographyGroups, fn (array $left, array $right): int => strcmp((string) ($left['group_key'] ?? ''), (string) ($right['group_key'] ?? '')));
+
+        $zoneOverview = array_values($zoneOverviewAccumulator);
+        usort($zoneOverview, fn (array $left, array $right): int => ((int) ($left['first_order'] ?? PHP_INT_MAX)) <=> ((int) ($right['first_order'] ?? PHP_INT_MAX)));
 
         return [
             'recognized_main_sections' => $recognizedMainSections,
@@ -428,6 +499,7 @@ class AbaAiSettingsController extends Controller
             'probable_toc_artifacts' => $probableTocArtifacts,
             'suspicious_heading_texts' => $suspiciousHeadings,
             'bibliography_groups' => $bibliographyGroups,
+            'zone_overview' => $zoneOverview,
             'counts' => [
                 'main_sections_count' => count($recognizedMainSections),
                 'document_title_candidate_count' => count($documentTitleCandidates),
@@ -435,6 +507,7 @@ class AbaAiSettingsController extends Controller
                 'empty_heading_count' => count($emptyHeadings),
                 'probable_toc_artifact_count' => count($probableTocArtifacts),
                 'suspicious_heading_count' => count($suspiciousHeadings),
+                'zone_count' => count($zoneOverview),
             ],
         ];
     }
@@ -459,6 +532,10 @@ class AbaAiSettingsController extends Controller
         $problemTags = is_array($block['problem_tags'] ?? null)
             ? array_values(array_map('strval', $block['problem_tags']))
             : [];
+        $documentZone = is_array($block['document_zone'] ?? null)
+            ? $block['document_zone']
+            : [];
+        $documentZoneKey = trim((string) ($documentZone['zone'] ?? ''));
 
         return [
             'id' => $block['id'] ?? null,
@@ -481,6 +558,10 @@ class AbaAiSettingsController extends Controller
             'heading_level' => is_numeric($block['heading_level'] ?? null) ? (int) $block['heading_level'] : null,
             'is_usable_heading' => (bool) ($block['is_usable_heading'] ?? false),
             'structure_role' => $block['structure_role'] ?? null,
+            'document_zone' => $documentZoneKey !== '' ? $documentZoneKey : null,
+            'document_zone_label' => $documentZoneKey !== '' ? $this->documentZoneLabel($documentZoneKey) : null,
+            'document_zone_confidence' => $documentZone['confidence'] ?? null,
+            'document_zone_reason' => $documentZone['reason'] ?? null,
             'section_group' => $sectionHint['group'] ?? null,
             'section_group_label' => $sectionHint['group_label'] ?? null,
             'section_subtype' => $sectionHint['subtype'] ?? null,
@@ -499,6 +580,21 @@ class AbaAiSettingsController extends Controller
             'bibliography' => 'Literatur-/Quellenverzeichnis',
             'figure_index' => 'Abbildungsverzeichnis',
             'consent_declaration' => 'Eigenständigkeitserklärung',
+            default => null,
+        };
+    }
+
+    private function documentZoneLabel(string $zone): ?string
+    {
+        return match ($zone) {
+            'title_page' => 'Titelblatt',
+            'front_matter' => 'Frontmatter',
+            'table_of_contents' => 'Inhaltsverzeichnis',
+            'main_content' => 'Hauptteil',
+            'bibliography_area' => 'Verzeichnisse / Bibliographie',
+            'appendix_area' => 'Anhang',
+            'declaration_area' => 'Erklärungsbereich',
+            'end_matter' => 'Endmatter',
             default => null,
         };
     }

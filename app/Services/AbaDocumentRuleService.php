@@ -58,12 +58,113 @@ class AbaDocumentRuleService
             'structure_rules' => [
                 'sections' => $sections,
             ],
+            'document_zone_rules' => $this->documentZoneRules(),
             'formal_rules' => $this->ruleList('formal_rules'),
             'language_rules' => $this->ruleList('language_rules'),
             'citation_rules' => $this->ruleList('citation_rules'),
             'uncertainty_and_school_dependency_rules' => $this->ruleList('uncertainty_and_school_dependency_rules'),
             'governance_and_safety_rules' => $this->ruleList('governance_and_safety_rules'),
         ];
+    }
+
+    /**
+     * @return array{
+     *   zones:array<string, array<string,mixed>>,
+     *   sequence_rules:array<int, array<string,mixed>>
+     * }
+     */
+    public function documentZoneRules(): array
+    {
+        return [
+            'zones' => $this->documentZones(),
+            'sequence_rules' => $this->documentZoneSequenceRules(),
+        ];
+    }
+
+    /**
+     * @return array<string, array<string,mixed>>
+     */
+    public function documentZones(): array
+    {
+        $rules = $this->all();
+        $zones = $rules['document_zone_rules']['zones'] ?? [];
+        if (! is_array($zones)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($zones as $zoneKey => $zone) {
+            if (! is_array($zone)) {
+                continue;
+            }
+
+            $key = trim((string) $zoneKey);
+            if ($key === '') {
+                continue;
+            }
+
+            $normalized[$key] = [
+                'label' => $zone['label'] ?? null,
+                'requirement' => $zone['requirement'] ?? null,
+                'assessment_class' => $zone['assessment_class'] ?? null,
+                'maps_to_section_type' => $zone['maps_to_section_type'] ?? null,
+                'school_specific' => (bool) ($zone['school_specific'] ?? false),
+                'heading_variants' => $this->normalizeStringList($zone['heading_variants'] ?? null),
+                'keyword_signals' => $this->normalizeStringList($zone['keyword_signals'] ?? null),
+                'position_hints' => $this->normalizeStringList($zone['position_hints'] ?? null),
+                'pattern_hints' => $this->normalizeStringList($zone['pattern_hints'] ?? null),
+                'content_hints' => $this->normalizeStringList($zone['content_hints'] ?? null),
+            ];
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    public function documentZone(string $zoneKey): ?array
+    {
+        $key = trim($zoneKey);
+        if ($key === '') {
+            return null;
+        }
+
+        $zones = $this->documentZones();
+
+        return isset($zones[$key]) && is_array($zones[$key]) ? $zones[$key] : null;
+    }
+
+    /**
+     * @return array<int, array<string,mixed>>
+     */
+    public function documentZoneSequenceRules(): array
+    {
+        $rules = $this->all();
+        $sequenceRules = $rules['document_zone_rules']['sequence_rules'] ?? [];
+
+        if (! is_array($sequenceRules)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($sequenceRules as $rule) {
+            if (! is_array($rule)) {
+                continue;
+            }
+
+            $normalized[] = [
+                'rule_key' => $rule['rule_key'] ?? null,
+                'label' => $rule['label'] ?? null,
+                'from_zone' => $rule['from_zone'] ?? null,
+                'to_zone' => $rule['to_zone'] ?? null,
+                'assessment_class' => $rule['assessment_class'] ?? null,
+                'strictness' => $rule['strictness'] ?? null,
+                'note' => $rule['note'] ?? null,
+            ];
+        }
+
+        return array_values($normalized);
     }
 
     /**
@@ -211,6 +312,21 @@ class AbaDocumentRuleService
         }
 
         return array_values(array_filter($items, fn (mixed $item): bool => is_array($item)));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function normalizeStringList(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_map(
+            fn (mixed $item): string => trim((string) $item),
+            array_filter($value, fn (mixed $item): bool => trim((string) $item) !== '')
+        ));
     }
 
     private function valueMatchesPattern(string $value, string $pattern): bool

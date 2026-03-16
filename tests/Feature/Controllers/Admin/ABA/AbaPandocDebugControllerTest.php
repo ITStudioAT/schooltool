@@ -61,7 +61,7 @@ function createPandocDebugFakePandocBinary(): string
             ."  echo pandoc 3.1.1\r\n"
             ."  exit /b 0\r\n"
             .")\r\n"
-            .'echo {"pandoc-api-version":[1,23,0],"meta":{},"blocks":[{"t":"Header","c":[1,["",[],[]],[{"t":"Str","c":"Auswirkungen digitaler Medien auf Lernmotivation im Unterricht"}]]},{"t":"Header","c":[1,["",[],[]],[{"t":"Str","c":"Literaturverzeichnis"}]]},{"t":"Header","c":[1,["",[],[]],[{"t":"Str","c":"1. Einleitung 5"}]]},{"t":"Header","c":[1,["",[],[]],[]]},{"t":"Para","c":[{"t":"Strong","c":[{"t":"Str","c":"Osteoporose: ...3.1.5. Knochendichte"}]}]},{"t":"Para","c":[{"t":"Image","c":[["",[],[]],[{"t":"Str","c":"Abbildung 1"}],["media/image1.png",""]]}]},{"t":"Para","c":[{"t":"Str","c":"Absatz"}]}]}'."\r\n"
+            .'echo {"pandoc-api-version":[1,23,0],"meta":{},"blocks":[{"t":"Header","c":[1,["",[],[]],[{"t":"Str","c":"Auswirkungen digitaler Medien auf Lernmotivation im Unterricht"}]]},{"t":"Header","c":[1,["",[],[]],[{"t":"Str","c":"Inhaltsverzeichnis"}]]},{"t":"Header","c":[1,["",[],[]],[{"t":"Str","c":"1. Einleitung 5"}]]},{"t":"Header","c":[1,["",[],[]],[{"t":"Str","c":"1. Einleitung"}]]},{"t":"Header","c":[1,["",[],[]],[{"t":"Str","c":"Literaturverzeichnis"}]]},{"t":"Header","c":[1,["",[],[]],[{"t":"Str","c":"Eigenständigkeitserklärung"}]]},{"t":"Header","c":[1,["",[],[]],[]]},{"t":"Para","c":[{"t":"Strong","c":[{"t":"Str","c":"Osteoporose: ...3.1.5. Knochendichte"}]}]},{"t":"Para","c":[{"t":"Image","c":[["",[],[]],[{"t":"Str","c":"Abbildung 1"}],["media/image1.png",""]]}]},{"t":"Para","c":[{"t":"Str","c":"Absatz"}]}]}'."\r\n"
             ."exit /b 0\r\n";
     } else {
         $script = "#!/usr/bin/env sh\n"
@@ -69,7 +69,7 @@ function createPandocDebugFakePandocBinary(): string
             ."  echo \"pandoc 3.1.1\"\n"
             ."  exit 0\n"
             ."fi\n"
-            ."echo '{\"pandoc-api-version\":[1,23,0],\"meta\":{},\"blocks\":[{\"t\":\"Header\",\"c\":[1,[\"\",[],[]],[{\"t\":\"Str\",\"c\":\"Auswirkungen digitaler Medien auf Lernmotivation im Unterricht\"}]]},{\"t\":\"Header\",\"c\":[1,[\"\",[],[]],[{\"t\":\"Str\",\"c\":\"Literaturverzeichnis\"}]]},{\"t\":\"Header\",\"c\":[1,[\"\",[],[]],[{\"t\":\"Str\",\"c\":\"1. Einleitung 5\"}]]},{\"t\":\"Header\",\"c\":[1,[\"\",[],[]],[]]},{\"t\":\"Para\",\"c\":[{\"t\":\"Strong\",\"c\":[{\"t\":\"Str\",\"c\":\"Osteoporose: ...3.1.5. Knochendichte\"}]}]},{\"t\":\"Para\",\"c\":[{\"t\":\"Image\",\"c\":[[\"\",[],[]],[{\"t\":\"Str\",\"c\":\"Abbildung 1\"}],[\"media/image1.png\",\"\"]]}]},{\"t\":\"Para\",\"c\":[{\"t\":\"Str\",\"c\":\"Absatz\"}]}]}'\n"
+            ."echo '{\"pandoc-api-version\":[1,23,0],\"meta\":{},\"blocks\":[{\"t\":\"Header\",\"c\":[1,[\"\",[],[]],[{\"t\":\"Str\",\"c\":\"Auswirkungen digitaler Medien auf Lernmotivation im Unterricht\"}]]},{\"t\":\"Header\",\"c\":[1,[\"\",[],[]],[{\"t\":\"Str\",\"c\":\"Inhaltsverzeichnis\"}]]},{\"t\":\"Header\",\"c\":[1,[\"\",[],[]],[{\"t\":\"Str\",\"c\":\"1. Einleitung 5\"}]]},{\"t\":\"Header\",\"c\":[1,[\"\",[],[]],[{\"t\":\"Str\",\"c\":\"1. Einleitung\"}]]},{\"t\":\"Header\",\"c\":[1,[\"\",[],[]],[{\"t\":\"Str\",\"c\":\"Literaturverzeichnis\"}]]},{\"t\":\"Header\",\"c\":[1,[\"\",[],[]],[{\"t\":\"Str\",\"c\":\"Eigenständigkeitserklärung\"}]]},{\"t\":\"Header\",\"c\":[1,[\"\",[],[]],[]]},{\"t\":\"Para\",\"c\":[{\"t\":\"Strong\",\"c\":[{\"t\":\"Str\",\"c\":\"Osteoporose: ...3.1.5. Knochendichte\"}]}]},{\"t\":\"Para\",\"c\":[{\"t\":\"Image\",\"c\":[[\"\",[],[]],[{\"t\":\"Str\",\"c\":\"Abbildung 1\"}],[\"media/image1.png\",\"\"]]}]},{\"t\":\"Para\",\"c\":[{\"t\":\"Str\",\"c\":\"Absatz\"}]}]}'\n"
             ."exit 0\n";
     }
 
@@ -101,20 +101,27 @@ test('admin can run pandoc debug endpoint and receives normalized summary', func
         ])
         ->assertSuccessful()
         ->assertJsonPath('success', true)
-        ->assertJsonPath('summary.normalized_block_count', 7)
-        ->assertJsonPath('summary.heading_count', 5)
+        ->assertJsonPath('summary.normalized_block_count', fn (mixed $value): bool => is_int($value) && $value >= 9)
+        ->assertJsonPath('summary.heading_count', fn (mixed $value): bool => is_int($value) && $value >= 6)
         ->assertJsonPath('summary.image_count', 1)
         ->assertJsonPath('summary.section_hint_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
         ->assertJsonPath('summary.document_title_candidate_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
         ->assertJsonPath('summary.empty_heading_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
         ->assertJsonPath('summary.probable_toc_artifact_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
         ->assertJsonPath('summary.suspicious_heading_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
+        ->assertJsonPath('summary.zone_count', fn (mixed $value): bool => is_int($value) && $value >= 3)
+        ->assertJsonPath('summary.zone_table_of_contents_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
+        ->assertJsonPath('summary.zone_main_content_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
+        ->assertJsonPath('summary.zone_bibliography_area_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
+        ->assertJsonPath('summary.zone_declaration_area_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
         ->assertJsonPath('review.counts.main_sections_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
         ->assertJsonPath('review.counts.document_title_candidate_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
         ->assertJsonPath('review.counts.uncertain_heading_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
         ->assertJsonPath('review.counts.empty_heading_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
         ->assertJsonPath('review.counts.probable_toc_artifact_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
         ->assertJsonPath('review.counts.suspicious_heading_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
+        ->assertJsonPath('review.counts.zone_count', fn (mixed $value): bool => is_int($value) && $value >= 3)
+        ->assertJsonPath('review.zone_overview.0.zone_key', fn (mixed $value): bool => is_string($value))
         ->assertJsonPath('review.bibliography_groups.0.group_key', fn (mixed $value): bool => is_string($value));
 });
 
@@ -164,6 +171,7 @@ test('pandoc debug page shows condensed review sections for human checks', funct
         ->toContain('Prüfbericht kopieren')
         ->toContain('Prüfbericht kopiert')
         ->toContain('AHS-ABA · Pandoc-Prüfbericht')
+        ->toContain('Dokumentphasen / Zonen')
         ->toContain('Erkannte Hauptabschnitte')
         ->toContain('Dokumenttitel-Kandidaten')
         ->toContain('Quellen-/Verzeichnisbereich')

@@ -85,5 +85,9 @@ test('ai settings endpoint exposes aba document rule base summary', function () 
         ->assertJsonPath('document_rule_base.domain', 'ahs-aba')
         ->assertJsonPath('document_rule_base.scope.school_type', 'AHS')
         ->assertJsonPath('document_rule_base.assessment_classes.verbindlich_pruefbar.label', 'verbindlich prüfbar')
-        ->assertJsonPath('document_rule_base.structure_rules.sections.conclusion.maps_to_section_type', 'chapter');
+        ->assertJsonPath('document_rule_base.structure_rules.sections.conclusion.maps_to_section_type', 'chapter')
+        ->assertJsonPath('document_rule_base.structure_rules.sections.abstract_en.requirement', 'optional')
+        ->assertJsonPath('document_rule_base.document_zone_rules.zones.abstract_en.requirement', 'optional')
+        ->assertJsonPath('document_rule_base.document_zone_rules.zones.abstract_de.requirement', 'required')
+        ->assertJsonPath('document_rule_base.document_zone_rules.sequence_rules.0.rule_key', fn (mixed $value): bool => is_string($value));
 });

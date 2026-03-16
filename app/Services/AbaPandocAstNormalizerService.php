@@ -111,6 +111,7 @@ class AbaPandocAstNormalizerService
                 'image_count' => 0,
             ],
             'section_hint' => null,
+            'document_zone' => null,
             'structure_role' => null,
             'is_usable_heading' => null,
             'image' => null,
@@ -479,6 +480,10 @@ class AbaPandocAstNormalizerService
             $blocks[$index] = $block;
         }
 
+        $zoneAnchors = $this->resolveDocumentZoneAnchors($blocks, $documentFrontBoundary);
+        $blocks = $this->assignDocumentZones($blocks, $zoneAnchors, $documentFrontBoundary);
+        $blocks = $this->applyZoneAwareHeadingAdjustments($blocks);
+
         return $blocks;
     }
 
@@ -497,6 +502,459 @@ class AbaPandocAstNormalizerService
         }
 
         return null;
+    }
+
+    /**
+     * @param  array<int, array<string,mixed>>  $blocks
+     * @return array{
+     *   toc_start:?int,
+     *   main_content_start:?int,
+     *   bibliography_start:?int,
+     *   appendix_start:?int,
+     *   declaration_start:?int
+     * }
+     */
+    private function resolveDocumentZoneAnchors(array $blocks, int $documentFrontBoundary): array
+    {
+        $tocStart = $this->firstHeadingOrderByCallback($blocks, function (array $block): bool {
+            $sectionType = (string) ($block['section_hint']['section_type'] ?? '');
+            $text = trim((string) ($block['plain_text'] ?? $block['text'] ?? ''));
+
+            if ($sectionType === 'table_of_contents') {
+                return true;
+            }
+
+            return preg_match('/\binhaltsverzeichnis\b/iu', mb_strtolower($text)) === 1;
+        });
+
+        $mainContentStart = $this->firstHeadingOrderByCallback(
+            $blocks,
+            fn (array $block, int $order): bool => $this->isMainContentHeadingCandidate(
+                block: $block,
+                order: $order,
+                tocStart: $tocStart,
+                documentFrontBoundary: $documentFrontBoundary
+            )
+        );
+
+        $bibliographyStart = $this->firstHeadingOrderByCallback($blocks, function (array $block, int $order) use ($mainContentStart): bool {
+            if ($mainContentStart !== null && $order < $mainContentStart) {
+                return false;
+            }
+
+            return $this->isBibliographyHeadingCandidate($block);
+        });
+
+        $appendixStart = $this->firstHeadingOrderByCallback($blocks, function (array $block, int $order) use ($mainContentStart): bool {
+            if ($mainContentStart !== null && $order < $mainContentStart) {
+                return false;
+            }
+
+            return $this->isAppendixHeadingCandidate($block);
+        });
+
+        $declarationStart = $this->firstHeadingOrderByCallback($blocks, function (array $block, int $order) use ($mainContentStart): bool {
+            if ($mainContentStart !== null && $order < $mainContentStart) {
+                return false;
+            }
+
+            return $this->isDeclarationHeadingCandidate($block);
+        });
+
+        return [
+            'toc_start' => $tocStart,
+            'main_content_start' => $mainContentStart,
+            'bibliography_start' => $bibliographyStart,
+            'appendix_start' => $appendixStart,
+            'declaration_start' => $declarationStart,
+        ];
+    }
+
+    /**
+     * @param  array<int, array<string,mixed>>  $blocks
+     * @param  array{
+     *   toc_start:?int,
+     *   main_content_start:?int,
+     *   bibliography_start:?int,
+     *   appendix_start:?int,
+     *   declaration_start:?int
+     * }  $zoneAnchors
+     * @return array<int, array<string,mixed>>
+     */
+    private function assignDocumentZones(array $blocks, array $zoneAnchors, int $documentFrontBoundary): array
+    {
+        $tocStart = is_numeric($zoneAnchors['toc_start'] ?? null) ? (int) $zoneAnchors['toc_start'] : null;
+        $mainContentStart = is_numeric($zoneAnchors['main_content_start'] ?? null) ? (int) $zoneAnchors['main_content_start'] : null;
+        $bibliographyStart = is_numeric($zoneAnchors['bibliography_start'] ?? null) ? (int) $zoneAnchors['bibliography_start'] : null;
+        $appendixStart = is_numeric($zoneAnchors['appendix_start'] ?? null) ? (int) $zoneAnchors['appendix_start'] : null;
+        $declarationStart = is_numeric($zoneAnchors['declaration_start'] ?? null) ? (int) $zoneAnchors['declaration_start'] : null;
+
+        $mainAreaStopCandidates = array_filter(
+            [$appendixStart, $bibliographyStart, $declarationStart],
+            fn (?int $value): bool => is_int($value) && $value > 0
+        );
+        $mainAreaStop = $mainAreaStopCandidates !== [] ? min($mainAreaStopCandidates) - 1 : null;
+
+        foreach ($blocks as $index => $block) {
+            if (! is_array($block)) {
+                continue;
+            }
+
+            $order = (int) ($block['order'] ?? ($index + 1));
+            $zone = null;
+            $confidence = 'low';
+            $reason = 'zone_fallback';
+
+            if ($declarationStart !== null && $order >= $declarationStart) {
+                $zone = $this->isDeclarationContextBlock($block, $order, $declarationStart)
+                    ? 'declaration_area'
+                    : 'end_matter';
+                $confidence = 'high';
+                $reason = 'declaration_tail_area';
+            } elseif ($bibliographyStart !== null && $order >= $bibliographyStart) {
+                $zone = 'bibliography_area';
+                $confidence = 'high';
+                $reason = 'bibliography_anchor_detected';
+            } elseif ($appendixStart !== null && $order >= $appendixStart) {
+                $zone = 'appendix_area';
+                $confidence = 'medium';
+                $reason = 'appendix_anchor_detected';
+            } elseif ($tocStart !== null && $order >= $tocStart && ($mainContentStart === null || $order < $mainContentStart)) {
+                $zone = 'table_of_contents';
+                $confidence = 'high';
+                $reason = 'toc_anchor_range';
+            } elseif (
+                $mainContentStart !== null
+                && $order >= $mainContentStart
+                && ($mainAreaStop === null || $order <= $mainAreaStop)
+            ) {
+                $zone = 'main_content';
+                $confidence = 'high';
+                $reason = 'main_content_anchor_range';
+            } elseif ($order <= $documentFrontBoundary) {
+                $zone = $this->isTitlePageContextBlock($block, $order)
+                    ? 'title_page'
+                    : 'front_matter';
+                $confidence = $zone === 'title_page' ? 'high' : 'medium';
+                $reason = 'front_document_range';
+            } else {
+                $zone = 'front_matter';
+                $confidence = 'low';
+                $reason = 'no_clear_anchor';
+            }
+
+            $block['document_zone'] = [
+                'zone' => $zone,
+                'label' => $this->documentZoneLabel($zone),
+                'confidence' => $confidence,
+                'reason' => $reason,
+            ];
+
+            $signals = is_array($block['classification']['signals'] ?? null)
+                ? array_values(array_map('strval', $block['classification']['signals']))
+                : [];
+            $signals[] = 'document_zone_'.$zone;
+            $block['classification']['signals'] = array_values(array_unique($signals));
+
+            $blocks[$index] = $block;
+        }
+
+        return $blocks;
+    }
+
+    /**
+     * @param  array<int, array<string,mixed>>  $blocks
+     * @return array<int, array<string,mixed>>
+     */
+    private function applyZoneAwareHeadingAdjustments(array $blocks): array
+    {
+        foreach ($blocks as $index => $block) {
+            if (! is_array($block) || (string) ($block['type'] ?? '') !== 'heading') {
+                continue;
+            }
+
+            $zone = trim((string) ($block['document_zone']['zone'] ?? ''));
+            if ($zone === '') {
+                continue;
+            }
+
+            $text = trim((string) ($block['plain_text'] ?? $block['text'] ?? ''));
+            $problemTags = is_array($block['problem_tags'] ?? null)
+                ? array_values(array_map('strval', $block['problem_tags']))
+                : [];
+            $problemNotes = is_array($block['problem_notes'] ?? null)
+                ? array_values(array_map('strval', $block['problem_notes']))
+                : [];
+            $signals = is_array($block['classification']['signals'] ?? null)
+                ? array_values(array_map('strval', $block['classification']['signals']))
+                : [];
+
+            if ($zone === 'table_of_contents' && $this->isLikelyTocEntryWithinTocZone($block, $text)) {
+                if (! in_array('probable_toc_artifact', $problemTags, true)) {
+                    $problemTags[] = 'probable_toc_artifact';
+                    $problemNotes[] = 'Im Inhaltsverzeichnis-Bereich als TOC-Eintrag erkannt.';
+                }
+
+                $block['is_usable_heading'] = false;
+                $block['structure_role'] = 'toc_entry_candidate';
+                $block['classification']['confidence'] = 'low';
+                $block['classification']['strategy'] = 'heuristic';
+                $signals[] = 'toc_artifact_by_zone';
+            }
+
+            if (
+                $zone === 'main_content'
+                && in_array('probable_toc_artifact', $problemTags, true)
+                && ! $this->isProbableTocArtifact($text)
+            ) {
+                $problemTags = array_values(array_filter(
+                    $problemTags,
+                    fn (string $tag): bool => $tag !== 'probable_toc_artifact'
+                ));
+                $problemNotes[] = 'Im Hauptteil-Bereich als Fließtext-Überschrift plausibilisiert.';
+                $block['is_usable_heading'] = true;
+                $block['structure_role'] = 'content_heading_confirmed';
+                if ((string) ($block['classification']['confidence'] ?? 'low') === 'low') {
+                    $block['classification']['confidence'] = 'medium';
+                }
+                $signals[] = 'toc_artifact_recovered_by_zone';
+            }
+
+            if (
+                $zone === 'title_page'
+                && ! in_array('document_title_candidate', $problemTags, true)
+                && $this->isTitlePageContextBlock($block, (int) ($block['order'] ?? ($index + 1)))
+            ) {
+                $problemTags[] = 'document_title_candidate';
+                $problemNotes[] = 'Im Titelblatt-Bereich als Dokumenttitel-Kandidat erkannt.';
+                $block['is_usable_heading'] = false;
+                $block['structure_role'] = 'title_page_heading';
+                $block['classification']['confidence'] = 'low';
+                $block['classification']['strategy'] = 'heuristic';
+                $signals[] = 'document_title_by_zone';
+            }
+
+            $block['problem_tags'] = array_values(array_unique($problemTags));
+            $block['problem_notes'] = array_values(array_unique($problemNotes));
+            $block['classification']['signals'] = array_values(array_unique($signals));
+            $blocks[$index] = $block;
+        }
+
+        return $blocks;
+    }
+
+    /**
+     * @param  array<int, array<string,mixed>>  $blocks
+     */
+    private function firstHeadingOrderByCallback(array $blocks, callable $predicate): ?int
+    {
+        foreach ($blocks as $index => $block) {
+            if (! is_array($block) || (string) ($block['type'] ?? '') !== 'heading') {
+                continue;
+            }
+
+            $order = (int) ($block['order'] ?? ($index + 1));
+            if ($predicate($block, $order) === true) {
+                return $order;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string,mixed>  $block
+     */
+    private function isMainContentHeadingCandidate(array $block, int $order, ?int $tocStart, int $documentFrontBoundary): bool
+    {
+        $text = trim((string) ($block['plain_text'] ?? $block['text'] ?? ''));
+        if ($text === '') {
+            return false;
+        }
+
+        if ($order <= $documentFrontBoundary) {
+            return false;
+        }
+
+        if ($tocStart !== null && $order <= $tocStart) {
+            return false;
+        }
+
+        $problemTags = is_array($block['problem_tags'] ?? null)
+            ? array_values(array_map('strval', $block['problem_tags']))
+            : [];
+        if (
+            in_array('probable_toc_artifact', $problemTags, true)
+            || in_array('document_title_candidate', $problemTags, true)
+            || in_array('empty_heading', $problemTags, true)
+        ) {
+            return false;
+        }
+
+        if (($block['is_usable_heading'] ?? false) !== true) {
+            return false;
+        }
+
+        $sectionType = trim((string) ($block['section_hint']['section_type'] ?? ''));
+        if (
+            in_array(
+                $sectionType,
+                ['table_of_contents', 'title_page', 'bibliography', 'figure_index', 'consent_declaration'],
+                true
+            )
+        ) {
+            return false;
+        }
+
+        if ($sectionType === 'chapter') {
+            return true;
+        }
+
+        return preg_match('/^\s*\d+(?:\.\d+){0,4}\.?\s+\S/u', $text) === 1;
+    }
+
+    /**
+     * @param  array<string,mixed>  $block
+     */
+    private function isBibliographyHeadingCandidate(array $block): bool
+    {
+        $sectionType = trim((string) ($block['section_hint']['section_type'] ?? ''));
+        if (in_array($sectionType, ['bibliography', 'figure_index'], true)) {
+            return true;
+        }
+
+        $sectionGroup = trim((string) ($block['section_hint']['group'] ?? ''));
+        if (in_array($sectionGroup, ['bibliography_area', 'index_area'], true)) {
+            return true;
+        }
+
+        $text = trim((string) ($block['plain_text'] ?? $block['text'] ?? ''));
+
+        return preg_match('/\b(literaturverzeichnis|quellenverzeichnis|internetquellen|abbildungsverzeichnis)\b/iu', $text) === 1;
+    }
+
+    /**
+     * @param  array<string,mixed>  $block
+     */
+    private function isAppendixHeadingCandidate(array $block): bool
+    {
+        $text = trim((string) ($block['plain_text'] ?? $block['text'] ?? ''));
+
+        return preg_match('/^\s*(anhang|appendix)\b/iu', $text) === 1;
+    }
+
+    /**
+     * @param  array<string,mixed>  $block
+     */
+    private function isDeclarationHeadingCandidate(array $block): bool
+    {
+        $sectionType = trim((string) ($block['section_hint']['section_type'] ?? ''));
+        if ($sectionType === 'consent_declaration') {
+            return true;
+        }
+
+        $text = trim((string) ($block['plain_text'] ?? $block['text'] ?? ''));
+
+        return preg_match('/\b(eigenständigkeitserklärung|eidesstattliche(?:\s+erklärung)?|selbstständigkeitserklärung)\b/iu', $text) === 1;
+    }
+
+    /**
+     * @param  array<string,mixed>  $block
+     */
+    private function isTitlePageContextBlock(array $block, int $order): bool
+    {
+        if ($order <= 0) {
+            return false;
+        }
+
+        if ((string) ($block['type'] ?? '') === 'heading') {
+            $problemTags = is_array($block['problem_tags'] ?? null)
+                ? array_values(array_map('strval', $block['problem_tags']))
+                : [];
+            if (in_array('document_title_candidate', $problemTags, true)) {
+                return true;
+            }
+
+            if ((string) ($block['structure_role'] ?? '') === 'title_page_heading') {
+                return true;
+            }
+        }
+
+        $text = trim((string) ($block['plain_text'] ?? $block['text'] ?? ''));
+        if ($text === '') {
+            return false;
+        }
+
+        if (
+            preg_match('/\b(ahs|schule|klasse|betreuer|verfasser|autor|kandidat|kandidatin|abgabedatum|schuljahr)\b/iu', $text) === 1
+            && mb_strlen($text) <= 180
+        ) {
+            return true;
+        }
+
+        return $order <= 2 && mb_strlen($text) >= 20 && mb_strlen($text) <= 220;
+    }
+
+    /**
+     * @param  array<string,mixed>  $block
+     */
+    private function isDeclarationContextBlock(array $block, int $order, int $declarationStart): bool
+    {
+        if ($order <= $declarationStart + 4) {
+            return true;
+        }
+
+        $text = trim((string) ($block['plain_text'] ?? $block['text'] ?? ''));
+        if ($text === '') {
+            return false;
+        }
+
+        return preg_match('/\b(ich erkläre|ich erklaere|ort|datum|unterschrift|eidesstattlich)\b/iu', $text) === 1;
+    }
+
+    /**
+     * @param  array<string,mixed>  $block
+     */
+    private function isLikelyTocEntryWithinTocZone(array $block, string $text): bool
+    {
+        $value = trim($text);
+        if ($value === '') {
+            return false;
+        }
+
+        $sectionType = trim((string) ($block['section_hint']['section_type'] ?? ''));
+        if ($sectionType === 'table_of_contents' && preg_match('/\binhaltsverzeichnis\b/iu', mb_strtolower($value)) === 1) {
+            return false;
+        }
+
+        if ($this->isProbableTocArtifact($value)) {
+            return true;
+        }
+
+        if (preg_match('/^\s*\d+(?:\.\d+){0,5}\.?\s+\S/u', $value) === 1) {
+            return true;
+        }
+
+        if ($this->documentRuleService->looksLikeSectionKeyword($value)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function documentZoneLabel(string $zone): string
+    {
+        return match ($zone) {
+            'title_page' => 'Titelblatt',
+            'front_matter' => 'Frontmatter',
+            'table_of_contents' => 'Inhaltsverzeichnis',
+            'main_content' => 'Hauptteil',
+            'bibliography_area' => 'Verzeichnisse / Bibliographie',
+            'appendix_area' => 'Anhang',
+            'declaration_area' => 'Erklärungsbereich',
+            'end_matter' => 'Endmatter',
+            default => 'Unklare Zone',
+        };
     }
 
     /**

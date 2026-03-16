@@ -7100,9 +7100,6 @@ class AbaLocalDocumentStructureExtractor
         if ($deCount === 0) {
             $missingLanguages[] = 'de';
         }
-        if ($enCount === 0) {
-            $missingLanguages[] = 'en';
-        }
 
         return [
             'abstract_de_detected' => $deCount > 0,
@@ -7110,6 +7107,7 @@ class AbaLocalDocumentStructureExtractor
             'abstract_de_count' => $deCount,
             'abstract_en_count' => $enCount,
             'abstract_missing_languages' => $missingLanguages,
+            'abstract_en_missing_optional' => $enCount === 0,
             'abstract_de_start_line' => $deStart,
             'abstract_de_end_line' => $deEnd,
             'abstract_en_start_line' => $enStart,

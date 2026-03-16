@@ -150,16 +150,16 @@ class ExtractKnowledgeClaims
             new AbaKnowledgeClaim(
                 claim_key: 'structure_abstract_en',
                 topic: 'Aufbau',
-                statement: 'Ein Abstract auf Englisch ist verpflichtend. Umfang: 1.000–1.500 Zeichen inklusive Leerzeichen. Übersetzung des deutschen Abstracts.',
+                statement: 'Ein Abstract auf Englisch ist optional. Falls vorhanden, kann es als englische Kurzfassung des deutschen Abstracts genutzt werden.',
                 classification: 'formatting_rule',
                 authority_level: 'bundesministerium',
-                normative_strength: 'binding',
+                normative_strength: 'recommended',
                 is_uncertain: false,
                 applies_to: 'schriftliche_aba',
                 valid_from: '2025-09-01',
                 valid_to: null,
                 source_refs: ['BMBWF-2025', 'AHS-HB-2025'],
-                tags: ['abstract', 'englisch', 'zeichen', 'zusammenfassung', '1000-1500'],
+                tags: ['abstract', 'englisch', 'optional', 'zusammenfassung'],
             ),
 
             new AbaKnowledgeClaim(
