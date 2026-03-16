@@ -82,6 +82,17 @@
         </ItsGridBox>
 
         <template v-if="result">
+            <v-sheet rounded="lg" class="mb-2 pa-2 d-flex justify-end align-center ga-2">
+                <v-btn
+                    color="teal"
+                    variant="flat"
+                    :prepend-icon="copyButtonIcon"
+                    :loading="isCopying"
+                    @click="copyReviewReport">
+                    {{ copyButtonLabel }}
+                </v-btn>
+            </v-sheet>
+
             <v-row class="w-100 ma-0 mb-2" dense>
                 <v-col cols="12" md="6" lg="4">
                     <v-sheet rounded="lg" class="metric-card pa-3">
@@ -406,6 +417,14 @@
                 </div>
             </ItsGridBox>
         </template>
+
+        <v-snackbar
+            v-model="copySnackbar.visible"
+            location="bottom right"
+            :color="copySnackbar.color"
+            timeout="2200">
+            {{ copySnackbar.message }}
+        </v-snackbar>
     </v-container>
 </template>
 
@@ -429,6 +448,13 @@ export default {
             isRunning: false,
             runError: null,
             result: null,
+            isCopying: false,
+            copyWasSuccessful: false,
+            copySnackbar: {
+                visible: false,
+                message: '',
+                color: 'success',
+            },
             activeFilter: 'all',
             showAllBlocks: false,
         }
@@ -592,6 +618,22 @@ export default {
         hiddenBlockCount() {
             return Math.max(0, this.filteredBlocks.length - this.displayedBlocks.length)
         },
+
+        copyButtonIcon() {
+            if (this.copyWasSuccessful) {
+                return 'mdi-check'
+            }
+
+            return 'mdi-content-copy'
+        },
+
+        copyButtonLabel() {
+            if (this.copyWasSuccessful) {
+                return 'Prüfbericht kopiert'
+            }
+
+            return 'Prüfbericht kopieren'
+        },
     },
 
     methods: {
@@ -604,6 +646,7 @@ export default {
             this.isRunning = true
             this.runError = null
             this.result = null
+            this.copyWasSuccessful = false
             this.showAllBlocks = false
 
             try {
@@ -623,6 +666,173 @@ export default {
             } finally {
                 this.isRunning = false
             }
+        },
+
+        async copyReviewReport() {
+            if (!this.result || this.isCopying) {
+                return
+            }
+
+            const report = this.buildReviewCopyText()
+            if ((report || '').trim() === '') {
+                this.showCopySnackbar('Kein Prüfbericht zum Kopieren verfügbar.', 'warning')
+                return
+            }
+
+            this.isCopying = true
+            this.copyWasSuccessful = false
+
+            try {
+                await this.writeTextToClipboard(report)
+                this.copyWasSuccessful = true
+                this.showCopySnackbar('Prüfbericht kopiert.', 'success')
+                window.setTimeout(() => {
+                    this.copyWasSuccessful = false
+                }, 1800)
+            } catch (error) {
+                this.showCopySnackbar('Kopieren fehlgeschlagen.', 'error')
+            } finally {
+                this.isCopying = false
+            }
+        },
+
+        async writeTextToClipboard(text) {
+            if (navigator?.clipboard?.writeText) {
+                await navigator.clipboard.writeText(text)
+                return
+            }
+
+            const textarea = document.createElement('textarea')
+            textarea.value = text
+            textarea.setAttribute('readonly', 'readonly')
+            textarea.style.position = 'fixed'
+            textarea.style.left = '-9999px'
+            document.body.appendChild(textarea)
+            textarea.select()
+            const wasCopied = document.execCommand('copy')
+            document.body.removeChild(textarea)
+
+            if (!wasCopied) {
+                throw new Error('clipboard_copy_failed')
+            }
+        },
+
+        buildReviewCopyText() {
+            const lines = []
+            const generatedAt = new Date().toLocaleString('de-AT')
+            const documentName = this.result?.document?.original_name || this.selectedUploadFile?.name || 'Unbekanntes Dokument'
+            const documentSize = Number(this.result?.document?.size_bytes || 0)
+
+            lines.push('AHS-ABA · Pandoc-Prüfbericht')
+            lines.push(`Erstellt: ${generatedAt}`)
+            lines.push(`Dokument: ${documentName}`)
+            if (documentSize > 0) {
+                lines.push(`Dateigröße: ${documentSize} Bytes`)
+            }
+
+            lines.push('')
+            lines.push('Kennzahlen')
+            lines.push(`- Normalisierte Blöcke: ${this.summary.normalized_block_count}`)
+            lines.push(`- Erkannte Überschriften: ${this.summary.heading_count}`)
+            lines.push(`- Erkannte Bilder: ${this.summary.image_count}`)
+            lines.push(`- Blöcke mit Abschnittshinweis: ${this.summary.section_hint_count}`)
+            lines.push(`- Unsichere Erkennung: ${this.summary.uncertain_or_heuristic_count}`)
+            lines.push(`- Dokumenttitel-Kandidaten: ${this.summary.document_title_candidate_count}`)
+            lines.push(`- Leere Überschriften: ${this.summary.empty_heading_count}`)
+            lines.push(`- TOC-Artefakte: ${this.summary.probable_toc_artifact_count}`)
+            lines.push(`- Auffällige Titeltexte: ${this.summary.suspicious_heading_count}`)
+
+            this.appendHeadingSection(
+                lines,
+                'Erkannte Hauptabschnitte',
+                this.recognizedMainSections,
+                (item) => `- ${item.section_type_label || item.section_type || 'Abschnitt'} | ${String(item.confidence || 'low').toUpperCase()} | ${this.reviewItemText(item)}`
+            )
+
+            this.appendHeadingSection(
+                lines,
+                'Unsichere Überschriften',
+                this.uncertainHeadings,
+                (item) => `- #${item.order || '?'} | ${String(item.confidence || 'low').toUpperCase()} | ${item.strategy || 'heuristic'} | ${this.reviewItemText(item)} | Grund: ${item.reason || 'kein_signal'}`
+            )
+
+            this.appendHeadingSection(
+                lines,
+                'Dokumenttitel-Kandidaten',
+                this.documentTitleCandidates,
+                (item) => `- #${item.order || '?'} | ${String(item.confidence || 'low').toUpperCase()} | ${this.reviewItemText(item)}`
+            )
+
+            this.appendBibliographySection(lines)
+
+            this.appendHeadingSection(
+                lines,
+                'Leere Überschriften',
+                this.emptyHeadings,
+                (item) => `- #${item.order || '?'} | ${this.reviewItemText(item)}`
+            )
+
+            this.appendHeadingSection(
+                lines,
+                'Wahrscheinliche Inhaltsverzeichnis-Einträge',
+                this.probableTocArtifacts,
+                (item) => `- #${item.order || '?'} | ${this.reviewItemText(item)}`
+            )
+
+            this.appendHeadingSection(
+                lines,
+                'Auffällige Überschriftentexte',
+                this.suspiciousHeadings,
+                (item) => `- #${item.order || '?'} | ${this.reviewItemText(item)}`
+            )
+
+            return lines.join('\n').trim()
+        },
+
+        appendHeadingSection(lines, title, items, formatter) {
+            lines.push('')
+            lines.push(title)
+
+            const collection = Array.isArray(items) ? items : []
+            if (collection.length === 0) {
+                lines.push('- Keine Einträge.')
+                return
+            }
+
+            collection.slice(0, 50).forEach((item) => {
+                lines.push(formatter(item))
+            })
+        },
+
+        appendBibliographySection(lines) {
+            lines.push('')
+            lines.push('Quellen-/Verzeichnisbereich')
+
+            if (!Array.isArray(this.bibliographyGroups) || this.bibliographyGroups.length === 0) {
+                lines.push('- Keine gruppierten Bereiche erkannt.')
+                return
+            }
+
+            this.bibliographyGroups.slice(0, 20).forEach((group) => {
+                lines.push(`- ${group.group_label || group.group_key || 'Bereich'}`)
+                const subtypes = Array.isArray(group.subtypes) ? group.subtypes : []
+                if (subtypes.length === 0) {
+                    lines.push('  - Keine Untertypen erkannt.')
+                    return
+                }
+
+                subtypes.slice(0, 20).forEach((subtype) => {
+                    const label = subtype.subtype_label || subtype.subtype_key || 'Untertyp'
+                    const count = Number(subtype.count || 0)
+                    lines.push(`  - ${label}: ${count}`)
+                })
+            })
+        },
+
+        showCopySnackbar(message, color) {
+            this.copySnackbar.message = message
+            this.copySnackbar.color = color
+            this.copySnackbar.visible = true
         },
 
         extractErrorMessage(error) {

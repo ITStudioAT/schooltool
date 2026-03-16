@@ -161,6 +161,9 @@ test('pandoc debug page shows condensed review sections for human checks', funct
     $content = file_get_contents(resource_path('js/pages/admin/aba/AbaPandocDebug.vue'));
 
     expect($content)
+        ->toContain('Prüfbericht kopieren')
+        ->toContain('Prüfbericht kopiert')
+        ->toContain('AHS-ABA · Pandoc-Prüfbericht')
         ->toContain('Erkannte Hauptabschnitte')
         ->toContain('Dokumenttitel-Kandidaten')
         ->toContain('Quellen-/Verzeichnisbereich')
