@@ -33,6 +33,13 @@
                         <span class="aba-nav__button-meta">Vergleich</span>
                     </span>
                 </v-btn>
+                <v-btn rounded="xl" color="secondary" variant="tonal" class="aba-nav__button" @click="$router.push('/admin/aba/ai-settings/pandoc-debug')">
+                    <v-icon size="18" icon="mdi-file-search-outline" class="mr-2" />
+                    <span class="aba-nav__button-copy">
+                        <span class="aba-nav__button-title">DOCX prüfen</span>
+                        <span class="aba-nav__button-meta">Pandoc-Pfad</span>
+                    </span>
+                </v-btn>
                 <v-spacer />
                 <v-btn size="small" variant="outlined" color="white" prepend-icon="mdi-refresh" :loading="isLoading" @click="loadData">
                     Aktualisieren
