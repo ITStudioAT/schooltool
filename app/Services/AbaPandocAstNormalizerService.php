@@ -54,6 +54,8 @@ class AbaPandocAstNormalizerService
             $normalizedBlocks[] = $this->normalizeBlock($block, $index + 1);
         }
 
+        $normalizedBlocks = $this->applyDocumentStructureContext($normalizedBlocks);
+
         $typeCounts = [];
         $headingCount = 0;
         $imageCount = 0;
@@ -109,6 +111,8 @@ class AbaPandocAstNormalizerService
                 'image_count' => 0,
             ],
             'section_hint' => null,
+            'structure_role' => null,
+            'is_usable_heading' => null,
             'image' => null,
             'image_refs' => [],
             'classification' => [
@@ -116,6 +120,8 @@ class AbaPandocAstNormalizerService
                 'strategy' => 'heuristic',
                 'signals' => [],
             ],
+            'problem_tags' => [],
+            'problem_notes' => [],
             'warnings' => [],
         ];
 
@@ -150,13 +156,15 @@ class AbaPandocAstNormalizerService
             if (($headingDetection['is_heading'] ?? false) === true) {
                 $base['type'] = 'heading';
                 $base['section_hint'] = $headingDetection['section_hint'] ?? null;
+                $base['structure_role'] = 'heading_candidate';
+                $base['is_usable_heading'] = true;
                 $base['classification'] = [
                     'confidence' => (string) ($headingDetection['confidence'] ?? 'low'),
                     'strategy' => 'heuristic',
                     'signals' => is_array($headingDetection['signals'] ?? null) ? array_values($headingDetection['signals']) : [],
                 ];
 
-                return $base;
+                return $this->applyHeadingDiagnostics($base);
             }
 
             $base['type'] = 'paragraph';
@@ -181,6 +189,8 @@ class AbaPandocAstNormalizerService
             $base['heading_level'] = $headingLevel;
             $base['text'] = $text;
             $base['plain_text'] = $text;
+            $base['structure_role'] = 'heading_candidate';
+            $base['is_usable_heading'] = true;
             $base['inline_signals'] = array_merge($base['inline_signals'], $inlinePayload['signals'], [
                 'image_count' => count($inlinePayload['images']),
             ]);
@@ -194,7 +204,7 @@ class AbaPandocAstNormalizerService
                     : ['pandoc_header_block'],
             ];
 
-            return $base;
+            return $this->applyHeadingDiagnostics($base);
         }
 
         if ($sourceType === 'LineBlock') {
@@ -263,6 +273,384 @@ class AbaPandocAstNormalizerService
         ];
 
         return $base;
+    }
+
+    /**
+     * @param  array<string,mixed>  $block
+     * @return array<string,mixed>
+     */
+    private function applyHeadingDiagnostics(array $block): array
+    {
+        if ((string) ($block['type'] ?? '') !== 'heading') {
+            return $block;
+        }
+
+        $text = trim((string) ($block['plain_text'] ?? $block['text'] ?? ''));
+        $problemTags = $this->detectHeadingProblemTags($text);
+        $problemNotes = array_values(array_filter(array_map(
+            fn (string $tag): ?string => $this->problemNoteForTag($tag),
+            $problemTags
+        )));
+
+        $block['problem_tags'] = $problemTags;
+        $block['problem_notes'] = $problemNotes;
+        $block['is_usable_heading'] = true;
+        $block['structure_role'] = 'content_heading_candidate';
+
+        $classification = is_array($block['classification'] ?? null)
+            ? $block['classification']
+            : ['confidence' => 'low', 'strategy' => 'heuristic', 'signals' => []];
+        $signals = is_array($classification['signals'] ?? null)
+            ? array_values(array_map('strval', $classification['signals']))
+            : [];
+        $confidence = (string) ($classification['confidence'] ?? 'low');
+        $strategy = (string) ($classification['strategy'] ?? 'heuristic');
+
+        if (in_array('empty_heading', $problemTags, true)) {
+            $confidence = 'low';
+            $strategy = 'heuristic';
+            $signals[] = 'empty_heading';
+            $block['is_usable_heading'] = false;
+            $block['structure_role'] = 'invalid_heading';
+            if ($text === '') {
+                $block['warnings'][] = 'Leere Überschrift erkannt.';
+            }
+        }
+
+        if (in_array('probable_toc_artifact', $problemTags, true)) {
+            $confidence = 'low';
+            $strategy = 'heuristic';
+            $signals[] = 'probable_toc_artifact';
+            $block['is_usable_heading'] = false;
+            $block['structure_role'] = 'toc_entry_candidate';
+            $block['warnings'][] = 'Überschrift wirkt wie Inhaltsverzeichnis-Eintrag.';
+            if (is_array($block['section_hint'] ?? null)) {
+                $block['section_hint']['is_probable_toc_artifact'] = true;
+            }
+        }
+
+        if (in_array('suspicious_heading_text', $problemTags, true)) {
+            if ($confidence === 'high') {
+                $confidence = 'medium';
+            }
+            $strategy = 'heuristic';
+            $signals[] = 'suspicious_heading_text';
+            if ($confidence !== 'high') {
+                $block['is_usable_heading'] = false;
+                $block['structure_role'] = 'damaged_heading';
+            }
+            $block['warnings'][] = 'Überschriftentext wirkt beschädigt oder zusammengeklebt.';
+        }
+
+        $classification['confidence'] = $confidence;
+        $classification['strategy'] = $strategy;
+        $classification['signals'] = array_values(array_unique($signals));
+        $block['classification'] = $classification;
+        $block['warnings'] = array_values(array_unique(array_map('strval', $block['warnings'] ?? [])));
+
+        return $block;
+    }
+
+    /**
+     * @param  array<int, array<string,mixed>>  $blocks
+     * @return array<int, array<string,mixed>>
+     */
+    private function applyDocumentStructureContext(array $blocks): array
+    {
+        $tocOrder = $this->firstHeadingOrderBySectionType($blocks, 'table_of_contents');
+        $firstChapterOrder = $this->firstHeadingOrderBySectionType($blocks, 'chapter');
+        $firstAbstractOrder = $this->firstHeadingOrderBySectionType($blocks, 'abstract');
+
+        $documentFrontBoundary = 12;
+        foreach ([$tocOrder, $firstAbstractOrder, $firstChapterOrder] as $boundaryCandidate) {
+            if ($boundaryCandidate !== null && $boundaryCandidate > 1) {
+                $documentFrontBoundary = min($documentFrontBoundary, $boundaryCandidate - 1);
+            }
+        }
+        $documentFrontBoundary = max(3, $documentFrontBoundary);
+
+        $tocArtifactMap = [];
+        $contentMap = [];
+
+        foreach ($blocks as $index => $block) {
+            if (! is_array($block) || (string) ($block['type'] ?? '') !== 'heading') {
+                continue;
+            }
+
+            $text = trim((string) ($block['plain_text'] ?? $block['text'] ?? ''));
+            $order = (int) ($block['order'] ?? ($index + 1));
+            $problemTags = is_array($block['problem_tags'] ?? null) ? array_values($block['problem_tags']) : [];
+            $sectionType = trim((string) ($block['section_hint']['section_type'] ?? ''));
+            $canonical = $this->canonicalizeHeadingText($text);
+
+            if (
+                $this->isDocumentTitleCandidate(
+                    text: $text,
+                    order: $order,
+                    sectionType: $sectionType,
+                    problemTags: $problemTags,
+                    documentFrontBoundary: $documentFrontBoundary
+                )
+            ) {
+                $problemTags[] = 'document_title_candidate';
+                $problemNotes = is_array($block['problem_notes'] ?? null) ? array_values($block['problem_notes']) : [];
+                $problemNotes[] = 'Wahrscheinlicher Dokumenttitel/Titelblatt-Eintrag.';
+
+                $block['problem_tags'] = array_values(array_unique(array_map('strval', $problemTags)));
+                $block['problem_notes'] = array_values(array_unique(array_map('strval', $problemNotes)));
+                $block['is_usable_heading'] = false;
+                $block['structure_role'] = 'title_page_heading';
+                $block['classification']['confidence'] = 'low';
+                $block['classification']['strategy'] = 'heuristic';
+                $block['classification']['signals'] = array_values(array_unique(array_merge(
+                    is_array($block['classification']['signals'] ?? null) ? array_values($block['classification']['signals']) : [],
+                    ['document_title_candidate']
+                )));
+
+                if (is_array($block['section_hint'] ?? null)) {
+                    $block['section_hint']['title_page_candidate'] = true;
+                    if ((string) ($block['section_hint']['section_type'] ?? '') === 'chapter') {
+                        $block['section_hint']['original_section_type'] = 'chapter';
+                        $block['section_hint']['section_type'] = null;
+                        $block['section_hint']['reason'] = 'document_title_candidate_override';
+                    }
+                }
+            }
+
+            $problemTags = is_array($block['problem_tags'] ?? null) ? array_values(array_map('strval', $block['problem_tags'])) : [];
+            $isTocArtifact = in_array('probable_toc_artifact', $problemTags, true);
+            $isUsable = (bool) ($block['is_usable_heading'] ?? false);
+
+            if ($canonical !== '') {
+                if ($isTocArtifact) {
+                    $tocArtifactMap[$canonical][] = $order;
+                } elseif ($isUsable) {
+                    $contentMap[$canonical][] = $order;
+                }
+            }
+
+            $blocks[$index] = $block;
+        }
+
+        foreach ($blocks as $index => $block) {
+            if (! is_array($block) || (string) ($block['type'] ?? '') !== 'heading') {
+                continue;
+            }
+
+            $text = trim((string) ($block['plain_text'] ?? $block['text'] ?? ''));
+            $order = (int) ($block['order'] ?? ($index + 1));
+            $canonical = $this->canonicalizeHeadingText($text);
+            if ($canonical === '') {
+                continue;
+            }
+
+            $problemTags = is_array($block['problem_tags'] ?? null) ? array_values(array_map('strval', $block['problem_tags'])) : [];
+            $signals = is_array($block['classification']['signals'] ?? null)
+                ? array_values(array_map('strval', $block['classification']['signals']))
+                : [];
+            $matchingContentOrders = array_values(array_filter(
+                $contentMap[$canonical] ?? [],
+                fn (int $candidateOrder): bool => $candidateOrder > $order
+            ));
+            $matchingTocOrders = array_values(array_filter(
+                $tocArtifactMap[$canonical] ?? [],
+                fn (int $candidateOrder): bool => $candidateOrder < $order
+            ));
+
+            if (in_array('probable_toc_artifact', $problemTags, true) && $matchingContentOrders !== []) {
+                $problemTags[] = 'toc_duplicate_of_content_heading';
+                $signals[] = 'toc_duplicate_of_content_heading';
+                $block['structure_role'] = 'toc_entry_candidate';
+                $block['is_usable_heading'] = false;
+            }
+
+            if (! in_array('probable_toc_artifact', $problemTags, true) && $matchingTocOrders !== []) {
+                $signals[] = 'content_heading_repeated_after_toc';
+                if (($block['classification']['confidence'] ?? 'low') === 'low') {
+                    $block['classification']['confidence'] = 'medium';
+                }
+                if (($block['is_usable_heading'] ?? false) === true) {
+                    $block['structure_role'] = 'content_heading_confirmed';
+                }
+            }
+
+            $block['problem_tags'] = array_values(array_unique($problemTags));
+            $block['classification']['signals'] = array_values(array_unique($signals));
+            $blocks[$index] = $block;
+        }
+
+        return $blocks;
+    }
+
+    private function firstHeadingOrderBySectionType(array $blocks, string $sectionType): ?int
+    {
+        foreach ($blocks as $index => $block) {
+            if (! is_array($block) || (string) ($block['type'] ?? '') !== 'heading') {
+                continue;
+            }
+
+            if ((string) ($block['section_hint']['section_type'] ?? '') !== $sectionType) {
+                continue;
+            }
+
+            return (int) ($block['order'] ?? ($index + 1));
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<int,string>  $problemTags
+     */
+    private function isDocumentTitleCandidate(
+        string $text,
+        int $order,
+        string $sectionType,
+        array $problemTags,
+        int $documentFrontBoundary
+    ): bool {
+        $value = trim($text);
+        if ($value === '' || $order <= 0) {
+            return false;
+        }
+
+        if ($order > $documentFrontBoundary) {
+            return false;
+        }
+
+        if (in_array('empty_heading', $problemTags, true) || in_array('probable_toc_artifact', $problemTags, true)) {
+            return false;
+        }
+
+        if (! in_array($sectionType, ['', 'chapter'], true)) {
+            return false;
+        }
+
+        if (preg_match('/^\s*\d+(?:\.\d+){0,4}\.?\s+/u', $value) === 1) {
+            return false;
+        }
+
+        if ($this->documentRuleService->looksLikeSectionKeyword($value)) {
+            return false;
+        }
+
+        if (preg_match('/\b(schule|klasse|kandidat|kandidatin|betreuer|verfasser|prüfung|pruefung)\b/iu', $value) === 1) {
+            return false;
+        }
+
+        $wordCount = count(array_values(array_filter(preg_split('/\s+/u', $value) ?: [])));
+        $length = mb_strlen($value);
+
+        return $wordCount >= 3 && $wordCount <= 24 && $length >= 20 && $length <= 200;
+    }
+
+    private function canonicalizeHeadingText(string $text): string
+    {
+        $value = mb_strtolower(trim($text));
+        if ($value === '') {
+            return '';
+        }
+
+        $value = preg_replace('/\.{2,}\s*\d+(?:\s*[-–]\s*\d+)?\s*$/u', '', $value) ?? $value;
+        $value = preg_replace('/\s+\d{1,3}(?:\s*[-–]\s*\d{1,3})?\s*$/u', '', $value) ?? $value;
+        $value = preg_replace('/^\s*\d+(?:\.\d+){0,5}\.?\s+/u', '', $value) ?? $value;
+        $value = preg_replace('/\s+/u', ' ', $value) ?? $value;
+
+        return trim($value);
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    private function detectHeadingProblemTags(string $text): array
+    {
+        $value = trim($text);
+        $tags = [];
+
+        if ($value === '' || mb_strlen($value) < 2) {
+            $tags[] = 'empty_heading';
+        }
+
+        if ($this->isProbableTocArtifact($value)) {
+            $tags[] = 'probable_toc_artifact';
+        }
+
+        if ($this->isSuspiciousHeadingText($value)) {
+            $tags[] = 'suspicious_heading_text';
+        }
+
+        return array_values(array_unique($tags));
+    }
+
+    private function isProbableTocArtifact(string $text): bool
+    {
+        $value = trim($text);
+        if ($value === '') {
+            return false;
+        }
+
+        if (preg_match('/\.{2,}\s*\d+(?:\s*[-–]\s*\d+)?\s*$/u', $value) === 1) {
+            return true;
+        }
+
+        if (
+            preg_match('/^\s*(?:\d+(?:\.\d+){0,5}\.?\s+)?[^\n]{2,160}\s+\d{1,3}(?:\s*[-–]\s*\d{1,3})?\s*$/u', $value) === 1
+            && preg_match('/[.!?]\s*$/u', $value) !== 1
+        ) {
+            return true;
+        }
+
+        if (
+            $this->documentRuleService->looksLikeSectionKeyword($value)
+            && preg_match('/\s+\d{1,3}(?:\s*[-–]\s*\d{1,3})?\s*$/u', $value) === 1
+        ) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function isSuspiciousHeadingText(string $text): bool
+    {
+        $value = trim($text);
+        if ($value === '') {
+            return false;
+        }
+
+        if (mb_strlen($value) > 180) {
+            return true;
+        }
+
+        if (preg_match('/https?:\/\/|www\./iu', $value) === 1) {
+            return true;
+        }
+
+        if (preg_match('/\.{2,}\s*\d+\.\d+/u', $value) === 1) {
+            return true;
+        }
+
+        if (
+            preg_match('/^.{20,}\d+\.\d+(?:\.\d+){1,4}\.?\s+/u', $value) === 1
+            || preg_match('/\b\d+\.\d+\.\d+\.\d+\b/u', $value) === 1
+        ) {
+            return true;
+        }
+
+        if (preg_match('/\[[0-9]{1,3}\]/u', $value) === 1) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function problemNoteForTag(string $tag): ?string
+    {
+        return match ($tag) {
+            'empty_heading' => 'Leere oder kaum nutzbare Überschrift.',
+            'probable_toc_artifact' => 'Wahrscheinlicher Inhaltsverzeichnis-Eintrag.',
+            'suspicious_heading_text' => 'Überschriftentext wirkt verschmutzt oder zusammengeklebt.',
+            default => null,
+        };
     }
 
     /**
@@ -590,21 +978,21 @@ class AbaPandocAstNormalizerService
 
         $sectionType = $this->documentRuleService->resolveSectionTypeFromTitle($value);
         if ($sectionType !== null) {
-            return [
+            return $this->enrichSectionHintGrouping([
                 'section_type' => $sectionType,
                 'confidence' => $isDeterministicHeading ? 'high' : 'medium',
                 'reason' => 'section_type_pattern_match',
                 'rule_matches' => $this->ruleMatchesForSectionType($sectionType),
-            ];
+            ], $value);
         }
 
         if ($this->documentRuleService->isConfiguredChapterHeading($value)) {
-            return [
+            return $this->enrichSectionHintGrouping([
                 'section_type' => 'chapter',
                 'confidence' => $isDeterministicHeading ? 'high' : 'medium',
                 'reason' => 'configured_chapter_heading',
                 'rule_matches' => $this->ruleMatchesForSectionType('chapter'),
-            ];
+            ], $value);
         }
 
         if ($this->documentRuleService->looksLikeSectionKeyword($value)) {
@@ -617,6 +1005,56 @@ class AbaPandocAstNormalizerService
         }
 
         return null;
+    }
+
+    /**
+     * @param  array{
+     *   section_type:?string,
+     *   confidence:string,
+     *   reason:string,
+     *   rule_matches:array<int, array<string,mixed>>
+     * }  $hint
+     * @return array<string,mixed>
+     */
+    private function enrichSectionHintGrouping(array $hint, string $text): array
+    {
+        $sectionType = (string) ($hint['section_type'] ?? '');
+        $value = mb_strtolower(trim($text));
+
+        if ($sectionType === 'bibliography') {
+            $subtype = 'sources';
+            $subtypeLabel = 'Quellenverzeichnis';
+
+            if (preg_match('/\b(literatur|bibliograph|references?)\b/iu', $value) === 1) {
+                $subtype = 'literature';
+                $subtypeLabel = 'Literaturverzeichnis';
+            }
+            if (preg_match('/(internet|web|online)/iu', $value) === 1) {
+                $subtype = 'internet_sources';
+                $subtypeLabel = 'Internetquellenverzeichnis';
+            }
+
+            $hint['group'] = 'bibliography_area';
+            $hint['group_label'] = 'Bibliographie / Quellenbereich';
+            $hint['subtype'] = $subtype;
+            $hint['subtype_label'] = $subtypeLabel;
+        }
+
+        if ($sectionType === 'figure_index') {
+            $hint['group'] = 'index_area';
+            $hint['group_label'] = 'Verzeichnisbereich';
+            $hint['subtype'] = 'figure_index';
+            $hint['subtype_label'] = 'Abbildungsverzeichnis';
+        }
+
+        if ($sectionType === 'table_of_contents') {
+            $hint['group'] = 'index_area';
+            $hint['group_label'] = 'Verzeichnisbereich';
+            $hint['subtype'] = 'table_of_contents';
+            $hint['subtype_label'] = 'Inhaltsverzeichnis';
+        }
+
+        return $hint;
     }
 
     /**

@@ -135,6 +135,159 @@ test('recognizes rule keywords for consent declaration and keeps unknown blocks 
         ->and(in_array($result['blocks'][1]['type'] ?? '', ['paragraph', 'unknown'], true))->toBeTrue();
 });
 
+test('marks probable toc artifact headings as low confidence heuristic', function () {
+    $ast = [
+        'blocks' => [
+            [
+                't' => 'Header',
+                'c' => [
+                    1,
+                    ['', [], []],
+                    [
+                        ['t' => 'Str', 'c' => '1. Einleitung 5'],
+                    ],
+                ],
+            ],
+        ],
+    ];
+
+    $result = app(AbaPandocAstNormalizerService::class)->normalizeAst($ast);
+    $block = $result['blocks'][0] ?? [];
+
+    expect($result['ok'] ?? false)->toBeTrue()
+        ->and($block['type'] ?? null)->toBe('heading')
+        ->and(in_array('probable_toc_artifact', $block['problem_tags'] ?? [], true))->toBeTrue()
+        ->and($block['classification']['confidence'] ?? null)->toBe('low')
+        ->and($block['classification']['strategy'] ?? null)->toBe('heuristic');
+});
+
+test('marks empty headings as problematic', function () {
+    $ast = [
+        'blocks' => [
+            [
+                't' => 'Header',
+                'c' => [
+                    1,
+                    ['', [], []],
+                    [],
+                ],
+            ],
+        ],
+    ];
+
+    $result = app(AbaPandocAstNormalizerService::class)->normalizeAst($ast);
+    $block = $result['blocks'][0] ?? [];
+
+    expect($result['ok'] ?? false)->toBeTrue()
+        ->and($block['type'] ?? null)->toBe('heading')
+        ->and(($block['plain_text'] ?? '') === '')->toBeTrue()
+        ->and(in_array('empty_heading', $block['problem_tags'] ?? [], true))->toBeTrue();
+});
+
+test('marks suspicious heading texts as problematic', function () {
+    $ast = [
+        'blocks' => [
+            [
+                't' => 'Para',
+                'c' => [
+                    ['t' => 'Strong', 'c' => [['t' => 'Str', 'c' => 'Osteoporose: ...3.1.5. Knochendichte']]],
+                ],
+            ],
+        ],
+    ];
+
+    $result = app(AbaPandocAstNormalizerService::class)->normalizeAst($ast);
+    $block = $result['blocks'][0] ?? [];
+
+    expect($result['ok'] ?? false)->toBeTrue()
+        ->and($block['type'] ?? null)->toBe('heading')
+        ->and(in_array('suspicious_heading_text', $block['problem_tags'] ?? [], true))->toBeTrue();
+});
+
+test('marks early document title candidates and makes them unusable as chapter heading', function () {
+    $ast = [
+        'blocks' => [
+            [
+                't' => 'Header',
+                'c' => [
+                    1,
+                    ['', [], []],
+                    [
+                        ['t' => 'Str', 'c' => 'Auswirkungen digitaler Medien auf Lernmotivation im Unterricht'],
+                    ],
+                ],
+            ],
+            [
+                't' => 'Header',
+                'c' => [
+                    1,
+                    ['', [], []],
+                    [
+                        ['t' => 'Str', 'c' => 'Inhaltsverzeichnis'],
+                    ],
+                ],
+            ],
+        ],
+    ];
+
+    $result = app(AbaPandocAstNormalizerService::class)->normalizeAst($ast);
+    $first = $result['blocks'][0] ?? [];
+
+    expect($result['ok'] ?? false)->toBeTrue()
+        ->and(in_array('document_title_candidate', $first['problem_tags'] ?? [], true))->toBeTrue()
+        ->and($first['structure_role'] ?? null)->toBe('title_page_heading')
+        ->and($first['is_usable_heading'] ?? true)->toBeFalse();
+});
+
+test('distinguishes toc entry from later real heading with same title', function () {
+    $ast = [
+        'blocks' => [
+            [
+                't' => 'Header',
+                'c' => [1, ['', [], []], [['t' => 'Str', 'c' => 'Inhaltsverzeichnis']]],
+            ],
+            [
+                't' => 'Header',
+                'c' => [1, ['', [], []], [['t' => 'Str', 'c' => '1. Einleitung 5']]],
+            ],
+            [
+                't' => 'Header',
+                'c' => [1, ['', [], []], [['t' => 'Str', 'c' => '1. Einleitung']]],
+            ],
+        ],
+    ];
+
+    $result = app(AbaPandocAstNormalizerService::class)->normalizeAst($ast);
+    $tocHeading = $result['blocks'][1] ?? [];
+    $contentHeading = $result['blocks'][2] ?? [];
+
+    expect($result['ok'] ?? false)->toBeTrue()
+        ->and(in_array('probable_toc_artifact', $tocHeading['problem_tags'] ?? [], true))->toBeTrue()
+        ->and(in_array('toc_duplicate_of_content_heading', $tocHeading['problem_tags'] ?? [], true))->toBeTrue()
+        ->and(in_array('content_heading_repeated_after_toc', $contentHeading['classification']['signals'] ?? [], true))->toBeTrue()
+        ->and($contentHeading['is_usable_heading'] ?? false)->toBeTrue();
+});
+
+test('adds bibliography grouping and subtype for internet sources', function () {
+    $ast = [
+        'blocks' => [
+            [
+                't' => 'Header',
+                'c' => [1, ['', [], []], [['t' => 'Str', 'c' => 'Internetquellenverzeichnis']]],
+            ],
+        ],
+    ];
+
+    $result = app(AbaPandocAstNormalizerService::class)->normalizeAst($ast);
+    $block = $result['blocks'][0] ?? [];
+    $sectionHint = is_array($block['section_hint'] ?? null) ? $block['section_hint'] : [];
+
+    expect($result['ok'] ?? false)->toBeTrue()
+        ->and($sectionHint['section_type'] ?? null)->toBe('bibliography')
+        ->and($sectionHint['group'] ?? null)->toBe('bibliography_area')
+        ->and($sectionHint['subtype'] ?? null)->toBe('internet_sources');
+});
+
 test('returns invalid_ast error when pandoc blocks are missing', function () {
     $result = app(AbaPandocAstNormalizerService::class)->normalizeAst([
         'meta' => [],

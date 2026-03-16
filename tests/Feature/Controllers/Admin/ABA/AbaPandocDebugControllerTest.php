@@ -61,7 +61,7 @@ function createPandocDebugFakePandocBinary(): string
             ."  echo pandoc 3.1.1\r\n"
             ."  exit /b 0\r\n"
             .")\r\n"
-            .'echo {"pandoc-api-version":[1,23,0],"meta":{},"blocks":[{"t":"Header","c":[1,["",[],[]],[{"t":"Str","c":"Literaturverzeichnis"}]]},{"t":"Para","c":[{"t":"Str","c":"Absatz"}]},{"t":"Para","c":[{"t":"Image","c":[["",[],[]],[{"t":"Str","c":"Abbildung 1"}],["media/image1.png",""]]}]}]}'."\r\n"
+            .'echo {"pandoc-api-version":[1,23,0],"meta":{},"blocks":[{"t":"Header","c":[1,["",[],[]],[{"t":"Str","c":"Auswirkungen digitaler Medien auf Lernmotivation im Unterricht"}]]},{"t":"Header","c":[1,["",[],[]],[{"t":"Str","c":"Literaturverzeichnis"}]]},{"t":"Header","c":[1,["",[],[]],[{"t":"Str","c":"1. Einleitung 5"}]]},{"t":"Header","c":[1,["",[],[]],[]]},{"t":"Para","c":[{"t":"Strong","c":[{"t":"Str","c":"Osteoporose: ...3.1.5. Knochendichte"}]}]},{"t":"Para","c":[{"t":"Image","c":[["",[],[]],[{"t":"Str","c":"Abbildung 1"}],["media/image1.png",""]]}]},{"t":"Para","c":[{"t":"Str","c":"Absatz"}]}]}'."\r\n"
             ."exit /b 0\r\n";
     } else {
         $script = "#!/usr/bin/env sh\n"
@@ -69,7 +69,7 @@ function createPandocDebugFakePandocBinary(): string
             ."  echo \"pandoc 3.1.1\"\n"
             ."  exit 0\n"
             ."fi\n"
-            ."echo '{\"pandoc-api-version\":[1,23,0],\"meta\":{},\"blocks\":[{\"t\":\"Header\",\"c\":[1,[\"\",[],[]],[{\"t\":\"Str\",\"c\":\"Literaturverzeichnis\"}]]},{\"t\":\"Para\",\"c\":[{\"t\":\"Str\",\"c\":\"Absatz\"}]},{\"t\":\"Para\",\"c\":[{\"t\":\"Image\",\"c\":[[\"\",[],[]],[{\"t\":\"Str\",\"c\":\"Abbildung 1\"}],[\"media/image1.png\",\"\"]]}]}]}'\n"
+            ."echo '{\"pandoc-api-version\":[1,23,0],\"meta\":{},\"blocks\":[{\"t\":\"Header\",\"c\":[1,[\"\",[],[]],[{\"t\":\"Str\",\"c\":\"Auswirkungen digitaler Medien auf Lernmotivation im Unterricht\"}]]},{\"t\":\"Header\",\"c\":[1,[\"\",[],[]],[{\"t\":\"Str\",\"c\":\"Literaturverzeichnis\"}]]},{\"t\":\"Header\",\"c\":[1,[\"\",[],[]],[{\"t\":\"Str\",\"c\":\"1. Einleitung 5\"}]]},{\"t\":\"Header\",\"c\":[1,[\"\",[],[]],[]]},{\"t\":\"Para\",\"c\":[{\"t\":\"Strong\",\"c\":[{\"t\":\"Str\",\"c\":\"Osteoporose: ...3.1.5. Knochendichte\"}]}]},{\"t\":\"Para\",\"c\":[{\"t\":\"Image\",\"c\":[[\"\",[],[]],[{\"t\":\"Str\",\"c\":\"Abbildung 1\"}],[\"media/image1.png\",\"\"]]}]},{\"t\":\"Para\",\"c\":[{\"t\":\"Str\",\"c\":\"Absatz\"}]}]}'\n"
             ."exit 0\n";
     }
 
@@ -101,10 +101,21 @@ test('admin can run pandoc debug endpoint and receives normalized summary', func
         ])
         ->assertSuccessful()
         ->assertJsonPath('success', true)
-        ->assertJsonPath('summary.normalized_block_count', 3)
-        ->assertJsonPath('summary.heading_count', 1)
+        ->assertJsonPath('summary.normalized_block_count', 7)
+        ->assertJsonPath('summary.heading_count', 5)
         ->assertJsonPath('summary.image_count', 1)
-        ->assertJsonPath('summary.section_hint_count', 1);
+        ->assertJsonPath('summary.section_hint_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
+        ->assertJsonPath('summary.document_title_candidate_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
+        ->assertJsonPath('summary.empty_heading_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
+        ->assertJsonPath('summary.probable_toc_artifact_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
+        ->assertJsonPath('summary.suspicious_heading_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
+        ->assertJsonPath('review.counts.main_sections_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
+        ->assertJsonPath('review.counts.document_title_candidate_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
+        ->assertJsonPath('review.counts.uncertain_heading_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
+        ->assertJsonPath('review.counts.empty_heading_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
+        ->assertJsonPath('review.counts.probable_toc_artifact_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
+        ->assertJsonPath('review.counts.suspicious_heading_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
+        ->assertJsonPath('review.bibliography_groups.0.group_key', fn (mixed $value): bool => is_string($value));
 });
 
 test('register admin cannot access pandoc debug endpoint', function () {
@@ -144,4 +155,17 @@ test('ai settings page links to pandoc debug view', function () {
     expect($content)
         ->toContain('/admin/aba/ai-settings/pandoc-debug')
         ->toContain('DOCX prüfen');
+});
+
+test('pandoc debug page shows condensed review sections for human checks', function () {
+    $content = file_get_contents(resource_path('js/pages/admin/aba/AbaPandocDebug.vue'));
+
+    expect($content)
+        ->toContain('Erkannte Hauptabschnitte')
+        ->toContain('Dokumenttitel-Kandidaten')
+        ->toContain('Quellen-/Verzeichnisbereich')
+        ->toContain('Unsichere Überschriften')
+        ->toContain('Leere Überschriften')
+        ->toContain('Wahrscheinliche Inhaltsverzeichnis-Einträge')
+        ->toContain('Auffällige Überschriftentexte');
 });

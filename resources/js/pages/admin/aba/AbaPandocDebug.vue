@@ -113,6 +113,203 @@
                         <div class="metric-value">{{ summary.uncertain_or_heuristic_count }}</div>
                     </v-sheet>
                 </v-col>
+                <v-col cols="12" md="6" lg="4">
+                    <v-sheet rounded="lg" class="metric-card pa-3">
+                        <div class="metric-label">Dokumenttitel-Kandidaten</div>
+                        <div class="metric-value">{{ summary.document_title_candidate_count }}</div>
+                    </v-sheet>
+                </v-col>
+                <v-col cols="12" md="6" lg="4">
+                    <v-sheet rounded="lg" class="metric-card pa-3">
+                        <div class="metric-label">Leere Überschriften</div>
+                        <div class="metric-value">{{ summary.empty_heading_count }}</div>
+                    </v-sheet>
+                </v-col>
+                <v-col cols="12" md="6" lg="4">
+                    <v-sheet rounded="lg" class="metric-card pa-3">
+                        <div class="metric-label">TOC-Artefakte</div>
+                        <div class="metric-value">{{ summary.probable_toc_artifact_count }}</div>
+                    </v-sheet>
+                </v-col>
+                <v-col cols="12" md="6" lg="4">
+                    <v-sheet rounded="lg" class="metric-card pa-3">
+                        <div class="metric-label">Auffällige Titeltexte</div>
+                        <div class="metric-value">{{ summary.suspicious_heading_count }}</div>
+                    </v-sheet>
+                </v-col>
+            </v-row>
+
+            <v-row class="w-100 ma-0 mb-2" dense>
+                <v-col cols="12" lg="6">
+                    <ItsGridBox class="h-100">
+                        <template #title>
+                            <v-icon size="16" class="mr-1">mdi-file-tree-outline</v-icon>
+                            Erkannte Hauptabschnitte
+                        </template>
+                        <div class="pa-3">
+                            <v-alert v-if="recognizedMainSections.length === 0" type="info" variant="tonal" density="compact" class="text-caption">
+                                Keine klaren Hauptabschnitte erkannt.
+                            </v-alert>
+                            <div v-else class="review-list">
+                                <v-sheet v-for="item in recognizedMainSections" :key="`main-${item.order}-${item.text}`" class="review-item pa-2" rounded="lg">
+                                    <div class="review-item__chips">
+                                        <v-chip size="x-small" color="teal" variant="tonal">{{ item.section_type_label || item.section_type || 'Abschnitt' }}</v-chip>
+                                        <v-chip size="x-small" :color="confidenceColorByValue(item.confidence)" variant="tonal">{{ (item.confidence || 'low').toUpperCase() }}</v-chip>
+                                    </div>
+                                    <div class="review-item__text">{{ reviewItemText(item) }}</div>
+                                </v-sheet>
+                            </div>
+                        </div>
+                    </ItsGridBox>
+                </v-col>
+
+                <v-col cols="12" lg="6">
+                    <ItsGridBox class="h-100">
+                        <template #title>
+                            <v-icon size="16" class="mr-1">mdi-alert-outline</v-icon>
+                            Unsichere Überschriften
+                        </template>
+                        <div class="pa-3">
+                            <v-alert v-if="uncertainHeadings.length === 0" type="success" variant="tonal" density="compact" class="text-caption">
+                                Keine unsicheren Überschriften erkannt.
+                            </v-alert>
+                            <div v-else class="review-list">
+                                <v-sheet v-for="item in uncertainHeadings" :key="`uncertain-${item.order}-${item.text}`" class="review-item pa-2" rounded="lg">
+                                    <div class="review-item__chips">
+                                        <v-chip size="x-small" color="blue" variant="tonal">#{{ item.order }}</v-chip>
+                                        <v-chip size="x-small" :color="confidenceColorByValue(item.confidence)" variant="tonal">{{ (item.confidence || 'low').toUpperCase() }}</v-chip>
+                                        <v-chip size="x-small" color="deep-purple" variant="tonal">{{ item.strategy || 'heuristic' }}</v-chip>
+                                    </div>
+                                    <div class="review-item__text">{{ reviewItemText(item) }}</div>
+                                    <div class="text-caption text-medium-emphasis mt-1">Grund: {{ item.reason || 'kein_signal' }}</div>
+                                </v-sheet>
+                            </div>
+                        </div>
+                    </ItsGridBox>
+                </v-col>
+            </v-row>
+
+            <v-row class="w-100 ma-0 mb-2" dense>
+                <v-col cols="12" lg="6">
+                    <ItsGridBox class="h-100">
+                        <template #title>
+                            <v-icon size="16" class="mr-1">mdi-format-title</v-icon>
+                            Dokumenttitel-Kandidaten
+                        </template>
+                        <div class="pa-3">
+                            <v-alert v-if="documentTitleCandidates.length === 0" type="success" variant="tonal" density="compact" class="text-caption">
+                                Keine auffälligen Dokumenttitel-Kandidaten erkannt.
+                            </v-alert>
+                            <div v-else class="review-list">
+                                <v-sheet v-for="item in documentTitleCandidates" :key="`title-${item.order}-${item.text}`" class="review-item pa-2" rounded="lg">
+                                    <div class="review-item__chips">
+                                        <v-chip size="x-small" color="blue" variant="tonal">#{{ item.order }}</v-chip>
+                                        <v-chip size="x-small" color="amber" variant="tonal">Titelblatt?</v-chip>
+                                        <v-chip size="x-small" :color="confidenceColorByValue(item.confidence)" variant="tonal">{{ (item.confidence || 'low').toUpperCase() }}</v-chip>
+                                    </div>
+                                    <div class="review-item__text">{{ reviewItemText(item) }}</div>
+                                </v-sheet>
+                            </div>
+                        </div>
+                    </ItsGridBox>
+                </v-col>
+                <v-col cols="12" lg="6">
+                    <ItsGridBox class="h-100">
+                        <template #title>
+                            <v-icon size="16" class="mr-1">mdi-bookshelf</v-icon>
+                            Quellen-/Verzeichnisbereich
+                        </template>
+                        <div class="pa-3">
+                            <v-alert v-if="bibliographyGroups.length === 0" type="info" variant="tonal" density="compact" class="text-caption">
+                                Keine gruppierten Quellen-/Verzeichnisbereiche erkannt.
+                            </v-alert>
+                            <div v-else class="review-list">
+                                <v-sheet v-for="group in bibliographyGroups" :key="group.group_key" class="review-item pa-2" rounded="lg">
+                                    <div class="review-item__text mb-1"><strong>{{ group.group_label || group.group_key }}</strong></div>
+                                    <div class="review-item__chips">
+                                        <v-chip
+                                            v-for="subtype in (Array.isArray(group.subtypes) ? group.subtypes : [])"
+                                            :key="`${group.group_key}-${subtype.subtype_key}`"
+                                            size="x-small"
+                                            color="teal"
+                                            variant="tonal">
+                                            {{ subtype.subtype_label || subtype.subtype_key }} ({{ subtype.count || 0 }})
+                                        </v-chip>
+                                    </div>
+                                </v-sheet>
+                            </div>
+                        </div>
+                    </ItsGridBox>
+                </v-col>
+            </v-row>
+
+            <v-row class="w-100 ma-0 mb-2" dense>
+                <v-col cols="12" lg="4">
+                    <ItsGridBox class="h-100">
+                        <template #title>
+                            <v-icon size="16" class="mr-1">mdi-text-box-remove-outline</v-icon>
+                            Leere Überschriften
+                        </template>
+                        <div class="pa-3">
+                            <v-alert v-if="emptyHeadings.length === 0" type="success" variant="tonal" density="compact" class="text-caption">
+                                Keine leeren Überschriften erkannt.
+                            </v-alert>
+                            <div v-else class="review-list">
+                                <v-sheet v-for="item in emptyHeadings" :key="`empty-${item.order}-${item.id}`" class="review-item pa-2" rounded="lg">
+                                    <div class="review-item__chips">
+                                        <v-chip size="x-small" color="blue" variant="tonal">#{{ item.order }}</v-chip>
+                                        <v-chip size="x-small" color="red" variant="tonal">leer</v-chip>
+                                    </div>
+                                    <div class="review-item__text">{{ reviewItemText(item) }}</div>
+                                </v-sheet>
+                            </div>
+                        </div>
+                    </ItsGridBox>
+                </v-col>
+                <v-col cols="12" lg="4">
+                    <ItsGridBox class="h-100">
+                        <template #title>
+                            <v-icon size="16" class="mr-1">mdi-format-list-numbered</v-icon>
+                            Wahrscheinliche Inhaltsverzeichnis-Einträge
+                        </template>
+                        <div class="pa-3">
+                            <v-alert v-if="probableTocArtifacts.length === 0" type="success" variant="tonal" density="compact" class="text-caption">
+                                Keine klaren TOC-Artefakte erkannt.
+                            </v-alert>
+                            <div v-else class="review-list">
+                                <v-sheet v-for="item in probableTocArtifacts" :key="`toc-${item.order}-${item.text}`" class="review-item pa-2" rounded="lg">
+                                    <div class="review-item__chips">
+                                        <v-chip size="x-small" color="blue" variant="tonal">#{{ item.order }}</v-chip>
+                                        <v-chip size="x-small" color="orange" variant="tonal">TOC</v-chip>
+                                    </div>
+                                    <div class="review-item__text">{{ reviewItemText(item) }}</div>
+                                </v-sheet>
+                            </div>
+                        </div>
+                    </ItsGridBox>
+                </v-col>
+                <v-col cols="12" lg="4">
+                    <ItsGridBox class="h-100">
+                        <template #title>
+                            <v-icon size="16" class="mr-1">mdi-alert-decagram-outline</v-icon>
+                            Auffällige Überschriftentexte
+                        </template>
+                        <div class="pa-3">
+                            <v-alert v-if="suspiciousHeadings.length === 0" type="success" variant="tonal" density="compact" class="text-caption">
+                                Keine auffälligen Überschriftentexte erkannt.
+                            </v-alert>
+                            <div v-else class="review-list">
+                                <v-sheet v-for="item in suspiciousHeadings" :key="`suspicious-${item.order}-${item.text}`" class="review-item pa-2" rounded="lg">
+                                    <div class="review-item__chips">
+                                        <v-chip size="x-small" color="blue" variant="tonal">#{{ item.order }}</v-chip>
+                                        <v-chip size="x-small" color="red" variant="tonal">auffällig</v-chip>
+                                    </div>
+                                    <div class="review-item__text">{{ reviewItemText(item) }}</div>
+                                </v-sheet>
+                            </div>
+                        </div>
+                    </ItsGridBox>
+                </v-col>
             </v-row>
 
             <ItsGridBox class="mb-2">
@@ -179,10 +376,25 @@
                                     variant="tonal">
                                     Abschnittshinweis
                                 </v-chip>
+                                <v-chip
+                                    v-for="tag in (Array.isArray(block.problem_tags) ? block.problem_tags : [])"
+                                    :key="`${block.id || block.order}-${tag}`"
+                                    size="x-small"
+                                    color="red"
+                                    variant="tonal">
+                                    {{ problemTagLabel(tag) }}
+                                </v-chip>
+                                <v-chip
+                                    v-if="block.type === 'heading' && block.is_usable_heading === false"
+                                    size="x-small"
+                                    color="warning"
+                                    variant="tonal">
+                                    nicht verwendbar
+                                </v-chip>
                             </div>
 
                             <div class="block-item__text">
-                                {{ snippet(block.plain_text || block.text || '') || 'Kein Textinhalt' }}
+                                {{ block.type === 'heading' && !((block.plain_text || block.text || '').trim()) ? 'Leere Überschrift' : (snippet(block.plain_text || block.text || '') || 'Kein Textinhalt') }}
                             </div>
 
                             <div class="block-item__meta text-caption text-medium-emphasis">
@@ -255,6 +467,10 @@ export default {
                 { key: 'image', label: 'Nur Bilder' },
                 { key: 'section_hint', label: 'Nur Abschnittshinweise' },
                 { key: 'uncertain', label: 'Nur unsicher/heuristisch' },
+                { key: 'document_title', label: 'Nur Titelblatt-Kandidaten' },
+                { key: 'toc_artifact', label: 'Nur TOC-Artefakte' },
+                { key: 'empty_heading', label: 'Nur leere Überschriften' },
+                { key: 'suspicious_heading', label: 'Nur auffällige Titel' },
             ]
         },
 
@@ -265,7 +481,52 @@ export default {
                 image_count: 0,
                 section_hint_count: 0,
                 uncertain_or_heuristic_count: 0,
+                document_title_candidate_count: 0,
+                empty_heading_count: 0,
+                probable_toc_artifact_count: 0,
+                suspicious_heading_count: 0,
             }
+        },
+
+        review() {
+            return this.result?.review ?? {
+                recognized_main_sections: [],
+                document_title_candidates: [],
+                uncertain_headings: [],
+                empty_or_problematic_headings: [],
+                probable_toc_artifacts: [],
+                suspicious_heading_texts: [],
+                bibliography_groups: [],
+                counts: {},
+            }
+        },
+
+        recognizedMainSections() {
+            return Array.isArray(this.review?.recognized_main_sections) ? this.review.recognized_main_sections.slice(0, 20) : []
+        },
+
+        documentTitleCandidates() {
+            return Array.isArray(this.review?.document_title_candidates) ? this.review.document_title_candidates.slice(0, 20) : []
+        },
+
+        bibliographyGroups() {
+            return Array.isArray(this.review?.bibliography_groups) ? this.review.bibliography_groups : []
+        },
+
+        uncertainHeadings() {
+            return Array.isArray(this.review?.uncertain_headings) ? this.review.uncertain_headings.slice(0, 30) : []
+        },
+
+        emptyHeadings() {
+            return Array.isArray(this.review?.empty_or_problematic_headings) ? this.review.empty_or_problematic_headings.slice(0, 30) : []
+        },
+
+        probableTocArtifacts() {
+            return Array.isArray(this.review?.probable_toc_artifacts) ? this.review.probable_toc_artifacts.slice(0, 30) : []
+        },
+
+        suspiciousHeadings() {
+            return Array.isArray(this.review?.suspicious_heading_texts) ? this.review.suspicious_heading_texts.slice(0, 30) : []
         },
 
         allBlocks() {
@@ -297,8 +558,24 @@ export default {
                 return this.allBlocks.filter((block) => {
                     const confidence = block?.classification?.confidence || ''
                     const strategy = block?.classification?.strategy || ''
-                    return confidence === 'low' || strategy === 'heuristic'
+                    return confidence === 'low' || strategy === 'heuristic' || block?.is_usable_heading === false
                 })
+            }
+
+            if (this.activeFilter === 'document_title') {
+                return this.allBlocks.filter((block) => this.blockHasProblemTag(block, 'document_title_candidate'))
+            }
+
+            if (this.activeFilter === 'toc_artifact') {
+                return this.allBlocks.filter((block) => this.blockHasProblemTag(block, 'probable_toc_artifact'))
+            }
+
+            if (this.activeFilter === 'empty_heading') {
+                return this.allBlocks.filter((block) => this.blockHasProblemTag(block, 'empty_heading'))
+            }
+
+            if (this.activeFilter === 'suspicious_heading') {
+                return this.allBlocks.filter((block) => this.blockHasProblemTag(block, 'suspicious_heading_text'))
             }
 
             return this.allBlocks
@@ -379,10 +656,17 @@ export default {
 
             const sectionType = hint?.section_type || 'nicht eindeutig'
             const confidence = hint?.confidence ? ` (${hint.confidence})` : ''
-            return `${sectionType}${confidence}`
+            const subtype = hint?.subtype_label || hint?.subtype || ''
+            const subtypeText = subtype ? ` · ${subtype}` : ''
+            return `${sectionType}${subtypeText}${confidence}`
         },
 
         reasonLabel(block) {
+            const problemTags = Array.isArray(block?.problem_tags) ? block.problem_tags : []
+            if (problemTags.length > 0) {
+                return this.problemTagLabel(problemTags[0])
+            }
+
             const sectionReason = block?.section_hint?.reason
             if (sectionReason) {
                 return sectionReason
@@ -396,8 +680,46 @@ export default {
             return 'Kein Grundsignal'
         },
 
+        blockHasProblemTag(block, tag) {
+            const tags = Array.isArray(block?.problem_tags) ? block.problem_tags : []
+            return tags.includes(tag)
+        },
+
+        problemTagLabel(tag) {
+            if (tag === 'empty_heading') {
+                return 'Leere Überschrift'
+            }
+            if (tag === 'probable_toc_artifact') {
+                return 'Wahrscheinlicher Inhaltsverzeichnis-Eintrag'
+            }
+            if (tag === 'suspicious_heading_text') {
+                return 'Auffälliger Überschriftentext'
+            }
+            if (tag === 'document_title_candidate') {
+                return 'Dokumenttitel-Kandidat'
+            }
+            if (tag === 'toc_duplicate_of_content_heading') {
+                return 'TOC-Duplikat zu Fließtext-Heading'
+            }
+
+            return tag || 'Unbekanntes Problem'
+        },
+
+        reviewItemText(item) {
+            const value = (item?.text || '').trim()
+            if (value !== '') {
+                return this.snippet(value)
+            }
+
+            return 'Leere Überschrift'
+        },
+
         confidenceColor(block) {
             const confidence = block?.classification?.confidence
+            return this.confidenceColorByValue(confidence)
+        },
+
+        confidenceColorByValue(confidence) {
             if (confidence === 'high') {
                 return 'green'
             }
@@ -470,6 +792,29 @@ export default {
     font-size: 1.5rem;
     font-weight: 700;
     color: #f8fafc;
+}
+
+.review-list {
+    display: grid;
+    gap: 8px;
+}
+
+.review-item {
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(30, 41, 59, 0.56);
+}
+
+.review-item__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.review-item__text {
+    color: #e2e8f0;
+    line-height: 1.3;
+    white-space: pre-wrap;
 }
 
 .block-list {

@@ -179,6 +179,16 @@ class AbaAiSettingsController extends Controller
             $blocks = is_array($normalization['blocks'] ?? null)
                 ? array_values($normalization['blocks'])
                 : [];
+            $review = $this->buildPandocDebugReview($blocks);
+            $summary = array_merge(
+                $this->buildPandocDebugSummary($blocks),
+                [
+                    'document_title_candidate_count' => (int) ($review['counts']['document_title_candidate_count'] ?? 0),
+                    'empty_heading_count' => (int) ($review['counts']['empty_heading_count'] ?? 0),
+                    'probable_toc_artifact_count' => (int) ($review['counts']['probable_toc_artifact_count'] ?? 0),
+                    'suspicious_heading_count' => (int) ($review['counts']['suspicious_heading_count'] ?? 0),
+                ]
+            );
 
             return response()->json([
                 'success' => true,
@@ -187,7 +197,8 @@ class AbaAiSettingsController extends Controller
                     'original_name' => $uploadedFile->getClientOriginalName(),
                     'size_bytes' => $uploadedFile->getSize(),
                 ],
-                'summary' => $this->buildPandocDebugSummary($blocks),
+                'summary' => $summary,
+                'review' => $review,
                 'extraction' => [
                     'engine' => $extraction['engine'] ?? 'pandoc',
                     'format' => $extraction['format'] ?? null,
@@ -273,6 +284,223 @@ class AbaAiSettingsController extends Controller
             'section_hint_count' => $sectionHintCount,
             'uncertain_or_heuristic_count' => $uncertainCount,
         ];
+    }
+
+    /**
+     * @param  array<int, array<string,mixed>>  $blocks
+     * @return array{
+     *   recognized_main_sections:array<int, array<string,mixed>>,
+     *   document_title_candidates:array<int, array<string,mixed>>,
+     *   uncertain_headings:array<int, array<string,mixed>>,
+     *   empty_or_problematic_headings:array<int, array<string,mixed>>,
+     *   probable_toc_artifacts:array<int, array<string,mixed>>,
+     *   suspicious_heading_texts:array<int, array<string,mixed>>,
+     *   bibliography_groups:array<int, array<string,mixed>>,
+     *   counts:array<string,int>
+     * }
+     */
+    private function buildPandocDebugReview(array $blocks): array
+    {
+        $recognizedMainSections = [];
+        $recognizedLookup = [];
+        $documentTitleCandidates = [];
+        $uncertainHeadings = [];
+        $emptyHeadings = [];
+        $probableTocArtifacts = [];
+        $suspiciousHeadings = [];
+        $bibliographyGroupAccumulator = [];
+        $mainSectionTypes = [
+            'title_page',
+            'abstract',
+            'foreword',
+            'table_of_contents',
+            'chapter',
+            'bibliography',
+            'figure_index',
+            'consent_declaration',
+        ];
+
+        foreach ($blocks as $block) {
+            if (! is_array($block) || (string) ($block['type'] ?? '') !== 'heading') {
+                continue;
+            }
+
+            $item = $this->toReviewHeadingItem($block);
+            $sectionType = trim((string) ($item['section_type'] ?? ''));
+            $problemTags = is_array($item['problem_tags'] ?? null)
+                ? array_values(array_map('strval', $item['problem_tags']))
+                : [];
+            $confidence = (string) ($item['confidence'] ?? 'low');
+            $strategy = (string) ($item['strategy'] ?? 'heuristic');
+            $isUsable = (bool) ($item['is_usable_heading'] ?? false);
+            $sectionGroup = trim((string) ($item['section_group'] ?? ''));
+            $sectionSubtype = trim((string) ($item['section_subtype'] ?? ''));
+
+            if (
+                $sectionType !== ''
+                && in_array($sectionType, $mainSectionTypes, true)
+                && ! in_array('probable_toc_artifact', $problemTags, true)
+                && ! in_array('document_title_candidate', $problemTags, true)
+                && $isUsable
+                && trim((string) ($item['text'] ?? '')) !== ''
+            ) {
+                $lookupKey = $sectionType.'|'.mb_strtolower((string) ($item['text'] ?? ''));
+                if (! isset($recognizedLookup[$lookupKey])) {
+                    $recognizedLookup[$lookupKey] = true;
+                    $recognizedMainSections[] = $item;
+                }
+            }
+
+            if (
+                in_array($confidence, ['low', 'medium'], true)
+                || $strategy === 'heuristic'
+                || $problemTags !== []
+                || ! $isUsable
+            ) {
+                $uncertainHeadings[] = $item;
+            }
+
+            if (in_array('document_title_candidate', $problemTags, true)) {
+                $documentTitleCandidates[] = $item;
+            }
+
+            if (in_array('empty_heading', $problemTags, true)) {
+                $emptyHeadings[] = $item;
+            }
+
+            if (in_array('probable_toc_artifact', $problemTags, true)) {
+                $probableTocArtifacts[] = $item;
+            }
+
+            if (in_array('suspicious_heading_text', $problemTags, true)) {
+                $suspiciousHeadings[] = $item;
+            }
+
+            if ($sectionGroup !== '') {
+                $groupLabel = trim((string) ($item['section_group_label'] ?? '')) ?: $sectionGroup;
+                $subtypeKey = $sectionSubtype !== '' ? $sectionSubtype : 'general';
+                $subtypeLabel = trim((string) ($item['section_subtype_label'] ?? '')) ?: $subtypeKey;
+
+                if (! isset($bibliographyGroupAccumulator[$sectionGroup])) {
+                    $bibliographyGroupAccumulator[$sectionGroup] = [
+                        'group_key' => $sectionGroup,
+                        'group_label' => $groupLabel,
+                        'subtypes' => [],
+                    ];
+                }
+
+                if (! isset($bibliographyGroupAccumulator[$sectionGroup]['subtypes'][$subtypeKey])) {
+                    $bibliographyGroupAccumulator[$sectionGroup]['subtypes'][$subtypeKey] = [
+                        'subtype_key' => $subtypeKey,
+                        'subtype_label' => $subtypeLabel,
+                        'count' => 0,
+                        'samples' => [],
+                    ];
+                }
+
+                $bibliographyGroupAccumulator[$sectionGroup]['subtypes'][$subtypeKey]['count']++;
+                if (count($bibliographyGroupAccumulator[$sectionGroup]['subtypes'][$subtypeKey]['samples']) < 6) {
+                    $bibliographyGroupAccumulator[$sectionGroup]['subtypes'][$subtypeKey]['samples'][] = $item;
+                }
+            }
+        }
+
+        $recognizedMainSections = array_values(array_slice($recognizedMainSections, 0, 30));
+        $documentTitleCandidates = array_values(array_slice($documentTitleCandidates, 0, 30));
+        $uncertainHeadings = array_values(array_slice($uncertainHeadings, 0, 120));
+        $emptyHeadings = array_values(array_slice($emptyHeadings, 0, 120));
+        $probableTocArtifacts = array_values(array_slice($probableTocArtifacts, 0, 120));
+        $suspiciousHeadings = array_values(array_slice($suspiciousHeadings, 0, 120));
+
+        $bibliographyGroups = [];
+        foreach ($bibliographyGroupAccumulator as $group) {
+            $subtypes = array_values($group['subtypes'] ?? []);
+            usort($subtypes, fn (array $left, array $right): int => ((int) ($right['count'] ?? 0)) <=> ((int) ($left['count'] ?? 0)));
+            $group['subtypes'] = $subtypes;
+            $bibliographyGroups[] = $group;
+        }
+
+        return [
+            'recognized_main_sections' => $recognizedMainSections,
+            'document_title_candidates' => $documentTitleCandidates,
+            'uncertain_headings' => $uncertainHeadings,
+            'empty_or_problematic_headings' => $emptyHeadings,
+            'probable_toc_artifacts' => $probableTocArtifacts,
+            'suspicious_heading_texts' => $suspiciousHeadings,
+            'bibliography_groups' => $bibliographyGroups,
+            'counts' => [
+                'main_sections_count' => count($recognizedMainSections),
+                'document_title_candidate_count' => count($documentTitleCandidates),
+                'uncertain_heading_count' => count($uncertainHeadings),
+                'empty_heading_count' => count($emptyHeadings),
+                'probable_toc_artifact_count' => count($probableTocArtifacts),
+                'suspicious_heading_count' => count($suspiciousHeadings),
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string,mixed>  $block
+     * @return array<string,mixed>
+     */
+    private function toReviewHeadingItem(array $block): array
+    {
+        $classification = is_array($block['classification'] ?? null)
+            ? $block['classification']
+            : [];
+        $signals = is_array($classification['signals'] ?? null)
+            ? array_values(array_map('strval', $classification['signals']))
+            : [];
+        $sectionHint = is_array($block['section_hint'] ?? null)
+            ? $block['section_hint']
+            : null;
+        $sectionType = trim((string) ($sectionHint['section_type'] ?? ''));
+        $text = trim((string) ($block['plain_text'] ?? $block['text'] ?? ''));
+        $problemTags = is_array($block['problem_tags'] ?? null)
+            ? array_values(array_map('strval', $block['problem_tags']))
+            : [];
+
+        return [
+            'id' => $block['id'] ?? null,
+            'order' => (int) ($block['order'] ?? 0),
+            'type' => (string) ($block['type'] ?? 'heading'),
+            'text' => $text,
+            'section_type' => $sectionType !== '' ? $sectionType : null,
+            'section_type_label' => $this->sectionTypeLabel($sectionType),
+            'confidence' => (string) ($classification['confidence'] ?? 'low'),
+            'strategy' => (string) ($classification['strategy'] ?? 'heuristic'),
+            'reason' => (string) (
+                $sectionHint['reason']
+                ?? ($signals[0] ?? 'no_signal')
+            ),
+            'problem_tags' => $problemTags,
+            'problem_notes' => is_array($block['problem_notes'] ?? null)
+                ? array_values(array_map('strval', $block['problem_notes']))
+                : [],
+            'signals' => $signals,
+            'heading_level' => is_numeric($block['heading_level'] ?? null) ? (int) $block['heading_level'] : null,
+            'is_usable_heading' => (bool) ($block['is_usable_heading'] ?? false),
+            'structure_role' => $block['structure_role'] ?? null,
+            'section_group' => $sectionHint['group'] ?? null,
+            'section_group_label' => $sectionHint['group_label'] ?? null,
+            'section_subtype' => $sectionHint['subtype'] ?? null,
+            'section_subtype_label' => $sectionHint['subtype_label'] ?? null,
+        ];
+    }
+
+    private function sectionTypeLabel(string $sectionType): ?string
+    {
+        return match ($sectionType) {
+            'title_page' => 'Titelblatt',
+            'abstract' => 'Abstract',
+            'foreword' => 'Vorwort',
+            'table_of_contents' => 'Inhaltsverzeichnis',
+            'chapter' => 'Kapitel',
+            'bibliography' => 'Literatur-/Quellenverzeichnis',
+            'figure_index' => 'Abbildungsverzeichnis',
+            'consent_declaration' => 'Eigenständigkeitserklärung',
+            default => null,
+        };
     }
 
     private function statusCodeForExtractionError(string $errorType): int
