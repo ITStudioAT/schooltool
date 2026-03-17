@@ -81,6 +81,47 @@ test('detects short strong paragraph as heuristic heading with chapter rule hint
         ->and($block['classification']['strategy'] ?? null)->toBe('heuristic');
 });
 
+test('detects numbered short paragraph as heading candidate', function () {
+    $ast = [
+        'blocks' => [
+            [
+                't' => 'Para',
+                'c' => [
+                    ['t' => 'Str', 'c' => '3.2. Personalisierung und Emotionalisierung von Politik'],
+                ],
+            ],
+        ],
+    ];
+
+    $result = app(AbaPandocAstNormalizerService::class)->normalizeAst($ast);
+    $block = $result['blocks'][0] ?? [];
+
+    expect($result['ok'] ?? false)->toBeTrue()
+        ->and($block['type'] ?? null)->toBe('heading')
+        ->and($block['is_usable_heading'] ?? false)->toBeTrue()
+        ->and(in_array('numbered_heading_paragraph', $block['classification']['signals'] ?? [], true))->toBeTrue();
+});
+
+test('keeps plain year paragraph as paragraph and not heading', function () {
+    $ast = [
+        'blocks' => [
+            [
+                't' => 'Para',
+                'c' => [
+                    ['t' => 'Str', 'c' => '2024 war ein intensives politisches Jahr mit zahlreichen Ereignissen.'],
+                ],
+            ],
+        ],
+    ];
+
+    $result = app(AbaPandocAstNormalizerService::class)->normalizeAst($ast);
+    $block = $result['blocks'][0] ?? [];
+
+    expect($result['ok'] ?? false)->toBeTrue()
+        ->and($block['type'] ?? null)->toBe('paragraph')
+        ->and(($block['is_usable_heading'] ?? null) === null)->toBeTrue();
+});
+
 test('maps image inline paragraph to image block and keeps target metadata', function () {
     $ast = [
         'blocks' => [

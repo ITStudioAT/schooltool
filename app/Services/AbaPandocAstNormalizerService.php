@@ -1544,6 +1544,7 @@ class AbaPandocAstNormalizerService
         $characterCount = mb_strlen($trimmed);
         $isShortLine = $characterCount > 0 && $characterCount <= 140 && $wordCount <= 14;
         $endsLikeSentence = preg_match('/[.!?]\s*$/u', $trimmed) === 1;
+        $numberingContext = $this->numberedHeadingContext($trimmed);
 
         $sectionHint = $this->resolveSectionHint($trimmed, false);
 
@@ -1598,11 +1599,73 @@ class AbaPandocAstNormalizerService
             ];
         }
 
+        if (
+            $numberingContext['is_numbered_heading'] === true
+            && $isShortLine
+            && ! $endsLikeSentence
+            && ((int) ($signals['line_break_count'] ?? 0)) === 0
+        ) {
+            return [
+                'is_heading' => true,
+                'confidence' => 'medium',
+                'signals' => ['numbered_heading_paragraph', 'numbering_depth_'.(string) ($numberingContext['depth'] ?? 1)],
+                'section_hint' => $sectionHint,
+            ];
+        }
+
         return [
             'is_heading' => false,
             'confidence' => 'low',
             'signals' => [],
             'section_hint' => $sectionHint,
+        ];
+    }
+
+    /**
+     * @return array{
+     *   is_numbered_heading:bool,
+     *   depth:int
+     * }
+     */
+    private function numberedHeadingContext(string $text): array
+    {
+        $value = trim($text);
+        if ($value === '') {
+            return [
+                'is_numbered_heading' => false,
+                'depth' => 0,
+            ];
+        }
+
+        if (@preg_match('/^\s*(\d+(?:\.\d+){0,6})([.\)\:]|\s)\s*\S/u', $value, $matches) !== 1) {
+            return [
+                'is_numbered_heading' => false,
+                'depth' => 0,
+            ];
+        }
+
+        $numbering = (string) ($matches[1] ?? '');
+        $delimiter = (string) ($matches[2] ?? '');
+        $hasChapterStyleMarker = str_contains($numbering, '.') || $delimiter === '.';
+
+        if (! $hasChapterStyleMarker) {
+            return [
+                'is_numbered_heading' => false,
+                'depth' => 0,
+            ];
+        }
+
+        $segments = array_values(array_filter(explode('.', $numbering), fn (string $segment): bool => $segment !== ''));
+        if ($segments === []) {
+            return [
+                'is_numbered_heading' => false,
+                'depth' => 0,
+            ];
+        }
+
+        return [
+            'is_numbered_heading' => true,
+            'depth' => count($segments),
         ];
     }
 

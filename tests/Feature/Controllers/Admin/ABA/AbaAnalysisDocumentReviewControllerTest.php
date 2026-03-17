@@ -173,6 +173,8 @@ test('analysis results page includes integrated document review section and endp
         ->toContain('/api/admin/abas/${this.abaId}/analysis/document-review')
         ->toContain('Dokumentprüfung')
         ->toContain('Prüfbericht kopieren')
+        ->toContain('Kapitelvergleich kopieren')
+        ->toContain('AHS-ABA · Kapitelvergleich')
         ->toContain('Pfadvergleich')
         ->toContain('Erkannte Kapitel / Abschnitte (lokal)')
         ->toContain('Erkannte Kapitel / Abschnitte (Pandoc)')

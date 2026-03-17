@@ -408,6 +408,18 @@
                     title="Erkannte Kapitel / Abschnitte (lokal)"
                     subtitle="Lokaler Analysepfad: Hauptkapitel als Collapsables, Unterstruktur innerhalb des Hauptkapitels"
                     icon="mdi-file-document-multiple-outline">
+                    <template #header-actions>
+                        <v-btn
+                            size="x-small"
+                            color="teal"
+                            variant="flat"
+                            :prepend-icon="chapterComparisonCopyButtonIcon"
+                            :loading="copyChapterComparisonLoading"
+                            @click="copyChapterComparisonReport">
+                            {{ chapterComparisonCopyButtonLabel }}
+                        </v-btn>
+                    </template>
+
                     <v-alert v-if="!analysisRun" type="info" variant="tonal" rounded="lg" class="mb-3">
                         Keine Analyseergebnisse vorhanden.
                     </v-alert>
@@ -682,6 +694,8 @@ export default {
             documentReviewError: '',
             copyDocumentReviewLoading: false,
             copyDocumentReviewWasSuccessful: false,
+            copyChapterComparisonLoading: false,
+            copyChapterComparisonWasSuccessful: false,
             pollTimer: null,
             pollInFlight: false,
             openChapterPanels: [],
@@ -1410,6 +1424,20 @@ export default {
 
             return 'Prüfbericht kopieren'
         },
+        chapterComparisonCopyButtonIcon() {
+            if (this.copyChapterComparisonWasSuccessful) {
+                return 'mdi-check'
+            }
+
+            return 'mdi-content-copy'
+        },
+        chapterComparisonCopyButtonLabel() {
+            if (this.copyChapterComparisonWasSuccessful) {
+                return 'Kapitelvergleich kopiert'
+            }
+
+            return 'Kapitelvergleich kopieren'
+        },
         leftColumnVisible() {
             return this.visibleCards.uebersicht
                 || this.visibleCards.erkennungsstatus
@@ -1551,6 +1579,169 @@ export default {
             } finally {
                 this.copyDocumentReviewLoading = false
             }
+        },
+        async copyChapterComparisonReport() {
+            if (this.copyChapterComparisonLoading) {
+                return
+            }
+
+            const report = this.buildChapterComparisonCopyText()
+            if ((report || '').trim() === '') {
+                return
+            }
+
+            this.copyChapterComparisonLoading = true
+            this.copyChapterComparisonWasSuccessful = false
+
+            try {
+                await this.writeTextToClipboard(report)
+                this.copyChapterComparisonWasSuccessful = true
+                window.setTimeout(() => {
+                    this.copyChapterComparisonWasSuccessful = false
+                }, 1800)
+            } catch (_error) {
+                this.copyChapterComparisonWasSuccessful = false
+            } finally {
+                this.copyChapterComparisonLoading = false
+            }
+        },
+        buildChapterComparisonCopyText() {
+            const lines = []
+            const generatedAt = new Date().toLocaleString('de-AT')
+            const documentName = this.mainDocument?.original_name || `ABA #${this.abaId}`
+
+            lines.push('AHS-ABA · Kapitelvergleich')
+            lines.push(`Erstellt: ${generatedAt}`)
+            lines.push(`Dokument: ${documentName}`)
+
+            this.appendLocalChapterComparisonSection(lines)
+            this.appendPandocChapterComparisonSection(lines)
+            this.appendOnlyDetectedChapterSection(lines)
+
+            return lines.join('\n').trim()
+        },
+        appendLocalChapterComparisonSection(lines) {
+            lines.push('')
+            lines.push('Erkannte Kapitel / Abschnitte (lokal)')
+
+            const frontmatter = Array.isArray(this.frontmatterRecords) ? this.frontmatterRecords : []
+            const roots = Array.isArray(this.chapterRootRecords) ? this.chapterRootRecords : []
+            if (frontmatter.length === 0 && roots.length === 0) {
+                lines.push('- Keine Einträge.')
+                return
+            }
+
+            if (frontmatter.length > 0) {
+                lines.push('Sonderbereiche:')
+                frontmatter.slice(0, 30).forEach((record) => {
+                    const title = this.localRecordDisplayTitle(record)
+                    const type = this.localSectionTypeLabel(String(record?.section_type || ''))
+                    const page = this.recordPageLabel(record)
+                    lines.push(`- ${title} [${type}]${page ? ` | ${page}` : ''}`)
+                })
+            }
+
+            if (roots.length > 0) {
+                lines.push('Kapitelbaum:')
+                roots.forEach((record) => {
+                    this.appendLocalRecordTreeLines(lines, record, 0)
+                })
+            }
+        },
+        appendLocalRecordTreeLines(lines, record, depth) {
+            const indent = '  '.repeat(Math.max(0, depth))
+            const title = this.localRecordDisplayTitle(record)
+            const type = this.localSectionTypeLabel(String(record?.section_type || 'chapter'))
+            const page = this.recordPageLabel(record)
+            lines.push(`${indent}- ${title} [${type}]${page ? ` | ${page}` : ''}`)
+
+            this.localSortedChildRecords(record?.id).forEach((child) => {
+                this.appendLocalRecordTreeLines(lines, child, depth + 1)
+            })
+        },
+        localSortedChildRecords(recordId) {
+            const id = Number(recordId || 0)
+            if (!id) {
+                return []
+            }
+
+            const items = Array.isArray(this.childrenByParent[id]) ? [...this.childrenByParent[id]] : []
+            return items.sort((left, right) => this.compareRecordsByPage(left, right))
+        },
+        localRecordDisplayTitle(record) {
+            const title = String(record?.section_title || '').trim()
+            if (title !== '') {
+                return title
+            }
+
+            return this.frontmatterPanelLabel(record)
+        },
+        appendPandocChapterComparisonSection(lines) {
+            lines.push('')
+            lines.push('Erkannte Kapitel / Abschnitte (Pandoc)')
+
+            const specialSections = Array.isArray(this.pandocSpecialSections) ? this.pandocSpecialSections : []
+            const roots = Array.isArray(this.pandocSectionHierarchyRoots) ? this.pandocSectionHierarchyRoots : []
+
+            if (specialSections.length === 0 && roots.length === 0) {
+                lines.push('- Keine Einträge.')
+                return
+            }
+
+            if (specialSections.length > 0) {
+                lines.push('Dokumentzonen / Sonderbereiche:')
+                specialSections.slice(0, 40).forEach((item) => {
+                    const status = this.sectionMatchStatusLabel(this.pandocSectionMatchStatus(item))
+                    lines.push(`- ${item.text} [${item.type_label}] | ${String(item.confidence || 'low').toUpperCase()} | ${item.strategy || 'heuristic'} | ${status}`)
+                })
+            }
+
+            if (roots.length > 0) {
+                lines.push('Kapitelbaum (Hauptteil):')
+                roots.forEach((node) => {
+                    this.appendPandocOutlineNodeLines(lines, node, 0)
+                })
+            }
+        },
+        appendPandocOutlineNodeLines(lines, node, depth) {
+            const indent = '  '.repeat(Math.max(0, depth))
+            const status = this.sectionMatchStatusLabel(this.pandocSectionMatchStatus(node))
+            const confidence = String(node?.confidence || 'low').toUpperCase()
+            const strategy = String(node?.strategy || 'heuristic')
+            const usableFlag = node?.is_usable_heading === false ? ' | unsicher' : ''
+            lines.push(`${indent}- ${node?.text || 'Ohne Titel'} [${node?.type_label || 'Kapitel'}] | ${confidence} | ${strategy} | ${status}${usableFlag}`)
+
+            const children = Array.isArray(node?.children) ? node.children : []
+            children.forEach((child) => {
+                this.appendPandocOutlineNodeLines(lines, child, depth + 1)
+            })
+        },
+        appendOnlyDetectedChapterSection(lines) {
+            const localOnly = this.localSectionComparisonItems
+                .filter((item) => this.localSectionMatchStatus(item) === 'local_only')
+                .slice(0, 30)
+            const pandocOnlyCandidates = [
+                ...(Array.isArray(this.pandocSectionComparisonItems) ? this.pandocSectionComparisonItems : []),
+                ...(Array.isArray(this.pandocSpecialSections) ? this.pandocSpecialSections : []),
+            ]
+            const pandocOnly = pandocOnlyCandidates
+                .filter((item) => this.pandocSectionMatchStatus(item) === 'pandoc_only')
+                .slice(0, 30)
+
+            if (localOnly.length === 0 && pandocOnly.length === 0) {
+                return
+            }
+
+            lines.push('')
+            lines.push('Nur lokal / nur Pandoc erkannt')
+            lines.push(`Nur lokal erkannt: ${localOnly.length}`)
+            localOnly.forEach((item) => {
+                lines.push(`- ${item.text}`)
+            })
+            lines.push(`Nur Pandoc erkannt: ${pandocOnly.length}`)
+            pandocOnly.forEach((item) => {
+                lines.push(`- ${item.text}`)
+            })
         },
         buildDocumentReviewCopyText() {
             const lines = []
