@@ -4455,19 +4455,104 @@ export default {
             append(this.pandocSectionHierarchyRoots)
             return lookup
         },
+        parsePandocTocNumberingEntry(rawLine) {
+            const value = String(rawLine || '').trim()
+            if (value === '') {
+                return null
+            }
+
+            let normalized = value.replace(/^-\s*/u, '').trim()
+            if (normalized === '') {
+                return null
+            }
+
+            normalized = normalized
+                .replace(/\s*[-–—]\s*\d{1,4}\s*$/u, '')
+                .replace(/\s+\d{1,4}\s*$/u, '')
+                .replace(/\s*\.{2,}\s*$/u, '')
+                .trim()
+            if (normalized === '') {
+                return null
+            }
+
+            const numbering = this.extractSectionNumbering(normalized)
+            if (!this.isNumericSectionNumbering(numbering)) {
+                return null
+            }
+
+            const title = normalized
+                .replace(/^(\d+(?:\.\d+){0,8})(?:\.(?=\p{L})|[.):\s]|$)\s*/u, '')
+                .trim()
+            if (title === '') {
+                return null
+            }
+
+            const key = this.sectionCompareKey(title)
+            if (key === '') {
+                return null
+            }
+
+            return {
+                key,
+                numbering: String(numbering || '').trim(),
+            }
+        },
+        pandocTocSectionNumberingLookup() {
+            const lookup = {}
+            const tocSection = (Array.isArray(this.pandocSpecialSections) ? this.pandocSpecialSections : [])
+                .find((item) => this.isPandocTocNode(item)) || null
+            if (!tocSection) {
+                return lookup
+            }
+
+            const outlineLines = this.normalizeProjectionLines(tocSection?.toc_outline_lines, true)
+            const pageIndexLines = this.normalizeProjectionLines(tocSection?.toc_page_index_lines, true)
+            const sourceLines = [...outlineLines, ...pageIndexLines]
+
+            sourceLines.forEach((line) => {
+                const entry = this.parsePandocTocNumberingEntry(line)
+                if (!entry) {
+                    return
+                }
+                if (!lookup[entry.key]) {
+                    lookup[entry.key] = entry.numbering
+                }
+            })
+
+            return lookup
+        },
+        pandocResolvedSectionNumbering(text, explicitNumbering = '') {
+            const direct = String(explicitNumbering || '').trim()
+            if (this.isNumericSectionNumbering(direct)) {
+                return direct
+            }
+
+            const key = this.sectionCompareKey(text)
+            if (key === '') {
+                return ''
+            }
+
+            const mainLookup = this.pandocMainSectionNumberingLookup()
+            const mainNumbering = String(mainLookup?.[key] || '').trim()
+            if (this.isNumericSectionNumbering(mainNumbering)) {
+                return mainNumbering
+            }
+
+            const tocLookup = this.pandocTocSectionNumberingLookup()
+            const tocNumbering = String(tocLookup?.[key] || '').trim()
+            if (this.isNumericSectionNumbering(tocNumbering)) {
+                return tocNumbering
+            }
+
+            return ''
+        },
         pandocNormalizeTocEntryText(text) {
             const value = String(text || '').trim()
             if (value === '' || this.extractSectionNumbering(value) !== '') {
                 return value
             }
 
-            const key = this.sectionCompareKey(value)
-            if (key === '') {
-                return value
-            }
-
-            const lookup = this.pandocMainSectionNumberingLookup()
-            const numbering = String(lookup?.[key] || '').trim()
+            const numbering = this.pandocResolvedSectionNumbering(value)
             if (!this.isNumericSectionNumbering(numbering)) {
                 return value
             }
@@ -4484,7 +4569,8 @@ export default {
                 return baseTitle
             }
 
-            return this.pandocSectionTextWithNumbering(baseTitle, String(node?.numbering || ''))
+            const numbering = this.pandocResolvedSectionNumbering(baseTitle, String(node?.numbering || ''))
+            return this.pandocSectionTextWithNumbering(baseTitle, numbering)
         },
         pandocNodeTitleClasses(node) {
             if (!this.pandocNodeIsMainSection(node)) {
@@ -4505,7 +4591,7 @@ export default {
             const depth = Math.max(0, Math.min(7, Number(line?.depth || 0)))
 
             return {
-                marginLeft: `${depth * 14}px`,
+                marginLeft: `${depth * 18}px`,
             }
         },
         normalizePandocContentLine(rawLine, { tocMode = false } = {}) {
@@ -5232,21 +5318,25 @@ export default {
 }
 
 .review-item__text {
-    font-size: 0.84rem;
+    font-size: 0.86rem;
+    font-weight: 500;
+    line-height: 1.4;
     color: rgba(15, 23, 42, 0.9);
     margin-top: 6px;
 }
 
 .review-item__text--chapter {
-    font-size: 0.98rem;
-    font-weight: 700;
-    color: rgba(15, 23, 42, 0.96);
+    font-size: 1.06rem;
+    font-weight: 800;
+    line-height: 1.35;
+    color: rgba(15, 23, 42, 0.98);
 }
 
 .review-item__text--subchapter {
-    font-size: 0.9rem;
-    font-weight: 650;
-    color: rgba(15, 23, 42, 0.94);
+    font-size: 0.98rem;
+    font-weight: 700;
+    line-height: 1.35;
+    color: rgba(15, 23, 42, 0.96);
 }
 
 .review-item__subtext {
@@ -5275,6 +5365,8 @@ export default {
 .pandoc-content-line__text {
     white-space: normal;
     word-break: break-word;
+    font-size: 0.84rem;
+    line-height: 1.42;
 }
 
 .pandoc-content-line__page {
@@ -5285,13 +5377,21 @@ export default {
 }
 
 .pandoc-content-line--heading .pandoc-content-line__text {
-    font-weight: 700;
-    color: rgba(15, 23, 42, 0.94);
+    font-size: 0.96rem;
+    font-weight: 760;
+    color: rgba(15, 23, 42, 0.96);
 }
 
 .pandoc-content-line--subheading .pandoc-content-line__text {
-    font-weight: 600;
-    color: rgba(15, 23, 42, 0.9);
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: rgba(15, 23, 42, 0.92);
+}
+
+.pandoc-content-line--paragraph .pandoc-content-line__text {
+    font-size: 0.84rem;
+    font-weight: 450;
+    color: rgba(15, 23, 42, 0.84);
 }
 
 .pandoc-content-line--bullet .pandoc-content-line__text::before {

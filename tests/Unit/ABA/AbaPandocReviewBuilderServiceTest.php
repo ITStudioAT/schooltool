@@ -633,11 +633,11 @@ test('builds structured toc content projection from detected main outline', func
     $toc = collect($specialSections)->first(fn (array $item): bool => ($item['special_area_key'] ?? null) === 'toc');
 
     expect($toc)->toBeArray()
-        ->and($toc['content_text'] ?? null)->toContain('1 Kapitel Eins')
+        ->and($toc['content_text'] ?? null)->toContain('1. Kapitel Eins')
         ->and($toc['content_text'] ?? null)->toContain('- 1.1 Unterpunkt A')
         ->and($toc['content_text'] ?? null)->toContain('Fazit')
         ->and($toc['toc_primary_kind'] ?? null)->toBe('outline')
-        ->and($toc['toc_outline_lines'] ?? [])->toContain('1 Kapitel Eins')
+        ->and($toc['toc_outline_lines'] ?? [])->toContain('1. Kapitel Eins')
         ->and($toc['content_text'] ?? null)->not->toContain('1 Kapitel Eins 1 Unterpunkt A');
 });
 
@@ -671,8 +671,8 @@ test('segments merged toc fallback text into readable toc lines', function () {
     $toc = collect($specialSections)->first(fn (array $item): bool => ($item['special_area_key'] ?? null) === 'toc');
 
     expect($toc)->toBeArray()
-        ->and($toc['content_text'] ?? null)->toContain("1 Printmedien 5\n1.1 Rundfunk 8")
-        ->and($toc['content_text'] ?? null)->toContain('2 Kontrolle und Macht 12')
+        ->and($toc['content_text'] ?? null)->toContain("1. Printmedien 5\n1.1 Rundfunk 8")
+        ->and($toc['content_text'] ?? null)->toContain('2. Kontrolle und Macht 12')
         ->and($toc['content_text'] ?? null)->toContain('Fazit 24')
         ->and($toc['toc_primary_kind'] ?? null)->toBe('page_index')
         ->and($toc['toc_page_index_lines'] ?? [])->toContain('1.1 Rundfunk 8')
@@ -744,8 +744,121 @@ test('keeps toc projection preview complete for larger chapter trees', function 
         ->and($toc['toc_primary_kind'] ?? null)->toBe('outline')
         ->and(count($outlineLines))->toBeGreaterThan(20)
         ->and(count($previewLines))->toBeGreaterThan(20)
-        ->and($previewText)->toContain('12 Kapitel Thema 12A')
+        ->and($previewText)->toContain('12. Kapitel Thema 12A')
         ->and($previewText)->toContain('12.2 Unterkapitel Thema 122B');
+});
+
+test('pairs split toc page index lines and enriches outline numbering from page index entries', function () {
+    $service = app(AbaPandocReviewBuilderService::class);
+
+    $blocks = [
+        [
+            'type' => 'heading',
+            'order' => 1,
+            'plain_text' => 'Inhaltsverzeichnis',
+            'heading_level' => 1,
+            'is_usable_heading' => true,
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['section_keyword']],
+            'section_hint' => ['section_type' => 'table_of_contents', 'reason' => 'section_keyword'],
+            'document_zone' => ['zone' => 'table_of_contents', 'label' => 'Inhaltsverzeichnis', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 2,
+            'plain_text' => '1. Einleitung',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'medium', 'strategy' => 'heuristic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'table_of_contents', 'label' => 'Inhaltsverzeichnis', 'confidence' => 'medium'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 3,
+            'plain_text' => '7',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'medium', 'strategy' => 'heuristic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'table_of_contents', 'label' => 'Inhaltsverzeichnis', 'confidence' => 'medium'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 4,
+            'plain_text' => '2. Entwicklung der Fotografie im Kontext sozialer Medien',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'medium', 'strategy' => 'heuristic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'table_of_contents', 'label' => 'Inhaltsverzeichnis', 'confidence' => 'medium'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 5,
+            'plain_text' => '9',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'medium', 'strategy' => 'heuristic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'table_of_contents', 'label' => 'Inhaltsverzeichnis', 'confidence' => 'medium'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 6,
+            'plain_text' => '8. Fazit',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'medium', 'strategy' => 'heuristic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'table_of_contents', 'label' => 'Inhaltsverzeichnis', 'confidence' => 'medium'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 7,
+            'plain_text' => '31',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'medium', 'strategy' => 'heuristic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'table_of_contents', 'label' => 'Inhaltsverzeichnis', 'confidence' => 'medium'],
+        ],
+        [
+            'type' => 'heading',
+            'order' => 8,
+            'plain_text' => 'Einleitung',
+            'heading_level' => 1,
+            'is_usable_heading' => true,
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['section_keyword']],
+            'section_hint' => ['section_type' => 'chapter', 'reason' => 'section_keyword'],
+            'document_zone' => ['zone' => 'main_content', 'label' => 'Hauptteil', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'heading',
+            'order' => 9,
+            'plain_text' => 'Entwicklung der Fotografie im Kontext sozialer Medien',
+            'heading_level' => 1,
+            'is_usable_heading' => true,
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['section_keyword']],
+            'section_hint' => ['section_type' => 'chapter', 'reason' => 'section_keyword'],
+            'document_zone' => ['zone' => 'main_content', 'label' => 'Hauptteil', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'heading',
+            'order' => 10,
+            'plain_text' => 'Fazit',
+            'heading_level' => 1,
+            'is_usable_heading' => true,
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['section_keyword']],
+            'section_hint' => ['section_type' => 'chapter', 'reason' => 'section_keyword'],
+            'document_zone' => ['zone' => 'main_content', 'label' => 'Hauptteil', 'confidence' => 'high'],
+        ],
+    ];
+
+    $review = $service->buildReview($blocks);
+    $specialSections = is_array($review['special_sections'] ?? null) ? $review['special_sections'] : [];
+    $toc = collect($specialSections)->first(fn (array $item): bool => ($item['special_area_key'] ?? null) === 'toc');
+    $outlineLines = is_array($toc['toc_outline_lines'] ?? null) ? $toc['toc_outline_lines'] : [];
+    $pageIndexLines = is_array($toc['toc_page_index_lines'] ?? null) ? $toc['toc_page_index_lines'] : [];
+
+    expect($toc)->toBeArray()
+        ->and($outlineLines)->toContain('1. Einleitung')
+        ->and($outlineLines)->toContain('2. Entwicklung der Fotografie im Kontext sozialer Medien')
+        ->and($outlineLines)->toContain('8. Fazit')
+        ->and($pageIndexLines)->toContain('1. Einleitung 7')
+        ->and($pageIndexLines)->toContain('2. Entwicklung der Fotografie im Kontext sozialer Medien 9')
+        ->and($pageIndexLines)->toContain('8. Fazit 31');
 });
 
 test('segments chapter projection content into list and sentence lines', function () {

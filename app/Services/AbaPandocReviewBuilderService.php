@@ -1782,7 +1782,9 @@ class AbaPandocReviewBuilderService
                 $title = $text;
             }
 
-            $label = $numbering !== '' ? ($numbering.' '.$title) : $title;
+            $label = $numbering !== ''
+                ? ($this->formatTocNumberingForDisplay($numbering).' '.$title)
+                : $title;
             $numberingDepth = is_numeric($item['numbering_depth'] ?? null)
                 ? max(0, (int) ($item['numbering_depth'] ?? 0))
                 : (($numbering !== '') ? count(array_filter(explode('.', $numbering), static fn (string $segment): bool => $segment !== '')) : 0);
@@ -1834,6 +1836,18 @@ class AbaPandocReviewBuilderService
         $fallbackPageIndexLines = is_array($tocSplit['page_index'] ?? null)
             ? array_values(array_map('strval', $tocSplit['page_index']))
             : [];
+
+        $tocNumberingLookup = $this->buildTocNumberingLookup(
+            $mainContentLinear,
+            $outlineLines,
+            $fallbackOutlineLines,
+            $fallbackPageIndexLines
+        );
+        if ($tocNumberingLookup !== []) {
+            $outlineLines = $this->enrichTocLinesWithNumbering($outlineLines, $tocNumberingLookup, false);
+            $fallbackOutlineLines = $this->enrichTocLinesWithNumbering($fallbackOutlineLines, $tocNumberingLookup, false);
+            $fallbackPageIndexLines = $this->enrichTocLinesWithNumbering($fallbackPageIndexLines, $tocNumberingLookup, true);
+        }
 
         if ($outlineLines !== [] && $fallbackOutlineLines !== [] && count($outlineLines) < 24) {
             $outlineLines = $this->mergeTocLines($outlineLines, $fallbackOutlineLines, 160);
@@ -1925,6 +1939,259 @@ class AbaPandocReviewBuilderService
         return $normalized !== '' ? $normalized : $trimmed;
     }
 
+    private function formatTocNumberingForDisplay(string $numbering): string
+    {
+        $normalized = trim($numbering);
+        if ($normalized === '') {
+            return '';
+        }
+
+        if (@preg_match('/^\d+$/u', $normalized) === 1) {
+            return $normalized.'.';
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @param  array<int, array<string,mixed>>  $mainContentLinear
+     * @param  array<int,string>  $outlineLines
+     * @param  array<int,string>  $fallbackOutlineLines
+     * @param  array<int,string>  $pageIndexLines
+     * @return array<string,string>
+     */
+    private function buildTocNumberingLookup(
+        array $mainContentLinear,
+        array $outlineLines,
+        array $fallbackOutlineLines,
+        array $pageIndexLines
+    ): array {
+        $lookup = [];
+
+        foreach ($mainContentLinear as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $numbering = trim((string) ($item['numbering'] ?? ''));
+            if (! $this->isNumericSectionNumbering($numbering)) {
+                continue;
+            }
+
+            $title = trim($this->stripLeadingNumbering((string) ($item['text'] ?? '')));
+            if ($title === '') {
+                continue;
+            }
+
+            $key = $this->sectionCompareKey($title);
+            if ($key === '' || isset($lookup[$key])) {
+                continue;
+            }
+
+            $lookup[$key] = $numbering;
+        }
+
+        $this->collectTocLineNumberingIntoLookup($outlineLines, $lookup, false);
+        $this->collectTocLineNumberingIntoLookup($fallbackOutlineLines, $lookup, false);
+        $this->collectTocLineNumberingIntoLookup($pageIndexLines, $lookup, true);
+
+        return $lookup;
+    }
+
+    /**
+     * @param  array<int,string>  $lines
+     * @param  array<string,string>  $lookup
+     */
+    private function collectTocLineNumberingIntoLookup(array $lines, array &$lookup, bool $pageIndexMode): void
+    {
+        foreach ($lines as $line) {
+            $normalized = trim((string) $line);
+            if ($normalized === '') {
+                continue;
+            }
+
+            $split = $this->splitTocLinePrefix($normalized);
+            $content = trim((string) ($split['content'] ?? ''));
+            if ($content === '') {
+                continue;
+            }
+
+            $title = $content;
+            if ($pageIndexMode) {
+                $pageEntry = $this->parseTocPageIndexEntry($content);
+                if ($pageEntry !== null) {
+                    $title = trim((string) ($pageEntry['title'] ?? ''));
+                }
+            }
+
+            $numbering = $this->extractLeadingNumbering($title);
+            if ($numbering === null || ! $this->isNumericSectionNumbering($numbering)) {
+                continue;
+            }
+
+            $plainTitle = trim($this->stripLeadingNumbering($title));
+            if ($plainTitle === '') {
+                continue;
+            }
+            if (@preg_match('/\p{L}/u', $plainTitle) !== 1) {
+                continue;
+            }
+
+            $key = $this->sectionCompareKey($plainTitle);
+            if ($key === '' || isset($lookup[$key])) {
+                continue;
+            }
+
+            $lookup[$key] = $numbering;
+        }
+    }
+
+    /**
+     * @param  array<int,string>  $lines
+     * @param  array<string,string>  $lookup
+     * @return array<int,string>
+     */
+    private function enrichTocLinesWithNumbering(array $lines, array $lookup, bool $pageIndexMode): array
+    {
+        if ($lines === [] || $lookup === []) {
+            return array_values($lines);
+        }
+
+        $enriched = [];
+
+        foreach ($lines as $line) {
+            $normalized = trim((string) $line);
+            if ($normalized === '') {
+                continue;
+            }
+
+            $split = $this->splitTocLinePrefix($normalized);
+            $prefix = (string) ($split['prefix'] ?? '');
+            $content = trim((string) ($split['content'] ?? ''));
+            if ($content === '') {
+                continue;
+            }
+
+            $title = $content;
+            $page = null;
+            if ($pageIndexMode) {
+                $pageEntry = $this->parseTocPageIndexEntry($content);
+                if ($pageEntry !== null) {
+                    $title = trim((string) ($pageEntry['title'] ?? ''));
+                    $page = trim((string) ($pageEntry['page'] ?? ''));
+                }
+            }
+
+            if ($title === '') {
+                continue;
+            }
+
+            $numbering = $this->extractLeadingNumbering($title);
+            if ($numbering === null || ! $this->isNumericSectionNumbering($numbering)) {
+                $lookupKey = $this->sectionCompareKey($title);
+                $lookupNumbering = $lookupKey !== '' ? trim((string) ($lookup[$lookupKey] ?? '')) : '';
+                if ($this->isNumericSectionNumbering($lookupNumbering)) {
+                    $plainTitle = trim($this->stripLeadingNumbering($title));
+                    if ($plainTitle !== '') {
+                        $title = trim($this->formatTocNumberingForDisplay($lookupNumbering).' '.$plainTitle);
+                    }
+                }
+            } else {
+                $plainTitle = trim($this->stripLeadingNumbering($title));
+                if ($plainTitle !== '') {
+                    $title = trim($this->formatTocNumberingForDisplay($numbering).' '.$plainTitle);
+                }
+            }
+
+            $enriched[] = $page !== null && $page !== ''
+                ? $prefix.$title.' '.$page
+                : $prefix.$title;
+        }
+
+        return array_values($enriched);
+    }
+
+    /**
+     * @return array{prefix:string,content:string}
+     */
+    private function splitTocLinePrefix(string $line): array
+    {
+        if (@preg_match('/^(\s*(?:-\s*)?)(.*)$/u', $line, $matches) !== 1) {
+            return [
+                'prefix' => '',
+                'content' => trim($line),
+            ];
+        }
+
+        return [
+            'prefix' => (string) ($matches[1] ?? ''),
+            'content' => trim((string) ($matches[2] ?? '')),
+        ];
+    }
+
+    private function extractTocPageOnlyNumber(string $text): ?string
+    {
+        $candidate = trim($text);
+        if ($candidate === '') {
+            return null;
+        }
+
+        if (@preg_match('/^(\d{1,4})(?:\.)?$/u', $candidate, $matches) !== 1) {
+            return null;
+        }
+
+        return trim((string) ($matches[1] ?? ''));
+    }
+
+    /**
+     * @return array{title:string,page:string}|null
+     */
+    private function parseTocPageIndexEntry(string $text): ?array
+    {
+        $candidate = trim((string) preg_replace('/\s+/u', ' ', trim($text)));
+        if ($candidate === '' || @preg_match('/\p{L}/u', $candidate) !== 1) {
+            return null;
+        }
+
+        $patterns = [
+            '/^(.*\p{L}.*?)\s*\.{2,}\s*(\d{1,4})\s*$/u',
+            '/^(.*\p{L}.*?)\s*[-–—]\s*(\d{1,4})\s*$/u',
+            '/^(.*\p{L}.*?)\s+(\d{1,4})\s*$/u',
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (@preg_match($pattern, $candidate, $matches) !== 1) {
+                continue;
+            }
+
+            $title = $this->normalizeTocDisplayTitle((string) ($matches[1] ?? ''));
+            $page = trim((string) ($matches[2] ?? ''));
+            if ($title === '' || $page === '') {
+                continue;
+            }
+
+            return [
+                'title' => $title,
+                'page' => $page,
+            ];
+        }
+
+        return null;
+    }
+
+    private function normalizeTocDisplayTitle(string $text): string
+    {
+        $normalized = trim((string) preg_replace('/\s+/u', ' ', trim($text)));
+        if ($normalized === '') {
+            return '';
+        }
+
+        $normalized = preg_replace('/\s*\.{2,}\s*$/u', '', $normalized) ?? $normalized;
+        $normalized = preg_replace('/\s*[-–—]\s*$/u', '', $normalized) ?? $normalized;
+
+        return trim($normalized);
+    }
+
     /**
      * @param  array<int,string>  $lines
      * @return array{outline:array<int,string>,page_index:array<int,string>}
@@ -1934,21 +2201,61 @@ class AbaPandocReviewBuilderService
         $outlineLines = [];
         $pageIndexLines = [];
 
-        foreach ($lines as $line) {
-            $normalized = trim((string) $line);
+        $count = count($lines);
+        for ($index = 0; $index < $count; $index++) {
+            $normalized = trim((string) ($lines[$index] ?? ''));
             if ($normalized === '') {
                 continue;
             }
 
-            $clean = trim((string) preg_replace('/^\-\s*/u', '', $normalized));
-            $hasLetters = @preg_match('/\p{L}/u', $clean) === 1;
-            $hasPageSuffix = @preg_match('/\s+\d{1,4}\s*$/u', $clean) === 1;
-            $hasDottedLeader = @preg_match('/\.{2,}\s*\d{1,4}\s*$/u', $clean) === 1;
-
-            if ($hasLetters && ($hasPageSuffix || $hasDottedLeader)) {
-                $pageIndexLines[] = $normalized;
-
+            $split = $this->splitTocLinePrefix($normalized);
+            $prefix = (string) ($split['prefix'] ?? '');
+            $content = trim((string) ($split['content'] ?? ''));
+            if ($content === '') {
                 continue;
+            }
+
+            $pageOnly = $this->extractTocPageOnlyNumber($content);
+            if ($pageOnly !== null) {
+                continue;
+            }
+
+            $pageEntry = $this->parseTocPageIndexEntry($content);
+            if ($pageEntry !== null) {
+                $title = trim((string) ($pageEntry['title'] ?? ''));
+                $page = trim((string) ($pageEntry['page'] ?? ''));
+                if ($title !== '' && $page !== '') {
+                    $pageIndexLines[] = $prefix.$title.' '.$page;
+
+                    continue;
+                }
+            }
+
+            $nextRaw = trim((string) ($lines[$index + 1] ?? ''));
+            if ($nextRaw !== '') {
+                $nextSplit = $this->splitTocLinePrefix($nextRaw);
+                $nextPage = $this->extractTocPageOnlyNumber((string) ($nextSplit['content'] ?? ''));
+                if ($nextPage !== null && @preg_match('/\p{L}/u', $content) === 1) {
+                    $title = $this->normalizeTocDisplayTitle($content);
+                    if ($title !== '') {
+                        if ($this->extractLeadingNumbering($title) === null && $index > 0) {
+                            $previousRaw = trim((string) ($lines[$index - 1] ?? ''));
+                            $previousSplit = $this->splitTocLinePrefix($previousRaw);
+                            $previousContent = trim((string) ($previousSplit['content'] ?? ''));
+                            if (@preg_match('/^(\d+(?:\.\d+){0,8})\.\s*$/u', $previousContent, $numberingMatches) === 1) {
+                                $previousNumbering = trim((string) ($numberingMatches[1] ?? ''));
+                                if ($this->isNumericSectionNumbering($previousNumbering)) {
+                                    $title = trim($this->formatTocNumberingForDisplay($previousNumbering).' '.$title);
+                                }
+                            }
+                        }
+
+                        $pageIndexLines[] = $prefix.$title.' '.$nextPage;
+                        $index++;
+
+                        continue;
+                    }
+                }
             }
 
             $outlineLines[] = $normalized;
@@ -3316,6 +3623,16 @@ class AbaPandocReviewBuilderService
         $numbering = rtrim($numbering, '.');
 
         return $numbering !== '' ? $numbering : null;
+    }
+
+    private function isNumericSectionNumbering(string $numbering): bool
+    {
+        $normalized = trim($numbering);
+        if ($normalized === '') {
+            return false;
+        }
+
+        return @preg_match('/^\d+(?:\.\d+){0,8}$/u', $normalized) === 1;
     }
 
     /**
