@@ -292,6 +292,7 @@ class AbaPandocAstNormalizerService
             fn (string $tag): ?string => $this->problemNoteForTag($tag),
             $problemTags
         )));
+        $recoveredFromSuspiciousText = false;
 
         $block['problem_tags'] = $problemTags;
         $block['problem_notes'] = $problemNotes;
@@ -307,15 +308,30 @@ class AbaPandocAstNormalizerService
         $confidence = (string) ($classification['confidence'] ?? 'low');
         $strategy = (string) ($classification['strategy'] ?? 'heuristic');
 
+        if (in_array('suspicious_heading_text', $problemTags, true)) {
+            $recoveredHeadingText = $this->extractRecoverableHeadingSegment($text);
+            if ($recoveredHeadingText !== null) {
+                $recoveredFromSuspiciousText = true;
+                $block['text'] = $recoveredHeadingText;
+                $block['plain_text'] = $recoveredHeadingText;
+                $problemNotes[] = 'Verschmutzter Überschriftentext wurde vorsichtig auf den erkennbaren Kapitelteil reduziert.';
+                $signals[] = 'suspicious_heading_salvaged';
+
+                $recoveredHint = $this->resolveSectionHint($recoveredHeadingText, false);
+                if ($recoveredHint !== null) {
+                    $block['section_hint'] = $recoveredHint;
+                }
+            }
+        }
+
         if (in_array('empty_heading', $problemTags, true)) {
             $confidence = 'low';
             $strategy = 'heuristic';
             $signals[] = 'empty_heading';
             $block['is_usable_heading'] = false;
             $block['structure_role'] = 'invalid_heading';
-            if ($text === '') {
-                $block['warnings'][] = 'Leere Überschrift erkannt.';
-            }
+            $block['section_hint'] = null;
+            $block['warnings'][] = 'Leere oder unbrauchbare Überschrift erkannt.';
         }
 
         if (in_array('probable_toc_artifact', $problemTags, true)) {
@@ -331,18 +347,32 @@ class AbaPandocAstNormalizerService
         }
 
         if (in_array('suspicious_heading_text', $problemTags, true)) {
-            if ($confidence === 'high') {
-                $confidence = 'medium';
-            }
             $strategy = 'heuristic';
             $signals[] = 'suspicious_heading_text';
-            if ($confidence !== 'high') {
+
+            if ($recoveredFromSuspiciousText) {
+                if ($confidence === 'low') {
+                    $confidence = 'medium';
+                }
+                if (
+                    ! in_array('empty_heading', $problemTags, true)
+                    && ! in_array('probable_toc_artifact', $problemTags, true)
+                ) {
+                    $block['is_usable_heading'] = true;
+                    $block['structure_role'] = 'content_heading_candidate';
+                }
+                $block['warnings'][] = 'Überschrift enthielt verschmutzte Anteile und wurde vorsichtig bereinigt.';
+            } else {
+                if ($confidence === 'high') {
+                    $confidence = 'medium';
+                }
                 $block['is_usable_heading'] = false;
                 $block['structure_role'] = 'damaged_heading';
+                $block['warnings'][] = 'Überschriftentext wirkt beschädigt oder zusammengeklebt.';
             }
-            $block['warnings'][] = 'Überschriftentext wirkt beschädigt oder zusammengeklebt.';
         }
 
+        $block['problem_notes'] = array_values(array_unique(array_map('strval', $problemNotes)));
         $classification['confidence'] = $confidence;
         $classification['strategy'] = $strategy;
         $classification['signals'] = array_values(array_unique($signals));
@@ -383,6 +413,7 @@ class AbaPandocAstNormalizerService
             $problemTags = is_array($block['problem_tags'] ?? null) ? array_values($block['problem_tags']) : [];
             $sectionType = trim((string) ($block['section_hint']['section_type'] ?? ''));
             $canonical = $this->canonicalizeHeadingText($text);
+            $hasTitleMetadataContext = $this->hasNearbyTitlePageMetadataSignals($blocks, $index);
 
             if (
                 $this->isDocumentTitleCandidate(
@@ -390,7 +421,8 @@ class AbaPandocAstNormalizerService
                     order: $order,
                     sectionType: $sectionType,
                     problemTags: $problemTags,
-                    documentFrontBoundary: $documentFrontBoundary
+                    documentFrontBoundary: $documentFrontBoundary,
+                    hasTitleMetadataContext: $hasTitleMetadataContext
                 )
             ) {
                 $problemTags[] = 'document_title_candidate';
@@ -401,11 +433,11 @@ class AbaPandocAstNormalizerService
                 $block['problem_notes'] = array_values(array_unique(array_map('strval', $problemNotes)));
                 $block['is_usable_heading'] = false;
                 $block['structure_role'] = 'title_page_heading';
-                $block['classification']['confidence'] = 'low';
+                $block['classification']['confidence'] = $hasTitleMetadataContext ? 'medium' : 'low';
                 $block['classification']['strategy'] = 'heuristic';
                 $block['classification']['signals'] = array_values(array_unique(array_merge(
                     is_array($block['classification']['signals'] ?? null) ? array_values($block['classification']['signals']) : [],
-                    ['document_title_candidate']
+                    ['document_title_candidate', $hasTitleMetadataContext ? 'title_page_metadata_context' : 'title_page_position_heuristic']
                 )));
 
                 if (is_array($block['section_hint'] ?? null)) {
@@ -530,6 +562,7 @@ class AbaPandocAstNormalizerService
         $mainContentStart = $this->firstHeadingOrderByCallback(
             $blocks,
             fn (array $block, int $order): bool => $this->isMainContentHeadingCandidate(
+                blocks: $blocks,
                 block: $block,
                 order: $order,
                 tocStart: $tocStart,
@@ -765,18 +798,34 @@ class AbaPandocAstNormalizerService
     /**
      * @param  array<string,mixed>  $block
      */
-    private function isMainContentHeadingCandidate(array $block, int $order, ?int $tocStart, int $documentFrontBoundary): bool
+    private function isMainContentHeadingCandidate(array $blocks, array $block, int $order, ?int $tocStart, int $documentFrontBoundary): bool
     {
         $text = trim((string) ($block['plain_text'] ?? $block['text'] ?? ''));
         if ($text === '') {
             return false;
         }
 
+        $isNumberedHeading = preg_match('/^\s*\d+(?:\.\d+){0,4}\.?\s+\S/u', $text) === 1;
         if ($order <= $documentFrontBoundary) {
-            return false;
+            if (! $isNumberedHeading) {
+                return false;
+            }
+
+            if ($tocStart !== null && $order <= $tocStart + 1) {
+                return false;
+            }
         }
 
         if ($tocStart !== null && $order <= $tocStart) {
+            return false;
+        }
+
+        if (
+            $tocStart !== null
+            && $order <= $tocStart + 20
+            && $this->isLikelyTocClusterEntryText($text)
+            && $this->hasNearbyLikelyTocHeading($blocks, $order, $tocStart)
+        ) {
             return false;
         }
 
@@ -819,11 +868,20 @@ class AbaPandocAstNormalizerService
     private function isBibliographyHeadingCandidate(array $block): bool
     {
         $sectionType = trim((string) ($block['section_hint']['section_type'] ?? ''));
+        if ($sectionType === 'table_of_contents') {
+            return false;
+        }
+
         if (in_array($sectionType, ['bibliography', 'figure_index'], true)) {
             return true;
         }
 
         $sectionGroup = trim((string) ($block['section_hint']['group'] ?? ''));
+        $sectionSubtype = trim((string) ($block['section_hint']['subtype'] ?? ''));
+        if ($sectionSubtype === 'table_of_contents') {
+            return false;
+        }
+
         if (in_array($sectionGroup, ['bibliography_area', 'index_area'], true)) {
             return true;
         }
@@ -927,16 +985,86 @@ class AbaPandocAstNormalizerService
             return false;
         }
 
+        return $this->isLikelyTocHeadingText($value);
+    }
+
+    private function isLikelyTocHeadingText(string $text): bool
+    {
+        $value = trim($text);
+        if ($value === '') {
+            return false;
+        }
+
         if ($this->isProbableTocArtifact($value)) {
             return true;
         }
 
-        if (preg_match('/^\s*\d+(?:\.\d+){0,5}\.?\s+\S/u', $value) === 1) {
+        if (
+            preg_match('/^\s*\d+(?:\.\d+){0,5}\.?\s+[^\n]{2,140}$/u', $value) === 1
+            && preg_match('/[.!?]\s*$/u', $value) !== 1
+        ) {
             return true;
         }
 
-        if ($this->documentRuleService->looksLikeSectionKeyword($value)) {
+        if (
+            $this->documentRuleService->looksLikeSectionKeyword($value)
+            && mb_strlen($value) <= 120
+            && preg_match('/[.!?]\s*$/u', $value) !== 1
+        ) {
             return true;
+        }
+
+        return false;
+    }
+
+    private function isLikelyTocClusterEntryText(string $text): bool
+    {
+        $value = trim($text);
+        if ($value === '') {
+            return false;
+        }
+
+        if ($this->isProbableTocArtifact($value)) {
+            return true;
+        }
+
+        return preg_match('/^\s*\d+(?:\.\d+){0,5}\.?\s+[^\n]{2,140}$/u', $value) === 1
+            && preg_match('/[.!?]\s*$/u', $value) !== 1;
+    }
+
+    /**
+     * @param  array<int, array<string,mixed>>  $blocks
+     */
+    private function hasNearbyLikelyTocHeading(array $blocks, int $order, int $tocStart): bool
+    {
+        if ($order <= $tocStart) {
+            return false;
+        }
+
+        $nextLikelyCount = 0;
+        foreach ($blocks as $candidate) {
+            if (! is_array($candidate) || (string) ($candidate['type'] ?? '') !== 'heading') {
+                continue;
+            }
+
+            $candidateOrder = (int) ($candidate['order'] ?? 0);
+            if ($candidateOrder <= $order || $candidateOrder > $order + 12) {
+                continue;
+            }
+
+            $candidateText = trim((string) ($candidate['plain_text'] ?? $candidate['text'] ?? ''));
+            if ($candidateText === '') {
+                continue;
+            }
+
+            if ($this->isLikelyTocClusterEntryText($candidateText)) {
+                $nextLikelyCount++;
+                if ($nextLikelyCount >= 1) {
+                    return true;
+                }
+            } else {
+                return false;
+            }
         }
 
         return false;
@@ -965,7 +1093,8 @@ class AbaPandocAstNormalizerService
         int $order,
         string $sectionType,
         array $problemTags,
-        int $documentFrontBoundary
+        int $documentFrontBoundary,
+        bool $hasTitleMetadataContext
     ): bool {
         $value = trim($text);
         if ($value === '' || $order <= 0) {
@@ -998,8 +1127,43 @@ class AbaPandocAstNormalizerService
 
         $wordCount = count(array_values(array_filter(preg_split('/\s+/u', $value) ?: [])));
         $length = mb_strlen($value);
+        if ($hasTitleMetadataContext) {
+            return $wordCount >= 3 && $wordCount <= 30 && $length >= 15 && $length <= 220;
+        }
 
-        return $wordCount >= 3 && $wordCount <= 24 && $length >= 20 && $length <= 200;
+        return $wordCount >= 4 && $wordCount <= 24 && $length >= 30 && $length <= 200;
+    }
+
+    /**
+     * @param  array<int, array<string,mixed>>  $blocks
+     */
+    private function hasNearbyTitlePageMetadataSignals(array $blocks, int $index): bool
+    {
+        $start = max(0, $index - 2);
+        $end = min(count($blocks) - 1, $index + 4);
+
+        for ($position = $start; $position <= $end; $position++) {
+            $candidate = $blocks[$position] ?? null;
+            if (! is_array($candidate)) {
+                continue;
+            }
+
+            $candidateText = trim((string) ($candidate['plain_text'] ?? $candidate['text'] ?? ''));
+            if ($candidateText === '') {
+                continue;
+            }
+
+            if (
+                preg_match(
+                    '/\b(ahs|schule|klasse|betreu(?:er|ung)|betreuungsperson|verfasser|verfasserin|autor|autorin|abgabedatum|schuljahr|kandidat|kandidatin)\b/iu',
+                    $candidateText
+                ) === 1
+            ) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function canonicalizeHeadingText(string $text): string
@@ -1025,7 +1189,7 @@ class AbaPandocAstNormalizerService
         $value = trim($text);
         $tags = [];
 
-        if ($value === '' || mb_strlen($value) < 2) {
+        if ($this->isEffectivelyEmptyHeadingText($value)) {
             $tags[] = 'empty_heading';
         }
 
@@ -1038,6 +1202,28 @@ class AbaPandocAstNormalizerService
         }
 
         return array_values(array_unique($tags));
+    }
+
+    private function isEffectivelyEmptyHeadingText(string $text): bool
+    {
+        $value = trim($text);
+        if ($value === '' || mb_strlen($value) < 2) {
+            return true;
+        }
+
+        if (preg_match('/^\s*(kein(?:e[rn]?|en)?\s+text(?:inhalt)?|n\/a|na|none|null)\s*$/iu', $value) === 1) {
+            return true;
+        }
+
+        if (preg_match('/^\s*[\p{P}\p{S}_\-–—~]+\s*$/u', $value) === 1) {
+            return true;
+        }
+
+        if (preg_match('/^\s*\d+(?:\.\d+){0,5}\.?\s*$/u', $value) === 1) {
+            return true;
+        }
+
+        return false;
     }
 
     private function isProbableTocArtifact(string $text): bool
@@ -1099,6 +1285,41 @@ class AbaPandocAstNormalizerService
         }
 
         return false;
+    }
+
+    private function extractRecoverableHeadingSegment(string $text): ?string
+    {
+        $value = trim($text);
+        if ($value === '') {
+            return null;
+        }
+
+        $matches = [];
+        if (
+            preg_match('/(?:\.{2,}|…+)\s*(\d+(?:\.\d+){1,5}\.?\s+[^\n]{2,140})$/u', $value, $matches) === 1
+            || preg_match('/^.{20,}?(\d+(?:\.\d+){1,5}\.?\s+[^\n]{2,140})$/u', $value, $matches) === 1
+        ) {
+            $candidate = $this->normalizeText((string) ($matches[1] ?? ''));
+            if ($candidate === '') {
+                return null;
+            }
+
+            if ($this->isEffectivelyEmptyHeadingText($candidate)) {
+                return null;
+            }
+
+            if ($this->isProbableTocArtifact($candidate)) {
+                return null;
+            }
+
+            if ($this->isSuspiciousHeadingText($candidate)) {
+                return null;
+            }
+
+            return $candidate;
+        }
+
+        return null;
     }
 
     private function problemNoteForTag(string $tag): ?string

@@ -184,6 +184,31 @@ test('marks empty headings as problematic', function () {
         ->and(in_array('empty_heading', $block['problem_tags'] ?? [], true))->toBeTrue();
 });
 
+test('treats placeholder heading text as empty and unusable', function () {
+    $ast = [
+        'blocks' => [
+            [
+                't' => 'Header',
+                'c' => [
+                    1,
+                    ['', [], []],
+                    [
+                        ['t' => 'Str', 'c' => 'Kein Textinhalt'],
+                    ],
+                ],
+            ],
+        ],
+    ];
+
+    $result = app(AbaPandocAstNormalizerService::class)->normalizeAst($ast);
+    $block = $result['blocks'][0] ?? [];
+
+    expect($result['ok'] ?? false)->toBeTrue()
+        ->and(in_array('empty_heading', $block['problem_tags'] ?? [], true))->toBeTrue()
+        ->and($block['is_usable_heading'] ?? true)->toBeFalse()
+        ->and($block['structure_role'] ?? null)->toBe('invalid_heading');
+});
+
 test('marks suspicious heading texts as problematic', function () {
     $ast = [
         'blocks' => [
@@ -202,6 +227,29 @@ test('marks suspicious heading texts as problematic', function () {
     expect($result['ok'] ?? false)->toBeTrue()
         ->and($block['type'] ?? null)->toBe('heading')
         ->and(in_array('suspicious_heading_text', $block['problem_tags'] ?? [], true))->toBeTrue();
+});
+
+test('salvages recoverable chapter tail from suspicious heading text', function () {
+    $ast = [
+        'blocks' => [
+            [
+                't' => 'Para',
+                'c' => [
+                    ['t' => 'Strong', 'c' => [['t' => 'Str', 'c' => 'Archäologische Gesellschaft ...3.2.3. Becken']]],
+                ],
+            ],
+        ],
+    ];
+
+    $result = app(AbaPandocAstNormalizerService::class)->normalizeAst($ast);
+    $block = $result['blocks'][0] ?? [];
+
+    expect($result['ok'] ?? false)->toBeTrue()
+        ->and($block['type'] ?? null)->toBe('heading')
+        ->and($block['plain_text'] ?? null)->toBe('3.2.3. Becken')
+        ->and($block['is_usable_heading'] ?? false)->toBeTrue()
+        ->and(in_array('suspicious_heading_text', $block['problem_tags'] ?? [], true))->toBeTrue()
+        ->and(in_array('suspicious_heading_salvaged', $block['classification']['signals'] ?? [], true))->toBeTrue();
 });
 
 test('marks early document title candidates and makes them unusable as chapter heading', function () {
@@ -242,6 +290,41 @@ test('marks early document title candidates and makes them unusable as chapter h
         ->and($second['document_zone']['zone'] ?? null)->toBe('table_of_contents');
 });
 
+test('stabilizes title candidate confidence when title-page metadata context is nearby', function () {
+    $ast = [
+        'blocks' => [
+            [
+                't' => 'Header',
+                'c' => [
+                    1,
+                    ['', [], []],
+                    [
+                        ['t' => 'Str', 'c' => 'Auswirkungen digitaler Medien auf Lernmotivation im Unterricht'],
+                    ],
+                ],
+            ],
+            [
+                't' => 'Para',
+                'c' => [
+                    ['t' => 'Str', 'c' => 'AHS Mustergymnasium, Betreuer: Max Mustermann'],
+                ],
+            ],
+            [
+                't' => 'Header',
+                'c' => [1, ['', [], []], [['t' => 'Str', 'c' => 'Inhaltsverzeichnis']]],
+            ],
+        ],
+    ];
+
+    $result = app(AbaPandocAstNormalizerService::class)->normalizeAst($ast);
+    $titleHeading = $result['blocks'][0] ?? [];
+
+    expect($result['ok'] ?? false)->toBeTrue()
+        ->and(in_array('document_title_candidate', $titleHeading['problem_tags'] ?? [], true))->toBeTrue()
+        ->and($titleHeading['classification']['confidence'] ?? null)->toBe('medium')
+        ->and(in_array('title_page_metadata_context', $titleHeading['classification']['signals'] ?? [], true))->toBeTrue();
+});
+
 test('distinguishes toc entry from later real heading with same title', function () {
     $ast = [
         'blocks' => [
@@ -271,6 +354,39 @@ test('distinguishes toc entry from later real heading with same title', function
         ->and($contentHeading['is_usable_heading'] ?? false)->toBeTrue()
         ->and($tocHeading['document_zone']['zone'] ?? null)->toBe('table_of_contents')
         ->and($contentHeading['document_zone']['zone'] ?? null)->toBe('main_content');
+});
+
+test('keeps dense toc heading cluster in toc zone before main content heading', function () {
+    $ast = [
+        'blocks' => [
+            [
+                't' => 'Header',
+                'c' => [1, ['', [], []], [['t' => 'Str', 'c' => 'Inhaltsverzeichnis']]],
+            ],
+            [
+                't' => 'Header',
+                'c' => [1, ['', [], []], [['t' => 'Str', 'c' => '1. Einleitung']]],
+            ],
+            [
+                't' => 'Header',
+                'c' => [1, ['', [], []], [['t' => 'Str', 'c' => '2. Hauptteil']]],
+            ],
+            [
+                't' => 'Header',
+                'c' => [1, ['', [], []], [['t' => 'Str', 'c' => '1. Einleitung']]],
+            ],
+        ],
+    ];
+
+    $result = app(AbaPandocAstNormalizerService::class)->normalizeAst($ast);
+    $tocLike = $result['blocks'][1] ?? [];
+    $mainHeading = $result['blocks'][3] ?? [];
+
+    expect($result['ok'] ?? false)->toBeTrue()
+        ->and($tocLike['document_zone']['zone'] ?? null)->toBe('table_of_contents')
+        ->and(in_array('probable_toc_artifact', $tocLike['problem_tags'] ?? [], true))->toBeTrue()
+        ->and($mainHeading['document_zone']['zone'] ?? null)->toBe('main_content')
+        ->and($mainHeading['is_usable_heading'] ?? false)->toBeTrue();
 });
 
 test('adds bibliography grouping and subtype for internet sources', function () {

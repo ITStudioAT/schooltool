@@ -114,12 +114,299 @@
 
             <v-col cols="12" :lg="leftColumnVisible ? 8 : 12">
                 <ItsGridBox
+                    v-if="visibleCards.dokumentpruefung"
+                    class="mb-3"
+                    variant="overview"
+                    color="primary"
+                    title="Dokumentprüfung"
+                    subtitle="Pandoc-Primärpfad und Pfadvergleich im normalen Ergebnisablauf"
+                    icon="mdi-file-search-outline">
+                    <template #header-actions>
+                        <v-btn
+                            size="x-small"
+                            color="primary"
+                            variant="tonal"
+                            prepend-icon="mdi-refresh"
+                            :loading="documentReviewRefreshing"
+                            :disabled="documentReviewLoading || documentReviewRefreshing"
+                            @click="refreshDocumentReview">
+                            Dokumentprüfung aktualisieren
+                        </v-btn>
+                        <v-btn
+                            size="x-small"
+                            color="teal"
+                            variant="flat"
+                            :prepend-icon="documentReviewCopyButtonIcon"
+                            :loading="copyDocumentReviewLoading"
+                            :disabled="!documentReviewAvailable"
+                            @click="copyDocumentReviewReport">
+                            {{ documentReviewCopyButtonLabel }}
+                        </v-btn>
+                    </template>
+
+                    <v-alert type="info" variant="tonal" density="compact" rounded="lg" class="mb-3">
+                        Interne Dokumentprüfung zur Extraktionsqualität, keine Benotung der Schülerarbeit.
+                    </v-alert>
+
+                    <v-progress-linear
+                        v-if="documentReviewLoading || documentReviewRefreshing"
+                        color="primary"
+                        indeterminate
+                        class="mb-3" />
+
+                    <v-alert
+                        v-if="documentReviewError"
+                        type="error"
+                        variant="tonal"
+                        density="compact"
+                        rounded="lg"
+                        class="mb-3">
+                        {{ documentReviewError }}
+                    </v-alert>
+
+                    <v-alert
+                        v-else-if="!documentReviewAvailable"
+                        type="info"
+                        variant="tonal"
+                        density="compact"
+                        rounded="lg"
+                        class="mb-3">
+                        {{ documentReviewMessage }}
+                    </v-alert>
+
+                    <template v-else>
+                        <v-row class="w-100 ma-0 mb-2" dense>
+                            <v-col cols="12" sm="6" md="4">
+                                <v-sheet class="review-item pa-2" rounded="lg">
+                                    <div class="text-caption text-medium-emphasis">Pflichtzonen gesamt</div>
+                                    <div class="text-subtitle-2">{{ Number(documentReviewComparison.summary?.required_zone_count || 0) }}</div>
+                                </v-sheet>
+                            </v-col>
+                            <v-col cols="12" sm="6" md="4">
+                                <v-sheet class="review-item pa-2" rounded="lg">
+                                    <div class="text-caption text-medium-emphasis">Pandoc: Pflicht erkannt</div>
+                                    <div class="text-subtitle-2">{{ Number(documentReviewComparison.summary?.pandoc_required_found || 0) }}</div>
+                                </v-sheet>
+                            </v-col>
+                            <v-col cols="12" sm="6" md="4">
+                                <v-sheet class="review-item pa-2" rounded="lg">
+                                    <div class="text-caption text-medium-emphasis">Pandoc: Pflicht fehlend</div>
+                                    <div class="text-subtitle-2">{{ Number(documentReviewComparison.summary?.pandoc_missing_required_count || 0) }}</div>
+                                </v-sheet>
+                            </v-col>
+                            <v-col cols="12" sm="6" md="4">
+                                <v-sheet class="review-item pa-2" rounded="lg">
+                                    <div class="text-caption text-medium-emphasis">Unsichere Erkennung</div>
+                                    <div class="text-subtitle-2">{{ Number(documentReviewSummary.uncertain_or_heuristic_count || 0) }}</div>
+                                </v-sheet>
+                            </v-col>
+                            <v-col cols="12" sm="6" md="4">
+                                <v-sheet class="review-item pa-2" rounded="lg">
+                                    <div class="text-caption text-medium-emphasis">TOC-Artefakte</div>
+                                    <div class="text-subtitle-2">{{ Number(documentReviewSummary.probable_toc_artifact_count || 0) }}</div>
+                                </v-sheet>
+                            </v-col>
+                            <v-col cols="12" sm="6" md="4">
+                                <v-sheet class="review-item pa-2" rounded="lg">
+                                    <div class="text-caption text-medium-emphasis">Leere/Beschädigte Überschriften</div>
+                                    <div class="text-subtitle-2">
+                                        {{ Number(documentReviewSummary.empty_heading_count || 0) + Number(documentReviewSummary.suspicious_heading_count || 0) }}
+                                    </div>
+                                </v-sheet>
+                            </v-col>
+                        </v-row>
+
+                        <v-row class="w-100 ma-0 mb-2" dense>
+                            <v-col cols="12" md="6">
+                                <v-sheet class="review-item pa-2" rounded="lg">
+                                    <div class="review-item__chips mb-1">
+                                        <v-chip size="x-small" color="blue" variant="tonal">{{ documentReviewLegacyPath.label || 'Lokaler Pfad' }}</v-chip>
+                                        <v-chip size="x-small" :color="comparePathStatusColor(documentReviewLegacyPath)" variant="tonal">{{ comparePathStatusLabel(documentReviewLegacyPath) }}</v-chip>
+                                    </div>
+                                    <div class="text-caption">
+                                        Pflicht erkannt: {{ Number(documentReviewLegacyPath.required_parts_found || 0) }} |
+                                        Fehlend: {{ Array.isArray(documentReviewLegacyPath.missing_required_parts) ? documentReviewLegacyPath.missing_required_parts.length : 0 }} |
+                                        TOC: {{ Number(documentReviewLegacyPath.toc_artifacts || 0) }}
+                                    </div>
+                                </v-sheet>
+                            </v-col>
+                            <v-col cols="12" md="6">
+                                <v-sheet class="review-item pa-2" rounded="lg">
+                                    <div class="review-item__chips mb-1">
+                                        <v-chip size="x-small" color="teal" variant="tonal">{{ documentReviewPandocPath.label || 'Pandoc-Pfad' }}</v-chip>
+                                        <v-chip size="x-small" :color="comparePathStatusColor(documentReviewPandocPath)" variant="tonal">{{ comparePathStatusLabel(documentReviewPandocPath) }}</v-chip>
+                                    </div>
+                                    <div class="text-caption">
+                                        Pflicht erkannt: {{ Number(documentReviewPandocPath.required_parts_found || 0) }} |
+                                        Fehlend: {{ Array.isArray(documentReviewPandocPath.missing_required_parts) ? documentReviewPandocPath.missing_required_parts.length : 0 }} |
+                                        TOC: {{ Number(documentReviewPandocPath.toc_artifacts || 0) }}
+                                    </div>
+                                </v-sheet>
+                            </v-col>
+                        </v-row>
+
+                        <div class="review-list mb-2">
+                            <v-sheet class="review-item pa-2" rounded="lg">
+                                <div class="text-caption text-medium-emphasis mb-1">Fehlende Pflichtbestandteile</div>
+                                <div class="review-item__chips">
+                                    <v-chip size="x-small" color="blue" variant="tonal">Lokal: {{ documentReviewLegacyMissingRequiredLabel }}</v-chip>
+                                    <v-chip size="x-small" color="teal" variant="tonal">Pandoc: {{ documentReviewPandocMissingRequiredLabel }}</v-chip>
+                                </div>
+                            </v-sheet>
+                        </div>
+
+                        <div class="text-caption text-medium-emphasis mb-1">Pflichtzonen im Pfadvergleich</div>
+                        <v-alert v-if="documentReviewComparisonZones.length === 0" type="info" variant="tonal" density="compact" class="text-caption mb-2">
+                            Keine Vergleichszonen verfügbar.
+                        </v-alert>
+                        <div v-else class="review-list mb-2">
+                            <v-sheet v-for="zone in documentReviewComparisonZones.slice(0, 20)" :key="`product-compare-zone-${zone.zone_key}`" class="review-item pa-2" rounded="lg">
+                                <div class="review-item__chips">
+                                    <v-chip size="x-small" color="indigo" variant="tonal">{{ zone.label || zone.zone_key }}</v-chip>
+                                    <v-chip size="x-small" color="grey" variant="outlined">{{ requirementLabel(zone.requirement) }}</v-chip>
+                                    <v-chip size="x-small" :color="compareBoolColor(zone.legacy_local)" variant="tonal">Lokal: {{ compareBoolLabel(zone.legacy_local) }}</v-chip>
+                                    <v-chip size="x-small" :color="compareBoolColor(zone.pandoc)" variant="tonal">Pandoc: {{ compareBoolLabel(zone.pandoc) }}</v-chip>
+                                </div>
+                            </v-sheet>
+                        </div>
+
+                        <v-row class="w-100 ma-0 mb-2" dense>
+                            <v-col cols="12" lg="6">
+                                <div class="text-caption text-medium-emphasis mb-1">Erkannte Kapitel / Abschnitte (lokal)</div>
+                                <v-alert v-if="localSectionComparisonItems.length === 0" type="info" variant="tonal" density="compact" class="text-caption">
+                                    Keine lokalen Kapitel-/Abschnittseinträge erkannt.
+                                </v-alert>
+                                <div v-else class="review-list">
+                                    <v-sheet v-for="item in localSectionComparisonItems" :key="`product-local-section-${item.id}`" class="review-item pa-2" rounded="lg">
+                                        <div class="review-item__chips">
+                                            <v-chip size="x-small" color="blue" variant="tonal">{{ item.type_label }}</v-chip>
+                                            <v-chip
+                                                size="x-small"
+                                                :color="sectionMatchStatusColor(localSectionMatchStatus(item))"
+                                                variant="tonal">
+                                                {{ sectionMatchStatusLabel(localSectionMatchStatus(item)) }}
+                                            </v-chip>
+                                            <v-chip v-if="item.page_label" size="x-small" color="success" variant="tonal">{{ item.page_label }}</v-chip>
+                                        </div>
+                                        <div class="review-item__text">{{ item.text }}</div>
+                                    </v-sheet>
+                                </div>
+                            </v-col>
+                            <v-col cols="12" lg="6">
+                                <div class="text-caption text-medium-emphasis mb-1">Erkannte Kapitel / Abschnitte (Pandoc)</div>
+                                <v-alert v-if="pandocSectionComparisonItems.length === 0" type="info" variant="tonal" density="compact" class="text-caption">
+                                    Keine Pandoc-Kapitel-/Abschnittseinträge erkannt.
+                                </v-alert>
+                                <div v-else class="review-list">
+                                    <v-sheet v-for="item in pandocSectionComparisonItems" :key="`product-pandoc-section-${item.id}`" class="review-item pa-2" rounded="lg">
+                                        <div class="review-item__chips">
+                                            <v-chip size="x-small" color="teal" variant="tonal">{{ item.type_label }}</v-chip>
+                                            <v-chip
+                                                size="x-small"
+                                                :color="sectionMatchStatusColor(pandocSectionMatchStatus(item))"
+                                                variant="tonal">
+                                                {{ sectionMatchStatusLabel(pandocSectionMatchStatus(item)) }}
+                                            </v-chip>
+                                            <v-chip size="x-small" :color="confidenceColorByValue(item.confidence)" variant="tonal">{{ String(item.confidence || 'low').toUpperCase() }}</v-chip>
+                                            <v-chip size="x-small" color="deep-purple" variant="tonal">{{ item.strategy || 'heuristic' }}</v-chip>
+                                        </div>
+                                        <div class="review-item__text">{{ item.text }}</div>
+                                    </v-sheet>
+                                </div>
+                            </v-col>
+                        </v-row>
+
+                        <v-row class="w-100 ma-0 mb-2" dense>
+                            <v-col cols="12" lg="6">
+                                <div class="text-caption text-medium-emphasis mb-1">Unsichere Erkennung</div>
+                                <v-alert v-if="documentReviewUncertainHeadings.length === 0" type="success" variant="tonal" density="compact" class="text-caption">
+                                    Keine unsicheren Überschriften erkannt.
+                                </v-alert>
+                                <div v-else class="review-list">
+                                    <v-sheet v-for="item in documentReviewUncertainHeadings" :key="`product-uncertain-${item.order}-${item.text}`" class="review-item pa-2" rounded="lg">
+                                        <div class="review-item__chips">
+                                            <v-chip size="x-small" color="blue" variant="tonal">#{{ item.order }}</v-chip>
+                                            <v-chip size="x-small" :color="confidenceColorByValue(item.confidence)" variant="tonal">{{ String(item.confidence || 'low').toUpperCase() }}</v-chip>
+                                            <v-chip size="x-small" color="deep-purple" variant="tonal">{{ item.strategy || 'heuristic' }}</v-chip>
+                                        </div>
+                                        <div class="review-item__text">{{ reviewItemText(item) }}</div>
+                                    </v-sheet>
+                                </div>
+                            </v-col>
+                        </v-row>
+
+                        <v-row class="w-100 ma-0 mb-2" dense>
+                            <v-col cols="12" md="4">
+                                <div class="text-caption text-medium-emphasis mb-1">Wahrscheinliche TOC-Artefakte</div>
+                                <v-alert v-if="documentReviewTocArtifacts.length === 0" type="success" variant="tonal" density="compact" class="text-caption">
+                                    Keine TOC-Artefakte erkannt.
+                                </v-alert>
+                                <div v-else class="review-list">
+                                    <v-sheet v-for="item in documentReviewTocArtifacts" :key="`product-toc-${item.order}-${item.text}`" class="review-item pa-2" rounded="lg">
+                                        <div class="review-item__chips">
+                                            <v-chip size="x-small" color="blue" variant="tonal">#{{ item.order }}</v-chip>
+                                            <v-chip size="x-small" color="orange" variant="tonal">TOC</v-chip>
+                                        </div>
+                                        <div class="review-item__text">{{ reviewItemText(item) }}</div>
+                                    </v-sheet>
+                                </div>
+                            </v-col>
+                            <v-col cols="12" md="4">
+                                <div class="text-caption text-medium-emphasis mb-1">Leere Überschriften</div>
+                                <v-alert v-if="documentReviewEmptyHeadings.length === 0" type="success" variant="tonal" density="compact" class="text-caption">
+                                    Keine leeren Überschriften erkannt.
+                                </v-alert>
+                                <div v-else class="review-list">
+                                    <v-sheet v-for="item in documentReviewEmptyHeadings" :key="`product-empty-${item.order}-${item.id}`" class="review-item pa-2" rounded="lg">
+                                        <div class="review-item__chips">
+                                            <v-chip size="x-small" color="blue" variant="tonal">#{{ item.order }}</v-chip>
+                                            <v-chip size="x-small" color="red" variant="tonal">leer</v-chip>
+                                        </div>
+                                        <div class="review-item__text">{{ reviewItemText(item) }}</div>
+                                    </v-sheet>
+                                </div>
+                            </v-col>
+                            <v-col cols="12" md="4">
+                                <div class="text-caption text-medium-emphasis mb-1">Auffällige Überschriftentexte</div>
+                                <v-alert v-if="documentReviewSuspiciousHeadings.length === 0" type="success" variant="tonal" density="compact" class="text-caption">
+                                    Keine auffälligen Überschriftentexte erkannt.
+                                </v-alert>
+                                <div v-else class="review-list">
+                                    <v-sheet v-for="item in documentReviewSuspiciousHeadings" :key="`product-susp-${item.order}-${item.text}`" class="review-item pa-2" rounded="lg">
+                                        <div class="review-item__chips">
+                                            <v-chip size="x-small" color="blue" variant="tonal">#{{ item.order }}</v-chip>
+                                            <v-chip size="x-small" color="red" variant="tonal">auffällig</v-chip>
+                                        </div>
+                                        <div class="review-item__text">{{ reviewItemText(item) }}</div>
+                                    </v-sheet>
+                                </div>
+                            </v-col>
+                        </v-row>
+
+                        <div class="text-caption text-medium-emphasis mb-1">Dokumentzonen / Hauptphasen</div>
+                        <v-alert v-if="documentReviewZoneOverview.length === 0" type="info" variant="tonal" density="compact" class="text-caption">
+                            Keine Zonen erkannt.
+                        </v-alert>
+                        <div v-else class="review-list">
+                            <v-sheet v-for="zone in documentReviewZoneOverview" :key="`product-zone-${zone.zone_key}`" class="review-item pa-2" rounded="lg">
+                                <div class="review-item__chips">
+                                    <v-chip size="x-small" color="indigo" variant="tonal">{{ zone.zone_label || zone.zone_key }}</v-chip>
+                                    <v-chip size="x-small" color="blue" variant="tonal">{{ zone.count || 0 }} Blöcke</v-chip>
+                                    <v-chip size="x-small" color="teal" variant="tonal">{{ zone.heading_count || 0 }} Überschriften</v-chip>
+                                    <v-chip size="x-small" color="grey" variant="outlined">#{{ zone.first_order || '?' }} - #{{ zone.last_order || '?' }}</v-chip>
+                                </div>
+                            </v-sheet>
+                        </div>
+                    </template>
+                </ItsGridBox>
+
+                <ItsGridBox
                     v-if="visibleCards.kapitel"
                     class="results-structure-card"
                     variant="overview"
                     color="primary"
-                    title="Erkannte Kapitel / Abschnitte"
-                    subtitle="Nur Hauptkapitel als Collapsables, Unterstruktur innerhalb des Hauptkapitels"
+                    title="Erkannte Kapitel / Abschnitte (lokal)"
+                    subtitle="Lokaler Analysepfad: Hauptkapitel als Collapsables, Unterstruktur innerhalb des Hauptkapitels"
                     icon="mdi-file-document-multiple-outline">
                     <v-alert v-if="!analysisRun" type="info" variant="tonal" rounded="lg" class="mb-3">
                         Keine Analyseergebnisse vorhanden.
@@ -204,6 +491,134 @@
                         </div>
                     </template>
                 </ItsGridBox>
+
+                <ItsGridBox
+                    v-if="visibleCards.kapitel"
+                    class="results-structure-card mt-3"
+                    variant="overview"
+                    color="primary"
+                    title="Erkannte Kapitel / Abschnitte (Pandoc)"
+                    subtitle="Pandoc-Primärpfad: Hauptabschnitte als Collapsables, Unterstruktur innerhalb des Hauptabschnitts"
+                    icon="mdi-file-search-outline">
+                    <v-progress-linear
+                        v-if="documentReviewLoading || documentReviewRefreshing"
+                        color="primary"
+                        indeterminate
+                        class="mb-3" />
+
+                    <v-alert
+                        v-else-if="!documentReviewAvailable"
+                        type="info"
+                        variant="tonal"
+                        rounded="lg"
+                        class="mb-3">
+                        {{ documentReviewMessage }}
+                    </v-alert>
+
+                    <template v-else>
+                        <div class="text-caption text-medium-emphasis mb-1">Dokumentzonen / Sonderbereiche (Pandoc)</div>
+                        <v-alert v-if="pandocSpecialSections.length === 0" type="info" variant="tonal" density="compact" class="text-caption mb-3">
+                            Keine Sonderbereiche erkannt.
+                        </v-alert>
+                        <div v-else class="review-list mb-3">
+                            <v-sheet v-for="item in pandocSpecialSections" :key="`pandoc-special-${item.id}`" class="review-item pa-2" rounded="lg">
+                                <div class="review-item__chips">
+                                    <v-chip size="x-small" color="indigo" variant="tonal">{{ item.area_label }}</v-chip>
+                                    <v-chip size="x-small" color="teal" variant="tonal">{{ item.type_label }}</v-chip>
+                                    <v-chip size="x-small" :color="sectionMatchStatusColor(pandocSectionMatchStatus(item))" variant="tonal">
+                                        {{ sectionMatchStatusLabel(pandocSectionMatchStatus(item)) }}
+                                    </v-chip>
+                                    <v-chip size="x-small" :color="confidenceColorByValue(item.confidence)" variant="tonal">
+                                        {{ String(item.confidence || 'low').toUpperCase() }}
+                                    </v-chip>
+                                    <v-chip size="x-small" color="deep-purple" variant="tonal">{{ item.strategy || 'heuristic' }}</v-chip>
+                                </div>
+                                <div class="review-item__text">{{ item.text }}</div>
+                            </v-sheet>
+                        </div>
+
+                        <div class="text-caption text-medium-emphasis mb-1">Kapitelbaum (Hauptteil, Pandoc)</div>
+                        <v-alert v-if="pandocSectionHierarchyRoots.length === 0" type="warning" variant="tonal" density="compact" class="text-caption mb-3">
+                            Kein belastbarer Kapitelbaum erkannt. Bitte Sonderbereiche und ausgeklammerte Headings prüfen.
+                        </v-alert>
+
+                        <v-expansion-panels v-else v-model="openPandocSectionPanels" multiple variant="accordion" class="mb-3">
+                            <v-expansion-panel v-for="root in pandocSectionHierarchyRoots" :key="`pandoc-root-${root.id}`" :value="root.id">
+                                <v-expansion-panel-title>
+                                    <div class="chapter-panel-title">
+                                        <div class="chapter-panel-title__main">
+                                            <span>{{ root.text }}</span>
+                                            <v-chip size="x-small" color="teal" variant="tonal">{{ root.type_label }}</v-chip>
+                                            <v-chip size="x-small" :color="sectionMatchStatusColor(pandocSectionMatchStatus(root))" variant="tonal">
+                                                {{ sectionMatchStatusLabel(pandocSectionMatchStatus(root)) }}
+                                            </v-chip>
+                                            <v-chip size="x-small" :color="confidenceColorByValue(root.confidence)" variant="tonal">
+                                                {{ String(root.confidence || 'low').toUpperCase() }}
+                                            </v-chip>
+                                            <v-chip size="x-small" color="deep-purple" variant="tonal">{{ root.strategy || 'heuristic' }}</v-chip>
+                                            <v-chip v-if="!root.is_usable_heading" size="x-small" color="red" variant="tonal">unsicher</v-chip>
+                                            <v-chip size="x-small" color="grey" variant="outlined">{{ pandocHeadingLevelLabel(root.heading_level) }}</v-chip>
+                                        </div>
+                                    </div>
+                                </v-expansion-panel-title>
+                                <v-expansion-panel-text>
+                                    <v-alert
+                                        v-if="pandocDescendantRows(root).length === 0"
+                                        type="info"
+                                        variant="tonal"
+                                        density="compact"
+                                        class="text-caption">
+                                        Keine Unterstruktur erkannt.
+                                    </v-alert>
+
+                                    <div v-else class="review-list">
+                                        <v-sheet
+                                            v-for="child in pandocDescendantRows(root)"
+                                            :key="`pandoc-desc-${root.id}-${child.id}`"
+                                            class="review-item pa-2"
+                                            rounded="lg"
+                                            :style="pandocHierarchyIndentStyle(child.depth)">
+                                            <div class="review-item__chips">
+                                                <v-chip size="x-small" color="teal" variant="tonal">{{ child.type_label }}</v-chip>
+                                                <v-chip size="x-small" color="grey" variant="outlined">{{ pandocHeadingLevelLabel(child.heading_level) }}</v-chip>
+                                                <v-chip size="x-small" :color="sectionMatchStatusColor(pandocSectionMatchStatus(child))" variant="tonal">
+                                                    {{ sectionMatchStatusLabel(pandocSectionMatchStatus(child)) }}
+                                                </v-chip>
+                                                <v-chip size="x-small" :color="confidenceColorByValue(child.confidence)" variant="tonal">
+                                                    {{ String(child.confidence || 'low').toUpperCase() }}
+                                                </v-chip>
+                                                <v-chip size="x-small" color="deep-purple" variant="tonal">{{ child.strategy || 'heuristic' }}</v-chip>
+                                                <v-chip v-if="!child.is_usable_heading" size="x-small" color="red" variant="tonal">unsicher</v-chip>
+                                            </div>
+                                            <div class="review-item__text">{{ child.text }}</div>
+                                        </v-sheet>
+                                    </div>
+                                </v-expansion-panel-text>
+                            </v-expansion-panel>
+                        </v-expansion-panels>
+
+                        <div class="text-caption text-medium-emphasis mb-1">Ausgeklammerte Heading-Signale (Pandoc)</div>
+                        <v-alert v-if="pandocExcludedHeadings.length === 0" type="success" variant="tonal" density="compact" class="text-caption">
+                            Keine ausgeklammerten Heading-Signale.
+                        </v-alert>
+                        <div v-else class="review-list">
+                            <v-sheet
+                                v-for="item in pandocExcludedHeadings.slice(0, 12)"
+                                :key="`pandoc-excluded-${item.id}-${item.order}`"
+                                class="review-item pa-2"
+                                rounded="lg">
+                                <div class="review-item__chips">
+                                    <v-chip size="x-small" color="grey" variant="tonal">ausgeklammert</v-chip>
+                                    <v-chip size="x-small" :color="confidenceColorByValue(item.confidence)" variant="tonal">
+                                        {{ String(item.confidence || 'low').toUpperCase() }}
+                                    </v-chip>
+                                    <v-chip size="x-small" color="deep-purple" variant="tonal">{{ item.strategy || 'heuristic' }}</v-chip>
+                                </div>
+                                <div class="review-item__text">{{ reviewItemText(item) }}</div>
+                            </v-sheet>
+                        </div>
+                    </template>
+                </ItsGridBox>
             </v-col>
         </v-row>
     </v-container>
@@ -256,13 +671,21 @@ export default {
                 erkennungsstatus: true,
                 datensatzstatistik: true,
                 qualitaetsmetriken: true,
+                dokumentpruefung: true,
                 kapitel: true,
             },
             error: '',
             payload: null,
+            documentReviewPayload: null,
+            documentReviewLoading: false,
+            documentReviewRefreshing: false,
+            documentReviewError: '',
+            copyDocumentReviewLoading: false,
+            copyDocumentReviewWasSuccessful: false,
             pollTimer: null,
             pollInFlight: false,
             openChapterPanels: [],
+            openPandocSectionPanels: [],
         }
     },
 
@@ -701,6 +1124,292 @@ export default {
 
             return items
         },
+        documentReview() {
+            return this.documentReviewPayload && typeof this.documentReviewPayload === 'object'
+                ? this.documentReviewPayload
+                : {}
+        },
+        documentReviewAvailable() {
+            return Boolean(this.documentReview.available)
+        },
+        documentReviewMessage() {
+            const value = String(this.documentReview.message || '').trim()
+            if (value !== '') {
+                return value
+            }
+
+            return 'Dokumentprüfung ist aktuell nicht verfügbar.'
+        },
+        documentReviewSummary() {
+            return this.documentReview.summary && typeof this.documentReview.summary === 'object'
+                ? this.documentReview.summary
+                : {
+                    normalized_block_count: 0,
+                    heading_count: 0,
+                    image_count: 0,
+                    section_hint_count: 0,
+                    uncertain_or_heuristic_count: 0,
+                    document_title_candidate_count: 0,
+                    empty_heading_count: 0,
+                    probable_toc_artifact_count: 0,
+                    suspicious_heading_count: 0,
+                    zone_count: 0,
+                }
+        },
+        documentReviewData() {
+            return this.documentReview.review && typeof this.documentReview.review === 'object'
+                ? this.documentReview.review
+                : {}
+        },
+        documentReviewComparison() {
+            return this.documentReview.comparison && typeof this.documentReview.comparison === 'object'
+                ? this.documentReview.comparison
+                : {
+                    paths: {
+                        legacy_local: {},
+                        pandoc: {},
+                        openai_pdf: {},
+                    },
+                    matrix: {
+                        zones: [],
+                    },
+                    summary: {},
+                }
+        },
+        documentReviewLegacyPath() {
+            return this.documentReviewComparison.paths?.legacy_local && typeof this.documentReviewComparison.paths.legacy_local === 'object'
+                ? this.documentReviewComparison.paths.legacy_local
+                : {}
+        },
+        documentReviewPandocPath() {
+            return this.documentReviewComparison.paths?.pandoc && typeof this.documentReviewComparison.paths.pandoc === 'object'
+                ? this.documentReviewComparison.paths.pandoc
+                : {}
+        },
+        documentReviewComparisonZones() {
+            return Array.isArray(this.documentReviewComparison.matrix?.zones)
+                ? this.documentReviewComparison.matrix.zones
+                : []
+        },
+        documentReviewMainSections() {
+            return Array.isArray(this.documentReviewData.recognized_main_sections)
+                ? this.documentReviewData.recognized_main_sections.slice(0, 20)
+                : []
+        },
+        localSectionComparisonItems() {
+            const items = []
+            const seen = new Set()
+
+            this.frontmatterRecords.forEach((record) => {
+                const text = String(this.frontmatterPanelLabel(record) || '').trim()
+                if (text === '') {
+                    return
+                }
+
+                const identifier = `front-${record.id}`
+                if (seen.has(identifier)) {
+                    return
+                }
+                seen.add(identifier)
+
+                items.push({
+                    id: identifier,
+                    text,
+                    type: String(record?.section_type || ''),
+                    type_label: this.localSectionTypeLabel(String(record?.section_type || '')),
+                    page_label: this.recordPageLabel(record),
+                    compare_key: this.sectionCompareKey(text),
+                })
+            })
+
+            this.chapterRootRecords.forEach((record) => {
+                const text = String(record?.section_title || '').trim()
+                if (text === '') {
+                    return
+                }
+
+                const identifier = `chapter-${record.id}`
+                if (seen.has(identifier)) {
+                    return
+                }
+                seen.add(identifier)
+
+                items.push({
+                    id: identifier,
+                    text,
+                    type: String(record?.section_type || 'chapter'),
+                    type_label: 'Kapitel',
+                    page_label: this.recordPageLabel(record),
+                    compare_key: this.sectionCompareKey(text),
+                })
+            })
+
+            return items.slice(0, 40)
+        },
+        pandocOutline() {
+            return this.documentReviewData?.outline && typeof this.documentReviewData.outline === 'object'
+                ? this.documentReviewData.outline
+                : {}
+        },
+        pandocFrontmatterSections() {
+            return Array.isArray(this.pandocOutline.frontmatter_sections)
+                ? this.pandocOutline.frontmatter_sections.slice(0, 40)
+                : []
+        },
+        pandocEndmatterSections() {
+            return Array.isArray(this.pandocOutline.endmatter_sections)
+                ? this.pandocOutline.endmatter_sections.slice(0, 40)
+                : []
+        },
+        pandocExcludedHeadings() {
+            return Array.isArray(this.pandocOutline.excluded_headings)
+                ? this.pandocOutline.excluded_headings.slice(0, 40)
+                : []
+        },
+        pandocSectionComparisonItems() {
+            const linear = Array.isArray(this.pandocOutline.main_content_linear)
+                ? this.pandocOutline.main_content_linear
+                : []
+
+            return linear
+                .map((item, index) => ({
+                    id: item?.id ?? `pandoc-main-${index}-${item?.order || 0}`,
+                    text: String(item?.text || '').trim(),
+                    type: String(item?.section_type || item?.type || ''),
+                    type_label: String(item?.section_type_label || item?.section_type || 'Kapitel'),
+                    confidence: String(item?.confidence || 'low'),
+                    strategy: String(item?.strategy || 'heuristic'),
+                    order: Number(item?.order || (index + 1)),
+                    heading_level: this.normalizePandocHeadingLevel(item?.heading_level ?? item?.outline_level ?? 1),
+                    is_usable_heading: Boolean(item?.is_usable_heading),
+                    problem_tags: Array.isArray(item?.problem_tags) ? item.problem_tags.map((value) => String(value || '')) : [],
+                    compare_key: String(item?.compare_key || this.sectionCompareKey(String(item?.text || ''))),
+                }))
+                .filter((item) => item.text !== '')
+                .sort((left, right) => Number(left.order || 0) - Number(right.order || 0))
+                .slice(0, 40)
+        },
+        pandocSectionHierarchyRoots() {
+            const roots = Array.isArray(this.pandocOutline.main_content_outline)
+                ? this.pandocOutline.main_content_outline
+                : []
+
+            return roots
+                .map((node, index) => this.normalizePandocOutlineNode(node, 0, index))
+                .filter((node) => node !== null)
+                .slice(0, 30)
+        },
+        pandocSpecialSections() {
+            const sections = []
+            this.pandocFrontmatterSections.forEach((item, index) => {
+                sections.push({
+                    id: `front-${item?.id ?? index}`,
+                    area: 'frontmatter',
+                    area_label: 'Frontmatter',
+                    text: String(item?.text || '').trim(),
+                    type_label: String(item?.section_type_label || item?.section_type || 'Abschnitt'),
+                    confidence: String(item?.confidence || 'low'),
+                    strategy: String(item?.strategy || 'heuristic'),
+                    compare_key: String(item?.compare_key || this.sectionCompareKey(String(item?.text || ''))),
+                    problem_tags: Array.isArray(item?.problem_tags) ? item.problem_tags.map((value) => String(value || '')) : [],
+                })
+            })
+            this.pandocEndmatterSections.forEach((item, index) => {
+                sections.push({
+                    id: `end-${item?.id ?? index}`,
+                    area: 'endmatter',
+                    area_label: 'Endmatter',
+                    text: String(item?.text || '').trim(),
+                    type_label: String(item?.section_type_label || item?.section_type || 'Abschnitt'),
+                    confidence: String(item?.confidence || 'low'),
+                    strategy: String(item?.strategy || 'heuristic'),
+                    compare_key: String(item?.compare_key || this.sectionCompareKey(String(item?.text || ''))),
+                    problem_tags: Array.isArray(item?.problem_tags) ? item.problem_tags.map((value) => String(value || '')) : [],
+                })
+            })
+
+            return sections.filter((item) => item.text !== '').slice(0, 60)
+        },
+        localSectionCompareKeySet() {
+            return new Set(
+                this.localSectionComparisonItems
+                    .map((item) => String(item.compare_key || ''))
+                    .filter((value) => value !== '')
+            )
+        },
+        pandocSectionCompareKeySet() {
+            return new Set(
+                this.pandocSectionComparisonItems
+                    .map((item) => String(item.compare_key || ''))
+                    .filter((value) => value !== '')
+            )
+        },
+        documentReviewUncertainHeadings() {
+            return Array.isArray(this.documentReviewData.uncertain_headings)
+                ? this.documentReviewData.uncertain_headings.slice(0, 20)
+                : []
+        },
+        documentReviewEmptyHeadings() {
+            return Array.isArray(this.documentReviewData.empty_or_problematic_headings)
+                ? this.documentReviewData.empty_or_problematic_headings.slice(0, 20)
+                : []
+        },
+        documentReviewTocArtifacts() {
+            return Array.isArray(this.documentReviewData.probable_toc_artifacts)
+                ? this.documentReviewData.probable_toc_artifacts.slice(0, 20)
+                : []
+        },
+        documentReviewSuspiciousHeadings() {
+            return Array.isArray(this.documentReviewData.suspicious_heading_texts)
+                ? this.documentReviewData.suspicious_heading_texts.slice(0, 20)
+                : []
+        },
+        documentReviewZoneOverview() {
+            return Array.isArray(this.documentReviewData.zone_overview)
+                ? this.documentReviewData.zone_overview.slice(0, 20)
+                : []
+        },
+        documentReviewBibliographyGroups() {
+            return Array.isArray(this.documentReviewData.bibliography_groups)
+                ? this.documentReviewData.bibliography_groups.slice(0, 20)
+                : []
+        },
+        documentReviewLegacyMissingRequiredLabel() {
+            const values = Array.isArray(this.documentReviewLegacyPath.missing_required_parts)
+                ? this.documentReviewLegacyPath.missing_required_parts
+                : []
+
+            if (values.length === 0) {
+                return 'keine'
+            }
+
+            return values.join(', ')
+        },
+        documentReviewPandocMissingRequiredLabel() {
+            const values = Array.isArray(this.documentReviewPandocPath.missing_required_parts)
+                ? this.documentReviewPandocPath.missing_required_parts
+                : []
+
+            if (values.length === 0) {
+                return 'keine'
+            }
+
+            return values.join(', ')
+        },
+        documentReviewCopyButtonIcon() {
+            if (this.copyDocumentReviewWasSuccessful) {
+                return 'mdi-check'
+            }
+
+            return 'mdi-content-copy'
+        },
+        documentReviewCopyButtonLabel() {
+            if (this.copyDocumentReviewWasSuccessful) {
+                return 'Prüfbericht kopiert'
+            }
+
+            return 'Prüfbericht kopieren'
+        },
         leftColumnVisible() {
             return this.visibleCards.uebersicht
                 || this.visibleCards.erkennungsstatus
@@ -713,7 +1422,8 @@ export default {
                 { key: 'erkennungsstatus', label: 'Erkennungsstatus' },
                 { key: 'datensatzstatistik', label: 'Datensatzstatistik' },
                 { key: 'qualitaetsmetriken', label: 'Qualitätsmetriken' },
-                { key: 'kapitel', label: 'Erkannte Kapitel / Abschnitte' },
+                { key: 'dokumentpruefung', label: 'Dokumentprüfung' },
+                { key: 'kapitel', label: 'Erkannte Kapitel / Abschnitte (lokal)' },
             ]
         },
         activeSection() {
@@ -768,6 +1478,13 @@ export default {
                     analysis_run: null,
                     sections: [],
                 }
+
+                if (!this.mainDocument) {
+                    this.documentReviewPayload = null
+                    this.documentReviewError = ''
+                } else if (!this.pendingRun) {
+                    await this.loadDocumentReview(true)
+                }
             } catch (error) {
                 this.error = error?.response?.data?.message || 'Analyseergebnisse konnten nicht geladen werden.'
             } finally {
@@ -778,6 +1495,184 @@ export default {
         async refreshNow() {
             this.refreshing = true
             await this.loadResults(true)
+        },
+        async loadDocumentReview(silent = false) {
+            if (this.abaId <= 0 || !this.mainDocument) {
+                this.documentReviewPayload = null
+                this.documentReviewError = ''
+                return
+            }
+
+            if (silent) {
+                this.documentReviewRefreshing = true
+            } else {
+                this.documentReviewLoading = true
+            }
+            this.documentReviewError = ''
+
+            try {
+                const response = await axios.get(`/api/admin/abas/${this.abaId}/analysis/document-review`)
+                this.documentReviewPayload = response?.data?.data || null
+            } catch (error) {
+                this.documentReviewError = error?.response?.data?.message || 'Dokumentprüfung konnte nicht geladen werden.'
+            } finally {
+                this.documentReviewLoading = false
+                this.documentReviewRefreshing = false
+            }
+        },
+        async refreshDocumentReview() {
+            if (this.documentReviewLoading || this.documentReviewRefreshing) {
+                return
+            }
+
+            await this.loadDocumentReview(true)
+        },
+        async copyDocumentReviewReport() {
+            if (!this.documentReviewAvailable || this.copyDocumentReviewLoading) {
+                return
+            }
+
+            const report = this.buildDocumentReviewCopyText()
+            if ((report || '').trim() === '') {
+                return
+            }
+
+            this.copyDocumentReviewLoading = true
+            this.copyDocumentReviewWasSuccessful = false
+
+            try {
+                await this.writeTextToClipboard(report)
+                this.copyDocumentReviewWasSuccessful = true
+                window.setTimeout(() => {
+                    this.copyDocumentReviewWasSuccessful = false
+                }, 1800)
+            } catch (_error) {
+                this.copyDocumentReviewWasSuccessful = false
+            } finally {
+                this.copyDocumentReviewLoading = false
+            }
+        },
+        buildDocumentReviewCopyText() {
+            const lines = []
+            const generatedAt = new Date().toLocaleString('de-AT')
+            const documentName = this.mainDocument?.original_name || `ABA #${this.abaId}`
+
+            lines.push('AHS-ABA · Dokumentprüfung (Ergebnisansicht)')
+            lines.push(`Erstellt: ${generatedAt}`)
+            lines.push(`Dokument: ${documentName}`)
+            lines.push('Hinweis: Vergleich der Dokumentaufbereitung, keine Benotung der Schülerarbeit.')
+            lines.push('')
+            lines.push('Kennzahlen')
+            lines.push(`- Pflichtzonen gesamt: ${Number(this.documentReviewComparison.summary?.required_zone_count || 0)}`)
+            lines.push(`- Pandoc Pflicht erkannt: ${Number(this.documentReviewComparison.summary?.pandoc_required_found || 0)}`)
+            lines.push(`- Pandoc Pflicht fehlend: ${Number(this.documentReviewComparison.summary?.pandoc_missing_required_count || 0)}`)
+            lines.push(`- Unsichere Erkennung: ${Number(this.documentReviewSummary.uncertain_or_heuristic_count || 0)}`)
+            lines.push(`- TOC-Artefakte: ${Number(this.documentReviewSummary.probable_toc_artifact_count || 0)}`)
+            lines.push(`- Leere Überschriften: ${Number(this.documentReviewSummary.empty_heading_count || 0)}`)
+            lines.push(`- Auffällige Überschriftentexte: ${Number(this.documentReviewSummary.suspicious_heading_count || 0)}`)
+
+            this.appendDocumentReviewPathComparisonSection(lines)
+            this.appendDocumentReviewZoneOverviewSection(lines)
+
+            this.appendDocumentReviewHeadingSection(
+                lines,
+                'Erkannte Hauptabschnitte',
+                this.documentReviewMainSections,
+                (item) => `- ${item.section_type_label || item.section_type || 'Abschnitt'} | ${String(item.confidence || 'low').toUpperCase()} | ${this.reviewItemText(item)}`
+            )
+            this.appendDocumentReviewHeadingSection(
+                lines,
+                'Unsichere Überschriften',
+                this.documentReviewUncertainHeadings,
+                (item) => `- #${item.order || '?'} | ${String(item.confidence || 'low').toUpperCase()} | ${item.strategy || 'heuristic'} | ${this.reviewItemText(item)}`
+            )
+            this.appendDocumentReviewHeadingSection(
+                lines,
+                'Wahrscheinliche TOC-Artefakte',
+                this.documentReviewTocArtifacts,
+                (item) => `- #${item.order || '?'} | ${this.reviewItemText(item)}`
+            )
+            this.appendDocumentReviewHeadingSection(
+                lines,
+                'Leere Überschriften',
+                this.documentReviewEmptyHeadings,
+                (item) => `- #${item.order || '?'} | ${this.reviewItemText(item)}`
+            )
+            this.appendDocumentReviewHeadingSection(
+                lines,
+                'Auffällige Überschriftentexte',
+                this.documentReviewSuspiciousHeadings,
+                (item) => `- #${item.order || '?'} | ${this.reviewItemText(item)}`
+            )
+            this.appendDocumentReviewBibliographySection(lines)
+
+            return lines.join('\n').trim()
+        },
+        appendDocumentReviewHeadingSection(lines, title, items, formatter) {
+            lines.push('')
+            lines.push(title)
+
+            const collection = Array.isArray(items) ? items : []
+            if (collection.length === 0) {
+                lines.push('- Keine Einträge.')
+                return
+            }
+
+            collection.slice(0, 40).forEach((item) => {
+                lines.push(formatter(item))
+            })
+        },
+        appendDocumentReviewBibliographySection(lines) {
+            lines.push('')
+            lines.push('Quellen-/Verzeichnisbereich')
+
+            if (!Array.isArray(this.documentReviewBibliographyGroups) || this.documentReviewBibliographyGroups.length === 0) {
+                lines.push('- Keine gruppierten Bereiche erkannt.')
+                return
+            }
+
+            this.documentReviewBibliographyGroups.forEach((group) => {
+                lines.push(`- ${group.group_label || group.group_key || 'Bereich'}`)
+                const subtypes = Array.isArray(group.subtypes) ? group.subtypes : []
+                if (subtypes.length === 0) {
+                    lines.push('  - Keine Untertypen erkannt.')
+                    return
+                }
+
+                subtypes.slice(0, 20).forEach((subtype) => {
+                    lines.push(`  - ${subtype.subtype_label || subtype.subtype_key || 'Untertyp'}: ${Number(subtype.count || 0)}`)
+                })
+            })
+        },
+        appendDocumentReviewZoneOverviewSection(lines) {
+            lines.push('')
+            lines.push('Dokumentzonen / Hauptphasen')
+
+            if (!Array.isArray(this.documentReviewZoneOverview) || this.documentReviewZoneOverview.length === 0) {
+                lines.push('- Keine Zonen erkannt.')
+                return
+            }
+
+            this.documentReviewZoneOverview.forEach((zone) => {
+                lines.push(`- ${zone.zone_label || zone.zone_key || 'Zone'}: ${Number(zone.count || 0)} Blöcke, ${Number(zone.heading_count || 0)} Überschriften`)
+            })
+        },
+        appendDocumentReviewPathComparisonSection(lines) {
+            lines.push('')
+            lines.push('Pfadvergleich (lokal vs. Pandoc)')
+            lines.push(`- Lokal: ${this.comparePathStatusLabel(this.documentReviewLegacyPath)}`)
+            lines.push(`- Pandoc: ${this.comparePathStatusLabel(this.documentReviewPandocPath)}`)
+            lines.push(`- Fehlende Pflichtbestandteile (Lokal): ${this.documentReviewLegacyMissingRequiredLabel}`)
+            lines.push(`- Fehlende Pflichtbestandteile (Pandoc): ${this.documentReviewPandocMissingRequiredLabel}`)
+
+            if (!Array.isArray(this.documentReviewComparisonZones) || this.documentReviewComparisonZones.length === 0) {
+                lines.push('- Keine Zonenmatrix verfügbar.')
+                return
+            }
+
+            this.documentReviewComparisonZones.slice(0, 30).forEach((zone) => {
+                lines.push(`- ${zone.label || zone.zone_key || 'Zone'} [${this.requirementLabel(zone.requirement)}] -> Lokal: ${this.compareBoolLabel(Boolean(zone.legacy_local))}, Pandoc: ${this.compareBoolLabel(Boolean(zone.pandoc))}`)
+            })
         },
         toggleCard(key) {
             this.visibleCards[key] = !this.visibleCards[key]
@@ -1104,6 +1999,251 @@ export default {
 
             return 'Datensatz'
         },
+        localSectionTypeLabel(sectionType) {
+            if (sectionType === 'title_page') {
+                return 'Titelblatt'
+            }
+            if (sectionType === 'abstract') {
+                return 'Abstract'
+            }
+            if (sectionType === 'table_of_contents') {
+                return 'Inhaltsverzeichnis'
+            }
+            if (sectionType === 'bibliography') {
+                return 'Literaturverzeichnis'
+            }
+            if (sectionType === 'figure_index') {
+                return 'Abbildungsverzeichnis'
+            }
+            if (sectionType === 'consent_declaration') {
+                return 'Eigenständigkeitserklärung'
+            }
+            if (sectionType === 'foreword') {
+                return 'Vorwort'
+            }
+            if (sectionType === 'chapter') {
+                return 'Kapitel'
+            }
+
+            return sectionType || 'Abschnitt'
+        },
+        sectionCompareKey(text) {
+            const raw = String(text || '').trim().toLowerCase()
+            if (raw === '') {
+                return ''
+            }
+
+            const withoutLeadingNumbering = raw.replace(/^\d+(?:[.\d]*)\s*/u, '')
+            const withoutTrailingPage = withoutLeadingNumbering.replace(/\s+\d{1,4}$/u, '')
+            const withoutPunctuation = withoutTrailingPage.replace(/[^\p{L}\p{N}\s]/gu, ' ')
+
+            return withoutPunctuation.replace(/\s+/gu, ' ').trim()
+        },
+        localSectionMatchStatus(item) {
+            const key = String(item?.compare_key || '')
+            if (key === '') {
+                return 'local_only'
+            }
+
+            if (this.pandocSectionCompareKeySet.has(key)) {
+                return 'both'
+            }
+
+            return 'local_only'
+        },
+        pandocSectionMatchStatus(item) {
+            const key = String(item?.compare_key || '')
+            if (key === '') {
+                return 'pandoc_only'
+            }
+
+            if (this.localSectionCompareKeySet.has(key)) {
+                return 'both'
+            }
+
+            return 'pandoc_only'
+        },
+        sectionMatchStatusLabel(status) {
+            if (status === 'both') {
+                return 'beide'
+            }
+            if (status === 'pandoc_only') {
+                return 'nur Pandoc'
+            }
+
+            return 'nur lokal'
+        },
+        sectionMatchStatusColor(status) {
+            if (status === 'both') {
+                return 'success'
+            }
+            if (status === 'pandoc_only') {
+                return 'teal'
+            }
+
+            return 'orange'
+        },
+        normalizePandocHeadingLevel(value) {
+            const numeric = Number(value)
+            if (!Number.isFinite(numeric) || numeric <= 0) {
+                return 1
+            }
+
+            return Math.min(9, Math.max(1, Math.round(numeric)))
+        },
+        normalizePandocOutlineNode(node, depth = 0, fallbackIndex = 0) {
+            if (!node || typeof node !== 'object') {
+                return null
+            }
+
+            const text = String(node.text || '').trim()
+            if (text === '') {
+                return null
+            }
+
+            const id = node.id ?? `pandoc-outline-${fallbackIndex}-${node.order || 0}`
+            const normalized = {
+                id,
+                text,
+                type: String(node.section_type || node.type || ''),
+                type_label: String(node.section_type_label || node.section_type || 'Kapitel'),
+                confidence: String(node.confidence || 'low'),
+                strategy: String(node.strategy || 'heuristic'),
+                order: Number(node.order || 0),
+                heading_level: this.normalizePandocHeadingLevel(node.heading_level ?? node.outline_level ?? 1),
+                outline_level: this.normalizePandocHeadingLevel(node.outline_level ?? node.heading_level ?? 1),
+                is_usable_heading: Boolean(node.is_usable_heading),
+                problem_tags: Array.isArray(node.problem_tags) ? node.problem_tags.map((value) => String(value || '')) : [],
+                compare_key: String(node.compare_key || this.sectionCompareKey(text)),
+                depth,
+                children: [],
+            }
+
+            const children = Array.isArray(node.children) ? node.children : []
+            normalized.children = children
+                .map((child, index) => this.normalizePandocOutlineNode(child, depth + 1, index))
+                .filter((child) => child !== null)
+
+            return normalized
+        },
+        pandocDescendantRows(rootNode) {
+            const rows = []
+            const append = (nodes, depth) => {
+                if (!Array.isArray(nodes) || nodes.length === 0) {
+                    return
+                }
+
+                nodes.forEach((node) => {
+                    rows.push({
+                        ...node,
+                        depth,
+                    })
+                    append(node.children, depth + 1)
+                })
+            }
+
+            append(rootNode?.children, 1)
+
+            return rows
+        },
+        pandocHierarchyIndentStyle(depth) {
+            const safeDepth = Math.max(0, Math.min(6, Number(depth || 0)))
+
+            return {
+                marginLeft: `${safeDepth * 14}px`,
+            }
+        },
+        pandocHeadingLevelLabel(level) {
+            const normalized = this.normalizePandocHeadingLevel(level)
+            return `H${normalized}`
+        },
+        async writeTextToClipboard(text) {
+            if (navigator?.clipboard?.writeText) {
+                await navigator.clipboard.writeText(text)
+                return
+            }
+
+            const textarea = document.createElement('textarea')
+            textarea.value = text
+            textarea.setAttribute('readonly', 'readonly')
+            textarea.style.position = 'fixed'
+            textarea.style.left = '-9999px'
+            document.body.appendChild(textarea)
+            textarea.select()
+            const wasCopied = document.execCommand('copy')
+            document.body.removeChild(textarea)
+
+            if (!wasCopied) {
+                throw new Error('clipboard_copy_failed')
+            }
+        },
+        comparePathStatusLabel(path) {
+            if ((path?.status || '') === 'ok') {
+                return 'ok'
+            }
+
+            if ((path?.status || '') === 'not_connected') {
+                return 'nicht verbunden'
+            }
+
+            return 'fehler'
+        },
+        comparePathStatusColor(path) {
+            if ((path?.status || '') === 'ok') {
+                return 'success'
+            }
+
+            if ((path?.status || '') === 'not_connected') {
+                return 'grey'
+            }
+
+            return 'warning'
+        },
+        compareBoolLabel(value) {
+            return value ? 'erkannt' : 'nicht erkannt'
+        },
+        compareBoolColor(value) {
+            return value ? 'success' : 'grey'
+        },
+        requirementLabel(requirement) {
+            if (requirement === 'required' || requirement === 'pflicht') {
+                return 'Pflicht'
+            }
+            if (requirement === 'school_specific' || requirement === 'schulspezifisch') {
+                return 'schulspezifisch'
+            }
+            if (requirement === 'recommended' || requirement === 'empfohlen') {
+                return 'empfohlen'
+            }
+
+            return 'optional'
+        },
+        snippet(text) {
+            const value = (text || '').trim()
+            if (value.length <= 220) {
+                return value
+            }
+
+            return `${value.slice(0, 220)}...`
+        },
+        reviewItemText(item) {
+            const value = (item?.text || '').trim()
+            if (value !== '') {
+                return this.snippet(value)
+            }
+
+            return 'Leere Überschrift'
+        },
+        confidenceColorByValue(confidence) {
+            if (confidence === 'high') {
+                return 'green'
+            }
+            if (confidence === 'medium') {
+                return 'orange'
+            }
+
+            return 'red'
+        },
     },
 }
 </script>
@@ -1294,6 +2434,28 @@ export default {
 
 .chapter-panel-title__meta {
     margin-left: auto;
+}
+
+.review-list {
+    display: grid;
+    gap: 8px;
+}
+
+.review-item {
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    background: rgba(255, 255, 255, 0.88);
+}
+
+.review-item__chips {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.review-item__text {
+    font-size: 0.84rem;
+    color: rgba(15, 23, 42, 0.9);
+    margin-top: 6px;
 }
 
 @media (min-width: 1280px) {

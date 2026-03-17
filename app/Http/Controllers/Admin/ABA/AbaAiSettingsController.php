@@ -23,6 +23,7 @@ use App\Services\AbaLocalDocumentStructureExtractor;
 use App\Services\AbaLocalDocumentTextExtractor;
 use App\Services\AbaPandocAstNormalizerService;
 use App\Services\AbaPandocDocxExtractionService;
+use App\Services\AbaPandocReviewBuilderService;
 use App\Services\AbaPdfOpenAiDebugService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\UploadedFile;
@@ -140,6 +141,7 @@ class AbaAiSettingsController extends Controller
         AbaLocalDocumentTextExtractor $localTextExtractor,
         AbaLocalDocumentStructureExtractor $localStructureExtractor,
         AbaExtractionPathComparisonService $comparisonService,
+        AbaPandocReviewBuilderService $reviewBuilderService,
     ): JsonResponse {
         /** @var UploadedFile $uploadedFile */
         $uploadedFile = $request->file('file');
@@ -191,9 +193,9 @@ class AbaAiSettingsController extends Controller
             $blocks = is_array($normalization['blocks'] ?? null)
                 ? array_values($normalization['blocks'])
                 : [];
-            $review = $this->buildPandocDebugReview($blocks);
+            $review = $reviewBuilderService->buildReview($blocks);
             $summary = array_merge(
-                $this->buildPandocDebugSummary($blocks),
+                $reviewBuilderService->buildSummary($blocks),
                 [
                     'document_title_candidate_count' => (int) ($review['counts']['document_title_candidate_count'] ?? 0),
                     'empty_heading_count' => (int) ($review['counts']['empty_heading_count'] ?? 0),
