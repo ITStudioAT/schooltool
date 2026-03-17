@@ -187,6 +187,7 @@ test('builds pandoc outline with separated frontmatter main content and endmatte
         ->and($specialSections[0]['compare_key'] ?? null)->toBe('titelseite')
         ->and($specialSections[0]['detail_lines'] ?? [])->toContain('Titel: Die Rolle der Medien in der politischen Meinungsbildung')
         ->and($specialSections[0]['detail_lines'] ?? [])->toContain('Verfasst von: Yvonne Pucher')
+        ->and($specialSections[0]['detail_lines'] ?? [])->toContain('Datum: --')
         ->and($specialSections[0]['content_text'] ?? null)->toContain('Die Rolle der Medien in der politischen Meinungsbildung')
         ->and($specialSections[1]['special_area_key'] ?? null)->toBe('abstract')
         ->and($specialSections[1]['content_text'] ?? null)->toContain('Abstract-Inhalt mit aussagekräftigem Abschnittstext.')
@@ -203,6 +204,257 @@ test('builds pandoc outline with separated frontmatter main content and endmatte
         ->and($titlePageDetails['submitter'] ?? null)->toBe('Yvonne Pucher')
         ->and($titlePageDetails['advisor'] ?? null)->toBe('Dipl.-Ing. Günther Kron')
         ->and($titlePageDetails['class'] ?? null)->toBe('8M');
+});
+
+test('extracts titlepage school address and date metadata for pandoc projection', function () {
+    $service = app(AbaPandocReviewBuilderService::class);
+
+    $blocks = [
+        [
+            'type' => 'heading',
+            'order' => 1,
+            'plain_text' => 'Die Rolle der Medien in der politischen Meinungsbildung',
+            'heading_level' => 1,
+            'is_usable_heading' => false,
+            'problem_tags' => ['document_title_candidate'],
+            'classification' => ['confidence' => 'medium', 'strategy' => 'heuristic', 'signals' => ['document_title_signal']],
+            'section_hint' => ['section_type' => 'title_page', 'reason' => 'document_title_signal'],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'medium'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 2,
+            'plain_text' => 'Christian Doppler-Gymnasium',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 3,
+            'plain_text' => 'Franz-Josef-Kai 41',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 4,
+            'plain_text' => '5020 Salzburg',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 5,
+            'plain_text' => 'Verfasst von',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 6,
+            'plain_text' => 'Yvonne Pucher',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 7,
+            'plain_text' => 'Betreuer: Dipl.-Ing. Günther Kron',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 8,
+            'plain_text' => 'Klasse 8M',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 9,
+            'plain_text' => 'Ort, Datum',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'medium', 'strategy' => 'heuristic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 10,
+            'plain_text' => '17.04.2025',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'heading',
+            'order' => 11,
+            'plain_text' => 'Abstract',
+            'heading_level' => 1,
+            'is_usable_heading' => true,
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['section_keyword']],
+            'section_hint' => ['section_type' => 'abstract', 'reason' => 'section_keyword'],
+            'document_zone' => ['zone' => 'front_matter', 'label' => 'Frontmatter', 'confidence' => 'high'],
+        ],
+    ];
+
+    $review = $service->buildReview($blocks);
+    $titlePageDetails = is_array($review['title_page_details'] ?? null) ? $review['title_page_details'] : [];
+    $specialSections = is_array($review['special_sections'] ?? null) ? $review['special_sections'] : [];
+    $titleSection = collect($specialSections)->first(fn (array $item): bool => ($item['special_area_key'] ?? null) === 'titlepage');
+
+    expect($titlePageDetails['school'] ?? null)->toBe('Christian Doppler-Gymnasium')
+        ->and($titlePageDetails['school_address'] ?? null)->toBe('Franz-Josef-Kai 41')
+        ->and($titlePageDetails['school_city'] ?? null)->toBe('5020 Salzburg')
+        ->and($titlePageDetails['school_full'] ?? null)->toBe('Christian Doppler-Gymnasium, Franz-Josef-Kai 41, 5020 Salzburg')
+        ->and($titlePageDetails['date'] ?? null)->toBe('17.04.2025')
+        ->and($titleSection)->not->toBeNull()
+        ->and($titleSection['detail_lines'] ?? [])->toContain('Schule: Christian Doppler-Gymnasium, Franz-Josef-Kai 41, 5020 Salzburg')
+        ->and($titleSection['detail_lines'] ?? [])->toContain('Datum: 17.04.2025');
+});
+
+test('builds a single titlepage section from fragmented titlepage candidates and detects month year date', function () {
+    $service = app(AbaPandocReviewBuilderService::class);
+
+    $blocks = [
+        [
+            'type' => 'heading',
+            'order' => 1,
+            'plain_text' => 'WER IST BONG JOON-HO? | DOKU',
+            'heading_level' => 1,
+            'is_usable_heading' => false,
+            'problem_tags' => ['document_title_candidate'],
+            'classification' => ['confidence' => 'medium', 'strategy' => 'heuristic', 'signals' => ['document_title_signal']],
+            'section_hint' => ['section_type' => 'title_page', 'reason' => 'document_title_signal'],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'medium'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 2,
+            'plain_text' => 'Eine Dokumentation über den einzigen südkoreanischen Regisseur mit einem Oscar',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 3,
+            'plain_text' => 'Abschließende Arbeit',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 4,
+            'plain_text' => 'verfasst von',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 5,
+            'plain_text' => 'Yvonne Pucher',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 6,
+            'plain_text' => 'Klasse 8M',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 7,
+            'plain_text' => 'betreut von',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 8,
+            'plain_text' => 'Dipl.-Ing. Günther Kron',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 9,
+            'plain_text' => 'Christian-Doppler-Gymnasium',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 10,
+            'plain_text' => 'Franz Josef-Kai 41, 5020 Salzburg',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 11,
+            'plain_text' => 'Februar 2026',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'heading',
+            'order' => 12,
+            'plain_text' => 'Ein Bild, das Schrift, Grafiken, Text, Kreis enthält. Automatisch generierte Beschreibung',
+            'heading_level' => 2,
+            'is_usable_heading' => false,
+            'problem_tags' => ['document_title_candidate'],
+            'classification' => ['confidence' => 'low', 'strategy' => 'heuristic', 'signals' => ['document_title_signal']],
+            'section_hint' => ['section_type' => 'title_page', 'reason' => 'document_title_signal'],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'low'],
+        ],
+        [
+            'type' => 'heading',
+            'order' => 13,
+            'plain_text' => 'Abstract',
+            'heading_level' => 1,
+            'is_usable_heading' => true,
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['section_keyword']],
+            'section_hint' => ['section_type' => 'abstract', 'reason' => 'section_keyword'],
+            'document_zone' => ['zone' => 'front_matter', 'label' => 'Frontmatter', 'confidence' => 'high'],
+        ],
+    ];
+
+    $review = $service->buildReview($blocks);
+    $specialSections = is_array($review['special_sections'] ?? null) ? $review['special_sections'] : [];
+    $titlePageDetails = is_array($review['title_page_details'] ?? null) ? $review['title_page_details'] : [];
+    $titlePageSections = array_values(array_filter($specialSections, fn (array $item): bool => ($item['special_area_key'] ?? null) === 'titlepage'));
+    $titleSection = $titlePageSections[0] ?? null;
+
+    expect($titlePageSections)->toHaveCount(1)
+        ->and($titlePageDetails['title'] ?? null)->toContain('Eine Dokumentation über den einzigen südkoreanischen Regisseur')
+        ->and($titlePageDetails['document_type'] ?? null)->toBe('DOKU')
+        ->and($titlePageDetails['advisor'] ?? null)->toBe('Dipl.-Ing. Günther Kron')
+        ->and($titlePageDetails['school_full'] ?? null)->toBe('Christian-Doppler-Gymnasium, Franz Josef-Kai 41, 5020 Salzburg')
+        ->and($titlePageDetails['date'] ?? null)->toBe('Februar 2026')
+        ->and($titleSection)->toBeArray()
+        ->and($titleSection['detail_lines'] ?? [])->toContain('Datum: Februar 2026')
+        ->and($titleSection['detail_lines'] ?? [])->toContain('Betreuer: Dipl.-Ing. Günther Kron');
 });
 
 test('normalizes numbering and compare keys for tightly glued chapter headings', function () {
@@ -491,4 +743,137 @@ test('segments chapter projection content into list and sentence lines', functio
         ->and($firstChapter['content_text'] ?? null)->toContain("Fließtext.\nDanach wird die Rolle von Medienkompetenz")
         ->and(is_array($firstChapter['content_preview_lines'] ?? null))->toBeTrue()
         ->and(count($firstChapter['content_preview_lines'] ?? []))->toBeGreaterThan(3);
+});
+
+test('excludes heuristic loose term headings from main content sections', function () {
+    $service = app(AbaPandocReviewBuilderService::class);
+
+    $blocks = [
+        [
+            'type' => 'heading',
+            'order' => 1,
+            'plain_text' => 'Einleitung',
+            'heading_level' => 1,
+            'is_usable_heading' => true,
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['section_keyword']],
+            'section_hint' => ['section_type' => 'chapter', 'reason' => 'section_keyword'],
+            'document_zone' => ['zone' => 'main_content', 'label' => 'Hauptteil', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'heading',
+            'order' => 2,
+            'plain_text' => 'Instagram',
+            'is_usable_heading' => true,
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'medium', 'strategy' => 'heuristic', 'signals' => ['heading_like_paragraph']],
+            'section_hint' => [],
+            'document_zone' => ['zone' => 'main_content', 'label' => 'Hauptteil', 'confidence' => 'medium'],
+        ],
+    ];
+
+    $review = $service->buildReview($blocks);
+    $mainLinear = is_array($review['outline']['main_content_linear'] ?? null) ? $review['outline']['main_content_linear'] : [];
+    $recognizedMain = is_array($review['recognized_main_sections'] ?? null) ? $review['recognized_main_sections'] : [];
+
+    expect($mainLinear)->toHaveCount(1)
+        ->and($mainLinear[0]['text'] ?? null)->toBe('Einleitung')
+        ->and(collect($recognizedMain)->pluck('text')->all())->toBe(['Einleitung']);
+});
+
+test('does not treat titlepage metadata headings as extra title candidates', function () {
+    $service = app(AbaPandocReviewBuilderService::class);
+
+    $blocks = [
+        [
+            'type' => 'heading',
+            'order' => 1,
+            'plain_text' => 'Die Rolle der Fotografie in sozialen Medien',
+            'heading_level' => 1,
+            'is_usable_heading' => false,
+            'problem_tags' => ['document_title_candidate'],
+            'classification' => ['confidence' => 'medium', 'strategy' => 'heuristic', 'signals' => ['document_title_signal']],
+            'section_hint' => ['section_type' => 'title_page', 'reason' => 'document_title_signal'],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'medium'],
+        ],
+        [
+            'type' => 'heading',
+            'order' => 2,
+            'plain_text' => 'Verfasser*in: Sandra Banu',
+            'heading_level' => 2,
+            'is_usable_heading' => false,
+            'problem_tags' => ['document_title_candidate'],
+            'classification' => ['confidence' => 'low', 'strategy' => 'heuristic', 'signals' => ['document_title_signal']],
+            'section_hint' => ['section_type' => 'title_page', 'reason' => 'document_title_signal'],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'medium'],
+        ],
+        [
+            'type' => 'heading',
+            'order' => 3,
+            'plain_text' => 'Klasse: 8M',
+            'heading_level' => 2,
+            'is_usable_heading' => false,
+            'problem_tags' => ['document_title_candidate'],
+            'classification' => ['confidence' => 'low', 'strategy' => 'heuristic', 'signals' => ['document_title_signal']],
+            'section_hint' => ['section_type' => 'title_page', 'reason' => 'document_title_signal'],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'medium'],
+        ],
+        [
+            'type' => 'heading',
+            'order' => 4,
+            'plain_text' => 'Schuljahr: 2025/26',
+            'heading_level' => 2,
+            'is_usable_heading' => false,
+            'problem_tags' => ['document_title_candidate'],
+            'classification' => ['confidence' => 'low', 'strategy' => 'heuristic', 'signals' => ['document_title_signal']],
+            'section_hint' => ['section_type' => 'title_page', 'reason' => 'document_title_signal'],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'medium'],
+        ],
+    ];
+
+    $review = $service->buildReview($blocks);
+    $titleCandidates = is_array($review['document_title_candidates'] ?? null) ? $review['document_title_candidates'] : [];
+    $uncertain = is_array($review['uncertain_headings'] ?? null) ? $review['uncertain_headings'] : [];
+
+    expect($titleCandidates)->toHaveCount(1)
+        ->and($titleCandidates[0]['text'] ?? null)->toBe('Die Rolle der Fotografie in sozialen Medien')
+        ->and(collect($uncertain)->pluck('text')->all())->not->toContain('Klasse: 8M')
+        ->and(collect($uncertain)->pluck('text')->all())->not->toContain('Schuljahr: 2025/26')
+        ->and(collect($uncertain)->pluck('text')->all())->not->toContain('Verfasser*in: Sandra Banu');
+});
+
+test('does not count toc artifact headings as normal zone headings', function () {
+    $service = app(AbaPandocReviewBuilderService::class);
+
+    $blocks = [
+        [
+            'type' => 'heading',
+            'order' => 1,
+            'plain_text' => 'Inhaltsverzeichnis',
+            'heading_level' => 1,
+            'is_usable_heading' => true,
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['section_keyword']],
+            'section_hint' => ['section_type' => 'table_of_contents', 'reason' => 'section_keyword'],
+            'document_zone' => ['zone' => 'table_of_contents', 'label' => 'Inhaltsverzeichnis', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'heading',
+            'order' => 2,
+            'plain_text' => 'Einleitung 7',
+            'heading_level' => 1,
+            'is_usable_heading' => false,
+            'problem_tags' => ['probable_toc_artifact'],
+            'classification' => ['confidence' => 'low', 'strategy' => 'heuristic', 'signals' => ['toc_pattern']],
+            'section_hint' => ['section_type' => 'table_of_contents', 'reason' => 'toc_pattern'],
+            'document_zone' => ['zone' => 'table_of_contents', 'label' => 'Inhaltsverzeichnis', 'confidence' => 'medium'],
+        ],
+    ];
+
+    $review = $service->buildReview($blocks);
+    $zones = is_array($review['zone_overview'] ?? null) ? $review['zone_overview'] : [];
+    $tocZone = collect($zones)->first(fn (array $zone): bool => ($zone['zone_key'] ?? null) === 'table_of_contents');
+
+    expect($tocZone)->toBeArray()
+        ->and($tocZone['heading_count'] ?? null)->toBe(1);
 });
