@@ -299,7 +299,7 @@
                                 <v-expansion-panel-title>
                                     <div class="chapter-panel-title">
                                         <div class="chapter-panel-title__main">
-                                            <span>{{ root.display_text || root.text }}</span>
+                                            <span>{{ pandocNodeDisplayTitle(root) }}</span>
                                             <v-chip size="x-small" color="teal" variant="tonal">{{ root.type_label }}</v-chip>
                                             <v-chip
                                                 v-if="!isPandocUiContainerNode(root)"
@@ -345,11 +345,11 @@
                                         </div>
                                     </div>
 
-                                    <div v-if="pandocNodeDisplayLines(root).length > 0" class="review-item__subtext mb-2">
+                                    <div v-if="pandocNodeDisplayLines(root, pandocNodeDisplayLineLimit(root)).length > 0" class="review-item__subtext mb-2">
                                         <div class="text-caption font-weight-medium mb-1">Textinhalt</div>
                                         <div class="pandoc-content-block">
                                             <div
-                                                v-for="(line, lineIndex) in pandocNodeDisplayLines(root)"
+                                                v-for="(line, lineIndex) in pandocNodeDisplayLines(root, pandocNodeDisplayLineLimit(root))"
                                                 :key="`pandoc-root-${root.id}-content-${lineIndex}`"
                                                 class="pandoc-content-line"
                                                 :class="`pandoc-content-line--${line.kind}`"
@@ -375,15 +375,8 @@
                                         </div>
                                     </div>
 
-                                    <div v-if="pandocNodeChildSummaryLines(root).length > 0" class="review-item__subtext mb-2">
-                                        <div class="text-caption font-weight-medium mb-1">Unterabschnitte</div>
-                                        <div v-for="(summaryLine, summaryIndex) in pandocNodeChildSummaryLines(root)" :key="`pandoc-root-${root.id}-summary-${summaryIndex}`">
-                                            {{ summaryLine }}
-                                        </div>
-                                    </div>
-
                                     <v-alert
-                                        v-if="pandocDescendantRows(root).length === 0 && pandocNodeDisplayLines(root).length === 0 && pandocNodeChildSummaryLines(root).length === 0"
+                                        v-if="pandocDescendantRows(root).length === 0 && pandocNodeDisplayLines(root, pandocNodeDisplayLineLimit(root)).length === 0"
                                         type="info"
                                         variant="tonal"
                                         density="compact"
@@ -418,12 +411,12 @@
                                                 </v-chip>
                                                 <v-chip v-if="!child.is_usable_heading" size="x-small" color="red" variant="tonal">unsicher</v-chip>
                                             </div>
-                                            <div class="review-item__text">{{ child.display_text || child.text }}</div>
+                                            <div class="review-item__text" :class="pandocNodeTitleClasses(child)">{{ pandocNodeDisplayTitle(child) }}</div>
                                             <div v-if="child.caption" class="review-item__subtext mt-1">{{ child.caption }}</div>
-                                            <div v-if="pandocNodeDisplayLines(child, 12).length > 0" class="review-item__subtext mt-1">
+                                            <div v-if="pandocNodeDisplayLines(child, pandocNodeDisplayLineLimit(child, { descendant: true })).length > 0" class="review-item__subtext mt-1">
                                                 <div class="pandoc-content-block">
                                                     <div
-                                                        v-for="(line, lineIndex) in pandocNodeDisplayLines(child, 12)"
+                                                        v-for="(line, lineIndex) in pandocNodeDisplayLines(child, pandocNodeDisplayLineLimit(child, { descendant: true }))"
                                                         :key="`pandoc-desc-${root.id}-${child.id}-content-${lineIndex}`"
                                                         class="pandoc-content-line"
                                                         :class="`pandoc-content-line--${line.kind}`"
@@ -431,12 +424,6 @@
                                                         <span class="pandoc-content-line__text">{{ line.text }}</span>
                                                         <span v-if="line.page" class="pandoc-content-line__page">{{ line.page }}</span>
                                                     </div>
-                                                </div>
-                                            </div>
-                                            <div v-if="pandocNodeChildSummaryLines(child, 4).length > 0" class="review-item__subtext mt-1">
-                                                <div class="text-caption font-weight-medium mb-1">Unterabschnitte</div>
-                                                <div v-for="(summaryLine, summaryIndex) in pandocNodeChildSummaryLines(child, 4)" :key="`pandoc-desc-${root.id}-${child.id}-summary-${summaryIndex}`">
-                                                    {{ summaryLine }}
                                                 </div>
                                             </div>
                                         </v-sheet>
@@ -1780,7 +1767,7 @@ export default {
         },
         pandocSpecialSections() {
             if (this.documentReviewSpecialSections.length > 0) {
-                return this.documentReviewSpecialSections
+                const sections = this.documentReviewSpecialSections
                     .map((item, index) => {
                         const text = String(item?.text || '').trim()
                         const sectionType = String(item?.section_type || '')
@@ -1845,6 +1832,8 @@ export default {
                     })
                     .filter((item) => item.text !== '')
                     .slice(0, 60)
+
+                return this.ensurePandocAbstractSpecialSection(sections)
             }
 
             const sections = []
@@ -1921,7 +1910,8 @@ export default {
                 })
             })
 
-            return sections.filter((item) => item.text !== '').slice(0, 60)
+            const filteredSections = sections.filter((item) => item.text !== '').slice(0, 60)
+            return this.ensurePandocAbstractSpecialSection(filteredSections)
         },
         chapterMatchingMatrix() {
             return this.buildChapterMatchingMatrix(
@@ -3481,6 +3471,255 @@ export default {
 
             return 'Sonderbereich'
         },
+        ensurePandocAbstractSpecialSection(sections) {
+            const items = Array.isArray(sections) ? [...sections] : []
+            const hasAbstract = items.some((item) => {
+                const area = String(item?.area || item?.semantic_type || '').trim().toLowerCase()
+                return area === 'abstract'
+            })
+            if (hasAbstract) {
+                return items
+            }
+
+            if (!this.pandocAbstractDetectedByPath()) {
+                return items
+            }
+
+            const fallback = this.buildPandocAbstractFallbackSection()
+            if (!fallback) {
+                return items
+            }
+
+            const merged = [...items, fallback]
+
+            return merged
+                .filter((item) => String(item?.text || '').trim() !== '')
+                .sort((left, right) => {
+                    const leftRank = this.pandocUnifiedTopLevelRank(left)
+                    const rightRank = this.pandocUnifiedTopLevelRank(right)
+                    if (leftRank !== rightRank) {
+                        return leftRank - rightRank
+                    }
+
+                    const leftOrder = Number(left?.order || 0)
+                    const rightOrder = Number(right?.order || 0)
+                    if (leftOrder !== rightOrder) {
+                        return leftOrder - rightOrder
+                    }
+
+                    const leftKey = String(left?.compare_key || left?.text || '')
+                    const rightKey = String(right?.compare_key || right?.text || '')
+                    return leftKey.localeCompare(rightKey, 'de')
+                })
+                .slice(0, 60)
+        },
+        pandocAbstractDetectedByPath() {
+            const path = this.documentReviewPandocPath && typeof this.documentReviewPandocPath === 'object'
+                ? this.documentReviewPandocPath
+                : {}
+            const zoneFlags = path?.zone_flags && typeof path.zone_flags === 'object'
+                ? path.zone_flags
+                : {}
+
+            return Boolean(
+                path?.abstract_found
+                || zoneFlags?.abstract
+                || zoneFlags?.abstract_de
+                || zoneFlags?.abstract_en
+            )
+        },
+        buildPandocAbstractFallbackSection() {
+            const blocks = this.documentReview?.normalization?.blocks
+            const normalizedBlocks = Array.isArray(blocks)
+                ? blocks.filter((block) => block && typeof block === 'object')
+                : []
+            if (normalizedBlocks.length === 0) {
+                return null
+            }
+
+            const sortedBlocks = [...normalizedBlocks].sort((left, right) => Number(left?.order || 0) - Number(right?.order || 0))
+            const candidates = sortedBlocks
+                .filter((block) => String(block?.type || '').trim().toLowerCase() === 'heading')
+                .filter((block) => String(block?.section_hint?.section_type || '').trim().toLowerCase() === 'abstract')
+                .map((block) => ({
+                    block,
+                    score: this.scorePandocAbstractFallbackCandidate(block),
+                }))
+                .sort((left, right) => {
+                    if (left.score !== right.score) {
+                        return right.score - left.score
+                    }
+                    return Number(left.block?.order || 0) - Number(right.block?.order || 0)
+                })
+
+            if (candidates.length === 0) {
+                return null
+            }
+
+            const selected = candidates[0].block
+            const startOrder = Number(selected?.order || 0)
+            const sectionType = String(selected?.section_hint?.section_type || '').trim().toLowerCase()
+            if (sectionType !== 'abstract') {
+                return null
+            }
+
+            let endOrder = null
+            for (const block of sortedBlocks) {
+                const order = Number(block?.order || 0)
+                if (!Number.isFinite(order) || order <= startOrder) {
+                    continue
+                }
+                if (String(block?.type || '').trim().toLowerCase() === 'heading') {
+                    endOrder = order
+                    break
+                }
+            }
+
+            const contentLines = []
+            for (const block of sortedBlocks) {
+                const order = Number(block?.order || 0)
+                if (!Number.isFinite(order) || order <= startOrder) {
+                    continue
+                }
+                if (endOrder !== null && order >= endOrder) {
+                    break
+                }
+
+                const blockType = String(block?.type || '').trim().toLowerCase()
+                if (blockType === 'heading') {
+                    continue
+                }
+
+                const text = this.extractPandocNormalizationBlockText(block)
+                if (text === '') {
+                    continue
+                }
+                if (this.isLikelyTocArtifactProjectionLine(text)) {
+                    continue
+                }
+
+                contentLines.push(text)
+                if (contentLines.length >= 48) {
+                    break
+                }
+            }
+
+            const contentText = contentLines.length > 0 ? contentLines.join('\n') : null
+            const contentExcerpt = contentText ? String(contentText).replace(/\s+/gu, ' ').trim().slice(0, 1600) : null
+            const previewLines = contentLines.length > 0
+                ? this.normalizeProjectionLines(contentLines, true).slice(0, 24)
+                : []
+            const confidence = String(selected?.classification?.confidence || selected?.confidence || 'medium')
+            const strategy = String(selected?.classification?.strategy || selected?.strategy || 'heuristic')
+            const zoneContext = String(selected?.document_zone?.zone || selected?.document_zone || 'front_matter')
+            const positionLabel = startOrder > 0 ? `Block #${startOrder}` : ''
+            const problemTags = Array.isArray(selected?.problem_tags)
+                ? selected.problem_tags.map((tag) => String(tag || '')).filter((tag) => tag !== '')
+                : []
+
+            return {
+                id: `pandoc-abstract-fallback-${startOrder > 0 ? startOrder : 'x'}`,
+                area: 'abstract',
+                area_label: 'Abstract',
+                text: 'Abstract',
+                display_text: 'Abstract',
+                detail_lines: [],
+                type_label: 'Abstract',
+                confidence,
+                strategy,
+                compare_key: this.sectionCompareKey('Abstract'),
+                semantic_type: 'abstract',
+                semantic_compare_key: this.sectionSemanticCompareKey('Abstract', 'abstract'),
+                zone_context: zoneContext,
+                parent_text: '',
+                parent_compare_key: '',
+                parent_numbering: '',
+                numbering: '',
+                numbering_depth: 0,
+                structure_level: 0,
+                content_text: contentText,
+                content_excerpt: contentExcerpt,
+                content_preview_lines: previewLines,
+                content_line_count: previewLines.length,
+                toc_outline_lines: [],
+                toc_page_index_lines: [],
+                toc_primary_kind: 'outline',
+                position_label: positionLabel,
+                problem_tags: problemTags,
+                order: startOrder > 0 ? startOrder : 50000,
+            }
+        },
+        scorePandocAbstractFallbackCandidate(block) {
+            const text = this.extractPandocNormalizationBlockText(block)
+            if (text === '') {
+                return -1000
+            }
+
+            let score = 0
+            const compareKey = this.sectionCompareKey(text)
+            if (['abstract', 'zusammenfassung', 'kurzfassung'].includes(compareKey)) {
+                score += 120
+            }
+
+            if (/\s+\d{1,4}\s*$/u.test(text)) {
+                score -= 90
+            } else {
+                score += 30
+            }
+
+            const zone = String(block?.document_zone?.zone || block?.document_zone || '').trim().toLowerCase()
+            if (zone !== 'table_of_contents') {
+                score += 40
+            }
+
+            if (!this.isLikelyTocArtifactBlock(block)) {
+                score += 20
+            }
+
+            const headingLevel = Number(block?.heading_level || 0)
+            if (headingLevel === 1) {
+                score += 20
+            }
+
+            const order = Number(block?.order || 0)
+            if (Number.isFinite(order) && order > 0) {
+                score += Math.min(300, order)
+            }
+
+            return score
+        },
+        isLikelyTocArtifactBlock(block) {
+            const zone = String(block?.document_zone?.zone || block?.document_zone || '').trim().toLowerCase()
+            if (zone === 'table_of_contents') {
+                return true
+            }
+
+            const tags = Array.isArray(block?.problem_tags) ? block.problem_tags : []
+            return tags.map((tag) => String(tag || '')).includes('probable_toc_artifact')
+        },
+        extractPandocNormalizationBlockText(block) {
+            const candidates = [
+                String(block?.plain_text || '').trim(),
+                String(block?.text || '').trim(),
+                String(block?.image?.alt_text || '').trim(),
+            ]
+            const first = candidates.find((value) => value !== '')
+            return first ? String(first) : ''
+        },
+        isLikelyTocArtifactProjectionLine(text) {
+            const value = String(text || '').trim()
+            if (value === '') {
+                return false
+            }
+
+            if (/^\s*abstract\s+\d{1,4}\s*$/iu.test(value)) {
+                return true
+            }
+
+            const hasPageSuffix = /\s+\d{1,4}\s*$/u.test(value)
+            const hasSectionKeyword = /\b(inhaltsverzeichnis|einleitung|fazit|literaturverzeichnis|abbildungsverzeichnis|eigenständigkeitserklärung|abstract)\b/iu.test(value)
+            return hasPageSuffix && hasSectionKeyword
+        },
         isSpecialSemanticType(semanticType) {
             return [
                 'titlepage',
@@ -4175,6 +4414,93 @@ export default {
             const type = String(node?.type || '').trim().toLowerCase()
             return rootKind === 'content' || semantic === 'ui_container' || type === 'ui_container'
         },
+        isNumericSectionNumbering(numbering) {
+            return /^\d+(?:\.\d+){0,8}$/u.test(String(numbering || '').trim())
+        },
+        pandocSectionTextWithNumbering(text, numbering) {
+            const title = String(text || '').trim()
+            if (title === '') {
+                return ''
+            }
+
+            const normalizedNumbering = String(numbering || '').trim()
+            if (!this.isNumericSectionNumbering(normalizedNumbering)) {
+                return title
+            }
+            if (this.extractSectionNumbering(title) !== '') {
+                return title
+            }
+
+            return `${normalizedNumbering}. ${title}`
+        },
+        pandocMainSectionNumberingLookup() {
+            const lookup = {}
+            const append = (nodes) => {
+                if (!Array.isArray(nodes) || nodes.length === 0) {
+                    return
+                }
+
+                nodes.forEach((node) => {
+                    const text = String(node?.text || '').trim()
+                    const numbering = String(node?.numbering || '').trim()
+                    const key = this.sectionCompareKey(text)
+                    if (key !== '' && this.isNumericSectionNumbering(numbering) && !lookup[key]) {
+                        lookup[key] = numbering
+                    }
+
+                    append(node?.children)
+                })
+            }
+
+            append(this.pandocSectionHierarchyRoots)
+            return lookup
+        },
+        pandocNormalizeTocEntryText(text) {
+            const value = String(text || '').trim()
+            if (value === '' || this.extractSectionNumbering(value) !== '') {
+                return value
+            }
+
+            const key = this.sectionCompareKey(value)
+            if (key === '') {
+                return value
+            }
+
+            const lookup = this.pandocMainSectionNumberingLookup()
+            const numbering = String(lookup?.[key] || '').trim()
+            if (!this.isNumericSectionNumbering(numbering)) {
+                return value
+            }
+
+            return this.pandocSectionTextWithNumbering(value, numbering)
+        },
+        pandocNodeDisplayTitle(node) {
+            const baseTitle = String(node?.display_text || node?.text || '').trim()
+            if (baseTitle === '') {
+                return ''
+            }
+
+            if (!this.pandocNodeIsMainSection(node)) {
+                return baseTitle
+            }
+
+            return this.pandocSectionTextWithNumbering(baseTitle, String(node?.numbering || ''))
+        },
+        pandocNodeTitleClasses(node) {
+            if (!this.pandocNodeIsMainSection(node)) {
+                return []
+            }
+
+            const level = this.normalizePandocHeadingLevel(node?.heading_level ?? node?.outline_level ?? 2)
+            if (level <= 1) {
+                return ['review-item__text--chapter']
+            }
+            if (level === 2) {
+                return ['review-item__text--subchapter']
+            }
+
+            return []
+        },
         pandocContentLineStyle(line) {
             const depth = Math.max(0, Math.min(7, Number(line?.depth || 0)))
 
@@ -4207,6 +4533,7 @@ export default {
                     text = String(tocMatch[1] || '').trim()
                     page = String(tocMatch[2] || '').trim()
                 }
+                text = this.pandocNormalizeTocEntryText(text)
 
                 const numbering = this.extractSectionNumbering(text)
                 const numberingDepth = this.numberingDepth(numbering)
@@ -4234,12 +4561,7 @@ export default {
             if (looksLikeHeading) {
                 depth = Math.max(depth, Math.max(0, numberingDepth - 1))
                 kind = depth > 0 ? 'subheading' : 'heading'
-            } else if (
-                kind === 'paragraph'
-                && text.length <= 90
-                && /[A-Za-zÄÖÜäöü]/u.test(text)
-                && !/[.!?:]$/u.test(text)
-            ) {
+            } else if (this.shouldRenderAsSubheadingCandidate(text)) {
                 kind = 'subheading'
             }
 
@@ -4263,6 +4585,37 @@ export default {
                 .map((line) => this.normalizePandocContentLine(line, { tocMode }))
                 .filter((line) => line && String(line.text || '').trim() !== '')
                 .slice(0, effectiveLimit)
+        },
+        pandocNodeDisplayLineLimit(node, { descendant = false } = {}) {
+            const fallback = descendant ? 28 : 20
+            if (this.isPandocTocNode(node)) {
+                return 180
+            }
+
+            const candidates = [
+                Number(node?.content_direct_line_count || 0),
+                Number(node?.content_line_count || 0),
+                Number(node?.content_with_children_line_count || 0),
+                Number(node?.content_own_line_count || 0),
+            ].filter((value) => Number.isFinite(value) && value > 0)
+            const discoveredLineCount = candidates.length > 0 ? Math.max(...candidates) : 0
+
+            if (this.pandocNodeIsMainSection(node)) {
+                const limit = discoveredLineCount > 0 ? Math.max(fallback, discoveredLineCount) : fallback
+                return Math.min(140, limit)
+            }
+
+            if (descendant) {
+                const limit = discoveredLineCount > 0
+                    ? Math.max(fallback, Math.min(discoveredLineCount, 90))
+                    : fallback
+                return Math.min(90, limit)
+            }
+
+            const limit = discoveredLineCount > 0
+                ? Math.max(fallback, Math.min(discoveredLineCount, 70))
+                : fallback
+            return Math.min(90, limit)
         },
         pandocNodeSecondaryDisplayLines(node, maxLines = 40) {
             if (!this.isPandocTocNode(node)) {
@@ -4384,7 +4737,107 @@ export default {
                 })
                 .filter((line) => line !== '')
         },
+        shouldRenderAsSubheadingCandidate(text) {
+            const value = String(text || '').trim()
+            if (value === '') {
+                return false
+            }
+            if (this.extractSectionNumbering(value) !== '') {
+                return false
+            }
+            if (/[.!?:;]$/u.test(value)) {
+                return false
+            }
+            if (value.length > 72) {
+                return false
+            }
+            if (!/^\p{Lu}/u.test(value)) {
+                return false
+            }
+
+            const words = value.split(/\s+/u).filter((word) => word !== '')
+            if (words.length < 2 || words.length > 8) {
+                return false
+            }
+
+            if (/\b(ich|wir|sie|er|es|du|man|dass|wird|werden|ist|sind|war|waren|habe|haben|steht|stehen|fasse|widmet|besch[aä]ftigt|zeigt)\b/iu.test(value)) {
+                return false
+            }
+            if (/\b(im|in|am|an|auf|mit|von|fuer|für|zu|zur|zum|und|oder|den|dem|des|einer|einem|einen|eines|kapitel|abschnitt)\s*$/iu.test(value)) {
+                return false
+            }
+
+            return true
+        },
+        shouldMergePandocFlowLines(previousLine, nextLine) {
+            const previous = String(previousLine || '').trim()
+            const next = String(nextLine || '').trim()
+            if (previous === '' || next === '') {
+                return false
+            }
+            if (/[.!?:;]$/u.test(previous)) {
+                return false
+            }
+            if (/^\s*[-*•]\s+/u.test(next)) {
+                return false
+            }
+            const nextNumbering = this.extractSectionNumbering(next)
+            if (nextNumbering !== '' && !/^\d{1,3}\s+\p{Ll}/u.test(next)) {
+                return false
+            }
+            if (this.shouldRenderAsSubheadingCandidate(previous) && /^\p{Lu}/u.test(next)) {
+                return false
+            }
+            if (/^\p{Ll}/u.test(next)) {
+                return true
+            }
+            if (/^\d{1,3}\b/u.test(next) && /\b(kapitel|abschnitt|teil|abbildung|seite)\s*$/iu.test(previous)) {
+                return true
+            }
+            if (/\b(im|in|am|an|auf|mit|von|fuer|für|zu|zur|zum|und|oder|der|die|das|den|dem|des|einer|einem|einen|eines|kapitel|abschnitt|teil)\s*$/iu.test(previous)) {
+                return true
+            }
+
+            return false
+        },
+        mergePandocFlowLines(lines) {
+            if (!Array.isArray(lines) || lines.length === 0) {
+                return []
+            }
+
+            const merged = []
+            lines.forEach((line) => {
+                const currentRaw = String(line || '').replace(/\s+$/u, '')
+                const currentTrimmed = currentRaw.trim()
+                if (currentTrimmed === '') {
+                    return
+                }
+
+                const previousIndex = merged.length - 1
+                if (previousIndex >= 0 && this.shouldMergePandocFlowLines(merged[previousIndex], currentTrimmed)) {
+                    merged[previousIndex] = `${String(merged[previousIndex] || '').trimEnd()} ${currentTrimmed}`
+                    return
+                }
+
+                merged.push(currentRaw)
+            })
+
+            return merged
+        },
+        pandocContentTextLines(text) {
+            if (String(text || '').trim() === '') {
+                return []
+            }
+
+            const lines = String(text || '')
+                .split('\n')
+                .map((line) => this.normalizeProjectionLine(line, true))
+                .filter((line) => String(line || '').trim() !== '')
+
+            return this.mergePandocFlowLines(lines)
+        },
         pandocNodeContentLines(node, maxLines = 10) {
+            const tocNode = this.isPandocTocNode(node)
             const hasChildren = Array.isArray(node?.children) && node.children.length > 0
             const preferDirectLines = hasChildren && this.pandocNodeIsMainSection(node)
             const maxLineCount = Math.max(1, Number(maxLines || 10))
@@ -4401,10 +4854,34 @@ export default {
                 Array.isArray(node?.content_preview_lines) ? node.content_preview_lines : [],
                 true
             )
+            const directTextLines = this.pandocContentTextLines(this.pandocNodeDirectContentText(node))
+            const withChildrenTextLines = this.pandocContentTextLines(this.pandocNodeContentWithChildrenText(node))
+            const renderedContentLines = this.pandocContentTextLines(this.pandocNodeRenderedContent(node))
+            const contentTextLines = this.pandocContentTextLines(this.pandocNodeContentText(node))
+
+            if (tocNode) {
+                if (defaultLines.length > 0) {
+                    return defaultLines.slice(0, maxLineCount)
+                }
+                if (withChildrenLines.length > 0) {
+                    return withChildrenLines.slice(0, maxLineCount)
+                }
+                if (renderedContentLines.length > 0) {
+                    return renderedContentLines.slice(0, maxLineCount)
+                }
+
+                return []
+            }
 
             if (preferDirectLines) {
+                if (directTextLines.length > 0) {
+                    return directTextLines.slice(0, maxLineCount)
+                }
                 if (directLines.length > 0) {
                     return directLines.slice(0, maxLineCount)
+                }
+                if (withChildrenTextLines.length > 0) {
+                    return withChildrenTextLines.slice(0, maxLineCount)
                 }
                 if (withChildrenLines.length > 0) {
                     return withChildrenLines.slice(0, maxLineCount)
@@ -4412,20 +4889,32 @@ export default {
                 if (defaultLines.length > 0) {
                     return defaultLines.slice(0, maxLineCount)
                 }
-            } else if (defaultLines.length > 0) {
+            }
+
+            const preferredTextLines = renderedContentLines.length > 0
+                ? renderedContentLines
+                : contentTextLines
+            if (defaultLines.length > 0 && preferredTextLines.length === 0) {
                 return defaultLines.slice(0, maxLineCount)
             }
+            if (preferredTextLines.length > 0) {
+                const keepStructuredPreview = defaultLines.length > 0
+                    && defaultLines.length >= preferredTextLines.length
+                    && defaultLines.length >= Math.min(maxLineCount, 8)
+                if (keepStructuredPreview) {
+                    return defaultLines.slice(0, maxLineCount)
+                }
 
-            const contentText = this.pandocNodeRenderedContent(node)
-            if (contentText === '') {
-                return []
+                return preferredTextLines.slice(0, maxLineCount)
+            }
+            if (defaultLines.length > 0) {
+                return defaultLines.slice(0, maxLineCount)
+            }
+            if (withChildrenLines.length > 0) {
+                return withChildrenLines.slice(0, maxLineCount)
             }
 
-            return contentText
-                .split('\n')
-                .map((line) => this.normalizeProjectionLine(line, true))
-                .filter((line) => String(line || '').trim() !== '')
-                .slice(0, maxLineCount)
+            return []
         },
         pandocHierarchyIndentStyle(depth) {
             const safeDepth = Math.max(0, Math.min(6, Number(depth || 0)))
@@ -4746,6 +5235,18 @@ export default {
     font-size: 0.84rem;
     color: rgba(15, 23, 42, 0.9);
     margin-top: 6px;
+}
+
+.review-item__text--chapter {
+    font-size: 0.98rem;
+    font-weight: 700;
+    color: rgba(15, 23, 42, 0.96);
+}
+
+.review-item__text--subchapter {
+    font-size: 0.9rem;
+    font-weight: 650;
+    color: rgba(15, 23, 42, 0.94);
 }
 
 .review-item__subtext {

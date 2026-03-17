@@ -877,3 +877,74 @@ test('does not count toc artifact headings as normal zone headings', function ()
     expect($tocZone)->toBeArray()
         ->and($tocZone['heading_count'] ?? null)->toBe(1);
 });
+
+test('keeps abstract visible when abstract heading is marked as toc artifact but abstract paragraph follows', function () {
+    $service = app(AbaPandocReviewBuilderService::class);
+
+    $blocks = [
+        [
+            'type' => 'heading',
+            'order' => 1,
+            'plain_text' => 'Inhaltsverzeichnis',
+            'heading_level' => 1,
+            'is_usable_heading' => true,
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['section_keyword']],
+            'section_hint' => ['section_type' => 'table_of_contents', 'reason' => 'section_keyword'],
+            'document_zone' => ['zone' => 'table_of_contents', 'label' => 'Inhaltsverzeichnis', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'heading',
+            'order' => 2,
+            'plain_text' => 'Abstract 6',
+            'heading_level' => 1,
+            'is_usable_heading' => false,
+            'problem_tags' => ['probable_toc_artifact', 'toc_duplicate_of_content_heading'],
+            'classification' => ['confidence' => 'low', 'strategy' => 'heuristic', 'signals' => ['toc_pattern']],
+            'section_hint' => ['section_type' => 'abstract', 'reason' => 'toc_pattern'],
+            'document_zone' => ['zone' => 'table_of_contents', 'label' => 'Inhaltsverzeichnis', 'confidence' => 'medium'],
+        ],
+        [
+            'type' => 'heading',
+            'order' => 3,
+            'plain_text' => 'Abstract',
+            'heading_level' => 1,
+            'is_usable_heading' => false,
+            'problem_tags' => ['probable_toc_artifact'],
+            'classification' => ['confidence' => 'low', 'strategy' => 'heuristic', 'signals' => ['toc_pattern']],
+            'section_hint' => ['section_type' => 'abstract', 'reason' => 'toc_pattern'],
+            'document_zone' => ['zone' => 'table_of_contents', 'label' => 'Inhaltsverzeichnis', 'confidence' => 'medium'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 4,
+            'plain_text' => 'Diese vorwissenschaftliche Arbeit untersucht die Rolle der Fotografie in sozialen Medien und beschreibt den Forschungszugang im Abstract-Abschnitt.',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'table_of_contents', 'label' => 'Inhaltsverzeichnis', 'confidence' => 'medium'],
+        ],
+        [
+            'type' => 'heading',
+            'order' => 5,
+            'plain_text' => 'Einleitung',
+            'heading_level' => 1,
+            'is_usable_heading' => true,
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['section_keyword']],
+            'section_hint' => ['section_type' => 'chapter', 'reason' => 'section_keyword'],
+            'document_zone' => ['zone' => 'main_content', 'label' => 'Hauptteil', 'confidence' => 'high'],
+        ],
+    ];
+
+    $review = $service->buildReview($blocks);
+    $specialSections = is_array($review['special_sections'] ?? null) ? $review['special_sections'] : [];
+    $probableTocArtifacts = is_array($review['probable_toc_artifacts'] ?? null) ? $review['probable_toc_artifacts'] : [];
+    $abstract = collect($specialSections)->first(fn (array $item): bool => ($item['special_area_key'] ?? null) === 'abstract');
+
+    expect($abstract)->toBeArray()
+        ->and($abstract['text'] ?? null)->toBe('Abstract')
+        ->and($abstract['content_text'] ?? null)->toContain('Diese vorwissenschaftliche Arbeit untersucht die Rolle der Fotografie in sozialen Medien')
+        ->and($abstract['content_text'] ?? null)->not->toContain('Abstract 6')
+        ->and(collect($probableTocArtifacts)->pluck('text')->all())->toContain('Abstract 6')
+        ->and(collect($probableTocArtifacts)->pluck('text')->all())->toContain('Abstract');
+});

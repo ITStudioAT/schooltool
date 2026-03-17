@@ -704,6 +704,7 @@ class AbaPandocReviewBuilderService
     {
         $items = [];
         $seen = [];
+        $hasAbstractSection = false;
         $titlePageItem = $this->buildTitlePageSpecialSectionItem($headingItems, $titlePageDetails);
 
         foreach ($headingItems as $item) {
@@ -781,7 +782,18 @@ class AbaPandocReviewBuilderService
                 $item['figure_index_entry_count'] = count($figureIndexEntries);
             }
 
+            if ($specialAreaKey === 'abstract') {
+                $hasAbstractSection = true;
+            }
+
             $items[] = $item;
+        }
+
+        if (! $hasAbstractSection) {
+            $fallbackAbstractItem = $this->buildFallbackAbstractSpecialSectionItem($headingItems);
+            if ($fallbackAbstractItem !== null) {
+                $items[] = $fallbackAbstractItem;
+            }
         }
 
         if ($titlePageItem !== null) {
@@ -884,6 +896,114 @@ class AbaPandocReviewBuilderService
         $item['title_page_details'] = $titlePageDetails;
 
         return $item;
+    }
+
+    /**
+     * @param  array<int, array<string,mixed>>  $headingItems
+     * @return array<string,mixed>|null
+     */
+    private function buildFallbackAbstractSpecialSectionItem(array $headingItems): ?array
+    {
+        $bestCandidate = null;
+        $bestScore = null;
+
+        foreach ($headingItems as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $sectionType = trim((string) ($item['section_type'] ?? ''));
+            if ($sectionType !== 'abstract') {
+                continue;
+            }
+
+            $zone = trim((string) ($item['document_zone'] ?? ''));
+            if ($zone !== 'table_of_contents') {
+                continue;
+            }
+
+            $rawText = trim((string) ($item['text'] ?? ''));
+            if ($rawText === '') {
+                continue;
+            }
+
+            $problemTags = is_array($item['problem_tags'] ?? null)
+                ? array_values(array_map('strval', $item['problem_tags']))
+                : [];
+            if (! in_array('probable_toc_artifact', $problemTags, true)) {
+                continue;
+            }
+
+            $score = $this->scoreFallbackAbstractCandidate($item);
+            if ($bestScore === null || $score > $bestScore) {
+                $bestCandidate = $item;
+                $bestScore = $score;
+            }
+        }
+
+        if (! is_array($bestCandidate)) {
+            return null;
+        }
+
+        $rawText = trim((string) ($bestCandidate['text'] ?? ''));
+        $detailLines = $this->buildSpecialSectionDetailLines('abstract', [], [], $rawText);
+        $item = $bestCandidate;
+        $item['special_area_key'] = 'abstract';
+        $item['special_area_label'] = $this->specialAreaLabel('abstract');
+        $item['raw_compare_key'] = (string) ($bestCandidate['compare_key'] ?? $this->sectionCompareKey($rawText));
+        $item['raw_text'] = $rawText;
+        $item['text'] = $this->specialAreaPrimaryTitle('abstract');
+        $item['display_text'] = $this->specialAreaLabel('abstract');
+        $item['detail_lines'] = $detailLines;
+        $item['compare_key'] = $this->sectionCompareKey((string) ($item['text'] ?? ''));
+        $item['semantic_compare_key'] = 'abstract|'.$item['compare_key'];
+        $item['numbering'] = null;
+        $item['numbering_depth'] = null;
+        $item['reason'] = (string) ($item['reason'] ?? 'abstract_fallback_from_toc_artifact');
+        $signals = is_array($item['signals'] ?? null)
+            ? array_values(array_map('strval', $item['signals']))
+            : [];
+        if (! in_array('abstract_fallback_from_toc_artifact', $signals, true)) {
+            $signals[] = 'abstract_fallback_from_toc_artifact';
+        }
+        $item['signals'] = $signals;
+
+        return $item;
+    }
+
+    /**
+     * @param  array<string,mixed>  $item
+     */
+    private function scoreFallbackAbstractCandidate(array $item): int
+    {
+        $text = trim((string) ($item['text'] ?? ''));
+        if ($text === '') {
+            return -1000;
+        }
+
+        $score = 0;
+        $compareKey = $this->sectionCompareKey($text);
+        if (in_array($compareKey, ['abstract', 'zusammenfassung', 'kurzfassung'], true)) {
+            $score += 100;
+        }
+
+        if (@preg_match('/\s+\d{1,4}\s*$/u', $text) === 1) {
+            $score -= 80;
+        } else {
+            $score += 30;
+        }
+
+        $headingLevel = is_numeric($item['heading_level'] ?? null) ? (int) ($item['heading_level'] ?? 0) : 0;
+        if ($headingLevel === 1) {
+            $score += 20;
+        }
+
+        $order = (int) ($item['order'] ?? 0);
+        if ($order > 0) {
+            $score += min(300, $order);
+        }
+
+        return $score;
     }
 
     /**
@@ -1911,7 +2031,8 @@ class AbaPandocReviewBuilderService
     {
         return match ($specialAreaKey) {
             'titlepage' => ['title_page'],
-            'abstract', 'foreword' => ['front_matter'],
+            'abstract' => ['front_matter', 'table_of_contents'],
+            'foreword' => ['front_matter'],
             'toc' => ['table_of_contents'],
             'bibliography', 'figure_index' => ['bibliography_area', 'end_matter'],
             'declaration' => ['declaration_area'],
