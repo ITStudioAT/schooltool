@@ -4497,6 +4497,127 @@ export default {
                 numbering: String(numbering || '').trim(),
             }
         },
+        parsePandocTocOutlineEntry(rawLine) {
+            const value = String(rawLine || '')
+            if (value.trim() === '') {
+                return null
+            }
+
+            const leadingSpacesMatch = value.match(/^(\s*)/u)
+            const leadingSpaces = leadingSpacesMatch ? leadingSpacesMatch[1].length : 0
+            let depth = Math.floor(leadingSpaces / 2)
+            let text = value.trim()
+
+            if (text.startsWith('- ')) {
+                text = text.slice(2).trim()
+                depth += 1
+            }
+
+            text = text
+                .replace(/\s*[-–—]\s*\d{1,4}\s*$/u, '')
+                .replace(/\s+\d{1,4}\s*$/u, '')
+                .replace(/\s*\.{2,}\s*$/u, '')
+                .trim()
+            if (text === '') {
+                return null
+            }
+
+            const numbering = this.extractSectionNumbering(text)
+            if (this.isNumericSectionNumbering(numbering)) {
+                depth = Math.max(depth, this.numberingDepth(numbering) - 1)
+            }
+
+            const plainTitle = this.isNumericSectionNumbering(numbering)
+                ? text.replace(/^(\d+(?:\.\d+){0,8})(?:\.(?=\p{L})|[.):\s]|$)\s*/u, '').trim()
+                : text
+            const key = this.sectionCompareKey(plainTitle)
+            if (key === '') {
+                return null
+            }
+
+            return {
+                key,
+                depth: Math.max(0, depth),
+                numbering: this.isNumericSectionNumbering(numbering) ? String(numbering || '').trim() : '',
+            }
+        },
+        inferPandocTocTopLevelNumbers(entries, lookup) {
+            if (!Array.isArray(entries) || entries.length === 0) {
+                return
+            }
+
+            const topLevelEntries = entries.filter((entry) => Number(entry?.depth || 0) === 0 && String(entry?.key || '') !== '')
+            if (topLevelEntries.length === 0) {
+                return
+            }
+
+            const resolvedNumbers = topLevelEntries.map((entry) => {
+                const key = String(entry?.key || '')
+                const fromLookup = String(lookup?.[key] || '').trim()
+                if (this.isNumericSectionNumbering(fromLookup)) {
+                    return Number(fromLookup.split('.')[0] || 0)
+                }
+
+                const own = String(entry?.numbering || '').trim()
+                if (this.isNumericSectionNumbering(own)) {
+                    return Number(own.split('.')[0] || 0)
+                }
+
+                return 0
+            })
+
+            for (let index = 0; index < topLevelEntries.length; index += 1) {
+                const entry = topLevelEntries[index]
+                const key = String(entry?.key || '')
+                if (key === '' || this.isNumericSectionNumbering(String(lookup?.[key] || '').trim())) {
+                    continue
+                }
+                if (resolvedNumbers[index] > 0) {
+                    continue
+                }
+
+                let previousIndex = index - 1
+                while (previousIndex >= 0 && resolvedNumbers[previousIndex] <= 0) {
+                    previousIndex -= 1
+                }
+
+                let nextIndex = index + 1
+                while (nextIndex < resolvedNumbers.length && resolvedNumbers[nextIndex] <= 0) {
+                    nextIndex += 1
+                }
+
+                let inferred = 0
+                if (previousIndex < 0 && nextIndex < resolvedNumbers.length) {
+                    const nextValue = resolvedNumbers[nextIndex]
+                    const distance = nextIndex - index
+                    inferred = nextValue - distance
+                } else if (previousIndex >= 0 && nextIndex >= resolvedNumbers.length) {
+                    const previousValue = resolvedNumbers[previousIndex]
+                    const distance = index - previousIndex
+                    inferred = previousValue + distance
+                } else if (previousIndex >= 0 && nextIndex < resolvedNumbers.length) {
+                    const previousValue = resolvedNumbers[previousIndex]
+                    const nextValue = resolvedNumbers[nextIndex]
+                    const span = nextIndex - previousIndex
+                    const range = nextValue - previousValue
+                    if (range === span) {
+                        inferred = previousValue + (index - previousIndex)
+                    }
+                }
+
+                if (!Number.isFinite(inferred) || inferred < 1) {
+                    continue
+                }
+
+                const inferredNumbering = String(Math.trunc(inferred))
+                if (!this.isNumericSectionNumbering(inferredNumbering)) {
+                    continue
+                }
+
+                lookup[key] = inferredNumbering
+                resolvedNumbers[index] = Number(inferredNumbering)
+            }
+        },
         pandocTocSectionNumberingLookup() {
             const lookup = {}
             const tocSection = (Array.isArray(this.pandocSpecialSections) ? this.pandocSpecialSections : [])
@@ -4518,6 +4639,11 @@ export default {
                     lookup[entry.key] = entry.numbering
                 }
             })
+
+            const outlineEntries = outlineLines
+                .map((line) => this.parsePandocTocOutlineEntry(line))
+                .filter((entry) => entry && typeof entry === 'object')
+            this.inferPandocTocTopLevelNumbers(outlineEntries, lookup)
 
             return lookup
         },
