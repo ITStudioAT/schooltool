@@ -442,11 +442,20 @@ class AbaPandocAstNormalizerService
 
                 if (is_array($block['section_hint'] ?? null)) {
                     $block['section_hint']['title_page_candidate'] = true;
-                    if ((string) ($block['section_hint']['section_type'] ?? '') === 'chapter') {
-                        $block['section_hint']['original_section_type'] = 'chapter';
-                        $block['section_hint']['section_type'] = null;
-                        $block['section_hint']['reason'] = 'document_title_candidate_override';
+                    if ((string) ($block['section_hint']['section_type'] ?? '') !== 'title_page') {
+                        $block['section_hint']['original_section_type'] = (string) ($block['section_hint']['section_type'] ?? '');
                     }
+                    $block['section_hint']['section_type'] = 'title_page';
+                    $block['section_hint']['confidence'] = 'medium';
+                    $block['section_hint']['reason'] = 'document_title_candidate_override';
+                } else {
+                    $block['section_hint'] = [
+                        'section_type' => 'title_page',
+                        'confidence' => 'medium',
+                        'reason' => 'document_title_candidate_override',
+                        'rule_matches' => [],
+                        'title_page_candidate' => true,
+                    ];
                 }
             }
 
@@ -539,6 +548,7 @@ class AbaPandocAstNormalizerService
     /**
      * @param  array<int, array<string,mixed>>  $blocks
      * @return array{
+     *   title_page_end:?int,
      *   toc_start:?int,
      *   main_content_start:?int,
      *   bibliography_start:?int,
@@ -569,6 +579,7 @@ class AbaPandocAstNormalizerService
                 documentFrontBoundary: $documentFrontBoundary
             )
         );
+        $titlePageEnd = $this->resolveTitlePageEnd($blocks, $documentFrontBoundary, $tocStart, $mainContentStart);
 
         $bibliographyStart = $this->firstHeadingOrderByCallback($blocks, function (array $block, int $order) use ($mainContentStart): bool {
             if ($mainContentStart !== null && $order < $mainContentStart) {
@@ -595,6 +606,7 @@ class AbaPandocAstNormalizerService
         });
 
         return [
+            'title_page_end' => $titlePageEnd,
             'toc_start' => $tocStart,
             'main_content_start' => $mainContentStart,
             'bibliography_start' => $bibliographyStart,
@@ -606,6 +618,7 @@ class AbaPandocAstNormalizerService
     /**
      * @param  array<int, array<string,mixed>>  $blocks
      * @param  array{
+     *   title_page_end:?int,
      *   toc_start:?int,
      *   main_content_start:?int,
      *   bibliography_start:?int,
@@ -616,6 +629,7 @@ class AbaPandocAstNormalizerService
      */
     private function assignDocumentZones(array $blocks, array $zoneAnchors, int $documentFrontBoundary): array
     {
+        $titlePageEnd = is_numeric($zoneAnchors['title_page_end'] ?? null) ? (int) $zoneAnchors['title_page_end'] : null;
         $tocStart = is_numeric($zoneAnchors['toc_start'] ?? null) ? (int) $zoneAnchors['toc_start'] : null;
         $mainContentStart = is_numeric($zoneAnchors['main_content_start'] ?? null) ? (int) $zoneAnchors['main_content_start'] : null;
         $bibliographyStart = is_numeric($zoneAnchors['bibliography_start'] ?? null) ? (int) $zoneAnchors['bibliography_start'] : null;
@@ -638,7 +652,11 @@ class AbaPandocAstNormalizerService
             $confidence = 'low';
             $reason = 'zone_fallback';
 
-            if ($declarationStart !== null && $order >= $declarationStart) {
+            if ($titlePageEnd !== null && $order <= $titlePageEnd) {
+                $zone = 'title_page';
+                $confidence = $this->isTitlePageContextBlock($block, $order) ? 'high' : 'medium';
+                $reason = 'title_page_anchor_range';
+            } elseif ($declarationStart !== null && $order >= $declarationStart) {
                 $zone = $this->isDeclarationContextBlock($block, $order, $declarationStart)
                     ? 'declaration_area'
                     : 'end_matter';
@@ -765,6 +783,24 @@ class AbaPandocAstNormalizerService
                 $block['classification']['confidence'] = 'low';
                 $block['classification']['strategy'] = 'heuristic';
                 $signals[] = 'document_title_by_zone';
+
+                if (is_array($block['section_hint'] ?? null)) {
+                    $block['section_hint']['title_page_candidate'] = true;
+                    if ((string) ($block['section_hint']['section_type'] ?? '') !== 'title_page') {
+                        $block['section_hint']['original_section_type'] = (string) ($block['section_hint']['section_type'] ?? '');
+                    }
+                    $block['section_hint']['section_type'] = 'title_page';
+                    $block['section_hint']['confidence'] = 'medium';
+                    $block['section_hint']['reason'] = 'document_title_by_zone';
+                } else {
+                    $block['section_hint'] = [
+                        'section_type' => 'title_page',
+                        'confidence' => 'medium',
+                        'reason' => 'document_title_by_zone',
+                        'rule_matches' => [],
+                        'title_page_candidate' => true,
+                    ];
+                }
             }
 
             $block['problem_tags'] = array_values(array_unique($problemTags));
@@ -943,14 +979,132 @@ class AbaPandocAstNormalizerService
             return false;
         }
 
-        if (
-            preg_match('/\b(ahs|schule|klasse|betreuer|verfasser|autor|kandidat|kandidatin|abgabedatum|schuljahr)\b/iu', $text) === 1
-            && mb_strlen($text) <= 180
-        ) {
+        if ($this->looksLikeTitlePageMetadataLine($text)) {
             return true;
         }
 
         return $order <= 2 && mb_strlen($text) >= 20 && mb_strlen($text) <= 220;
+    }
+
+    /**
+     * @param  array<int, array<string,mixed>>  $blocks
+     */
+    private function resolveTitlePageEnd(array $blocks, int $documentFrontBoundary, ?int $tocStart, ?int $mainContentStart): ?int
+    {
+        $stopCandidates = [];
+
+        foreach ($blocks as $index => $block) {
+            if (! is_array($block) || (string) ($block['type'] ?? '') !== 'heading') {
+                continue;
+            }
+
+            $order = (int) ($block['order'] ?? ($index + 1));
+            if ($order <= 1) {
+                continue;
+            }
+
+            $sectionType = trim((string) ($block['section_hint']['section_type'] ?? ''));
+            $text = trim((string) ($block['plain_text'] ?? $block['text'] ?? ''));
+            $isBoundaryHeading = in_array(
+                $sectionType,
+                ['abstract', 'foreword', 'table_of_contents', 'chapter'],
+                true
+            ) || @preg_match('/\b(abstract|zusammenfassung|kurzfassung|vorwort|inhaltsverzeichnis|einleitung|introduction)\b/iu', mb_strtolower($text)) === 1;
+
+            if ($isBoundaryHeading) {
+                $stopCandidates[] = $order - 1;
+            }
+        }
+
+        if ($tocStart !== null && $tocStart > 1) {
+            $stopCandidates[] = $tocStart - 1;
+        }
+        if ($mainContentStart !== null && $mainContentStart > 1) {
+            $stopCandidates[] = $mainContentStart - 1;
+        }
+
+        $candidateEnd = $stopCandidates !== [] ? min($stopCandidates) : $documentFrontBoundary;
+        $candidateEnd = max(1, min($candidateEnd, max($documentFrontBoundary, 18)));
+
+        $titleHeadingCount = 0;
+        $metadataLineCount = 0;
+        $longParagraphCount = 0;
+
+        foreach ($blocks as $index => $block) {
+            if (! is_array($block)) {
+                continue;
+            }
+
+            $order = (int) ($block['order'] ?? ($index + 1));
+            if ($order < 1 || $order > $candidateEnd) {
+                continue;
+            }
+
+            $text = trim((string) ($block['plain_text'] ?? $block['text'] ?? ''));
+            if ((string) ($block['type'] ?? '') === 'heading') {
+                $problemTags = is_array($block['problem_tags'] ?? null)
+                    ? array_values(array_map('strval', $block['problem_tags']))
+                    : [];
+                if (
+                    in_array('document_title_candidate', $problemTags, true)
+                    || (string) ($block['structure_role'] ?? '') === 'title_page_heading'
+                    || (string) ($block['section_hint']['section_type'] ?? '') === 'title_page'
+                ) {
+                    $titleHeadingCount++;
+                }
+            }
+
+            if ($text !== '' && $this->looksLikeTitlePageMetadataLine($text)) {
+                $metadataLineCount++;
+            }
+
+            if ((string) ($block['type'] ?? '') === 'paragraph' && mb_strlen($text) > 220) {
+                $longParagraphCount++;
+            }
+        }
+
+        $hasStrongSignals = ($titleHeadingCount >= 1 && $metadataLineCount >= 2) || $metadataLineCount >= 4;
+        if (! $hasStrongSignals) {
+            return null;
+        }
+
+        if ($longParagraphCount > 2) {
+            return null;
+        }
+
+        return $candidateEnd;
+    }
+
+    private function looksLikeTitlePageMetadataLine(string $text): bool
+    {
+        $value = trim($text);
+        if ($value === '') {
+            return false;
+        }
+
+        if (mb_strlen($value) > 180) {
+            return false;
+        }
+
+        if (
+            @preg_match('/\b(ahs|gymnasium|schule|klasse|betreuer(?:in)?|verfasst(?:\s+von)?|verfasser(?:in)?|autor(?:in)?|kandidat(?:in)?|abgabe(?:datum)?|schuljahr|matura|abschlussarbeit)\b/iu', $value) === 1
+        ) {
+            return true;
+        }
+
+        if (@preg_match('/\b(stra[ßs]e|gasse|platz|kai)\b/iu', $value) === 1) {
+            return true;
+        }
+
+        if (@preg_match('/^\s*\d{4}\s+[\p{L}\- ]{2,80}$/u', $value) === 1) {
+            return true;
+        }
+
+        if (@preg_match('/^\s*[\p{L}.\- ]{2,40}\s*:\s*[\p{L}\p{N}.\- ]{2,120}$/u', $value) === 1) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

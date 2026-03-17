@@ -366,6 +366,37 @@ test('stabilizes title candidate confidence when title-page metadata context is 
         ->and(in_array('title_page_metadata_context', $titleHeading['classification']['signals'] ?? [], true))->toBeTrue();
 });
 
+test('reconstructs title page zone range from early metadata before abstract', function () {
+    $ast = [
+        'blocks' => [
+            ['t' => 'Para', 'c' => [['t' => 'Str', 'c' => 'AHS Mustergymnasium']]],
+            ['t' => 'Para', 'c' => [['t' => 'Str', 'c' => 'Franz-Josef-Kai 41']]],
+            ['t' => 'Para', 'c' => [['t' => 'Str', 'c' => '5020 Salzburg']]],
+            ['t' => 'Para', 'c' => [['t' => 'Strong', 'c' => [['t' => 'Str', 'c' => 'Auswirkungen digitaler Medien auf Lernmotivation im Unterricht']]]]],
+            ['t' => 'Para', 'c' => [['t' => 'Str', 'c' => 'Verfasst von']]],
+            ['t' => 'Para', 'c' => [['t' => 'Str', 'c' => 'Max Mustermann']]],
+            ['t' => 'Para', 'c' => [['t' => 'Str', 'c' => 'Betreuer: Mag. Erika Beispiel']]],
+            ['t' => 'Para', 'c' => [['t' => 'Str', 'c' => 'Klasse 8A']]],
+            ['t' => 'Header', 'c' => [1, ['', [], []], [['t' => 'Str', 'c' => 'Abstract']]]],
+        ],
+    ];
+
+    $result = app(AbaPandocAstNormalizerService::class)->normalizeAst($ast);
+    $blocks = is_array($result['blocks'] ?? null) ? $result['blocks'] : [];
+
+    $titlePageCount = collect($blocks)
+        ->filter(fn (array $block): bool => ($block['document_zone']['zone'] ?? null) === 'title_page')
+        ->count();
+    $titleHeading = $blocks[3] ?? [];
+    $abstractHeading = $blocks[8] ?? [];
+
+    expect($result['ok'] ?? false)->toBeTrue()
+        ->and($titlePageCount)->toBeGreaterThanOrEqual(6)
+        ->and(in_array('document_title_candidate', $titleHeading['problem_tags'] ?? [], true))->toBeTrue()
+        ->and($titleHeading['section_hint']['section_type'] ?? null)->toBe('title_page')
+        ->and($abstractHeading['document_zone']['zone'] ?? null)->toBe('front_matter');
+});
+
 test('distinguishes toc entry from later real heading with same title', function () {
     $ast = [
         'blocks' => [
