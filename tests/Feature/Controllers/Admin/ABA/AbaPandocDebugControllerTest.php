@@ -122,7 +122,13 @@ test('admin can run pandoc debug endpoint and receives normalized summary', func
         ->assertJsonPath('review.counts.suspicious_heading_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
         ->assertJsonPath('review.counts.zone_count', fn (mixed $value): bool => is_int($value) && $value >= 3)
         ->assertJsonPath('review.zone_overview.0.zone_key', fn (mixed $value): bool => is_string($value))
-        ->assertJsonPath('review.bibliography_groups.0.group_key', fn (mixed $value): bool => is_string($value));
+        ->assertJsonPath('review.bibliography_groups.0.group_key', fn (mixed $value): bool => is_string($value))
+        ->assertJsonPath('comparison.format', 'aba_path_compare_v1')
+        ->assertJsonPath('comparison.paths.legacy_local.label', 'Lokaler Pfad')
+        ->assertJsonPath('comparison.paths.pandoc.label', 'Pandoc-Pfad')
+        ->assertJsonPath('comparison.paths.openai_pdf.supported', false)
+        ->assertJsonPath('comparison.summary.required_zone_count', fn (mixed $value): bool => is_int($value) && $value >= 1)
+        ->assertJsonPath('comparison.matrix.zones.0.zone_key', fn (mixed $value): bool => is_string($value));
 });
 
 test('register admin cannot access pandoc debug endpoint', function () {
@@ -170,7 +176,11 @@ test('pandoc debug page shows condensed review sections for human checks', funct
     expect($content)
         ->toContain('Prüfbericht kopieren')
         ->toContain('Prüfbericht kopiert')
+        ->toContain('Vergleich kopieren')
+        ->toContain('Vergleich kopiert')
         ->toContain('AHS-ABA · Pandoc-Prüfbericht')
+        ->toContain('AHS-ABA · Pfadvergleich')
+        ->toContain('Pfadvergleich: Lokal vs. Pandoc')
         ->toContain('Dokumentphasen / Zonen')
         ->toContain('Erkannte Hauptabschnitte')
         ->toContain('Dokumenttitel-Kandidaten')

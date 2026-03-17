@@ -112,6 +112,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/aba/ai-settings/propose-update', [\App\Http\Controllers\Admin\ABA\AbaAiSettingsController::class, 'proposeSeedUpdate']);
         Route::post('/admin/aba/ai-settings/rebuild', [\App\Http\Controllers\Admin\ABA\AbaAiSettingsController::class, 'rebuildFromSeed']);
         Route::post('/admin/aba/ai-settings/pandoc-debug/run', [\App\Http\Controllers\Admin\ABA\AbaAiSettingsController::class, 'runPandocDebug']);
+        Route::post('/admin/aba/ai-settings/pdf-openai-debug/run', [\App\Http\Controllers\Admin\ABA\AbaAiSettingsController::class, 'runPdfOpenAiDebug']);
         Route::get('/admin/aba/seed-report', [\App\Http\Controllers\Admin\ABA\AbaSeedReportController::class, 'index']);
 
         // Seed Hardening Pipeline

@@ -15,11 +15,19 @@ use App\ABA\Services\RebuildKnowledgeBaseFromSeed;
 use App\ABA\Services\RunOnlineFreshnessCheck;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\ABA\AbaPandocDebugRunRequest;
+use App\Http\Requests\Admin\ABA\AbaPdfOpenAiDebugRequest;
+use App\Models\AbaAttachment;
 use App\Services\AbaDocumentRuleService;
+use App\Services\AbaExtractionPathComparisonService;
+use App\Services\AbaLocalDocumentStructureExtractor;
+use App\Services\AbaLocalDocumentTextExtractor;
 use App\Services\AbaPandocAstNormalizerService;
 use App\Services\AbaPandocDocxExtractionService;
+use App\Services\AbaPdfOpenAiDebugService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 /**
  * Admin-API für die KI-Einstellungen-Seite der ABA-Wissensbasis.
@@ -129,6 +137,9 @@ class AbaAiSettingsController extends Controller
         AbaPandocDebugRunRequest $request,
         AbaPandocDocxExtractionService $extractionService,
         AbaPandocAstNormalizerService $normalizerService,
+        AbaLocalDocumentTextExtractor $localTextExtractor,
+        AbaLocalDocumentStructureExtractor $localStructureExtractor,
+        AbaExtractionPathComparisonService $comparisonService,
     ): JsonResponse {
         /** @var UploadedFile $uploadedFile */
         $uploadedFile = $request->file('file');
@@ -141,6 +152,7 @@ class AbaAiSettingsController extends Controller
         }
 
         $tempPath = $this->storeUploadedDocxTemporarily($uploadedFile);
+        $legacyRelativePath = null;
 
         try {
             $extraction = $extractionService->extractFromPath($tempPath);
@@ -189,6 +201,54 @@ class AbaAiSettingsController extends Controller
                     'suspicious_heading_count' => (int) ($review['counts']['suspicious_heading_count'] ?? 0),
                 ]
             );
+            $legacyPayload = [
+                'ok' => false,
+                'error' => 'Lokaler Vergleichspfad konnte nicht ausgeführt werden.',
+            ];
+
+            try {
+                $legacyRelativePath = $this->storeUploadedDocxForLegacyComparison($uploadedFile);
+                $legacyAttachment = new AbaAttachment;
+                $legacyAttachment->disk = 'local';
+                $legacyAttachment->path = $legacyRelativePath;
+                $legacyAttachment->mime_type = (string) ($uploadedFile->getClientMimeType() ?? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+                $legacyAttachment->original_name = $uploadedFile->getClientOriginalName();
+
+                $legacyExtraction = $localTextExtractor->extractDocument($legacyAttachment);
+                $legacySections = $localStructureExtractor->extractSections(
+                    (string) ($legacyExtraction['text'] ?? ''),
+                    [
+                        'outline' => is_array($legacyExtraction['outline'] ?? null) ? array_values($legacyExtraction['outline']) : [],
+                        'toc_lines' => is_array($legacyExtraction['toc_lines'] ?? null) ? array_values($legacyExtraction['toc_lines']) : [],
+                        'selected_candidate' => $legacyExtraction['selected_candidate'] ?? null,
+                        'extraction_candidates' => is_array($legacyExtraction['candidates'] ?? null) ? array_values($legacyExtraction['candidates']) : [],
+                    ]
+                );
+
+                $legacyPayload = [
+                    'ok' => true,
+                    'sections' => is_array($legacySections) ? array_values($legacySections) : [],
+                    'diagnostics' => $localStructureExtractor->lastDiagnostics(),
+                    'extraction' => [
+                        'selected_candidate' => $legacyExtraction['selected_candidate'] ?? null,
+                        'candidate_count' => is_array($legacyExtraction['candidates'] ?? null) ? count($legacyExtraction['candidates']) : 0,
+                        'metadata' => is_array($legacyExtraction['metadata'] ?? null) ? $legacyExtraction['metadata'] : [],
+                    ],
+                ];
+            } catch (\Throwable $legacyException) {
+                $legacyPayload = [
+                    'ok' => false,
+                    'error' => 'Lokaler Vergleichspfad fehlgeschlagen: '.$legacyException->getMessage(),
+                ];
+            }
+
+            $pandocPayload = [
+                'ok' => true,
+                'blocks' => $blocks,
+                'model_version' => $normalization['model_version'] ?? null,
+                'extraction_engine' => $extraction['engine'] ?? 'pandoc',
+            ];
+            $comparison = $comparisonService->compare($legacyPayload, $pandocPayload);
 
             return response()->json([
                 'success' => true,
@@ -199,6 +259,13 @@ class AbaAiSettingsController extends Controller
                 ],
                 'summary' => $summary,
                 'review' => $review,
+                'comparison' => $comparison,
+                'legacy_local' => [
+                    'ok' => (bool) ($legacyPayload['ok'] ?? false),
+                    'error' => $legacyPayload['error'] ?? null,
+                    'diagnostics' => is_array($legacyPayload['diagnostics'] ?? null) ? $legacyPayload['diagnostics'] : [],
+                    'extraction' => is_array($legacyPayload['extraction'] ?? null) ? $legacyPayload['extraction'] : [],
+                ],
                 'extraction' => [
                     'engine' => $extraction['engine'] ?? 'pandoc',
                     'format' => $extraction['format'] ?? null,
@@ -216,7 +283,32 @@ class AbaAiSettingsController extends Controller
             ]);
         } finally {
             @unlink($tempPath);
+            if (is_string($legacyRelativePath) && $legacyRelativePath !== '') {
+                Storage::disk('local')->delete($legacyRelativePath);
+            }
         }
+    }
+
+    public function runPdfOpenAiDebug(
+        AbaPdfOpenAiDebugRequest $request,
+        AbaPdfOpenAiDebugService $service,
+    ): JsonResponse {
+        /** @var UploadedFile $uploadedFile */
+        $uploadedFile = $request->file('file');
+        if (! $uploadedFile->isValid()) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Die hochgeladene PDF-Datei konnte nicht verarbeitet werden.',
+            ], 422);
+        }
+
+        $result = $service->analyze($uploadedFile);
+
+        if (! ($result['success'] ?? false)) {
+            return response()->json($result, 500);
+        }
+
+        return response()->json($result);
     }
 
     private function storeUploadedDocxTemporarily(UploadedFile $file): string
@@ -237,6 +329,19 @@ class AbaAiSettingsController extends Controller
         file_put_contents($docxPath, $content);
 
         return $docxPath;
+    }
+
+    private function storeUploadedDocxForLegacyComparison(UploadedFile $file): string
+    {
+        $relativePath = 'aba/pandoc-debug-uploads/'.Str::uuid().'.docx';
+        $content = @file_get_contents($file->getPathname());
+        if (! is_string($content)) {
+            throw new \RuntimeException('Upload-Inhalt für lokalen Vergleich konnte nicht gelesen werden.');
+        }
+
+        Storage::disk('local')->put($relativePath, $content);
+
+        return $relativePath;
     }
 
     /**

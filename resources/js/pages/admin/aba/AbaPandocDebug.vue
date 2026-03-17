@@ -182,6 +182,73 @@
 
             <ItsGridBox class="mb-2">
                 <template #title>
+                    <v-icon size="16" class="mr-1">mdi-compare-horizontal</v-icon>
+                    Pfadvergleich: Lokal vs. Pandoc
+                </template>
+                <div class="pa-3">
+                    <div class="d-flex justify-end mb-2">
+                        <v-btn
+                            color="blue"
+                            variant="tonal"
+                            size="small"
+                            :prepend-icon="comparisonCopyButtonIcon"
+                            :loading="isComparisonCopying"
+                            @click="copyComparisonReport">
+                            {{ comparisonCopyButtonLabel }}
+                        </v-btn>
+                    </div>
+
+                    <v-alert type="info" variant="tonal" density="compact" class="text-caption mb-2">
+                        Vergleich der Dokumentaufbereitung, keine Benotung der Schülerarbeit.
+                    </v-alert>
+
+                    <v-row dense class="mb-1">
+                        <v-col cols="12" md="6">
+                            <v-sheet class="review-item pa-2" rounded="lg">
+                                <div class="review-item__chips mb-1">
+                                    <v-chip size="x-small" color="blue" variant="tonal">{{ legacyComparePath.label || 'Lokaler Pfad' }}</v-chip>
+                                    <v-chip size="x-small" :color="comparePathStatusColor(legacyComparePath)" variant="tonal">{{ comparePathStatusLabel(legacyComparePath) }}</v-chip>
+                                </div>
+                                <div class="text-caption">
+                                    Pflichtteile erkannt: {{ Number(legacyComparePath.required_parts_found || 0) }} |
+                                    Fehlende Pflichtteile: {{ Array.isArray(legacyComparePath.missing_required_parts) ? legacyComparePath.missing_required_parts.length : 0 }} |
+                                    TOC-Artefakte: {{ Number(legacyComparePath.toc_artifacts || 0) }}
+                                </div>
+                            </v-sheet>
+                        </v-col>
+                        <v-col cols="12" md="6">
+                            <v-sheet class="review-item pa-2" rounded="lg">
+                                <div class="review-item__chips mb-1">
+                                    <v-chip size="x-small" color="teal" variant="tonal">{{ pandocComparePath.label || 'Pandoc-Pfad' }}</v-chip>
+                                    <v-chip size="x-small" :color="comparePathStatusColor(pandocComparePath)" variant="tonal">{{ comparePathStatusLabel(pandocComparePath) }}</v-chip>
+                                </div>
+                                <div class="text-caption">
+                                    Pflichtteile erkannt: {{ Number(pandocComparePath.required_parts_found || 0) }} |
+                                    Fehlende Pflichtteile: {{ Array.isArray(pandocComparePath.missing_required_parts) ? pandocComparePath.missing_required_parts.length : 0 }} |
+                                    TOC-Artefakte: {{ Number(pandocComparePath.toc_artifacts || 0) }}
+                                </div>
+                            </v-sheet>
+                        </v-col>
+                    </v-row>
+
+                    <v-alert v-if="comparisonZones.length === 0" type="info" variant="tonal" density="compact" class="text-caption">
+                        Keine Vergleichsdaten verfügbar.
+                    </v-alert>
+                    <div v-else class="review-list">
+                        <v-sheet v-for="zone in comparisonZones" :key="`compare-${zone.zone_key}`" class="review-item pa-2" rounded="lg">
+                            <div class="review-item__chips">
+                                <v-chip size="x-small" color="indigo" variant="tonal">{{ zone.label || zone.zone_key }}</v-chip>
+                                <v-chip size="x-small" color="grey" variant="outlined">{{ requirementLabel(zone.requirement) }}</v-chip>
+                                <v-chip size="x-small" :color="compareBoolColor(zone.legacy_local)" variant="tonal">Lokal: {{ compareBoolLabel(zone.legacy_local) }}</v-chip>
+                                <v-chip size="x-small" :color="compareBoolColor(zone.pandoc)" variant="tonal">Pandoc: {{ compareBoolLabel(zone.pandoc) }}</v-chip>
+                            </div>
+                        </v-sheet>
+                    </div>
+                </div>
+            </ItsGridBox>
+
+            <ItsGridBox class="mb-2">
+                <template #title>
                     <v-icon size="16" class="mr-1">mdi-map-outline</v-icon>
                     Dokumentphasen / Zonen
                 </template>
@@ -477,6 +544,133 @@
             </ItsGridBox>
         </template>
 
+        <v-divider class="my-4" />
+
+        <v-alert type="info" variant="tonal" density="comfortable" rounded="lg" class="mb-2 text-caption">
+            <strong>PDF → OpenAI Debug</strong> – Strukturerkennung via gpt-4o. Nur für Vergleichs- und Testzwecke.
+        </v-alert>
+
+        <ItsGridBox class="mb-2">
+            <template #title>
+                <v-icon size="16" class="mr-1">mdi-file-pdf-box</v-icon>
+                PDF-Strukturanalyse (OpenAI)
+            </template>
+
+            <div class="pa-3">
+                <v-row dense>
+                    <v-col cols="12" md="8">
+                        <v-file-input
+                            v-model="selectedPdfFile"
+                            accept=".pdf"
+                            label="PDF-Datei auswählen"
+                            prepend-icon="mdi-file-pdf-box"
+                            variant="outlined"
+                            density="comfortable"
+                            show-size
+                            :disabled="isPdfRunning"
+                            clearable />
+                    </v-col>
+                    <v-col cols="12" md="4" class="d-flex align-end">
+                        <v-btn
+                            block
+                            color="deep-purple"
+                            variant="flat"
+                            prepend-icon="mdi-brain"
+                            :loading="isPdfRunning"
+                            :disabled="!selectedPdfUploadFile || isPdfRunning"
+                            @click="runPdfDebug">
+                            PDF analysieren
+                        </v-btn>
+                    </v-col>
+                </v-row>
+
+                <v-alert v-if="pdfRunError" type="error" variant="tonal" density="compact" class="mt-2 text-caption">
+                    {{ pdfRunError }}
+                </v-alert>
+            </div>
+        </ItsGridBox>
+
+        <template v-if="pdfResult">
+            <v-row class="w-100 ma-0 mb-2" dense>
+                <v-col cols="12">
+                    <v-sheet rounded="lg" class="pa-3">
+                        <div class="d-flex align-center ga-2 mb-2">
+                            <span class="text-caption text-medium-emphasis">Gesamtvertrauen:</span>
+                            <v-chip :color="confidenceColorForPdf(pdfResult.result?.overall_confidence)" size="small" variant="tonal">
+                                {{ pdfResult.result?.overall_confidence }}
+                            </v-chip>
+                            <span class="text-caption text-medium-emphasis ml-auto">{{ pdfResult.filename }} · {{ pdfResult.model }}</span>
+                        </div>
+
+                        <div class="d-flex flex-wrap ga-2">
+                            <v-chip v-for="zone in ['titlepage', 'abstract_de', 'abstract_en', 'toc', 'introduction', 'main_part', 'conclusion', 'bibliography', 'declaration', 'appendix', 'figure_index']" :key="zone"
+                                :color="pdfResult.result?.[zone + '_detected'] ? 'green' : 'red'"
+                                size="small"
+                                variant="tonal">
+                                {{ zone }}
+                            </v-chip>
+                        </div>
+                    </v-sheet>
+                </v-col>
+            </v-row>
+
+            <ItsGridBox v-if="pdfZonesFound.length > 0" class="mb-2">
+                <template #title>
+                    <v-icon size="16" class="mr-1">mdi-layers-outline</v-icon>
+                    Erkannte Zonen ({{ pdfZonesFound.length }})
+                </template>
+                <div class="pa-3">
+                    <v-table density="compact">
+                        <thead>
+                            <tr>
+                                <th>Zone</th>
+                                <th>Konfidenz</th>
+                                <th>Seite</th>
+                                <th>Evidenz</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(zone, i) in pdfZonesFound" :key="i">
+                                <td class="text-caption font-weight-medium">{{ zone.zone }}</td>
+                                <td>
+                                    <v-chip :color="confidenceColorForPdf(zone.confidence)" size="x-small" variant="tonal">
+                                        {{ zone.confidence }}
+                                    </v-chip>
+                                </td>
+                                <td class="text-caption text-medium-emphasis">{{ zone.page_hint || '–' }}</td>
+                                <td class="text-caption">{{ zone.evidence }}</td>
+                            </tr>
+                        </tbody>
+                    </v-table>
+                </div>
+            </ItsGridBox>
+
+            <ItsGridBox v-if="pdfMissingParts.length > 0 || pdfSuspiciousItems.length > 0 || pdfSequenceObservations.length > 0 || pdfNotes.length > 0" class="mb-2">
+                <template #title>
+                    <v-icon size="16" class="mr-1">mdi-comment-alert-outline</v-icon>
+                    Beobachtungen
+                </template>
+                <div class="pa-3">
+                    <div v-if="pdfMissingParts.length > 0" class="mb-3">
+                        <div class="text-caption text-medium-emphasis mb-1">Fehlende Pflichtteile:</div>
+                        <v-chip v-for="(part, i) in pdfMissingParts" :key="i" color="red" size="small" variant="tonal" class="mr-1 mb-1">{{ part }}</v-chip>
+                    </div>
+                    <div v-if="pdfSuspiciousItems.length > 0" class="mb-3">
+                        <div class="text-caption text-medium-emphasis mb-1">Auffälligkeiten:</div>
+                        <div v-for="(item, i) in pdfSuspiciousItems" :key="i" class="text-caption mb-1">• {{ item }}</div>
+                    </div>
+                    <div v-if="pdfSequenceObservations.length > 0" class="mb-3">
+                        <div class="text-caption text-medium-emphasis mb-1">Reihenfolge-Beobachtungen:</div>
+                        <div v-for="(obs, i) in pdfSequenceObservations" :key="i" class="text-caption mb-1">• {{ obs }}</div>
+                    </div>
+                    <div v-if="pdfNotes.length > 0">
+                        <div class="text-caption text-medium-emphasis mb-1">Notizen:</div>
+                        <div v-for="(note, i) in pdfNotes" :key="i" class="text-caption mb-1">• {{ note }}</div>
+                    </div>
+                </div>
+            </ItsGridBox>
+        </template>
+
         <v-snackbar
             v-model="copySnackbar.visible"
             location="bottom right"
@@ -509,6 +703,8 @@ export default {
             result: null,
             isCopying: false,
             copyWasSuccessful: false,
+            isComparisonCopying: false,
+            comparisonCopyWasSuccessful: false,
             copySnackbar: {
                 visible: false,
                 message: '',
@@ -516,6 +712,10 @@ export default {
             },
             activeFilter: 'all',
             showAllBlocks: false,
+            selectedPdfFile: null,
+            isPdfRunning: false,
+            pdfRunError: null,
+            pdfResult: null,
         }
     },
 
@@ -598,6 +798,37 @@ export default {
             }
         },
 
+        comparison() {
+            return this.result?.comparison ?? {
+                note: '',
+                paths: {
+                    legacy_local: {},
+                    pandoc: {},
+                    openai_pdf: {},
+                },
+                matrix: {
+                    zones: [],
+                },
+                summary: {},
+            }
+        },
+
+        legacyComparePath() {
+            return typeof this.comparison?.paths?.legacy_local === 'object' && this.comparison?.paths?.legacy_local !== null
+                ? this.comparison.paths.legacy_local
+                : {}
+        },
+
+        pandocComparePath() {
+            return typeof this.comparison?.paths?.pandoc === 'object' && this.comparison?.paths?.pandoc !== null
+                ? this.comparison.paths.pandoc
+                : {}
+        },
+
+        comparisonZones() {
+            return Array.isArray(this.comparison?.matrix?.zones) ? this.comparison.matrix.zones : []
+        },
+
         recognizedMainSections() {
             return Array.isArray(this.review?.recognized_main_sections) ? this.review.recognized_main_sections.slice(0, 20) : []
         },
@@ -640,6 +871,34 @@ export default {
             }
 
             return this.selectedFile || null
+        },
+
+        selectedPdfUploadFile() {
+            if (Array.isArray(this.selectedPdfFile)) {
+                return this.selectedPdfFile[0] || null
+            }
+
+            return this.selectedPdfFile || null
+        },
+
+        pdfZonesFound() {
+            return Array.isArray(this.pdfResult?.result?.zones_found) ? this.pdfResult.result.zones_found : []
+        },
+
+        pdfMissingParts() {
+            return Array.isArray(this.pdfResult?.result?.missing_required_parts) ? this.pdfResult.result.missing_required_parts : []
+        },
+
+        pdfSuspiciousItems() {
+            return Array.isArray(this.pdfResult?.result?.suspicious_items) ? this.pdfResult.result.suspicious_items : []
+        },
+
+        pdfSequenceObservations() {
+            return Array.isArray(this.pdfResult?.result?.sequence_observations) ? this.pdfResult.result.sequence_observations : []
+        },
+
+        pdfNotes() {
+            return Array.isArray(this.pdfResult?.result?.notes) ? this.pdfResult.result.notes : []
         },
 
         filteredBlocks() {
@@ -717,6 +976,22 @@ export default {
 
             return 'Prüfbericht kopieren'
         },
+
+        comparisonCopyButtonIcon() {
+            if (this.comparisonCopyWasSuccessful) {
+                return 'mdi-check'
+            }
+
+            return 'mdi-content-copy'
+        },
+
+        comparisonCopyButtonLabel() {
+            if (this.comparisonCopyWasSuccessful) {
+                return 'Vergleich kopiert'
+            }
+
+            return 'Vergleich kopieren'
+        },
     },
 
     methods: {
@@ -730,6 +1005,7 @@ export default {
             this.runError = null
             this.result = null
             this.copyWasSuccessful = false
+            this.comparisonCopyWasSuccessful = false
             this.showAllBlocks = false
 
             try {
@@ -749,6 +1025,38 @@ export default {
             } finally {
                 this.isRunning = false
             }
+        },
+
+        async runPdfDebug() {
+            if (!this.selectedPdfUploadFile) {
+                this.pdfRunError = 'Bitte wählen Sie eine PDF-Datei aus.'
+                return
+            }
+
+            this.isPdfRunning = true
+            this.pdfRunError = null
+            this.pdfResult = null
+
+            try {
+                const formData = new FormData()
+                formData.append('file', this.selectedPdfUploadFile)
+
+                const response = await axios.post('/api/admin/aba/ai-settings/pdf-openai-debug/run', formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' },
+                })
+
+                this.pdfResult = response.data
+            } catch (error) {
+                this.pdfRunError = this.extractErrorMessage(error)
+            } finally {
+                this.isPdfRunning = false
+            }
+        },
+
+        confidenceColorForPdf(confidence) {
+            if (confidence === 'high') return 'green'
+            if (confidence === 'medium') return 'orange'
+            return 'red'
         },
 
         async copyReviewReport() {
@@ -776,6 +1084,34 @@ export default {
                 this.showCopySnackbar('Kopieren fehlgeschlagen.', 'error')
             } finally {
                 this.isCopying = false
+            }
+        },
+
+        async copyComparisonReport() {
+            if (!this.result || this.isComparisonCopying) {
+                return
+            }
+
+            const comparisonReport = this.buildComparisonCopyText()
+            if ((comparisonReport || '').trim() === '') {
+                this.showCopySnackbar('Kein Vergleich zum Kopieren verfügbar.', 'warning')
+                return
+            }
+
+            this.isComparisonCopying = true
+            this.comparisonCopyWasSuccessful = false
+
+            try {
+                await this.writeTextToClipboard(comparisonReport)
+                this.comparisonCopyWasSuccessful = true
+                this.showCopySnackbar('Vergleich kopiert.', 'success')
+                window.setTimeout(() => {
+                    this.comparisonCopyWasSuccessful = false
+                }, 1800)
+            } catch (error) {
+                this.showCopySnackbar('Kopieren fehlgeschlagen.', 'error')
+            } finally {
+                this.isComparisonCopying = false
             }
         },
 
@@ -830,6 +1166,7 @@ export default {
             lines.push(`- Verzeichnis-/Bibliographie-Blöcke: ${this.summary.zone_bibliography_area_count}`)
             lines.push(`- Erklärungsbereich-Blöcke: ${this.summary.zone_declaration_area_count}`)
 
+            this.appendPathComparisonSection(lines)
             this.appendZoneOverviewSection(lines)
 
             this.appendHeadingSection(
@@ -875,6 +1212,29 @@ export default {
                 this.suspiciousHeadings,
                 (item) => `- #${item.order || '?'} | ${this.reviewItemText(item)}`
             )
+
+            return lines.join('\n').trim()
+        },
+
+        buildComparisonCopyText() {
+            const lines = []
+            const generatedAt = new Date().toLocaleString('de-AT')
+            const documentName = this.result?.document?.original_name || this.selectedUploadFile?.name || 'Unbekanntes Dokument'
+
+            lines.push('AHS-ABA · Pfadvergleich')
+            lines.push(`Erstellt: ${generatedAt}`)
+            lines.push(`Dokument: ${documentName}`)
+            lines.push('Hinweis: Vergleich der Dokumentaufbereitung, keine Benotung der Schülerarbeit.')
+
+            this.appendPathComparisonSection(lines)
+
+            const legacyMissing = Array.isArray(this.legacyComparePath?.missing_required_parts) ? this.legacyComparePath.missing_required_parts : []
+            const pandocMissing = Array.isArray(this.pandocComparePath?.missing_required_parts) ? this.pandocComparePath.missing_required_parts : []
+
+            lines.push('')
+            lines.push('Fehlende Pflichtzonen je Pfad')
+            lines.push(`- Lokal: ${legacyMissing.length > 0 ? legacyMissing.join(', ') : 'keine'}`)
+            lines.push(`- Pandoc: ${pandocMissing.length > 0 ? pandocMissing.join(', ') : 'keine'}`)
 
             return lines.join('\n').trim()
         },
@@ -935,6 +1295,34 @@ export default {
                 const firstOrder = zone.first_order || '?'
                 const lastOrder = zone.last_order || '?'
                 lines.push(`- ${label}: ${count} Blöcke, ${headingCount} Überschriften (#${firstOrder} - #${lastOrder})`)
+            })
+        },
+
+        appendPathComparisonSection(lines) {
+            lines.push('')
+            lines.push('Pfadvergleich (lokal vs. Pandoc)')
+
+            const requiredZoneCount = Number(this.comparison?.summary?.required_zone_count || 0)
+            const legacyRequiredFound = Number(this.comparison?.summary?.legacy_required_found || 0)
+            const legacyMissingRequired = Number(this.comparison?.summary?.legacy_missing_required_count || 0)
+            const pandocRequiredFound = Number(this.comparison?.summary?.pandoc_required_found || 0)
+            const pandocMissingRequired = Number(this.comparison?.summary?.pandoc_missing_required_count || 0)
+
+            lines.push(`- Pflichtzonen gesamt: ${requiredZoneCount}`)
+            lines.push(`- Lokal: ${legacyRequiredFound} erkannt, ${legacyMissingRequired} fehlend`)
+            lines.push(`- Pandoc: ${pandocRequiredFound} erkannt, ${pandocMissingRequired} fehlend`)
+
+            if (!Array.isArray(this.comparisonZones) || this.comparisonZones.length === 0) {
+                lines.push('- Keine Zonenmatrix verfügbar.')
+                return
+            }
+
+            this.comparisonZones.slice(0, 30).forEach((zone) => {
+                const label = zone.label || zone.zone_key || 'Zone'
+                const requirement = this.requirementLabel(zone.requirement)
+                const legacy = this.compareBoolLabel(Boolean(zone.legacy_local))
+                const pandoc = this.compareBoolLabel(Boolean(zone.pandoc))
+                lines.push(`- ${label} [${requirement}] -> Lokal: ${legacy}, Pandoc: ${pandoc}`)
             })
         },
 
@@ -1006,6 +1394,52 @@ export default {
 
         blockZoneKey(block) {
             return block?.document_zone?.zone || ''
+        },
+
+        comparePathStatusLabel(path) {
+            if ((path?.status || '') === 'ok') {
+                return 'ok'
+            }
+
+            if ((path?.status || '') === 'not_connected') {
+                return 'nicht verbunden'
+            }
+
+            return 'fehler'
+        },
+
+        comparePathStatusColor(path) {
+            if ((path?.status || '') === 'ok') {
+                return 'success'
+            }
+
+            if ((path?.status || '') === 'not_connected') {
+                return 'grey'
+            }
+
+            return 'warning'
+        },
+
+        compareBoolLabel(value) {
+            return value ? 'erkannt' : 'nicht erkannt'
+        },
+
+        compareBoolColor(value) {
+            return value ? 'success' : 'grey'
+        },
+
+        requirementLabel(requirement) {
+            if (requirement === 'required' || requirement === 'pflicht') {
+                return 'Pflicht'
+            }
+            if (requirement === 'school_specific' || requirement === 'schulspezifisch') {
+                return 'schulspezifisch'
+            }
+            if (requirement === 'recommended' || requirement === 'empfohlen') {
+                return 'empfohlen'
+            }
+
+            return 'optional'
         },
 
         documentZoneLabel(zone) {
